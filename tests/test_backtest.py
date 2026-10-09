@@ -686,6 +686,23 @@ def test_empirical_tail_loss_and_volatility_include_transaction_costs():
     assert Decimal(metrics["max_drawdown_percent"]) > 0
 
 
+def test_annualization_policy_drives_calculation_and_disclosed_assumptions(monkeypatch):
+    costs = ResearchCosts(Decimal(100), Decimal(100))
+    original = run(costs=costs)
+    # A different convention must change both the number and its explanation;
+    # editing a caption alone must never misdescribe the mathematical result.
+    monkeypatch.setattr("omnicio.backtest.ANNUALIZATION_SESSIONS", 63)
+    changed = run(costs=costs)
+    before = Decimal(original["metrics"]["annualized_volatility_percent"])
+    after = Decimal(changed["metrics"]["annualized_volatility_percent"])
+    assert abs(before - 2 * after) < Decimal("1e-20")
+    assert changed["assumptions"]["annualization_sessions"] == 63
+    assert changed["assumptions"]["volatility_annualization"] == (
+        "daily_sample_standard_deviation_sqrt_63_no_serial_adjustment"
+    )
+    assert changed["metrics"]["ending_nav_rub"] == original["metrics"]["ending_nav_rub"]
+
+
 def test_future_window_and_nonfinite_costs_are_rejected_before_research():
     document = research_document()
     capital = Decimal(1000)

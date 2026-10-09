@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import copy
 import hashlib
 import importlib.util
 import io
@@ -128,8 +129,31 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertGreater(call.kwargs["timeout"], maximum)
             self.assertIn("timeout --kill-after=", call.args[0])
             self.assertNotIn("--foreground", call.args[0])
-        self.assertEqual(deploy.kwargs["input_text"], MODULE.REMOTE_DEPLOY_SCRIPT)
+        self.assertEqual(
+            deploy.kwargs["input_text"],
+            MODULE.REMOTE_DEPLOY_SCRIPT.replace(
+                "__OMNICIO_PUBLIC_BUILD__", sha[:12],
+            ).replace("__OMNICIO_PUBLIC_RELEASE__", sha),
+        )
+        self.assertNotIn("__OMNICIO_PUBLIC_BUILD__", deploy.kwargs["input_text"])
+        self.assertIn(f'add_header X-Omnicio-Build "{sha[:12]}";', deploy.kwargs["input_text"])
+        roots = re.findall(r"^\s*root ([^;]+);$", deploy.kwargs["input_text"], flags=re.M)
+        self.assertTrue(roots)
+        self.assertEqual(set(roots), {f"/var/www/omnicio.ru/releases/{sha}"})
+        self.assertNotIn("__OMNICIO_PUBLIC_RELEASE__", deploy.kwargs["input_text"])
         self.assertEqual(rollback.kwargs["input_text"], MODULE.REMOTE_ROLLBACK_SCRIPT)
+
+    def test_deploy_and_rollback_reject_non_commit_arguments_before_ssh(self) -> None:
+        from unittest.mock import Mock
+
+        ssh = Mock()
+        for action in (MODULE.deploy_remote, MODULE.rollback_remote):
+            for sha in ("../current", "a" * 39, "A" * 40, "a" * 40 + "; true"):
+                with self.subTest(action=action.__name__, sha=sha), self.assertRaisesRegex(
+                    MODULE.InfraError, "40-character SHA",
+                ):
+                    action(ssh, release_sha=sha)
+        ssh.run.assert_not_called()
 
     def test_existing_legacy_brand_links_can_be_republished(self) -> None:
         if os.name == "nt":
@@ -772,6 +796,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertEqual(len(locations), len(re.findall(r"^    location ", https, re.M)))
         self.assertTrue({
             "/", "/api/", "/health/", "/assets/", "= /assets/app.css",
+            "= /assets/tokens.css", "= /assets/config.js",
             "= /assets/app.js", "= /assets/workspace.js", "= /assets/i18n.js",
             "= /sw.js", "= /offline.html", "= /manifest.webmanifest", "= /version.js",
         }.issubset(locations))
@@ -787,6 +812,10 @@ class AuthAppDeployTests(unittest.TestCase):
                     self.assertEqual(effective["Cache-Control"], ("public, max-age=86400", False))
                 elif "Cache-Control" in effective:
                     self.assertEqual(effective["Cache-Control"], ("no-cache", False))
+                if "Cache-Control" in effective:
+                    self.assertEqual(
+                        effective["X-Omnicio-Build"], ("__OMNICIO_PUBLIC_BUILD__", False),
+                    )
         self.assertEqual(headers(locations["= /sw.js"])["Service-Worker-Allowed"], ("/", False))
         self.assertNotIn("__OMNICIO_SERVER_SECURITY_HEADERS__", script)
         self.assertNotIn("__OMNICIO_LOCATION_SECURITY_HEADERS__", script)
@@ -892,6 +921,140 @@ class AuthAppDeployTests(unittest.TestCase):
                 2,
                 release_path,
             )
+
+    def test_workflow_events_preserve_validation_and_report_blocked_releases(self) -> None:
+        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
+            encoding="utf-8",
+        )
+        tests, deploy = workflow.split("\n  tests:\n", 1)[1].split("\n  deploy:\n", 1)
+        expressions = []
+        for job in (tests, deploy):
+            match = re.search(r"^    if: >-\n((?:      .+\n)+)", job, flags=re.M)
+            self.assertIsNotNone(match)
+            expressions.append(match[1].strip())
+        prerequisite = tests.split(
+            "      - name: Require successful PostgreSQL release prerequisite", 1,
+        )[1].split("      - name:", 1)[0]
+        match = re.search(r"^        if: (.+)$", prerequisite, flags=re.M)
+        self.assertIsNotNone(match)
+        expressions.append(match[1])
+        self.assertIn("          exit /b 1\n", prerequisite)
+        self.assertLess(tests.index("id: prerequisite"), tests.index("Checkout candidate state"))
+        diagnostic_conditions = {
+            "Upload synthetic interface screenshots": (
+                "always() && steps.checkout.outcome == 'success'"
+            ),
+            "Report source-specific Sonar": (
+                "github.event_name == 'pull_request' && always() "
+                "&& steps.checkout.outcome == 'success' && steps.python.outcome == 'success'"
+            ),
+        }
+        for name, condition in diagnostic_conditions.items():
+            step = tests.split("      - name: " + name, 1)[1].split("      - name:", 1)[0]
+            self.assertIn("        if: " + condition + "\n", step)
+
+        baseline = {
+            "event_name": "workflow_run", "repository": "test/omnicio", "sha": "a" * 40,
+            "ref": "refs/heads/main",
+            "event": {
+                "workflow_run": {
+                    "event": "push", "conclusion": "success", "head_sha": "a" * 40,
+                    "head_branch": "main", "head_repository": {"full_name": "test/omnicio"},
+                },
+                "pull_request": {
+                    "author_association": "OWNER",
+                    "head": {"repo": {"full_name": "test/omnicio"}},
+                },
+            },
+        }
+        scenarios = (
+            ("accepted upstream push", {}, [True, True, False]),
+            ("failed upstream push", {"event.workflow_run.conclusion": "failure"},
+             [True, False, True]),
+            ("cancelled upstream push", {"event.workflow_run.conclusion": "cancelled"},
+             [True, False, True]),
+            ("missing upstream outcome", {"event.workflow_run.conclusion": ""},
+             [True, False, True]),
+            ("successful scheduled backup", {"event.workflow_run.event": "schedule"},
+             [False, False, False]),
+            ("failed scheduled backup", {"event.workflow_run.event": "schedule",
+                                         "event.workflow_run.conclusion": "failure"},
+             [False, False, False]),
+            ("stale upstream push", {"event.workflow_run.head_sha": "b" * 40},
+             [False, False, False]),
+            ("foreign upstream", {"event.workflow_run.head_repository.full_name": "fork/omnicio"},
+             [False, False, False]),
+            ("other upstream branch", {"event.workflow_run.head_branch": "feature"},
+             [False, False, False]),
+            ("upstream pull request", {"event.workflow_run.event": "pull_request"},
+             [False, False, False]),
+            ("push validation", {"event_name": "push"}, [True, False, False]),
+            ("owner PR validation", {"event_name": "pull_request"}, [True, False, False]),
+            ("fork PR", {"event_name": "pull_request",
+                         "event.pull_request.head.repo.full_name": "fork/omnicio"},
+             [False, False, False]),
+            ("nonowner PR", {"event_name": "pull_request",
+                             "event.pull_request.author_association": "CONTRIBUTOR"},
+             [False, False, False]),
+            ("manual main release", {"event_name": "workflow_dispatch"}, [True, True, False]),
+            ("manual branch validation", {"event_name": "workflow_dispatch",
+                                          "ref": "refs/heads/feature"}, [True, False, False]),
+        )
+        contexts = []
+        for _, changes, _ in scenarios:
+            context = copy.deepcopy(baseline)
+            for path, value in changes.items():
+                parent = context
+                *keys, last = path.split(".")
+                for key in keys:
+                    parent = parent[key]
+                parent[last] = value
+            contexts.append(context)
+        # These conditions use only string equality and boolean operators shared
+        # by GitHub expressions and JavaScript. Execute the workflow expressions
+        # themselves using Node, already required by this job's browser checks.
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "Node is required by the application workflow")
+        source = (
+            "const contexts = " + json.dumps(contexts) + ";\n"
+            "const results = contexts.map(github => {\n"
+            f"  const tests = Boolean({expressions[0]});\n"
+            f"  const deploy = tests && Boolean({expressions[1]});\n"
+            f"  const blocked = tests && Boolean({expressions[2]});\n"
+            "  return [tests, deploy, blocked];\n});\n"
+            "process.stdout.write(JSON.stringify(results));\n"
+        )
+        result = subprocess.run([node, "-"], input=source, text=True,
+                                capture_output=True, check=True, timeout=10)
+        for (name, _, expected), actual in zip(scenarios, json.loads(result.stdout), strict=True):
+            with self.subTest(event=name):
+                self.assertEqual(actual, expected)
+
+    def test_deploy_completion_requires_confirmed_app_ready(self) -> None:
+        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
+            encoding="utf-8",
+        )
+        step = workflow.split("      - name: Confirm application readiness\n", 1)[1]
+        step = step.split("      - name:", 1)[0]
+        self.assertIsNone(re.search(r"^        if:", step, flags=re.M))
+        self.assertIn("AUTH_DEPLOY_STATUS: ${{ steps.app.outputs.status }}", step)
+        self.assertIn("          if errorlevel 1 exit /b 1\n", step)
+        match = re.search(r'^          "%OMNICIO_PYTHON%" -c "(.+)"$', step, flags=re.M)
+        self.assertIsNotNone(match)
+        for status in (
+            None, "", "pending_database", "unknown", "APP_READY", "app_ready\n", "app_ready",
+        ):
+            environment = dict(os.environ)
+            environment.pop("AUTH_DEPLOY_STATUS", None)
+            if status is not None:
+                environment["AUTH_DEPLOY_STATUS"] = status
+            result = subprocess.run([sys.executable, "-c", match[1]], env=environment,
+                                    text=True, capture_output=True, timeout=10)
+            with self.subTest(status=status):
+                self.assertEqual(result.returncode, 0 if status == "app_ready" else 1)
+                if status != "app_ready":
+                    self.assertIn("::error::Application deployment did not reach app_ready",
+                                  result.stderr)
 
     def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -1040,10 +1203,12 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(asset, shipped)
         self.assertIn("assets/brand/web/earth-hero.png", shipped)
         self.assertIn("assets/brand/web/auth-mountains.png", shipped)
+        # Join shell continuations while preserving quoted paths, argument order and modes.
+        deployment_script = re.sub(r"\\\n[ \t]*", "", MODULE.REMOTE_DEPLOY_SCRIPT)
         for name in ("earth-hero.png", "auth-mountains.png"):
             self.assertIn(
                 f'install -m 0644 "$RELEASE/assets/brand/web/{name}" '
-                f'"$WEB_RELEASE/assets/brand/{name}"', MODULE.REMOTE_DEPLOY_SCRIPT,
+                f'"$WEB_RELEASE/assets/brand/{name}"', deployment_script,
             )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
         manifest = json.loads((root / "web" / "manifest.webmanifest").read_text())
@@ -1067,7 +1232,6 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
-        project = (root / "pyproject.toml").read_text(encoding="utf-8")
         deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
 
         self.assertGreaterEqual(page.count("data-app-version"), 3)
@@ -1077,17 +1241,21 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "1.3.0"', project)
-        self.assertIn("window.OMNICIO_RELEASE", deploy_script)
-        self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
-        self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
-        self.assertIn("tomllib", deploy_script)
+        self.assertIn('/assets/config.js?build=__OMNICIO_BUILD__', page)
+        self.assertIn('/assets/tokens.css?build=__OMNICIO_BUILD__', page)
+        self.assertIn(
+            '"$RELEASE/.venv/bin/python" -m omnicio.web_assets '
+            '"$RELEASE/web" "$WEB_RELEASE" "$SHA"', deploy_script,
+        )
+        self.assertNotIn('python3 - "$RELEASE/pyproject.toml"', deploy_script)
         self.assertEqual(MODULE.VERSION_PUBLIC_PATH, "/version.js")
 
     def test_runtime_assets_cannot_mix_across_frontend_releases(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
 
         self.assertIn("location = /assets/app.css", script)
+        self.assertIn("location = /assets/tokens.css", script)
+        self.assertIn("location = /assets/config.js", script)
         self.assertIn("location = /assets/app.js", script)
         self.assertIn("location = /assets/workspace.js", script)
         self.assertIn("location = /assets/i18n.js", script)
@@ -1098,34 +1266,70 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertGreaterEqual(script.count('add_header Cache-Control "no-cache";'), 5)
         self.assertNotIn('add_header Cache-Control "public, max-age=300";', script)
 
+    def test_public_version_script_accepts_only_the_bounded_release_assignment(self) -> None:
+        sha = "b" * 40
+        metadata = json.dumps({"version": MODULE.release_version(), "build": sha[:12]})
+        assignment = "window.OMNICIO_RELEASE = " + metadata
+        for body in (assignment, assignment + ";", " \n" + assignment + ";\n"):
+            MODULE.verify_public_version_script(body.encode(), sha)
+        invalid = (
+            "document.location = " + metadata,
+            assignment + "; alert('unexpected');",
+            assignment + "; " + assignment,
+            "window.OMNICIO_RELEASE = []",
+            "window.OMNICIO_RELEASE = {broken}",
+            assignment.replace(MODULE.release_version(), "0.0.0-obsolete"),
+            assignment.replace(sha[:12], "old-build"),
+            assignment + " " * MODULE.MAX_RELEASE_METADATA_BYTES,
+        )
+        for value in invalid:
+            body = value.encode()
+            with self.subTest(body=body[:100]), self.assertRaises(MODULE.InfraError):
+                MODULE.verify_public_version_script(body, sha)
+
     def test_rendered_offline_styles_match_the_service_worker_build(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        program = MODULE.REMOTE_DEPLOY_SCRIPT.split(
-            'python3 - "$RELEASE/pyproject.toml"', 1,
-        )[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         build = "b" * 40
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory)
-            (output / "assets").mkdir()
-            for name in ("app.js", "workspace.js", "i18n.js"):
-                (output / "assets" / name).write_bytes((root / "web" / name).read_bytes())
             subprocess.run([
-                sys.executable, "-c", program, str(root / "pyproject.toml"), build,
-                str(root / "web" / "index.html"), str(output / "index.html"),
-                str(output / "version.js"),
-                str(root / "web" / "sw.js"), str(output / "sw.js"),
-                str(root / "web" / "offline.html"), str(output / "offline.html"),
+                sys.executable, "-m", "omnicio.web_assets", str(root / "web"),
+                str(output), build,
             ], check=True, capture_output=True, timeout=10)
             offline = (output / "offline.html").read_text(encoding="utf-8")
             worker = (output / "sw.js").read_text(encoding="utf-8")
             self.assertIn(f"/assets/app.css?build={build[:12]}", offline)
+            self.assertIn(f"/assets/tokens.css?build={build[:12]}", offline)
             self.assertIn(f'const build = "{build[:12]}"', worker)
             self.assertNotIn("__OMNICIO_BUILD__", offline)
             self.assertNotIn("__OMNICIO_BUILD__", worker)
-            for name in ("app.js", "workspace.js", "i18n.js"):
+            for name in ("app.js", "workspace.js", "i18n.js", "config.js", "tokens.css", "app.css"):
                 script = (output / "assets" / name).read_text(encoding="utf-8")
                 self.assertIn(build[:12], script)
                 self.assertNotIn("__OMNICIO_BUILD__", script)
+
+    def test_legal_renderer_stamps_styles_without_changing_document_revision(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        program = MODULE.REMOTE_DEPLOY_SCRIPT.split(
+            'python3 - "$RELEASE/web/legal"', 1,
+        )[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        sha = "c" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            subprocess.run([
+                sys.executable, "-c", program, str(root / "web" / "legal"), directory, sha,
+            ], env={**os.environ, "LEGAL_OPERATOR_NAME": "Test <Operator>",
+                    "LEGAL_OPERATOR_EMAIL": "operator@example.com"},
+                check=True, capture_output=True, timeout=10)
+            for name in ("privacy.html", "consent.html", "terms.html"):
+                original = (root / "web" / "legal" / name).read_text(encoding="utf-8")
+                rendered = (pathlib.Path(directory) / name).read_text(encoding="utf-8")
+                self.assertIn("Test &lt;Operator&gt;", rendered)
+                self.assertIn(f"/assets/tokens.css?build={sha[:12]}", rendered)
+                self.assertNotIn("__OMNICIO_", rendered)
+                self.assertEqual(
+                    re.findall(r'<p class="legal-meta">([^<]+)</p>', rendered),
+                    re.findall(r'<p class="legal-meta">([^<]+)</p>', original),
+                )
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -1169,9 +1373,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         root = " ".join((
             MODULE.SITE_MARKER, MODULE.BRAND_PUBLIC_MARK, MODULE.WEB_MANIFEST_PATH,
             self.sha[:12],
+            f'<span data-release-version>{MODULE.release_version()}</span>',
         )).encode()
         config = json.dumps({
-            "release": {"version": "1.3.0", "build": self.sha[:12]},
+            "release": {"version": MODULE.release_version(), "build": self.sha[:12]},
             "mode": "closed",
             "registration_enabled": False,
             "registration_max_users": 1,
@@ -1193,7 +1398,9 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ),
             MODULE.WEB_MANIFEST_PATH: (b'{"icons": []}', "application/json", 200),
             MODULE.VERSION_PUBLIC_PATH: (
-                f'window.OMNICIO_RELEASE = {{"build": "{self.sha[:12]}"}}'.encode(),
+                ('window.OMNICIO_RELEASE = ' + json.dumps({
+                    "version": MODULE.release_version(), "build": self.sha[:12],
+                }) + ";").encode(),
                 "text/javascript", 200,
             ),
             "/api/auth/config": (config, "application/json", 200),
@@ -1201,11 +1408,13 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         for path in MODULE.CALLBACK_PUBLIC_PATHS:
             self.responses[path] = (b"", "text/plain", 303)
         for path, body, content_type in (
+            ("/assets/config.js", b"OMNICIO_CONFIG " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/tokens.css", b"--browser-theme-dark " + self.sha[:12].encode(), "text/css"),
             ("/assets/app.js", b"window.OmniUI " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/workspace.js", b"window.OmniUI " + self.sha[:12].encode(),
              "application/javascript"),
             ("/assets/i18n.js", b"OMNICIO_I18N " + self.sha[:12].encode(), "text/javascript"),
-            ("/assets/app.css", b"--sidebar:240px", "text/css"),
+            ("/assets/app.css", b"--sidebar:240px " + self.sha[:12].encode(), "text/css"),
             ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
@@ -1227,6 +1436,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
     def verify(
         self, *, missing_header_path: str | None = None,
         callback_referrer: list[str] | None = None,
+        build_header_path: str | None = None, build_headers: tuple[str, ...] = (),
     ) -> set[str]:
         requested: set[str] = set()
 
@@ -1239,6 +1449,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             path = request.full_url.removeprefix(prefix)
             requested.add(path)
             response = PublicResponse(*self.responses[path])
+            for value in build_headers if path == build_header_path else (self.sha[:12],):
+                response.headers["X-Omnicio-Build"] = value
             if path in MODULE.CALLBACK_PUBLIC_PATHS:
                 self.assertEqual(request.get_method(), "GET")
                 self.assertIsNone(request.get_header("Cookie"))
@@ -1280,6 +1492,16 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                 MODULE.InfraError, "security header invalid: Content-Security-Policy",
             ):
                 self.verify(missing_header_path=path)
+
+    def test_static_public_assets_reject_missing_stale_or_duplicate_build_headers(self) -> None:
+        for path in self.responses:
+            if path.startswith("/api/"):
+                continue
+            for values in ((), ("old-build",), (self.sha[:12], self.sha[:12])):
+                with self.subTest(path=path, values=values), self.assertRaisesRegex(
+                    MODULE.InfraError, "build header does not match release",
+                ):
+                    self.verify(build_header_path=path, build_headers=values)
 
     def test_missing_weakened_or_duplicate_security_headers_reject_public_response(self) -> None:
         context = MODULE.ssl.create_default_context()
@@ -1348,12 +1570,21 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         cases = [
             ("/", b"wrong site", "text/html", 200),
             ("/", self.responses["/"][0] + b"__OMNICIO_BUILD__", "text/html", 200),
+            ("/", self.responses["/"][0] + b"__OMNICIO_THEME_COLOR__", "text/html", 200),
             ("/", self.responses["/"][0], "text/html", 503),
             (MODULE.BRAND_PUBLIC_MARK, b"", "image/png", 200),
             (MODULE.BRAND_PUBLIC_MARK, b"png", "text/html", 200),
             (MODULE.WEB_MANIFEST_PATH, b"[]", "application/json", 200),
             (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
+            (
+                f"/assets/config.js?build={self.sha[:12]}",
+                b"OMNICIO_CONFIG old", "text/javascript", 200,
+            ),
+            (
+                f"/assets/tokens.css?build={self.sha[:12]}",
+                b"--browser-theme-dark old", "text/css", 200,
+            ),
             (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
             (f"/assets/brand/earth-hero.png?build={self.sha[:12]}", b"missing", "image/png", 200),
             (
@@ -1387,6 +1618,19 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                 self.responses[path] = (body, content_type, status)
                 try:
                     with self.assertRaises(MODULE.InfraError):
+                        self.verify()
+                finally:
+                    self.responses[path] = previous
+
+    def test_matching_build_with_wrong_public_version_is_rejected(self) -> None:
+        for path in ("/", MODULE.VERSION_PUBLIC_PATH, "/api/auth/config"):
+            previous = self.responses[path]
+            changed = previous[0].replace(MODULE.release_version().encode(), b"0.0.0-obsolete")
+            self.assertNotEqual(changed, previous[0])
+            with self.subTest(path=path):
+                self.responses[path] = (changed, *previous[1:])
+                try:
+                    with self.assertRaisesRegex(MODULE.InfraError, "version"):
                         self.verify()
                 finally:
                     self.responses[path] = previous

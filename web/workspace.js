@@ -4,11 +4,16 @@
 (() => {
   "use strict";
 
+  // Offline recovery remains usable if another cached module is unavailable.
+  if (typeof document !== "undefined") document.querySelector("[data-offline-retry]")?.addEventListener("click", () => window.location.reload());
   const I = window.OMNICIO_I18N;
+  const C = window.OMNICIO_CONFIG;
+  if (!I || !C) return;
   const T = (key, values) => I.t(key, values);
   const H = (key, values) => I.html(key, values);
 
-  const colors = ["#3689ff", "#15c7ce", "#02d59b", "#efa85f", "#ad79f1", "#6ab8de"];
+  // SVG strokes and HTML legends use the same palette, including theme changes.
+  const colors = Object.freeze(Array.from({length: C.charts.allocationColorCount}, (_, index) => `var(--chart-allocation-${index})`));
   const navigation = () => ([["home", T("Главная")], ["portfolio", T("Портфель")], ["market", T("Рынок")], ["strategies", T("Стратегии")], ["assistant", T("ИИ-помощник")], ["goals", T("Цели")], ["analytics", T("Аналитика")], ["events", T("События")], ["profile", T("Профиль")], ["settings", T("Настройки")]]);
   const publicPages = Object.freeze(["welcome", "features", "how-it-works", "strategies", "technology", "pricing", "about", "support", "install"]);
   const routeScreens = Object.freeze({
@@ -36,7 +41,7 @@
     const params = new URLSearchParams(query);
     for (const [field, key] of Object.entries(routeFields)) {
       const value = params.get(key);
-      if (value !== null) result[field] = value.slice(0, field === "q" ? 64 : 256);
+      if (value !== null) result[field] = value.slice(0, field === "q" ? C.limits.searchQueryCharacters : C.limits.routeValueCharacters);
     }
     return result;
   };
@@ -58,10 +63,10 @@
   const pendingCharts = new Map();
   let chartSequence = 0;
   let privateValuesHidden = false;
-  let displayLocale = "ru-RU";
+  let displayLocale = C.display.locales.ru;
   const setLocale = locale => {
-    I.setLocale(locale);
-    displayLocale = locale === "en" ? "en-US" : "ru-RU";
+    // Use the same normalized locale for labels and numerical/date formatting.
+    displayLocale = C.display.locales[I.setLocale(locale)];
   };
   const escape = value => String(value ?? "").replace(/[&<>"']/g, character => ({
     "&": "&amp;",
@@ -76,7 +81,7 @@
     const result = Number(value);
     return Number.isFinite(result) ? result : null;
   };
-  const format = (value, digits = 2) => {
+  const format = (value, digits = C.display.numberFractionDigits) => {
     const numeric = number(value);
     return numeric === null ? "—" : new Intl.NumberFormat(displayLocale, {
       maximumFractionDigits: digits
@@ -96,7 +101,7 @@
   };
   const percent = (value, signed = false) => {
     const numeric = number(value);
-    return numeric === null ? "—" : `${renderPercentValue(signed, numeric)}${format(numeric, 2)}%`;
+    return numeric === null ? "—" : `${renderPercentValue(signed, numeric)}${format(numeric, C.display.numberFractionDigits)}%`;
   };
   const date = (value, time = false) => {
     if (!value) return T("Дата не получена");
@@ -106,7 +111,7 @@
       day: "numeric",
       month: "short",
       year: "numeric",
-      timeZone: "Europe/Moscow",
+      timeZone: C.display.timeZone,
       ...(time ? {
         hour: "2-digit",
         minute: "2-digit"
@@ -146,16 +151,10 @@
   const periods = (scope, selected, includeAll = true) => `<div class="periods" aria-label="${H("Период графика")}">${periodLabels().filter(([key]) => includeAll || key !== "all").map(([key, label]) => renderPeriodsPeriodButton(key, scope, selected, label)).join("")}</div>`;
   const filteredSeries = (data, period, timeKey = "captured_at") => {
     if (!Array.isArray(data)) return [];
-    const days = {
-      "1d": 1,
-      "1w": 7,
-      "1m": 31,
-      "3m": 93,
-      "1y": 365
-    }[period];
+    const days = C.display.periodDays[period];
     if (!days) return data;
     const now = Date.now();
-    const cutoff = now - days * 86400000;
+    const cutoff = now - days * C.units.millisecondsPerDay;
     return data.filter(item => {
       const time = new Date(item[timeKey]).getTime();
       return time >= cutoff && time <= now;
@@ -171,9 +170,9 @@
   const marketPrice = (value, unit = "currency", currency = "", personal = false) => {
     if (number(value) === null) return "—";
     if (personal && privateValuesHidden) return "••••••";
-    if (unit === "currency") return money(value, 9, currency, personal);
+    if (unit === "currency") return money(value, C.display.marketPriceFractionDigits, currency, personal);
     const suffix = {percent_nominal: T("% номинала"), points: T("пунктов"), per_nominal: `${currency} ${T("за номинал")}`, unknown: T("ед. источника")}[unit] || T("ед. источника");
-    return `${format(value, 9)} ${suffix}`;
+    return `${format(value, C.display.marketPriceFractionDigits)} ${suffix}`;
   };
   const chartPoints = (rows, timeKey, valueKey, comparison, xKind) => {
     const unique = new Map();
@@ -191,7 +190,7 @@
   };
   const chartLegend = (comparison, points, label, currency, personal) => {
     if (!comparison.length) return "";
-    const values = comparison.map((series, index) => `<span class="chart-comparison-${index % 2}">${escape(series.label)}: <strong data-chart-comparison="${index}">${escape(money(points.at(-1).comparison[index], 0, currency, personal))}</strong></span>`).join("");
+    const values = comparison.map((series, index) => `<span class="chart-comparison-${index % C.charts.comparisonColorCount}">${escape(series.label)}: <strong data-chart-comparison="${index}">${escape(money(points.at(-1).comparison[index], 0, currency, personal))}</strong></span>`).join("");
     return `<div class="chart-legend"><span>${escape(label)}</span>${values}</div>`;
   };
   const chart = (rows, {
@@ -210,16 +209,14 @@
     const timeLabel = value => xKind === "model_month" ? T("goals.model_month", {month: format(value, 0)}) : date(value, true);
     const points = chartPoints(rows, timeKey, valueKey, comparison, xKind);
     if (points.length < 2) return ("<div class=\"chart-empty\">" + H("Для графика нужны минимум два реальных наблюдения.") + "</div>");
-    const width = 480;
-    const height = 180;
-    const left = 1;
-    const top = compact ? 12 : 0;
-    const bottom = compact ? 173 : height;
-    const right = width - 1;
+    const {width, height, edgeInset: left} = C.charts;
+    const top = compact ? C.charts.compactTop : 0;
+    const bottom = compact ? C.charts.compactBottom : height;
+    const right = width - left;
     const values = points.flatMap(point => [point.value, ...point.comparison.filter(value => value !== null)]);
     let low = Math.min(...values);
     let high = Math.max(...values);
-    const pad = (high - low || Math.max(Math.abs(high) * .005, 1)) * .1;
+    const pad = (high - low || Math.max(Math.abs(high) * C.charts.flatRangeRatio, 1)) * C.charts.rangePaddingRatio;
     low -= pad;
     high += pad;
     const x = time => left + (time - points[0].time) / (points.at(-1).time - points[0].time) * (right - left);
@@ -240,7 +237,7 @@
       comparison,
       timeLabel
     });
-    const grid = [0, .5, 1].map(part => {
+    const grid = C.charts.gridFractions.map(part => {
       const value = high - (high - low) * part;
       const position = y(value);
       return `<line class="chart-grid" x1="${left}" x2="${right}" y1="${position}" y2="${position}"/>`;
@@ -248,7 +245,7 @@
     const compared = comparison.map((series, index) => {
       const selected = points.filter(point => point.comparison[index] !== null);
       const line = selected.map((point, pointIndex) => `${pointIndex ? "L" : "M"}${x(point.time).toFixed(2)} ${y(point.comparison[index]).toFixed(2)}`).join(" ");
-      return `<path class="chart-path chart-comparison chart-comparison-${index % 2}" d="${line}"/>`;
+      return `<path class="chart-path chart-comparison chart-comparison-${index % C.charts.comparisonColorCount}" d="${line}"/>`;
     }).join("");
     const legend = chartLegend(comparison, points, label, currency, personal);
     return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/>${compared}<g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high, timeLabel)}</div><div class="chart-readout" aria-live="off"><span>${escape(timeLabel(points.at(-1).time))}</span><strong>${escape(marketPrice(points.at(-1).sourceValue, priceUnit, currency, personal))}</strong></div>${legend}</div>`;
@@ -315,16 +312,16 @@
   const allocation = (items, total) => {
     const valid = (Array.isArray(items) ? items : []).filter(item => number(item.value_rub) !== null && number(item.value_rub) >= 0 && number(item.nav_percent) !== null && number(item.nav_percent) >= 0);
     if (!valid.length || number(total) === null || number(total) <= 0) return empty(T("Структура пока не рассчитана"), T("Она появится после получения полного состава портфеля."), "", "", "portfolio");
-    const circumference = 2 * Math.PI * 47;
+    const circumference = 2 * Math.PI * C.charts.donutRadius;
     let offset = 0;
     const arcs = valid.map((item, index) => {
       const share = Math.min(100, Math.max(0, Number(item.nav_percent)));
       const length = share / 100 * circumference;
-      const result = `<circle cx="60" cy="60" r="47" stroke="${colors[index % colors.length]}" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}"/>`;
+      const result = `<circle cx="${C.charts.donutCenter}" cy="${C.charts.donutCenter}" r="${C.charts.donutRadius}" stroke="${colors[index % colors.length]}" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}"/>`;
       offset += length;
       return result;
     }).join("");
-    return `<div class="allocation-content"><div class="donut-wrap"><svg class="donut" viewBox="0 0 120 120" role="img" aria-label="${H("Структура портфеля")}"><circle cx="60" cy="60" r="47" stroke="var(--line)"/>${arcs}</svg><div class="donut-center"><span>${H("Всего")}</span><strong>${escape(money(total))}</strong></div></div><ul class="allocation-legend">${valid.map((item, index) => renderAllocationLegendDot(index, item)).join("")}</ul></div>`;
+    return `<div class="allocation-content"><div class="donut-wrap"><svg class="donut" viewBox="0 0 ${C.charts.donutSize} ${C.charts.donutSize}" role="img" aria-label="${H("Структура портфеля")}"><circle cx="${C.charts.donutCenter}" cy="${C.charts.donutCenter}" r="${C.charts.donutRadius}" stroke="var(--line)"/>${arcs}</svg><div class="donut-center"><span>${H("Всего")}</span><strong>${escape(money(total))}</strong></div></div><ul class="allocation-legend">${valid.map((item, index) => renderAllocationLegendDot(index, item)).join("")}</ul></div>`;
   };
   const progress = value => `<div class="progress-row"><div class="progress-track"><svg viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect class="progress-shape" width="${Math.max(0, Math.min(100, number(value) ?? 0))}" height="4" rx="2"/></svg></div><span>${escape(percent(value))}</span></div>`;
   const infoRows = rows => `<dl class="info-list">${rows.map(([label, value]) => renderInfoRowsInfoRow(label, value)).join("")}</dl>`;
@@ -387,7 +384,6 @@
     compiledBuild: "__OMNICIO_BUILD__",
     publicPages, routeScreens, parseRoute, routeHash, resumeRoute
   });
-  if (typeof document !== "undefined") document.querySelector("[data-offline-retry]")?.addEventListener("click", () => window.location.reload());
   function renderPercentValue(signed, numeric) {
     if (signed && numeric > 0) {
       return "+";
@@ -411,7 +407,7 @@
   }
   function renderChartAxes(points, low, high, timeLabel = value => date(value)) {
     const step = (high - low) / 2;
-    const digits = Math.max(0, Math.min(20, 1 - Math.floor(Math.log10(step))));
+    const digits = Math.max(0, Math.min(C.display.chartAxisFractionDigitsMax, 1 - Math.floor(Math.log10(step))));
     const ticks = [high, high - step, low].map(value => renderChartAxis(format(value, digits))).join("");
     return `<div class="chart-value-axis">${ticks}</div><div class="chart-time-axis">${renderChartAxis(timeLabel(points[0].time))}${renderChartAxis(timeLabel(points.at(-1).time))}</div>`;
   }

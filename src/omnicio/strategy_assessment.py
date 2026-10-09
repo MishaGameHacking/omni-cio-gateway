@@ -16,8 +16,16 @@ from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-from .freshness import PORTFOLIO_MAX_AGE
+from .financial import PERCENT_SCALE, RUB_QUANTUM
+from .freshness import ISSUER_IDENTITY_MAX_AGE, PORTFOLIO_MAX_AGE, RATING_MAX_AGE
 from .portfolio import PortfolioAnalysis, SecurityExposure
+from .research_policy import (
+    CORRECTED_MATH_ENGINES,
+    MAX_RESEARCH_ASSETS,
+    RESEARCH_ENGINE_VERSION,
+    SUPPORTED_RESEARCH_ENGINES,
+    UNIT_AWARE_ENGINES,
+)
 from .strategy import (
     ALLOCATION_KEYS,
     RATING_LEVELS,
@@ -28,15 +36,12 @@ from .strategy import (
 from .tbank import TBankInstrumentMetadata, TBankRating
 
 _ZERO = Decimal("0")
-_HUNDRED = Decimal("100")
 _CLASS = {"share": "shares", "bond": "bonds", "etf": "funds"}
 _CLASS_CAP = {
     "shares": "max_share_percent",
     "bonds": "max_bond_percent",
     "funds": "max_etf_percent",
 }
-_RATING_MAX_AGE = timedelta(days=366)
-_IDENTITY_MAX_AGE = timedelta(days=30)
 _MISSING_PREFIX = "missing:"
 _DIVIDEND_COVERAGE_INVALID = "research_dividend_coverage_invalid"
 _DIVIDEND_COVERAGE_MISSING = "missing:dividend_cashflow_coverage"
@@ -126,7 +131,7 @@ def _ceiling(
     sources: Sequence[str],
 ) -> dict[str, Any]:
     cap = _amount(limit)
-    percent = value * _HUNDRED / nav if value is not None and nav > 0 else None
+    percent = value * PERCENT_SCALE / nav if value is not None and nav > 0 else None
     state: _State = "unknown"
     detail = "Не хватает значения лимита, стоимости или полного покрытия позиций."
     if percent is not None and cap is not None:
@@ -183,7 +188,7 @@ def _allocation_rows(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key in ALLOCATION_KEYS:
-        target = nav * Decimal(data["allocation"][key]) / _HUNDRED
+        target = nav * Decimal(data["allocation"][key]) / PERCENT_SCALE
         actual = totals[key]
         rows.append(
             {
@@ -191,7 +196,7 @@ def _allocation_rows(
                 "target_percent": data["allocation"][key],
                 "target_rub": _text(target),
                 "current_rub": _text(actual),
-                "current_percent": _text(actual * _HUNDRED / nav) if nav else None,
+                "current_percent": _text(actual * PERCENT_SCALE / nav) if nav else None,
                 "difference_rub": _text(target - actual),
                 "complete": complete,
             }
@@ -212,7 +217,7 @@ def _cash_checks(
     )
     reserve = _amount(data["profile"]["reserve_rub"])
     withdrawals = _amount(data["profile"]["planned_withdrawal_rub"])
-    target = nav * Decimal(data["allocation"]["cash"]) / _HUNDRED
+    target = nav * Decimal(data["allocation"]["cash"]) / PERCENT_SCALE
     available = None
     shortfall = None
     if (
@@ -298,7 +303,7 @@ def _verified_mappings(
             mapping.issuer_id
             and _source_url(mapping.source_url)
             and _source_url(mapping.mapping_source_url)
-            and _fresh(mapping.verified_at, now, _IDENTITY_MAX_AGE)
+            and _fresh(mapping.verified_at, now, ISSUER_IDENTITY_MAX_AGE)
         ):
             result[mapping.instrument_uid] = mapping
     return result
@@ -386,7 +391,7 @@ def rating_notch(rating: TBankRating, now: datetime) -> str | None:
     screening convention, not a cross-agency default-probability calibration.
     Expected/structured/international/withdrawn and stale symbols stay unknown.
     """
-    if not _fresh(rating.rating_date, now, _RATING_MAX_AGE):
+    if not _fresh(rating.rating_date, now, RATING_MAX_AGE):
         return None
     agency = rating.agency_name.strip().casefold()
     level = rating.rating_level.strip()
@@ -627,7 +632,7 @@ def _dependent_checks(data: Mapping[str, Any], nav: Decimal) -> list[dict[str, A
             "evaluated" if turnover is not None else "unknown",
             "Рублёвый предел рассчитан от стоимости счёта. "
             "Это предел будущего сценария, не расход денег.",
-            value=_text(nav * turnover / _HUNDRED) if turnover is not None else None,
+            value=_text(nav * turnover / PERCENT_SCALE) if turnover is not None else None,
             limit=_text(turnover),
             sources=("portfolio", "saved_strategy"),
         )
@@ -751,9 +756,9 @@ def assess_strategy_account(
         raise ValueError("strategy_snapshot_not_reconciled")
     totals, known, complete = _position_totals(analysis)
     residual = nav - sum(totals.values(), _ZERO)
-    if residual < Decimal("-0.01"):
+    if residual < -RUB_QUANTUM:
         raise ValueError("strategy_snapshot_not_reconciled")
-    complete = complete and abs(residual) <= Decimal("0.01")
+    complete = complete and abs(residual) <= RUB_QUANTUM
     complete = complete and analysis.status == "observed"
     checks = [
         _check(
@@ -1046,7 +1051,7 @@ def _bond_maturity_bucket(
     months: int,
     engine_version: str,
 ) -> str:
-    if rules["ranking"] != "maturity_ladder" or engine_version not in {"1.3.2", "1.3.3"}:
+    if rules["ranking"] != "maturity_ladder" or engine_version not in UNIT_AWARE_ENGINES:
         return str(max(0, months) // int(rules.get("rung_months", 12)))
     maturity = _known_fact(candidate, "maturity_date", as_of)
     if isinstance(maturity, datetime):
@@ -1241,7 +1246,7 @@ def _covered_dividends_score(
     if candidate.asset_class != "shares":
         return None
     keys: tuple[str, ...] = ("dividend_yield_percent", "payout_ratio_percent", "debt_to_ebitda")
-    if engine_version not in {"1.3.2", "1.3.3"}:
+    if engine_version not in UNIT_AWARE_ENGINES:
         keys += ("free_cashflow_yield_percent",)
     values, reasons = _required_numbers(
         candidate, as_of, keys,
@@ -1256,7 +1261,7 @@ def _covered_dividends_score(
     )
     if _known_fact(candidate, "dividend_declared", as_of) is not True:
         reasons.append("missing:dividend_decision")
-    if engine_version in {"1.3.2", "1.3.3"}:
+    if engine_version in UNIT_AWARE_ENGINES:
         _, coverage_reasons = _dividend_cashflow_evidence(candidate, as_of)
         reasons.extend(coverage_reasons)
     elif values["free_cashflow_yield_percent"] <= 0:
@@ -1429,7 +1434,7 @@ _ExposureLedger = dict[str, dict[str, Decimal]]
 
 
 def _candidate_fact_value(key: str, fact: StrategyFact, engine_version: str) -> object:
-    if key == "dividend_cashflow_coverage" and engine_version in {"1.3.2", "1.3.3"}:
+    if key == "dividend_cashflow_coverage" and engine_version in UNIT_AWARE_ENGINES:
         try:
             return normalize_dividend_cashflow_coverage(fact.value, available_at=fact.available_at)
         except ValueError:
@@ -1724,7 +1729,7 @@ def _select_asset_class(
     )
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
     calendar_ladder = (
-        mode == "maturity_ladder" and kind == "bonds" and engine_version in {"1.3.2", "1.3.3"}
+        mode == "maturity_ladder" and kind == "bonds" and engine_version in UNIT_AWARE_ENGINES
     )
     if not matching:
         missing.add("eligible_" + kind)
@@ -1779,7 +1784,7 @@ def _selection_status(
     engine_version: str,
 ) -> str:
     ready = (
-        bool(selected) or (cash_only and engine_version in {"1.3.1", "1.3.2", "1.3.3"})
+        bool(selected) or (cash_only and engine_version in CORRECTED_MATH_ENGINES)
     ) and not missing
     if ready:
         return "ready"
@@ -1814,7 +1819,7 @@ def select_strategy_candidates(
     candidates: Sequence[StrategyCandidateFacts],
     *,
     as_of: datetime,
-    engine_version: str = "1.3.3",
+    engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> dict[str, Any]:
     """Screen dated facts, rank by the mandate and allocate bounded research weights.
 
@@ -1822,8 +1827,8 @@ def select_strategy_candidates(
     is useful, but it does not certify a complete personal investment selection.
     """
     data = normalize_document(document)
-    if (as_of.tzinfo is None or len(candidates) > 100
-            or engine_version not in {"1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2", "1.3.3"}):
+    if (as_of.tzinfo is None or len(candidates) > MAX_RESEARCH_ASSETS
+            or engine_version not in SUPPORTED_RESEARCH_ENGINES):
         raise ValueError("strategy_candidate_input_invalid")
     ids = [row.instrument_uid for row in candidates]
     if any(not uid for uid in ids) or len(ids) != len(set(ids)):
@@ -1833,7 +1838,7 @@ def select_strategy_candidates(
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
     cash_only = data["allocation"]["cash"] == 100
     if mode == "regime_risk" and len({bucket for _, _, bucket in eligible}) < 4 and not (
-        cash_only and engine_version in {"1.3.1", "1.3.2", "1.3.3"}
+        cash_only and engine_version in CORRECTED_MATH_ENGINES
     ):
         missing.add("four_economic_regimes")
     used: _ExposureLedger = {
@@ -1855,7 +1860,7 @@ def select_strategy_candidates(
         if reason.startswith(_MISSING_PREFIX)
     )
     details = {}
-    if engine_version in {"1.3.2", "1.3.3"}:
+    if engine_version in UNIT_AWARE_ENGINES:
         details = _current_selection_evidence(data, candidates, selected, as_of, missing)
     total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
     status = _selection_status(
@@ -1886,7 +1891,7 @@ def candidate_weight_constraints(
     weights: Mapping[str, Decimal],
     *,
     as_of: datetime,
-    engine_version: str = "1.3.3",
+    engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> list[str]:
     """Recheck rounded, cost-adjusted holdings with the same look-through caps as selection."""
     data = normalize_document(document)

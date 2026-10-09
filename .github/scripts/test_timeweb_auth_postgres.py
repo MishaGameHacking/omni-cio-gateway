@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import io
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -202,6 +204,54 @@ class PostgresTests(unittest.TestCase):
         for path in migrations:
             with self.subTest(migration=path):
                 self.assertEqual(workflow.count(f"--migration {path}"), 1)
+
+    def test_push_validation_queue_cannot_be_replaced_by_scheduled_or_manual_runs(self) -> None:
+        workflow = (MODULE_PATH.parents[2] / ".github/workflows/auth-postgres.yml").read_text(
+            encoding="utf-8",
+        )
+        header, jobs = workflow.split("\njobs:\n", 1)
+        concurrency = header.split("\nconcurrency:\n", 1)[1]
+        group = re.search(r"^  group: (.*?)\$\{\{\s*(.*?)\s*\}\}(.*?)$", concurrency, re.M)
+        self.assertIsNotNone(group)
+        self.assertIn("  cancel-in-progress: false\n", concurrency)
+        terms = [term.strip() for term in group[2].split("||")]
+        self.assertEqual(len(terms), 2)
+
+        def queue(pr_number: int | None, run_id: int) -> str:
+            # Evaluate only this workflow's nonzero-id/null fallback expression.
+            # The previous 'production' literal is intentionally evaluable, so
+            # the regression fails on its collision, without requiring Node here.
+            context = {"github.event.pull_request.number": pr_number, "github.run_id": run_id}
+            values = [context[term] if term in context else ast.literal_eval(term)
+                      for term in terms]
+            return group[1] + str(next(value for value in values if value)) + group[3]
+
+        scenarios = (
+            ("first PR", 765, 1001), ("same PR again", 765, 1002),
+            ("other PR", 766, 1003),
+            ("main push", None, 2001), ("scheduled maintenance", None, 2002),
+            ("manual reconcile", None, 2003), ("later main push", None, 2004),
+            ("later schedule", None, 2005), ("manual restore request", None, 2006),
+        )
+        groups = [queue(pr, run_id) for _, pr, run_id in scenarios]
+        self.assertEqual(groups[0], groups[1], "The same PR retains one validation queue")
+        self.assertEqual(len(set(groups)), len(scenarios) - 1,
+                         "Each non-PR run needs a separate pending slot; false does not queue them")
+
+        tests, mutations = jobs.split("\n  reconcile:\n", 1)
+        self.assertNotIn("omnicio-production-ssh", tests)
+        reconcile, restore = mutations.split("\n  isolated-restore:\n", 1)
+        for name, block in (("reconcile", reconcile), ("restore", restore)):
+            with self.subTest(job=name):
+                lock = re.search(r"^    concurrency:\n((?:      [^\n]*\n)+)", block, re.M)
+                self.assertIsNotNone(lock)
+                self.assertEqual(lock[1], "      group: omnicio-production-ssh\n"
+                                 "      cancel-in-progress: false\n      queue: max\n")
+                self.assertIn("    needs: tests\n", block)
+                self.assertIn("github.ref == 'refs/heads/main'", block)
+        self.assertLess(reconcile.index("name: Verify current main release checks"),
+                        reconcile.index("name: Validate Timeweb secret"))
+        self.assertIn('OMNICIO_RESTORE_DRILL_ALLOWED: "false"', restore)
 
     def test_parser_accepts_multiple_migrations(self) -> None:
         old = sys.argv

@@ -32,8 +32,24 @@ const {
   spawnSync
 } = require("node:child_process");
 const root = resolve(__dirname, "..");
-const version = /^version = "([^"\r\n]+)"$/m.exec(readFileSync(join(root, "pyproject.toml"), "utf8"))[1];
-const build = `smoke-${version}`;
+const renderedResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c", "import json; from pathlib import Path; from omnicio import __version__; from omnicio.web_assets import render_web_assets; build='smoke-'+__version__; print(json.dumps({'version':__version__,'build':build,'assets':render_web_assets(Path('web'),build)}))"], {
+  cwd: root,
+  env: {...process.env, PYTHONPATH: join(root, "src")},
+  encoding: "utf8",
+  maxBuffer: 8 * 1024 * 1024
+});
+assert.equal(renderedResult.status, 0, "Browser assets use the production renderer: " + renderedResult.stderr);
+const {version, build, assets: publicAssets} = JSON.parse(renderedResult.stdout);
+const configRealm = vm.createContext({});
+vm.runInContext(publicAssets["assets/config.js"], configRealm);
+const clientConfig = configRealm.OMNICIO_CONFIG;
+// Extracted production functions share the real config. Browser VMs model the
+// actual window/globalThis alias instead of maintaining two unrelated globals.
+const sourceContext = bindings => {
+  const context = {C: clientConfig, OMNICIO_CONFIG: clientConfig, ...bindings.window, ...bindings};
+  if (Object.hasOwn(bindings, "window")) context.window = context;
+  return vm.createContext(context);
+};
 const catalogResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c", "import json,runpy; print(json.dumps(runpy.run_path('src/omnicio/strategy.py')['strategy_catalog']()))"], {
   cwd: root,
   encoding: "utf8",
@@ -188,6 +204,7 @@ const makeFixture = mode => {
       snapshot_saved: false,
       history_status: null,
       history_pages: 0,
+      news: clone(serverContracts.refresh_news_cases.not_requested.news),
       can_refresh: true,
       retry_after_seconds: 0,
       cooldown_until: null,
@@ -629,34 +646,38 @@ const serveTestApiRequest = async (request, response, url) => {
   const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : null;
   return await routeAPI(request, response, url, fixtures.get(key), body);
 };
+// A dropped public connection exercises the real worker fetch-failure path.
+let publicNetworkUnavailable = false;
+let unavailablePublicAsset = "";
+const publicRequestDiagnostics = [];
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     if (url.pathname.startsWith("/api/")) return await serveTestApiRequest(request, response, url);
+    response.once("finish", () => {
+      publicRequestDiagnostics.push({path: url.pathname, build: url.searchParams.get("build"), status: response.statusCode, responseBuild: response.getHeader("X-Omnicio-Build") || null, contentType: response.getHeader("Content-Type") || null, destination: request.headers["sec-fetch-dest"] || null});
+      if (publicRequestDiagnostics.length > 100) publicRequestDiagnostics.shift();
+    });
+    if (publicNetworkUnavailable) { request.socket.destroy(); return; }
     const page = new URL(request.headers.referer || url.href);
     const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
-    if (fixture?.missingBundle === url.pathname) {
+    if (unavailablePublicAsset === url.pathname || fixture?.missingBundle === url.pathname) {
       response.statusCode = 404;
       return response.end();
-    }
-    if (url.pathname === "/version.js") {
-      response.setHeader("Content-Type", "text/javascript");
-      response.end(`window.OMNICIO_RELEASE=${JSON.stringify({
-        version,
-        build
-      })};`);
-      return;
     }
     let path = url.pathname;
     if (path === "/") path = "/index.html";
     let file = join(root, "web", path.replace(/^\/assets\//, "").replace(/^\//, ""));
     if (path.startsWith("/assets/brand/")) file = path === "/assets/brand/omnicio-logo.png" ? join(root,"assets","brand","omnicio-logo.png") : join(root, "assets", "brand", "web", path.split("/").at(-1));
-    if (!file.startsWith(root) || !existsSync(file)) {
+    const assetKey = path.replace(/^\//, "");
+    const rendered = publicAssets[assetKey];
+    if (rendered === undefined && (!file.startsWith(root) || !existsSync(file))) {
       response.statusCode = 404;
       return response.end();
     }
+    response.setHeader("X-Omnicio-Build", build);
     response.setHeader("Content-Type", {
       ".html": "text/html; charset=utf-8",
       ".js": "text/javascript",
@@ -664,8 +685,8 @@ const server = createServer(async (request, response) => {
       ".png": "image/png",
       ".webmanifest": "application/manifest+json"
     }[extname(file)] || "application/octet-stream");
-    const raw = readFileSync(file);
-    let content = [".html", ".js", ".css"].includes(extname(file)) ? raw.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version) : raw;
+    let content = rendered === undefined ? readFileSync(file) : rendered;
+    if (path.startsWith("/legal/") && path.endsWith(".html")) content = content.toString("utf8").replaceAll("__OMNICIO_BUILD__", build);
     if (fixture?.legacyHtml && path === "/index.html") content = content.replace(/<main id="startup-state"[\s\S]*?<\/main>/, "").replace('<div id="public-site" hidden>', '<div id="public-site">');
     response.end(content);
   } catch (error) {
@@ -675,7 +696,7 @@ const server = createServer(async (request, response) => {
   }
 });
 const displayContracts = () => {
-  const context = vm.createContext({
+  const context = sourceContext({
     window: {},
     Intl,
     Date,
@@ -726,7 +747,7 @@ function presetMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  const strategyMethodLabels ="), app.indexOf("  const assessmentIsCurrent ="));
   const renderers = app.slice(app.indexOf("  function renderSelectionHTMLNotice("), app.indexOf("  function renderAssessmentValue("));
-  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+  const context = sourceContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
     infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
     number: ui.number, policyFields: () => [],
     renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(context.requirement(value))}</li>`});
@@ -753,7 +774,7 @@ function researchMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const helpers = app.slice(app.indexOf("  const researchCashProjectionHTML ="), app.indexOf("  const researchWindowHTML ="));
   const freshnessCheck = app.slice(app.indexOf("  const assessmentIsCurrent ="), app.indexOf("  const renderAssessment ="));
-  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+  const context = sourceContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
     infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
     renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(value)}</li>`, Date, Number});
   vm.runInContext(helpers + freshnessCheck + "\nglobalThis.renderOutcomes=researchOutcomesHTML; globalThis.renderCash=researchCashProjectionHTML; globalThis.renderWindow=researchOutcomeWindowHTML; globalThis.current=assessmentIsCurrent;", context);
@@ -798,6 +819,511 @@ function researchMathContracts(ui, i18n) {
   assert.ok(panel.innerHTML.includes("data-assessment-expired"), "The assessment expires locally without a network refresh or form rerender");
   console.log("PASS research contracts: real calculator results, historical frequency limits, explicit cash model and expiring account assessment");
 }
+async function ledgerPaginationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
+  const state = {generation: 1, view: "portfolio", data: {ledger: {items: [{id: "old"}], next_cursor: "cursor-old"}}, errors: {}, loading: new Set(), resourceVersions: new Map([["ledger", 1]])};
+  let resolveRead, requests = 0, merges = 0;
+  const context = sourceContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
+    api: () => { requests += 1; return new Promise(resolve => { resolveRead = resolve; }); },
+    mergePage: (before, after) => { merges += 1; return {...after, items: [...before.items, ...after.items]}; }});
+  vm.runInContext(source + "\nglobalThis.load=loadLedgerPage;", context);
+  const pending = context.load();
+  const corrected = {items: [{id: "corrected"}], next_cursor: "cursor-new"};
+  state.data.ledger = corrected;
+  resolveRead({items: [{id: "stale-page"}], next_cursor: null});
+  await pending;
+  assert.equal(state.data.ledger, corrected, "A late page from the prior snapshot cannot replace a corrected first page");
+  assert.equal(merges, 0);
+  const oldMore = context.load();
+  state.resourceVersions.set("ledger", 2);
+  const newError = Object.assign(new Error("Newer first-page reload failed"), {code: "request_timeout"});
+  state.errors.ledger = newError;
+  resolveRead({items: [{id: "old-more"}], next_cursor: null});
+  await oldMore;
+  assert.equal(state.errors.ledger, newError, "An older page cannot erase a failed newer refresh and its recovery action");
+  assert.equal(merges, 0);
+  context.api = async () => { requests += 1; throw Object.assign(new Error("history changed"), {code: "workspace_operation_history_changed"}); };
+  await context.load();
+  assert.equal(state.errors.ledger.code, "workspace_operation_history_changed");
+  await context.load();
+  assert.equal(requests, 3, "A rejected frozen cursor requires a first-page reload instead of repeating it");
+  assert.equal(state.loading.has("ledger-more"), false);
+  console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
+}
+async function searchAndAssetPaginationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const runSearch ="), app.indexOf("  const mergePage ="))
+    + app.slice(app.indexOf("  const loadSearchPage ="), app.indexOf("  const archiveNewsItem ="))
+    + app.slice(app.indexOf("  const loadAssetNewsPage ="), app.indexOf("  const assetSideHTML ="));
+  const page = (id, cursor = "next") => ({items: [{id}], next_cursor: cursor});
+  const state = {generation: 1, view: "search", tour: false, searchSequence: 1, searchQuery: "old", route: {q: "old"},
+    loading: new Set(), errors: {}, resourceVersions: new Map(), searchPages: {events: page("old-event"), news: null}, searchFailures: {}};
+  const pending = [];
+  const context = sourceContext({state, encodeURIComponent, safeSegment: encodeURIComponent, isCancelled: () => false,
+    renderSearch() {}, renderAsset() {}, $: () => ({value: "", removeAttribute() {}}),
+    routeSearchQuery: () => state.route.q, api: () => new Promise(resolve => pending.push(resolve)),
+    mergePage: (before, after) => ({...after, items: [...before.items, ...after.items]})});
+  vm.runInContext(source + "\nglobalThis.search=runSearch; globalThis.more=loadSearchPage; globalThis.assetMore=loadAssetNewsPage;", context);
+  const oldPage = context.more("events");
+  const finishOldPage = pending.shift();
+  state.route.q = "new";
+  const newSearch = context.search("new");
+  pending.splice(0).forEach((finish, index) => finish(page("new-" + index)));
+  await newSearch;
+  const newEvents = state.searchPages.events;
+  finishOldPage(page("obsolete-event", null));
+  await oldPage;
+  assert.equal(state.searchPages.events, newEvents, "An earlier query page cannot merge into a new search");
+  assert.equal(state.loading.has("search-events"), false, "Changing a query cannot leave its pagination permanently disabled");
+  const currentPage = context.more("events");
+  assert.equal(pending.length, 1, "The new query can request its next page after the old read settles");
+  pending.shift()(page("new-event-page", null));
+  await currentPage;
+  assert.deepEqual(state.searchPages.events.items.map(item => item.id), ["new-1", "new-event-page"]);
+  state.route.q = "pending";
+  const oldSearch = context.search("pending");
+  state.route.q = "";
+  await context.search("");
+  pending.splice(0).forEach(finish => finish(page("obsolete-result")));
+  await oldSearch;
+  assert.equal(state.loading.has("search"), false, "Clearing an in-flight query restores the empty search screen");
+  assert.equal(state.searchResults.length, 0);
+  state.view = "asset";
+  state.asset = {uid: "a", news: page("a-first")};
+  state.resourceVersions.set("asset", 1);
+  const oldAssetPage = context.assetMore();
+  const currentAsset = {uid: "b", news: page("b-first")};
+  state.asset = currentAsset;
+  state.resourceVersions.set("asset", 2);
+  pending.shift()(page("a-obsolete", null));
+  await oldAssetPage;
+  assert.equal(state.asset, currentAsset);
+  assert.equal(state.asset.news.items[0].id, "b-first");
+  assert.equal(state.loading.has("asset-news-more"), false, "Leaving an asset cannot lock every subsequent news archive");
+  const staleAssetPage = context.assetMore();
+  assert.equal(pending.length, 1);
+  const refreshed = page("b-refreshed", "fresh-cursor");
+  currentAsset.news = refreshed;
+  currentAsset.newsError = new Error("A newer refresh failed");
+  state.resourceVersions.set("asset", 3);
+  pending.shift()(page("b-obsolete", null));
+  await staleAssetPage;
+  assert.equal(currentAsset.news, refreshed, "An old cursor cannot replace a newer first page for the same instrument");
+  assert.equal(currentAsset.newsError.message, "A newer refresh failed", "An obsolete page cannot erase the current retry state");
+  const validAssetPage = context.assetMore();
+  pending.shift()(page("b-new-page", null));
+  await validAssetPage;
+  assert.deepEqual(currentAsset.news.items.map(item => item.id), ["b-refreshed", "b-new-page"]);
+  state.asset.news = page("b-later");
+  const previousAccount = context.assetMore();
+  state.generation += 1;
+  state.loading = new Set(["asset-news-more"]);
+  pending.shift()(page("other-account-page", null));
+  await previousAccount;
+  assert.equal(state.loading.has("asset-news-more"), true, "Old-account cleanup cannot release a new account's pending request");
+  console.log("PASS search and asset pagination: changed queries, empty searches, instrument switches, refresh races and session isolation");
+}
+async function visibleRefreshContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const stopVisibleRefresh =");
+  const scheduler = start < 0 ? "" : app.slice(start, app.indexOf("  const stopQuoteStream =", start));
+  const navigation = app.slice(app.indexOf("  const navigate ="), app.indexOf("  const loadNavigationScreen ="));
+  const refresh = app.slice(app.indexOf("  const refreshVisibleData ="), app.indexOf('  window.addEventListener("focus",'));
+  const state = {generation: 1, user: {public_id: "000000123"}, mode: "account", view: "home", route: {}, viewState: {}, navigationSequence: 0, devicePush: {status: "active"}, requests: new Set()};
+  const timers = new Map(), reads = [];
+  let sequence = 0, checks = 0, statusReads = 0, editing = false;
+  const node = {setAttribute() {}, focus() {}};
+  const schedule = (callback, delay) => { const id = ++sequence; timers.set(id, {callback, delay}); return id; };
+  const context = sourceContext({state, document: {visibilityState: "visible", activeElement: null}, navigator: {onLine: true},
+    window: {setTimeout: schedule}, setTimeout: schedule, clearTimeout: id => timers.delete(id), T: value => value,
+    U: {navigation: [["home", "Home"], ["portfolio", "Portfolio"]]}, $: selector => selector === "dialog[open]" ? null : node, $$: () => [],
+    resolveNavigationRoute: (view, detail) => ({view, ...detail}),
+    saveNavigationPosition() {}, captureScreenDrafts() {}, closeRouteDialogs() {}, closeDrawer() {}, stopQuoteStream() {}, stopTableQuotes() {},
+    restoreRouteControls() {}, updateRouteHistory() {}, renderNav() {}, renderCurrent() {}, restoreNavigationScroll() {},
+    loadNavigationScreen: async () => {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, refreshPushDevice: async () => {},
+    verifySession: async () => { checks += 1; }, hasPending: () => editing,
+    resumeWorkspaceRefresh: async canAdopt => { assert.equal(canAdopt(), true); statusReads += 1; },
+    loadForView: async (view, route, force) => reads.push({view, force})});
+  vm.runInContext("let freshnessTimer=null, freshnessBusy=false;\n" + scheduler + navigation + refresh + "\nglobalThis.go=navigate;", context);
+  context.go("home", {mode: "account"});
+  assert.equal(timers.size, 1, "Initial authenticated route entry starts periodic data refresh without a focus event");
+  const initial = [...timers.keys()][0];
+  assert.equal(timers.get(initial).delay, 60000, "Background page refresh remains bounded to the existing interval");
+  context.go("portfolio", {mode: "account"});
+  assert.equal([...timers.keys()][0], initial, "Frequent navigation cannot postpone refresh indefinitely");
+  const tick = async () => {
+    const [id, timer] = [...timers.entries()][0];
+    timers.delete(id);
+    timer.callback();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  await tick();
+  assert.equal(checks, 1);
+  assert.deepEqual(reads, [{view: "portfolio", force: true}], "The timer refreshes the current page after rechecking the session");
+  assert.equal(statusReads, 1, "The same visible cycle reads autonomous collection status without a manual refresh");
+  assert.equal(timers.size, 1, "A completed refresh schedules its next observation");
+  editing = true;
+  await tick();
+  assert.equal(reads.length, 1, "An active draft prevents background replacement of the editor");
+  assert.equal(checks, 2, "Session verification continues while a draft is being edited");
+  assert.equal(timers.size, 1);
+  editing = false;
+  state.requests.add({omnicioMutation: true});
+  await tick();
+  assert.equal(reads.length, 1, "A pending form submission cannot be replaced by a background page refresh");
+  assert.equal(statusReads, 1, "Drafts and active mutations also defer collection-status adoption");
+  state.requests.clear();
+  await tick();
+  assert.equal(reads.length, 2, "Background refresh resumes after the submission settles");
+  assert.equal(checks, 4);
+  state.mode = "public";
+  await tick();
+  assert.equal(checks, 4, "Public mode does not perform private background reads");
+  assert.equal(timers.size, 0);
+  context.go("home", {mode: "account"});
+  assert.equal(timers.size, 1, "Returning from a public page restarts periodic account refresh");
+  context.document.visibilityState = "hidden";
+  await tick();
+  assert.equal(checks, 4, "Hidden documents do not start refresh requests");
+  assert.equal(timers.size, 0);
+  context.document.visibilityState = "visible";
+  context.go("portfolio", {mode: "account"});
+  context.loadForView = async () => { state.generation += 1; };
+  const beforeChange = statusReads;
+  await tick();
+  assert.equal(statusReads, beforeChange, "A session change during the view read cannot start an old cycle's status request");
+  context.loadForView = async () => { state.requests.add({omnicioMutation: true}); };
+  await tick();
+  assert.equal(statusReads, beforeChange, "A mutation started during the view read prevents subsequent status adoption");
+  state.requests.clear();
+  console.log("PASS visible refresh: initial account entry, navigation deadlines, ongoing polling, draft preservation and public/hidden boundaries");
+}
+async function payoutDisplayContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const context = sourceContext({window: {}, Intl, URL, URLSearchParams});
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
+  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
+  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
+  const details = serverContracts.payout_visualization;
+  const payouts = Object.fromEntries(details.payouts.map(item => [item.provider_key, item]));
+  const original = JSON.stringify(details), dialogs = [], receipts = [];
+  const state = {generation: 1, eventRequest: 1};
+  let activeEvent;
+  Object.assign(context, {U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, date: ui.date,
+    money: ui.money, infoRows: ui.infoRows, button: ui.button, state,
+    views: new Set(["asset", "events", "goals"]), $: () => ({open: true}),
+    enterRouteScreen: () => false, requireUser: () => true, api: async () => activeEvent,
+    openDialog: (title, html) => dialogs.push({title, html}), markEvents: ids => receipts.push(...ids),
+    isCancelled: () => false, humanError: error => error.message});
+  const source = app.slice(app.indexOf("  const eventSourceLabel ="), app.indexOf("  const openNews ="))
+    + app.slice(app.indexOf("  function renderAssetFinePrint("), app.indexOf("  function renderUpdateSaveStatusValue("));
+  vm.runInContext(source + "\nglobalThis.row=renderAssetFinePrint; globalThis.section=renderAssetDetailsSummary2; globalThis.open=openEvent; globalThis.sourceHTML=eventSourceHTML;", context);
+  assert.ok(payouts.scheduled.expected_at && payouts.paid.actual_at && payouts.record_only.record_at);
+  assert.equal(payouts.ambiguous_scheduled.identity_status, "ambiguous", "The actual serializer exposes the disputed source identity");
+  assert.equal(payouts.ambiguous_scheduled.identity_reason, "co_observed_anchor_collision");
+  assert.ok(!Object.hasOwn(payouts.scheduled, "identity_status"), "Unambiguous legacy rows retain their existing DTO");
+  assert.ok(!Object.hasOwn(payouts.scheduled, "payment_date") && !Object.hasOwn(payouts.scheduled, "effective_at"), "The browser must use the real payout date fields");
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    const planned = context.row(payouts.scheduled), paid = context.row(payouts.paid);
+    assert.ok(planned.includes(ui.escape(ui.date(payouts.scheduled.expected_at))), "The scheduled payout displays the expected date emitted by the actual HTTP route");
+    assert.ok(planned.includes(ui.escape(i18n.t("events.expected"))));
+    assert.ok(!planned.includes(ui.escape(ui.date(payouts.scheduled.actual_at))), "A non-paid source cannot turn an actual_at field into a payment confirmation");
+    assert.ok(paid.includes(ui.escape(ui.date(payouts.paid.actual_at))) && paid.includes(ui.escape(i18n.t("payout.date.actual"))), "Explicit paid status uses and labels its actual payment date");
+    assert.ok(!paid.includes(ui.escape(ui.date(payouts.paid.expected_at))), "The actual payment date takes precedence over the old schedule");
+    const fallback = context.row(payouts.paid_expected);
+    assert.ok(fallback.includes(ui.escape(ui.date(payouts.paid_expected.expected_at))) && fallback.includes(ui.escape(i18n.t("events.expected"))), "A missing actual date may only retain an explicitly planned date");
+    for (const key of ["record_only", "undated"]) {
+      const html = context.row(payouts[key]);
+      assert.ok(html.includes(ui.escape(i18n.t("payout.date.unknown"))), "The UI says when the payment date is unconfirmed");
+      for (const value of [payouts[key].record_at, payouts[key].announced_at].filter(Boolean)) assert.ok(!html.includes(ui.escape(ui.date(value))), "Record and announcement dates are never shown as payment dates");
+    }
+    for (const value of [undefined, null, "", false, 0, "invalid-time"]) {
+      assert.ok(context.row({...payouts.paid, actual_at: value, expected_at: value}).includes(ui.escape(i18n.t("payout.date.unknown"))), "Malformed or missing date fields remain unknown");
+    }
+    const normal = context.section({payouts: [payouts.scheduled, payouts.paid]});
+    assert.ok(normal.includes(i18n.html("Подтверждённые события выплат")), "Ordinary source records preserve their existing section");
+    const ambiguous = context.section(details);
+    assert.ok(ambiguous.includes(i18n.html("payout.identity.ambiguous")) && ambiguous.includes(i18n.html("payout.identity.note")));
+    assert.ok(!ambiguous.includes(i18n.html("Подтверждённые события выплат")), "A disputed source group is never labelled confirmed");
+    const disputedPaid = context.row(payouts.ambiguous_paid);
+    assert.ok(disputedPaid.includes(ui.escape(ui.date(payouts.ambiguous_paid.actual_at))) && disputedPaid.includes(i18n.html("payout.date.source")));
+    assert.ok(disputedPaid.includes(i18n.html("payout.identity.unconfirmed")) && !disputedPaid.includes(i18n.html("payout.date.actual")), "A disputed paid record is labelled as a source claim, not a confirmed payment");
+    for (const [key, label] of [["scheduled", "asset.dividend"], ["record_only", "asset.coupon"], ["undated", "asset.bond_event"]]) {
+      assert.ok(context.row(payouts[key]).startsWith(`<p class="fine-print">${i18n.html(label)} · `), "The real payout type has a localized label in both languages");
+      assert.notEqual(i18n.t(label), label);
+    }
+    const unsafe = '<img src=x onerror="alert(1)">';
+    for (const type of [undefined, null, "unknown_source_type", "constructor", "__proto__", unsafe]) {
+      const html = context.row({...payouts.scheduled, event_type: type});
+      assert.ok(html.startsWith(`<p class="fine-print">${i18n.html("Выплата")} · `), "Unknown and unsafe provider type codes have a neutral translated label");
+      if (type) assert.ok(!html.includes(ui.escape(type)) && !html.includes(type), "Raw internal or untrusted type codes are not displayed");
+    }
+    for (const [key, event] of Object.entries(serverContracts.payout_event_cases)) {
+      activeEvent = event;
+      await context.open(event.id);
+      const dialog = dialogs.at(-1);
+      assert.strictEqual(state.eventDetail, event, "Presentation preserves the original event and destination");
+      if (key === "normal") {
+        assert.equal(dialog.title, event.title);
+        assert.ok(dialog.html.includes(ui.escape(event.detail)) && dialog.html.includes(ui.escape(ui.date(event.source.expected_at))));
+        assert.ok(dialog.html.includes(ui.escape(ui.money(event.source.amount_per_security, 2, event.source.currency, false))), "An undisputed source keeps its original amount");
+      } else {
+        assert.equal(dialog.title, i18n.t("payout.identity.ambiguous"));
+        assert.ok(dialog.html.includes(i18n.html("payout.identity.note")), "Old direct links and the new warning explain the same source uncertainty");
+        assert.ok(!dialog.html.includes(ui.escape(event.title)) && !dialog.html.includes(ui.escape(event.detail)) && !dialog.html.includes("999.19"), "Superseded financial claims cannot survive in the old title or description");
+        assert.ok(!dialog.html.includes(ui.escape(ui.date(event.occurred_at))) && !dialog.html.includes(ui.escape(ui.date(event.occurred_at, true))), "The old calendar event time cannot look like a confirmed payment date");
+        if (event.source.expected_at) assert.ok(!dialog.html.includes(ui.escape(ui.date(event.source.expected_at))) && !dialog.html.includes(ui.escape(ui.money(event.source.amount_per_security, 2, event.source.currency, false))));
+      }
+      assert.ok(dialog.html.includes("synthetic-a") && dialog.html.includes("event-destination"), "Source identity and the instrument path remain available");
+      assert.ok(!dialog.html.includes("undefined") && !dialog.html.includes("NaN"));
+    }
+    for (const key of ["payout.date.actual", "payout.date.source", "payout.date.unknown", "payout.identity.ambiguous", "payout.identity.note", "payout.identity.unconfirmed"]) assert.notEqual(i18n.t(key), key, "Each new state has authored text in both languages");
+  }
+  activeEvent = {...serverContracts.payout_event_cases.superseded, read_at: null};
+  await context.open(activeEvent.id);
+  assert.deepEqual(receipts, [activeEvent.id], "Opening an uncertainty warning preserves the existing read receipt flow");
+  assert.equal(JSON.stringify(details), original, "Rendering does not rewrite source evidence");
+  console.log("PASS payout display: real private DTO, actual/planned/unknown dates, no record-date substitution, ambiguous source labels and safe historical event links");
+}
+async function payoutEventHistoryContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const eventReadEpoch ="), app.indexOf("  const workspacePeriod ="))
+    + app.slice(app.indexOf("  const eventsPath ="), app.indexOf("  const goalPreview ="))
+    + app.slice(app.indexOf("  const mergePage ="), app.indexOf("  const loadSearchPage ="))
+    + app.slice(app.indexOf("  const eventIsRead ="), app.indexOf("  const paintEventRow ="))
+    + app.slice(app.indexOf("  const loadEventPage ="), app.indexOf("  const eventSourceLabel ="))
+    + app.slice(app.indexOf("  function renderEventsHTMLEventTitleButton("), app.indexOf("  function renderHomeGoalsGoalsPreviewList("));
+  const normal = clone(serverContracts.payout_event_cases.normal);
+  const warning = clone(serverContracts.payout_event_cases.ambiguous);
+  const superseded = clone(serverContracts.payout_event_cases.superseded);
+  const alias = {...normal, id: superseded.id, title: "Obsolete payout", detail: "Obsolete financial claim 777.77"};
+  const valid = {...normal, title: "Another valid payout for the same instrument", occurred_at: "2026-09-01T00:00:00Z"};
+  const older = {...normal, id: "d".repeat(64), kind: "broker_operation", title: "Retained older operation", occurred_at: "2026-08-01T00:00:00Z", source: {type: "operation", amount: "42", currency: "RUB"}};
+  const incoming = {items: [warning], next_cursor: null, read_all_before: 20, unread_count: 1};
+  const state = {};
+  const context = sourceContext({state, console, safeSegment: encodeURIComponent, T: value => value, H: value => value,
+    esc: value => String(value), date: value => value, icon: () => "", U: {},
+    document: {activeElement: null}, $: selector => selector === "#workspace-freshness" ? {} : null,
+    renderCurrent() {}, renderEvents() {}, adoptPreferences() {}, adoptStrategy() {}, mergeGoalList: value => value,
+    renderAdoptWorkspaceValue: () => "", isCancelled: error => error.name === "AbortError", dataError: name => `<p data-error="${name}">Refresh is unconfirmed</p>`});
+  vm.runInContext(source + "\nglobalThis.load=loadResource; globalThis.more=loadEventPage; globalThis.rows=eventsHTML;", context);
+  const reset = (items = [alias, valid]) => Object.assign(state, {generation: 1, navigationSequence: 1, eventFilter: "all", mode: "account", view: "events", user: {public_id: "000000123"},
+    eventHistoryExtended: false, eventWrites: new Set(), resourceVersions: new Map(), resourceRequests: new Map(), loading: new Set(), errors: {},
+    data: {events: {items: clone(items), next_cursor: "older", read_all_before: 20}}});
+  const freshValid = {...valid, read_at: "2026-10-08T11:00:00Z"};
+  const records = new Map([[alias.id, superseded], [valid.id, freshValid]]);
+  for (const resource of ["events", "workspace"]) {
+    reset();
+    const reads = [];
+    let collision = false;
+    context.api = async path => {
+      reads.push(path);
+      if (path.includes("cursor=")) return {items: [clone(older)], next_cursor: "still-older", read_all_before: 20};
+      if (path.startsWith("/api/events/")) return clone(collision ? records.get(path.split("/").at(-1)) : [alias, valid].find(item => path.endsWith(item.id)));
+      return resource === "workspace" ? {events: clone(incoming), overview: {observed_at: "2026-10-08T12:00:00Z"}} : clone(incoming);
+    };
+    await context.more();
+    assert.equal(state.eventHistoryExtended, true, "The regression starts with an actually appended event page");
+    assert.ok(state.data.events.items.some(item => item.id === alias.id));
+    const retainedOperation = state.data.events.items.find(item => item.id === older.id);
+    collision = true;
+    reads.length = 0;
+    await context.load(resource, `/api/${resource}`, {force: true});
+    await new Promise(resolve => setImmediate(resolve));
+    const items = state.data.events.items;
+    assert.ok(!items.some(item => item.id === alias.id), "An authoritative refresh removes the cached alias superseded by an ambiguity warning");
+    assert.ok(items.some(item => item.id === warning.id));
+    assert.equal(items.find(item => item.id === valid.id).read_at, freshValid.read_at, "A valid other-anchor payout for the same instrument survives with its authoritative read receipt");
+    assert.equal(items.find(item => item.id === older.id), retainedOperation, "Unrelated appended history and its read receipt remain intact");
+    assert.equal(state.data.events.next_cursor, "still-older", "Reconciliation preserves the appended history continuation");
+    assert.equal(state.data.events.read_all_before, 20, "Source-only supersession is reconciled even without a new revision ceiling");
+    assert.deepEqual(reads.filter(path => /^\/api\/events\/[a-f0-9]{64}$/.test(path)).sort(), [alias.id, valid.id].map(id => `/api/events/${id}`).sort(), "Only omitted cached payouts need individual authoritative reads");
+    assert.ok(!context.rows(false).includes(alias.detail), "The real feed renderer cannot retain the old financial claim");
+  }
+  reset([alias, valid, older]);
+  state.eventHistoryExtended = true;
+  context.api = async path => path.endsWith(alias.id) ? {...superseded, source: {...alias.source, superseded_by: valid.id}} : {...incoming, items: [freshValid]};
+  await context.load("events", "/api/events", {force: true});
+  assert.ok(!state.data.events.items.some(item => item.id === alias.id), "Ordinary consolidation also removes an alias without an ambiguity reason or revision change");
+  const failure = Object.assign(new Error("source_unavailable"), {status: 503});
+  for (const resource of ["events", "workspace"]) {
+    reset([alias, valid, older]);
+    state.eventHistoryExtended = true;
+    const before = state.data.events;
+    context.api = async path => {
+      if (path.endsWith(alias.id)) throw failure;
+      if (path.endsWith(valid.id)) return freshValid;
+      return resource === "workspace" ? {events: incoming} : incoming;
+    };
+    const result = await context.load(resource, `/api/${resource}`, {force: true});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(result === null, resource === "events", "An event failure cannot fail the successful unrelated workspace read");
+    assert.equal(state.data.events, before, "A partly failed readback cannot certify or replace the retained history");
+    assert.equal(state.errors.events, failure);
+    assert.ok(context.rows(true).includes('data-error="events"') && !context.rows(false).includes(alias.detail), "Both the compact feed and full event list expose failure instead of unverified financial claims");
+    let finishRead;
+    context.api = async path => {
+      if (path.endsWith(alias.id)) return new Promise(resolve => { finishRead = resolve; });
+      if (path.endsWith(valid.id)) return freshValid;
+      return resource === "workspace" ? {events: incoming} : incoming;
+    };
+    const retry = context.load(resource, `/api/${resource}`, {force: true});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(state.errors.events, failure, "Starting a retry cannot remove the uncertainty before payout readback succeeds");
+    assert.ok(!context.rows(true).includes(alias.detail) && !context.rows(false).includes(alias.detail));
+    finishRead(superseded);
+    await retry;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(state.errors.events, undefined);
+    assert.ok(!state.data.events.items.some(item => item.id === alias.id));
+  }
+  reset([alias, valid]);
+  context.api = async path => path.endsWith(alias.id) ? superseded : path.endsWith(valid.id) ? freshValid : {items: [older], next_cursor: "next-history-page", read_all_before: 20};
+  await context.more();
+  assert.ok(!state.data.events.items.some(item => item.id === alias.id), "The first pagination response also reconciles aliases hidden since page one");
+  assert.ok(state.data.events.items.some(item => item.id === valid.id) && state.data.events.items.some(item => item.id === older.id));
+  assert.equal(state.data.events.next_cursor, "next-history-page");
+  reset([alias, valid, older]);
+  state.eventHistoryExtended = true;
+  const priorEvents = state.data.events;
+  const workspace = {events: incoming, overview: {nav_rub: "12345.67", observed_at: "2026-10-08T12:00:00Z"}, goals: {items: [{id: "current-goal"}]}, connection: {connected: true, account_id: "current-account"}};
+  let failRead;
+  context.api = async path => {
+    if (path.endsWith(alias.id)) return new Promise((resolve, reject) => { failRead = reject; });
+    if (path.endsWith(valid.id)) return freshValid;
+    return workspace;
+  };
+  assert.equal(await context.load("workspace", "/api/workspace", {force: true}), workspace);
+  assert.equal(state.data.workspace.overview.nav_rub, "12345.67", "Workspace valuation adopts immediately while event readback is pending");
+  assert.equal(state.data.goals, workspace.goals);
+  assert.equal(state.data.connection, workspace.connection);
+  assert.equal(state.data.events, priorEvents, "Unconfirmed events do not replace retained history while the workspace becomes usable");
+  failRead(failure);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.errors.events, failure);
+  assert.equal(state.errors.workspace, undefined, "An event-detail outage remains isolated from successful valuation, goals and connection data");
+  assert.equal(state.data.workspace, workspace);
+  reset([alias, valid]);
+  state.eventHistoryExtended = true;
+  const held = [];
+  let hold = true;
+  context.api = async path => {
+    if (path.includes("cursor=")) return {items: [older], next_cursor: "winning-page-cursor", read_all_before: 20};
+    if (path.startsWith("/api/events/")) {
+      const event = records.get(path.split("/").at(-1));
+      return hold ? new Promise(resolve => held.push(() => resolve(event))) : event;
+    }
+    return incoming;
+  };
+  const prePaginationRefresh = context.load("events", "/api/events", {force: true});
+  await new Promise(resolve => setImmediate(resolve));
+  const winningPagination = context.more();
+  hold = false;
+  held.forEach(resolve => resolve());
+  await Promise.all([prePaginationRefresh, winningPagination]);
+  assert.ok(!state.data.events.items.some(item => item.id === alias.id), "Pagination that supersedes an in-flight refresh must itself remove the retired payout claim");
+  assert.ok(state.data.events.items.some(item => item.id === valid.id) && state.data.events.items.some(item => item.id === older.id));
+  assert.equal(state.data.events.next_cursor, "winning-page-cursor");
+  const many = Array.from({length: 9}, (_, index) => ({...valid, id: (index + 32).toString(16).padStart(64, "0")}));
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  const deferredFixture = () => {
+    reset(many);
+    state.eventHistoryExtended = true;
+    const pending = [], reads = [];
+    let active = 0, peak = 0;
+    context.api = async path => {
+      if (!/^\/api\/events\/[a-f0-9]{64}$/.test(path)) return path === "/api/workspace" ? {events: incoming} : incoming;
+      reads.push(path);
+      active += 1;
+      peak = Math.max(peak, active);
+      const item = many.find(event => path.endsWith(event.id));
+      return new Promise((resolve, reject) => pending.push({
+        resolve: () => { active -= 1; resolve(clone(item)); },
+        reject: () => { active -= 1; reject(failure); }
+      }));
+    };
+    return {pending, reads, peak: () => peak};
+  };
+  const overlap = deferredFixture();
+  const oldRefresh = context.load("events", "/api/events", {force: true});
+  await tick();
+  assert.equal(overlap.pending.length, 4);
+  const newRefresh = context.load("workspace", "/api/workspace", {force: true});
+  overlap.pending.shift().reject();
+  await tick();
+  assert.equal(overlap.reads.length, 4, "An early rejection cannot start another batch while the other three requests remain active");
+  while (overlap.pending.length) {
+    overlap.pending.splice(0).forEach(item => item.resolve());
+    await tick();
+  }
+  await Promise.all([oldRefresh, newRefresh]);
+  assert.equal(overlap.peak(), 4, "Overlapping workspace/event refreshes share a global four-request bound");
+  assert.equal(overlap.reads.length, 4 + many.length, "A superseded refresh starts no later batches and the current refresh reads each omitted payout once");
+  assert.ok(state.data.events.items.some(item => item.id === warning.id));
+  assert.equal(state.errors.events, undefined, "An old refresh failure cannot replace the current result");
+  for (const interruption of ["navigation", "logout", "read_receipt"]) {
+    const fixture = deferredFixture();
+    const before = state.data.events;
+    const refreshing = context.load("events", "/api/events", {force: true});
+    await tick();
+    if (interruption === "navigation") state.navigationSequence += 1;
+    else if (interruption === "logout") state.generation += 1;
+    else if (interruption === "read_receipt") {
+      state.resourceVersions.set("eventReads", 1);
+      state.data.events = {...before, items: before.items.map(item => ({...item, read_confirmed: true}))};
+    }
+    const protectedHistory = state.data.events;
+    fixture.pending.splice(0).forEach(item => item.resolve());
+    await refreshing;
+    assert.equal(state.data.events, protectedHistory, "A late readback cannot overwrite a newer navigation, account, read receipt or pagination result: " + interruption);
+    assert.equal(fixture.reads.length, 4, "An invalidated readback stops before another request batch: " + interruption);
+  }
+  console.log("PASS payout event history: real private DTOs, appended cache supersession, valid same-instrument history, read receipts, failure visibility and bounded stale-read cancellation");
+}
+async function evidenceFileReadContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const openResearchEvidence ="), app.indexOf("  const saveResearchEvidence ="));
+  const state = {generation: 1, eventRequest: 0};
+  const messages = [];
+  const dialog = {open: true};
+  let fileChange;
+  const form = {isConnected: true, elements: {document: {value: ""}, evidence_file: {addEventListener(type, handler) { assert.equal(type, "change"); fileChange = handler; }}}};
+  const context = sourceContext({state, enterRouteScreen: () => false, requireUser: () => true,
+    T: value => value, H: value => value, esc: value => value, U: {loading: value => value},
+    openDialog: () => { state.eventRequest += 1; },
+    api: async () => ({version: 1, document: {assets: []}}), isCancelled: () => false,
+    $: selector => selector === "#workspace-dialog" ? dialog : selector === "#research-evidence-form" ? form : {},
+    showMessage: (_element, text) => messages.push(text)});
+  vm.runInContext(source + "\nglobalThis.openEvidence=openResearchEvidence;", context);
+  await context.openEvidence();
+  assert.equal(typeof fileChange, "function", "The production evidence form binds the actual file reader");
+  const selectFile = (size = 20) => {
+    let finish, fail;
+    const text = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+    const pending = fileChange({target: {files: [{size, text: () => text}]}});
+    return {pending, finish, fail};
+  };
+  const first = selectFile(), second = selectFile();
+  second.finish("newer source"); await second.pending;
+  first.finish("older source"); await first.pending;
+  assert.equal(form.elements.document.value, "newer source", "A slower previous selection cannot replace the selected evidence");
+  const edited = selectFile();
+  form.elements.document.value = "Manual correction";
+  edited.finish("File before correction"); await edited.pending;
+  assert.equal(form.elements.document.value, "Manual correction", "A file completion preserves intervening manual input");
+  const failed = selectFile(); failed.fail(new Error("Synthetic file access failure")); await failed.pending;
+  assert.equal(messages.at(-1), "research.evidence_file_failed", "A read failure becomes a visible recoverable form error");
+  const detached = selectFile(); state.eventRequest += 1;
+  detached.finish("Previous form"); await detached.pending;
+  assert.equal(form.elements.document.value, "Manual correction", "A prior form cannot accept a late read after navigation");
+  await context.openEvidence();
+  const oversized = selectFile(clientConfig.limits.researchEvidenceBytes + 1);
+  await oversized.pending;
+  assert.equal(messages.at(-1), "research.evidence_too_large", "The shared byte limit rejects oversized evidence before reading");
+  console.log("PASS evidence file reader: selection ordering, manual edits, navigation, errors and byte limits");
+}
 function dialogCloseContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {view: "goals", route: {mode: "account", view: "goals", screen: "create", goal_id: "goal-a", overlay: ""}};
@@ -813,7 +1339,7 @@ function dialogCloseContracts() {
       // HTML close() clears open immediately and queues the close event for a later task.
       queuedClose.push(() => handlers.get("close")());
     }};
-  const context = vm.createContext({state,
+  const context = sourceContext({state,
     $$: selector => selector === "dialog[open]" && !dialog.open ? [] : [dialog],
     saveNavigationPosition() {}, captureScreenDrafts() { captured += 1; },
     routeBack() { backed += 1; },
@@ -897,13 +1423,13 @@ async function assetBackgroundChartContracts() {
       matches: () => false, focus() { document.activeElement = this; }};
   }};
   const sidebar = {set innerHTML(value) { sidebarText = value; }};
-  const context = vm.createContext({state, document, T: value => value, I: {getLocale: () => locale},
+  const context = sourceContext({state, document, T: value => value, I: {getLocale: () => locale},
     $: (selector, parent) => parent === header ? header[selector] : ({"#view-asset": container,
       ".asset-detail-header": header, "[data-asset-sidebar]": sidebar, ".chart-svg": chart})[selector] || null,
     isWatched: uid => state.prefs.draft.watchlist.some(item => item.instrument_uid === uid),
     assetPricing: asset => ({asset}), assetSideHTML: () => state.prefs.draft.mask_balances ? "masked source balance" : "visible source balance",
     assetFrameHTML: () => "new chart source", assetChartHTML() {}, assetOverviewHTML() {}, assetMetricsHTML() {}, assetNewsHTML() {},
-    resourceSnapshot: (_name, payload) => payload, adoptLoadedResource() {}, isCancelled: () => false, eventReadEpoch: () => 0,
+    resourceSnapshot: async (_name, payload) => payload, adoptLoadedResource() {}, isCancelled: () => false,
     captureScreenMenuFocus() {}, restoreScreenMenuFocus() {}, updateIdentity() {}, renderConnectionBanner() {},
     updateRefreshControls() {}, renderInstallPromotion() {}, U: {bindCharts() {}}});
   for (const name of ["Home", "Portfolio", "Market", "Strategies", "Assistant", "Goals", "Analytics", "Events", "Profile", "Settings", "Search", "Install"]) context["render" + name] = () => {};
@@ -970,37 +1496,247 @@ async function assetBackgroundChartContracts() {
   assert.notEqual(state.data.news?.observed, "obsolete account");
   console.log("PASS asset background chart: actual generic source completions preserve SVG, focus and selection; errors, privacy, watch state, locale and route invalidation remain correct");
 }
-async function ledgerPaginationContracts() {
+function assetPayoutDisclosureContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
-  const state = {generation: 1, view: "portfolio", data: {ledger: {items: [{id: "old"}], next_cursor: "cursor-old"}}, errors: {}, loading: new Set(), resourceVersions: new Map([["ledger", 1]])};
-  let resolveRead, requests = 0, merges = 0;
-  const context = vm.createContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
-    api: () => { requests += 1; return new Promise(resolve => { resolveRead = resolve; }); },
-    mergePage: (before, after) => { merges += 1; return {...after, items: [...before.items, ...after.items]}; }});
-  vm.runInContext(source + "\nglobalThis.load=loadLedgerPage;", context);
-  const pending = context.load();
-  const corrected = {items: [{id: "corrected"}], next_cursor: "cursor-new"};
-  state.data.ledger = corrected;
-  resolveRead({items: [{id: "stale-page"}], next_cursor: null});
+  const state = {route: {uid: "a"}, asset: {uid: "a", name: "Initial source", ticker: "A", payoutText: "Planned payout: old date"}, assetTab: "chart", assetPeriod: "1m"};
+  const document = {activeElement: null, body: {}};
+  let disclosure;
+  const replacePayout = text => {
+    if (disclosure?.contains(document.activeElement)) document.activeElement = document.body;
+    const next = {open: false, textContent: text, contains: element => element === next.summary};
+    next.summary = {focus(options) { this.focusOptions = options; document.activeElement = this; }};
+    disclosure = next;
+  };
+  const container = {dataset: {}, set innerHTML(text) { replacePayout(text); }};
+  const sidebar = {set innerHTML(text) { replacePayout(text); }};
+  const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": {dataset: {}, setAttribute() {}}};
+  const context = sourceContext({state, document, T: value => value, I: {getLocale: () => "ru"}, isWatched: () => false,
+    $: (selector, parent) => {
+      if (parent === header) return header[selector];
+      if (selector === "summary") return parent.summary;
+      return {"#view-asset": container, "[data-asset-payouts]": disclosure, "[data-asset-sidebar]": sidebar, ".asset-detail-header": header, ".chart-svg": {}}[selector];
+    }, assetPricing: asset => ({asset}), assetSideHTML: ({asset}) => asset.payoutText,
+    assetFrameHTML: ({asset}) => asset.payoutText, assetChartHTML: () => "", assetOverviewHTML: () => "", assetMetricsHTML: () => "", assetNewsHTML: () => ""});
+  const source = app.slice(app.indexOf("  const refreshAssetChartContext ="), app.indexOf("  const tradingLabel ="));
+  vm.runInContext(source + "\nglobalThis.render=renderAsset;", context);
+  context.render();
+  disclosure.open = true;
+  disclosure.summary.focus();
+  for (const preserveChart of [true, false, true, false]) {
+    const previous = disclosure;
+    state.asset.payoutText = "Corrected source payment; ambiguous identity: " + preserveChart;
+    context.render({preserveChart});
+    assert.notEqual(disclosure, previous, "Late renders must replace stale payout content with the newly received source records");
+    assert.equal(disclosure.open, true, "Both sidebar enrichment and full background repaint retain an opened same-asset disclosure");
+    assert.equal(document.activeElement, disclosure.summary, "The replacement disclosure retains keyboard focus");
+    assert.equal(disclosure.summary.focusOptions.preventScroll, true);
+    assert.equal(disclosure.textContent, state.asset.payoutText, "Open-state preservation cannot preserve obsolete dates or financial assertions");
+    assert.ok(!disclosure.textContent.includes("old date"));
+  }
+  const otherControl = {};
+  disclosure.open = false;
+  document.activeElement = otherControl;
+  context.render({preserveChart: true});
+  assert.equal(disclosure.open, false, "A deliberately closed disclosure remains closed");
+  assert.equal(document.activeElement, otherControl, "A payout repaint does not steal focus from another control");
+  disclosure.open = true;
+  disclosure.summary.focus();
+  state.route.uid = "b";
+  state.asset = {uid: "b", name: "Other source", ticker: "B", payoutText: "Another instrument's payout"};
+  context.render({preserveChart: true});
+  assert.equal(disclosure.open, false, "Switching instruments starts with a fresh disclosure state");
+  assert.notEqual(document.activeElement, disclosure.summary, "Focus from another instrument is not carried into the new disclosure");
+  assert.equal(disclosure.textContent, state.asset.payoutText);
+  console.log("PASS payout disclosure: repeated late sidebar/full repaints retain same-asset open state and focus while replacing source content; instrument switches reset it");
+}
+async function newsMonitoringContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const context = sourceContext({window: {}, Intl, console, URLSearchParams});
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
+  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
+  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
+  const cases = serverContracts.refresh_news_cases;
+  const connection = {connected: true, environment: "prod", account_id: "synthetic-account", account_name: "Synthetic account"};
+  const state = {generation: 1, user: {public_id: "000000123"}, refresh: {sequence: 1, busy: false},
+    data: {connection, workspace: {connection, overview: {observed_at: cases.received.observed_at, status: "stale"}}}, errors: {}};
+  const banner = {innerHTML: "", hidden: true, classList: {toggle() {}}}, sourceStatus = {textContent: ""};
+  let reloads = 0, polls = 0;
+  Object.assign(context, {state, U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, date: ui.date, format: ui.format, infoRows: ui.infoRows, button: ui.button,
+    $: selector => selector === "#connection-banner" ? banner : selector === "[data-news-monitor-status]" ? sourceStatus : null,
+    humanError: error => error.message, brokerDisconnectDescription: () => "Disconnect help", disconnectBlocked: () => false,
+    renderConnectionBannerValue: () => i18n.t("action.refresh"), renderConnectionBannerValue2: () => "workspace-refresh", renderConnectionBannerValue3: () => "",
+    updateRefreshControls() {}, clearTimeout() {}, isCancelled: () => false,
+    reloadWorkspaceObservation: async () => { reloads += 1; }, scheduleRefreshPoll: () => { polls += 1; }});
+  const source = app.slice(app.indexOf("  const refreshActive ="), app.indexOf("  const refreshUnavailable ="))
+    + app.slice(app.indexOf("  const workspaceRefreshText ="), app.indexOf("  const scheduleRefreshPoll ="))
+    + app.slice(app.indexOf("  const adoptRefreshStatus ="), app.indexOf("  const requestWorkspaceRefresh ="))
+    + app.slice(app.indexOf("  const connectionStatusText ="), app.indexOf("  const portfolioRows ="))
+    + app.slice(app.indexOf("  const brokerSettingsHTML ="), app.indexOf("  const assistantHealthLabel ="));
+  vm.runInContext(source + "\nglobalThis.newsText=workspaceNewsText; globalThis.paint=renderConnectionBanner; globalThis.sourceHTML=brokerSettingsHTML; globalThis.adopt=adoptRefreshStatus; globalThis.resume=resumeWorkspaceRefresh;", context);
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    for (const [status, result] of Object.entries(cases)) {
+      assert.equal(result.news.status, status, "The browser consumes the real server's news status");
+      assert.ok(!Object.hasOwn(result.news, "next_cursor") && !Object.hasOwn(result.news, "error"), "Internal broker traversal details do not enter the browser DTO");
+      state.data.refreshStatus = result;
+      const text = context.newsText(true);
+      assert.ok(text.includes(i18n.t(`news.monitor.${status}`)));
+      assert.ok(text.includes(i18n.t("news.monitor.scope")), "Every detailed status states the held-instrument broker-feed boundary in both languages");
+      assert.ok(!text.includes("undefined") && !text.includes("NaN") && !text.includes("synthetic-private-provider-cursor"));
+      if (result.news.observed_at) assert.ok(text.includes(i18n.t("news.monitor.observed", {time: ui.date(result.news.observed_at, true)})), "Failed scans retain the actual last successful page time");
+      const html = context.sourceHTML();
+      assert.ok(html.includes("data-news-monitor-status") && html.includes(ui.escape(text)), "The existing broker settings render the actual escaped source status");
+      context.paint();
+      assert.ok(banner.innerHTML.includes(ui.escape(i18n.t("Последнее наблюдение устарело. Значения помечены временем получения; обновите данные."))), "News status cannot hide stale portfolio data");
+      if (["partial", "unavailable"].includes(status)) {
+        assert.ok(banner.innerHTML.includes(ui.escape(context.newsText())));
+        assert.ok(!text.includes(i18n.t("news.monitor.received")), "Partial scans and outages never claim a completed feed check");
+      }
+      state.data.workspace.overview.status = "available";
+      context.paint();
+      assert.equal(banner.hidden, !["partial", "unavailable"].includes(status), "Only news gaps add a banner when financial data is available");
+      state.data.workspace.overview.status = "stale";
+    }
+    state.data.refreshStatus = {...cases.received, news: {...cases.received.news, documents_new: 0}};
+    assert.ok(context.newsText(true).includes(i18n.t("news.monitor.saved", {count: ui.format(0, 0)})), "Zero newly saved items is an explicit write count, not proof that no news exists");
+    state.data.refreshStatus.news = {...cases.received.news, scope: "unconfirmed_source", documents_new: 999};
+    assert.ok(context.newsText(true).includes(i18n.t("news.monitor.unknown")) && !context.newsText(true).includes("999"), "An unrecognized scope cannot inherit a successful feed claim");
+    state.data.refreshStatus.news = {...cases.received.news, documents_new: null, observed_at: "invalid-time"};
+    assert.ok(!context.newsText(true).includes(i18n.t("news.monitor.saved", {count: ui.format(0, 0)})), "Missing counts stay unknown");
+    assert.ok(!context.newsText(true).includes("invalid-time"));
+  }
+  state.data.refreshStatus = cases.partial;
+  await context.adopt(cases.received, {generation: 1, sequence: 1});
+  assert.equal(sourceStatus.textContent, context.newsText(true), "A status-only change updates the existing paragraph in place");
+  assert.equal(reloads, 0, "News-only completion does not reload financial views or editors");
+  assert.equal(polls, 0, "Completed source status does not create an extra polling loop");
+  const accepted = sourceStatus.textContent;
+  await context.adopt(cases.unavailable, {generation: 0, sequence: 1});
+  assert.equal(sourceStatus.textContent, accepted, "An older account cannot replace current news status");
+  await context.adopt(cases.unavailable, {generation: 1, sequence: 1, canAdopt: () => false});
+  assert.equal(sourceStatus.textContent, accepted, "A draft or mutation started during a background GET prevents late adoption");
+  let finishRead, guard = true;
+  context.api = () => new Promise(resolve => { finishRead = resolve; });
+  const pending = context.resume(() => guard);
+  guard = false;
+  finishRead(cases.unavailable);
   await pending;
-  assert.equal(state.data.ledger, corrected, "A late page from the prior snapshot cannot replace a corrected first page");
-  assert.equal(merges, 0);
-  const oldMore = context.load();
-  state.resourceVersions.set("ledger", 2);
-  const newError = Object.assign(new Error("Newer first-page reload failed"), {code: "request_timeout"});
-  state.errors.ledger = newError;
-  resolveRead({items: [{id: "old-more"}], next_cursor: null});
-  await oldMore;
-  assert.equal(state.errors.ledger, newError, "An older page cannot erase a failed newer refresh and its recovery action");
-  assert.equal(merges, 0);
-  context.api = async () => { requests += 1; throw Object.assign(new Error("history changed"), {code: "workspace_operation_history_changed"}); };
-  await context.load();
-  assert.equal(state.errors.ledger.code, "workspace_operation_history_changed");
-  await context.load();
-  assert.equal(requests, 3, "A rejected frozen cursor requires a first-page reload instead of repeating it");
-  assert.equal(state.loading.has("ledger-more"), false);
-  console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
+  assert.equal(sourceStatus.textContent, accepted, "The actual status GET carries its live editing guard through the response");
+  state.tour = true;
+  context.paint();
+  assert.equal(banner.hidden, true, "Private monitoring status stays hidden in the public tour");
+  console.log("PASS news monitoring: real refresh DTO, bilingual scope, partial/outage truthfulness, retained source time, in-place updates and session/draft boundaries");
+}
+function settingsRecoveryContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const context = sourceContext({window: {}, Intl, URLSearchParams});
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
+  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
+  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
+  const state = {view: "settings", route: {screen: "appearance"}, data: {}, formDrafts: {},
+    prefs: {server: defaultPreferences(), draft: defaultPreferences().document, dirty: true, busy: false, error: {status: 0, code: "request_interrupted"}}};
+  const notice = () => ({innerHTML: "", hidden: !state.prefs.error});
+  const sections = [0, 1].map(() => ({dataset: {}, notices: [], insertAdjacentHTML(position, html) {
+    if (html.includes('data-save-error="prefs"')) this.notices.push(notice());
+  }}));
+  const form = {id: "preferences-form"};
+  const status = {dataset: {}, textContent: "", closest: () => form};
+  const view = {set innerHTML(html) {
+    sections.forEach(section => { section.notices = []; });
+    if (html.includes('data-save-error="prefs"')) sections[1].notices.push(notice());
+  }};
+  Object.assign(context, {state, U: ui, I: i18n, T: i18n.t, H: i18n.html, esc: ui.escape, select: ui.select, field: ui.field, heading: ui.heading, button: ui.button, infoRows: ui.infoRows,
+    $: selector => ({"#view-settings": view, "#preferences-form": form, "[data-release-version]": {textContent: version}}[selector] || null),
+    $$: selector => selector === ":scope > section" ? sections : selector === '[data-save-status="prefs"]' ? [status] : selector === '[data-save-error="prefs"]' ? sections.flatMap(section => section.notices) : [],
+    humanError: error => error.code, captureScreenDrafts() {}, restoreEditableForm() {}, restoreScreenDrafts() {}, addScreenNavigation() {},
+    brokerSettingsHTML: () => "", recoveryPanelHTML: () => "", notificationContentsHTML: () => "", operationalMetricsHTML: () => ""});
+  const source = app.slice(app.indexOf("  const updateSaveStatus ="), app.indexOf("  const applySavedEffects ="))
+    + app.slice(app.indexOf("  const saveErrorHTML ="), app.indexOf("  const preservePersonal ="))
+    + app.slice(app.indexOf("  const renderSettings ="), app.indexOf("  const brokerSettingsHTML ="))
+    + app.slice(app.indexOf("  function layoutSettings("), app.indexOf("  function layoutProfile("))
+    + app.slice(app.indexOf("  function applyScreenLayout("), app.indexOf("  function incomePaneHTML("))
+    + app.slice(app.indexOf("  function renderUpdateSaveStatusValue("), app.indexOf("  function renderStrategiesStrategyOption("));
+  vm.runInContext(source + "\nconst screenLayoutHandlers={settings:layoutSettings}; globalThis.render=renderSettings;", context);
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    for (const error of [{status: 0, code: "request_interrupted"}, {status: 503, code: "source_unavailable"}, {status: 409, code: "settings_version_conflict"}]) {
+      state.prefs.error = error;
+      context.render();
+      const visible = sections[0].notices[0];
+      assert.equal(sections[0].hidden, false, "The appearance screen is the actual visible section");
+      assert.equal(status.dataset.state, error.status === 409 ? "conflict" : "error");
+      assert.ok(visible.innerHTML.includes('data-action="prefs-reload"'), "Rerendering unconfirmed settings keeps recovery controls in the visible Appearance section");
+      assert.equal(visible.innerHTML.includes('data-action="prefs-retry"'), error.status !== 409, "Interrupted writes retain readback; version conflicts require explicit reload");
+      assert.equal(visible.hidden, false);
+    }
+    state.prefs.error = null;
+    state.prefs.dirty = false;
+    context.render();
+    assert.equal(status.dataset.state, "saved");
+    assert.equal(sections[0].notices[0].hidden, true);
+    assert.equal(sections[0].notices[0].innerHTML, "", "Confirmed settings remove obsolete recovery actions");
+  }
+  console.log("PASS settings recovery: rerendered Appearance controls, interrupted/failed/conflicting writes and confirmed-state cleanup in both languages");
+}
+async function offlineQuoteContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const quoteForConnection =");
+  const helper = start < 0 ? "" : app.slice(start, app.indexOf("  const startQuoteStream =", start));
+  const stream = app.slice(app.indexOf("  const startQuoteStream ="), app.indexOf("  const clearPrivateState ="));
+  const tables = app.slice(app.indexOf("  function adoptTableQuotes("), app.indexOf("  async function pollTableQuotes()"));
+  const events = app.slice(app.indexOf('  window.addEventListener("offline",'), app.indexOf('  prefersDark.addEventListener("change",'));
+  const stamp = "2026-10-08T12:00:00Z";
+  const quote = {instrument_uid: "a", last_price: "123.000000001", quote_status: "live", quote_time: stamp, observed_at: stamp, price_unit: "currency", price_currency: "RUB"};
+  const state = {generation: 1, user: {public_id: "000000123"}, view: "asset", asset: {uid: "a", market: {...quote}}, quotes: {a: {...quote}}, session: {status: "authenticated"}};
+  const source = {innerHTML: "live"}, price = {innerHTML: quote.last_price}, callbacks = {}, streams = [];
+  class EventSourceFixture {
+    constructor() { this.listeners = {}; streams.push(this); }
+    addEventListener(name, callback) { this.listeners[name] = callback; }
+    close() { this.closed = true; }
+  }
+  const context = sourceContext({state, navigator: {onLine: false}, document: {visibilityState: "visible"}, EventSource: EventSourceFixture,
+    window: {EventSource: EventSourceFixture, addEventListener: (name, callback) => { callbacks[name] = callback; }},
+    $: selector => ({"[data-market-source]": source, "[data-market-quote]": price}[selector] || {}), $$: () => [],
+    T: value => value, assetPricing: asset => ({market: asset.market}), assetQuoteHTML: value => value.market.last_price,
+    freshness: (name, at, status) => status, safeSegment: encodeURIComponent, encodeURIComponent,
+    clearTimeout() {}, setTimeout: () => 1, toast() {}, lockSession() {}, refreshVisibleData() {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, paintTableQuotes() {},
+    stopQuoteStream: () => { if (streams.length) streams.at(-1).close(); }});
+  vm.runInContext("let quoteStream=null, quoteFailures=0, quoteReconnectTimer=null;\n" + helper + stream + tables + events
+    + "\nglobalThis.accept=adoptTableQuotes; globalThis.unavailable=markTableQuotesUnavailable;", context);
+  callbacks.offline();
+  assert.equal(state.asset.market.quote_status, "offline", "An offline event immediately removes the live label from the asset");
+  assert.equal(state.quotes.a.quote_status, "offline", "Remembered table quotes cannot remain live while offline");
+  assert.equal(source.innerHTML, "offline", "The existing source indicator updates without replacing the chart");
+  assert.equal(price.innerHTML, quote.last_price);
+  assert.equal(state.asset.market.quote_time, stamp, "Connectivity loss cannot fabricate a new observation timestamp");
+  context.accept([{...quote, last_price: "123.000000002"}], ["a"]);
+  assert.equal(state.quotes.a.quote_status, "offline", "A delayed pre-offline response cannot restore a live badge");
+  const assetLoad = app.slice(app.indexOf("  const loadAsset ="), app.indexOf("  const fundamentalMetricsHTML ="));
+  state.resourceVersions = new Map();
+  state.assetPeriod = "1m";
+  Object.assign(state.asset, {details: {}, facts: {}, news: {items: []}});
+  let finishAsset;
+  Object.assign(context, {renderAsset: () => true, U: {bindCharts() {}}, api: () => new Promise(resolve => { finishAsset = resolve; })});
+  vm.runInContext(assetLoad + "\nglobalThis.loadAssetNow=loadAsset;", context);
+  const pendingAsset = context.loadAssetNow("a");
+  finishAsset(quote);
+  await pendingAsset;
+  assert.equal(state.asset.market.quote_status, "offline", "An asset REST response received offline cannot claim a live source");
+  assert.equal(state.asset.market.quote_time, stamp);
+  context.navigator.onLine = true;
+  callbacks.online();
+  assert.equal(state.asset.market.quote_status, "connecting", "Restored connectivity waits for source confirmation");
+  assert.equal(state.quotes.a.quote_status, "offline", "Online alone does not certify previously received table data");
+  context.accept([quote], ["a"]);
+  assert.equal(state.quotes.a.quote_status, "live", "A new source response can restore table freshness");
+  streams.at(-1).listeners.market({data: JSON.stringify({...quote, observed_at: "2026-10-08T12:00:01Z"})});
+  assert.equal(state.asset.market.quote_status, "live");
+  streams.at(-1).listeners.status({data: JSON.stringify({state: "disconnected"})});
+  assert.equal(state.asset.market.quote_status, "reconnect", "An explicit source disconnect removes the live badge while retrying");
+  context.unavailable(["a"]);
+  assert.equal(state.quotes.a.quote_status, "unavailable", "A failed or timed-out batch retains its unavailable source status");
+  assert.equal(state.quotes.a.last_price, quote.last_price);
+  console.log("PASS offline quotes: source/table state, exact retained values, late responses, reconnect confirmation and source failures");
 }
 async function assistantConversationContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -1016,7 +1752,7 @@ async function assistantConversationContracts() {
   let delayConversationWrites = false;
   let requestSequence = 0;
   let reportedFailures = 0;
-  const context = vm.createContext({
+  const context = sourceContext({
     state, requireUser: () => true, safeSegment: encodeURIComponent, renderAssistant() {},
     T: value => value, H: value => value, esc: value => value, button: () => "", openDialog() {},
     updateViewRoute: route => { state.route = route; }, loadResource: async () => {},
@@ -1129,7 +1865,7 @@ async function assistantMemoryReconciliationContracts() {
   const saved = {id: "saved-note", version: 1, category: "preference", content: "Explain source timestamps"};
   const state = {generation: 1, view: "assistant", assistantMemoryDraftId: saved.id, data: {assistantMemory: {items: [saved]}}};
   let rendered = "", cleared = 0, failures = 0;
-  const context = vm.createContext({state, crypto: {randomUUID: () => "next-note"}, T: value => value, H: value => value, esc: value => value, select: () => "", loadResource: async () => {}, clearScreenDraft: () => { cleared++; }, humanError: () => "Unconfirmed", $: () => ({}), showMessage: () => { failures++; }, renderAssistant: () => { rendered = context.form(); }});
+  const context = sourceContext({state, crypto: {randomUUID: () => "next-note"}, T: value => value, H: value => value, esc: value => value, select: () => "", loadResource: async () => {}, clearScreenDraft: () => { cleared++; }, humanError: () => "Unconfirmed", $: () => ({}), showMessage: () => { failures++; }, renderAssistant: () => { rendered = context.form(); }});
   vm.runInContext(source + "\nglobalThis.form=assistantMemoryForm;globalThis.reconcile=reconcileAssistantMemory;", context);
   const form = {dataset: {id: saved.id, version: "0"}};
   await context.reconcile(form, saved, new Error("lost_ack"), 1);
@@ -1187,7 +1923,7 @@ async function strategyInputContracts() {
     let remote = structuredClone(state.strategy.server);
     const writes = [], controls = [], statuses = [];
     const form = {elements: controls, checkValidity: () => controls.every(input => input.validity.valid)};
-    const context = vm.createContext({
+    const context = sourceContext({
       state, structuredClone, clone: structuredClone, same: (a, b) => JSON.stringify(a) === JSON.stringify(b),
       $: () => present ? form : null, window: {setTimeout: () => 1}, clearTimeout() {},
       updateSaveStatus() { statuses.push({dirty: state.strategy.dirty, error: state.strategy.error?.message || null}); },
@@ -1311,14 +2047,30 @@ function startupBuildContracts() {
   for (const [bundleBuild, releaseBuild] of [["__OMNICIO_BUILD__", undefined], [build, undefined], [build, build]]) {
     const reachedApplication = new Error("compatible modules reached document initialization");
     const document = {currentScript: {src: `http://127.0.0.1/assets/app.js?build=${bundleBuild}`}, documentElement: {dataset: {}}, querySelector: selector => selector === "#startup-state" ? {} : null};
-    const context = vm.createContext({window: {}, document, URL});
+    const context = sourceContext({window: {}, document, URL, getComputedStyle: () => ({getPropertyValue: () => JSON.stringify(bundleBuild)})});
     if (releaseBuild) context.window.OMNICIO_RELEASE = {build: releaseBuild};
-    for (const name of ["i18n", "workspace"]) vm.runInContext(readFileSync(join(root, "web", `${name}.js`), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild), context);
+    for (const name of ["config", "i18n", "workspace"]) vm.runInContext(readFileSync(join(root, "web", `${name}.js`), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild), context);
     context.window.OMNICIO_I18N = {...context.window.OMNICIO_I18N, apply() { throw reachedApplication; }};
     const app = readFileSync(join(root, "web", "app.js"), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild);
     assert.throws(() => vm.runInContext(app, context), error => error === reachedApplication, "A coherent raw/dev or stamped bundle starts without relying on optional version.js metadata");
   }
-  console.log("PASS startup build contracts: coherent dev and stamped bundles reach initialization even without release metadata");
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const boundary = app.slice(app.indexOf("  function compatibleStartup("), app.indexOf("  async function reloadStartup("));
+  let paletteBuild = JSON.stringify(build);
+  const context = sourceContext({compiledBuild: build, window: {}, URL,
+    document: {querySelector: () => ({}), documentElement: {}, currentScript: {src: `http://127.0.0.1/assets/app.js?build=${build}`}},
+    getComputedStyle: () => ({getPropertyValue: () => paletteBuild})});
+  vm.runInContext(boundary + "\nglobalThis.compatible=compatibleStartup;", context);
+  const translations = {compiledBuild: build, t() {}, html() {}, apply() {}, getLocale() {}};
+  const ui = {compiledBuild: build, parseRoute() {}, routeHash() {}, resumeRoute() {}};
+  assert.equal(context.compatible(translations, ui, clientConfig), true);
+  for (const value of ["", JSON.stringify(build + "-stale"), "unquoted-build", "null"]) {
+    paletteBuild = value;
+    assert.equal(context.compatible(translations, ui, clientConfig), false, "Missing, stale and malformed palette identity cannot start the account");
+  }
+  paletteBuild = JSON.stringify(build);
+  for (const config of [undefined, {...clientConfig, compiledBuild: build + "-stale"}]) assert.equal(context.compatible(translations, ui, config), false, "Missing or stale configuration cannot start the account");
+  console.log("PASS startup build contracts: coherent bundles, independent metadata, missing/stale configuration and CSS identity");
 }
 function goalRouteContracts(ui) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -1326,7 +2078,7 @@ function goalRouteContracts(ui) {
   const entry = app.slice(app.indexOf("  function enterRouteScreen("), app.indexOf("  async function restoreRouteOverlay("));
   const state = {view: "goals", route: ui.parseRoute("#account/goals/create"), data: {goals: {items: [{id: "goal-a", title: "A"}, {id: "goal-b", title: "B"}]}}};
   const navigations = [], opened = [];
-  const context = vm.createContext({state, navigate: (...args) => navigations.push(args), requireUser: () => true, goalDocument: goal => goal || {}, T: value => value, H: value => value, esc: String, field: () => "", select: () => "", openDialog: (...args) => opened.push(args), updateGoalFields() {}});
+  const context = sourceContext({state, navigate: (...args) => navigations.push(args), requireUser: () => true, goalDocument: goal => goal || {}, T: value => value, H: value => value, esc: String, field: () => "", select: () => "", openDialog: (...args) => opened.push(args), updateGoalFields() {}});
   vm.runInContext(entry + opener + "\nglobalThis.open=openGoal;", context);
   context.open();
   assert.equal(opened.length, 1, "A parsed create route opens its form without a second navigation that would reset restored scroll");
@@ -1378,7 +2130,7 @@ function assetQuotePrecisionContracts(ui) {
   const start = app.indexOf("  const quotationNanos =");
   assert.ok(start >= 0, "Asset extrema use the source decimal contract");
   const source = app.slice(start, app.indexOf("  const assetChartMarkup =", start));
-  const context = vm.createContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
+  const context = sourceContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
   vm.runInContext(source + "\nglobalThis.pricing=assetPricing;globalThis.quote=assetQuoteHTML;globalThis.extreme=assetPriceExtreme;", context);
   const smaller = "10000000.000000001", larger = "10000000.000000002";
   assert.equal(Number(smaller), Number(larger), "The fixture exposes two source prices that Number cannot distinguish");
@@ -1427,7 +2179,7 @@ function eventReadReceiptContracts() {
   const start = app.indexOf("  const eventIsRead =");
   const end = app.indexOf("  const paintEventRow =", start);
   assert.ok(start >= 0 && end > start, "Read receipt contracts exercise the actual application reconciliation");
-  const context = vm.createContext({});
+  const context = sourceContext({});
   vm.runInContext(app.slice(start, end) + "\nglobalThis.reconcile = confirmEventItems;", context);
   const row = {id: "source-event", revision: 10, read_at: null, title: "Earlier fact"};
   const [changed] = context.reconcile([row], item => item.revision <= 10, new Map([[row.id, {...row, revision: 11, title: "New source fact"}]]));
@@ -1446,7 +2198,7 @@ function eventReadReceiptContracts() {
   assert.equal(newer.read_at, null, "An older acknowledged source cannot replace the displayed newer unread fact");
   const counters = app.slice(app.indexOf("  const eventUnreadCount ="), app.indexOf("  const eventUnreadLabel ="));
   const state = {tour: false, data: {events: {unread_count: 2, read_all_before: 10}}};
-  const counts = vm.createContext({state, number: value => value == null ? null : Number(value)});
+  const counts = sourceContext({state, number: value => value == null ? null : Number(value)});
   vm.runInContext(counters + "\nglobalThis.count = eventUnreadCount;globalThis.boundary = eventReadBoundary;", counts);
   assert.equal(counts.count(), null, "A category-filtered page cannot establish the global unread count");
   state.data.eventSummary = {unread_total: 8, max_revision: 11};
@@ -1473,7 +2225,7 @@ function deletionDraftFixture(app, kind, outcome) {
     state.screenBaselines[key] ||= "{}";
     state.screenDrafts[key] = {content: "Editing this note"};
   };
-  const context = vm.createContext({
+  const context = sourceContext({
     state, acceptingUpdate: false, requireUser: () => true, safeSegment: value => value, T: value => value,
     api: async () => {
       if (outcome === "unknown") throw Object.assign(new Error("lost_ack"), {status: 503});
@@ -1548,7 +2300,7 @@ async function browserProtocolContracts() {
     close() {}
   }
   let protocolNow = 0;
-  const context = vm.createContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout, performance: {now: () => protocolNow}, until: (read, label) => until(read, label, 6)});
+  const context = sourceContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout, performance: {now: () => protocolNow}, until: (read, label) => until(read, label, 6)});
   vm.runInContext(source.slice(from, to) + "\nglobalThis.connect=protocolClient;globalThis.session=browserSession;", context);
   const client = await context.connect("ws://synthetic.invalid");
   const navigate = client.send("Page.navigate", {url: "http://127.0.0.1/?case=next"}, "target");
@@ -1711,23 +2463,39 @@ const assertTextContrast = (foreground, background, label) => {
   const ratio = (Math.max(...values) + .05) / (Math.min(...values) + .05);
   assert.ok(ratio >= 4.5, label + ": normal text contrast " + ratio.toFixed(2) + ":1 must reach 4.5:1");
 };
+const resolveStyleTokens = (value, palette, visited = []) => {
+  assert.equal(typeof value, "string", "A checked style property must exist");
+  const resolved = value.replace(/var\((--[\w-]+)(?:,\s*([^()]*))?\)/g, (_, name, fallback) => {
+    assert.ok(!visited.includes(name), "CSS token references cannot form a cycle: " + name);
+    return resolveStyleTokens(palette[name] ?? fallback, palette, [...visited, name]);
+  });
+  if (resolved !== value) return resolveStyleTokens(resolved, palette, visited);
+  assert.ok(!resolved.includes("var("), "Every checked CSS token resolves: " + resolved);
+  return resolved;
+};
 const styleContracts = () => {
   const css = readFileSync(join(root, "web", "app.css"), "utf8");
-  const declared = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map(item => item[1]));
-  for (const reference of css.matchAll(/var\((--[\w-]+)(,)?/g)) assert.ok(declared.has(reference[1]) || reference[2], "CSS custom property must exist or have a fallback: " + reference[1]);
+  const tokens = readFileSync(join(root, "web", "tokens.css"), "utf8");
+  const styles = tokens + "\n" + css;
+  const declared = new Set([...styles.matchAll(/(--[\w-]+)\s*:/g)].map(item => item[1]));
+  for (const reference of styles.matchAll(/var\((--[\w-]+)(,)?/g)) assert.ok(declared.has(reference[1]) || reference[2], "CSS custom property must exist or have a fallback: " + reference[1]);
+  assert.ok(!/#[a-f0-9]{3,8}\b/i.test(css), "All authored colors have one palette source");
+  const base = cssRule(tokens, ":root");
+  assert.equal(JSON.parse(base["--omnicio-build"]), "__OMNICIO_BUILD__", "The stylesheet participates in startup release integrity");
+  for (const color of ["--browser-theme-dark", "--browser-theme-light"]) assert.match(base[color], /^#[a-f0-9]{6}$/i, "Public chrome has one literal theme token");
   for (const selector of [":root", ":root[data-theme=light]"]) {
-    const palette = cssRule(css, selector);
+    const palette = {...base, ...cssRule(tokens, selector)};
     for (const text of ["--text", "--muted", "--subtle", "--blue-light", "--green", "--red", "--purple", "--gold"]) {
-      for (const surface of ["--bg", "--panel", "--panel-deep", "--panel-hover"]) assertTextContrast(palette[text], palette[surface], selector + " " + text + " on " + surface);
+      for (const surface of ["--bg", "--panel", "--panel-deep", "--panel-hover"]) assertTextContrast(resolveStyleTokens(palette[text], palette), resolveStyleTokens(palette[surface], palette), selector + " " + text + " on " + surface);
     }
-    assertTextContrast("#ffffff", palette["--blue"], selector + " selected controls");
+    assertTextContrast("#ffffff", resolveStyleTokens(palette["--blue"], palette), selector + " selected controls");
   }
   for (const selector of [".button.primary", ".button.primary:hover", ".vk-provider", ".vk-provider:hover", ".strategy-option .strategy-icon"]) {
     const rule = cssRule(css, selector);
-    for (const background of rule.background.match(/#[a-f0-9]{6}\b/gi) || []) assertTextContrast("#ffffff", background, selector);
+    for (const background of resolveStyleTokens(rule.background, base).match(/#[a-f0-9]{6}\b/gi) || []) assertTextContrast("#ffffff", background, selector);
   }
   const avatar = cssRule(css, ".avatar");
-  for (const background of avatar.background.match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(avatar.color, background, "Profile avatar text");
+  for (const background of resolveStyleTokens(avatar.background, base).match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(resolveStyleTokens(avatar.color, base), background, "Profile avatar text");
   console.log("PASS style contracts: declared tokens and normal-text contrast in both themes");
 };
 function workerBindingDatabase() {
@@ -1767,37 +2535,127 @@ function workerBindingDatabase() {
 const workerContract = async () => {
   const handlers = new Map();
   const tasks = [];
-  const cached = [];
   const notifications = [];
   const opened = [];
   const bindings = workerBindingDatabase();
-  let activated = 0;
+  const cacheStores = new Map();
+  const fetches = [], writes = [], repairTimers = new Map();
+  let activated = 0, storageFailure = false, networkFailure = false;
+  let responseBuild = build, responseStatus = 200, responseUrl = null, fetchGate = null;
+  // Installing browsers can hold only a few unread fetch responses at once.
+  // Cache.put below consumes a real Response body before returning the permit.
+  const responsePool = {enabled: false, used: 0, peak: 0, queue: []};
+  const releaseQueuedResponses = () => {
+    while (responsePool.used < 3 && responsePool.queue.length) responsePool.queue.shift()();
+  };
+  const reserveResponseBody = signal => {
+    if (!responsePool.enabled) return Promise.resolve(() => {});
+    return new Promise((resolve, reject) => {
+      let granted = false, released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        signal.removeEventListener("abort", cancel);
+        if (granted) responsePool.used -= 1;
+        else responsePool.queue = responsePool.queue.filter(item => item !== grant);
+        releaseQueuedResponses();
+      };
+      const cancel = () => { release(); reject(new Error("Synthetic aborted response")); };
+      const grant = () => {
+        granted = true;
+        responsePool.used += 1;
+        responsePool.peak = Math.max(responsePool.peak, responsePool.used);
+        resolve(release);
+      };
+      signal.addEventListener("abort", cancel, {once: true});
+      if (signal.aborted) cancel();
+      else { responsePool.queue.push(grant); releaseQueuedResponses(); }
+    });
+  };
   const origin = "https://example.test";
-  globalThis.self = {
-    location: {
-      origin
+  const cacheName = "omnicio-public-" + build;
+  const publicPaths = ["/offline.html", "/assets/config.js", "/assets/tokens.css", "/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"];
+  const publicUrls = publicPaths.map(path => origin + path + "?build=" + encodeURIComponent(build));
+  const requestUrl = value => new URL(typeof value === "string" ? value : value.url, origin).href;
+  const cacheStorage = {
+    async open(name) {
+      if (storageFailure) throw new Error("Synthetic storage failure");
+      if (!cacheStores.has(name)) cacheStores.set(name, new Map());
+      const values = cacheStores.get(name);
+      return {
+        match: async request => values.get(requestUrl(request))?.clone(),
+        put: async (request, response) => {
+          const body = await response.arrayBuffer();
+          const stored = new Response(body, {status: response.status, statusText: response.statusText, headers: response.headers});
+          const key = requestUrl(request);
+          writes.push(key);
+          values.set(key, stored);
+        }
+      };
     },
-    addEventListener: (name, handler) => handlers.set(name, handler),
-    registration: {showNotification: async (title, options) => notifications.push({title, options})},
-    clients: {matchAll: async () => [], openWindow: async path => opened.push(path)},
-    skipWaiting: async () => {
-      activated += 1;
+    keys: async () => [...cacheStores.keys()],
+    delete: async name => cacheStores.delete(name),
+    async match(request) {
+      for (const values of cacheStores.values()) {
+        const response = values.get(requestUrl(request));
+        if (response) return response.clone();
+      }
+      return undefined;
     }
   };
-  globalThis.caches = {
-    open: async () => ({
-      addAll: async paths => cached.push(...paths)
-    })
-  };
-  globalThis.indexedDB = bindings.indexedDB;
+  const context = vm.createContext({
+    location: {origin},
+    addEventListener: (name, handler) => handlers.set(name, handler),
+    registration: {showNotification: async (title, options) => notifications.push({title, options: clone(options)})},
+    clients: {matchAll: async () => [], openWindow: async path => opened.push(path), claim: async () => {}},
+    skipWaiting: async () => { activated += 1; },
+    caches: cacheStorage, indexedDB: bindings.indexedDB, URL, AbortController, MessageChannel,
+    setTimeout(handler, ms) {
+      if (ms !== clientConfig.timing.publicCacheRepairMs) return setTimeout(handler, ms);
+      const timer = {};
+      repairTimers.set(timer, handler);
+      return timer;
+    },
+    clearTimeout(timer) { if (!repairTimers.delete(timer)) clearTimeout(timer); },
+    async fetch(request, options) {
+      const url = requestUrl(request);
+      fetches.push({url, options});
+      if (networkFailure) throw new Error("Synthetic offline network");
+      const releaseBody = await reserveResponseBody(options?.signal);
+      try {
+        if (fetchGate) await Promise.race([fetchGate, new Promise((_, reject) => {
+          if (options.signal.aborted) reject(new Error("Synthetic aborted fetch"));
+          else options.signal.addEventListener("abort", () => reject(new Error("Synthetic aborted fetch")), {once: true});
+        })]);
+        const body = publicAssets[new URL(url).pathname.replace(/^\//, "")] || "Public brand asset";
+        const response = new Response(body, {status: responseStatus, headers: responseBuild === null ? {} : {"X-Omnicio-Build": responseBuild}});
+        Object.defineProperty(response, "url", {value: responseUrl || url});
+        const readBody = response.arrayBuffer.bind(response);
+        response.arrayBuffer = async () => { try { return await readBody(); } finally { releaseBody(); } };
+        return response;
+      } catch (error) { releaseBody(); throw error; }
+    },
+    importScripts(...urls) {
+      for (const url of urls) {
+        const parsed = new URL(url, origin);
+        assert.equal(parsed.origin, origin);
+        assert.equal(parsed.searchParams.get("build"), build);
+        const source = publicAssets[parsed.pathname.replace(/^\//, "")];
+        assert.ok(source, "The worker imports the actual compiled public asset");
+        vm.runInContext(source, context);
+      }
+    }
+  });
+  context.self = context;
+  const self = context;
   try {
-    require("../web/sw.js");
-    handlers.get("install")({
-      waitUntil: task => tasks.push(task)
-    });
+    vm.runInContext(publicAssets["sw.js"], context);
+    assert.equal(context.window, undefined, "Worker imports do not rely on a browser window");
+    handlers.get("install")({waitUntil: task => tasks.push(task)});
     await Promise.all(tasks);
-    assert.ok(cached.includes("/offline.html?build=__OMNICIO_BUILD__"));
-    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js|brand\/omnicio-logo\.png))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
+    assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort());
+    assert.ok(fetches.every(({options}) => options.credentials === "omit" && options.cache === "no-store" && options.redirect === "error"), "Only explicit public requests enter the cache");
+    assert.equal(repairTimers.size, 0, "Completed installation releases its deadline");
     let intercepted = 0;
     for (const path of ["/api/me", "/api/workspace", "/api/preferences", "/api/goals", "/api/assistant/messages", "/api/broker/tbank/portfolio", "/health/ready"]) {
       for (const method of ["GET", "POST"]) handlers.get("fetch")({
@@ -1832,10 +2690,77 @@ const workerContract = async () => {
     const workerMessage = async (data, messageOrigin = origin) => {
       let receipt;
       const pending = [];
-      handlers.get("message")({origin: messageOrigin, data, ports: [{postMessage: value => { receipt = value; }}], waitUntil: task => pending.push(task)});
+      handlers.get("message")({origin: messageOrigin, data, ports: [{postMessage: value => { receipt = clone(value); }}], waitUntil: task => pending.push(task)});
       await Promise.all(pending);
       return receipt;
     };
+    const repair = () => workerMessage({type: "REPAIR_PUBLIC_CACHE", build});
+    const initialFetches = fetches.length, initialWrites = writes.length;
+    assert.deepEqual(await repair(), {handled: true, ok: true});
+    assert.equal(fetches.length, initialFetches, "A coherent complete cache requires no network repair");
+    assert.equal(writes.length, initialWrites, "Normal startup does not rewrite its public cache");
+    assert.equal(await workerMessage({type: "REPAIR_PUBLIC_CACHE", build: "wrong-build"}), undefined);
+    assert.equal(await workerMessage({type: "REPAIR_PUBLIC_CACHE", build}, "https://untrusted.invalid"), undefined);
+    cacheStores.delete(cacheName);
+    let releaseFetch;
+    fetchGate = new Promise(resolve => { releaseFetch = resolve; });
+    const repairs = [repair(), repair()];
+    await until(() => fetches.length === initialFetches + publicUrls.length, "Concurrent repair requests share one fetch batch");
+    releaseFetch();
+    assert.deepEqual(await Promise.all(repairs), [{handled: true, ok: true}, {handled: true, ok: true}]);
+    fetchGate = null;
+    assert.equal(writes.length, initialWrites + publicUrls.length);
+    assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort(), "Recovery repopulates the full offline shell with the unchanged worker");
+    cacheStores.delete(cacheName);
+    const beforeStreamingWrites = writes.length;
+    responsePool.enabled = true;
+    const streamingRepair = repair();
+    await until(() => writes.length === beforeStreamingWrites + publicUrls.length, "Each response body is consumed before waiting for all remaining headers", 30);
+    assert.deepEqual(await streamingRepair, {handled: true, ok: true});
+    assert.equal(responsePool.peak, 3, "The regression exercises the installing-worker response throttle");
+    assert.equal(responsePool.used, 0);
+    assert.equal(responsePool.queue.length, 0);
+    responsePool.enabled = false;
+    // Reproduce manual recovery deleting a cache after an older fill obtained
+    // its handle. The new startup joins that fill and must receive a usable name.
+    cacheStores.get(cacheName).delete(publicUrls[1]);
+    const beforeRaceFetches = fetches.length;
+    fetchGate = new Promise(resolve => { releaseFetch = resolve; });
+    const olderRepair = repair();
+    await until(() => fetches.length === beforeRaceFetches + 1, "An older repair holds one missing asset fetch");
+    cacheStores.delete(cacheName);
+    const recoveryRepair = repair();
+    releaseFetch();
+    assert.deepEqual(await Promise.all([olderRepair, recoveryRepair]), [{handled: true, ok: true}, {handled: true, ok: true}]);
+    fetchGate = null;
+    assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort(), "A coalesced recovery fills the current named cache, including assets lost from the detached old handle");
+    networkFailure = true;
+    let navigation;
+    handlers.get("fetch")({request: {url: origin + "/?private=session", method: "GET", mode: "navigate"}, respondWith: task => { navigation = task; }});
+    const offline = await navigation;
+    assert.equal(offline.headers.get("X-Omnicio-Build"), build);
+    assert.match(await offline.text(), /data-offline-retry/, "The repaired cache can serve the real public offline page");
+    assert.ok(!writes.some(url => url.includes("private=session")), "Navigation and session HTML cannot enter the repair cache");
+    networkFailure = false;
+    for (const failure of ["missing-header", "stale-header", "bad-status", "foreign-url", "storage"]) {
+      cacheStores.delete(cacheName);
+      const before = writes.length;
+      responseBuild = failure === "missing-header" ? null : failure === "stale-header" ? "old-build" : build;
+      responseStatus = failure === "bad-status" ? 503 : 200;
+      responseUrl = failure === "foreign-url" ? "https://untrusted.invalid/assets/app.js" : null;
+      storageFailure = failure === "storage";
+      assert.deepEqual(await repair(), {handled: true, ok: false}, "Public repair reports " + failure);
+      assert.equal(writes.length, before, "No unvalidated response is published after " + failure);
+    }
+    storageFailure = false; responseBuild = build; responseStatus = 200; responseUrl = null;
+    fetchGate = new Promise(() => {});
+    const timedOut = repair();
+    await until(() => repairTimers.size === 1, "A stalled repair has one bounded deadline");
+    for (const expire of repairTimers.values()) expire();
+    assert.deepEqual(await timedOut, {handled: true, ok: false});
+    fetchGate = null;
+    assert.equal(repairTimers.size, 0);
+    assert.deepEqual(await repair(), {handled: true, ok: true}, "Failure releases the single-flight guard so a later online repair can succeed");
     const bindingA = "00000000-0000-4000-9000-000000000001";
     const bindingB = "00000000-0000-4000-9000-000000000002";
     assert.deepEqual(await workerMessage({type: "PUSH_BINDING", binding_id: bindingA, locale: "ru"}), {handled: true, ok: true, binding_id: bindingA});
@@ -1894,11 +2819,12 @@ const workerContract = async () => {
     assert.deepEqual(opened, ["/#account/events"], "The worker cannot open another tab when an existing app does not acknowledge");
     assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingB}), {handled: true, ok: true, cleared: true});
     assert.equal(bindings.values.size, 0, "Only the matching binding is cleared after a logout or explicit revocation");
-    console.log("PASS service worker: private-cache isolation, origin checks, private push redaction and safe notification navigation");
+    console.log("PASS service worker: streaming response throttle, versioned cache repair, offline recovery, bounded failures, private-cache isolation, origin checks and safe notifications");
   } finally {
-    delete globalThis.self;
-    delete globalThis.caches;
-    delete globalThis.indexedDB;
+    for (const expire of repairTimers.values()) expire();
+    repairTimers.clear();
+    handlers.clear();
+    cacheStores.clear();
   }
 };
 function captureBrowserLayout() {
@@ -2227,7 +3153,7 @@ function assertChartLayout(charts, label) {
     for (const axis of chart.axes.slice(3)) assert.ok(axis.rect.top >= chart.svg.bottom && axis.rect.left >= chart.svg.left - 1 && axis.rect.right <= chart.svg.right + 1, label + ": date axis stays below its own plot");
   }
 }
-const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png"]);
+const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png"]);
 let screenshotEvidenceCharacters = 0;
 let screenshotEvidenceSequence = 0;
 function logScreenshotEvidence(name, png) {
@@ -2276,6 +3202,12 @@ const protocolClient = async url => {
   const pending = new Map();
   let sequence = 0;
   let nativeDialog = null;
+  const workerDiagnostics = {errors: [], registrations: [], versions: []};
+  const workerObservers = {
+    "ServiceWorker.workerErrorReported": params => { workerDiagnostics.errors = [...workerDiagnostics.errors, params.errorMessage].slice(-20); },
+    "ServiceWorker.workerRegistrationUpdated": params => { workerDiagnostics.registrations = params.registrations; },
+    "ServiceWorker.workerVersionUpdated": params => { workerDiagnostics.versions = [...workerDiagnostics.versions, ...params.versions].slice(-20); }
+  };
   const dialogError = method => Object.assign(new Error(`Unexpected native ${nativeDialog.type} dialog during ${method} at ${nativeDialog.url}`), {code: "unexpected_native_dialog", dialog: {...nativeDialog}});
   await new Promise((done, reject) => {
     socket.addEventListener("open", done, {
@@ -2289,6 +3221,9 @@ const protocolClient = async url => {
     data
   }) => {
     const message = JSON.parse(data);
+    // Worker-global failures do not reach the page's error event. Keep bounded
+    // native CDP evidence so an install failure has a concrete diagnostic.
+    if (Object.hasOwn(workerObservers, message.method)) workerObservers[message.method](message.params);
     if (message.method === "Page.javascriptDialogOpening") {
       nativeDialog = {...message.params, sessionId: message.sessionId};
       for (const [id, waiter] of pending) {
@@ -2308,6 +3243,7 @@ const protocolClient = async url => {
   });
   return {
     get nativeDialog() { return nativeDialog; },
+    get workerDiagnostics() { return workerDiagnostics; },
     send(method, params = {}, sessionId, timeout = 15000) {
       if (nativeDialog && nativeDialog.sessionId === sessionId && method !== "Browser.close") return Promise.reject(dialogError(method));
       return new Promise((done, reject) => {
@@ -2416,6 +3352,7 @@ const runBrowser = async base => {
     };
     await send("Page.enable");
     await send("Runtime.enable");
+    await send("ServiceWorker.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {
       source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.error?.stack||e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(e.reason?.stack||String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
     });
@@ -2525,6 +3462,8 @@ const runBrowser = async base => {
       const debug = {
         failure: error.stack || String(error),
         nativeDialog: client.nativeDialog || error.dialog || null,
+        serviceWorker: client.workerDiagnostics,
+        publicRequests: publicRequestDiagnostics,
         requests
       };
       writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
@@ -2540,6 +3479,8 @@ const runBrowser = async base => {
         url: documentState.url,
         errors: documentState.errors,
         csp: documentState.csp,
+        serviceWorker: client.workerDiagnostics,
+        publicRequests: publicRequestDiagnostics,
         bodyText: documentState.bodyText?.slice(0, 3500),
         requests
       }, null, 2));
@@ -2568,6 +3509,7 @@ const runBrowser = async base => {
       await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout});
+      await exercisePayoutDisplay({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -2620,9 +3562,18 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    await payoutDisplayContracts();
+    await payoutEventHistoryContracts();
+    assetPayoutDisclosureContracts();
     dialogCloseContracts();
+    await evidenceFileReadContracts();
     await assetBackgroundChartContracts();
     await ledgerPaginationContracts();
+    await searchAndAssetPaginationContracts();
+    await visibleRefreshContracts();
+    await newsMonitoringContracts();
+    settingsRecoveryContracts();
+    await offlineQuoteContracts();
     await assistantConversationContracts();
     await assistantMemoryReconciliationContracts();
     await strategyInputContracts();
@@ -3057,7 +4008,7 @@ async function serveTestPortfolioInstruments({
       captured_at: stamp
     },
     sources: [],
-    payouts: [],
+    payouts: fixture.assetPayouts || [],
     history: []
   });
 }
@@ -3412,6 +4363,27 @@ async function exerciseNotificationChannels({fixture, click, wait, evaluate}) {
   await wait('document.querySelector("#notification-settings [data-device-push-state]")', "The notification page exposes this device's actual delivery state");
   assert.equal(await evaluate('document.querySelectorAll("#notification-email-form, form[id^=notification-verify]").length'), 0, "Push setup does not ask the user for email, SMS or external credentials");
   assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/notifications/email/")).length, 0);
+}
+async function exerciseNewsMonitoring({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
+  const original = clone(fixture.refreshStatus);
+  const refreshPosts = () => fixture.requests.filter(item => item.path === "/api/workspace/refresh" && item.method === "POST").length;
+  const before = refreshPosts();
+  await click('#view-settings [data-screen="broker"]');
+  for (const status of ["received", "partial", "unavailable"]) {
+    fixture.refreshStatus = {...original, status: "succeeded", news: clone(serverContracts.refresh_news_cases[status].news)};
+    await evaluate('document.querySelector("#main-content").focus(); window.dispatchEvent(new Event("focus"))');
+    const expected = await evaluate(`window.OMNICIO_I18N.t(${JSON.stringify("news.monitor." + status)})`);
+    await wait(`document.querySelector("[data-news-monitor-status]")?.textContent.includes(${JSON.stringify(expected)})`, "The current news status arrives through the visible refresh GET");
+    assert.ok(await evaluate('document.querySelector("[data-news-monitor-status]").textContent.includes(window.OMNICIO_I18N.t("news.monitor.scope"))'), "The settings show the limited broker-feed coverage");
+    if (status !== "received") assert.ok(await evaluate(`!document.querySelector("#connection-banner").hidden && document.querySelector("#connection-banner").textContent.includes(${JSON.stringify(expected)})`), "News gaps are visible alongside usable account data");
+    await checkLayout(`news-monitoring-${status}-${round}-390`);
+  }
+  assert.equal(refreshPosts(), before, "Checking autonomous news status never enqueues a portfolio refresh");
+  await screenshot(`news-monitoring-unavailable-${round}-390.png`);
+  fixture.refreshStatus = original;
+  await evaluate('document.querySelector("#main-content").focus(); window.dispatchEvent(new Event("focus"))');
+  await wait('document.querySelector("[data-news-monitor-status]")?.textContent.includes(window.OMNICIO_I18N.t("news.monitor.not_requested"))', "The isolated case restores its original collection state");
+  await click('#sidebar-nav [data-route="settings"]');
 }
 async function exerciseNotificationRetry({fixture, click, fieldValue, wait, evaluate}) {
   const retry = '#notification-settings [data-action="resource-retry"][data-resource="notifications"]';
@@ -3788,6 +4760,7 @@ async function exerciseReadConsistency(options) {
   await send("Page.navigate", {url: `${base}?case=${key}#settings`});
   await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("#preferences-form")`, "A fresh signed-in settings document");
   const context = {...options, fixture};
+  await exerciseNewsMonitoring(context);
   await exerciseNotificationRetry(context);
   await exerciseAnalyticsReadConsistency(context);
   await exerciseSearchReadConsistency(context);
@@ -4405,6 +5378,51 @@ async function exerciseIndependentPageLoads({send, configureViewport, round, bas
   await checkLayout(`independent-support-${round}`);
   console.log(`PASS independent reads round ${round}: asset, search, article and support become usable before unrelated responses`);
 }
+async function exercisePayoutDisplay({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  await configureViewport(320);
+  const locale = round === 1 ? "ru" : "en";
+  const key = `signed-payout-display-${round}`, fixture = makeFixture("signed");
+  fixture.prefs.document.locale = locale;
+  fixture.enrichmentName = "Payout contract company";
+  fixture.events = Object.values(clone(serverContracts.payout_event_cases));
+  fixtures.set(key, fixture);
+  const target = `${base}?case=${key}`;
+  for (const disputed of [false, true]) {
+    fixture.assetPayouts = clone(serverContracts.payout_visualization.payouts.filter(item => (item.identity_status === "ambiguous") === disputed));
+    const cohort = disputed ? "ambiguous" : "normal";
+    const navigation = await send("Page.navigate", {url: `${target}&payout=${cohort}#account/asset?uid=synthetic-a`});
+    assert.ok(navigation.loaderId, "Each payout source cohort loads a new document");
+    const summary = disputed ? "payout.identity.ambiguous" : "Подтверждённые события выплат";
+    await wait(`document.documentElement.lang === ${JSON.stringify(locale)} && document.querySelector('#view-asset h1')?.textContent === 'Payout contract company' && document.querySelector('#view-asset [data-asset-payouts] summary')?.textContent === window.OMNICIO_I18N.t(${JSON.stringify(summary)}) && !document.querySelector('#view-asset .loading-panel')`, "The asset receives the expected payout source cohort: " + cohort);
+    assert.equal(await evaluate('document.querySelector("#view-asset [data-asset-payouts]").open'), false, "The new payout disclosure starts closed before its single native click");
+    await click("#view-asset [data-asset-payouts] summary");
+    await wait('document.querySelector("#view-asset [data-asset-payouts]").open', "Payment records have a visible disclosure path");
+    const text = await evaluate('document.querySelector("#view-asset [data-asset-payouts]").textContent');
+    const labels = disputed ? ["payout.identity.ambiguous", "payout.identity.note", "payout.identity.unconfirmed", "payout.date.source"] : ["Подтверждённые события выплат", "events.expected", "payout.date.actual", "payout.date.unknown"];
+    for (const label of labels) assert.ok(text.includes(await evaluate(`window.OMNICIO_I18N.t(${JSON.stringify(label)})`)), "The real disclosure contains its labelled source status: " + label);
+    if (disputed) assert.ok(!text.includes(await evaluate('window.OMNICIO_I18N.t("Подтверждённые события выплат")')));
+    const dated = fixture.assetPayouts.find(item => item.status === "paid" && item.actual_at);
+    assert.ok(text.includes(await evaluate(`window.OmniUI.date(${JSON.stringify(dated.actual_at)})`)), "The actual payment date survives the real source read and DOM rendering");
+    assert.ok(!text.includes(await evaluate(`window.OmniUI.date(${JSON.stringify(dated.record_at)})`)), "The disclosure does not substitute the record date");
+    await evaluate('document.querySelector("#view-asset [data-asset-payouts]").scrollIntoView({block:"start"})');
+    await checkLayout(`payout-source-${disputed ? "ambiguous" : "normal"}-${locale}-320`);
+    await screenshot(`payout-source-${disputed ? "ambiguous" : "normal"}-${locale}-320.png`);
+  }
+  for (const kind of ["superseded", "ambiguous"]) {
+    const event = serverContracts.payout_event_cases[kind];
+    await send("Page.navigate", {url: `${target}#account/events/detail?event=${event.id}`});
+    await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#dialog-title").textContent === window.OMNICIO_I18N.t("payout.identity.ambiguous") && !document.querySelector("#dialog-content .loading-panel")', "The old event bookmark resolves to the uncertainty notice");
+    const text = await evaluate('document.querySelector("#dialog-content").textContent');
+    assert.ok(text.includes(await evaluate('window.OMNICIO_I18N.t("payout.identity.note")')) && text.includes("synthetic-a"));
+    assert.ok(!text.includes(event.detail) && !text.includes("999.19"), "A historic direct link cannot display superseded financial claims");
+    assert.ok(!text.includes(await evaluate(`window.OmniUI.date(${JSON.stringify(event.occurred_at)}, true)`)));
+    await checkLayout(`payout-event-${kind}-${locale}-320`);
+    await screenshot(`payout-event-${kind}-${locale}-320.png`);
+  }
+  await click('#dialog-content [data-action="event-destination"]');
+  await wait('location.hash === "#account/asset?uid=synthetic-a" && document.querySelector("#view-asset [data-asset-payouts]")', "The warning retains its real instrument navigation");
+  console.log(`PASS payout source display round ${round}: real DTO dates, visible uncertain records and safe historical event links at 320px in ${locale}`);
+}
 async function exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout}) {
   const key = `signed-late-asset-${round}`;
   const fixture = makeFixture("signed");
@@ -4509,7 +5527,7 @@ async function installLifecycleContracts() {
   const stored = new Map();
   let opens = 0, prompts = 0, installed = false;
   const navigator = {userAgent: "Chrome", platform: "Win32", maxTouchPoints: 0};
-  const context = vm.createContext({installState, navigator, installedDisplay: () => installed, H: value => value, localStorage: {setItem: (key, value) => stored.set(key, value)}, renderInstallState() {}, openInstall: () => { opens += 1; }});
+  const context = sourceContext({installState, navigator, installedDisplay: () => installed, H: value => value, localStorage: {setItem: (key, value) => stored.set(key, value)}, renderInstallState() {}, openInstall: () => { opens += 1; }});
   vm.runInContext(status + actions + "\nglobalThis.installActions={installStatus,installInstructionsHTML,dismissInstall,promptInstall};", context);
   const api = context.installActions;
   assert.equal(api.installStatus(), "manual", "No retained browser event means instructions, not a fake installation button");
@@ -4549,7 +5567,7 @@ async function installPromptInterleavingContracts() {
   for (const isolated of [false, true]) {
     const handlers = [];
     const installState = {prompt: null, installed: false, dismissed: false, busy: false, result: ""};
-    const context = vm.createContext({installState, URLSearchParams, location: {search: `?case=${isolated ? "guest-installation" : "guest-installability"}`}, window: {addEventListener: (_name, callback) => handlers.push(callback)}, renderInstallState() {}, openInstall() {}, localStorage: {setItem() {}}});
+    const context = sourceContext({installState, URLSearchParams, location: {search: `?case=${isolated ? "guest-installation" : "guest-installability"}`}, window: {addEventListener: (_name, callback) => handlers.push(callback)}, renderInstallState() {}, openInstall() {}, localStorage: {setItem() {}}});
     vm.runInContext(`(${installPromptBrowserFixture.toString()})();` + actions + listener + "\nglobalThis.promptInstall=promptInstall;", context);
     const dispatch = event => {
       event.preventDefault = () => { event.defaultPrevented = true; };
@@ -4586,7 +5604,7 @@ async function installPromptInterleavingContracts() {
 async function pushEndpointContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  const pushFingerprint ="), app.indexOf("  const withPushDeviceLock ="));
-  const context = vm.createContext({URL, crypto: require("node:crypto").webcrypto, TextEncoder});
+  const context = sourceContext({URL, crypto: require("node:crypto").webcrypto, TextEncoder});
   vm.runInContext(source + "\nglobalThis.fingerprint=pushFingerprint;", context);
   const endpoint = "https://fcm.googleapis.com/fcm/send/fixture-device?token=one";
   const expected = createHash("sha256").update(endpoint).digest("hex");
@@ -4607,7 +5625,7 @@ async function pushContextContracts() {
     let releaseSubscription, releaseReceipt;
     const registration = {pushManager: {getSubscription: () => boundary === "subscription" ? new Promise(resolve => { releaseSubscription = resolve; }) : Promise.resolve(subscription)}, active: {postMessage: (...args) => bindings.push(args)}};
     const api = async (path, options) => { writes.push({path, options, publicId: state.user.public_id}); return new Promise(resolve => { releaseReceipt = resolve; }); };
-    const context = vm.createContext({state, navigator: {serviceWorker: {ready: Promise.resolve(registration)}}, window: {}, Uint8Array, URL, atob, crypto: require("node:crypto").webcrypto, TextEncoder, setTimeout, clearTimeout, api, T: value => value});
+    const context = sourceContext({state, navigator: {serviceWorker: {ready: Promise.resolve(registration)}}, window: {}, Uint8Array, URL, atob, crypto: require("node:crypto").webcrypto, TextEncoder, setTimeout, clearTimeout, api, T: value => value});
     vm.runInContext(source + "\nglobalThis.pushTest={pushContext,readPushSubscription};", context);
     const pending = context.pushTest.readPushSubscription(data, context.pushTest.pushContext(), true);
     await until(() => boundary === "subscription" ? releaseSubscription : releaseReceipt, "The actual push helper reaches its controlled " + boundary + " boundary");
@@ -4641,7 +5659,7 @@ async function pushBindingReceiptContracts() {
     const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
     const messages = [];
     const registration = {active: {postMessage(message, ports) { messages.push(message); ports[0].postMessage({handled: true, ok: scenario.workerAccepted !== false, binding_id: scenario.matchingBinding === false ? "00000000-0000-4000-9000-000000000099" : message.binding_id}); ports[0].close(); }}};
-    const context = vm.createContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
+    const context = sourceContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
     vm.runInContext(source + "\nglobalThis.pushTest={pushContext,adoptPushReceipt};", context);
     const receipt = {id: scenario.id || channelId, status: "active", current_session: scenario.currentSession !== false, binding_id: scenario.bindingId || bindingId};
     const pending = context.pushTest.adoptPushReceipt(receipt, {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-receipt"}, registration, context.pushTest.pushContext());
@@ -4661,7 +5679,7 @@ async function pushPermissionReadFailureContracts() {
     const saved = {push_configured: true, channels: [{id: "00000000-0000-4000-8000-000000000801", status: "active"}]};
     const state = {user: {public_id: "000000123"}, devicePush: {status: previousStatus, pending: null}, data: {notifications: saved}, errors: {notifications: failure}, resourceRequests: new Map()};
     const reads = [];
-    const context = vm.createContext({state, Notification: {permission}, pushSupported: () => true, pushContext: () => ({}), currentPushContext: () => true, isCancelled: () => false, renderNotificationPanel() {}, loadResource: async (...args) => { reads.push(args); return saved; }});
+    const context = sourceContext({state, Notification: {permission}, pushSupported: () => true, pushContext: () => ({}), currentPushContext: () => true, isCancelled: () => false, renderNotificationPanel() {}, loadResource: async (...args) => { reads.push(args); return saved; }});
     vm.runInContext(source + "\nglobalThis.refresh=refreshPushDevice;", context);
     await context.refresh();
     assert.equal(state.devicePush.status, expected, `Observed ${permission} browser permission and previous ${previousStatus} state remain truthful after a failed server read`);
@@ -4688,7 +5706,7 @@ async function exerciseInstallability({send, configureViewport, base, wait, eval
   console.log("INSTALLABILITY " + JSON.stringify(evidence));
   assert.deepEqual(manifest.errors, [], "Chromium parses the actual deployed manifest without errors");
   assert.equal(new URL(manifest.url).pathname, "/manifest.webmanifest");
-  assert.deepEqual(JSON.parse(manifest.data), JSON.parse(readFileSync(join(root, "web", "manifest.webmanifest"), "utf8")), "Installability uses the repository manifest, not a test substitute");
+  assert.deepEqual(JSON.parse(manifest.data), JSON.parse(publicAssets["manifest.webmanifest"]), "Installability uses the canonical production-rendered manifest, not a test substitute");
   assert.equal(evidence.canonical_logo_sha256, "d9c44905a77858882d99e948a647705afa853fd11cfd01efd37528645b8ca12f", "The installation check retains the approved original logo");
   assert.deepEqual(installability.installabilityErrors, [], "Chromium accepts the actual manifest and its declared original icon");
   console.log("PASS actual manifest and original brand installability");
@@ -4881,6 +5899,15 @@ async function exercisePushNotificationNavigation(context) {
 async function exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
   await configureViewport(390);
   const destination = "#account/settings/appearance";
+  const publicUrls = ["/offline.html", "/assets/config.js", "/assets/tokens.css", "/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"].map(path => path + "?build=" + encodeURIComponent(build));
+  const waitPublicCache = label => until(() => evaluate(`(async () => {
+    const name = "omnicio-public-" + ${JSON.stringify(build)};
+    if (!(await caches.keys()).includes(name)) return false;
+    const cache = await caches.open(name);
+    const responses = await Promise.all(${JSON.stringify(publicUrls)}.map(url => cache.match(url)));
+    return responses.every(response => response?.ok && response.headers.get("X-Omnicio-Build") === ${JSON.stringify(build)});
+  })()`), label);
+
   const missingKey = "signed-startup-missing";
   const missing = makeFixture("signed");
   missing.missingBundle = "/assets/i18n.js";
@@ -4897,6 +5924,7 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   await wait(`performance.timeOrigin !== ${firstOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "An explicit startup retry reopens the requested personal page");
   assert.equal(await evaluate("location.hash"), destination);
   await wait("Boolean(navigator.serviceWorker.controller)", "The cache regression uses the actual installed service worker");
+  await waitPublicCache("Initial installation has a complete verified public shell");
   await evaluate(`(async () => {
     const resource = "/assets/workspace.js?build=" + ${JSON.stringify(build)};
     const source = await (await fetch(resource)).text();
@@ -4922,6 +5950,62 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   assert.equal(await evaluate('sessionStorage.getItem("synthetic-startup-preserved")'), "retained", "Recovery does not clear session state");
   assert.equal(await evaluate('(async () => (await caches.keys()).includes("synthetic-startup-preserved"))()'), true, "Only OMNICIO public asset caches may be removed");
   await evaluate('(async () => {sessionStorage.removeItem("synthetic-startup-preserved");await caches.delete("synthetic-startup-preserved");})()');
+  await waitPublicCache("Manual startup recovery repopulates the offline shell without a worker reinstall");
+  for (const item of [
+    {name: "missing-config", asset: "config.js", missing: true},
+    {name: "stale-config", asset: "config.js", missing: false},
+    {name: "missing-tokens", asset: "tokens.css", missing: true},
+    {name: "stale-tokens", asset: "tokens.css", missing: false}
+  ]) {
+    const key = "signed-startup-" + item.name;
+    const fixture = makeFixture("signed");
+    const path = "/assets/" + item.asset;
+    fixture.missingBundle = item.missing ? path : "";
+    // The worker may finish a prior startup check concurrently; the missing
+    // response must also fail its independent request, not only page referrers.
+    unavailablePublicAsset = fixture.missingBundle;
+    fixtures.set(key, fixture);
+    const resource = path + "?build=" + encodeURIComponent(build);
+    const source = publicAssets[path.slice(1)].replaceAll(build, build + "-stale");
+    await evaluate(`(async () => {
+      const cache = await caches.open("omnicio-public-" + ${JSON.stringify(build)});
+      if (${item.missing}) await cache.delete(${JSON.stringify(resource)});
+      else await cache.put(${JSON.stringify(resource)}, new Response(${JSON.stringify(source)}, {headers: {"Content-Type": ${JSON.stringify(item.asset.endsWith(".css") ? "text/css" : "text/javascript")}, "X-Omnicio-Build": ${JSON.stringify(build)}}}));
+    })()`);
+    await send("Page.navigate", {url: `${base}?case=${key}${destination}`});
+    await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable" && document.querySelector("[data-startup-reload]")?.getClientRects().length', "A " + item.name + " asset fails before private startup");
+    assert.equal(fixture.requests.length, 0, item.name + " cannot start an API read or mutation");
+    assert.equal(await evaluate("location.hash"), destination);
+    if (item.asset === "config.js") assert.equal(await evaluate("window.OMNICIO_CONFIG?.compiledBuild || null"), item.missing ? null : build + "-stale");
+    else assert.equal(await evaluate('getComputedStyle(document.documentElement).getPropertyValue("--omnicio-build").trim()'), item.missing ? "" : JSON.stringify(build + "-stale"));
+    fixture.missingBundle = "";
+    unavailablePublicAsset = "";
+    const timeOrigin = await evaluate("performance.timeOrigin");
+    await click("[data-startup-reload]");
+    await wait(`performance.timeOrigin !== ${timeOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Explicit retry restores " + item.name + " without losing the destination");
+    assert.equal(await evaluate("location.hash"), destination);
+    assert.ok(fixture.requests.length > 0 && fixture.requests.every(request => request.clientBuild === build));
+    await waitPublicCache("Recovered " + item.name + " has all eight verified offline assets");
+  }
+  const workerUrl = await evaluate('(async () => (await navigator.serviceWorker.ready).active.scriptURL)()');
+  const offlineKey = "signed-startup-offline";
+  const offline = makeFixture("signed");
+  fixtures.set(offlineKey, offline);
+  publicNetworkUnavailable = true;
+  try {
+    await send("Page.navigate", {url: `${base}?case=${offlineKey}${destination}`});
+    await wait('document.body.classList.contains("offline-page") && document.querySelector("[data-offline-retry]")?.getClientRects().length && Boolean(window.OmniUI)', "A network failure after recovery opens the real cached offline shell");
+    assert.equal(await evaluate("location.hash"), destination);
+    assert.equal(await evaluate("window.OMNICIO_CONFIG.compiledBuild"), build);
+    assert.equal(await evaluate('JSON.parse(getComputedStyle(document.documentElement).getPropertyValue("--omnicio-build"))'), build);
+    assert.equal(await evaluate('Boolean(document.querySelector("#app-shell"))'), false, "The public offline shell contains no retained account document");
+    assert.equal(offline.requests.length, 0, "Offline fallback never asks the API to reconstruct private account data");
+    assert.equal(await evaluate('(async () => (await navigator.serviceWorker.ready).active.scriptURL)()'), workerUrl);
+  } finally { publicNetworkUnavailable = false; }
+  const offlineOrigin = await evaluate("performance.timeOrigin");
+  await click("[data-offline-retry]");
+  await wait(`performance.timeOrigin !== ${offlineOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "The visible offline retry returns to the same authenticated destination once the connection works");
+  assert.equal(await evaluate("location.hash"), destination);
   const htmlKey = "signed-startup-old-html";
   const html = makeFixture("signed");
   html.legacyHtml = true;
@@ -4940,7 +6024,7 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   assert.equal(await evaluate("location.hash"), destination);
   assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true, "Stamped script URLs and matching modules remain sufficient when version.js is unavailable");
   assert.ok(html.requests.length > 0 && html.requests.every(item => item.clientBuild === build), "The compiled build identifies API requests without optional release metadata");
-  console.log("PASS startup recovery: missing bundle, legacy public cache, old HTML, unavailable cache API and preserved deep links");
+  console.log("PASS startup recovery: missing/stale configuration and palette, cache repair, real offline fallback and retry, old HTML, storage failure and preserved deep links");
 }
 async function exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);

@@ -6,6 +6,19 @@ import os
 from dataclasses import dataclass
 from uuid import UUID
 
+# Environment defaults live beside their validation, not in provider adapters.
+# TTLs are seconds; the long session lifetime remains subject to server revocation.
+DEFAULT_VKID_FLOW_TTL_SECONDS = 600
+DEFAULT_SESSION_TTL_SECONDS = 34_560_000
+DEFAULT_REGISTRATION_MAX_USERS = 1
+# RUB ceilings are inactive while live execution is disabled. A daily cap cannot
+# be smaller than a single-order cap; load_settings enforces that relationship.
+DEFAULT_LIVE_MAX_ORDER_RUB = 10_000
+DEFAULT_LIVE_MAX_DAILY_RUB = 20_000
+DEFAULT_SMTP_PORT = 465
+DEFAULT_BILLING_PERIOD_DAYS = 30
+DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT = 30
+
 
 class ConfigurationError(RuntimeError):
     """Raised when required configuration is missing."""
@@ -92,7 +105,7 @@ class Settings:
     notification_vapid_private_key: str = ""
     notification_vapid_subject: str = ""
     notification_smtp_host: str = ""
-    notification_smtp_port: int = 465
+    notification_smtp_port: int = DEFAULT_SMTP_PORT
     notification_smtp_username: str = ""
     notification_smtp_password: str = ""
     notification_smtp_sender: str = ""
@@ -101,14 +114,14 @@ class Settings:
     billing_terminal_key: str = ""
     billing_password: str = ""
     billing_amount_kopecks: int = 0
-    billing_period_days: int = 30
+    billing_period_days: int = DEFAULT_BILLING_PERIOD_DAYS
     billing_offer_version: str = ""
     billing_description: str = ""
     billing_taxation: str = ""
     billing_tax: str = ""
     assistant_enabled: bool = False
     assistant_allowed_endpoints: tuple[str, ...] = ()
-    assistant_daily_request_limit: int = 30
+    assistant_daily_request_limit: int = DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT
     operator_user_id: UUID | None = None
     legal_operator_name: str = ""
     legal_operator_email: str = ""
@@ -133,8 +146,8 @@ class Settings:
 
 def load_settings() -> Settings:
     email_enabled = boolean("NOTIFICATION_EMAIL_ENABLED", False)
-    live_max_order = positive_int("PORTFOLIO_LIVE_MAX_ORDER_RUB", 10_000)
-    live_max_daily = positive_int("PORTFOLIO_LIVE_MAX_DAILY_RUB", 20_000)
+    live_max_order = positive_int("PORTFOLIO_LIVE_MAX_ORDER_RUB", DEFAULT_LIVE_MAX_ORDER_RUB)
+    live_max_daily = positive_int("PORTFOLIO_LIVE_MAX_DAILY_RUB", DEFAULT_LIVE_MAX_DAILY_RUB)
     if live_max_daily < live_max_order:
         raise ConfigurationError(
             "PORTFOLIO_LIVE_MAX_DAILY_RUB must be >= PORTFOLIO_LIVE_MAX_ORDER_RUB"
@@ -147,12 +160,14 @@ def load_settings() -> Settings:
         vkid_app_id=os.environ.get("VKID_APP_ID", "").strip(),
         vkid_login_enabled=boolean("VKID_LOGIN_ENABLED", False),
         registration_enabled=boolean("REGISTRATION_ENABLED", False),
-        registration_max_users=positive_int("REGISTRATION_MAX_USERS", 1),
+        registration_max_users=positive_int(
+            "REGISTRATION_MAX_USERS", DEFAULT_REGISTRATION_MAX_USERS,
+        ),
         privacy_version=os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         consent_version=os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
-        vkid_flow_ttl_seconds=positive_int("VKID_FLOW_TTL_SECONDS", 600),
-        session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", 34_560_000),
+        vkid_flow_ttl_seconds=positive_int("VKID_FLOW_TTL_SECONDS", DEFAULT_VKID_FLOW_TTL_SECONDS),
+        session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", DEFAULT_SESSION_TTL_SECONDS),
         portfolio_live_execution_enabled=boolean(
             "PORTFOLIO_LIVE_EXECUTION_ENABLED",
             False,
@@ -174,8 +189,8 @@ def load_settings() -> Settings:
         notification_vapid_subject=os.environ.get("NOTIFICATION_VAPID_SUBJECT", "").strip(),
         notification_smtp_host=(os.environ.get("NOTIFICATION_SMTP_HOST", "").strip()
                                 if email_enabled else ""),
-        notification_smtp_port=(positive_int("NOTIFICATION_SMTP_PORT", 465)
-                               if email_enabled else 465),
+        notification_smtp_port=(positive_int("NOTIFICATION_SMTP_PORT", DEFAULT_SMTP_PORT)
+                               if email_enabled else DEFAULT_SMTP_PORT),
         notification_smtp_username=(os.environ.get("NOTIFICATION_SMTP_USERNAME", "").strip()
                                     if email_enabled else ""),
         notification_smtp_password=(os.environ.get("NOTIFICATION_SMTP_PASSWORD", "")
@@ -188,7 +203,7 @@ def load_settings() -> Settings:
         billing_terminal_key=os.environ.get("BILLING_TERMINAL_KEY", "").strip(),
         billing_password=os.environ.get("BILLING_PASSWORD", ""),
         billing_amount_kopecks=positive_int("BILLING_AMOUNT_KOPECKS", 0),
-        billing_period_days=positive_int("BILLING_PERIOD_DAYS", 30),
+        billing_period_days=positive_int("BILLING_PERIOD_DAYS", DEFAULT_BILLING_PERIOD_DAYS),
         billing_offer_version=os.environ.get("BILLING_OFFER_VERSION", "").strip(),
         billing_description=os.environ.get("BILLING_DESCRIPTION", "").strip(),
         billing_taxation=os.environ.get("BILLING_TAXATION", "").strip(),
@@ -198,7 +213,9 @@ def load_settings() -> Settings:
             value.strip() for value in os.environ.get("ASSISTANT_ALLOWED_ENDPOINTS", "").split(",")
             if value.strip()
         ),
-        assistant_daily_request_limit=positive_int("ASSISTANT_DAILY_REQUEST_LIMIT", 30),
+        assistant_daily_request_limit=positive_int(
+            "ASSISTANT_DAILY_REQUEST_LIMIT", DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
+        ),
         operator_user_id=optional_uuid("OPERATOR_USER_ID"),
         legal_operator_name=os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         legal_operator_email=os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),

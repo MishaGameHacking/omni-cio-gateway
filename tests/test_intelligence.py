@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
-from omnicio.intelligence import assess_candidate_fundamental_risk, build_tbank_evidence
+from omnicio.intelligence import (
+    assess_candidate_fundamental_risk,
+    build_news_evidence,
+    build_tbank_evidence,
+    held_news_instrument_uids,
+)
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.tbank import (
     TBankAssetFundamental,
@@ -12,6 +19,7 @@ from omnicio.tbank import (
     TBankBondEvent,
     TBankInstrumentMetadata,
     TBankMoney,
+    TBankNewsItem,
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
@@ -131,6 +139,61 @@ def _sources(now: datetime) -> tuple[AnalysisSource, ...]:
     )
 
 
+def news_item(
+    ident: str = "101", *, uid: str = "bond-uid", published: datetime | None = None,
+    priority: bool = True, title: str = "Публикация эмитента",
+) -> dict[str, object]:
+    return asdict(TBankNewsItem(
+        id=ident, title=title, summary="Подтверждённое сообщение источника", content="",
+        source="https://news.example.test/article", source_url="https://news.example.test/article",
+        occurred_at=published or datetime.now(UTC) - timedelta(minutes=1),
+        instrument_uids=(uid,), priority=priority,
+    ))
+
+
+def test_news_evidence_requires_source_identity_time_and_current_holding_link() -> None:
+    now = datetime.now(UTC)
+    observed = _bundle()
+    item = news_item(published=now - timedelta(minutes=1))
+    rejected = [
+        {**item, "id": ""}, {**item, "id": "0"}, {**item, "id": "1٢"},
+        {**item, "occurred_at": None}, {**item, "occurred_at": now.replace(tzinfo=None)},
+        {**item, "occurred_at": now + timedelta(seconds=1)},
+        {**item, "occurred_at": now - timedelta(hours=49)},
+        {**item, "instrument_uids": ("other-bond",)},
+        {**item, "priority": None}, {**item, "title": ""},
+    ]
+    documents = build_news_evidence(held_news_instrument_uids(observed), [item, *rejected],
+                                    observed_at=now)
+    assert len(documents) == 1
+    document = documents[0]
+    assert document.provider_key == document.subject_uid == "101"
+    assert document.published_at == item["occurred_at"]
+    assert document.document_type == "issuer_news"
+    assert document.payload["instrument_uids"] == ["bond-uid"]
+    assert "account_id" not in document.payload
+    assert "quantity" not in document.payload
+    # An issuer retracting the priority marker must be able to correct its old alert.
+    corrected = build_news_evidence(frozenset({"bond-uid"}), [{**item, "priority": False}],
+                                    observed_at=now)
+    assert corrected[0].provider_key == document.provider_key
+    assert corrected[0].payload["priority"] is False
+
+
+def test_news_binding_never_guesses_ambiguous_figi_or_includes_closed_positions() -> None:
+    observed = _bundle()
+    holding = replace(observed.portfolio.positions[0], instrument_uid="")
+    observed = replace(observed, portfolio=replace(observed.portfolio, positions=(holding,)))
+    assert held_news_instrument_uids(observed) == frozenset({"bond-uid"})
+    ambiguous = replace(observed.metadata[0], uid="different-uid")
+    assert held_news_instrument_uids(replace(observed, metadata=(*observed.metadata, ambiguous))) \
+        == frozenset()
+    closed = replace(holding, quantity="0.000")
+    assert held_news_instrument_uids(
+        replace(observed, portfolio=replace(observed.portfolio, positions=(closed,))),
+    ) == frozenset()
+
+
 def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> None:
     now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
     evidence = BrokerEvidenceSnapshot(
@@ -177,7 +240,7 @@ def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> Non
     assert assessments[0].state == "data_missing"
     assert assessments[0].rating_status == "data_missing"
     assert assessments[0].fundamental_status == "received"
-    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
+    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v2"
     assert "credit_rating_feed_not_verified" in assessments[0].reasons
 
 
@@ -213,6 +276,80 @@ def test_documented_bond_default_date_is_confirmed_default() -> None:
     assert documents[0].payout.status == "defaulted"
     assert assessments[0].state == "confirmed_default"
     assert assessments[0].evidence["default_date"] == "2026-09-30T00:00:00+00:00"
+
+
+@pytest.mark.parametrize("execution", ["ED", "ET"])
+def test_fulfilled_default_preserves_history_without_claiming_current_default(
+    execution: str,
+) -> None:
+    bundle = _bundle()
+    now = bundle.refreshed_at
+    default_at, paid_at = now - timedelta(days=2), now - timedelta(days=1)
+    event = TBankBondEvent(
+        instrument_uid="bond-uid", event_number=7, event_date=default_at,
+        event_type="EVENT_TYPE_CPN", default_date=default_at, real_pay_date=paid_at,
+        pay_date=default_at - timedelta(days=1), pay_one_bond=TBankMoney("RUB", "50"),
+        execution=execution, operation_type="OPERATION_TYPE_COUPON", note="",
+    )
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now, dividends=(), coupons=(), bond_events=(event,), reports=(),
+        fundamentals=(), sources=_sources(now),
+    )
+    documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+    document, assessment = documents[0], assessments[0]
+    assert document.payout is not None
+    assert document.payout.status == "paid"
+    assert document.payout.actual_at == paid_at
+    assert document.facts[0].fact_key == "default_date"
+    assert document.facts[0].effective_at == default_at
+    assert assessment.state == "watch"
+    assert assessment.evidence["default_date"] is None
+    assert assessment.evidence["resolved_default_date"] == default_at.isoformat()
+    assert "tbank_default_obligation_fulfilled" in assessment.reasons
+
+    future_event = replace(event, event_date=now + timedelta(days=1))
+    _, future = build_tbank_evidence(
+        bundle, replace(evidence, bond_events=(future_event,)),
+        assessed_at=now,
+    )
+    assert future[0].state == "confirmed_default"
+    assert future[0].evidence["resolved_default_date"] is None
+
+    # Paying one obligation never clears a separate unresolved default.
+    unresolved = replace(event, event_number=8, real_pay_date=None, execution="D")
+    for events in ((event, unresolved), (unresolved, event)):
+        _, outstanding = build_tbank_evidence(
+            bundle, replace(evidence, bond_events=events), assessed_at=now,
+        )
+        assert outstanding[0].state == "confirmed_default"
+        assert outstanding[0].evidence["default_date"] == default_at.isoformat()
+
+
+@pytest.mark.parametrize(
+    ("execution", "paid_days"), [("D", -1), ("", -1), ("ED", None), ("ET", 1), ("ED", -3)],
+)
+def test_default_resolution_requires_execution_code_and_confirmed_later_payment(
+    execution: str, paid_days: int | None,
+) -> None:
+    bundle = _bundle()
+    now = bundle.refreshed_at
+    default_at = now - timedelta(days=2)
+    event = TBankBondEvent(
+        instrument_uid="bond-uid", event_number=7, event_date=default_at,
+        event_type="EVENT_TYPE_CPN", default_date=default_at,
+        real_pay_date=now + timedelta(days=paid_days) if paid_days is not None else None,
+        pay_date=default_at - timedelta(days=1), pay_one_bond=TBankMoney("RUB", "50"),
+        execution=execution, operation_type="OPERATION_TYPE_COUPON", note="",
+    )
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now, dividends=(), coupons=(), bond_events=(event,), reports=(),
+        fundamentals=(), sources=_sources(now),
+    )
+    documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+    assert documents[0].payout is not None
+    assert documents[0].payout.status == "defaulted"
+    assert documents[0].payout.actual_at is None
+    assert assessments[0].state == "confirmed_default"
 
 
 def test_report_date_is_preserved_as_publication_time() -> None:
@@ -373,7 +510,7 @@ def test_stale_evidence_retrieval_is_fail_closed() -> None:
     assert assessments[0].state == "data_missing"
     assert "provider_evidence_stale" in assessments[0].reasons
     assert assessments[0].evidence["evidence_retrieval_max_age_hours"] == 36
-    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
+    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v2"
 
 
 

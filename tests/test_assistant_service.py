@@ -417,6 +417,21 @@ def test_evidence_guard_rejects_invented_sums_links_and_source_ids() -> None:
             validate_source_response(reply, context)
 
 
+def test_news_source_reference_keeps_receipt_time_and_staleness() -> None:
+    context = investment_context({}, news=[{
+        "title": "Ставка Банка России", "url": "https://www.cbr.ru/press/1",
+        "published_at": "2026-10-07T08:00:00Z", "fetched_at": "2026-10-08T09:00:00Z",
+        "freshness": "stale", "raw": "private-field",
+    }])
+    reference = next(row for row in source_references(context) if row["kind"] == "official_news")
+    assert reference["observed_at"] == "2026-10-08T09:00:00Z"
+    assert reference["published_at"] == "2026-10-07T08:00:00Z"
+    stored = source_read(context, reference["id"])
+    assert stored["content"]["freshness"] == "stale"
+    assert stored["content"]["fetched_at"] == reference["observed_at"]
+    assert "raw" not in stored["content"]
+
+
 def test_service_stream_persists_real_prefix_and_finishes_once() -> None:
     system, owner, conversation, request = service(), uuid4(), uuid4(), uuid4()
     system.store.update_stream.side_effect = [1, 2, 3]

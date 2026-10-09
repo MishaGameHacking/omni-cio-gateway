@@ -16,6 +16,18 @@ from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
 from typing import Any, Literal
 
+from .financial import PERCENT_SCALE
+from .research_policy import (
+    ANNUALIZATION_SESSIONS,
+    CASHFLOW_WINDOW_DAYS,
+    CORRECTED_MATH_ENGINES,
+    MAX_RESEARCH_ASSETS,
+    MAX_RESEARCH_DAYS,
+    MIN_TEST_OBSERVATIONS,
+    MIN_TRAIN_OBSERVATIONS,
+    RESEARCH_ENGINE_VERSION,
+    UNIT_AWARE_ENGINES,
+)
 from .strategy import document_hash, expected_shortfall, normalize_document, strategy_rule_set
 from .strategy_assessment import (
     StrategyCandidateFacts,
@@ -29,19 +41,12 @@ from .tbank import TBankHistoricCandle
 
 ResearchBasis = Literal["unadjusted_price", "verified_total_return"]
 HISTORY_SOURCE = "https://developer.tbank.ru/invest/api/market-data-service-get-candles"
-MAX_RESEARCH_ASSETS = 100
-RESEARCH_ENGINE_VERSION = "1.3.3"
-_CORRECTED_MATH_ENGINES = frozenset({"1.3.1", "1.3.2", "1.3.3"})
-_UNIT_AWARE_ENGINES = frozenset({"1.3.2", "1.3.3"})
-MAX_RESEARCH_DAYS = 1095
-MIN_TRAIN_OBSERVATIONS = 60
-MIN_TEST_OBSERVATIONS = 20
 _OUTCOME_HORIZONS = (1, 5, 21)
 _BOOTSTRAP_REPLICATES = 1024
 _BOOTSTRAP_SOURCE = "https://users.ssc.wisc.edu/~behansen/718/Politis%20Romano.pdf"
-_ZERO, _ONE, _HUNDRED = Decimal(0), Decimal(1), Decimal(100)
+_ZERO, _ONE = Decimal(0), Decimal(1)
 _DAY = timedelta(days=1)
-_CASHFLOW_YEAR = timedelta(days=365)
+_CASHFLOW_YEAR = timedelta(days=CASHFLOW_WINDOW_DAYS)
 _CASHFLOW_COVERAGE_FLAGS = (
     "cashflows_complete", "corporate_actions_complete", "lot_history_complete",
 )
@@ -142,7 +147,7 @@ def _volatility(returns: Sequence[Decimal]) -> Decimal | None:
         return None
     mean = sum(returns, _ZERO) / len(returns)
     variance = sum(((item - mean) ** 2 for item in returns), _ZERO) / (len(returns) - 1)
-    return (variance * 252).sqrt() * 100
+    return (variance * ANNUALIZATION_SESSIONS).sqrt() * PERCENT_SCALE
 
 
 def _drawdown(prices: Sequence[Decimal]) -> Decimal:
@@ -172,7 +177,7 @@ def history_candidate(
     if not completed:
         return candidate
     past: Sequence[TBankHistoricCandle] = completed
-    if engine_version in _UNIT_AWARE_ENGINES:
+    if engine_version in UNIT_AWARE_ENGINES:
         past = split_adjusted_history(completed, splits, as_of)
     prices = [_decimal(bar.close) for bar in past]
     values: dict[str, Decimal | int] = {
@@ -196,7 +201,7 @@ def history_candidate(
         for key in ("growth_beta", "inflation_beta", "factor_observations"):
             facts.pop(key, None)
         facts.update(_factor_facts(past, factors, as_of))
-    if engine_version in _UNIT_AWARE_ENGINES:
+    if engine_version in UNIT_AWARE_ENGINES:
         income_end = completed[-1].time + _DAY
         coverage_reasons = _cashflow_window_reasons(
             cashflow_coverage, cashflows, splits, corporate_action_dates, income_end,
@@ -341,7 +346,7 @@ def _cashflow_coverage_diagnostic(
     return {
         "status": "complete" if not reasons else "incomplete",
         "reasons": reasons,
-        "window_days": 365,
+        "window_days": CASHFLOW_WINDOW_DAYS,
         "as_of": income_end.isoformat() if income_end is not None else None,
     }
 
@@ -361,7 +366,7 @@ def _cashflow_facts(
     paid = [
         event
         for event in cashflows
-        if event.kind == "income" and as_of - timedelta(days=365) < event.paid_at <= as_of
+        if event.kind == "income" and as_of - _CASHFLOW_YEAR < event.paid_at <= as_of
     ]
     if (not paid and coverage_source is None) or price <= 0:
         return {}
@@ -629,7 +634,7 @@ def research_history_candidate(
     if len(bars) < MIN_TRAIN_OBSERVATIONS:
         raise ValueError("insufficient_training_history")
     signal_bars = bars
-    if engine_version not in _UNIT_AWARE_ENGINES:
+    if engine_version not in UNIT_AWARE_ENGINES:
         signal_bars = split_adjusted_history(bars, asset.splits, as_of)
     return history_candidate(
         asset.candidate,
@@ -996,7 +1001,7 @@ def _simulate(
 ) -> _Simulation:
     ids = [asset.candidate.instrument_uid for asset in assets]
     state = _Simulation(capital, dict.fromkeys(ids, 0))
-    current_math = engine_version in _CORRECTED_MATH_ENGINES
+    current_math = engine_version in CORRECTED_MATH_ENGINES
     state.net_receivables = current_math
     state.chronological_actions = engine_version == "1.3.3"
     tax = document["policy"]["securities_tax_rate_percent"]
@@ -1504,7 +1509,7 @@ def _prepare_research_asset(
 ) -> tuple[ResearchAsset, dict[str, Any]]:
     """Validate one series and derive its facts from the training window only."""
     reasons = _asset_reasons(asset, from_at, to_at)
-    if engine_version in _CORRECTED_MATH_ENGINES:
+    if engine_version in CORRECTED_MATH_ENGINES:
         reasons.extend(_cashflow_reasons(asset.observed_cashflows))
     try:
         bars = _validated_bars(asset, from_at, to_at)
@@ -1514,13 +1519,13 @@ def _prepare_research_asset(
     training = tuple(bar for bar in bars if split - bar.time >= _DAY)
     if len(training) < MIN_TRAIN_OBSERVATIONS:
         reasons.append("insufficient_training_history")
-    unsafe = engine_version in _CORRECTED_MATH_ENGINES and bool(
+    unsafe = engine_version in CORRECTED_MATH_ENGINES and bool(
         set(reasons) & _MALFORMED_HISTORY_REASONS
     )
     candidate = asset.candidate
     if not unsafe:
         signal_bars = training
-        if engine_version not in _UNIT_AWARE_ENGINES:
+        if engine_version not in UNIT_AWARE_ENGINES:
             signal_bars = split_adjusted_history(training, asset.splits, split)
         candidate = history_candidate(
             asset.candidate,
@@ -1542,10 +1547,10 @@ def _prepare_research_asset(
         "observations": len(bars),
         "train_observations": len(training),
         "status": "observed" if not reasons else "incomplete",
-        "reasons": sorted(set(reasons)) if engine_version in _CORRECTED_MATH_ENGINES else reasons,
+        "reasons": sorted(set(reasons)) if engine_version in CORRECTED_MATH_ENGINES else reasons,
         "price_return_percent": _text((prices[-1] / prices[0] - 1) * 100) if prices else None,
     }
-    if engine_version in _UNIT_AWARE_ENGINES:
+    if engine_version in UNIT_AWARE_ENGINES:
         diagnostic["cashflow_yield_coverage"] = _cashflow_coverage_diagnostic(
             asset, split, candles=training,
         )
@@ -1747,7 +1752,7 @@ def _research_asset_fingerprint(asset: ResearchAsset, engine_version: str) -> di
             ]
             for event in asset.observed_cashflows
         ]
-    if engine_version in _UNIT_AWARE_ENGINES:
+    if engine_version in UNIT_AWARE_ENGINES:
         row["user_cashflow_coverage"] = _structured_fingerprint(
             asset.provider_observations.get("user_cashflow_coverage"),
         )
@@ -1767,7 +1772,7 @@ def _structured_fingerprint(value: object) -> Any:
 
 def _fact_fingerprint(fact: StrategyFact, engine_version: str) -> list[Any]:
     value: Any = str(fact.value)
-    if engine_version in _UNIT_AWARE_ENGINES and isinstance(fact.value, Mapping):
+    if engine_version in UNIT_AWARE_ENGINES and isinstance(fact.value, Mapping):
         value = _structured_fingerprint(fact.value)
     return [value, fact.available_at.isoformat(), fact.source_url]
 
@@ -1800,7 +1805,7 @@ def run_strategy_backtest(
     )
     invalid_assets = {
         row["instrument_uid"] for row in diagnostics
-        if engine_version in _CORRECTED_MATH_ENGINES
+        if engine_version in CORRECTED_MATH_ENGINES
         and set(row["reasons"]) & _MALFORMED_HISTORY_REASONS
     }
     selection = select_strategy_candidates(
@@ -1810,7 +1815,7 @@ def run_strategy_backtest(
         as_of=split,
         engine_version=engine_version,
     )
-    if engine_version in _UNIT_AWARE_ENGINES:
+    if engine_version in UNIT_AWARE_ENGINES:
         _selection_cashflow_gaps(selection, diagnostics)
     chosen = {
         row["instrument_uid"]: Decimal(row["target_weight_percent"])
@@ -1863,7 +1868,7 @@ def run_strategy_backtest(
         "assumptions": {
             "commission_bps": str(costs.commission_bps),
             "slippage_bps": str(costs.slippage_bps),
-            "annualization_sessions": 252,
+            "annualization_sessions": ANNUALIZATION_SESSIONS,
             "training_fraction": "0.70",
             "execution": "next_open_from_previous_close",
             "liquidity": "previous_session_volume",
@@ -1885,7 +1890,7 @@ def run_strategy_backtest(
         "data_hash": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest(),
         "missing_requirements": [],
     }
-    if engine_version in _CORRECTED_MATH_ENGINES and data["allocation"]["cash"] == 100:
+    if engine_version in CORRECTED_MATH_ENGINES and data["allocation"]["cash"] == 100:
         cash_missing = set(selection["missing_requirements"])
         cash_missing.update(
             reason for row in diagnostics if row["instrument_uid"] in invalid_assets
@@ -1921,12 +1926,14 @@ def run_strategy_backtest(
         test_from=test_times[0].isoformat() if test_times else None,
     )
     result["missing_requirements"] = sorted(missing | set(selection["missing_requirements"]))
-    if engine_version in _CORRECTED_MATH_ENGINES:
+    if engine_version in CORRECTED_MATH_ENGINES:
         result["assumptions"].update(
             liquidity="min_previous_planned_and_observed_session_volume",
             buy_sizing="previous_close_signal_bounded_by_open_mark_and_post_cost_nav_floor",
             receivable_valuation="net_of_configured_distribution_tax",
-            volatility_annualization="daily_sample_standard_deviation_sqrt_252_no_serial_adjustment",
+            volatility_annualization=(
+                f"daily_sample_standard_deviation_sqrt_{ANNUALIZATION_SESSIONS}_no_serial_adjustment"
+            ),
             turnover_budget="gross_execution_notional_plus_commission",
         )
         result["limitations"].append(
@@ -1934,7 +1941,7 @@ def run_strategy_backtest(
             "доступность всего этого объёма на аукционе открытия."
         )
     if missing:
-        if engine_version in _CORRECTED_MATH_ENGINES:
+        if engine_version in CORRECTED_MATH_ENGINES:
             result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     times = [training_times[-1], *test_times]
@@ -1971,7 +1978,7 @@ def _simulate_research_result(
         if str(exc) != "fractional_split_cash_settlement_required":
             raise
         result["missing_requirements"].append(str(exc))
-        if engine_version in _CORRECTED_MATH_ENGINES:
+        if engine_version in CORRECTED_MATH_ENGINES:
             result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     result.update(
@@ -1985,7 +1992,7 @@ def _simulate_research_result(
         },
     )
     result["stress_scenario"] = _stress_scenario(state, selected_assets, panel, times[-1], data)
-    if engine_version in _CORRECTED_MATH_ENGINES:
+    if engine_version in CORRECTED_MATH_ENGINES:
         result["historical_outcomes"] = _historical_outcomes(result, data)
         result["holding_constraints"] = {
             "evaluated_sessions": len(times) - 1,
@@ -2041,7 +2048,7 @@ def research_robustness(
     engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> dict[str, Any]:
     """Three declared chronological holdouts; no search for the best result."""
-    if engine_version in _CORRECTED_MATH_ENGINES and normalize_document(document)[
+    if engine_version in CORRECTED_MATH_ENGINES and normalize_document(document)[
         "allocation"
     ]["cash"] == 100:
         _validated_research_capital(

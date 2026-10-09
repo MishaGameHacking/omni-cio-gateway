@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 
+from .financial import PERCENT_SCALE, RUB_QUANTUM
 from .tbank import (
     TBankInstrumentMetadata,
     TBankMoney,
@@ -98,7 +99,7 @@ def _text(value: Decimal) -> str:
 
 
 def _percent(value: Decimal, total: Decimal) -> str | None:
-    return _text(value / total * 100) if total > 0 else None
+    return _text(value / total * PERCENT_SCALE) if total > 0 else None
 
 
 def _rub_money(items: tuple[TBankMoney, ...]) -> tuple[Decimal, bool]:
@@ -414,7 +415,7 @@ def analyze_portfolio(
         Decimal(0),
     )
     valuation_consistent = (
-        nav >= 0 and nav >= max(valued + cash, class_subtotal) - Decimal("0.01")
+        nav >= 0 and nav >= max(valued + cash, class_subtotal) - RUB_QUANTUM
     )
     if not valuation_consistent:
         compatible = False

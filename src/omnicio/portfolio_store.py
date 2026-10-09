@@ -17,12 +17,20 @@ from psycopg import DatabaseError
 
 from .broker import AnalysisSource, BrokerObservationBundle
 from .db import Database, live_execution_lock_key
-from .freshness import PORTFOLIO_MAX_AGE
+from .freshness import EVIDENCE_RETRIEVAL_MAX_AGE, PORTFOLIO_MAX_AGE
 from .intelligence import (
-    EVIDENCE_RETRIEVAL_MAX_AGE,
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
+from .monitoring import (
+    DAILY_MAX_ATTEMPTS,
+    DAILY_RETRY_BASE_SECONDS,
+    DAILY_RUNNING_TIMEOUT,
+    MONITORING_FULL_INTERVAL,
+    REFRESH_COOLDOWN_SECONDS,
+    REFRESH_MAX_ATTEMPTS,
+)
+from .payouts import PAYOUT_READ_CTES
 from .portfolio import SecurityExposure, analyze_portfolio
 from .strategy import document_hash, normalize_document
 from .tbank import (
@@ -37,9 +45,6 @@ from .tbank import (
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 REFRESH_JOB_TYPE = "portfolio_refresh"
-REFRESH_COOLDOWN_SECONDS = 60
-REFRESH_MAX_ATTEMPTS = 3
-DAILY_MAX_ATTEMPTS = 3
 
 
 def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
@@ -932,6 +937,8 @@ class PortfolioStore:
             "status": "not_connected", "job_id": None, "requested_at": None,
             "started_at": None, "finished_at": None, "observed_at": None,
             "snapshot_saved": False, "history_status": None, "history_pages": 0,
+            "news": {"status": "not_requested", "observed_at": None,
+                     "scope": "held_instrument_links"},
             "can_refresh": False, "retry_after_seconds": 0, "cooldown_until": None,
             "reason": "broker_not_connected",
         }
@@ -969,6 +976,11 @@ class PortfolioStore:
             cooldown_until=cooldown.isoformat(),
             reason=reason or job["details"].get("stage_error"),
         )
+        news = job["details"].get("news")
+        if isinstance(news, dict):
+            result["news"] = {key: news[key] for key in (
+                "status", "observed_at", "pages", "scanned_items", "documents_new", "scope",
+            ) if key in news}
         return result
 
     def refresh_status(self, user_id: UUID) -> dict[str, Any]:
@@ -1013,19 +1025,61 @@ class PortfolioStore:
                 or active["details"].get("legal_versions") != legal_versions
             ):
                 self._fail_refresh(cur, user_id, active["id"], "observation_context_changed")
+            elif active is not None and active["status"] == "queued" and scope == "full":
+                # A queued quick observation may have been scheduled without the
+                # browser. An explicit full request upgrades it before any reads.
+                cur.execute(
+                    "UPDATE job_runs SET details = details || %s::jsonb "
+                    "WHERE id = %s AND user_id = %s AND status = 'queued'",
+                    (_json({"refresh_scope": "full", "trigger": "manual"}), active["id"], user_id),
+                )
             current = self._refresh_status(cur, user_id, connection)
             if not current["can_refresh"]:
                 if current["status"] not in {"queued", "running"}:
                     current["reason"] = "refresh_cooldown"
                 return current
-            context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
-            cur.execute(
-                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
-                "VALUES (%s, 'portfolio_refresh', NULL, 'queued', %s::jsonb)",
-                (user_id, _json({"connection": context, "legal_versions": legal_versions,
-                                 "refresh_scope": scope})),
-            )
+            self._enqueue_refresh(cur, user_id, connection, legal_versions,
+                                  scope=scope, trigger="manual")
             return self._refresh_status(cur, user_id, connection)
+
+    @staticmethod
+    def _enqueue_refresh(
+        cur: Any, user_id: UUID, connection: Mapping[str, Any], legal_versions: dict[str, str],
+        *, scope: str, trigger: str,
+    ) -> dict[str, Any]:
+        context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
+        cur.execute(
+            "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
+            "VALUES (%s, 'portfolio_refresh', NULL, 'queued', %s::jsonb) RETURNING *",
+            (user_id, _json({"connection": context, "legal_versions": legal_versions,
+                             "refresh_scope": scope, "trigger": trigger})),
+        )
+        return cast(dict[str, Any], cur.fetchone())
+
+    @staticmethod
+    def _monitoring_scope(
+        cur: Any, user_id: UUID, connection: Mapping[str, Any], legal_versions: dict[str, str],
+    ) -> str | None:
+        """Use durable attempt times; a restart or outage cannot create a hot loop."""
+        context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
+        now = connection["server_now"]
+        cur.execute(
+            "SELECT max(GREATEST(requested_at, started_at, finished_at)) AS last_attempt_at, "
+            "max(GREATEST(requested_at, started_at, finished_at)) FILTER "
+            "(WHERE COALESCE(details->>'refresh_scope', 'full') "
+            "= 'full') AS last_full_at FROM job_runs WHERE user_id = %s "
+            "AND job_type IN ('portfolio_daily', 'portfolio_refresh') "
+            "AND details->'connection' = %s::jsonb AND details->'legal_versions' = %s::jsonb "
+            "AND GREATEST(requested_at, started_at, finished_at) >= %s",
+            (user_id, _json(context), _json(legal_versions), now - MONITORING_FULL_INTERVAL),
+        )
+        row = cast(dict[str, Any], cur.fetchone())
+        last_attempt = row["last_attempt_at"]
+        if last_attempt is not None and now < last_attempt + PORTFOLIO_MAX_AGE:
+            return None
+        last_full = row["last_full_at"]
+        return ("full" if last_full is None or now >= last_full + MONITORING_FULL_INTERVAL
+                else "quick")
 
     def _resume_refresh(
         self, cur: Any, user_id: UUID, row: dict[str, Any],
@@ -1040,6 +1094,7 @@ class PortfolioStore:
             "legal_versions": row["details"]["legal_versions"],
             "resumed_from": str(row["id"]),
             "refresh_scope": row["details"].get("refresh_scope", "full"),
+            "trigger": row["details"].get("trigger", "manual"),
         }
         cur.execute(
             "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, attempt, "
@@ -1051,7 +1106,7 @@ class PortfolioStore:
         return _job_run(cast(dict[str, Any], cur.fetchone()))
 
     def claim_refresh_job(
-        self, user_id: UUID, legal_versions: dict[str, str],
+        self, user_id: UUID, legal_versions: dict[str, str], *, schedule_if_due: bool = False,
     ) -> JobRunRecord | None:
         """Claim/recover only while the caller holds this owner's observer session lock."""
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
@@ -1059,13 +1114,19 @@ class PortfolioStore:
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
             connection = self._refresh_connection(cur, user_id)
             row = self._refresh_row(cur, user_id, active_only=True)
+            if connection is None or not _has_refresh_legal(cur, user_id, legal_versions):
+                if row is not None:
+                    self._fail_refresh(cur, user_id, row["id"], "observation_context_changed")
+                return None
+            if row is None and schedule_if_due:
+                scope = self._monitoring_scope(cur, user_id, connection, legal_versions)
+                if scope is not None:
+                    row = self._enqueue_refresh(cur, user_id, connection, legal_versions,
+                                                scope=scope, trigger="automatic")
             if row is None:
                 return None
-            if connection is None or (
-                not _refresh_context_matches(row["details"].get("connection"), connection)
-                or row["details"].get("legal_versions") != legal_versions
-                or not _has_refresh_legal(cur, user_id, legal_versions)
-            ):
+            if (not _refresh_context_matches(row["details"].get("connection"), connection)
+                    or row["details"].get("legal_versions") != legal_versions):
                 self._fail_refresh(cur, user_id, row["id"], "observation_context_changed")
                 return None
             if row["status"] == "running":
@@ -1114,7 +1175,7 @@ class PortfolioStore:
         context_matches: bool, recover_running: bool,
     ) -> bool:
         if row["status"] == "running":
-            if not recover_running and row["started_at"] >= now - timedelta(minutes=30):
+            if not recover_running and row["started_at"] >= now - DAILY_RUNNING_TIMEOUT:
                 return False
         elif context_matches and (
             not row["details"].get("retryable", row["status"] == "failed")
@@ -1254,7 +1315,7 @@ class PortfolioStore:
                     finished_at = now(),
                     next_attempt_at = CASE WHEN job_type = 'portfolio_daily'
                         THEN now() + make_interval(
-                            secs => 300 * power(2, LEAST(attempt, 3) - 1)::integer)
+                            secs => %s * power(2, LEAST(attempt, %s) - 1)::integer)
                         ELSE next_attempt_at END,
                     details = details || %s::jsonb
                 WHERE id = %s
@@ -1262,7 +1323,8 @@ class PortfolioStore:
                   AND status = 'running'
                 RETURNING id
                 """,
-                (status, _json(details), job_run_id, user_id),
+                (status, DAILY_RETRY_BASE_SECONDS, DAILY_MAX_ATTEMPTS,
+                 _json(details), job_run_id, user_id),
             )
             if cur.fetchone() is None:
                 raise RuntimeError("observation job is no longer running")
@@ -1719,6 +1781,23 @@ class PortfolioStore:
             )
             return snapshot_id
 
+    def news_state(self, user_id: UUID, *, job_run_id: UUID) -> dict[str, Any]:
+        """Resume only evidence collected under this exact connection and consent."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            _require_observation_job(cur, user_id, job_run_id)
+            cur.execute(
+                "SELECT prior.details -> 'news' AS news FROM job_runs prior "
+                "JOIN job_runs current ON current.user_id = prior.user_id AND current.id = %s "
+                "WHERE prior.user_id = %s AND jsonb_typeof(prior.details -> 'news') = 'object' "
+                "AND prior.details -> 'connection' = current.details -> 'connection' "
+                "AND prior.details -> 'legal_versions' = current.details -> 'legal_versions' "
+                "ORDER BY prior.started_at DESC, prior.id DESC LIMIT 1",
+                (job_run_id, user_id),
+            )
+            row = cast(Mapping[str, Any] | None, cur.fetchone())
+            return dict(row["news"]) if row is not None else {}
+
     def save_evidence(
         self,
         user_id: UUID,
@@ -1728,6 +1807,7 @@ class PortfolioStore:
         documents: tuple[EvidenceDocument, ...],
         assessments: tuple[InstrumentRiskAssessment, ...],
         retrieved_at: datetime,
+        news_checkpoint: dict[str, object] | None = None,
     ) -> tuple[int, int]:
         if retrieved_at.tzinfo is None:
             raise ValueError("evidence retrieval time must be timezone-aware")
@@ -1761,6 +1841,17 @@ class PortfolioStore:
                         assessment=assessment,
                         retrieved_at=retrieved_at,
                     )
+                )
+            if news_checkpoint is not None:
+                checkpoint = {
+                    **news_checkpoint,
+                    "documents_new": cast(int, news_checkpoint.get("documents_new", 0))
+                    + documents_written,
+                }
+                cur.execute(
+                    "UPDATE job_runs SET details = details || %s::jsonb "
+                    "WHERE user_id = %s AND id = %s AND status = 'running'",
+                    (_json({"news": checkpoint}), user_id, job_run_id),
                 )
         return documents_written, assessments_written
 
@@ -2070,12 +2161,16 @@ class PortfolioStore:
             subjects = list(dict.fromkeys(subjects))
 
             cur.execute(
-                """
+                f"""
+                WITH payout_scope AS (
+                    SELECT unnest(%s::text[]) AS instrument_uid
+                ), {PAYOUT_READ_CTES}
                 SELECT DISTINCT ON (
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
-                    pe.provider_key
+                    pe.anchor_key,
+                    pe.logical_key
                 )
                     pe.provider,
                     pe.instrument_uid,
@@ -2088,29 +2183,25 @@ class PortfolioStore:
                     pe.amount,
                     pe.currency,
                     pe.status,
-                    sd.source_url,
-                    sd.first_retrieved_at,
-                    retrieval.retrieved_at
-                FROM payout_events AS pe
-                JOIN source_documents AS sd
-                  ON sd.id = pe.source_document_id
-                JOIN LATERAL (
-                    SELECT COALESCE(max(sr.retrieved_at), sd.first_retrieved_at) AS retrieved_at
-                    FROM source_retrievals sr WHERE sr.source_document_id = sd.id
-                ) AS retrieval ON true
-                WHERE pe.instrument_uid = ANY (%s)
+                    pe.source_url,
+                    pe.first_retrieved_at,
+                    pe.retrieved_at,
+                    pe.identity_ambiguous
+                FROM payout_observations AS pe
+                WHERE NOT pe.identity_ambiguous OR pe.retrieved_at = pe.latest_positive_at
                 ORDER BY
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
-                    pe.provider_key,
-                    retrieval.retrieved_at DESC,
+                    pe.anchor_key,
+                    pe.logical_key,
+                    pe.retrieved_at DESC,
                     pe.id DESC
                 LIMIT 100
                 """,
                 (subjects,),
             )
-            payouts = [dict(row) for row in cur.fetchall()]
+            payouts = [_payout_payload(dict(row)) for row in cur.fetchall()]
 
             cur.execute(
                 """
@@ -2485,6 +2576,15 @@ class PortfolioStore:
                 page=page,
             )
         return inserted
+
+
+def _payout_payload(payout: dict[str, Any]) -> dict[str, Any]:
+    if payout.pop("identity_ambiguous"):
+        payout.update(
+            identity_status="ambiguous",
+            identity_reason="co_observed_anchor_collision",
+        )
+    return payout
 
 
 def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:

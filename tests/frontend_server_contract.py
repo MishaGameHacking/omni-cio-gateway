@@ -28,6 +28,7 @@ from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
 from omnicio.goal_planning import goal_forecast
 from omnicio.market import MarketService
+from omnicio.portfolio_store import PortfolioStore
 from omnicio.service import AuthService
 from omnicio.tbank import (
     TBankHistoricCandle,
@@ -276,8 +277,135 @@ def billing_contract() -> dict[str, Any]:
     return {"billing_disabled": disabled_status, "billing_enabled": enabled_status}
 
 
+def refresh_news_contract() -> dict[str, Any]:
+    """Use the actual refresh serializer; broker cursors remain server-side."""
+    now = datetime(2026, 10, 8, 10, tzinfo=UTC)
+    connection = {"account_id": "synthetic-account", "environment": "prod",
+                  "verified_at": now, "server_now": now + timedelta(minutes=5)}
+    context = {"account_id": connection["account_id"], "environment": "prod",
+               "verified_at": now.isoformat()}
+    cases = {}
+    store = PortfolioStore(Mock())
+    for status in ("not_requested", "not_applicable", "received", "partial", "unavailable"):
+        details: dict[str, Any] = {"connection": context, "refresh_scope": "quick",
+                                   "history_status": "complete", "valuation_status": "complete"}
+        if status != "not_requested":
+            received = status in {"received", "partial"}
+            details["news"] = {
+                "status": status, "scope": "held_instrument_links",
+                "observed_at": now.isoformat() if status != "not_applicable" else None,
+                "pages": 1 if received else 0, "scanned_items": 18 if received else 0,
+                "documents_new": 2 if received else 0,
+                "next_cursor": "synthetic-private-provider-cursor", "error": "internal-detail",
+            }
+        row = {"id": UUID(int=456), "status": "succeeded", "requested_at": now,
+               "started_at": now, "finished_at": now, "snapshot_at": now, "details": details}
+        cursor = Mock()
+        cursor.fetchone.side_effect = [{"captured_at": now}, row]
+        cases[status] = store._refresh_status(cursor, UUID(int=123), connection)
+    return {"refresh_news_cases": cases}
+
+
+def payout_display_contract() -> dict[str, Any]:
+    """Serialize stored payout dates and uncertainty through the actual private routes."""
+    now = datetime(2026, 10, 8, 10, tzinfo=UTC)
+    expected = datetime(2026, 10, 20, tzinfo=UTC)
+    actual = datetime(2026, 9, 24, tzinfo=UTC)
+    record = datetime(2026, 9, 15, tzinfo=UTC)
+    snapshot_id = UUID(int=456)
+    uid = "synthetic-a"
+    position = {
+        "snapshot_id": snapshot_id, "captured_at": now, "recorded_at": now,
+        "analysis_status": "complete", "instrument_uid": uid, "quantity": Decimal(10),
+        "current_price_value": Decimal(100), "current_price_currency": "RUB",
+        "value_rub": Decimal(1000), "nav_percent": Decimal(100),
+        "blocked": False, "blocked_lots": Decimal(0),
+    }
+    payouts = []
+    for key, status, planned, paid, ambiguous in (
+        ("scheduled", "scheduled", expected, actual, False),
+        ("paid", "paid", actual - timedelta(days=1), actual, False),
+        ("paid_expected", "paid", expected, None, False),
+        ("record_only", "scheduled", None, None, False),
+        ("undated", "observed", None, None, False),
+        ("ambiguous_scheduled", "scheduled", expected, None, True),
+        ("ambiguous_paid", "paid", actual - timedelta(days=1), actual, True),
+    ):
+        payouts.append({
+            "provider": "tbank", "instrument_uid": uid,
+            "event_type": {"record_only": "coupon", "undated": "bond_event"}.get(key, "dividend"),
+            "provider_key": key, "announced_at": now - timedelta(days=30),
+            "record_at": None if key == "undated" else record,
+            "expected_at": planned, "actual_at": paid, "amount": Decimal("12.34"),
+            "currency": "RUB", "status": status, "source_url": "https://example.test/payout",
+            "first_retrieved_at": now, "retrieved_at": now, "identity_ambiguous": ambiguous,
+        })
+    cursor, connection, database = Mock(), Mock(), Mock()
+    database.pool.connection.return_value = nullcontext(connection)
+    connection.transaction.return_value = nullcontext()
+    connection.cursor.return_value = nullcontext(cursor)
+    cursor.fetchone.return_value = {
+        "current_snapshot_id": snapshot_id, "current_snapshot_at": now,
+        "account_id": "synthetic-account", "environment": "prod",
+    }
+    cursor.fetchall.side_effect = [[position], payouts, []]
+    auth = Mock(spec=AuthService)
+    auth.refresh_session.return_value = UserRecord(UUID(int=123), 123, "active", "user")
+    with (
+        patch.object(main.app.state, "auth_service", auth, create=True),
+        patch.object(main.app.state, "portfolio_store", PortfolioStore(database), create=True),
+        patch.object(main.app.state, "workspace_store", WorkspaceStore(Mock()), create=True),
+    ):
+        client = TestClient(main.app, base_url=main.CANONICAL_ORIGIN,
+                            cookies={"omnicio_session": "synthetic-session"})
+        try:
+            response = client.get(f"/api/portfolio/instruments/{uid}/visualization",
+                                  headers={"X-Omnicio-Profile": "000000123"})
+            assert response.status_code == 200, response.text
+            assert "no-store" in response.headers["cache-control"]
+            visualization = response.json()
+            event_cases = _payout_event_contract(client, uid, now, expected)
+        finally:
+            client.close()
+    return {"payout_visualization": visualization, "payout_event_cases": event_cases}
+
+
+def _payout_event_contract(
+    client: TestClient, uid: str, now: datetime, expected: datetime,
+) -> dict[str, Any]:
+    source = {
+        "type": "payout", "instrument_uid": uid, "amount_per_security": "999.19",
+        "currency": "RUB", "expected_at": expected.isoformat(), "status": "scheduled",
+        "url": "https://example.test/payout",
+    }
+    uncertain = {"identity_status": "ambiguous",
+                 "identity_reason": "co_observed_anchor_collision"}
+    cases = {}
+    for key, ident, event_source in (
+        ("normal", "a" * 64, source),
+        ("superseded", "b" * 64, {**source, "superseded_by": "c" * 64,
+                                  "supersession_reason": "identity_ambiguous"}),
+        ("ambiguous", "c" * 64, {"type": "payout", "instrument_uid": uid, **uncertain}),
+    ):
+        cursor = Mock()
+        cursor.fetchone.return_value = {
+            "id": ident, "category": "payments", "severity": "warning",
+            "kind": "payout_identity_ambiguous" if key == "ambiguous" else "payout_calendar",
+            "title": "Synthetic source payout 999.19",
+            "detail": "Synthetic payment terms 999.19", "occurred_at": expected,
+            "read_at": now, "target": "asset", "source": event_source, "revision": 1,
+        }
+        with patch.object(WorkspaceStore, "_transaction", return_value=nullcontext(cursor)):
+            response = client.get(f"/api/events/{ident}",
+                                  headers={"X-Omnicio-Profile": "000000123"})
+        assert response.status_code == 200, response.text
+        assert "no-store" in response.headers["cache-control"]
+        cases[key] = response.json()
+    return cases
+
+
 if __name__ == "__main__":
     print(json.dumps({**market_contract(), "market_precision_cases": market_precision_contract(),
                       **goal_contract(), **research_contract(), **preset_math_contract(),
-                      **billing_contract()},
+                      **billing_contract(), **refresh_news_contract(), **payout_display_contract()},
                      ensure_ascii=True))

@@ -13,6 +13,7 @@ from datetime import date
 from decimal import ROUND_CEILING, Decimal, localcontext
 from typing import Any
 
+from .financial import MAX_USER_AMOUNT_RUB, MONTHS_PER_YEAR, PERCENT_SCALE, RUB_QUANTUM
 from .workspace import amount
 
 _FIELDS = {
@@ -56,8 +57,8 @@ def normalize_goal_plan(document: object, *, kind: str | None = None) -> dict[st
     active = _active_plan_fields(document, kind)
     result: dict[str, Any] = {}
     bounds = {
-        "monthly_contribution_rub": (Decimal(0), Decimal("1000000000000")),
-        "monthly_income_rub": (Decimal(0), Decimal("1000000000000")),
+        "monthly_contribution_rub": (Decimal(0), MAX_USER_AMOUNT_RUB),
+        "monthly_income_rub": (Decimal(0), MAX_USER_AMOUNT_RUB),
         "annual_return_percent": (Decimal(-99), Decimal(100)),
         "annual_volatility_percent": (Decimal(0), Decimal(200)),
         "annual_inflation_percent": (Decimal(-20), Decimal(100)),
@@ -117,11 +118,11 @@ def _simulation(
     half /= denominator
     return {
         "paths": _PATHS, "seed": seed,
-        "conditional_probability_percent": str(round(probability * 100, 4)),
-        "sampling_interval_95_percent": [round((center - half) * 100, 4),
-                                         round((center + half) * 100, 4)],
+        "conditional_probability_percent": str(round(probability * PERCENT_SCALE, 4)),
+        "sampling_interval_95_percent": [round((center - half) * PERCENT_SCALE, 4),
+                                         round((center + half) * PERCENT_SCALE, 4)],
         "terminal_percentiles_rub": {
-            str(percentile): _money(values[round((_PATHS - 1) * percentile / 100)])
+            str(percentile): _money(values[round((_PATHS - 1) * percentile / PERCENT_SCALE)])
             for percentile in (10, 50, 90)
         },
     }
@@ -173,20 +174,21 @@ def goal_forecast(
     target = amount(goal["target_amount_rub"])
     income = goal["kind"] == "income"
     monthly = Decimal(plan["monthly_income_rub" if income else "monthly_contribution_rub"])
-    sigma = 0.0 if income else float(plan["annual_volatility_percent"]) / 100 / math.sqrt(12)
+    sigma = (0.0 if income else float(plan["annual_volatility_percent"])
+             / PERCENT_SCALE / math.sqrt(MONTHS_PER_YEAR))
     with localcontext() as context:
         # Bounded 30-year assumptions fit with ample guard digits. Binary floats
         # are used only by the explicitly approximate stochastic model below.
         context.prec = 48
         rate = Decimal(0) if income else Decimal(plan["annual_return_percent"])
-        monthly_factor = (1 + rate / 100) ** (1 / Decimal(12))
+        monthly_factor = (1 + rate / PERCENT_SCALE) ** (1 / Decimal(MONTHS_PER_YEAR))
         inflation = Decimal(plan["annual_inflation_percent"])
-        inflation_factor = ((1 + inflation / 100) ** (1 / Decimal(12))
+        inflation_factor = ((1 + inflation / PERCENT_SCALE) ** (1 / Decimal(MONTHS_PER_YEAR))
                             if plan["target_in_today_money"] else Decimal(1))
         adjusted_target = target * inflation_factor**months
         growth, annuity = _future_factors(monthly_factor, months)
         required = max(Decimal(0), (adjusted_target - capital * growth) / annuity)
-        required = required.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+        required = required.quantize(RUB_QUANTUM, rounding=ROUND_CEILING)
         points = [(_future(capital, monthly, monthly_factor, month),
                    target * inflation_factor**month) for month in range(months + 1)]
         reached = next((month for month, (value, threshold) in enumerate(points)

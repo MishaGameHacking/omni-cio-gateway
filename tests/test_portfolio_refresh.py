@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime
 from threading import Event, Lock
@@ -49,7 +49,9 @@ class RefreshStore(FakeStore):
                 self.locked = False
                 self.mutex.release()
 
-    def claim_refresh_job(self, user_id: UUID, versions: dict[str, str]):
+    def claim_refresh_job(
+        self, user_id: UUID, versions: dict[str, str], *, schedule_if_due: bool = False,
+    ):
         assert self.locked
         assert versions == LEGAL_VERSIONS
         assert user_id == USER_ID
@@ -86,6 +88,35 @@ def test_refresh_does_not_claim_or_read_broker_while_daily_observer_holds_global
     assert not coordinator.run_pending()
     assert len(store.jobs) == 1
     assert broker.mock_calls == []
+
+
+def test_worker_prioritizes_existing_other_owner_request_before_automatic_observation() -> None:
+    other = UUID(int=2)
+    store = Mock(spec=PortfolioStore)
+    store.database = Mock()
+    store.observer_user_ids.return_value = (USER_ID, other)
+    store.observer_lock.side_effect = lambda owner: nullcontext(True)
+    store.claim_pending_daily_job.return_value = None
+    manual = manual_job(other)
+    automatic = replace(manual_job(), refresh_scope="quick")
+    pending = [manual]
+
+    def claim(owner, versions, *, schedule_if_due=False):
+        assert versions == LEGAL_VERSIONS
+        if owner == other and pending:
+            return pending.pop()
+        return automatic if owner == USER_ID and schedule_if_due else None
+
+    store.claim_refresh_job.side_effect = claim
+    coordinator = PortfolioRefreshCoordinator(store, Mock(), legal_versions=LEGAL_VERSIONS)
+    coordinator.observer.run_job = Mock()
+    assert coordinator.run_pending()
+    assert coordinator.observer.run_job.call_args.args[0] == manual
+    assert not any(call.kwargs.get("schedule_if_due")
+                   for call in store.claim_refresh_job.call_args_list)
+    # With no browser request left, the same running worker admits automatic work.
+    assert coordinator.run_pending()
+    assert coordinator.observer.run_job.call_args.args[0] == automatic
 
 
 def test_manual_worker_completes_dated_request_after_daily_lock_contention() -> None:

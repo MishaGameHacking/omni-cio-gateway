@@ -4,13 +4,18 @@
   "use strict";
 
   const compiledBuild = "__OMNICIO_BUILD__";
-  function compatibleStartup(translations, ui) {
-    if (!translations || !ui || !document.querySelector("#startup-state")) return false;
+  function compatibleStartup(translations, ui, config) {
+    if (!translations || !ui || !config || !document.querySelector("#startup-state")) return false;
     const required = [translations.t, translations.html, translations.apply, translations.getLocale, ui.parseRoute, ui.routeHash, ui.resumeRoute];
     if (required.some(value => typeof value !== "function")) return false;
     const requested = document.currentScript?.src && new URL(document.currentScript.src).searchParams.get("build");
     const expected = requested || compiledBuild;
-    if ([compiledBuild, translations.compiledBuild, ui.compiledBuild].some(value => value !== expected)) return false;
+    if ([compiledBuild, translations.compiledBuild, ui.compiledBuild, config.compiledBuild].some(value => value !== expected)) return false;
+    // A partial update must not combine new controls with a missing/stale palette.
+    try {
+      const paletteBuild = getComputedStyle(document.documentElement).getPropertyValue("--omnicio-build").trim();
+      if (JSON.parse(paletteBuild) !== expected) return false;
+    } catch { return false; }
     const release = window.OMNICIO_RELEASE?.build;
     return release === undefined || release === expected;
   }
@@ -19,6 +24,7 @@
     let deadline;
     try {
       const cleanup = window.caches?.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("omnicio-public-")).map(key => caches.delete(key))));
+      // Recovery must work even when config.js itself failed to load.
       await Promise.race([cleanup, new Promise(resolve => { deadline = setTimeout(resolve, 2000); })]);
     } catch { /* Reload remains available when public cache storage is unavailable. */ }
     finally { clearTimeout(deadline); location.reload(); }
@@ -65,7 +71,8 @@
   }
   const I = window.OMNICIO_I18N;
   const U = window.OmniUI;
-  if (!compatibleStartup(I, U)) { recoverStartup(); return; }
+  const C = window.OMNICIO_CONFIG;
+  if (!compatibleStartup(I, U, C)) { recoverStartup(); return; }
   const T = (key, values) => I.t(key, values);
   const H = (key, values) => I.html(key, values);
   I.apply(document);
@@ -93,6 +100,8 @@
   } = U;
   const $ = (selector, parent = document) => parent.querySelector(selector);
   const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+  // CSS owns the navigation breakpoint; JS follows the actual control layout.
+  const compactNavigation = () => getComputedStyle($("#app-menu-toggle")).display !== "none";
   const clone = value => structuredClone(value);
   const state = {
     user: null,
@@ -198,16 +207,16 @@
   try { installState.dismissed = localStorage.getItem("omnicio-install-dismissed") === "true"; } catch { /* Installation remains available without optional preferences. */ }
   const assetTypes = () => ([["all", T("Все")], ["share", T("Акции")], ["bond", T("Облигации")], ["etf", T("Фонды")], ["currency", T("Валюта")], ["other", T("Другое")]]);
   const strategyIcons = {
-    balanced: ["portfolio", "#2b86ff"],
-    conservative: ["shield", "#8645d8"],
-    aggressive: ["analytics", "#f24964"],
-    income: ["wallet", "#ef9b32"],
-    growth: ["market", "#2f82ff"],
-    buffett: ["shield", "#27c963"],
-    bogle: ["building", "#af9a53"],
-    dalio: ["portfolio", "#a04eed"],
-    ladder: ["building", "#23ace9"],
-    dividends: ["wallet", "#f26333"]
+    balanced: "portfolio",
+    conservative: "shield",
+    aggressive: "analytics",
+    income: "wallet",
+    growth: "market",
+    buffett: "shield",
+    bogle: "building",
+    dalio: "portfolio",
+    ladder: "building",
+    dividends: "wallet"
   };
   const strategyTaglines = () => ({
     balanced: T("Сочетание риска и доходности"),
@@ -235,7 +244,7 @@
   });
   const safeSegment = value => {
     const text = String(value ?? "");
-    if (!text || text.length > 128 || text !== text.trim() || /[\\/?#\u0000-\u001f\u007f]/u.test(text)) throw new Error("invalid_instrument");
+    if (!text || text.length > C.limits.identifierCharacters || text !== text.trim() || /[\\/?#\u0000-\u001f\u007f]/u.test(text)) throw new Error("invalid_instrument");
     return encodeURIComponent(text);
   };
   const apiPath = path => {
@@ -313,7 +322,7 @@
   const api = async (path, {
     method = "GET",
     body,
-    timeout = 30000,
+    timeout = C.timing.requestMs,
     bootstrap = false,
     onStream = null
   } = {}) => {
@@ -478,7 +487,7 @@
     item.className = `toast${isError ? " error" : ""}`;
     item.textContent = message;
     $("#toast-region").append(item);
-    window.setTimeout(() => item.remove(), isError ? 7000 : 4200);
+    window.setTimeout(() => item.remove(), isError ? C.timing.errorToastMs : C.timing.toastMs);
   };
   const showMessage = (element, text, isError = false) => {
     if (!element) return;
@@ -537,10 +546,38 @@
   let quoteReconnectTimer = null;
   let freshnessTimer = null;
   let freshnessBusy = false;
+  const stopVisibleRefresh = () => {
+    clearTimeout(freshnessTimer);
+    freshnessTimer = null;
+  };
+  const scheduleVisibleRefresh = () => {
+    if (freshnessTimer !== null || freshnessBusy || !state.user || state.locked || state.mode !== "account" || document.visibilityState !== "visible" || !navigator.onLine) return;
+    freshnessTimer = setTimeout(() => {
+      freshnessTimer = null;
+      void refreshVisibleData();
+    }, C.timing.freshnessPaintMs);
+  };
   const stopQuoteStream = () => {
     clearTimeout(quoteReconnectTimer);
     quoteStream?.close();
     quoteStream = null;
+  };
+  const quoteForConnection = payload => navigator.onLine ? payload : {...payload, quote_status: "offline"};
+  const repaintAssetQuote = () => {
+    if (!state.asset?.market || state.view !== "asset" || state.tour || state.locked) return;
+    const container = $("#view-asset");
+    // A source update must not replace a chart or focused control being inspected.
+    const quote = $("[data-market-quote]", container);
+    if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
+    const source = $("[data-market-source]", container);
+    const market = state.asset.market;
+    if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
+    for (const row of $$(".asset-tab-content .info-row", container)) {
+      const label = $("dt", row)?.textContent;
+      const value = $("dd", row);
+      if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
+      if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
+    }
   };
   const startQuoteStream = () => {
     stopQuoteStream();
@@ -550,34 +587,19 @@
     const stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream?profile_context=${encodeURIComponent(state.user.public_id)}`);
     quoteStream = stream;
     const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset?.uid === uid && !state.locked;
-    const repaint = () => {
-      const container = $("#view-asset");
-      // A tick must not replace a chart or focused control being inspected.
-      const quote = $("[data-market-quote]", container);
-      if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
-      const source = $("[data-market-source]", container);
-      const market = state.asset.market;
-      if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
-      for (const row of $$(".asset-tab-content .info-row", container)) {
-        const label = $("dt", row)?.textContent;
-        const value = $("dd", row);
-        if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
-        if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
-      }
-    };
     const reconnect = () => {
       if (!current()) return;
       stopQuoteStream();
       quoteFailures += 1;
       state.asset.market.quote_status = navigator.onLine ? "reconnect" : "offline";
-      repaint();
+      repaintAssetQuote();
       if (navigator.onLine && document.visibilityState === "visible") quoteReconnectTimer = setTimeout(() => {
         if (generation === state.generation && state.view === "asset" && state.asset?.uid === uid) startQuoteStream();
-      }, Math.min(30000, 1000 * 2 ** Math.min(quoteFailures, 5)));
+      }, Math.min(C.timing.quoteReconnectMaxMs, C.timing.quoteReconnectBaseMs * 2 ** Math.min(quoteFailures, C.timing.quoteReconnectExponentMax)));
     };
     state.asset.market.quote_status = "connecting";
-    repaint();
-    stream.addEventListener("open", () => { if (current()) { state.asset.market.quote_status = "connecting"; repaint(); } });
+    repaintAssetQuote();
+    stream.addEventListener("open", () => { if (current()) { state.asset.market.quote_status = "connecting"; repaintAssetQuote(); } });
     stream.addEventListener("market", event => {
       if (!current()) return;
       try {
@@ -587,7 +609,7 @@
         if (observedAt < Date.parse(state.asset.market.observed_at)) return;
         state.asset.market = {...state.asset.market, ...payload};
         quoteFailures = 0;
-        repaint();
+        repaintAssetQuote();
       } catch {
         reconnect();
       }
@@ -603,7 +625,7 @@
       }
       state.asset.market.quote_status = status;
       if (["offline", "invalid", "disconnected", "reconnect"].includes(status)) { reconnect(); return; }
-      repaint();
+      repaintAssetQuote();
     });
     stream.onerror = reconnect;
   };
@@ -618,7 +640,7 @@
     state.authReturn = null;
     transientDialogs.clear();
     try { sessionStorage.removeItem("omnicio-update-drafts"); } catch { /* No stored draft can survive an identity reset. */ }
-    clearTimeout(freshnessTimer);
+    stopVisibleRefresh();
     state.generation += 1;
     for (const controller of state.requests) controller.abort();
     state.requests.clear();
@@ -730,7 +752,7 @@
     themeChoice = choice;
     const actual = choice === "system" ? renderApplyThemeValue() : choice;
     document.documentElement.dataset.theme = actual;
-    $("meta[name=theme-color]").content = actual === "dark" ? "#071421" : "#eff4fa";
+    $("meta[name=theme-color]").content = getComputedStyle(document.documentElement).getPropertyValue(`--browser-theme-${actual}`).trim();
     for (const item of $$("[data-theme-choice]")) item.setAttribute("aria-pressed", String(item.dataset.themeChoice === choice));
     try {
       localStorage.setItem("omnicio-theme", choice);
@@ -753,7 +775,7 @@
   };
   function closeDrawer(restore = true) {
     delete $("#app-sidebar").dataset.open;
-    $("#app-sidebar").inert = window.innerWidth <= 960;
+    $("#app-sidebar").inert = compactNavigation();
     $("#drawer-backdrop").hidden = true;
     $("#app-menu-toggle").setAttribute("aria-expanded", "false");
     $(".app-main").inert = false;
@@ -918,7 +940,8 @@
     });
     restoreNavigationScroll(scrollPosition, sequence);
     scheduleTableQuotes(100);
-    scheduleEventSummary(100);
+    scheduleEventSummary(C.timing.eventSummaryChangedMs);
+    scheduleVisibleRefresh();
     if (state.devicePush.status === "checking") void refreshPushDevice();
   };
   const loadNavigationScreen = async (route, scrollPosition, sequence) => {
@@ -962,12 +985,16 @@
     navigate(view, {...route, view, screen: views.has(view) ? route.screen : "", mode: tour ? "demo" : "account", invalid: false}, {replace: !tour});
     if (!tour) {
       void resumeWorkspaceRefresh();
-      clearTimeout(freshnessTimer);
-      freshnessTimer = setTimeout(() => void refreshVisibleData(), 60000);
     }
   };
   const eventReadEpoch = () => state.resourceVersions.get("eventReads") || 0;
   const currentEventRead = epoch => epoch === eventReadEpoch() && state.eventWrites.size === 0;
+  const eventSnapshotContext = () => {
+    const sequence = (state.resourceVersions.get("eventSnapshots") || 0) + 1;
+    state.resourceVersions.set("eventSnapshots", sequence);
+    return {sequence, generation: state.generation, navigation: state.navigationSequence, filter: state.eventFilter, epoch: eventReadEpoch()};
+  };
+  const currentEventSnapshot = context => context?.generation === state.generation && context.navigation === state.navigationSequence && context.filter === state.eventFilter && context.sequence === state.resourceVersions.get("eventSnapshots") && currentEventRead(context.epoch);
   const retryMissingEvents = () => {
     if (!state.data.events && !state.loading.has("events") && !state.eventWrites.size && state.user && !state.locked && state.mode === "account" && ["home", "events"].includes(state.view)) void loadResource("events", eventsPath(), {force: true});
   };
@@ -984,16 +1011,19 @@
     state.resourceVersions.set(name, sequence);
     const generation = state.generation;
     const goalsSequence = state.resourceVersions.get("goals") || 0;
-    const eventsEpoch = eventReadEpoch();
+    const eventsContext = name === "events" || name === "workspace" && state.eventFilter === "all" ? eventSnapshotContext() : null;
     const current = () => generation === state.generation && state.resourceVersions.get(name) === sequence;
-    const currentResult = () => current() && (name !== "events" || currentEventRead(eventsEpoch));
+    const currentResult = () => current() && (name !== "events" || currentEventSnapshot(eventsContext));
     state.loading.add(name);
-    delete state.errors[name];
-    const promise = (read ? read() : api(path, options)).then(payload => {
+    if (name !== "events") delete state.errors[name];
+    const promise = (read ? read() : api(path, options)).then(async payload => {
       if (!currentResult()) return null;
-      state.data[name] = resourceSnapshot(name, payload);
-      adoptLoadedResource(name, payload, goalsSequence, eventsEpoch);
-      return payload;
+      const snapshot = await resourceSnapshot(name, payload, eventsContext);
+      if (!snapshot || !currentResult()) return null;
+      state.data[name] = snapshot;
+      if (name === "events") delete state.errors.events;
+      adoptLoadedResource(name, snapshot, goalsSequence, eventsContext);
+      return snapshot;
     }).catch(error => {
       if (currentResult() && !isCancelled(error)) state.errors[name] = error;
       return null;
@@ -1001,27 +1031,40 @@
       if (current()) {
         state.loading.delete(name);
         state.resourceRequests.delete(name);
-        if (name === "events" && !currentEventRead(eventsEpoch)) { retryMissingEvents(); return; }
+        if (name === "events" && !currentEventSnapshot(eventsContext)) { retryMissingEvents(); return; }
         if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent({preserveAssetChart: true});
       }
     });
     state.resourceRequests.set(name, {path, promise});
     return promise;
   };
-  const resourceSnapshot = (name, payload) => {
+  const resourceSnapshot = async (name, payload, eventsContext) => {
     if (name === "goals") return mergeGoalList(payload);
-    if (name === "events") return eventSnapshot(payload);
+    if (name === "events") return readEventSnapshot(payload, eventsContext);
     return payload;
   };
-  const adoptWorkspace = (payload, goalsSequence, eventsEpoch) => {
+  const adoptWorkspaceEvents = async (payload, context) => {
+    try {
+      const events = await readEventSnapshot(payload, context);
+      if (!events || !currentEventSnapshot(context)) return;
+      state.data.events = events;
+      delete state.errors.events;
+    } catch (error) {
+      if (!currentEventSnapshot(context) || isCancelled(error)) return;
+      state.errors.events = error;
+    } finally {
+      if (currentEventSnapshot(context) && ["home", "events"].includes(state.view) && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
+    }
+  };
+  const adoptWorkspace = (payload, goalsSequence, eventsContext) => {
     if (payload.preferences) adoptPreferences(payload.preferences);
     if (payload.goals && goalsSequence === (state.resourceVersions.get("goals") || 0)) state.data.goals = mergeGoalList(payload.goals);
-    if (payload.events && currentEventRead(eventsEpoch) && state.eventFilter === "all") state.data.events = eventSnapshot(payload.events);
+    if (payload.events && currentEventSnapshot(eventsContext)) void adoptWorkspaceEvents(payload.events, eventsContext);
     if (payload.connection) state.data.connection = payload.connection;
     $("#workspace-freshness").textContent = payload.overview?.observed_at ? `T-Invest · ${date(payload.overview.observed_at, true)} ${T("МСК · Стоимость по последнему наблюдению")}` : renderAdoptWorkspaceValue(payload);
   };
-  const adoptLoadedResource = (name, payload, goalsSequence, eventsEpoch) => {
-    if (name === "workspace") adoptWorkspace(payload, goalsSequence, eventsEpoch);
+  const adoptLoadedResource = (name, payload, goalsSequence, eventsContext) => {
+    if (name === "workspace") adoptWorkspace(payload, goalsSequence, eventsContext);
     if (name === "preferences") adoptPreferences(payload);
     if (name === "strategy") adoptStrategy(payload);
   };
@@ -1056,7 +1099,7 @@
   }, {
     name: "visualization",
     views: ["home", "portfolio", "analytics", "market"],
-    path: "/api/portfolio/visualization?history_limit=365"
+    path: `/api/portfolio/visualization?history_limit=${C.pagination.historyObservations}`
   }, {
     name: "strategy",
     views: ["home", "strategies", "analytics"],
@@ -1102,11 +1145,11 @@
   }, {
     name: "researchArchive",
     views: ["strategies"],
-    path: "/api/research/runs?limit=50"
+    path: `/api/research/runs?limit=${C.pagination.pageSize}`
   }, {
     name: "assistantResearch",
     views: ["assistant"],
-    path: "/api/research/runs?limit=200",
+    path: `/api/research/runs?limit=${C.pagination.researchChoicesPageSize}`,
     read: () => readResearchChoices()
   }, {
     name: "assistantMemory",
@@ -1123,7 +1166,7 @@
   }, {
     name: "marketArchive",
     views: ["events"],
-    path: "/api/news?limit=50"
+    path: `/api/news?limit=${C.pagination.pageSize}`
   }, {
     name: "notifications",
     views: ["settings"],
@@ -1140,7 +1183,7 @@
   }, {
     name: "ledger",
     views: ["portfolio"],
-    path: "/api/workspace/operations?limit=50"
+    path: `/api/workspace/operations?limit=${C.pagination.pageSize}`
   }, {
     name: "support",
     views: [],
@@ -1150,7 +1193,7 @@
     name: "analysis",
     views: ["analytics"],
     path: "/api/broker/tbank/analysis",
-    timeout: 45000
+    timeout: C.timing.portfolioRequestMs
   }];
   const loadAssetView = async (uid, force) => {
     try {
@@ -1172,7 +1215,7 @@
       return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
         force: force || historyChanged,
         read: resource.read,
-        timeout: resource.timeout || 30000
+        timeout: resource.timeout || C.timing.requestMs
       });
     });
     if (state.view === view) renderCurrent();
@@ -1234,7 +1277,7 @@
     await loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
       force: true,
       read: resource.read,
-      timeout: resource.timeout || 30000
+      timeout: resource.timeout || C.timing.requestMs
     });
     if (generation !== state.generation || state.view !== view) return;
     if (resource.name === "researchArchive") restoreResearchRequest();
@@ -1274,7 +1317,7 @@
     generation: state.generation,
     sequence: ++state.refresh.sequence
   });
-  const currentRefresh = context => context.generation === state.generation && context.sequence === state.refresh.sequence && Boolean(state.user) && !state.locked;
+  const currentRefresh = context => context.generation === state.generation && context.sequence === state.refresh.sequence && Boolean(state.user) && !state.locked && (!context.canAdopt || context.canAdopt());
   const refreshUnavailable = () => {
     if (state.refresh.busy) return true;
     if (state.errors.refreshStatus) return false;
@@ -1324,6 +1367,24 @@
     if (text && result?.observed_at) text += ` ${T("Последнее наблюдение:")} ${date(result.observed_at, true)} ${T("МСК.")}`;
     return text;
   };
+  const workspaceNewsText = (details = false) => {
+    const news = state.data.refreshStatus?.news;
+    const labels = {
+      not_requested: T("news.monitor.not_requested"),
+      not_applicable: T("news.monitor.not_applicable"),
+      received: T("news.monitor.received"),
+      partial: T("news.monitor.partial"),
+      unavailable: T("news.monitor.unavailable"),
+      unknown: T("news.monitor.unknown")
+    };
+    const status = news?.scope === "held_instrument_links" && Object.hasOwn(labels, news.status) ? news.status : "unknown";
+    let text = `${T("news.monitor.title")}: ${labels[status]}`;
+    if (!details) return text;
+    text += " " + T("news.monitor.scope");
+    if (["received", "partial"].includes(status) && Number.isSafeInteger(news.documents_new) && news.documents_new >= 0) text += " " + T("news.monitor.saved", {count: format(news.documents_new, 0)});
+    if (["received", "partial", "unavailable"].includes(status) && typeof news.observed_at === "string" && Number.isFinite(Date.parse(news.observed_at))) text += " " + T("news.monitor.observed", {time: date(news.observed_at, true)});
+    return text;
+  };
   const scheduleRefreshPoll = (context, delay) => {
     clearTimeout(state.refresh.timer);
     state.refresh.timer = window.setTimeout(() => {
@@ -1342,11 +1403,11 @@
     updateRefreshControls();
   };
   const reloadWorkspaceObservation = async context => {
-    const resources = [["workspace", workspacePath()], ["visualization", "/api/portfolio/visualization?history_limit=365"]];
+    const resources = [["workspace", workspacePath()], ["visualization", `/api/portfolio/visualization?history_limit=${C.pagination.historyObservations}`]];
     if (state.view === "analytics") resources.push(["analysis", "/api/broker/tbank/analysis"]);else delete state.data.analysis;
     await Promise.allSettled(resources.map(([name, path]) => loadResource(name, path, {
       force: true,
-      timeout: 45000
+      timeout: C.timing.portfolioRequestMs
     })));
     if (!currentRefresh(context)) return;
     state.strategy.assessment = null;
@@ -1357,13 +1418,15 @@
     const previous = state.data.refreshStatus;
     state.data.refreshStatus = result;
     delete state.errors.refreshStatus;
+    const newsStatus = $("[data-news-monitor-status]");
+    if (newsStatus) newsStatus.textContent = workspaceNewsText(true);
     renderConnectionBanner();
     updateRefreshControls();
     const changedObservation = result.observed_at && result.observed_at !== state.data.workspace?.overview?.observed_at;
     const finished = (refreshActive(previous) || state.refresh.busy) && !refreshActive(result);
     if (changedObservation || finished) await reloadWorkspaceObservation(context);
     if (!currentRefresh(context)) return;
-    if (refreshActive(result)) scheduleRefreshPoll(context, 2500);else if (!result.can_refresh && result.retry_after_seconds > 0) scheduleRefreshPoll(context, Math.min(60000, result.retry_after_seconds * 1000));
+    if (refreshActive(result)) scheduleRefreshPoll(context, C.timing.refreshPollMs);else if (!result.can_refresh && result.retry_after_seconds > 0) scheduleRefreshPoll(context, Math.min(C.timing.refreshRetryMaxMs, result.retry_after_seconds * C.units.millisecondsPerSecond));
   };
   const refreshFailed = (error, context) => {
     if (!currentRefresh(context) || isCancelled(error)) return;
@@ -1379,9 +1442,9 @@
       refreshFailed(error, context);
     }
   };
-  const resumeWorkspaceRefresh = async () => {
-    if (!state.user || state.tour || state.locked || state.refresh.busy) return;
-    const context = refreshContext();
+  const resumeWorkspaceRefresh = async (canAdopt = () => true) => {
+    if (!state.user || state.tour || state.locked || state.refresh.busy || !canAdopt()) return;
+    const context = {...refreshContext(), canAdopt};
     clearTimeout(state.refresh.timer);
     await pollWorkspaceRefresh(context);
   };
@@ -1431,7 +1494,8 @@
       banner.hidden = true;
       return;
     }
-    const text = connectionStatusText(connection, ws);
+    const news = connection?.connected && ["partial", "unavailable"].includes(state.data.refreshStatus?.news?.status) ? workspaceNewsText() : "";
+    const text = [connectionStatusText(connection, ws), news].filter(Boolean).join(" ");
     banner.hidden = !text;
     banner.classList.toggle("error", Boolean(state.errors.workspace || state.errors.refreshStatus) || state.data.refreshStatus?.status === "failed");
     banner.innerHTML = text ? `<span>${esc(text)}</span>${button(renderConnectionBannerValue(connection), renderConnectionBannerValue2(connection), {
@@ -1476,7 +1540,7 @@
     const rows = filteredRows();
     if (!rows.length) return empty(portfolioRows().length ? T("Нет активов этого типа") : T("Активы пока не получены"), portfolioRows().length ? T("Выберите другой фильтр.") : T("Состав счёта появится после подключения и первого наблюдения."), portfolioRows().length ? "" : "connect", T("Подключить счёт"));
     const headers = [["name", T("Название")], ["price", T("Цена")], ["change", T("Изменение")], ["share", T("Доля")]];
-    return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : ("<th class=\"hide-on-mobile\" scope=\"col\">" + H("Стоимость") + "</th><th scope=\"col\"><span class=\"sr-only\">" + H("Избранное") + "</span></th>")}</tr></thead><tbody>${(compact ? rows.slice(0, 5) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("quotes.snapshot_scope")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
+    return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : ("<th class=\"hide-on-mobile\" scope=\"col\">" + H("Стоимость") + "</th><th scope=\"col\"><span class=\"sr-only\">" + H("Избранное") + "</span></th>")}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("quotes.snapshot_scope")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
   };
   const selectedPreset = (document = state.strategy.draft) => {
     const id = document?.base_preset_id;
@@ -1504,7 +1568,7 @@
     const horizon = number(document?.profile?.horizon_months);
     return `${cardHeader(T("Моя стратегия"))}<div class="strategy-current">${icon("strategies")}<strong>${esc(strategyTitle())}</strong><button class="icon-button" data-route="strategies" aria-label="${H("Настройки стратегии")}">${icon("settings", true)}</button></div><div class="strategy-chips"><span class="chip">${document ? renderHomeStrategyFragment(document) : T("Ваши условия")}</span><span class="chip">${horizon ? renderHomeStrategyFragment2(horizon) : T("Ваш горизонт")}</span></div><p class="strategy-note">${document ? T("Проверка состава и ограничений на данных вашего счёта.") : T("Выберите подход и уточните личные параметры, чтобы начать расчёты.")}</p><button class="button secondary full" data-route="strategies">${H("Настроить стратегию")} ${icon("arrow", true)}</button>`;
   };
-  const eventsPath = () => `/api/events?limit=50&category=${state.eventFilter === "assets" ? "assets" : "all"}${state.eventFilter === "important" ? "&important_only=true" : ""}`;
+  const eventsPath = () => `/api/events?limit=${C.pagination.pageSize}&category=${state.eventFilter === "assets" ? "assets" : "all"}${state.eventFilter === "important" ? "&important_only=true" : ""}`;
   const eventItems = () => {
     const news = (state.data.news?.items || []).map(item => ({
       ...item,
@@ -1521,9 +1585,10 @@
   };
   const eventsHTML = (compact = true) => {
     const rows = eventItems();
+    if (!state.tour && state.eventFilter !== "market" && state.errors.events) return dataError("events");
     if (state.loading.has("events") && !state.data.events && !state.tour && state.eventFilter !== "market") return U.loading(T("state.loading"));
     if (!rows.length) return empty(state.eventFilter === "market" ? T("Новостной источник не подключён") : T("Нет новых событий"), state.eventFilter === "market" ? T("Система не подставляет заголовки. События счёта появятся после подключения данных.") : T("Подтверждённые события портфеля и целей появятся здесь."), "", "", "events");
-    return `<div class="event-list">${(compact ? rows.slice(0, 4) : rows).map(item => renderEventsHTMLEventItem(item, compact)).join("")}</div>`;
+    return `<div class="event-list">${(compact ? rows.slice(0, C.pagination.compactEvents) : rows).map(item => renderEventsHTMLEventItem(item, compact)).join("")}</div>`;
   };
   const goalPreview = goal => `<article class="goal-preview"><span class="event-icon">${icon(goal.kind === "income" ? "wallet" : "building", true)}</span><div class="goal-preview-body"><h3>${esc(goal.title)}</h3><p>${esc(money(goal.progress?.amount_rub))} ${H("из")} ${esc(money(goal.target_amount_rub))}</p>${U.progress(goal.progress?.percent)}</div></article>`;
   const homeGoals = () => {
@@ -1587,7 +1652,7 @@
     if (state.loading.has("news") && !state.data.news) return U.loading(T("state.loading"));
     if (state.errors.news) return dataError("news");
     if (!rows.length) return empty(T("Новостной источник пока недоступен"), T("Повторите обновление. Заголовки не заменяются примерами."), "", "", "events");
-    return `<div class="event-list">${rows.slice(0, 8).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness(T("Официальная лента Банка России"), state.data.news.fetched_at, state.data.news.freshness === "cached" ? "cached" : "")}`;
+    return `<div class="event-list">${rows.slice(0, C.pagination.publicNews).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness(T("Официальная лента Банка России"), state.data.news.fetched_at, state.data.news.freshness === "cached" ? "cached" : "")}`;
   };
   const indicatorCards = reference => {
     const data = reference?.indicators;
@@ -1610,7 +1675,7 @@
     applyScreenLayout("market");
   };
   const runSearch = async query => {
-    const trimmed = String(query).trim().slice(0, 64);
+    const trimmed = String(query).trim().slice(0, C.limits.searchQueryCharacters);
     state.searchQuery = trimmed;
     $("#global-search").value = trimmed;
     const sequence = ++state.searchSequence;
@@ -1618,12 +1683,8 @@
     state.searchPages = {events: null, news: null};
     state.searchFailures = {};
     state.searchResults = [];
-    if (!trimmed) {
-      state.searchResults = [];
-      renderSearch();
-      return;
-    }
-    if (state.tour) {
+    if (!trimmed || state.tour) {
+      state.loading.delete("search");
       renderSearch();
       return;
     }
@@ -1632,8 +1693,8 @@
     renderSearch();
     const requests = [
       ["instruments", `/api/broker/tbank/instruments/search?q=${encodeURIComponent(trimmed)}`],
-      ["events", `/api/events?limit=50&query=${encodeURIComponent(trimmed)}`],
-      ["news", `/api/news?limit=50&query=${encodeURIComponent(trimmed)}`]
+      ["events", `/api/events?limit=${C.pagination.pageSize}&query=${encodeURIComponent(trimmed)}`],
+      ["news", `/api/news?limit=${C.pagination.pageSize}&query=${encodeURIComponent(trimmed)}`]
     ];
     const results = await Promise.allSettled(requests.map(([, path]) => api(path)));
     if (sequence !== state.searchSequence || generation !== state.generation || trimmed !== routeSearchQuery()) return;
@@ -1650,11 +1711,55 @@
   const mergePage = (previous, incoming) => ({...incoming, items: [...new Map([
     ...(previous?.items || []), ...(incoming?.items || [])
   ].map(item => [item.id, item])).values()]});
-  const eventSnapshot = payload => {
-    if (!state.eventHistoryExtended || !state.data.events) return payload;
-    const combined = mergePage(state.data.events, payload);
+  let payoutHistoryReadback = Promise.resolve();
+  const readPayoutHistoryBatch = (items, context) => {
+    const pending = payoutHistoryReadback.then(async () => {
+      if (!currentEventSnapshot(context)) return [];
+      const results = await Promise.allSettled(items.map(async item => {
+        try {
+          const event = await api(`/api/events/${safeSegment(item.id)}`);
+          if (event.id !== item.id || event.kind !== "payout_calendar" || event.source?.type !== "payout") throw Object.assign(new Error("invalid_server_response"), {status: 502});
+          return [item.id, event];
+        } catch (error) {
+          if (error.status === 404) return [item.id, null];
+          throw error;
+        }
+      }));
+      const failed = results.find(result => result.status === "rejected");
+      if (failed) throw failed.reason;
+      return results.map(result => result.value);
+    });
+    // Keep a single batch in flight even when a newer refresh replaces this one.
+    payoutHistoryReadback = pending.catch(() => {});
+    return pending;
+  };
+  const readPayoutHistory = async (items, context, received, offset = 0) => {
+    if (offset >= items.length || !currentEventSnapshot(context)) return;
+    const batch = await readPayoutHistoryBatch(items.slice(offset, offset + 4), context);
+    for (const [id, event] of batch) received.set(id, event);
+    return readPayoutHistory(items, context, received, offset + 4);
+  };
+  const readEventSnapshot = async (payload, context, append = false) => {
+    if (!currentEventSnapshot(context)) return null;
+    if ((!state.eventHistoryExtended && !append) || !state.data.events) return payload;
+    const incoming = new Set((payload.items || []).map(item => item.id));
+    const omitted = (state.data.events.items || []).filter(item => item.kind === "payout_calendar" && item.source?.type === "payout" && !incoming.has(item.id));
+    const received = new Map();
+    try {
+      await readPayoutHistory(omitted, context, received);
+    } catch (error) {
+      if (!currentEventSnapshot(context)) return null;
+      state.errors.events = error;
+      throw error;
+    }
+    if (!currentEventSnapshot(context)) return null;
+    const retained = state.data.events.items.filter(item => {
+      const event = received.get(item.id);
+      return !received.has(item.id) || event && !/^[a-f0-9]{64}$/.test(event.source.superseded_by || "");
+    });
+    const combined = mergePage({...state.data.events, items: confirmEventItems(retained, () => false, received)}, payload);
     combined.items.sort((left, right) => new Date(right.occurred_at) - new Date(left.occurred_at));
-    combined.next_cursor = state.data.events.next_cursor;
+    combined.next_cursor = append ? payload.next_cursor : state.data.events.next_cursor;
     return combined;
   };
   const loadSearchPage = async kind => {
@@ -1665,22 +1770,23 @@
     state.loading.add(`search-${kind}`);
     renderSearch();
     try {
-      const page = await api(`/api/${kind}?limit=50&query=${encodeURIComponent(state.searchQuery)}&cursor=${encodeURIComponent(cursor)}`);
+      const page = await api(`/api/${kind}?limit=${C.pagination.pageSize}&query=${encodeURIComponent(state.searchQuery)}&cursor=${encodeURIComponent(cursor)}`);
       if (generation !== state.generation || sequence !== state.searchSequence) return;
       state.searchPages[kind] = mergePage(state.searchPages[kind], page);
       delete state.searchFailures[kind];
     } catch (error) {
       if (generation === state.generation && sequence === state.searchSequence && !isCancelled(error)) state.searchFailures[kind] = error;
     } finally {
-      if (generation === state.generation && sequence === state.searchSequence) {
+      if (generation === state.generation) {
         state.loading.delete(`search-${kind}`);
-        if (state.view === "search") renderSearch();
+        if (state.view === "search" && sequence === state.searchSequence) renderSearch();
+        else $(`#view-search [data-action=search-more-${kind}]`)?.removeAttribute("disabled");
       }
     }
   };
   const archiveNewsItem = item => `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3><button class="event-title-button" data-news-open="${esc(item.id)}">${esc(item.title)}</button></h3><p class="fine-print">${esc(item.summary || "")}</p><span class="event-meta">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at, true))}</span></div></article>`;
   const searchMatchesHTML = (errors, matches, more) => `${errors}<div class="search-results">${matches || empty(more ? T("В проверенной части совпадений нет") : T("Совпадений не найдено"), more ? T("Продолжите поиск в следующей части архива.") : T("Уточните название или попробуйте биржевой тикер."), "", "", "search")}</div><div class="form-actions">${more}</div><p class="data-footnote">${H("События: серверная история аккаунта. Новости: последовательный просмотр архива источника; сводка ЦБ содержит последние публичные заголовки.")}</p>`;
-  const routeSearchQuery = () => String(state.route.q || "").trim().slice(0, 64);
+  const routeSearchQuery = () => String(state.route.q || "").trim().slice(0, C.limits.searchQueryCharacters);
   const renderSearch = () => {
     const selectedQuery = routeSearchQuery();
     const query = selectedQuery.toLocaleLowerCase("ru-RU");
@@ -1720,7 +1826,7 @@
     }];
     if (!asset.details || force) requests.push({
       key: "details",
-      promise: api(`/api/portfolio/instruments/${segment}/visualization?history_limit=365`)
+      promise: api(`/api/portfolio/instruments/${segment}/visualization?history_limit=${C.pagination.historyObservations}`)
     });
     if (!asset.facts || force) requests.push({
       key: "facts",
@@ -1728,14 +1834,18 @@
     });
     if (!asset.news || force) requests.push({
       key: "news",
-      promise: api(`/api/news?instrument_uid=${segment}&limit=50`)
+      promise: api(`/api/news?instrument_uid=${segment}&limit=${C.pagination.pageSize}`)
     });
     const current = () => generation === state.generation && state.resourceVersions.get("asset") === sequence && state.asset?.uid === uid && state.assetPeriod === requestedPeriod;
+    const repaint = preserveChart => {
+      const preservedChart = renderAsset({preserveChart});
+      if (!preservedChart) U.bindCharts($("#view-asset"));
+    };
     await Promise.allSettled(requests.map(async ({key, promise}) => {
       try {
         const value = await promise;
         if (!current()) return;
-        asset[key] = value;
+        asset[key] = key === "market" ? quoteForConnection(value) : value;
         asset[`${key}Error`] = null;
       } catch (error) {
         if (!current() || isCancelled(error)) return;
@@ -1744,8 +1854,7 @@
       } finally {
         if (current() && state.view === "asset") {
           if (key === "market") asset.loading = false;
-          const preservedChart = renderAsset({preserveChart: key !== "market"});
-          if (!preservedChart) U.bindCharts($("#view-asset"));
+          repaint(key !== "market");
           if (key === "market" && asset.market) startQuoteStream();
         }
       }
@@ -1755,8 +1864,7 @@
     asset.ticker = asset.facts?.ticker || asset.details?.latest?.ticker || asset.ticker;
     asset.loading = false;
     if (state.view === "asset") {
-      const preservedChart = renderAsset({preserveChart: true});
-      if (!preservedChart) U.bindCharts($("#view-asset"));
+      repaint(true);
       quoteFailures = 0;
       startQuoteStream();
     }
@@ -1908,19 +2016,24 @@
     if (!asset?.news?.next_cursor || state.loading.has("asset-news-more")) return;
     const generation = state.generation;
     const uid = asset.uid;
+    const news = asset.news;
+    const version = state.resourceVersions.get("asset") || 0;
+    const currentAsset = () => generation === state.generation && state.asset === asset && version === (state.resourceVersions.get("asset") || 0);
+    const currentPage = () => currentAsset() && asset.news === news;
     state.loading.add("asset-news-more");
     renderAsset();
     try {
-      const page = await api(`/api/news?instrument_uid=${safeSegment(uid)}&limit=50&cursor=${encodeURIComponent(asset.news.next_cursor)}`);
-      if (generation !== state.generation || state.asset?.uid !== uid) return;
-      asset.news = mergePage(asset.news, page);
+      const page = await api(`/api/news?instrument_uid=${safeSegment(uid)}&limit=${C.pagination.pageSize}&cursor=${encodeURIComponent(news.next_cursor)}`);
+      if (!currentPage()) return;
+      asset.news = mergePage(news, page);
       asset.newsError = null;
     } catch (error) {
-      if (generation === state.generation && state.asset?.uid === uid && !isCancelled(error)) asset.newsError = error;
+      if (currentPage() && !isCancelled(error)) asset.newsError = error;
     } finally {
-      if (generation === state.generation && state.asset?.uid === uid) {
+      if (generation === state.generation) {
         state.loading.delete("asset-news-more");
-        if (state.view === "asset") renderAsset();
+        if (state.view === "asset" && currentAsset()) renderAsset();
+        else $("#view-asset [data-action=asset-news-more]")?.removeAttribute("disabled");
       }
     }
   };
@@ -1976,8 +2089,19 @@
       container.innerHTML = U.loading(T("Получаем данные актива…"));
       return;
     }
+    const payout = container.dataset.assetUid === asset.uid ? $("[data-asset-payouts]", container) : null;
+    const payoutFocused = payout?.contains(document.activeElement);
+    const restorePayout = () => {
+      const current = $("[data-asset-payouts]", container);
+      if (!payout || !current) return;
+      current.open = payout.open;
+      if (payoutFocused) $("summary", current)?.focus({preventScroll: true});
+    };
     const context = assetPricing(asset);
-    if (preserveChart && refreshAssetChartContext(container, context)) return true;
+    if (preserveChart && refreshAssetChartContext(container, context)) {
+      restorePayout();
+      return true;
+    }
     const renderers = {
       chart: assetChartHTML,
       overview: assetOverviewHTML,
@@ -1990,6 +2114,7 @@
     container.dataset.assetPane = state.assetTab;
     container.dataset.assetLocale = I.getLocale();
     container.innerHTML = assetFrameHTML(context, renderer(context));
+    restorePayout();
   };
   const tradingLabel = value => ({
     SECURITY_TRADING_STATUS_NORMAL_TRADING: T("Основная сессия"),
@@ -2247,7 +2372,7 @@
     updateSaveStatus(kind);
     slot.timer = window.setTimeout(() => {
       void saveVersioned(kind);
-    }, 600);
+    }, C.timing.autosaveDebounceMs);
   };
   const editPreferences = change => {
     if (!requireUser()) return false;
@@ -2456,7 +2581,7 @@
       return `<button type="button" id="strategy-tab-${key}" class="tab-button" role="tab" data-action="strategy-${key}" aria-controls="strategy-panel-${key}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}">${label}</button>`;
     }).join("") + "</div>";
   };
-  const policyFields = () => ([["max_instrument_percent", T("Один инструмент"), "%", 100, T("Максимальная доля одного инструмента. Превышение отмечается в проверке состава; это не предел убытка.")], ["max_sector_percent", T("Один сектор"), "%", 100, T("Ограничение концентрации в одном секторе. Нужны данные о секторе каждого инструмента.")], ["max_issuer_percent", T("Один эмитент"), "%", 100, T("Суммарная доля бумаг одного эмитента. Малый лимит требует большего числа доступных инструментов.")], ["max_group_percent", T("Одна группа компаний"), "%", 100, T("Доля связанных эмитентов. Без подтверждённых связей полная проверка невозможна.")], ["max_share_percent", T("Акции — предел"), "%", 100, T("Верхняя граница доли акций. Целевые доли задаются отдельно в распределении.")], ["max_bond_percent", T("Облигации — предел"), "%", 100, T("Верхняя граница доли облигаций. Кредитный и процентный риски сохраняются.")], ["max_etf_percent", T("Фонды — предел"), "%", 100, T("Верхняя граница доли фондов. Состав фонда проверяется отдельно при наличии данных.")], ["max_below_grade_percent", T("Ниже инвест. уровня"), "%", 100, T("Максимальная доля бумаг ниже выбранного рейтингового уровня. Рейтинг не является вероятностью прибыли.")], ["max_unknown_percent", T("Неизвестные данные"), "%", 100, T("Допустимая доля инструментов с неполной классификацией. Неизвестное не означает безопасное.")], ["max_term_months", T("Срок инструментов"), T("мес."), 1200, T("Предельный срок до погашения в условиях модели. Для проверки нужна дата погашения.")], ["turnover_budget_percent", T("strategy.turnover_with_commission"), "%", 100, T("strategy.turnover_scope")], ["max_daily_turnover_participation_percent", T("Участие в обороте"), "%", 100, T("Ограничение доли заявки в наблюдаемом дневном обороте. Требует данных ликвидности.")], ["securities_tax_rate_percent", T("Личная налоговая ставка"), "%", 100, T("Укажите ставку, применимую к вашей ситуации. Неизвестная ставка остаётся пустой и не заменяется предположением.")], ["uncertainty_haircut_percent", T("Запас на неопределённость"), "%", 100, T("Заданный запас в модели, а не статистически доказанная вероятность или гарантия.")], ["credit_loss_haircut_percent", T("Запас на кредитный риск"), "%", 100, T("Пользовательский параметр допустимого сценария потерь. Без данных эмитента это не прогноз дефолта.")], ["no_trade_band_percent", T("Порог отклонения долей"), "%", 100, T("Небольшие отклонения можно не перестраивать. Увеличение порога уменьшает частоту расчётной ребалансировки.")], ["min_replace_benefit_rub", T("Минимальный эффект замены"), "₽", 1000000000000, T("strategy.effect_scope")]]);
+  const policyFields = () => ([["max_instrument_percent", T("Один инструмент"), "%", C.formLimits.percentMax, T("Максимальная доля одного инструмента. Превышение отмечается в проверке состава; это не предел убытка.")], ["max_sector_percent", T("Один сектор"), "%", C.formLimits.percentMax, T("Ограничение концентрации в одном секторе. Нужны данные о секторе каждого инструмента.")], ["max_issuer_percent", T("Один эмитент"), "%", C.formLimits.percentMax, T("Суммарная доля бумаг одного эмитента. Малый лимит требует большего числа доступных инструментов.")], ["max_group_percent", T("Одна группа компаний"), "%", C.formLimits.percentMax, T("Доля связанных эмитентов. Без подтверждённых связей полная проверка невозможна.")], ["max_share_percent", T("Акции — предел"), "%", C.formLimits.percentMax, T("Верхняя граница доли акций. Целевые доли задаются отдельно в распределении.")], ["max_bond_percent", T("Облигации — предел"), "%", C.formLimits.percentMax, T("Верхняя граница доли облигаций. Кредитный и процентный риски сохраняются.")], ["max_etf_percent", T("Фонды — предел"), "%", C.formLimits.percentMax, T("Верхняя граница доли фондов. Состав фонда проверяется отдельно при наличии данных.")], ["max_below_grade_percent", T("Ниже инвест. уровня"), "%", C.formLimits.percentMax, T("Максимальная доля бумаг ниже выбранного рейтингового уровня. Рейтинг не является вероятностью прибыли.")], ["max_unknown_percent", T("Неизвестные данные"), "%", C.formLimits.percentMax, T("Допустимая доля инструментов с неполной классификацией. Неизвестное не означает безопасное.")], ["max_term_months", T("Срок инструментов"), T("мес."), C.formLimits.horizonMonthsMax, T("Предельный срок до погашения в условиях модели. Для проверки нужна дата погашения.")], ["turnover_budget_percent", T("strategy.turnover_with_commission"), "%", C.formLimits.percentMax, T("strategy.turnover_scope")], ["max_daily_turnover_participation_percent", T("Участие в обороте"), "%", C.formLimits.percentMax, T("Ограничение доли заявки в наблюдаемом дневном обороте. Требует данных ликвидности.")], ["securities_tax_rate_percent", T("Личная налоговая ставка"), "%", C.formLimits.percentMax, T("Укажите ставку, применимую к вашей ситуации. Неизвестная ставка остаётся пустой и не заменяется предположением.")], ["uncertainty_haircut_percent", T("Запас на неопределённость"), "%", C.formLimits.percentMax, T("Заданный запас в модели, а не статистически доказанная вероятность или гарантия.")], ["credit_loss_haircut_percent", T("Запас на кредитный риск"), "%", C.formLimits.percentMax, T("Пользовательский параметр допустимого сценария потерь. Без данных эмитента это не прогноз дефолта.")], ["no_trade_band_percent", T("Порог отклонения долей"), "%", C.formLimits.percentMax, T("Небольшие отклонения можно не перестраивать. Увеличение порога уменьшает частоту расчётной ребалансировки.")], ["min_replace_benefit_rub", T("Минимальный эффект замены"), "₽", C.formLimits.amountRubMax, T("strategy.effect_scope")]]);
   const strategyField = (section, key, title, unit, max, helpText, value) => {
     const name = `strategy.${section}.${key}`;
     const step = key.includes("months") || key.includes("days") ? "1" : "any";
@@ -2469,12 +2594,12 @@
     catalog
   }) => {
     let editor;
-    if (!document) editor = `<section class="card">${state.errors.strategy ? dataError("strategy") : empty(T("Выберите свой подход"), T("Изучите описание и выберите стратегию. Личные суммы не подставляются из шаблона; их задаёте вы."), renderStrategiesValue(), T("Войти"), "strategies", true)}<p class="notice">${H("Расчёты проверяют условия на данных, доступных системе. Ни одна стратегия не гарантирует сохранность капитала или прибыль.")}</p></section>`;else editor = `<div class="strategy-editor"><section class="card"><div class="strategy-heading"><h2>${esc(strategyEditorTitle())}</h2><span class="save-status" data-save-status="strategy"></span></div><p class="strategy-note section-gap">${esc(preset?.description || T("Ваши сохранённые параметры стратегии"))}</p>${saveErrorHTML("strategy")}<form id="strategy-form"><div class="allocation-sliders">${[["shares", T("Акции")], ["bonds", T("Облигации")], ["funds", T("Фонды")], ["cash", T("Деньги")]].map(([key, label], index) => renderStrategiesRangeRow(key, index, label, document)).join("")}</div><p class="data-footnote">${H("Сумма долей всегда 100%. Изменение одной доли пропорционально перераспределяет остальные незакреплённые доли.")}</p><details><summary class="details-summary">${H("Закрепить или исключить классы")}</summary><div class="allocation-flags">${[["shares", T("Акции")], ["bonds", T("Облигации")], ["funds", T("Фонды")], ["cash", T("Деньги")]].map(([key, label]) => renderStrategiesAllocationFlagRow(label, key, document)).join("")}</div></details><h3 class="panel-title section-gap">${H("Ваши условия")}</h3><div class="field-grid">${strategyField("profile", "reserve_rub", T("Резерв вне инвестиций"), "₽", 1000000000000, T("Личная сумма, которую следует сохранить доступной. Укажите реальное значение; пустое поле означает неизвестные условия."), document.profile.reserve_rub)}${strategyField("profile", "planned_withdrawal_rub", T("Планируемый вывод"), "₽", 1000000000000, T("Запланированная потребность в деньгах. При смене готовой стратегии эта сумма сохраняется."), document.profile.planned_withdrawal_rub)}${strategyField("profile", "horizon_months", T("Инвестиционный горизонт"), T("мес."), 1200, T("Срок вашей цели. Более длинный срок не исключает убытки и потребность в резерве."), document.profile.horizon_months)}${strategyField("profile", "max_drawdown_percent", T("Допустимая просадка"), "%", 100, T("Ваша готовность к временному снижению капитала. Это условие модели, а не гарантированный предел потерь."), document.profile.max_drawdown_percent)}${strategyField("profile", "liquidity_horizon_days", T("Срок доступности денег"), T("дней"), 36500, T("За сколько дней вам могут понадобиться деньги. Фактическая ликвидность инструментов проверяется отдельно."), document.profile.liquidity_horizon_days)}</div><label class="check-field section-gap"><input type="checkbox" name="strategy.profile.allow_below_investment_grade"${document.profile.allow_below_investment_grade ? " checked" : ""}><span>${H("Рассматривать бумаги ниже инвестиционного рейтинга. Это повышенный кредитный риск.")}</span></label><details><summary class="details-summary">${H("Ограничения портфеля")}</summary><div class="field-grid">${policyFields().map(([key, title, unit, max, detail]) => strategyField("policy", key, title, unit, max, detail, document.policy[key])).join("")}</div></details><details><summary class="details-summary">${H("Рейтинги и условия доходности")}</summary><p class="fine-print">${H("Доли по рейтинговым категориям — верхние границы. Рейтинговый уровень не равен вероятности успеха.")}</p><div class="field-grid">${select("strategy.rules.yield_floor", T("Условие доходности"), [["none", T("Не задавать")], ["key_rate", T("От ключевой ставки")]], document.rules.yield_floor, T("Порог применяется только при наличии сопоставимых данных о доходности инструмента и ключевой ставке."))}${strategyField("rules", "yield_margin_pp", T("Надбавка к ставке"), T("п.п."), 100, T("Заданная надбавка к официальной ключевой ставке для фильтра условий. Это не обещание доходности."), document.rules.yield_margin_pp)}${strategyField("rules", "fund_wrapper_cap_percent", T("Доля одного фонда"), "%", 100, T("Дополнительный предел для отдельного фонда. Не отменяет проверки его состава."), document.rules.fund_wrapper_cap_percent)}${(catalog.rating_levels || []).map(grade => field({
+    if (!document) editor = `<section class="card">${state.errors.strategy ? dataError("strategy") : empty(T("Выберите свой подход"), T("Изучите описание и выберите стратегию. Личные суммы не подставляются из шаблона; их задаёте вы."), renderStrategiesValue(), T("Войти"), "strategies", true)}<p class="notice">${H("Расчёты проверяют условия на данных, доступных системе. Ни одна стратегия не гарантирует сохранность капитала или прибыль.")}</p></section>`;else editor = `<div class="strategy-editor"><section class="card"><div class="strategy-heading"><h2>${esc(strategyEditorTitle())}</h2><span class="save-status" data-save-status="strategy"></span></div><p class="strategy-note section-gap">${esc(preset?.description || T("Ваши сохранённые параметры стратегии"))}</p>${saveErrorHTML("strategy")}<form id="strategy-form"><div class="allocation-sliders">${[["shares", T("Акции")], ["bonds", T("Облигации")], ["funds", T("Фонды")], ["cash", T("Деньги")]].map(([key, label], index) => renderStrategiesRangeRow(key, index, label, document)).join("")}</div><p class="data-footnote">${H("Сумма долей всегда 100%. Изменение одной доли пропорционально перераспределяет остальные незакреплённые доли.")}</p><details><summary class="details-summary">${H("Закрепить или исключить классы")}</summary><div class="allocation-flags">${[["shares", T("Акции")], ["bonds", T("Облигации")], ["funds", T("Фонды")], ["cash", T("Деньги")]].map(([key, label]) => renderStrategiesAllocationFlagRow(label, key, document)).join("")}</div></details><h3 class="panel-title section-gap">${H("Ваши условия")}</h3><div class="field-grid">${strategyField("profile", "reserve_rub", T("Резерв вне инвестиций"), "₽", C.formLimits.amountRubMax, T("Личная сумма, которую следует сохранить доступной. Укажите реальное значение; пустое поле означает неизвестные условия."), document.profile.reserve_rub)}${strategyField("profile", "planned_withdrawal_rub", T("Планируемый вывод"), "₽", C.formLimits.amountRubMax, T("Запланированная потребность в деньгах. При смене готовой стратегии эта сумма сохраняется."), document.profile.planned_withdrawal_rub)}${strategyField("profile", "horizon_months", T("Инвестиционный горизонт"), T("мес."), C.formLimits.horizonMonthsMax, T("Срок вашей цели. Более длинный срок не исключает убытки и потребность в резерве."), document.profile.horizon_months)}${strategyField("profile", "max_drawdown_percent", T("Допустимая просадка"), "%", C.formLimits.percentMax, T("Ваша готовность к временному снижению капитала. Это условие модели, а не гарантированный предел потерь."), document.profile.max_drawdown_percent)}${strategyField("profile", "liquidity_horizon_days", T("Срок доступности денег"), T("дней"), C.formLimits.liquidityDaysMax, T("За сколько дней вам могут понадобиться деньги. Фактическая ликвидность инструментов проверяется отдельно."), document.profile.liquidity_horizon_days)}</div><label class="check-field section-gap"><input type="checkbox" name="strategy.profile.allow_below_investment_grade"${document.profile.allow_below_investment_grade ? " checked" : ""}><span>${H("Рассматривать бумаги ниже инвестиционного рейтинга. Это повышенный кредитный риск.")}</span></label><details><summary class="details-summary">${H("Ограничения портфеля")}</summary><div class="field-grid">${policyFields().map(([key, title, unit, max, detail]) => strategyField("policy", key, title, unit, max, detail, document.policy[key])).join("")}</div></details><details><summary class="details-summary">${H("Рейтинги и условия доходности")}</summary><p class="fine-print">${H("Доли по рейтинговым категориям — верхние границы. Рейтинговый уровень не равен вероятности успеха.")}</p><div class="field-grid">${select("strategy.rules.yield_floor", T("Условие доходности"), [["none", T("Не задавать")], ["key_rate", T("От ключевой ставки")]], document.rules.yield_floor, T("Порог применяется только при наличии сопоставимых данных о доходности инструмента и ключевой ставке."))}${strategyField("rules", "yield_margin_pp", T("Надбавка к ставке"), T("п.п."), C.formLimits.percentMax, T("Заданная надбавка к официальной ключевой ставке для фильтра условий. Это не обещание доходности."), document.rules.yield_margin_pp)}${strategyField("rules", "fund_wrapper_cap_percent", T("Доля одного фонда"), "%", C.formLimits.percentMax, T("Дополнительный предел для отдельного фонда. Не отменяет проверки его состава."), document.rules.fund_wrapper_cap_percent)}${(catalog.rating_levels || []).map(grade => field({
       name: renderStrategiesFragment(grade),
       label: renderStrategiesFragment2(grade),
       type: "number",
       min: 0,
-      max: 100,
+      max: C.formLimits.percentMax,
       step: "0.0001",
       required: true,
       value: document.rules.rating_caps[grade]
@@ -2497,7 +2622,7 @@
     }
     const list = `<aside class="card strategy-catalog"><h2>${H("Выбор стратегии")}</h2>${strategyTabsHTML()}<div id="strategy-panel-catalog" role="tabpanel" aria-labelledby="strategy-tab-catalog" tabindex="0"${state.strategyPane === "catalog" ? "" : " hidden"}>${catalog.presets.map(raw => {
       const item = I.preset(raw);
-      const [symbol] = strategyIcons[item.id] || ["strategies"];
+      const symbol = strategyIcons[item.id] || "strategies";
       return renderStrategiesStrategyOption(item, document, symbol);
     }).join("")}</div><div id="strategy-panel-custom" role="tabpanel" aria-labelledby="strategy-tab-custom" tabindex="0"${state.strategyPane === "custom" ? "" : " hidden"}><output id="strategy-custom-status" class="fine-print"></output><div class="form-actions"><button type="button" class="button secondary" data-action="strategy-apply-custom" disabled>${H("Создать из текущей")}</button></div></div></aside>`;
     const editor = strategyEditorHTML({
@@ -2802,7 +2927,7 @@
     const rows = Array.isArray(histories) ? histories.map(row => [row.instrument_uid, date(row.latest_completed_candle_at, true)]) : [];
     const errors = Array.isArray(invalid) ? invalid.map(row => `<p class="notice warning">${esc(row.instrument_uid)}: ${esc(humanRequirement(row.reason))}</p>`).join("") : "";
     if (!rows.length && !errors) return "";
-    return `<details class="section-gap"><summary class="details-summary">${H("research.current_history_title")}</summary><p class="fine-print">${H("research.current_history_scope", {days: format(selection.history_max_age_seconds / 86400, 0)})}</p>${infoRows(rows)}${errors}</details>`;
+    return `<details class="section-gap"><summary class="details-summary">${H("research.current_history_title")}</summary><p class="fine-print">${H("research.current_history_scope", {days: format(selection.history_max_age_seconds / C.units.secondsPerDay, 0)})}</p>${infoRows(rows)}${errors}</details>`;
   };
   const dividendCoverageHTML = item => {
     const coverage = item.dividend_cashflow_coverage;
@@ -2831,7 +2956,7 @@
   const assessmentIsCurrent = (result, strategyVersion) => {
     const observed = Date.parse(result.captured_at);
     const until = Date.parse(result.valid_until);
-    return result.strategy_version === strategyVersion && Number.isInteger(strategyVersion) && strategyVersion > 0 && Number.isFinite(observed) && Number.isFinite(until) && observed <= Date.now() + 5000 && until > Date.now() && until >= observed;
+    return result.strategy_version === strategyVersion && Number.isInteger(strategyVersion) && strategyVersion > 0 && Number.isFinite(observed) && Number.isFinite(until) && observed <= Date.now() + C.timing.assessmentClockSkewMs && until > Date.now() && until >= observed;
   };
   const renderAssessment = () => {
     clearTimeout(state.assessmentExpiryTimer);
@@ -2847,7 +2972,7 @@
         if (generation !== state.generation) return;
         const panel = $("#strategy-assessment");
         if (panel) panel.innerHTML = renderAssessment();
-      }, Math.min(2147483647, Math.max(1, Date.parse(result.valid_until) - Date.now() + 1)));
+      }, Math.min(C.timing.timerMaxMs, Math.max(1, Date.parse(result.valid_until) - Date.now() + 1)));
     }
     const content = `<div class="assessment-metrics section-gap"><div class="assessment-metric"><span>${H("Стоимость счёта")}</span><strong>${esc(money(result.nav_rub))}</strong></div><div class="assessment-metric"><span>${H("Проверок")}</span><strong>${result.checks?.length || 0}</strong></div><div class="assessment-metric"><span>${H("Вероятность прибыли")}</span><strong>—</strong></div></div><p class="fine-print section-gap">${esc(result.probability_reason || T("Проверка ограничений не оценивает вероятность будущей прибыли."))}</p>${(result.checks || []).map(item => renderAssessmentDetailsSummary(item)).join("")}${selectionHTML(result.selection)}`;
     const displayed = current ? content : `<p class="notice warning" data-assessment-expired>${H("strategy.assessment_expired")}</p><details><summary class="details-summary">${H("strategy.assessment_previous")}</summary>${content}</details>`;
@@ -2872,7 +2997,7 @@
     try {
       const result = await api("/api/profile/strategy/account-assessment", {
         method: "POST",
-        timeout: 60000,
+        timeout: C.timing.calculationRequestMs,
         body: {
           expected_public_id: state.user.public_id,
           expected_version: version
@@ -2902,7 +3027,7 @@
     label: T("Конец периода"),
     type: "date",
     value: state.researchDraft.to_at,
-    max: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+    max: new Date(Date.now() - C.units.millisecondsPerDay).toISOString().slice(0, 10),
     hint: T("research.complete_day"),
     required: true
   })}${field({
@@ -2911,7 +3036,7 @@
     type: "number",
     value: state.researchDraft.initial_capital_rub,
     min: ".01",
-    max: 1000000000000,
+    max: C.formLimits.amountRubMax,
     step: ".01",
     required: true,
     helpText: T("Капитал для исторического исследования. Это явно заданное условие расчёта, а не сумма реальных денег на вашем счёте.")
@@ -2921,7 +3046,7 @@
     type: "number",
     value: state.researchDraft.commission_bps,
     min: "0",
-    max: "1000",
+    max: C.formLimits.costBasisPointsMax,
     step: ".01",
     required: true,
     helpText: T("Один базисный пункт равен 0,01%. Укажите фактические или исследуемые издержки; значение не подставляется автоматически.")
@@ -2931,7 +3056,7 @@
     type: "number",
     value: state.researchDraft.slippage_bps,
     min: "0",
-    max: "1000",
+    max: C.formLimits.costBasisPointsMax,
     step: ".01",
     required: true,
     helpText: T("Дополнительная разница между наблюдаемой и расчётной ценой. Реальное проскальзывание заранее неизвестно.")
@@ -3092,7 +3217,7 @@
     await loadResearchArchivePage(false);
   };
   const readResearchChoices = async () => {
-    const first = await api("/api/research/runs?limit=200");
+    const first = await api(`/api/research/runs?limit=${C.pagination.researchChoicesPageSize}`);
     const items = new Map(first.items.map(item => [item.id, item]));
     const cursors = new Set();
     const maximumPages = Math.ceil(first.capacity.runs_used / 200) + 1;
@@ -3100,7 +3225,7 @@
       if (!cursor) return;
       if (cursors.has(cursor) || cursors.size >= maximumPages) throw new Error("invalid_server_response");
       cursors.add(cursor);
-      const page = await api(`/api/research/runs?limit=200&cursor=${safeSegment(cursor)}`);
+      const page = await api(`/api/research/runs?limit=${C.pagination.researchChoicesPageSize}&cursor=${safeSegment(cursor)}`);
       for (const item of page.items) items.set(item.id, item);
       return readNext(page.next_cursor);
     };
@@ -3128,7 +3253,7 @@
     renderResearchArchive(page);
     try {
       const query = cursor ? `&cursor=${safeSegment(cursor)}` : "";
-      const payload = await api(`/api/research/runs?limit=50${query}`);
+      const payload = await api(`/api/research/runs?limit=${C.pagination.pageSize}${query}`);
       if (!currentResearchArchive(page)) return;
       const previous = more ? page.items : [];
       page.items = [...new Map([...previous, ...payload.items].map(item => [item.id, item])).values()];
@@ -3156,15 +3281,25 @@
     try {
       const payload = await api("/api/research/evidence");
       if (!current()) return;
-      openDialog(T("Дополнительные источники исследования"), `<form id="research-evidence-form" data-version="${payload.version}"><p class="notice">${H("Данные, которых нет у подключённых источников, можно импортировать в свой аккаунт. Для каждого факта нужны значение, реальная дата его доступности и ссылка на источник. Загруженные сведения обозначаются как предоставленные вами; ссылка сама по себе не подтверждает достоверность.")}</p><label class="field"><span>${H("research.evidence_file")}</span><input type="file" name="evidence_file" accept="application/json,.json"></label><label class="field section-gap"><span>${H("Документ исходных данных")}</span><textarea name="document" rows="14" maxlength="16777216" required spellcheck="false"></textarea></label><details><summary class="details-summary">${H("Состав документа")}</summary><p class="fine-print">${H("research.evidence_structure")}</p><p class="fine-print">${H("research.evidence_dividend_structure")}</p></details><div class="form-actions"><button class="button primary" type="submit">${H("Проверить и сохранить данные")}</button><button class="button secondary" type="button" data-close-dialog>${H("Закрыть")}</button></div><output class="form-message" id="evidence-message"></output></form>`);
+      openDialog(T("Дополнительные источники исследования"), `<form id="research-evidence-form" data-version="${payload.version}"><p class="notice">${H("Данные, которых нет у подключённых источников, можно импортировать в свой аккаунт. Для каждого факта нужны значение, реальная дата его доступности и ссылка на источник. Загруженные сведения обозначаются как предоставленные вами; ссылка сама по себе не подтверждает достоверность.")}</p><label class="field"><span>${H("research.evidence_file")}</span><input type="file" name="evidence_file" accept="application/json,.json"></label><label class="field section-gap"><span>${H("Документ исходных данных")}</span><textarea name="document" rows="14" maxlength="${C.limits.researchEvidenceBytes}" required spellcheck="false"></textarea></label><details><summary class="details-summary">${H("Состав документа")}</summary><p class="fine-print">${H("research.evidence_structure")}</p><p class="fine-print">${H("research.evidence_dividend_structure")}</p></details><div class="form-actions"><button class="button primary" type="submit">${H("Проверить и сохранить данные")}</button><button class="button secondary" type="button" data-close-dialog>${H("Закрыть")}</button></div><output class="form-message" id="evidence-message"></output></form>`);
       const form = $("#research-evidence-form");
       form.elements.document.value = JSON.stringify(payload.document || {assets: []});
+      const formSequence = state.eventRequest;
+      let fileReadSequence = 0;
       form.elements.evidence_file.addEventListener("change", async event => {
+        const readSequence = ++fileReadSequence;
         const file = event.target.files?.[0];
         if (!file) return;
-        if (file.size > 16 * 1024 * 1024) { showMessage($("#evidence-message"), T("research.evidence_too_large"), true); return; }
-        const text = await file.text();
-        if (generation === state.generation && form.isConnected) form.elements.document.value = text;
+        if (file.size > C.limits.researchEvidenceBytes) { showMessage($("#evidence-message"), T("research.evidence_too_large"), true); return; }
+        const previousText = form.elements.document.value;
+        // A slow file read cannot replace a newer selection or a manual edit.
+        const currentRead = () => generation === state.generation && formSequence === state.eventRequest && readSequence === fileReadSequence && form.isConnected && $("#workspace-dialog").open && form.elements.document.value === previousText;
+        try {
+          const text = await file.text();
+          if (currentRead()) form.elements.document.value = text;
+        } catch {
+          if (currentRead()) showMessage($("#evidence-message"), T("research.evidence_file_failed"), true);
+        }
       });
     } catch (error) { if (current() && !isCancelled(error)) openDialog(T("Дополнительные источники исследования"), `<p class="notice error">${esc(humanError(error))}</p><button class="button secondary" data-research-action="evidence">${H("Повторить загрузку")}</button>`); }
   };
@@ -3176,7 +3311,7 @@
     control.disabled = true;
     try {
       const document = JSON.parse(form.elements.document.value);
-      if (new TextEncoder().encode(JSON.stringify(document)).length > 16 * 1024 * 1024) throw new Error("research_evidence_too_large");
+      if (new TextEncoder().encode(JSON.stringify(document)).length > C.limits.researchEvidenceBytes) throw new Error("research_evidence_too_large");
       const saved = await api("/api/research/evidence", {method: "PUT", body: {document, expected_version: Number(form.dataset.version)}});
       if (generation !== state.generation || !form.isConnected) return;
       form.dataset.version = saved.version;
@@ -3206,7 +3341,7 @@
         }
         return;
       }
-      const payload = await api(`/api/research/runs/${id}${action === "replay" ? "/replay" : ""}`, action === "replay" ? {method: "POST", body: {}, timeout: 60000} : {});
+      const payload = await api(`/api/research/runs/${id}${action === "replay" ? "/replay" : ""}`, action === "replay" ? {method: "POST", body: {}, timeout: C.timing.calculationRequestMs} : {});
       if (!current()) return;
       presentArchivedResearch(payload, action);
     } catch (error) { if (current() && !isCancelled(error)) toast(humanError(error), true); }
@@ -3218,7 +3353,7 @@
         const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"}));
         const link = document.createElement("a");
         link.href = url; link.download = `omnicio-research-${payload.id}.json`; link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setTimeout(() => URL.revokeObjectURL(url), C.timing.downloadUrlLifetimeMs);
         return;
       }
       state.researchDisplaySequence = (state.researchDisplaySequence || 0) + 1;
@@ -3302,7 +3437,7 @@
     try {
       const archive = await api(`/api/research/runs/${safeSegment(form.elements.research_run_id.value)}`);
       if (!current()) return;
-      const result = await api("/api/portfolio/proposals/plan", {method: "POST", timeout: 65000, body: {
+      const result = await api("/api/portfolio/proposals/plan", {method: "POST", timeout: C.timing.proposalRequestMs, body: {
         expected_version: Number(form.dataset.strategyVersion), research_run_id: archive.id,
         commission_bps: archive.inputs.commission_bps, slippage_bps: archive.inputs.slippage_bps,
         mode: "shadow"
@@ -3364,7 +3499,7 @@
     state.recovery.busy = true;
     updateRecoveryControls();
     try {
-      await api(`/api/portfolio/executions/${safeSegment(record.id)}/dispatch`, {method: "POST", timeout: 60000, body: {expected_leg_id: next.id}});
+      await api(`/api/portfolio/executions/${safeSegment(record.id)}/dispatch`, {method: "POST", timeout: C.timing.calculationRequestMs, body: {expected_leg_id: next.id}});
       if (currentRecovery(context)) await readRecoveryDetails(context);
       if (context.generation === state.generation) await reloadRecovery();
     } catch (error) {
@@ -3426,7 +3561,7 @@
       const doc = saved.document || {};
       const kind = saved.goal_kind || (state.data.goals?.items || []).find(goal => goal.id === id)?.kind || "capital";
       const applicable = new Set(saved.applicable_fields || (kind === "income" ? ["monthly_income_rub", "annual_inflation_percent"] : ["monthly_contribution_rub", "annual_return_percent", "annual_volatility_percent", "annual_inflation_percent"]));
-      const fields = [["monthly_contribution_rub", T("Ежемесячный взнос в капитал, ₽"), 0, 1000000000000], ["monthly_income_rub", T("Ежемесячные выплаты для цели по доходу, ₽"), 0, 1000000000000], ["annual_return_percent", T("Годовой темп роста после издержек, %"), -99, 100], ["annual_volatility_percent", T("Годовая волатильность для модели, %"), 0, 200], ["annual_inflation_percent", T("Предполагаемая инфляция, %"), -20, 100]].filter(([name]) => applicable.has(name));
+      const fields = [["monthly_contribution_rub", T("Ежемесячный взнос в капитал, ₽"), 0, C.formLimits.amountRubMax], ["monthly_income_rub", T("Ежемесячные выплаты для цели по доходу, ₽"), 0, C.formLimits.amountRubMax], ["annual_return_percent", T("Годовой темп роста после издержек, %"), -99, 100], ["annual_volatility_percent", T("Годовая волатильность для модели, %"), 0, 200], ["annual_inflation_percent", T("Предполагаемая инфляция, %"), -20, 100]].filter(([name]) => applicable.has(name));
       openDialog(T("План достижения цели"), `<form id="goal-plan-form" data-id="${esc(id)}" data-kind="${esc(kind)}" data-version="${saved.version}" data-goal-version="${saved.goal_version}"><p class="notice">${H("Введите собственные сценарные предположения. Эти поля не являются прогнозом OMNICIO. Ноль также нужно указать явно.")}</p>${U.switchControl("target_in_today_money", T("Цель в сегодняшних ценах"), T("Будущая целевая сумма увеличивается на заданную инфляцию."), doc.target_in_today_money ?? true)}<div class="field-grid">${fields.map(([name, label, min, max]) => field({name, label, type: "number", min, max, step: "0.0001", required: name !== "annual_volatility_percent", value: doc[name] ?? ""})).join("")}</div><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить и рассчитать")}</button><button class="button secondary" type="button" data-close-dialog>${H("navigation.back")}</button></div><output class="form-message" id="goal-plan-message"></output><section id="goal-plan-result" class="section-gap">${goalForecastHTML(saved.forecast)}</section></form>`);
       updateGoalPlanFields();
     } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("state.load_failed"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить загрузку"), "route-retry")}`); }
@@ -3500,7 +3635,7 @@
       label: T("Целевая сумма, ₽"),
       type: "number",
       min: ".00000001",
-      max: "1000000000000",
+      max: C.formLimits.amountRubMax,
       step: "any",
       value: document.target_amount_rub,
       required: true
@@ -3521,7 +3656,7 @@
       label: T("Доля источника, %"),
       type: "number",
       min: ".00000001",
-      max: "100",
+      max: C.formLimits.percentMax,
       step: "any",
       value: document.allocation_percent || "",
       helpText: T("Какая доля портфеля или подтверждённых выплат относится к этой цели. Общая доля активных целей не может превышать 100%.")
@@ -3530,7 +3665,7 @@
       label: T("Уже накоплено вручную, ₽"),
       type: "number",
       min: "0",
-      max: "1000000000000",
+      max: C.formLimits.amountRubMax,
       step: "any",
       value: document.manual_amount_rub ?? "",
       helpText: T("Сумма, которую вы подтверждаете сами. Она не выдаётся за полученную из брокерского API.")
@@ -3746,7 +3881,7 @@
     if (!state.eventWrites.size) state.eventWritesOverlapped = false;
     paintEventCounters();
     retryMissingEvents();
-    scheduleEventSummary(100);
+    scheduleEventSummary(C.timing.eventSummaryChangedMs);
   };
   const eventIsRead = item => Boolean(item.read_at || item.read_confirmed);
   const confirmEventItem = (item, matches, serverItem) => {
@@ -3827,40 +3962,52 @@
     const cursor = state.data[name]?.next_cursor;
     if (!cursor || state.loading.has(busy)) return;
     const generation = state.generation;
-    const eventsEpoch = eventReadEpoch();
-    const filter = state.eventFilter;
-    const current = () => generation === state.generation && (news || filter === state.eventFilter && currentEventRead(eventsEpoch));
+    const eventsContext = news ? null : eventSnapshotContext();
+    const current = () => generation === state.generation && (news || currentEventSnapshot(eventsContext));
     state.loading.add(busy);
     renderEvents();
     try {
-      const page = await api(`${news ? "/api/news?limit=50" : eventsPath()}&cursor=${encodeURIComponent(cursor)}`);
+      const requestPath = news ? `/api/news?limit=${C.pagination.pageSize}` : eventsPath();
+      const page = await api(`${requestPath}&cursor=${encodeURIComponent(cursor)}`);
       if (!current()) return;
-      state.data[name] = mergePage(state.data[name], page);
+      const snapshot = news ? mergePage(state.data[name], page) : await readEventSnapshot(page, eventsContext, true);
+      if (!snapshot || !current()) return;
+      state.data[name] = snapshot;
       if (!news) state.eventHistoryExtended = true;
       delete state.errors[name];
     } catch (error) {
       if (current() && !isCancelled(error)) state.errors[name] = error;
     } finally {
-      if (generation === state.generation) {
-        state.loading.delete(busy);
-        if (state.view === "events" && current()) renderEvents();
-        else if (!news) $("#view-events [data-action=events-more]")?.removeAttribute("disabled");
-      }
+      finishEventPage(news, busy, generation, current);
     }
   };
+  const finishEventPage = (news, busy, generation, current) => {
+    if (generation !== state.generation) return;
+    state.loading.delete(busy);
+    if (state.view === "events" && current()) renderEvents();
+    else if (!news) $("#view-events [data-action=events-more]")?.removeAttribute("disabled");
+  };
   const eventSourceLabel = type => ({operation: T("Операция брокера"), payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")})[type] || type || T("Серверный факт");
-  const eventSourceHTML = event => {
-    const source = event.source;
-    if (!source || typeof source !== "object") return `<p class="fine-print">${esc(typeof source === "string" ? source : T("Источник не указан"))}</p>`;
-    const rows = [[T("Источник"), eventSourceLabel(source.type)]];
-    if (source.instrument_uid) rows.push([T("Инструмент"), source.instrument_uid]);
+  const payoutIdentityUncertain = item => item?.identity_status === "ambiguous" || item?.supersession_reason === "identity_ambiguous";
+  const eventSourceValues = source => {
+    const rows = [];
     if (source.amount !== undefined) rows.push([T("Сумма операции"), money(source.amount, 2, source.currency || "")]);
     if (source.amount_per_security != null) rows.push([T("На одну бумагу"), money(source.amount_per_security, 2, source.currency || "", false)]);
     if (source.expected_at) rows.push([T("Плановая дата выплаты"), date(source.expected_at)]);
     if (source.due_date) rows.push([T("Плановая дата цели"), date(source.due_date)]);
     if (source.state || source.status) rows.push([T("Состояние источника"), source.state || source.status]);
+    return rows;
+  };
+  const eventSourceHTML = event => {
+    const source = event.source;
+    if (!source || typeof source !== "object") return `<p class="fine-print">${esc(typeof source === "string" ? source : T("Источник не указан"))}</p>`;
+    const rows = [[T("Источник"), eventSourceLabel(source.type)]];
+    if (source.instrument_uid) rows.push([T("Инструмент"), source.instrument_uid]);
+    const uncertain = source.type === "payout" && payoutIdentityUncertain(source);
+    if (!uncertain) rows.push(...eventSourceValues(source));
+    const notice = uncertain ? `<p class="notice warning">${H("payout.identity.note")}</p>` : "";
     const link = source.url ? `<p class="fine-print">${U.sourceLink(source.url, T("Открыть первоисточник"))}</p>` : "";
-    return infoRows(rows) + link;
+    return notice + infoRows(rows) + link;
   };
   const eventDestinationButton = destination => {
     if (!destination || !views.has(destination.view)) return "";
@@ -3868,6 +4015,11 @@
     if (destination.uid) label = T("Открыть инструмент");
     else if (destination.goal_id) label = T("Открыть цель");
     return button(label, "event-destination", {primary: true});
+  };
+  const showEventDetails = event => {
+    const uncertain = event.source?.type === "payout" && payoutIdentityUncertain(event.source);
+    const details = uncertain ? "" : `<p class="help-copy">${esc(event.detail || T("Подтверждённое событие вашего аккаунта."))}</p><p class="fine-print">${esc(date(event.occurred_at, true))} ${H("МСК")}</p>`;
+    openDialog(uncertain ? T("payout.identity.ambiguous") : event.title, `${details}${eventSourceHTML(event)}${eventDestinationButton(event.destination)}`);
   };
   const openEvent = async id => {
     if (enterRouteScreen("events", "detail", {event: id})) return;
@@ -3879,7 +4031,7 @@
       const event = await api(`/api/events/${id}`);
       if (generation !== state.generation || request !== state.eventRequest || !$("#workspace-dialog").open) return;
       state.eventDetail = event;
-      openDialog(event.title, `<p class="help-copy">${esc(event.detail || T("Подтверждённое событие вашего аккаунта."))}</p><p class="fine-print">${esc(date(event.occurred_at, true))} ${H("МСК")}</p>${eventSourceHTML(event)}${eventDestinationButton(event.destination)}`);
+      showEventDetails(event);
       if (!event.read_at) void markEvents([id]);
     } catch (error) {
       if (generation === state.generation && request === state.eventRequest && $("#workspace-dialog").open && !isCancelled(error)) openDialog(T("Событие недоступно"), `<p class="notice error">${esc(humanError(error))}</p>`);
@@ -4434,14 +4586,14 @@
   const pushRegistration = async () => {
     let timeout;
     return Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(Object.assign(new Error("service_worker_unavailable"), {code: "service_worker_unavailable"})), 15000);
+      timeout = setTimeout(() => reject(Object.assign(new Error("service_worker_unavailable"), {code: "service_worker_unavailable"})), C.timing.workerReadyMs);
     })]).finally(() => clearTimeout(timeout));
   };
   const sendPushBinding = (registration, bindingId, type = "PUSH_BINDING") => new Promise((resolve, reject) => {
     const worker = registration?.active;
     if (!worker) { reject(new Error("service_worker_unavailable")); return; }
     const channel = new MessageChannel();
-    const timeout = setTimeout(() => { channel.port1.close(); reject(new Error("service_worker_unavailable")); }, 5000);
+    const timeout = setTimeout(() => { channel.port1.close(); reject(new Error("service_worker_unavailable")); }, C.timing.workerMessageMs);
     channel.port1.onmessage = event => {
       clearTimeout(timeout);
       channel.port1.close();
@@ -4705,19 +4857,19 @@
     restoreEditableForm("preferences-form");
     $("#view-settings .settings-layout > div")?.insertAdjacentHTML("beforeend", `<section class="card section-gap" id="notification-settings">${notificationContentsHTML()}</section>`);
     $("#view-settings .settings-layout > div:last-child")?.insertAdjacentHTML("beforeend", operationalMetricsHTML());
-    updateSaveStatus("prefs");
     applyScreenLayout("settings");
+    updateSaveStatus("prefs");
   };
   const brokerSettingsHTML = () => {
     const connection = state.data.connection;
     if (!connection) return state.errors.connection ? dataError("connection") : U.loading(T("Проверяем подключение…"));
-    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || T("Счёт T-Invest"))}</strong><small>${connection.environment === "sandbox" ? T("Тестовая среда") : T("Основной счёт")}</small></div><span class="status-dot"></span></div>${infoRows([[T("ID счёта"), connection.account_id], [T("Проверен"), connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button(T("Обновить данные"), "refresh", {
+    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || T("Счёт T-Invest"))}</strong><small>${connection.environment === "sandbox" ? T("Тестовая среда") : T("Основной счёт")}</small></div><span class="status-dot"></span></div>${infoRows([[T("ID счёта"), connection.account_id], [T("Проверен"), connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print" data-news-monitor-status>${esc(workspaceNewsText(true))}</p><p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button(T("Обновить данные"), "refresh", {
       small: true
     })}${button(T("Отключить"), "disconnect-start", {
       small: true,
       extra: disconnectBlocked() ? " disabled" : ""
     })}</div>`;
-    return `<p class="fine-print">${H("Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.")}</p><form id="broker-form" class="connection-steps"><label class="field"><span>${H("API-токен")} ${help(T("API-токен"), T("Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке."))}</span><input type="password" name="credential" autocomplete="off" minlength="20" maxlength="4096" required placeholder="${H("Вставьте токен")}" spellcheck="false"></label>${select("environment", T("Среда источника"), [["prod", T("Основной счёт")], ["sandbox", T("Тестовая среда")]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>${H("Подтверждаю доступ к своим данным на условиях")} <a href="/legal/terms.html">${H("использования сервиса")}</a>.</span></label><button class="button primary" type="submit">${H("Проверить токен")}</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
+    return `<p class="fine-print">${H("Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.")}</p><form id="broker-form" class="connection-steps"><label class="field"><span>${H("API-токен")} ${help(T("API-токен"), T("Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке."))}</span><input type="password" name="credential" autocomplete="off" minlength="${C.formLimits.brokerCredentialCharactersMin}" maxlength="${C.formLimits.credentialCharactersMax}" required placeholder="${H("Вставьте токен")}" spellcheck="false"></label>${select("environment", T("Среда источника"), [["prod", T("Основной счёт")], ["sandbox", T("Тестовая среда")]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>${H("Подтверждаю доступ к своим данным на условиях")} <a href="/legal/terms.html">${H("использования сервиса")}</a>.</span></label><button class="button primary" type="submit">${H("Проверить токен")}</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
   };
   const assistantHealthLabel = status => {
     if (!status?.enabled) return T("Активация отложена");
@@ -4757,7 +4909,7 @@
     }).join("");
     const history = rows.map(item => `<button class="recovery-row" data-assistant-conversation="${esc(item.id)}"${state.assistantBusy ? " disabled" : ""}${selected?.id === item.id ? ' aria-current="true"' : ""}><span><strong>${esc(item.title)}</strong><small>${esc(date(item.updated_at, true))} ${H("МСК")}</small></span></button>`).join("");
     const researchOptions = [["", T("Не передавать")], ...runs.map(run => [run.id, `${date(run.created_at, true)} · ${run.strategy_version || ""}`])];
-    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}<div id="assistant-request">${assistantRequestHTML()}</div></div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p><p id="assistant-history-context" class="fine-print">${H("assistant.history_context_help")}</p></div>${assistantMemoryChoices()}<div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
+    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}<div id="assistant-request">${assistantRequestHTML()}</div></div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p><p id="assistant-history-context" class="fine-print">${H("assistant.history_context_help")}</p></div>${assistantMemoryChoices()}<div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="${C.formLimits.assistantMessageCharactersMax}" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
     updateAssistantContext();
     applyScreenLayout("assistant");
   };
@@ -4768,7 +4920,7 @@
     const sequence = state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
     const before = more && state.assistantConversation?.id === id ? state.assistantConversation.next_before : null;
     const cursor = before ? "&before=" + before : "";
-    const payload = await api(`/api/assistant/conversations/${safeSegment(id)}?limit=50${cursor}`);
+    const payload = await api(`/api/assistant/conversations/${safeSegment(id)}?limit=${C.pagination.pageSize}${cursor}`);
     if (generation !== state.generation || sequence !== state.assistantLoadSequence) return;
     if (payload.id !== id || !Array.isArray(payload.messages)) throw new Error("invalid_server_response");
     state.chat = more ? [...new Map([...payload.messages, ...state.chat].map(item => [item.position, item])).values()].sort((a,b) => a.position - b.position) : payload.messages;
@@ -4844,7 +4996,7 @@
     if (!status) { openDialog(T("Подключение ИИ"), `${dataError("assistantStatus")}${button(T("Повторить"), "route-retry")}`); return; }
     const endpoints = status.allowed_endpoints || [];
     const keyPlaceholder = status.has_key ? T("Оставьте пустым, чтобы сохранить ключ") : T("Ключ провайдера");
-    const connectionForm = endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="4096" placeholder="${esc(keyPlaceholder)}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>");
+    const connectionForm = endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="${C.formLimits.credentialCharactersMax}" placeholder="${esc(keyPlaceholder)}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>");
     const checkedAt = status.health?.checked_at ? `${T("Последняя проверка:")} ${esc(date(status.health.checked_at,true))} ${T("МСК")}` : T("Соединение ещё не проверено.");
     openDialog(T("Подключение ИИ"), `<p class="help-copy">${esc(assistantHealthLabel(status))}</p><p class="fine-print">${H("Сервис проверяет наличие указанной модели и доступность API отдельно от сохранения настроек.")}</p>${connectionForm}<div class="form-actions">${button(T("Проверить соединение"), "assistant-health", {small: true, extra: !status.enabled || !status.configured ? "disabled" : ""})}${status.connection_version ? button(T("Удалить подключение"), "assistant-disconnect", {small: true}) : ""}</div><p class="fine-print">${checkedAt}</p>`);
   };
@@ -4880,7 +5032,7 @@
   };
   const ensureAssistantConversation = async (message, generation) => {
     if (state.assistantConversation) return;
-    const created = await api("/api/assistant/conversations", {method: "POST", body: {title: message.slice(0, 120)}});
+    const created = await api("/api/assistant/conversations", {method: "POST", body: {title: message.slice(0, C.limits.conversationTitleCharacters)}});
     if (generation === state.generation) state.assistantConversation = {...created, messages: [], next_before: null};
   };
   const reportAssistantFailure = async (error, current) => {
@@ -4918,7 +5070,7 @@
       state.assistantRequest = request;
       updateViewRoute({screen: "conversation", conversation: selected.id}, {replace: true});
       paintAssistantRequest();
-      await api("/api/assistant/messages/stream", {method: "POST", timeout: 120000, body: {
+      await api("/api/assistant/messages/stream", {method: "POST", timeout: C.timing.assistantRequestMs, body: {
         conversation_id: selected.id, request_id: request.id, expected_version: selected.version,
         message, context: draft.context, include_news: draft.context === "investment" && draft.include_news,
         research_run_id: draft.context === "investment" ? draft.research_run_id || null : null,
@@ -4963,7 +5115,7 @@
       const data = JSON.parse(json);
       if (data.request_id !== request.id) throw new Error("assistant_stream_invalid");
       if (event === "delta") {
-        if (typeof data.reply_prefix !== "string" || data.reply_prefix.length > 100000 || !Number.isSafeInteger(data.sequence)) throw new Error("assistant_stream_invalid");
+        if (typeof data.reply_prefix !== "string" || data.reply_prefix.length > C.limits.assistantReplyCharacters || !Number.isSafeInteger(data.sequence)) throw new Error("assistant_stream_invalid");
         if (data.sequence > request.stream_sequence) { request.reply_prefix = data.reply_prefix; request.stream_sequence = data.sequence; }
       } else if (event === "complete") { request.status = "completed"; request.result = data.result; terminal = true; }
       else if (event === "cancelled") { request.status = "cancelled"; terminal = true; }
@@ -4975,7 +5127,7 @@
         const {value, done} = await reader.read();
         ensure();
         buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
-        if (buffer.length > 524288) throw new Error("assistant_response_too_large");
+        if (buffer.length > C.limits.assistantStreamBufferCharacters) throw new Error("assistant_response_too_large");
         let match;
         while ((match = /\r?\n\r?\n/.exec(buffer))) {
           const block = buffer.slice(0, match.index);
@@ -5027,7 +5179,7 @@
     return `${cardHeader(T("assistant.memory"))}<p class="fine-print">${H("assistant.memory_help")}</p>${dataError("assistantMemory")}${loading ? U.loading(T("state.loading")) : content}<div id="assistant-memory-editor">${assistantMemoryForm()}</div>`;
   }
   function assistantMemoryForm(item = null) {
-    return `<form id="assistant-memory-form" class="section-gap" data-id="${esc(item?.id || (state.assistantMemoryDraftId ||= crypto.randomUUID()))}" data-version="${item?.version || 0}">${select("category", T("assistant.memory_kind"), [["preference", T("assistant.preference")], ["context", T("assistant.context")]], item?.category || "preference")}<label class="field"><span>${H("assistant.memory_content")}</span><textarea name="content" maxlength="1000" rows="4" required>${esc(item?.content || "")}</textarea></label><label class="check-field"><input type="checkbox" name="confirmed" required><span>${H("assistant.memory_confirm")}</span></label><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить")}</button></div><output id="assistant-memory-message" class="form-message"></output></form>`;
+    return `<form id="assistant-memory-form" class="section-gap" data-id="${esc(item?.id || (state.assistantMemoryDraftId ||= crypto.randomUUID()))}" data-version="${item?.version || 0}">${select("category", T("assistant.memory_kind"), [["preference", T("assistant.preference")], ["context", T("assistant.context")]], item?.category || "preference")}<label class="field"><span>${H("assistant.memory_content")}</span><textarea name="content" maxlength="${C.formLimits.assistantMemoryCharactersMax}" rows="4" required>${esc(item?.content || "")}</textarea></label><label class="check-field"><input type="checkbox" name="confirmed" required><span>${H("assistant.memory_confirm")}</span></label><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить")}</button></div><output id="assistant-memory-message" class="form-message"></output></form>`;
   }
   async function reconcileAssistantMemory(form, body, error, generation) {
     await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
@@ -5266,11 +5418,11 @@
     const menu = `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
     if (!state.route.screen || panes.length <= 2) return menu;
     const current = panes.find(([key]) => key === state.route.screen)?.[1] || T("navigation.sections");
-    const compact = window.innerWidth <= 960;
+    const compact = compactNavigation();
     return `<details class="screen-menu-picker" data-compact="${compact}"${compact ? "" : " open"}><summary class="button secondary screen-menu-toggle"><span>${H("navigation.current_section", {title: current})}</span>${icon("arrow", true)}</summary>${menu}</details>`;
   }
   function syncScreenMenus() {
-    const compact = window.innerWidth <= 960;
+    const compact = compactNavigation();
     for (const picker of $$(".screen-menu-picker")) {
       if (picker.dataset.compact === String(compact)) continue;
       const focused = picker.contains(document.activeElement);
@@ -5429,7 +5581,7 @@
     const current = () => generation === state.generation && state.data.ledger === ledger && version === (state.resourceVersions.get("ledger") || 0);
     state.loading.add("ledger-more");
     try {
-      const page = await api(`/api/workspace/operations?limit=50&cursor=${encodeURIComponent(ledger.next_cursor)}`);
+      const page = await api(`/api/workspace/operations?limit=${C.pagination.pageSize}&cursor=${encodeURIComponent(ledger.next_cursor)}`);
       if (current()) { state.data.ledger = mergePage(ledger, page); delete state.errors.ledger; }
     } catch (error) { if (current() && !isCancelled(error)) state.errors.ledger = error; }
     finally {
@@ -5440,7 +5592,7 @@
     }
   }
   function supportAddress(value) {
-    if (typeof value !== "string" || value.length > 254 || /[\s<>]/.test(value)) return "";
+    if (typeof value !== "string" || value.length > C.limits.emailCharacters || /[\s<>]/.test(value)) return "";
     const parts = value.split("@");
     if (parts.length !== 2 || !parts[0] || !parts[1]) return "";
     const domain = parts[1];
@@ -5482,7 +5634,7 @@
       if (!allowed) { unsupported.add(form); continue; }
       let baseline = {};
       try { baseline = JSON.parse(state.screenBaselines[key] || "{}"); } catch { /* Ignore an unavailable initial form state. */ }
-      const entered = Object.fromEntries(Object.entries(values).filter(([field, value]) => allowed.includes(field) && ["string", "boolean"].includes(typeof value) && String(value).length <= 12000 && value !== baseline[field]));
+      const entered = Object.fromEntries(Object.entries(values).filter(([field, value]) => allowed.includes(field) && ["string", "boolean"].includes(typeof value) && String(value).length <= C.limits.updateDraftFieldCharacters && value !== baseline[field]));
       if (Object.keys(entered).length) drafts[key] = entered;
     }
     if (state.strategy.dirty) unsupported.add("strategy-form");
@@ -5496,15 +5648,15 @@
       const raw = sessionStorage.getItem("omnicio-update-drafts");
       if (!raw) return;
       sessionStorage.removeItem("omnicio-update-drafts");
-      if (new TextEncoder().encode(raw).byteLength > 131072) return;
+      if (new TextEncoder().encode(raw).byteLength > C.limits.updateDraftBytes) return;
       saved = JSON.parse(raw);
     } catch { return; }
-    if (saved.version !== 1 || saved.public_id !== publicId || !Number.isFinite(saved.expires_at) || saved.expires_at < Date.now() || saved.expires_at > Date.now() + 1800000 || !saved.drafts || typeof saved.drafts !== "object") return;
+    if (saved.version !== 1 || saved.public_id !== publicId || !Number.isFinite(saved.expires_at) || saved.expires_at < Date.now() || saved.expires_at > Date.now() + C.timing.updateDraftLifetimeMs || !saved.drafts || typeof saved.drafts !== "object") return;
     for (const [key, values] of Object.entries(saved.drafts)) {
       const [form, entity = ""] = key.split(":");
       const fields = updateDraftFields[form];
-      if (!fields || entity.length > 128 || !values || typeof values !== "object") continue;
-      const restored = Object.fromEntries(Object.entries(values).filter(([name, value]) => fields.includes(name) && ["string", "boolean"].includes(typeof value) && String(value).length <= 12000));
+      if (!fields || entity.length > C.limits.identifierCharacters || !values || typeof values !== "object") continue;
+      const restored = Object.fromEntries(Object.entries(values).filter(([name, value]) => fields.includes(name) && ["string", "boolean"].includes(typeof value) && String(value).length <= C.limits.updateDraftFieldCharacters));
       if (Object.keys(restored).length) state.screenDrafts[`${form}:${entity}`] = restored;
     }
     if (Object.keys(state.screenDrafts).length) toast(T("pwa.drafts_restored"));
@@ -5523,8 +5675,8 @@
     try {
       sessionStorage.removeItem("omnicio-update-drafts");
       if (!Object.keys(drafts).length || !state.user) return true;
-      const payload = JSON.stringify({version: 1, public_id: state.user.public_id, expires_at: Date.now() + 1800000, drafts});
-      if (new TextEncoder().encode(payload).byteLength > 131072) return false;
+      const payload = JSON.stringify({version: 1, public_id: state.user.public_id, expires_at: Date.now() + C.timing.updateDraftLifetimeMs, drafts});
+      if (new TextEncoder().encode(payload).byteLength > C.limits.updateDraftBytes) return false;
       sessionStorage.setItem("omnicio-update-drafts", payload);
       return true;
     } catch { return false; }
@@ -5565,23 +5717,23 @@
     activateApplicationUpdate();
   }
   function stopTableQuotes() { clearTimeout(tableQuotesTimer); tableQuotesTimer = null; }
-  function scheduleTableQuotes(delay = 10000) {
+  function scheduleTableQuotes(delay = C.timing.quotePollMs) {
     stopTableQuotes();
     if (state.mode !== "account" || !state.user || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market"].includes(state.view)) return;
     tableQuotesTimer = setTimeout(() => void pollTableQuotes(), delay);
   }
   function adoptTableQuotes(items, uids) {
     for (const item of items || []) {
-      if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
+      if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = quoteForConnection(item);
     }
     paintTableQuotes();
   }
-  function markTableQuotesUnavailable(uids) {
-    for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: "unavailable"};
+  function markTableQuotesUnavailable(uids, status = "unavailable") {
+    for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: status};
     paintTableQuotes();
   }
   async function pollTableQuotes() {
-    if (tableQuotesBusy || !navigator.onLine) { scheduleTableQuotes(15000); return; }
+    if (tableQuotesBusy || !navigator.onLine) { scheduleTableQuotes(C.timing.quoteOfflineRetryMs); return; }
     const generation = state.generation;
     const root = $(`#view-${state.view}`);
     const uids = [...new Set($$("[data-table-quote]", root || document).filter(item => item.getClientRects().length).map(item => item.dataset.tableQuote))];
@@ -5589,8 +5741,8 @@
     tableQuotesBusy = true;
     try {
       // One batch per fifty displayed instruments, never one provider call per cell.
-      for (let offset = 0; offset < uids.length; offset += 50) {
-        const chunk = uids.slice(offset, offset + 50);
+      for (let offset = 0; offset < uids.length; offset += C.pagination.quoteBatchSize) {
+        const chunk = uids.slice(offset, offset + C.pagination.quoteBatchSize);
         const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(chunk.join(","))}`);
         if (generation !== state.generation || state.tour) return;
         adoptTableQuotes(payload.items, chunk);
@@ -5608,7 +5760,7 @@
     const rows = new Map(portfolioRows().map(item => [item.uid, item]));
     for (const element of $$("[data-table-quote]")) element.innerHTML = tableQuoteHTML(rows.get(element.dataset.tableQuote) || {uid: element.dataset.tableQuote});
   }
-  function scheduleEventSummary(delay = 30000) {
+  function scheduleEventSummary(delay = C.timing.eventSummaryPollMs) {
     clearTimeout(eventSummaryTimer);
     if (!state.user || state.mode !== "account" || state.locked || document.visibilityState !== "visible") return;
     eventSummaryTimer = setTimeout(() => void pollEventSummary(), delay);
@@ -5626,7 +5778,7 @@
     } finally {
       if (eventSummaryRequest === context) {
         eventSummaryRequest = null;
-        scheduleEventSummary(currentEventRead(context.epoch) ? 30000 : 100);
+        scheduleEventSummary(currentEventRead(context.epoch) ? C.timing.eventSummaryPollMs : C.timing.eventSummaryChangedMs);
       }
     }
   }
@@ -5695,7 +5847,7 @@
     for (const count of $$("[data-catalog-count]")) count.textContent = String(catalog.presets.length);
     target.innerHTML = catalog.presets.map(raw => {
       const item = I.preset(raw);
-      const [symbol] = strategyIcons[item.id] || ["strategies"];
+      const symbol = strategyIcons[item.id] || "strategies";
       return `<button class="public-strategy-card" data-public-strategy="${esc(item.id)}">${icon(symbol)}<strong>${esc(item.title)}</strong><small>${esc(strategyTaglines()[item.id] || item.description)}</small></button>`;
     }).join("");
   };
@@ -5812,7 +5964,7 @@
       const route = parseRoute();
       if (state.mode === "auto" || route.mode === "auto") navigate(route.view, {...route, mode: "account"}, {replace: true});
       else if (state.mode === "account") navigate(route.view, route, {replace: true});
-      scheduleEventSummary(100);
+      scheduleEventSummary(C.timing.eventSummaryChangedMs);
       void refreshPushDevice();
       void resumeWorkspaceRefresh();
     }).catch(error => {
@@ -5852,7 +6004,7 @@
     try {
       const result = await api("/api/broker/tbank/accounts", {
         method: "POST",
-        timeout: 45000,
+        timeout: C.timing.portfolioRequestMs,
         body: {
           credential,
           environment,
@@ -5902,7 +6054,7 @@
     try {
       return await api("/api/broker/tbank", {
         method: "PUT",
-        timeout: 45000,
+        timeout: C.timing.portfolioRequestMs,
         body: {
           credential: preview.credential,
           environment: preview.environment,
@@ -6100,7 +6252,7 @@
     const precise = BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, "0"));
     const amount = input.name.endsWith("_rub") ? 1000n : renderStepFieldValue(input);
     const adjusted = precise + BigInt(control.dataset.stepDirection) * amount * 100000000n;
-    const maximum = BigInt(Math.trunc(Number(input.max || "1000000000000"))) * 100000000n;
+    const maximum = BigInt(Math.trunc(Number(input.max || C.formLimits.amountRubMax))) * 100000000n;
     const minimum = BigInt(input.min || "0") * 100000000n;
     const bounded = adjusted < minimum ? minimum : renderStepFieldValue2(adjusted, maximum);
     const decimal = String(bounded % 100000000n).padStart(8, "0").replace(/0{1,8}$/, "");
@@ -6119,7 +6271,7 @@
     id, body, generation: state.generation, revision: state.strategy.revision,
     version: state.strategy.server?.version, status: "checking", busy: false,
     displaySequence: state.researchDisplaySequence || 0,
-    pollUntil: Date.now() + 120000, timer: null, error: null, resultPending: false
+    pollUntil: Date.now() + C.timing.researchReadbackMs, timer: null, error: null, resultPending: false
   });
   const restoreResearchRequest = () => {
     const recent = state.data.researchArchive?.recent_request;
@@ -6132,7 +6284,7 @@
     clearTimeout(request.timer);
     if (!currentResearchRequest(request) || request.busy || !["running", "uncertain"].includes(request.status)) return;
     if (Date.now() >= request.pollUntil || state.view !== "strategies" || document.visibilityState !== "visible") return;
-    request.timer = setTimeout(() => { if (currentResearchRequest(request)) void checkResearchRequest(); }, 2500);
+    request.timer = setTimeout(() => { if (currentResearchRequest(request)) void checkResearchRequest(); }, C.timing.refreshPollMs);
   };
   const acceptResearchResult = (request, result, archive) => {
     request.status = "completed";
@@ -6209,10 +6361,10 @@
     clearTimeout(request.timer);
     repaintResearch();
     try {
-      const result = await api("/api/profile/strategy/research", {method: "POST", timeout: 305000, body: request.body});
+      const result = await api("/api/profile/strategy/research", {method: "POST", timeout: C.timing.researchRequestMs, body: request.body});
       if (!currentResearchRequest(request)) return;
       await adoptResearchResponse(request, result);
-      await loadResource("researchArchive", "/api/research/runs?limit=50", {force: true});
+      await loadResource("researchArchive", `/api/research/runs?limit=${C.pagination.pageSize}`, {force: true});
     } catch (error) {
       if (!currentResearchRequest(request) || isCancelled(error)) return;
       request.error = error;
@@ -6221,7 +6373,7 @@
     } finally {
       if (currentResearchRequest(request)) {
         request.busy = false;
-        request.pollUntil = Date.now() + 120000;
+        request.pollUntil = Date.now() + C.timing.researchReadbackMs;
         repaintResearch();
         if (request.status === "uncertain") await checkResearchRequest();
         else scheduleResearchCheck(request);
@@ -6809,17 +6961,21 @@
   window.addEventListener("popstate", historyNavigation);
   window.addEventListener("hashchange", historyNavigation);
   const refreshVisibleData = async () => {
-    clearTimeout(freshnessTimer);
+    stopVisibleRefresh();
     if (freshnessBusy || document.visibilityState !== "visible" || !navigator.onLine || !state.user || state.locked || state.mode !== "account") return;
+    const generation = state.generation;
+    const canRefresh = () => generation === state.generation && state.user && !state.locked && state.mode === "account" && document.visibilityState === "visible" && navigator.onLine && !(document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending() || [...state.requests].some(controller => controller.omnicioMutation));
     freshnessBusy = true;
     try {
       await verifySession();
       void refreshPushDevice();
-      const editing = document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending();
-      if (!state.locked && state.user && !editing) await loadForView(state.view, state.route, true);
+      if (canRefresh()) {
+        await loadForView(state.view, state.route, true);
+        if (canRefresh()) await resumeWorkspaceRefresh(canRefresh);
+      }
     } finally {
       freshnessBusy = false;
-      if (state.user && !state.locked) freshnessTimer = setTimeout(() => void refreshVisibleData(), 60000);
+      scheduleVisibleRefresh();
     }
   };
   window.addEventListener("focus", () => {
@@ -6832,8 +6988,8 @@
     }
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { void refreshVisibleData(); scheduleTableQuotes(100); scheduleEventSummary(100); startQuoteStream(); }
-    else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); clearTimeout(freshnessTimer); }
+    if (document.visibilityState === "visible") { void refreshVisibleData(); scheduleTableQuotes(100); scheduleEventSummary(C.timing.eventSummaryChangedMs); startQuoteStream(); }
+    else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); stopVisibleRefresh(); }
   });
   window.addEventListener("beforeunload", event => {
     if (acceptingUpdate) return;
@@ -6847,7 +7003,7 @@
     stopQuoteStream();
     stopTableQuotes();
     clearTimeout(eventSummaryTimer);
-    clearTimeout(freshnessTimer);
+    stopVisibleRefresh();
     const pendingGoal = $("#goal-form");
     if (pendingGoal?.dataset.busy === "true") reportGoalSaveError(pendingGoal, Object.assign(new Error("request_interrupted"), {
       status: 0
@@ -6861,17 +7017,23 @@
     if (input) input.value = "";
   });
   window.addEventListener("resize", () => {
-    if (window.innerWidth > 960 && !$("#drawer-backdrop").hidden) closeDrawer(false);
-    $("#app-sidebar").inert = window.innerWidth <= 960 && $("#drawer-backdrop").hidden;
+    if (!compactNavigation() && !$("#drawer-backdrop").hidden) closeDrawer(false);
+    $("#app-sidebar").inert = compactNavigation() && $("#drawer-backdrop").hidden;
     syncScreenMenus();
     syncDialogScrollPadding();
   });
-  window.addEventListener("offline", () => { stopQuoteStream(); toast(T("Нет соединения. Новые данные и изменения требуют сети."), true); });
+  window.addEventListener("offline", () => {
+    stopQuoteStream();
+    if (state.asset?.market) state.asset.market.quote_status = "offline";
+    repaintAssetQuote();
+    markTableQuotesUnavailable(Object.keys(state.quotes), "offline");
+    toast(T("Нет соединения. Новые данные и изменения требуют сети."), true);
+  });
   window.addEventListener("online", () => {
     toast(T("Соединение восстановлено. Проверяем сессию и обновляем данные."));
     void refreshVisibleData();
     scheduleTableQuotes(100);
-    scheduleEventSummary(100);
+    scheduleEventSummary(C.timing.eventSummaryChangedMs);
     startQuoteStream();
     if (state.session.status === "error") void bootstrap();
   });
@@ -6911,6 +7073,10 @@
           const worker = registration.installing;
           worker?.addEventListener("statechange", () => { if (worker.state === "installed" && navigator.serviceWorker.controller) flagApplicationUpdate(); });
         });
+        // Manual startup recovery clears the public cache without reinstalling
+        // an unchanged worker. Repair only missing assets after coherent startup.
+        try { registration.active?.postMessage({type: "REPAIR_PUBLIC_CACHE", build}); }
+        catch { /* Public-cache failure cannot block the online application. */ }
       }).catch(() => {/* Network use remains available without offline assets. */});
       navigator.serviceWorker.addEventListener("controllerchange", () => { if (acceptingUpdate) location.reload(); });
     });
@@ -6919,7 +7085,7 @@
     for (const element of $$("[data-release-version]")) element.textContent = window.OMNICIO_RELEASE.version;
     for (const element of $$("[data-app-build]")) element.textContent = window.OMNICIO_RELEASE.build || "";
   }
-  $("#app-sidebar").inert = window.innerWidth <= 960;
+  $("#app-sidebar").inert = compactNavigation();
   applyTheme(themeChoice);
   renderNav();
   initializeNavigation();
@@ -7030,7 +7196,7 @@
     }[item.category] || "events", true)}</span><div class="event-item-body"><h3>${item.news ? U.sourceLink(item.url, item.title) : renderEventsHTMLEventTitleButton(item)}</h3>${!compact && item.detail ? renderEventsHTMLP(item) : ""}<div class="event-meta"><span>${esc(date(item.occurred_at, true))}</span>${item.news && state.data.news?.freshness === "cached" ? ("<span>" + H("· сохранённый ответ источника") + "</span>") : ""}${item.source ? renderEventsHTMLSpan(item) : ""}${read ? "" : '<span class="status-dot"></span>'}</div></div>${!compact && !read ? renderEventsHTMLIconButton(item) : ""}</article>`;
   }
   function renderHomeGoalsGoalsPreviewList(goals) {
-    return `<div class="goals-preview-list">${goals.slice(0, 2).map(goalPreview).join("")}</div>`;
+    return `<div class="goals-preview-list">${goals.slice(0, C.pagination.compactGoals).map(goalPreview).join("")}</div>`;
   }
   function renderHomeValue(result) {
     if (result >= 0) {
@@ -7191,10 +7357,26 @@
     })}</div>`;
   }
   function renderAssetFinePrint(item) {
-    return `<p class="fine-print">${esc(item.event_type || T("Выплата"))} · ${esc(date(item.payment_date || item.effective_at))}</p>`;
+    const validDate = value => typeof value === "string" && Number.isFinite(Date.parse(value));
+    const uncertain = payoutIdentityUncertain(item);
+    const payoutType = new Map([
+      ["dividend", "asset.dividend"],
+      ["coupon", "asset.coupon"],
+      ["bond_event", "asset.bond_event"]
+    ]).get(item.event_type) || "Выплата";
+    let paymentDate = T("payout.date.unknown");
+    if (item.status === "paid" && validDate(item.actual_at)) {
+      paymentDate = `${T(uncertain ? "payout.date.source" : "payout.date.actual")}: ${date(item.actual_at)}`;
+    } else if (validDate(item.expected_at)) {
+      paymentDate = `${T("events.expected")}: ${date(item.expected_at)}`;
+    }
+    const uncertaintyNote = uncertain ? ` · ${H("payout.identity.unconfirmed")}` : "";
+    return `<p class="fine-print">${H(payoutType)} · ${esc(paymentDate)}${uncertaintyNote}</p>`;
   }
   function renderAssetDetailsSummary2(details) {
-    return `<details><summary class="details-summary">${H("Подтверждённые события выплат")}</summary>${details.payouts.slice(0, 12).map(item => renderAssetFinePrint(item)).join("")}</details>`;
+    const uncertain = details.payouts.some(payoutIdentityUncertain);
+    const notice = uncertain ? `<p class="notice warning">${H("payout.identity.note")}</p>` : "";
+    return `<details data-asset-payouts><summary class="details-summary">${H(uncertain ? "payout.identity.ambiguous" : "Подтверждённые события выплат")}</summary>${notice}${details.payouts.slice(0, C.pagination.assetPayouts).map(item => renderAssetFinePrint(item)).join("")}</details>`;
   }
   function renderUpdateSaveStatusValue(slot) {
     if (slot.error.status === 409) {
@@ -7898,7 +8080,7 @@
     form
   }) {
     navigate("search", {
-      q: form.elements.q.value.trim().slice(0, 64)
+      q: form.elements.q.value.trim().slice(0, C.limits.searchQueryCharacters)
     });
   }
   async function handleSubmitStrategy({}) {
@@ -7913,8 +8095,8 @@
     form
   }) {
     const value = form.elements.display_name.value.trim();
-    if (value.length > 80) {
-      toast(T("Имя должно быть не длиннее 80 символов."), true);
+    if (value.length > C.limits.displayNameCharacters) {
+      toast(T("profile.name_too_long", {limit: C.limits.displayNameCharacters}), true);
       return;
     }
     const accepted = editPreferences(document => {

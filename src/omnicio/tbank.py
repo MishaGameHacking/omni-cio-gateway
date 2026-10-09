@@ -30,6 +30,11 @@ _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
 _INSTRUMENT_UID_FIELD = "instrument uid"
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
+# Documented endpoint page ceilings. Defaults and callers use the same limits;
+# these are provider contracts, not runtime knobs that may be raised arbitrarily.
+NEWS_MAX_PAGE_SIZE = 50
+OPERATIONS_MAX_PAGE_SIZE = 1000
+
 
 class TBankError(RuntimeError):
     """Base T-Invest provider failure that never contains the submitted token."""
@@ -1007,9 +1012,9 @@ class TBankInvestClient:
 
     def get_news(
         self, token: str, environment: TBankEnvironment, *, cursor: str | None = None,
-        limit: int = 50,
+        limit: int = NEWS_MAX_PAGE_SIZE,
     ) -> TBankNewsPage:
-        if type(limit) is not int or not 1 <= limit <= 50 or (
+        if type(limit) is not int or not 1 <= limit <= NEWS_MAX_PAGE_SIZE or (
             cursor is not None and (not isinstance(cursor, str) or not cursor.isdecimal()
                                    or len(cursor) > 19 or int(cursor) > 2**63 - 1)
         ):
@@ -1019,18 +1024,22 @@ class TBankInvestClient:
             body["cursor"] = cursor
         payload = self._post(token=token, environment=environment,
                              service="InstrumentsService", method="News", body=body)
-        raw_items = _required_list(payload, "items")
+        # ProtoJSON omits empty repeated fields and false scalar defaults.
+        raw_items = _optional_list(payload, "items")
         if len(raw_items) > limit:
             raise TBankUnavailable("news page exceeded requested limit")
         items = tuple(_news_item(raw) for raw in raw_items)
         if len({item.id for item in items}) != len(items):
             raise TBankUnavailable("duplicate news identity")
-        next_cursor = str(payload.get("nextCursor", "0"))
-        if not next_cursor.isdecimal() or len(next_cursor) > 19 or int(next_cursor) > 2**63 - 1:
+        has_next = _optional_bool(payload, "hasNext") is True
+        next_cursor = _integer_text(payload.get("nextCursor"))
+        if int(next_cursor) < 0:
             raise TBankUnavailable("news cursor invalid")
-        if cursor is not None and next_cursor == cursor and items:
+        if has_next and (next_cursor == "0" or (
+            cursor is not None and int(next_cursor) == int(cursor)
+        )):
             raise TBankUnavailable("news cursor did not advance")
-        return TBankNewsPage(items, next_cursor if next_cursor != "0" else None)
+        return TBankNewsPage(items, next_cursor if has_next else None)
 
     def get_fund_profile(
         self, token: str, environment: TBankEnvironment, asset_uid: str,
@@ -1884,14 +1893,16 @@ class TBankInvestClient:
         from_at: datetime,
         to_at: datetime,
         cursor: str = "",
-        limit: int = 1000,
+        limit: int = OPERATIONS_MAX_PAGE_SIZE,
     ) -> TBankOperationsPage:
         if from_at.tzinfo is None or to_at.tzinfo is None:
             raise ValueError("operation history boundaries must be timezone-aware")
         if from_at > to_at:
             raise ValueError("operation history start must not be after end")
-        if not 1 <= limit <= 1000:
-            raise ValueError("operation history limit must be between 1 and 1000")
+        if not 1 <= limit <= OPERATIONS_MAX_PAGE_SIZE:
+            raise ValueError(
+                f"operation history limit must be between 1 and {OPERATIONS_MAX_PAGE_SIZE}"
+            )
         if len(cursor) > 4096 or "\n" in cursor or "\r" in cursor:
             raise ValueError("operation history cursor is invalid")
 

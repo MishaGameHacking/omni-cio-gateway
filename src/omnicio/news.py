@@ -16,9 +16,13 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from . import APPLICATION_USER_AGENT
+
 _SOURCE_HOST = "www.cbr.ru"
 _SOURCE_URL = f"https://{_SOURCE_HOST}/rss/eventrss"
 _MAX_BYTES = 512_000
+_FEED_TTL_SECONDS = 300
+_FEED_MAX_AGE_SECONDS = 3600
 
 
 class NewsUnavailable(RuntimeError):
@@ -129,6 +133,7 @@ class NewsClient:
     def __init__(self) -> None:
         self._cached: dict[str, Any] | None = None
         self._expires = 0.0
+        self._stale_until = 0.0
         self._retry_after = 0.0
         self._lock = threading.Lock()
         self._reading = threading.BoundedSemaphore(2)
@@ -169,7 +174,7 @@ class NewsClient:
             with closing(http.client.HTTPSConnection(_SOURCE_HOST, timeout=6)) as conn:
                 path = parsed.path + ("?" + parsed.query if parsed.query else "")
                 conn.request("GET", path, headers={"Accept": "text/html",
-                             "User-Agent": "OMNICIO/1.3 (+https://omnicio.ru)"})
+                             "User-Agent": APPLICATION_USER_AGENT})
                 response = conn.getresponse()
                 if response.status != 200:
                     raise NewsUnavailable("news_source_unavailable")
@@ -203,7 +208,7 @@ class NewsClient:
                 with closing(http.client.HTTPSConnection(_SOURCE_HOST, timeout=6)) as conn:
                     conn.request("GET", "/rss/eventrss", headers={
                         "Accept": "application/rss+xml,application/xml,text/xml",
-                        "User-Agent": "OMNICIO/1.0 (+https://omnicio.ru)",
+                        "User-Agent": APPLICATION_USER_AGENT,
                     })
                     response = conn.getresponse()
                     if response.status != 200:
@@ -214,13 +219,15 @@ class NewsClient:
                 self._retry_after = time.monotonic() + 60
                 return self._fallback()
             self._cached = payload
-            self._expires = time.monotonic() + 300
+            fetched = time.monotonic()
+            self._expires = fetched + _FEED_TTL_SECONDS
+            self._stale_until = fetched + _FEED_MAX_AGE_SECONDS
             self._retry_after = 0
             return payload
         finally:
             self._lock.release()
 
     def _fallback(self) -> dict[str, Any]:
-        if self._cached is None:
+        if self._cached is None or time.monotonic() >= self._stale_until:
             raise NewsUnavailable("news_source_unavailable")
         return {**self._cached, "freshness": "cached"}

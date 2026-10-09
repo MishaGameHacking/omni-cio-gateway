@@ -2,9 +2,15 @@
 
 /* Only application-authored messages are translated. User text, issuer names,
    market news, source evidence and values remain in their original language.
-   t() returns plain text; html() escapes the entire interpolated result. */
+   t() returns plain text; html() escapes the entire interpolated result.
+   Message keys are stable identifiers, including historical keys in Russian.
+   Edit the pair below to change wording everywhere; do not rename a key just
+   because its displayed text changes. Page, offline and push share this catalog. */
 (() => {
   const messages = {
+    "product.name": ["OMNICIO","OMNICIO"],
+    "push.notification.test": ["Это проверочное уведомление OMNICIO.","This is an OMNICIO test notification."],
+    "push.notification.update": ["В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.","New information is available in your account. Open the app to view it."],
     "navigation.current_section": ["Раздел: {title}","Section: {title}"],
     "research.dividend.coverage_fact": ["сопоставимые денежные потоки эмитента для покрытия дивидендов","comparable issuer cashflows for dividend coverage"],
     "research.dividend.issuer_mismatch": ["Денежные потоки относятся к другому эмитенту.","The cashflows belong to a different issuer."],
@@ -181,6 +187,7 @@
     "research.too_large": ["Документ исследования превышает допустимый размер одной записи. Сократите период или набор исходных данных.","The research document exceeds the size allowed for one record. Reduce the period or source dataset."],
     "research.request_capacity": ["Достигнут лимит хранимых запросов исследования. Дождитесь завершения и очистки старых записей сервером.","The retained research-request limit has been reached. Wait for the server to finish and clean up old requests."],
     "research.evidence_file": ["Файл данных JSON, до 16 МиБ","JSON evidence file, up to 16 MiB"],
+    "research.evidence_file_failed": ["Не удалось прочитать файл. Выберите его ещё раз или вставьте документ в поле ниже.","The file could not be read. Select it again or paste the document into the field below."],
     "research.evidence_too_large": ["Размер исходных данных превышает 16 МиБ. Уменьшите документ и повторите сохранение.","The source dataset exceeds 16 MiB. Reduce the document and save again."],
     "ops.title": ["Состояние сервиса","Service status"],
     "ops.ok": ["Работает штатно","Operating normally"],
@@ -397,11 +404,27 @@
     "events.per_security": ["На одну бумагу","Per security"],
     "events.expected": ["Плановая дата выплаты","Expected payment date"],
     "events.goal_due": ["Плановая дата цели","Goal target date"],
+    "payout.date.actual": ["Фактическая дата выплаты","Actual payment date"],
+    "payout.date.source": ["Дата выплаты по источнику","Payment date reported by the source"],
+    "payout.date.unknown": ["Дата выплаты не подтверждена","Payment date is unconfirmed"],
+    "payout.identity.ambiguous": ["Данные о выплатах требуют уточнения","Payment data needs clarification"],
+    "payout.identity.note": ["Источник содержит несколько записей с совпадающими признаками. Условия выплаты требуют уточнения; эти сведения не подтверждают доход или зачисление на счёт.","The source contains several records with matching details. The payment terms need clarification; these records do not confirm income or a credit to your account."],
+    "payout.identity.unconfirmed": ["Условия выплаты не подтверждены","Payment terms are unconfirmed"],
     "news.archive": ["Архив новостей источника","Source news archive"],
     "news.older": ["Предыдущие публикации","Older publications"],
     "news.page_empty": ["В загруженной части архива публикаций нет.","There are no publications in this part of the archive."],
     "news.no_content": ["Источник не предоставил полный текст.","The source did not provide the full text."],
     "news.no_link": ["Публикация предоставлена API источника; внешняя ссылка отсутствует.","The publication was supplied by the source API; no external link is available."],
+    "news.monitor.title": ["Новости по активам","Holdings news"],
+    "news.monitor.not_requested": ["Проверка ленты ещё не выполнялась.","The feed has not been checked yet."],
+    "news.monitor.not_applicable": ["Нет активов с подтверждённой привязкой к ленте T-Invest.","No holdings have a confirmed link to the T-Invest feed."],
+    "news.monitor.received": ["Проверка доступной ленты T-Invest завершена.","The available T-Invest feed has been checked."],
+    "news.monitor.partial": ["Лента T-Invest проверена частично; возможны пропуски публикаций по портфелю.","The T-Invest feed was only partly checked; portfolio-related publications may be missing."],
+    "news.monitor.unavailable": ["Лента T-Invest недоступна; наличие новых публикаций по портфелю не проверено.","The T-Invest feed is unavailable; new portfolio-related publications have not been checked."],
+    "news.monitor.unknown": ["Статус проверки ленты пока неизвестен.","The feed check status is not yet known."],
+    "news.monitor.scope": ["Проверяются только публикации T-Invest с привязкой к активам портфеля. Полный охват новостей рынка и других источников не подтверждён.","Checks cover only T-Invest publications linked to portfolio holdings. Complete coverage of market news and other sources is not confirmed."],
+    "news.monitor.saved": ["Новых публикаций сохранено: {count}.","New publications saved: {count}."],
+    "news.monitor.observed": ["Последние данные ленты получены: {time} МСК.","Latest feed data received: {time} MSK."],
     "notifications.title": ["Доставка уведомлений","Notification delivery"],
     "notifications.cabinet": ["Уведомления в кабинете","In-app notifications"],
     "notifications.check": ["Проверить состояние","Check status"],
@@ -476,6 +499,7 @@
     "asset.maturity": ["Погашение","Maturity"],
     "asset.coupon": ["Купон","Coupon"],
     "asset.dividend": ["Дивиденд","Dividend"],
+    "asset.bond_event": ["Событие облигации","Bond event"],
     "asset.yield": ["Доходность","Return"],
     "asset.volume": ["Объём","Volume"],
     "asset.spread": ["Спред","Spread"],
@@ -1577,7 +1601,7 @@
     "Параметры подхода можно изменить после входа. Название не является обещанием результата.": ["Параметры подхода можно изменить после входа. Название не является обещанием результата.","You can change the approach parameters after signing in. The name does not promise a result."],
     "Открыть личный кабинет": ["Открыть личный кабинет","Open your account"],
     "Освободите другую долю, прежде чем исключать этот класс.": ["Освободите другую долю, прежде чем исключать этот класс.","Unlock another allocation before excluding this asset class."],
-    "Имя должно быть не длиннее 80 символов.": ["Имя должно быть не длиннее 80 символов.","The name must be no longer than 80 characters."],
+    "profile.name_too_long": ["Имя должно быть не длиннее {limit} символов.","The name must be no longer than {limit} characters."],
     "ID не совпадает с текущим профилем.": ["ID не совпадает с текущим профилем.","The ID does not match the current profile."],
     "Аккаунт удалён.": ["Аккаунт удалён.","Account deleted."],
     "Дата не получена": ["Дата не получена","Date not received"],
@@ -2043,7 +2067,7 @@
     return result;
   };
   const api = Object.freeze({compiledBuild: "__OMNICIO_BUILD__", t, html, has, setLocale, getLocale: () => locale, normalizeLocale, apply, keys: () => Object.keys(messages), preset: record => authoredRecord("preset", record), catalogSource: record => authoredRecord("catalog_source", record)});
-  if (typeof window !== "undefined") window.OMNICIO_I18N = api;
+  globalThis.OMNICIO_I18N = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document !== "undefined" && Object.hasOwn(document.documentElement.dataset, "i18nDeviceLocale")) {
     setLocale(typeof navigator !== "undefined" ? navigator.language : "ru");

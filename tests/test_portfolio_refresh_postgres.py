@@ -17,15 +17,17 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from test_intelligence import news_item
 from test_observer import LEGAL_VERSIONS, USER_ID, FakeBroker, bundle
-from test_workspace_postgres import user
+from test_workspace_postgres import user, workspace_database_context
 from test_workspace_postgres import workspace_database as workspace_database
 
 from omnicio.broker import BrokerService
 from omnicio.db import Database
-from omnicio.observer import PortfolioObserver
+from omnicio.intelligence import build_news_evidence
+from omnicio.observer import PortfolioObserver, PortfolioRefreshCoordinator
 from omnicio.portfolio_store import ObservationCancelled, PortfolioStore
-from omnicio.tbank import TBankOperationsPage
+from omnicio.tbank import TBankOperationsPage, TBankUnavailable
 from omnicio.workspace_store import WorkspaceStore
 
 pytestmark = pytest.mark.skipif(
@@ -34,6 +36,14 @@ pytestmark = pytest.mark.skipif(
 REFRESH_MIGRATION = (
     Path(__file__).resolve().parents[1] / "migrations" / "0016_portfolio_refresh.sql"
 )
+
+
+@pytest.fixture
+def isolated_workspace_database() -> Iterator[tuple[Database, str, str]]:
+    # Replaying an older migration changes its then-current constraints. Keep
+    # that historical-schema exercise separate from latest-schema runtime tests.
+    with workspace_database_context() as database:
+        yield database
 
 
 @pytest.fixture
@@ -335,9 +345,9 @@ def _accepted_daily_insert(database: Database, ident: UUID, day: date) -> dict[s
 
 
 def test_native_refresh_preserves_accepted_daily_insert_and_reader_during_rollback(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database, admin_url, schema = workspace_database
+    database, admin_url, schema = isolated_workspace_database
     ident, store, day = owner(database), PortfolioStore(database), date.today()
     daily = _accepted_daily_insert(database, ident, day)
     assert daily is not None
@@ -422,9 +432,9 @@ def test_native_active_refresh_guard_applies_when_scheduled_dates_are_null(
 
 
 def test_native_refresh_migration_recovers_earlier_candidate_without_losing_job_lineage(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database, admin_url, schema = workspace_database
+    database, admin_url, schema = isolated_workspace_database
     ident, store = owner(database), PortfolioStore(database)
     day = date.today()
     daily = _accepted_daily_insert(database, ident, day)
@@ -469,9 +479,9 @@ def test_native_refresh_migration_recovers_earlier_candidate_without_losing_job_
 
 
 def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database, admin_url, schema = workspace_database
+    database, admin_url, schema = isolated_workspace_database
     store, ident = PortfolioStore(database), owner(database)
     earlier = datetime.now(UTC) - timedelta(hours=1)
     observation = replace(bundle(), account_id=str(ident), refreshed_at=earlier)
@@ -606,6 +616,141 @@ def test_native_restart_uses_new_snapshot_lineage_and_resumes_history_cursor(
     assert {row["id"] for row in snapshots} == {old_snapshot, new_snapshot}
 
 
+def _monitoring_broker(ident: UUID) -> Mock:
+    fake, broker = FakeBroker(), Mock(spec=BrokerService)
+    broker.revalidate_account.return_value = replace(
+        fake.revalidate_account(USER_ID), id=str(ident),
+    )
+    broker.user_info.return_value = fake.user_info(USER_ID)
+    broker.observation_bundle.side_effect = lambda *_args, **_kwargs: replace(
+        bundle(), account_id=str(ident), refreshed_at=datetime.now(UTC),
+    )
+    broker.evidence.side_effect = lambda _user, value, **kwargs: fake.evidence(
+        USER_ID, replace(value, account_id="account-1"), **kwargs,
+    )
+    broker.history_page.return_value = TBankOperationsPage(False, "", ())
+    return broker
+
+
+def _age_monitoring_attempts(database: Database, ident: UUID, minutes: int) -> None:
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        connection.execute(
+            "UPDATE job_runs SET requested_at = requested_at - make_interval(mins => %s), "
+            "started_at = started_at - make_interval(mins => %s), "
+            "finished_at = finished_at - make_interval(mins => %s) WHERE user_id = %s",
+            (minutes, minutes, minutes, ident),
+        )
+
+
+def test_native_continuous_worker_refreshes_without_browser_and_keeps_durable_cadence(
+    isolated_workspace_database: tuple[Database, str, str],
+) -> None:
+    database = isolated_workspace_database[0]
+    store, ident = PortfolioStore(database), owner(database)
+    broker = _monitoring_broker(ident)
+    worker = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
+    assert worker.run_pending()
+    first = store.refresh_status(ident)
+    assert first["status"] == "succeeded"
+    assert first["scope"] == "full"
+    assert first["snapshot_saved"] is True
+    restarted = PortfolioRefreshCoordinator(
+        PortfolioStore(database), broker, legal_versions=LEGAL_VERSIONS,
+    )
+    assert not restarted.run_pending()
+    assert broker.observation_bundle.call_count == 1
+
+    _age_monitoring_attempts(database, ident, 6)
+    assert restarted.run_pending()
+    quick = store.refresh_status(ident)
+    assert quick["scope"] == "quick"
+    assert quick["status"] == "succeeded"
+    assert quick["job_id"] != first["job_id"]
+    assert broker.evidence.call_count == 1
+    assert broker.observation_bundle.call_args.kwargs == {"quick": True}
+    assert not restarted.run_pending()
+
+    _age_monitoring_attempts(database, ident, 61)
+    assert restarted.run_pending()
+    assert store.refresh_status(ident)["scope"] == "full"
+    assert broker.evidence.call_count == 2
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        jobs = connection.execute(
+            "SELECT details->>'trigger' AS trigger FROM job_runs WHERE user_id = %s", (ident,),
+        ).fetchall()
+    assert len(jobs) == 3
+    assert all(row["trigger"] == "automatic" for row in jobs)
+
+
+def test_native_automatic_provider_failure_is_throttled_across_restart(
+    isolated_workspace_database: tuple[Database, str, str],
+) -> None:
+    database = isolated_workspace_database[0]
+    store, ident = PortfolioStore(database), owner(database)
+    broker = _monitoring_broker(ident)
+    broker.revalidate_account.side_effect = TBankUnavailable("synthetic outage")
+    worker = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
+    with patch("omnicio.observer.time.sleep"):
+        assert worker.run_pending()
+    failed = store.refresh_status(ident)
+    assert failed["status"] == "degraded"
+    assert failed["snapshot_saved"] is False
+    assert failed["observed_at"] is None
+    attempts = broker.revalidate_account.call_count
+    assert not PortfolioRefreshCoordinator(
+        PortfolioStore(database), broker, legal_versions=LEGAL_VERSIONS,
+    ).run_pending()
+    assert broker.revalidate_account.call_count == attempts
+    _age_monitoring_attempts(database, ident, 6)
+    assert worker.run_pending()
+    assert store.refresh_status(ident)["scope"] == "quick"
+    assert broker.revalidate_account.call_count == attempts + 1
+
+
+@pytest.mark.parametrize("revocation", ["consent", "blocked", "disconnect"])
+def test_native_automatic_admission_requires_current_owner_connection_and_consent(
+    workspace_database: tuple[Database, str, str], revocation: str,
+) -> None:
+    database = workspace_database[0]
+    store, ident = PortfolioStore(database), owner(database)
+    if revocation == "disconnect":
+        assert database.delete_tbank_connection(ident)
+    else:
+        with database.pool.connection() as connection:
+            if revocation == "consent":
+                connection.execute("DELETE FROM legal_acceptances WHERE user_id = %s", (ident,))
+            else:
+                connection.execute("UPDATE users SET status = 'blocked' WHERE id = %s", (ident,))
+    with store.observer_lock(ident) as locked:
+        assert locked
+        assert store.claim_refresh_job(ident, LEGAL_VERSIONS, schedule_if_due=True) is None
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        assert connection.execute(
+            "SELECT id FROM job_runs WHERE user_id = %s", (ident,),
+        ).fetchall() == []
+
+
+def test_native_explicit_full_refresh_upgrades_queued_quick_without_duplicate_job(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store, ident = PortfolioStore(database), owner(database)
+    queued = store.request_refresh(ident, LEGAL_VERSIONS, scope="quick")
+    upgraded = store.request_refresh(ident, LEGAL_VERSIONS, scope="full")
+    assert upgraded["job_id"] == queued["job_id"]
+    assert upgraded["scope"] == "full"
+    with store.observer_lock(ident) as locked:
+        assert locked
+        claimed = store.claim_refresh_job(ident, LEGAL_VERSIONS, schedule_if_due=True)
+        assert claimed is not None
+        assert claimed.refresh_scope == "full"
+        with PortfolioStore(database).observer_lock(ident) as competing:
+            assert not competing
+
+
 def test_native_resumed_history_catches_up_to_the_actual_snapshot_watermark(
     workspace_database: tuple[Database, str, str],
 ) -> None:
@@ -714,3 +859,58 @@ def test_native_refresh_cannot_persist_after_authority_or_connection_revocation(
         replacement = store.request_refresh(ident, LEGAL_VERSIONS)
         assert replacement["status"] == "queued"
         assert replacement["job_id"] != str(job.id)
+
+
+def test_native_news_page_checkpoint_is_atomic_resumable_and_connection_bound(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store, ident, other = PortfolioStore(database), owner(database), owner(database)
+    store.request_refresh(ident, LEGAL_VERSIONS)
+    job = store.claim_refresh_job(ident, LEGAL_VERSIONS)
+    assert job is not None
+    now = datetime.now(UTC)
+    observation = replace(bundle(), account_id=str(ident), refreshed_at=now)
+    snapshot = store.save_snapshot(ident, job_run_id=job.id, bundle=observation)
+    news_id = str(uuid4().int % 10**18 + 1)
+    documents = build_news_evidence(frozenset({"bond-uid"}), [news_item(news_id)], observed_at=now)
+    continuations = [{"cursor": "10", "seen_cursors": []},
+                     {"cursor": "20", "seen_cursors": ["30"]}]
+    checkpoint = {"continuations": continuations, "completed_cursors": [], "status": "partial",
+                  "observed_at": now.isoformat(), "pages": 1, "scanned_items": 1,
+                  "documents_new": 0, "scope": "held_instrument_links"}
+    arguments = {"job_run_id": job.id, "snapshot_id": snapshot, "documents": documents,
+                 "assessments": (), "retrieved_at": now, "news_checkpoint": checkpoint}
+    with (
+        patch("omnicio.portfolio_store._save_source_retrieval",
+              side_effect=RuntimeError("synthetic failed transaction")),
+        pytest.raises(RuntimeError, match="failed transaction"),
+    ):
+        store.save_evidence(ident, **arguments)
+    assert store.news_state(ident, job_run_id=job.id) == {}
+    with database.pool.connection() as connection:
+        assert connection.execute(
+            "SELECT count(*) AS total FROM source_documents WHERE provider_key = %s", (news_id,),
+        ).fetchone()["total"] == 0
+    assert store.save_evidence(ident, **arguments) == (1, 0)
+    saved = PortfolioStore(database).news_state(ident, job_run_id=job.id)
+    assert saved["continuations"] == continuations
+    assert saved["documents_new"] == 1
+    visible = store.refresh_status(ident)["news"]
+    assert visible["status"] == "partial"
+    assert visible["documents_new"] == 1
+    assert "cursor" not in visible
+    assert "seen_cursors" not in visible
+    assert "continuations" not in visible
+    assert "completed_cursors" not in visible
+    with pytest.raises(ObservationCancelled):
+        store.news_state(other, job_run_id=job.id)
+    assert store.finish_job(ident, job.id, status="succeeded", details={})
+    age_request(database, ident)
+    store.request_refresh(ident, LEGAL_VERSIONS)
+    resumed = PortfolioStore(database).claim_refresh_job(ident, LEGAL_VERSIONS)
+    assert resumed is not None
+    assert store.news_state(ident, job_run_id=resumed.id)["continuations"] == continuations
+    assert database.delete_tbank_connection(ident)
+    with pytest.raises(ObservationCancelled):
+        store.news_state(ident, job_run_id=resumed.id)

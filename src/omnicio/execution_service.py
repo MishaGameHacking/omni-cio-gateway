@@ -13,8 +13,6 @@ from typing import Any, cast
 from uuid import UUID
 
 from .backtest import (
-    MAX_RESEARCH_ASSETS,
-    RESEARCH_ENGINE_VERSION,
     ResearchCosts,
 )
 from .broker import (
@@ -40,7 +38,12 @@ from .execution_store import (
     ExecutionStore,
     StrategyExecutionContext,
 )
+from .financial import RUB_QUANTUM
 from .portfolio_store import PortfolioStore
+from .research_policy import (
+    MAX_RESEARCH_ASSETS,
+    RESEARCH_ENGINE_VERSION,
+)
 from .research_store import ResearchStore
 from .strategy import document_hash, normalize_document
 from .strategy_assessment import StrategyCandidateFacts, select_strategy_candidates
@@ -475,7 +478,7 @@ class PortfolioExecutionService:
                 Decimal(estimate.initial_order_amount.value)
                 - Decimal(leg["limit_price"]) * leg["lot_size"] * leg["lots"]
             )
-            > Decimal("0.01")
+            > RUB_QUANTUM
             or leg["action"] == "buy"
             and Decimal(estimate.total_order_amount.value) > Decimal(leg["max_spend_rub"])
             or leg["action"] == "sell"
@@ -815,7 +818,7 @@ class PortfolioExecutionService:
         actual_lots = _execution_snapshot_lots(snapshot, payload.get("lot_sizes", {}))
         if actual_lots != {uid: count for uid, count in expected_lots.items() if count} or abs(
             cash - expected_cash
-        ) > Decimal("0.01"):
+        ) > RUB_QUANTUM:
             raise ExecutionServiceError("execution_portfolio_changed")
 
     @staticmethod

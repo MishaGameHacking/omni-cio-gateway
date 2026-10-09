@@ -8,6 +8,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import unittest
 from unittest.mock import Mock, patch
 
@@ -16,15 +17,18 @@ import verify_main_release as gate
 from report_sonar_annotations import report_annotations
 
 SHA = "a" * 40
+PR_HEAD = "b" * 40
+TREE = "c" * 40
+PR_NUMBER = 765
 BRANCH = {"commit": {"sha": SHA}}
 
 
 def sonar(identifier: int = 10, **changes: object) -> dict:
     return {
-        "id": identifier, "head_sha": SHA,
+        "id": identifier, "head_sha": PR_HEAD,
         "name": "SonarCloud Code Analysis",
         "app": {"id": 12526, "slug": "sonarqubecloud"},
-        "details_url": f"https://sonarcloud.io/dashboard?id={gate.SONAR_PROJECT}&branch=main",
+        "details_url": f"https://sonarcloud.io/dashboard?id={gate.SONAR_PROJECT}&pullRequest={PR_NUMBER}",
         "status": "completed", "conclusion": "success",
         "completed_at": "2026-10-08T12:01:00Z",
         "output": {
@@ -59,48 +63,57 @@ def application_test(**changes: object) -> dict:
     }
 
 
-def client_with_evidence(*, final_sonar: dict | None = None) -> Mock:
-    client = Mock(spec=gate.GitHubClient)
-    client.get.return_value = copy.deepcopy(BRANCH)
-    client.collect.side_effect = [
-        [sonar()], [foundation()], [application()], [application_test()], [application()],
-        [sonar() if final_sonar is None else final_sonar],
-    ]
-    return client
-
-
-def analysis_page(**changes: object) -> dict:
+def merged_pull(**changes: object) -> dict:
     return {
-        "paging": {"pageIndex": 1, "pageSize": 1, "total": 3},
-        "analyses": [{
-            "key": "analysis-a", "revision": SHA, "date": "2026-10-08T12:00:00+0000",
-            **changes,
-        }],
-    }
-
-
-def issues_page(total: int = 0, **changes: object) -> dict:
-    return {
-        "paging": {"pageIndex": 1, "pageSize": 1, "total": total},
-        "issues": ([{
-            "key": "old-issue", "project": gate.SONAR_PROJECT,
-            "issueStatus": "OPEN", "creationDate": "2025-01-01T00:00:00+0000",
-        }] if total else []),
+        "number": PR_NUMBER, "state": "closed", "merged": True,
+        "merge_commit_sha": SHA, "merged_at": "2026-10-09T04:00:00Z",
+        "base": {"ref": "main", "repo": {"full_name": gate.REPOSITORY}},
+        "head": {"sha": PR_HEAD, "repo": {"full_name": gate.REPOSITORY}},
         **changes,
     }
 
 
-def sonar_client_with_evidence() -> Mock:
-    client = Mock(spec=gate.SonarClient)
-    client.get.side_effect = [analysis_page(), issues_page(), analysis_page()]
+def client_with_evidence(*, final_sonar: dict | None = None) -> Mock:
+    client = Mock(spec=gate.GitHubClient)
+    client.collect_list.return_value = [{"number": PR_NUMBER, "merge_commit_sha": SHA}]
+    checks_read = 0
+
+    def get(path: str) -> dict:
+        if path == "/branches/main":
+            return copy.deepcopy(BRANCH)
+        if path == f"/pulls/{PR_NUMBER}":
+            return merged_pull()
+        if path in {f"/git/commits/{SHA}", f"/git/commits/{PR_HEAD}"}:
+            return {"sha": path.rsplit("/", 1)[-1], "tree": {"sha": TREE}}
+        raise AssertionError(f"Unexpected GitHub object request: {path}")
+
+    def collect(path: str, key: str) -> list[dict]:
+        nonlocal checks_read
+        if path == f"/commits/{PR_HEAD}/check-runs?filter=all":
+            checks_read += 1
+            return [final_sonar if checks_read > 1 and final_sonar is not None else sonar()]
+        if path == f"/actions/workflows/auth-foundation-ci.yml/runs?event=push&head_sha={SHA}":
+            return [foundation()]
+        if path == f"/actions/workflows/auth-app-deploy.yml/runs?event=push&head_sha={SHA}":
+            return [application()]
+        if path == f"/actions/workflows/auth-postgres.yml/runs?event=push&head_sha={SHA}":
+            return [application(id=50, path=gate.POSTGRES_PATH)]
+        if path == "/actions/runs/30/attempts/1/jobs":
+            return [application_test()]
+        if path == "/actions/runs/50/attempts/1/jobs":
+            return [application_test(id=60, run_id=50, name=gate.POSTGRES_TEST_JOB)]
+        raise AssertionError(f"Unexpected GitHub collection request: {path}, {key}")
+
+    client.get.side_effect = get
+    client.collect.side_effect = collect
     return client
 
 
 class ReleaseEvidenceTests(unittest.TestCase):
     def test_current_main_with_all_successful_checks_passes(self) -> None:
         client = client_with_evidence()
-        gate.verify(client, SHA, sonar_client_with_evidence())
-        self.assertEqual(client.get.call_count, 2)
+        gate.verify(client, SHA)
+        self.assertEqual(client.get.call_count, 6)
         self.assertIn("filter=all", client.collect.call_args_list[0].args[0])
         self.assertEqual(client.collect.call_args_list[0], client.collect.call_args_list[-1])
         self.assertEqual(client.collect.call_args_list[3].args,
@@ -131,7 +144,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         for output in dirty_outputs:
             check = sonar(output=output)
             with self.subTest(output=output), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar([check], SHA)
+                gate.require_sonar([check], PR_HEAD, PR_NUMBER)
 
     def test_sonar_missing_or_malformed_output_blocks_release(self) -> None:
         malformed = (
@@ -141,56 +154,58 @@ class ReleaseEvidenceTests(unittest.TestCase):
             {"annotations_count": -1, "summary": sonar()["output"]["summary"]},
             {"annotations_count": 0, "summary": ""},
             {"annotations_count": 0, "summary": "Quality Gate passed"},
+            {"annotations_count": 0,
+             "summary": sonar()["output"]["summary"] + "\n[1 New issue](https://sonarcloud.io/new)"},
         )
         for output in malformed:
             check = sonar(output=output)
             with self.subTest(output=output), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar([check], SHA)
+                gate.require_sonar([check], PR_HEAD, PR_NUMBER)
 
-    def test_same_sha_pr_success_cannot_hide_failed_main(self) -> None:
+    def test_another_pr_success_cannot_hide_failed_merged_pr(self) -> None:
         pull_request = sonar(12, details_url=(
             f"https://sonarcloud.io/dashboard?id={gate.SONAR_PROJECT}&pullRequest=660"
         ))
         checks = [sonar(conclusion="failure"), pull_request]
         with self.assertRaises(gate.ReleaseBlocked):
-            gate.require_sonar(checks, SHA)
+            gate.require_sonar(checks, PR_HEAD, PR_NUMBER)
         with self.assertRaises(gate.PendingChecks):
-            gate.require_sonar([pull_request], SHA)
+            gate.require_sonar([pull_request], PR_HEAD, PR_NUMBER)
 
-    def test_latest_main_attempt_controls_acceptance(self) -> None:
+    def test_latest_merged_pr_attempt_controls_acceptance(self) -> None:
         for conclusion in ("failure", "cancelled", "timed_out", "neutral", "skipped", None):
             checks = [sonar(), sonar(11, conclusion=conclusion)]
             with self.subTest(conclusion=conclusion), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar(checks, SHA)
-        gate.require_sonar([sonar(conclusion="failure"), sonar(11)], SHA)
+                gate.require_sonar(checks, PR_HEAD, PR_NUMBER)
+        gate.require_sonar([sonar(conclusion="failure"), sonar(11)], PR_HEAD, PR_NUMBER)
 
     def test_pending_or_unclassified_new_analysis_cannot_reuse_old_success(self) -> None:
         for change in ({"status": "in_progress"}, {"details_url": None}):
             checks = [sonar(), sonar(11, **change)]
             with self.subTest(change=change), self.assertRaises(gate.PendingChecks):
-                gate.require_sonar(checks, SHA)
+                gate.require_sonar(checks, PR_HEAD, PR_NUMBER)
 
     def test_untrusted_sonar_identity_cannot_pass(self) -> None:
         for change in (
-            {"head_sha": "b" * 40}, {"name": "Fake Sonar"},
+            {"head_sha": "d" * 40}, {"name": "Fake Sonar"},
             {"app": {"id": 1, "slug": "sonarqubecloud"}},
             {"app": {"id": 12526, "slug": "another-app"}}, {"app": None},
         ):
             checks = [sonar(**change)]
             with self.subTest(change=change), self.assertRaises(gate.PendingChecks):
-                gate.require_sonar(checks, SHA)
+                gate.require_sonar(checks, PR_HEAD, PR_NUMBER)
 
     def test_ambiguous_project_or_branch_url_cannot_pass(self) -> None:
         valid = sonar()["details_url"]
         for url in (
             valid.replace("https:", "http:"), valid.replace("sonarcloud.io", "example.org"),
             valid.replace(gate.SONAR_PROJECT, "another-project"),
-            valid.replace("branch=main", "branch=feature"), valid + "&branch=main",
+            valid.replace("pullRequest=765", "branch=feature"), valid + "&branch=main",
             valid + "&pullRequest=661", valid + "#fragment", "https://[invalid", 123,
         ):
             checks = [sonar(details_url=url)]
             with self.subTest(url=url), self.assertRaises(gate.PendingChecks):
-                gate.require_sonar(checks, SHA)
+                gate.require_sonar(checks, PR_HEAD, PR_NUMBER)
 
     def test_only_exact_push_foundation_workflow_can_certify_release(self) -> None:
         for change in (
@@ -220,18 +235,28 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 gate.require_foundation(runs, SHA)
 
     def test_main_moving_before_or_during_verification_blocks_release(self) -> None:
-        for responses in ([{"commit": {"sha": "b" * 40}}], [BRANCH, {"commit": {}}]):
+        for moves_on_read in (1, 2):
             client = client_with_evidence()
-            client.get.side_effect = responses
-            sonar_client = sonar_client_with_evidence()
-            with self.subTest(responses=responses), self.assertRaises(gate.ReleaseBlocked):
-                gate.verify(client, SHA, sonar_client)
+            original = client.get.side_effect
+            reads = 0
+
+            def get(path: str, moves_on_read=moves_on_read, original=original) -> dict:
+                nonlocal reads
+                if path == "/branches/main":
+                    reads += 1
+                    if reads >= moves_on_read:
+                        return {"commit": {"sha": "d" * 40}}
+                return original(path)
+
+            client.get.side_effect = get
+            with self.subTest(moves_on_read=moves_on_read), self.assertRaises(gate.ReleaseBlocked):
+                gate.verify(client, SHA)
 
     def test_malformed_check_identity_blocks_instead_of_selecting_a_result(self) -> None:
         for identifier in (None, "99", True, -1):
             checks = [sonar(id=identifier)]
             with self.subTest(identifier=identifier), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar(checks, SHA)
+                gate.require_sonar(checks, PR_HEAD, PR_NUMBER)
 
     def test_missing_checks_wait_then_success_returns(self) -> None:
         client = client_with_evidence()
@@ -240,257 +265,207 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 patch.object(gate.time, "monotonic", return_value=1), \
                 patch.object(gate.time, "sleep") as sleep, \
                 contextlib.redirect_stdout(io.StringIO()):
-            gate.wait_for_release(client, SHA, sonar_client_with_evidence())
+            gate.wait_for_release(client, SHA)
             sleep.assert_called_once_with(15)
 
     def test_missing_checks_have_bounded_wait_and_failure_is_not_retried(self) -> None:
         client = client_with_evidence()
         client.deadline = 1
         for error in (gate.PendingChecks("Pending"), gate.ReleaseBlocked("Failed")):
-            sonar_client = sonar_client_with_evidence()
             with self.subTest(error=type(error)), \
                     patch.object(gate, "verify", side_effect=error), \
                     patch.object(gate.time, "monotonic", return_value=2), \
                     patch.object(gate.time, "sleep") as sleep, \
                     self.assertRaises(gate.ReleaseBlocked):
-                gate.wait_for_release(client, SHA, sonar_client)
+                gate.wait_for_release(client, SHA)
             sleep.assert_not_called()
 
 
-class OverallSonarEvidenceTests(unittest.TestCase):
-    def test_new_pending_or_failed_main_check_during_inventory_blocks_release(self) -> None:
+class MergedPullRequestEvidenceTests(unittest.TestCase):
+    def test_squash_commit_uses_the_exact_merged_pr_head_analysis(self) -> None:
+        client = client_with_evidence()
+        gate.verify(client, SHA)
+        client.collect_list.assert_called_once_with(f"/commits/{SHA}/pulls")
+        check_paths = [call.args[0] for call in client.collect.call_args_list
+                       if call.args[1] == "check_runs"]
+        self.assertEqual(check_paths, [f"/commits/{PR_HEAD}/check-runs?filter=all"] * 2)
+        self.assertIn(f"/git/commits/{SHA}", [call.args[0] for call in client.get.call_args_list])
+        self.assertIn(f"/git/commits/{PR_HEAD}",
+                      [call.args[0] for call in client.get.call_args_list])
+
+    def test_failed_main_sonar_does_not_override_successful_exact_pr_sonar(self) -> None:
+        main = sonar(99, conclusion="cancelled", details_url=(
+            f"https://sonarcloud.io/dashboard?id={gate.SONAR_PROJECT}&branch=main"
+        ))
+        self.assertEqual(gate.require_sonar([main, sonar()], PR_HEAD, PR_NUMBER)[0], 10)
+        with self.assertRaises(gate.PendingChecks):
+            gate.require_sonar([main], PR_HEAD, PR_NUMBER)
+
+    def test_direct_push_or_another_merge_cannot_borrow_a_pr_result(self) -> None:
+        for rows in ([], [{"number": PR_NUMBER, "merge_commit_sha": "d" * 40}]):
+            client = client_with_evidence()
+            client.collect_list.return_value = rows
+            with self.subTest(rows=rows), self.assertRaises(gate.PendingChecks):
+                gate.verify(client, SHA)
+            client.collect.assert_not_called()
+
+    def test_ambiguous_or_malformed_pr_association_blocks(self) -> None:
+        for rows in (
+            [{"number": PR_NUMBER, "merge_commit_sha": SHA}] * 2,
+            [{"number": True, "merge_commit_sha": SHA}],
+            [{"number": "765", "merge_commit_sha": SHA}],
+            [{"number": -1, "merge_commit_sha": SHA}],
+        ):
+            client = client_with_evidence()
+            client.collect_list.return_value = rows
+            with self.subTest(rows=rows), self.assertRaises(gate.ReleaseBlocked):
+                gate.verify(client, SHA)
+
+    def test_only_closed_merged_same_repository_main_pr_is_accepted(self) -> None:
+        for changes in (
+            {"merged": False}, {"merged": 1}, {"state": "open"},
+            {"number": PR_NUMBER + 1}, {"merge_commit_sha": "d" * 40},
+            {"merged_at": None}, {"head": None}, {"base": {}},
+            {"base": {"ref": "other", "repo": {"full_name": gate.REPOSITORY}}},
+            {"head": {"sha": PR_HEAD, "repo": {"full_name": "untrusted/fork"}}},
+            {"head": {"sha": "not-a-commit", "repo": {"full_name": gate.REPOSITORY}}},
+        ):
+            client = client_with_evidence()
+            original = client.get.side_effect
+            client.get.side_effect = lambda path, changes=changes, original=original: (
+                merged_pull(**changes) if path == f"/pulls/{PR_NUMBER}" else original(path)
+            )
+            with self.subTest(changes=changes), self.assertRaises(gate.ReleaseBlocked):
+                gate.verify(client, SHA)
+            client.collect.assert_not_called()
+
+    def test_unanalysed_merge_tree_changes_block_even_with_green_pr(self) -> None:
+        client = client_with_evidence()
+        original = client.get.side_effect
+        client.get.side_effect = lambda path: (
+            {"sha": SHA, "tree": {"sha": "d" * 40}}
+            if path == f"/git/commits/{SHA}" else original(path)
+        )
+        with self.assertRaisesRegex(gate.ReleaseBlocked, "main tree differs.*PR head tree"):
+            gate.verify(client, SHA)
+        client.collect.assert_not_called()
+
+    def test_missing_or_misattributed_tree_fails_closed(self) -> None:
+        for commit in (
+            {"sha": PR_HEAD, "tree": {"sha": TREE}}, {"sha": SHA},
+            {"sha": SHA, "tree": {"sha": "invalid"}},
+        ):
+            client = client_with_evidence()
+            original = client.get.side_effect
+            client.get.side_effect = lambda path, commit=commit, original=original: (
+                commit if path == f"/git/commits/{SHA}" else original(path)
+            )
+            with self.subTest(commit=commit), self.assertRaises(gate.ReleaseBlocked):
+                gate.verify(client, SHA)
+
+    def test_changed_pr_head_cannot_reuse_older_green_sha(self) -> None:
+        client = client_with_evidence()
+        original = client.collect.side_effect
+        client.collect.side_effect = lambda path, key: (
+            [sonar(head_sha="d" * 40)] if key == "check_runs" else original(path, key)
+        )
+        with self.assertRaises(gate.PendingChecks):
+            gate.verify(client, SHA)
+
+    def test_pr_head_changing_during_verification_blocks(self) -> None:
+        client = client_with_evidence()
+        original = client.get.side_effect
+        reads = 0
+
+        def get(path: str) -> dict:
+            nonlocal reads
+            if path == f"/pulls/{PR_NUMBER}":
+                reads += 1
+                if reads > 1:
+                    return merged_pull(head={"sha": "d" * 40,
+                                             "repo": {"full_name": gate.REPOSITORY}})
+            return original(path)
+
+        client.get.side_effect = get
+        with self.assertRaisesRegex(gate.PendingChecks, "PR head changed"):
+            gate.verify(client, SHA)
+
+    def test_new_failed_pending_or_replaced_pr_analysis_blocks(self) -> None:
         for check, error in (
             (sonar(11, status="queued", conclusion=None), gate.PendingChecks),
             (sonar(11, conclusion="failure"), gate.ReleaseBlocked),
-            (sonar(status="in_progress", conclusion=None), gate.PendingChecks),
-            (sonar(conclusion="cancelled"), gate.ReleaseBlocked),
+            (sonar(11, conclusion="cancelled"), gate.ReleaseBlocked),
+            (sonar(11), gate.PendingChecks),
+            (sonar(completed_at="2026-10-09T05:00:00Z"), gate.PendingChecks),
         ):
             client = client_with_evidence(final_sonar=check)
-            sonar_client = sonar_client_with_evidence()
             with self.subTest(check=check), self.assertRaises(error):
-                gate.verify(client, SHA, sonar_client)
+                gate.verify(client, SHA)
 
-    def test_replaced_success_or_new_completion_requires_fresh_inventory(self) -> None:
-        for check in (sonar(11), sonar(completed_at="2026-10-08T12:02:00Z")):
-            client = client_with_evidence(final_sonar=check)
-            sonar_client = sonar_client_with_evidence()
-            with self.subTest(check=check), self.assertRaisesRegex(
-                gate.PendingChecks, "check changed",
-            ):
-                gate.verify(client, SHA, sonar_client)
-
-    def test_sonar_check_missing_completion_identity_cannot_certify_inventory(self) -> None:
-        for completed_at in (None, "", True):
-            checks = [sonar(completed_at=completed_at)]
-            with self.subTest(completed_at=completed_at), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar(checks, SHA)
-
-    def test_green_new_code_check_cannot_hide_older_main_issue(self) -> None:
-        for status in ("OPEN", "CONFIRMED", "ACCEPTED"):
-            inventory = issues_page(1)
-            inventory["issues"][0]["issueStatus"] = status
-            sonar_client = Mock(spec=gate.SonarClient)
-            sonar_client.get.side_effect = [analysis_page(), inventory]
+    def test_foundation_rerun_after_initial_green_cannot_pass(self) -> None:
+        for conclusion in ("failure", None, "success"):
             client = client_with_evidence()
-            with self.subTest(status=status), self.assertRaisesRegex(
-                gate.ReleaseBlocked, "overall main has",
-            ):
-                gate.verify(client, SHA, sonar_client)
+            original = client.collect.side_effect
+            reads = 0
 
-    def test_zero_inventory_requires_stable_exact_analysis_around_the_read(self) -> None:
-        client = sonar_client_with_evidence()
-        gate.require_overall_sonar(client, SHA)
-        self.assertEqual([call.args[0] for call in client.get.call_args_list], [
-            gate.SONAR_ANALYSES_PATH, gate.SONAR_ISSUES_PATH, gate.SONAR_ANALYSES_PATH,
-        ])
-        self.assertEqual(gate.SONAR_ISSUES_PATH, (
-            f"/api/issues/search?componentKeys={gate.SONAR_PROJECT}&branch=main"
-            "&issueStatuses=OPEN,CONFIRMED,ACCEPTED&p=1&ps=1"
-        ))
-        self.assertEqual(gate.SONAR_ANALYSES_PATH, (
-            f"/api/project_analyses/search?project={gate.SONAR_PROJECT}&branch=main&p=1&ps=1"
-        ))
+            def collect(path: str, key: str, conclusion=conclusion,
+                        original=original) -> list[dict]:
+                nonlocal reads
+                if "auth-foundation-ci.yml/runs" in path:
+                    reads += 1
+                    if reads > 1:
+                        return [foundation(run_attempt=2, conclusion=conclusion,
+                                           status="completed" if conclusion else "queued")]
+                return original(path, key)
 
-    def test_previous_revision_never_certifies_even_an_empty_inventory(self) -> None:
-        client = Mock(spec=gate.SonarClient)
-        client.get.return_value = analysis_page(revision="b" * 40)
-        with self.assertRaises(gate.PendingChecks):
-            gate.require_overall_sonar(client, SHA)
-        client.get.assert_called_once_with(gate.SONAR_ANALYSES_PATH)
+            client.collect.side_effect = collect
+            error = gate.ReleaseBlocked if conclusion == "failure" else gate.PendingChecks
+            with self.subTest(conclusion=conclusion), self.assertRaises(error):
+                gate.verify(client, SHA)
 
-    def test_no_analysis_waits_instead_of_treating_missing_inventory_as_clean(self) -> None:
-        client = Mock(spec=gate.SonarClient)
-        client.get.return_value = {
-            "paging": {"pageIndex": 1, "pageSize": 1, "total": 0}, "analyses": [],
-        }
-        with self.assertRaises(gate.PendingChecks):
-            gate.require_overall_sonar(client, SHA)
+    def test_postgres_job_must_pass_without_waiting_for_its_own_deployment(self) -> None:
+        for conclusion in ("success", "failure", "cancelled", None):
+            client = client_with_evidence()
+            original = client.collect.side_effect
 
-    def test_reanalysis_during_inventory_read_requires_fresh_verification(self) -> None:
-        for changes in (
-            {"key": "analysis-b"}, {"revision": "b" * 40},
-            {"date": "2026-10-08T12:01:00+0000"},
-        ):
-            client = Mock(spec=gate.SonarClient)
-            client.get.side_effect = [analysis_page(), issues_page(), analysis_page(**changes)]
-            with self.subTest(changes=changes), self.assertRaises(gate.PendingChecks):
-                gate.require_overall_sonar(client, SHA)
+            def collect(path: str, key: str, conclusion=conclusion,
+                        original=original) -> list[dict]:
+                if "auth-postgres.yml/runs" in path:
+                    return [application(id=50, path=gate.POSTGRES_PATH,
+                                        status="in_progress", conclusion=None)]
+                if path == "/actions/runs/50/attempts/1/jobs":
+                    return [application_test(id=60, run_id=50, name=gate.POSTGRES_TEST_JOB,
+                                             conclusion=conclusion,
+                                             status="completed" if conclusion else "queued")]
+                return original(path, key)
 
-    def test_missing_or_malformed_analysis_identity_fails_closed(self) -> None:
-        for changes in (
-            {"key": None}, {"key": ""}, {"key": "invalid\nkey"},
-            {"revision": None}, {"revision": True}, {"revision": "not-a-sha"},
-            {"date": None}, {"date": "invalid"}, {"date": "2026-10-08T12:00:00"},
-        ):
-            client = Mock(spec=gate.SonarClient)
-            client.get.return_value = analysis_page(**changes)
-            with self.subTest(changes=changes), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_overall_sonar(client, SHA)
+            client.collect.side_effect = collect
+            with self.subTest(conclusion=conclusion):
+                if conclusion == "success":
+                    gate.verify(client, SHA)
+                else:
+                    error = gate.PendingChecks if conclusion is None else gate.ReleaseBlocked
+                    with self.assertRaises(error):
+                        gate.verify(client, SHA)
 
-    def test_malformed_or_incomplete_zero_issue_response_cannot_pass(self) -> None:
-        invalid = (
-            {}, {"issues": []}, issues_page(paging=None), issues_page(issues=None),
-            issues_page(issues=["invalid"]), issues_page(issues=[{"key": "hidden"}]),
-            issues_page(paging={"pageIndex": 1, "pageSize": 1, "total": False}),
-            issues_page(paging={"pageIndex": True, "pageSize": 1, "total": 0}),
-            issues_page(paging={"pageIndex": 1, "pageSize": 0, "total": 0}),
-            issues_page(paging={"pageIndex": 2, "pageSize": 1, "total": 0}),
-            issues_page(paging={"pageIndex": 1, "pageSize": 1, "total": -1}),
-            issues_page(paging={"pageIndex": 1, "pageSize": 1, "total": "0"}),
-            issues_page(total=0, p=2), issues_page(total=0, ps=100),
-            {**issues_page(), "total": 1}, {**issues_page(), "total": False},
-            issues_page(2, issues=[]),
-        )
-        for response in invalid:
-            client = Mock(spec=gate.SonarClient)
-            client.get.side_effect = [analysis_page(), response]
-            with self.subTest(response=response), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_overall_sonar(client, SHA)
+    def test_postgres_or_application_jobs_changing_after_initial_green_block(self) -> None:
+        for run in (30, 50):
+            client = client_with_evidence()
+            original = client.collect.side_effect
+            reads = 0
 
-    def test_deprecated_matching_paging_fields_remain_compatible(self) -> None:
-        client = Mock(spec=gate.SonarClient)
-        client.get.side_effect = [
-            analysis_page(), {**issues_page(), "p": 1, "ps": 1, "total": 0}, analysis_page(),
-        ]
-        gate.require_overall_sonar(client, SHA)
+            def collect(path: str, key: str, run=run, original=original) -> list[dict]:
+                nonlocal reads
+                rows = original(path, key)
+                if path == f"/actions/runs/{run}/attempts/1/jobs":
+                    reads += 1
+                    if reads > 1:
+                        rows[0]["conclusion"] = "failure"
+                return rows
 
-    def test_nonzero_total_cannot_be_hidden_on_later_pages(self) -> None:
-        client = Mock(spec=gate.SonarClient)
-        client.get.side_effect = [analysis_page(), issues_page(501)]
-        with self.assertRaises(gate.ReleaseBlocked):
-            gate.require_overall_sonar(client, SHA)
-        self.assertEqual(client.get.call_count, 2)
-
-    def test_unavailable_overall_inventory_blocks_successful_github_evidence(self) -> None:
-        client = Mock(spec=gate.SonarClient)
-        client.get.side_effect = gate.ReleaseBlocked("SonarCloud unavailable")
-        github = client_with_evidence()
-        with self.assertRaisesRegex(gate.ReleaseBlocked, "SonarCloud unavailable"):
-            gate.verify(github, SHA, client)
-
-
-class SonarTransportTests(unittest.TestCase):
-    def test_public_read_uses_fixed_tls_host_without_github_credentials(self) -> None:
-        response = Mock(status=200)
-        response.read.return_value = json.dumps(issues_page()).encode()
-        connection = Mock()
-        connection.getresponse.return_value = response
-        with patch.object(gate.http.client, "HTTPSConnection", return_value=connection) as https, \
-                patch.object(gate.time, "monotonic", return_value=0), \
-                patch.dict(os.environ, {"GITHUB_TOKEN": "synthetic-github-token"}):
-            client = gate.SonarClient("", deadline=100)
-            self.assertEqual(client.get(gate.SONAR_ISSUES_PATH), issues_page())
-        https.assert_called_once_with("sonarcloud.io", timeout=15)
-        self.assertEqual(connection.request.call_args.args, ("GET", gate.SONAR_ISSUES_PATH))
-        headers = connection.request.call_args.kwargs["headers"]
-        self.assertNotIn("Authorization", headers)
-        self.assertNotIn("synthetic-github-token", str(connection.mock_calls))
-        self.assertEqual(headers["Cache-Control"], "no-cache")
-        response.read.assert_called_once_with(gate.MAX_RESPONSE_BYTES + 1)
-        connection.close.assert_called_once()
-
-    def test_only_dedicated_sonar_token_can_authenticate_the_read(self) -> None:
-        with patch.object(gate, "request_json", return_value=analysis_page()) as request:
-            client = gate.SonarClient("synthetic-sonar-token", deadline=100)
-            client.get(gate.SONAR_ANALYSES_PATH)
-        self.assertEqual(request.call_args.args[0], "sonarcloud.io")
-        self.assertEqual(request.call_args.args[2]["Authorization"],
-                         "Bearer synthetic-sonar-token")
-
-    def test_wrong_host_project_branch_and_narrowed_inventory_are_rejected(self) -> None:
-        for path in (
-            "https://example.org/api/issues/search", "//example.org/anything",
-            gate.SONAR_ISSUES_PATH.replace(gate.SONAR_PROJECT, "another-project"),
-            gate.SONAR_ISSUES_PATH.replace("branch=main", "pullRequest=765"),
-            gate.SONAR_ISSUES_PATH.replace("branch=main", "branch=feature"),
-            gate.SONAR_ISSUES_PATH + "&sinceLeakPeriod=true",
-            gate.SONAR_ISSUES_PATH + "&assignees=someone",
-            gate.SONAR_ISSUES_PATH + "&createdAfter=2026-01-01",
-        ):
-            client = gate.SonarClient("", deadline=100)
-            with self.subTest(path=path), patch.object(gate, "request_json") as request, \
-                    self.assertRaises(gate.ReleaseBlocked):
-                client.get(path)
-            request.assert_not_called()
-
-    def test_redirect_private_project_and_invalid_responses_fail_closed(self) -> None:
-        for status, body in (
-            (301, b"redirect"), (302, b"redirect"), (401, b"unauthorized"),
-            (403, b"forbidden"), (404, b"missing project"),
-            (200, b"<html>login required</html>"), (200, b"[]"), (200, b"null"),
-            (200, b"x" * (gate.MAX_RESPONSE_BYTES + 1)),
-        ):
-            response = Mock(status=status)
-            response.read.return_value = body
-            connection = Mock()
-            connection.getresponse.return_value = response
-            client = gate.SonarClient("", deadline=100)
-            with self.subTest(status=status, size=len(body)), \
-                    patch.object(gate.http.client, "HTTPSConnection", return_value=connection), \
-                    patch.object(gate.time, "monotonic", return_value=0), \
-                    self.assertRaises(gate.ReleaseBlocked) as raised:
-                client.get(gate.SONAR_ISSUES_PATH)
-            self.assertNotIn(body.decode(), str(raised.exception))
-            connection.close.assert_called_once()
-            self.assertEqual(connection.request.call_count, 1)
-
-    def test_transient_errors_share_the_existing_bounded_release_retry(self) -> None:
-        for status in (408, 429, 500, 502, 503, 599):
-            response = Mock(status=status)
-            connection = Mock()
-            connection.getresponse.return_value = response
-            client = gate.SonarClient("", deadline=100)
-            with self.subTest(status=status), \
-                    patch.object(gate.http.client, "HTTPSConnection", return_value=connection), \
-                    patch.object(gate.time, "monotonic", return_value=0), \
-                    self.assertRaises(gate.PendingChecks):
-                client.get(gate.SONAR_ISSUES_PATH)
-        client = gate.SonarClient("", deadline=100)
-        with patch.object(gate.http.client, "HTTPSConnection", side_effect=OSError), \
-                patch.object(gate.time, "monotonic", return_value=0), \
-                self.assertRaises(gate.PendingChecks):
-            client.get(gate.SONAR_ISSUES_PATH)
-
-    def test_deadline_expired_before_or_during_request_cannot_pass(self) -> None:
-        response = Mock(status=200)
-        response.read.return_value = json.dumps(issues_page()).encode()
-        connection = Mock()
-        connection.getresponse.return_value = response
-        client = gate.SonarClient("", deadline=100)
-        with patch.object(gate.http.client, "HTTPSConnection", return_value=connection), \
-                patch.object(gate.time, "monotonic", side_effect=[0, 101]), \
-                self.assertRaises(gate.ReleaseBlocked):
-            client.get(gate.SONAR_ISSUES_PATH)
-        with patch.object(gate.http.client, "HTTPSConnection") as https, \
-                patch.object(gate.time, "monotonic", return_value=101), \
-                self.assertRaises(gate.ReleaseBlocked):
-            client.get(gate.SONAR_ISSUES_PATH)
-        https.assert_not_called()
-
-    def test_malformed_sonar_token_never_reaches_http_headers(self) -> None:
-        for token in ("bad\r\nheader", "bad token", "a" * 513):
-            with self.subTest(length=len(token)), self.assertRaises(gate.ReleaseBlocked):
-                gate.SonarClient(token, deadline=100)
+            client.collect.side_effect = collect
+            with self.subTest(run=run), self.assertRaises(gate.ReleaseBlocked):
+                gate.verify(client, SHA)
 
 
 class ApplicationPushEvidenceTests(unittest.TestCase):
@@ -596,19 +571,64 @@ class ApplicationPushEvidenceTests(unittest.TestCase):
 
 
 class SelfHostedCiPolicyTests(unittest.TestCase):
+    def test_sonar_diagnostics_cannot_block_main_on_provider_quota(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        conditions = {
+            "auth-foundation-ci.yml": "matrix.name == 'Release gate tests'",
+            "auth-app-deploy.yml": (
+                "always() && steps.checkout.outcome == 'success' "
+                "&& steps.python.outcome == 'success'"
+            ),
+        }
+        for name, condition in conditions.items():
+            workflow = (workflow_dir / name).read_text(encoding="utf-8")
+            diagnostic_steps = [
+                block for block in workflow.split("\n      - name: ")[1:]
+                if "run:" in block and "report_sonar_annotations.py'" in block
+            ]
+            with self.subTest(workflow=name):
+                self.assertEqual(len(diagnostic_steps), 1)
+                step = diagnostic_steps[0]
+                self.assertIn(
+                    "        if: github.event_name == 'pull_request' && " + condition + "\n",
+                    step,
+                )
+                self.assertIn("SOURCE_SHA: ${{ github.event.pull_request.head.sha }}", step)
+
+    def test_workflow_environment_and_permission_blocks_are_not_empty(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        for path in workflow_dir.glob("*.yml"):
+            lines = [line for line in path.read_text(encoding="utf-8").splitlines()
+                     if line.strip() and not line.lstrip().startswith("#")]
+            for index, line in enumerate(lines):
+                mapping = re.fullmatch(r"( *)(env|permissions):", line)
+                if mapping is None:
+                    continue
+                following = lines[index + 1] if index + 1 < len(lines) else ""
+                with self.subTest(workflow=path.name, line=line):
+                    self.assertGreater(
+                        len(following) - len(following.lstrip()), len(mapping[1]),
+                        "An empty workflow mapping is null, not an accepted Actions configuration",
+                    )
+
     def test_infrastructure_pr_queues_are_isolated_from_production(self) -> None:
         workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
         for name in ("auth-postgres", "auth-private-network"):
+            fallback = "github.run_id" if name == "auth-postgres" else "'production'"
             workflow = (workflow_dir / f"{name}.yml").read_text(encoding="utf-8")
             header, jobs = workflow.split("\njobs:\n", 1)
+            concurrency = "\n".join(
+                line for line in header.split("\nconcurrency:\n", 1)[1].splitlines()
+                if not line.lstrip().startswith("#")
+            ).strip()
             reconcile = jobs.split("\n  reconcile:\n", 1)[1].split(
                 "\n  isolated-restore:\n", 1,
             )[0]
             with self.subTest(workflow=name):
                 self.assertEqual(
-                    header.split("\nconcurrency:\n", 1)[1].strip(),
+                    concurrency,
                     f"group: {name}-"
-                    "${{ github.event.pull_request.number || 'production' }}\n"
+                    "${{ github.event.pull_request.number || " + fallback + " }}\n"
                     "  cancel-in-progress: false",
                 )
                 self.assertIn(
@@ -625,7 +645,7 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
                 self.assertIn("    needs: tests\n", reconcile)
                 self.assertIn("- name: Verify current main release checks\n", reconcile)
 
-    def test_inactive_restore_only_binds_sonar_auth_to_the_gated_step(self) -> None:
+    def test_inactive_restore_uses_shared_gate_without_sonar_credentials(self) -> None:
         workflow = (
             pathlib.Path(__file__).resolve().parent.parent / "workflows" / "auth-postgres.yml"
         ).read_text(encoding="utf-8")
@@ -633,14 +653,9 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
         self.assertIn("OMNICIO_RESTORE_DRILL_ALLOWED: \"false\"", restore)
         self.assertIn("github.event_name == 'workflow_dispatch'", restore)
         self.assertIn("github.ref == 'refs/heads/main' && inputs.restore_drill", restore)
-        prefix, gated_step = restore.split(
-            "      - name: Export encrypted archive and verify on a new isolated cluster\n", 1,
-        )
-        gated_step, remainder = gated_step.split("\n      - name:", 1)
-        self.assertNotIn("SONAR_TOKEN:", prefix)
-        self.assertNotIn("SONAR_TOKEN:", remainder)
-        self.assertIn("          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n", gated_step)
-        self.assertIn("run_recovery_drill.py", gated_step)
+        self.assertIn("run_recovery_drill.py", restore)
+        self.assertIn("pull-requests: read", restore)
+        self.assertNotIn("SONAR_TOKEN", workflow)
 
     def test_application_gate_targets_the_existing_tests_job_only(self) -> None:
         workflow = (pathlib.Path(__file__).resolve().parents[2] / gate.APPLICATION_PATH).read_text(
@@ -737,6 +752,22 @@ class SonarScopePolicyTests(unittest.TestCase):
 
 
 class GitHubTransportTests(unittest.TestCase):
+    def test_pr_provenance_pagination_reaches_the_actual_merged_pr(self) -> None:
+        client = gate.GitHubClient("synthetic-test-token", deadline=100)
+        first = [{"number": 1, "merge_commit_sha": "d" * 40}] * 100
+        accepted = {"number": PR_NUMBER, "merge_commit_sha": SHA}
+        with patch.object(client, "get_list", side_effect=[first, [accepted]]) as get:
+            rows = client.collect_list(f"/commits/{SHA}/pulls")
+        self.assertEqual(rows[-1], accepted)
+        self.assertEqual(get.call_args.args[0], f"/commits/{SHA}/pulls?per_page=100&page=2")
+
+    def test_pr_provenance_pagination_is_bounded(self) -> None:
+        client = gate.GitHubClient("synthetic-test-token", deadline=100)
+        with patch.object(client, "get_list", return_value=[{}] * 100) as get, \
+                self.assertRaises(gate.ReleaseBlocked):
+            client.collect_list(f"/commits/{SHA}/pulls")
+        self.assertEqual(get.call_count, 10)
+
     def test_attempt_jobs_pagination_adds_the_first_query_separator(self) -> None:
         client = gate.GitHubClient("synthetic-test-token", deadline=100)
         with patch.object(client, "get", return_value={"jobs": [application_test()]}) as get:
@@ -859,7 +890,7 @@ class GitHubTransportTests(unittest.TestCase):
             rows = client.collect("/commits/example/check-runs?filter=all", "check_runs")
         self.assertIn("page=2", get.call_args.args[0])
         with self.assertRaises(gate.ReleaseBlocked):
-            gate.require_sonar(rows, SHA)
+            gate.require_sonar(rows, PR_HEAD, PR_NUMBER)
 
     def test_malformed_lists_and_pagination_overflow_block(self) -> None:
         client = gate.GitHubClient("synthetic-test-token", deadline=100)
@@ -882,62 +913,29 @@ class GitHubTransportTests(unittest.TestCase):
 
 
 class ReleaseContextTests(unittest.TestCase):
-    def test_shared_entrypoint_gives_both_services_the_same_bounded_deadline(self) -> None:
-        with patch.dict(os.environ, {"SONAR_TOKEN": "synthetic-sonar-token"}, clear=True), \
+    def test_shared_entrypoint_only_needs_github_and_a_bounded_deadline(self) -> None:
+        with patch.dict(os.environ, {}, clear=True), \
                 patch.object(gate.time, "monotonic", return_value=100), \
                 patch.object(gate, "GitHubClient") as github, \
-                patch.object(gate, "SonarClient") as sonar, \
                 patch.object(gate, "wait_for_release") as wait:
             gate.wait_for_main_release(SHA, "synthetic-github-token", timeout=600)
         github.assert_called_once_with("synthetic-github-token", deadline=700)
-        sonar.assert_called_once_with("synthetic-sonar-token", deadline=700)
-        wait.assert_called_once_with(github.return_value, SHA, sonar.return_value)
+        wait.assert_called_once_with(github.return_value, SHA)
 
-    def test_shared_entrypoint_never_reuses_github_credentials_for_sonar(self) -> None:
-        with patch.dict(os.environ, {"SONAR_TOKEN": "synthetic-github-token"}, clear=True), \
-                patch.object(gate, "SonarClient") as sonar, \
-                patch.object(gate, "wait_for_release") as wait, \
-                self.assertRaises(gate.ReleaseBlocked):
-            gate.wait_for_main_release(SHA, "synthetic-github-token", timeout=600)
-        sonar.assert_not_called()
-        wait.assert_not_called()
-
-    def test_cli_keeps_github_and_optional_sonar_credentials_separate(self) -> None:
+    def test_cli_needs_no_sonar_api_or_credential(self) -> None:
         valid = {
             "GITHUB_REPOSITORY": gate.REPOSITORY, "GITHUB_REF": "refs/heads/main",
             "GITHUB_EVENT_NAME": "push", "GITHUB_SHA": SHA,
             "GITHUB_TOKEN": "synthetic-github-token",
         }
-        for sonar_token in ("", "synthetic-sonar-token"):
-            with self.subTest(authenticated=bool(sonar_token)), \
-                    patch.dict(os.environ, valid | {"SONAR_TOKEN": sonar_token}, clear=True), \
-                    patch.object(gate, "require_checkout"), \
-                    patch.object(gate, "GitHubClient") as github_client, \
-                    patch.object(gate, "SonarClient") as sonar_client, \
-                    patch.object(gate, "wait_for_release") as wait, \
-                    contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(gate.main(), 0)
-            self.assertEqual(github_client.call_args.args, ("synthetic-github-token",))
-            self.assertEqual(sonar_client.call_args.args, (sonar_token,))
-            self.assertEqual(sonar_client.call_args.kwargs["deadline"],
-                             github_client.call_args.kwargs["deadline"])
-            wait.assert_called_once_with(github_client.return_value, SHA,
-                                         sonar_client.return_value)
-
-    def test_cli_rejects_github_token_reused_as_sonar_auth(self) -> None:
-        valid = {
-            "GITHUB_REPOSITORY": gate.REPOSITORY, "GITHUB_REF": "refs/heads/main",
-            "GITHUB_EVENT_NAME": "push", "GITHUB_SHA": SHA,
-            "GITHUB_TOKEN": "synthetic-github-token", "SONAR_TOKEN": "synthetic-github-token",
-        }
-        output = io.StringIO()
-        with patch.dict(os.environ, valid, clear=True), patch.object(gate, "require_checkout"), \
-                patch.object(gate, "GitHubClient"), patch.object(gate, "SonarClient") as sonar, \
-                patch.object(gate, "wait_for_release") as wait, contextlib.redirect_stderr(output):
-            self.assertEqual(gate.main(), 1)
-        sonar.assert_not_called()
-        wait.assert_not_called()
-        self.assertNotIn("synthetic-github-token", output.getvalue())
+        with patch.dict(os.environ, valid, clear=True), \
+                patch.object(gate, "require_checkout"), \
+                patch.object(gate, "GitHubClient") as github, \
+                patch.object(gate, "wait_for_release") as wait, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(gate.main(), 0)
+        self.assertEqual(github.call_args.args, ("synthetic-github-token",))
+        wait.assert_called_once_with(github.return_value, SHA)
 
     def test_release_gate_uses_a_trusted_git_executable(self) -> None:
         executable = pathlib.Path(gate.git_executable())

@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 
+from omnicio import APPLICATION_USER_AGENT
 from omnicio.news import NewsClient, NewsNotFound, NewsUnavailable, parse_news, source_page_text
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
@@ -80,6 +81,8 @@ def test_search_scope_is_current_official_feed_and_read_is_bound_to_confirmed_id
         assert "Не текст новости" not in read["content"]
         assert len(read["sha256"]) == 64
         network.assert_called_once_with("www.cbr.ru", timeout=6)
+        headers = connection.request.call_args.kwargs["headers"]
+        assert headers["User-Agent"] == APPLICATION_USER_AGENT
         assert client.read_source(found["items"][0]["id"])["freshness"] == "cached"
         assert network.call_count == 1
         with pytest.raises(NewsNotFound):
@@ -229,3 +232,32 @@ def test_news_redirect_is_not_followed_and_failure_backoff_preserves_no_data() -
     factory.assert_called_once()
     connection.request.assert_called_once()
     response.read.assert_not_called()
+
+
+def test_news_outage_cannot_keep_an_old_feed_available_indefinitely() -> None:
+    clock = [0.0]
+    connection = Mock()
+    connection.getresponse.side_effect = [
+        Mock(status=200, read=Mock(return_value=feed(item()))),
+        Mock(status=503),
+        Mock(status=200, read=Mock(return_value=feed(item(title="Восстановлено")))),
+    ]
+    client = NewsClient()
+    with (
+        patch("omnicio.news.time.monotonic", side_effect=lambda: clock[0]),
+        patch("omnicio.news.http.client.HTTPSConnection", return_value=connection),
+    ):
+        first = client.headlines()
+        clock[0] = 3599
+        cached = client.headlines()
+        assert cached["freshness"] == "cached"
+        assert cached["fetched_at"] == first["fetched_at"]
+        clock[0] = 3600
+        with pytest.raises(NewsUnavailable):
+            client.headlines()
+        # The failed read did not extend the last successful feed's lifetime.
+        assert connection.request.call_count == 2
+        clock[0] = 3659
+        recovered = client.headlines()
+        assert recovered["freshness"] == "fresh"
+        assert recovered["items"][0]["title"] == "Восстановлено"

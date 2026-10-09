@@ -40,6 +40,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
 
 from .db import Database
+from .payouts import visible_event_sql
 from .security import SecurityValueError, decrypt_secret, encrypt_secret
 from .workspace import quiet_now
 from .workspace_store import WorkspaceNotFound, WorkspaceStore, _event_record, _json
@@ -52,6 +53,8 @@ _MAILTO_SCHEME = "mailto:"
 _HTTPS_SCHEME = "https://"
 _SETTINGS_TARGET = "/#settings"
 _EVENTS_TARGET = "/#events"
+_VISIBLE_EVENTS_SQL = visible_event_sql()
+_VISIBLE_MEMBERS_SQL = visible_event_sql("e")
 
 
 def _notification_target(payload: Mapping[str, Any]) -> str:
@@ -947,6 +950,7 @@ class NotificationService:
         cur.execute(
             "SELECT e.id, e.category, e.target, e.source, e.revision, e.occurred_at, e.updated_at "
             "FROM workspace_events e WHERE e.user_id = %s AND e.category = ANY (%s) "
+            f"AND {_VISIBLE_MEMBERS_SQL} "
             "AND e.read_at IS NULL AND ((%s::text IS NOT NULL AND e.id = %s "
             "AND e.revision = %s) OR (%s::text IS NULL "
             "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END >= %s::timestamptz "
@@ -976,6 +980,7 @@ class NotificationService:
             "JOIN workspace_events e ON e.user_id = m.user_id AND e.id = m.event_id "
             "AND e.revision = m.event_revision WHERE m.user_id = %s "
             "AND m.outbox_id = ANY (%s::uuid[]) AND e.read_at IS NULL "
+            f"AND {_VISIBLE_MEMBERS_SQL} "
             "AND e.category = ANY (%s) ORDER BY e.revision", (user_id, outbox_ids, enabled),
         )
         return [dict(row) for row in cur.fetchall()]
@@ -1201,6 +1206,7 @@ class NotificationService:
         cur.execute(
             "SELECT id, category, title, detail, target, source, revision, occurred_at, updated_at "
             "FROM workspace_events WHERE user_id = %s AND revision > %s "
+            f"AND {_VISIBLE_EVENTS_SQL} "
             "ORDER BY revision LIMIT 200", (user_id, channel["event_revision"]),
         )
         rows = cur.fetchall()

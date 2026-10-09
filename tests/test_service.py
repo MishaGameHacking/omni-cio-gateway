@@ -3,14 +3,20 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import runpy
+import tomllib
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from threading import Event
 from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 
+from omnicio import APPLICATION_USER_AGENT, __version__
 from omnicio.config import Settings
 from omnicio.db import (
     RegistrationCapacityError,
@@ -18,7 +24,7 @@ from omnicio.db import (
     UserRecord,
     live_execution_lock_key,
 )
-from omnicio.main import instrument_market_stream, usd_rub_market_stream
+from omnicio.main import app, instrument_market_stream, usd_rub_market_stream
 from omnicio.service import (
     AccountDeletionRejected,
     AuthService,
@@ -103,6 +109,36 @@ def test_live_execution_cleanup_lock_is_stable_and_user_scoped() -> None:
     assert live_execution_lock_key(user_id) == (
         "portfolio-live-execution:00000000-0000-0000-0000-000000000123"
     )
+
+
+def test_one_package_release_reaches_framework_http_and_public_config() -> None:
+    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+    expected = project["project"]["version"]
+    assert version("omnicio-gateway") == expected
+    assert __version__ == expected
+    assert app.version == expected
+    actual_user_agent = APPLICATION_USER_AGENT
+    assert actual_user_agent == f"OMNICIO/{expected} (+https://omnicio.ru)"
+    cfg = settings(release_build="a" * 12)
+    auth = AuthService(cfg, FakeDatabase())
+    with (
+        patch.object(app.state, "settings", cfg, create=True),
+        patch.object(app.state, "auth_service", auth, create=True),
+    ):
+        response = TestClient(app).get("/api/auth/config")
+    assert response.status_code == 200
+    assert response.headers["X-Omnicio-Version"] == expected
+    assert response.json()["release"] == {"version": expected, "build": "a" * 12}
+
+
+def test_missing_package_metadata_cannot_silently_report_an_old_release() -> None:
+    package_init = str(Path(__file__).parents[1] / "src" / "omnicio" / "__init__.py")
+    missing = PackageNotFoundError("omnicio-gateway")
+    with (
+        patch("importlib.metadata.version", side_effect=missing),
+        pytest.raises(PackageNotFoundError),
+    ):
+        runpy.run_path(package_init)
 
 
 @pytest.mark.parametrize("instrument", [False, True])

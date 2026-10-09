@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,10 +16,20 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from test_intelligence import _bundle as instrument_bundle
+from test_intelligence import news_item
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
 from omnicio.db import BrokerConnectionConflict, Database
+from omnicio.monitoring import (
+    DAILY_MAX_ATTEMPTS,
+    DAILY_RETRY_BASE_SECONDS,
+    NEWS_MAX_COMPLETED_CURSORS,
+    NEWS_MAX_CONTINUATIONS,
+    NEWS_MAX_PATH_PROOFS,
+)
 from omnicio.observer import (
+    ObservationInterrupted,
     PortfolioObserver,
     PortfolioRefreshCoordinator,
     _scheduled_day,
@@ -112,6 +123,8 @@ class FakeStore:
         self.saved_pages: list[str] = []
         self.saved_windows: list[tuple[datetime, datetime]] = []
         self.saved_evidence = 0
+        self.saved_news = []
+        self.news_checkpoint = {}
         self.claimed = False
         self.lock_available = True
         self.recover_running_values: list[bool] = []
@@ -209,12 +222,25 @@ class FakeStore:
         documents,
         assessments,
         retrieved_at: datetime,
+        news_checkpoint=None,
     ):
         assert user_id == USER_ID
         assert snapshot_id
         assert retrieved_at.tzinfo is not None
-        self.saved_evidence += 1
+        if news_checkpoint is None:
+            self.saved_evidence += 1
+        else:
+            self.saved_news.extend(documents)
+            self.news_checkpoint = {
+                **news_checkpoint,
+                "documents_new": news_checkpoint["documents_new"] + len(documents),
+            }
         return len(documents), len(assessments)
+
+    def news_state(self, user_id: UUID, *, job_run_id: UUID):
+        assert user_id == USER_ID
+        assert job_run_id
+        return dict(self.news_checkpoint)
 
     def sync_state(self, user_id: UUID, account_id: str):
         assert user_id == USER_ID
@@ -258,6 +284,12 @@ class FakeBroker:
         self.analysis_status = analysis_status
         self.user_info_unavailable = user_info_unavailable
         self.seen_cursors: list[str] = []
+
+    def instrument_news(self, user_id, *, cursor=None, limit=50):
+        assert user_id == USER_ID
+        assert limit == 50
+        return {"items": [], "next_cursor": None, "scanned_items": 0,
+                "observed_at": datetime.now(UTC).isoformat(), "status": "available"}
 
     def revalidate_account(self, user_id: UUID) -> TBankAccount:
         assert user_id == USER_ID
@@ -568,10 +600,35 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "pg_try_advisory_lock" in store
     assert "pg_advisory_xact_lock" in store
     assert "retry_of" in store
-    assert "DAILY_MAX_ATTEMPTS = 3" in store
     assert "recover_running" in store
     assert "ON CONFLICT (job_run_id) DO NOTHING" in store
     assert "pending_cursor" in store
+
+
+def test_daily_retry_policy_controls_durable_delay_and_terminal_attempt() -> None:
+    now = datetime(2026, 10, 6, 10, tzinfo=UTC)
+    cursor, connection, database = Mock(), Mock(), Mock()
+    cursor.fetchone.return_value = {"id": UUID(int=50)}
+    connection.transaction.return_value = nullcontext()
+    connection.cursor.return_value = nullcontext(cursor)
+    database.pool.connection.return_value = nullcontext(connection)
+    store = PortfolioStore(database)
+    with patch.object(store, "_tenant"), patch("omnicio.portfolio_store._require_observation_job"):
+        assert store.finish_job(USER_ID, UUID(int=50), status="failed", details={"retryable": True})
+    statement, params = cursor.execute.call_args.args
+    assert statement.count("%s") == len(params)
+    assert params[1:3] == (DAILY_RETRY_BASE_SECONDS, DAILY_MAX_ATTEMPTS)
+    assert "LEAST(attempt, %s) - 1" in statement
+    assert params[-2:] == (UUID(int=50), USER_ID)
+    row = {"status": "failed", "details": {"retryable": True}, "next_attempt_at": now,
+           "attempt": DAILY_MAX_ATTEMPTS - 1}
+    assert store._settle_daily_retry(
+        cursor, USER_ID, row, now, context_matches=True, recover_running=False,
+    )
+    assert not store._settle_daily_retry(
+        cursor, USER_ID, {**row, "attempt": DAILY_MAX_ATTEMPTS}, now,
+        context_matches=True, recover_running=False,
+    )
 
 
 def test_instrument_required_tests_are_tenant_account_evidence() -> None:
@@ -1025,3 +1082,281 @@ def test_native_quick_refresh_restores_persisted_metadata_and_original_user_info
     assert all(row[0] == original for row in catalog_times)
     with pytest.raises(ObservationCancelled):
         store.reuse_snapshot_metadata(UUID(int=2), job_run_id=quick_job.id, bundle=quick)
+
+
+@pytest.fixture
+def news_observer():
+    store, broker = FakeStore(), FakeBroker(pages={"": TBankOperationsPage(False, "", ())})
+    held = instrument_bundle()
+    observed = replace(bundle(), portfolio=held.portfolio, metadata=held.metadata,
+                       analysis=replace(analysis(), security_count=1),
+                       refreshed_at=datetime.now(UTC))
+    broker.observation_bundle = Mock(return_value=observed)
+    return store, broker, PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
+
+
+def news_page(ident: str, next_cursor: str | None = None) -> dict[str, object]:
+    return {"items": [news_item(ident)], "next_cursor": next_cursor, "scanned_items": 1,
+            "observed_at": datetime.now(UTC).isoformat(), "status": "available"}
+
+
+def pending_news_cursors(state: dict[str, object]) -> list[str]:
+    return [path["cursor"] for path in state["continuations"]]
+
+
+def test_news_polling_always_reads_newest_before_durable_bounded_backlog(news_observer) -> None:
+    store, broker, observer = news_observer
+    pages = {None: news_page("101", "10"), "10": news_page("102", "20"),
+             "20": news_page("103", "30"), "30": news_page("104", "40"),
+             "40": news_page("105")}
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    result = observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert result.status == "succeeded"
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list] \
+        == [None, "10", "20"]
+    assert pending_news_cursors(store.news_checkpoint) == ["30"]
+    assert store.finished[-1][1]["news"]["status"] == "partial"
+    assert store.news_checkpoint["documents_new"] == 3
+    store.claimed = False
+    restarted = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
+    restarted.run_user(USER_ID, now=datetime.now(UTC))
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list][3:] \
+        == [None, "30", "40"]
+    assert pending_news_cursors(store.news_checkpoint) == []
+    assert store.finished[-1][1]["news"]["status"] == "received"
+    assert {document.provider_key for document in store.saved_news} == {
+        "101", "102", "103", "104", "105",
+    }
+
+
+def test_news_outage_keeps_committed_cursor_and_valid_portfolio_available(news_observer) -> None:
+    store, broker, observer = news_observer
+    head = news_page("101", "10")
+    broker.instrument_news = Mock(side_effect=[head, TBankUnavailable("synthetic outage")])
+    result = observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert result.status == "succeeded"
+    assert result.snapshot_saved is True
+    partial = store.finished[-1][1]["news"]
+    assert partial["status"] == "partial"
+    assert pending_news_cursors(partial) == ["10"]
+    assert partial["observed_at"] == head["observed_at"]
+    assert pending_news_cursors(store.news_checkpoint) == ["10"]
+    store.claimed = False
+    broker.instrument_news = Mock(side_effect=TBankUnavailable("still unavailable"))
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    unavailable = store.finished[-1][1]["news"]
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["observed_at"] == head["observed_at"]
+    assert pending_news_cursors(unavailable) == ["10"]
+
+
+def test_news_cursor_cannot_advance_past_a_rolled_back_evidence_page(news_observer) -> None:
+    store, broker, observer = news_observer
+    broker.instrument_news = Mock(side_effect=[news_page("101", "10"), news_page("102", "20")])
+    save = store.save_evidence
+
+    def fail_second_news_page(*args, **kwargs):
+        if kwargs.get("news_checkpoint") is not None and store.saved_news:
+            raise RuntimeError("synthetic transaction rollback")
+        return save(*args, **kwargs)
+
+    store.save_evidence = Mock(side_effect=fail_second_news_page)
+    now = datetime.now(UTC)
+    with pytest.raises(RuntimeError, match="transaction rollback"):
+        observer.run_user(USER_ID, now=now)
+    assert pending_news_cursors(store.news_checkpoint) == ["10"]
+    assert pending_news_cursors(store.finished[-1][1]["news"]) == ["10"]
+    assert [document.provider_key for document in store.saved_news] == ["101"]
+    store.save_evidence = save
+    store.claimed = False
+    broker.instrument_news = Mock(side_effect=[news_page("101", "10"), news_page("102")])
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list] == [None, "10"]
+    assert store.news_checkpoint["status"] == "received"
+
+
+def test_news_shutdown_and_restart_resume_committed_page_without_claiming_completion(
+    news_observer,
+) -> None:
+    store, broker, observer = news_observer
+    broker.instrument_news = Mock(return_value=news_page("101", "10"))
+    now = datetime.now(UTC)
+    job = store.claim_daily_job(USER_ID, job_type="portfolio_daily", scheduled_for=now.date(),
+                                legal_versions=LEGAL_VERSIONS)
+    def should_stop():
+        return bool(store.saved_news)
+    with pytest.raises(ObservationInterrupted):
+        observer.run_job(job, now=now, should_stop=should_stop)
+    assert store.finished == []
+    assert store.news_checkpoint["status"] == "partial"
+    assert pending_news_cursors(store.news_checkpoint) == ["10"]
+    assert store.news_checkpoint["documents_new"] == 1
+    broker.instrument_news = Mock(side_effect=[news_page("101", "10"), news_page("102")])
+    PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_job(job, now=now)
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list] == [None, "10"]
+    assert store.finished[-1][1]["news"]["status"] == "received"
+
+
+def test_repeated_news_cursor_across_restarts_remains_partial_and_recovers_from_head(
+    news_observer,
+) -> None:
+    store, broker, observer = news_observer
+    pages = {None: news_page("101", "10"), "10": news_page("102", "20"),
+             "20": news_page("103", "30"), "30": news_page("104", "10")}
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    for _attempt in range(3):
+        store.claimed = False
+        observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
+        observer.run_user(USER_ID, now=datetime.now(UTC))
+        assert store.finished[-1][1]["news"]["status"] == "partial"
+        assert pending_news_cursors(store.news_checkpoint)
+    pages["30"] = news_page("104")
+    for _attempt in range(2):
+        store.claimed = False
+        PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+            USER_ID, now=datetime.now(UTC),
+        )
+    assert store.news_checkpoint["status"] == "received"
+    assert store.news_checkpoint["recovery_required"] is False
+
+
+def test_new_head_continuation_cannot_disappear_behind_an_older_backlog(news_observer) -> None:
+    store, broker, observer = news_observer
+    pages = {None: news_page("500", "450"), "450": news_page("449", "400"),
+             "400": news_page("399", "350"), "350": news_page("349", "300"),
+             "300": news_page("299")}
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert pending_news_cursors(store.news_checkpoint) == ["350"]
+    pages.update({None: news_page("700", "650"), "650": news_page("649", "600"),
+                  "600": news_page("599", "450")})
+    store.claimed = False
+    PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+        USER_ID, now=datetime.now(UTC),
+    )
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list][3:] \
+        == [None, "350", "650"]
+    assert pending_news_cursors(store.news_checkpoint) == ["300", "600"]
+    assert store.news_checkpoint["status"] == "partial"
+    store.claimed = False
+    PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+        USER_ID, now=datetime.now(UTC),
+    )
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list][6:] \
+        == [None, "300", "600"]
+    assert {"649", "599"} <= {document.provider_key for document in store.saved_news}
+    assert pending_news_cursors(store.news_checkpoint) == []
+    assert store.news_checkpoint["status"] == "received"
+
+
+def test_news_complete_pass_is_rechecked_for_corrections_under_the_same_cursors(
+    news_observer,
+) -> None:
+    store, broker, observer = news_observer
+    pages = {None: news_page("501", "450"), "450": news_page("449", "400"),
+             "400": news_page("399")}
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert store.news_checkpoint["status"] == "received"
+    pages["400"] = {**news_page("399"), "items": [news_item(
+        "399", title="Уточнение старой публикации", priority=False,
+    )]}
+    store.claimed = False
+    PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+        USER_ID, now=datetime.now(UTC),
+    )
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list][3:] \
+        == [None, "450", "400"]
+    assert store.saved_news[-1].payload["title"] == "Уточнение старой публикации"
+    assert store.saved_news[-1].payload["priority"] is False
+    assert store.news_checkpoint["status"] == "received"
+
+
+def test_news_old_page_proofs_cannot_hide_publications_for_a_new_holding(news_observer) -> None:
+    store, broker, observer = news_observer
+    pages = {None: news_page("501", "450"), "450": news_page("449", "400"),
+             "400": news_page("399", "350"), "350": news_page("349")}
+    pages["450"]["items"] = [news_item("449", uid="new-held")]
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert "449" not in {document.provider_key for document in store.saved_news}
+    observed = broker.observation_bundle.return_value
+    position = replace(observed.portfolio.positions[0], instrument_uid="new-held")
+    broker.observation_bundle.return_value = replace(
+        observed, portfolio=replace(observed.portfolio, positions=(position,)),
+    )
+    store.claimed = False
+    PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+        USER_ID, now=datetime.now(UTC),
+    )
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list][3:] \
+        == [None, "350", "450"]
+    assert "449" in {document.provider_key for document in store.saved_news}
+    assert store.news_checkpoint["status"] == "partial"
+
+
+def test_news_queue_overflow_requires_a_complete_fresh_recovery(news_observer) -> None:
+    store, broker, observer = news_observer
+    store.news_checkpoint = {
+        "continuations": [{"cursor": str(1000 + index), "seen_cursors": []}
+                          for index in range(NEWS_MAX_CONTINUATIONS)],
+    }
+    pages = {None: news_page("101", "10"), "10": news_page("102", "20"),
+             "20": news_page("103")}
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list] \
+        == [None, "10", "20"]
+    assert store.news_checkpoint["status"] == "partial"
+    assert store.news_checkpoint["recovery_required"] is True
+    assert store.news_checkpoint["coverage_reset_at"] == pages[None]["observed_at"]
+    store.claimed = False
+    PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+        USER_ID, now=datetime.now(UTC),
+    )
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list][3:] \
+        == [None, "10", "20"]
+    assert store.news_checkpoint["status"] == "received"
+    assert store.news_checkpoint["recovery_required"] is False
+
+
+def test_news_durable_metadata_has_a_total_bound_during_a_long_unfinished_traversal(
+    news_observer,
+) -> None:
+    store, broker, observer = news_observer
+
+    def endless_feed(_user, *, cursor, limit):
+        value = int(cursor or "1000000000000000000")
+        return news_page(str(value), str(value + 1))
+
+    broker.instrument_news = Mock(side_effect=endless_feed)
+    for _attempt in range(NEWS_MAX_PATH_PROOFS // 2 + 5):
+        store.claimed = False
+        PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+            USER_ID, now=datetime.now(UTC),
+        )
+        checkpoint = store.news_checkpoint
+        paths = checkpoint["continuations"]
+        assert len(paths) <= NEWS_MAX_CONTINUATIONS
+        assert sum(len(path["seen_cursors"]) for path in paths) <= NEWS_MAX_PATH_PROOFS
+        assert len(checkpoint["completed_cursors"]) <= NEWS_MAX_COMPLETED_CURSORS
+        assert len(json.dumps(checkpoint).encode("utf-8")) < 10_000
+        assert checkpoint["status"] == "partial"
+    # Retain the known head relation while evicting other old proof markers.
+    assert len(store.news_checkpoint["continuations"]) == 1
+    assert len(broker.instrument_news.call_args_list) == (NEWS_MAX_PATH_PROOFS // 2 + 5) * 3
+
+
+def test_news_legacy_single_cursor_checkpoint_is_resumed_without_skipping_new_head(
+    news_observer,
+) -> None:
+    store, broker, observer = news_observer
+    store.news_checkpoint = {"cursor": "20", "seen_cursors": ["10"], "status": "partial"}
+    pages = {None: news_page("501", "450"), "20": news_page("19"),
+             "450": news_page("449")}
+    broker.instrument_news = Mock(side_effect=lambda _user, *, cursor, limit: pages[cursor])
+    observer.run_user(USER_ID, now=datetime.now(UTC))
+    assert [call.kwargs["cursor"] for call in broker.instrument_news.call_args_list] \
+        == [None, "20", "450"]
+    assert "cursor" not in store.news_checkpoint
+    assert store.news_checkpoint["status"] == "received"

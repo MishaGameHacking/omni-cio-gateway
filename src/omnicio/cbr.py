@@ -16,6 +16,8 @@ from html import unescape
 from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 
+from . import APPLICATION_USER_AGENT
+
 logger = logging.getLogger(__name__)
 
 _CBR_DAILY_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
@@ -23,7 +25,6 @@ _MOSCOW = ZoneInfo("Europe/Moscow")
 _INDICATOR_CURRENCIES = frozenset({"USD", "EUR"})
 _MAX_PUBLIC_RESPONSE_BYTES = 512_000
 _CBR_XML_ACCEPT = "application/xml,text/xml;q=0.9,*/*;q=0.1"
-_CBR_USER_AGENT = "OmniCIO-Personal/1.0"
 
 
 class CBRUnavailable(RuntimeError):
@@ -228,7 +229,7 @@ class CBRClient:
                f"?date_req1={start.strftime('%d/%m/%Y')}"
                f"&date_req2={target.strftime('%d/%m/%Y')}&VAL_NM_RQ={code}")
         request = urllib.request.Request(url, headers={
-            "Accept": _CBR_XML_ACCEPT, "User-Agent": _CBR_USER_AGENT,
+            "Accept": _CBR_XML_ACCEPT, "User-Agent": APPLICATION_USER_AGENT,
         })
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
@@ -292,7 +293,7 @@ class CBRClient:
             url,
             headers={
                 "Accept": _CBR_XML_ACCEPT,
-                "User-Agent": _CBR_USER_AGENT,
+                "User-Agent": APPLICATION_USER_AGENT,
             },
         )
         try:
@@ -318,7 +319,7 @@ class CBRClient:
             "https://www.cbr.ru/scripts/XML_daily.asp",
             headers={
                 "Accept": _CBR_XML_ACCEPT,
-                "User-Agent": _CBR_USER_AGENT,
+                "User-Agent": APPLICATION_USER_AGENT,
             },
         )
         try:
@@ -364,7 +365,7 @@ class CBRClient:
                 "Accept": _CBR_XML_ACCEPT,
                 "Content-Type": "text/xml; charset=utf-8",
                 "SOAPAction": '"http://web.cbr.ru/KeyRateXML"',
-                "User-Agent": _CBR_USER_AGENT,
+                "User-Agent": APPLICATION_USER_AGENT,
             },
         )
         try:

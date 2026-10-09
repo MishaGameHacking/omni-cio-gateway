@@ -71,7 +71,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: auth-postgres-${{ github.event.pull_request.number || 'production' }}
+  # Preserve each main push's validation when schedules/manual runs are queued.
+  # Both mutation jobs retain the shared production SSH lock below.
+  group: auth-postgres-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -112,6 +114,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
       checks: read
     name: Reconcile private PostgreSQL
     concurrency:
@@ -158,7 +161,6 @@ jobs:
         shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate verified SSH server key
@@ -210,6 +212,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
       checks: read
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
@@ -249,8 +252,6 @@ jobs:
 
       - name: Export encrypted archive and verify on a new isolated cluster
         shell: cmd
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: '"%OMNICIO_PYTHON%" .github\scripts\run_recovery_drill.py'
 
       - name: Keep only encrypted archive and signed provenance for one day

@@ -57,6 +57,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
       checks: read
     if: github.ref == 'refs/heads/main'
     needs: tests
@@ -82,7 +83,6 @@ jobs:
         shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate verified SSH server key

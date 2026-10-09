@@ -8,6 +8,7 @@ key is temporarily registered in Timeweb and attached to the server.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pathlib
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from timeweb_addresses import network_addresses
-from timeweb_http import request_json
+from timeweb_http import release_user_agent, request_json
 from timeweb_ssh_trust import (
     managed_server_identity,
     ssh_base_args,
@@ -239,7 +240,7 @@ def verify_https() -> bool:
     context.check_hostname = True
     request = urllib.request.Request(
         f"https://{DOMAIN_NAME}/",
-        headers={"User-Agent": "omni-cio-deploy-verifier/1.0"},
+        headers={"User-Agent": release_user_agent("omni-cio-deploy-verifier")},
     )
     try:
         with urllib.request.urlopen(
@@ -312,7 +313,8 @@ nginx -t
 systemctl enable nginx
 systemctl reload nginx
 
-certbot --nginx   --non-interactive   --agree-tos   --register-unsafely-without-email   --redirect   -d "${DOMAIN}"
+certbot --nginx --non-interactive --agree-tos --register-unsafely-without-email \
+    --redirect -d "${DOMAIN}"
 
 if systemctl list-unit-files certbot.timer >/dev/null 2>&1; then
     systemctl enable --now certbot.timer
@@ -501,10 +503,8 @@ def configure_with_ephemeral_key(
                     ssh_key_id=ssh_key_id,
                 )
             else:
-                try:
+                with contextlib.suppress(Exception):
                     client.delete_ssh_key(ssh_key_id)
-                except Exception:
-                    pass
 
 
 def run(*, client: TimewebClient) -> int:
