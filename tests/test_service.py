@@ -38,6 +38,7 @@ from omnicio.service import (
     InvalidEmailChallenge,
     LoginUnavailable,
     normalize_login_email,
+    validate_auth_email_configuration,
 )
 
 PASSWORD = "Луна и лес у моря 37!"
@@ -157,6 +158,43 @@ def test_login_email_rejects_lookalikes_headers_and_other_domains(email):
         normalize_login_email(email)
 
 
+@pytest.mark.parametrize("overrides,error", [
+    ({"auth_smtp_sender": "not-an-email"}, "notification_email_invalid"),
+    ({"notification_crypto_key": "invalid-fernet-key"}, "invalid secret encryption key"),
+    ({"broker_token_crypto_key": "invalid-fernet-key"}, "invalid secret encryption key"),
+])
+def test_auth_email_configuration_rejects_unusable_sender_or_selected_key_before_startup(
+    overrides, error,
+) -> None:
+    database, transport = Mock(spec=Database), Mock(spec=NotificationTransport)
+    configuration = settings(**overrides)
+    with pytest.raises(ValueError, match=error):
+        AuthService(configuration, database, transport=transport)
+    assert database.mock_calls == []
+    assert transport.mock_calls == []
+
+
+@pytest.mark.parametrize("dedicated_key", [False, True])
+def test_auth_email_configuration_uses_the_selected_key_for_real_encrypted_delivery(
+    dedicated_key,
+) -> None:
+    crypto_key = Fernet.generate_key().decode("ascii")
+    overrides = {"broker_token_crypto_key": crypto_key, "notification_crypto_key": ""}
+    if dedicated_key:
+        overrides = {
+            "broker_token_crypto_key": "unused-broker-key",
+            "notification_crypto_key": crypto_key,
+        }
+    auth, database, transport = auth_service(**overrides)
+    assert validate_auth_email_configuration(auth.settings) == crypto_key
+    auth.request_email(
+        email="owner@gmail.com", password=None, client_ip="203.0.113.10", purpose="reset",
+    )
+    ciphertext = database.create_email_challenge.call_args.kwargs["delivery_ciphertext"]
+    assert json.loads(decrypt_secret(ciphertext, crypto_key))["email"] == "owner@gmail.com"
+    transport.send_email.assert_not_called()
+
+
 def test_registration_queues_encrypted_mail_and_hashes_password_before_ownership_proof() -> None:
     auth, db, transport = auth_service()
     result = auth.request_email(
@@ -184,8 +222,14 @@ def test_registration_queues_encrypted_mail_and_hashes_password_before_ownership
     assert result.resend_after_seconds == 60
 
 
-def test_unavailable_mail_blocks_new_registration_but_not_verified_login_or_legacy_session():
-    auth, db, _ = auth_service(auth_smtp_host="", auth_smtp_sender="")
+@pytest.mark.parametrize("crypto_overrides", [
+    {}, {"notification_crypto_key": "unused-invalid-notification-key"},
+    {"broker_token_crypto_key": "unused-invalid-broker-key"},
+])
+def test_unavailable_mail_blocks_new_registration_but_not_verified_login_or_legacy_session(
+    crypto_overrides,
+):
+    auth, db, _ = auth_service(auth_smtp_host="", auth_smtp_sender="", **crypto_overrides)
     db.email_identity.return_value = {
         "user_id": OWNER.id, "email": "owner@gmail.com", "password_hash": hash_password(PASSWORD),
         "password_version": 1,

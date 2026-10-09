@@ -31,9 +31,10 @@ RECOVERY_DIRECTORY = pathlib.Path("/var/lib/omnicio-recovery")
 # The existing exporter accepts at most 64 MiB before Fernet encryption.
 MAX_LOGICAL_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_ENCRYPTED_ARCHIVE_BYTES = 2 * MAX_LOGICAL_ARCHIVE_BYTES
-WRITER_UNITS = (
-    "omnicio-auth.service", "omnicio-observer.timer", "omnicio-observer.service",
-)
+AUTH_SERVICE = "omnicio-auth.service"
+OBSERVER_TIMER = "omnicio-observer.timer"
+OBSERVER_SERVICE = "omnicio-observer.service"
+WRITER_UNITS = (AUTH_SERVICE, OBSERVER_TIMER, OBSERVER_SERVICE)
 PLAN_KEYS = frozenset({
     "mode", "source_release", "source_version", "target_version",
     "source_schema_sha256", "migration_sha256",
@@ -159,6 +160,8 @@ def schema_query(source: str, expected_digest: str | None = None) -> str:
 
 def _operational_bytes(path: pathlib.Path, maximum: int, *, private: bool = True) -> bytes:
     """Read one bounded existing root-owned file; never follow a final symlink."""
+    if sys.platform != "linux":
+        raise UpgradeBlocked("upgrade_requires_linux")
     parent = path.parent.lstat()
     if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022):
         raise UpgradeBlocked("untrusted_operational_directory")
@@ -179,20 +182,8 @@ def _private_file(path: pathlib.Path, maximum: int) -> str:
     return _operational_bytes(path, maximum).decode("utf-8")
 
 
-def _environment_text(value: str) -> str:
-    """Decode only the project's quoted writer grammar, without shell evaluation."""
-    if value.startswith("'"):
-        if not value.endswith("'") or len(value) < 2 or "'" in value[1:-1]:
-            raise UpgradeBlocked("invalid_runtime_environment")
-        return value[1:-1]
-    if not value.startswith('"'):
-        if any(character.isspace() or character in "\\\"'$`;&|<>()[]{}#~*"
-               for character in value):
-            raise UpgradeBlocked("invalid_runtime_environment")
-        return value
-    if not value.endswith('"') or len(value) < 2:
-        raise UpgradeBlocked("invalid_runtime_environment")
-    text = value[1:-1]
+def _unescape_environment_text(text: str) -> str:
+    """Decode the four escapes permitted inside the writer's double quotes."""
     result = []
     index = 0
     while index < len(text):
@@ -207,6 +198,22 @@ def _environment_text(value: str) -> str:
         result.append(character)
         index += 1
     return "".join(result)
+
+
+def _environment_text(value: str) -> str:
+    """Decode only the project's quoted writer grammar, without shell evaluation."""
+    if value.startswith("'"):
+        if not value.endswith("'") or len(value) < 2 or "'" in value[1:-1]:
+            raise UpgradeBlocked("invalid_runtime_environment")
+        return value[1:-1]
+    if not value.startswith('"'):
+        if any(character.isspace() or character in "\\\"'$`;&|<>()[]{}#~*"
+               for character in value):
+            raise UpgradeBlocked("invalid_runtime_environment")
+        return value
+    if not value.endswith('"') or len(value) < 2:
+        raise UpgradeBlocked("invalid_runtime_environment")
+    return _unescape_environment_text(value[1:-1])
 
 
 def parse_environment(text: str) -> dict[str, str]:
@@ -258,37 +265,44 @@ def _require_recovery(
             encrypted_archive_sha256=hashlib.sha256(encrypted).hexdigest(),
             decrypted_archive_sha256=hashlib.sha256(raw).hexdigest(),
         )
-    except (OSError, UnicodeError, ValueError, TypeError, InvalidToken) as exc:
+    except (OSError, ValueError, TypeError, InvalidToken) as exc:
         # Ciphertext, plaintext, keys, paths supplied by another actor and SQL
         # driver diagnostics never become a recovery failure message.
         raise UpgradeBlocked("upgrade_recovery_unavailable") from exc
 
 
-def render_recovery_validator() -> str:
-    """Ship the canonical verifier definitions without importing the old installed module."""
-    path = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio/recovery.py"
+def render_source_definitions(path: pathlib.Path, names: set[str]) -> str:
+    """Emit each requested module-level definition exactly once, in source order."""
     source = path.read_text(encoding="utf-8")
-    names = {
-        "BACKUP_MAX_AGE", "RESTORE_MAX_AGE", "RESTORE_CHECKS", "sign_recovery_evidence",
-        "verified_recovery_evidence", "_restore_verification", "_timestamp",
-        "require_upgrade_recovery", "_require_upgrade_archive",
-    }
     definitions: dict[str, str] = {}
     for node in ast.parse(source).body:
         name = None
-        if isinstance(node, ast.FunctionDef):
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
             name = node.name
         elif (isinstance(node, ast.Assign) and len(node.targets) == 1
               and isinstance(node.targets[0], ast.Name)):
             name = node.targets[0].id
         if name in names:
             segment = ast.get_source_segment(source, node)
-            if segment is not None:
-                definitions[name] = segment
+            if segment is None or name in definitions:
+                raise UpgradeBlocked("source_definition_contract_changed")
+            definitions[name] = segment
     if set(definitions) != names:
-        raise UpgradeBlocked("recovery_verifier_contract_changed")
+        raise UpgradeBlocked("source_definition_contract_changed")
+    return "\n\n".join(definitions.values()) + "\n"
+
+
+def render_recovery_validator() -> str:
+    """Ship the canonical verifier definitions without importing the old installed module."""
+    path = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio/recovery.py"
+    names = {
+        "BACKUP_MAX_AGE", "RESTORE_MAX_AGE", "RESTORE_CHECKS", "SHA256_PATTERN",
+        "sign_recovery_evidence",
+        "verified_recovery_evidence", "_restore_verification", "_timestamp",
+        "require_upgrade_recovery", "_require_upgrade_archive",
+    }
     return ("\nimport hmac\nfrom datetime import timedelta\n\n"
-            + "\n\n".join(definitions.values()) + "\n")
+            + render_source_definitions(path, names))
 
 
 def _read_receipt() -> dict[str, Any] | None:
@@ -400,7 +414,7 @@ def _unit_state(command: str, unit: str) -> str:
 def _capture_writer_state() -> dict[str, dict[str, Any]]:
     state = {unit: {"active": _unit_state("is-active", unit) == "active",
                     "enabled": _unit_state("is-enabled", unit)} for unit in WRITER_UNITS}
-    if not state["omnicio-auth.service"]["active"]:
+    if not state[AUTH_SERVICE]["active"]:
         raise UpgradeBlocked("source_application_not_running")
     return state
 
@@ -429,8 +443,7 @@ def _drain_writers(state: dict[str, dict[str, Any]]) -> None:
     # after COMMIT cannot start a 1.3 reader against nullable 1.4 snapshots.
     _change_units("disable", [unit for unit in WRITER_UNITS
                               if state[unit]["enabled"] == "enabled"])
-    _change_units("stop", ["omnicio-observer.timer", "omnicio-observer.service",
-                           "omnicio-auth.service"])
+    _change_units("stop", [OBSERVER_TIMER, OBSERVER_SERVICE, AUTH_SERVICE])
     _assert_writers_stopped()
 
 
@@ -441,7 +454,7 @@ def _restore_writers(state: dict[str, dict[str, Any]]) -> None:
     _change_units("start", [unit for unit in WRITER_UNITS if state[unit]["active"]])
     for unit in WRITER_UNITS:
         if (_unit_state("is-enabled", unit) != state[unit]["enabled"]
-                or (unit != "omnicio-observer.service"
+                or (unit != OBSERVER_SERVICE
                     and (_unit_state("is-active", unit) == "active") != state[unit]["active"])):
             raise UpgradeBlocked("source_writer_resume_unconfirmed")
 

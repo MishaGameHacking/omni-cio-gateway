@@ -80,9 +80,17 @@ class ProductPreflightTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.directory = pathlib.Path(directory.name)
+        self.legal = {
+            "LEGAL_OPERATOR_NAME": "Test Operator", "LEGAL_OPERATOR_EMAIL": "operator@example.com",
+            "LEGAL_PRIVACY_VERSION": "fixture-privacy", "LEGAL_CONSENT_VERSION": "fixture-consent",
+            "LEGAL_TERMS_VERSION": "fixture-terms",
+        }
+        environment = patch.dict(os.environ, self.legal, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def _candidate(self, overrides: dict[str, str]) -> SimpleNamespace:
-        with patch.dict(os.environ, overrides, clear=True):
+        with patch.dict(os.environ, {**self.legal, **overrides}, clear=True):
             source = MODULE.render_product_preflight()
         path = self.directory / "candidate_configuration.py"
         path.write_text(
@@ -99,10 +107,11 @@ class ProductPreflightTests(unittest.TestCase):
         return candidate
 
     def _run(self, candidate: SimpleNamespace, product: str) -> dict[str, object]:
+        broker_key = base64.urlsafe_b64encode(b"b" * 32).decode("ascii")
         runtime = (
             'DATABASE_URL="postgresql://fixture@127.0.0.1/test"\n'
             'CLIENT_IP_KEY="fixture-ip-key"\n'
-            'BROKER_TOKEN_CRYPTO_KEY="fixture-broker-key"\n'
+            f'BROKER_TOKEN_CRYPTO_KEY="{broker_key}"\n'
         )
         original = dict(os.environ)
         with patch.object(candidate, "_private_file", side_effect=[runtime, product]) as read:
@@ -173,11 +182,38 @@ class ProductPreflightTests(unittest.TestCase):
         for overrides in (
             {"SESSION_TTL_SECONDS": "0"}, {"OPERATOR_USER_ID": "invalid-uuid"},
             {"ASSISTANT_ENABLED": "invalid-boolean"},
+            {"ASSISTANT_ENABLED": "false", "ASSISTANT_DAILY_REQUEST_LIMIT": "201"},
         ):
             with self.subTest(overrides=overrides):
                 candidate = self._candidate(overrides)
                 with self.assertRaises(candidate.ConfigurationError):
                     self._run(candidate, product)
+
+    def test_invalid_published_settings_are_rejected_before_remote_preflight(self) -> None:
+        for overrides in ({"AUTH_SMTP_HOST": "bad host"}, {"LEGAL_OPERATOR_EMAIL": "not-email"}):
+            with self.subTest(overrides=overrides), self.assertRaises(MODULE.InfraError):
+                self._candidate(overrides)
+
+    def test_candidate_validates_email_sender_and_encryption(self) -> None:
+        for product in (
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="not-email"\n',
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            'NOTIFICATION_CRYPTO_KEY="invalid-fernet-key"\n',
+        ):
+            with self.subTest(product=product):
+                candidate = self._candidate({})
+                with self.assertRaises(ValueError):
+                    self._run(candidate, product)
+
+    def test_candidate_validates_actual_push_key_before_cutover(self) -> None:
+        candidate = self._candidate({"NOTIFICATION_VAPID_SUBJECT": "https://omnicio.ru"})
+        email = 'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+        for key in ("invalid-key", base64.urlsafe_b64encode(b"\0" * 32).decode("ascii")):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self._run(candidate, email + f'NOTIFICATION_VAPID_PRIVATE_KEY="{key}"\n')
+        valid_key = base64.urlsafe_b64encode(b"\1" * 32).decode("ascii")
+        result = self._run(candidate, email + f'NOTIFICATION_VAPID_PRIVATE_KEY="{valid_key}"\n')
+        self.assertEqual(result["status"], "configuration_ready")
 
     def test_removed_base_values_do_not_survive_from_old_product_environment(self) -> None:
         candidate = self._candidate({})

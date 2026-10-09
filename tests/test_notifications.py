@@ -29,6 +29,7 @@ from omnicio.notifications import (
     normalize_email,
     normalize_subscription,
     push_public_key,
+    validate_push_configuration,
     vapid_authorization,
 )
 from omnicio.workspace import default_preferences
@@ -54,6 +55,45 @@ def test_disabled_email_cannot_break_configured_push_startup() -> None:
     enabled = replace(config, email_enabled=True)
     with pytest.raises(ValueError, match="notification_smtp_invalid"):
         NotificationService(database, enabled, legal_versions={})
+
+
+@pytest.mark.parametrize("private_key,subject", [
+    ("invalid-key", "https://omnicio.ru"),
+    (base64.urlsafe_b64encode(bytes(32)).decode("ascii"), "https://omnicio.ru"),
+    (SENDER, "http://omnicio.ru"),
+    (SENDER, "https://omnicio.ru\r\ninvalid"),
+    (SENDER, "mailto:not-an-email"),
+])
+def test_push_configuration_rejects_unusable_keys_and_subjects_before_startup(
+    private_key: str, subject: str,
+) -> None:
+    database, transport = Mock(spec=Database), Mock(spec=NotificationTransport)
+    config = NotificationConfig(
+        crypto_key="unused", enabled=True, vapid_private_key=private_key,
+        vapid_subject=subject,
+    )
+    with pytest.raises(ValueError):
+        validate_push_configuration(private_key, subject)
+    with pytest.raises(ValueError):
+        NotificationService(database, config, legal_versions={}, transport=transport)
+    assert database.mock_calls == []
+    assert transport.mock_calls == []
+
+
+@pytest.mark.parametrize("private_key,subject,configured", [
+    ("", "unused-invalid-subject", False),
+    (SENDER, "https://omnicio.ru", True),
+    (SENDER, "mailto:operator@example.org", True),
+])
+def test_push_configuration_keeps_missing_key_optional_and_accepts_valid_keys(
+    private_key: str, subject: str, configured: bool,
+) -> None:
+    validate_push_configuration(private_key, subject)
+    service = NotificationService(Mock(spec=Database), NotificationConfig(
+        crypto_key="unused", enabled=True, vapid_private_key=private_key,
+        vapid_subject=subject,
+    ), legal_versions={})
+    assert service.push_configured is configured
 
 
 def test_worker_failure_logs_only_safe_type_without_original_message_or_traceback(

@@ -1009,6 +1009,22 @@ def apply_database_release(
                              endpoint=endpoint, desired=desired)
 
 
+def reconcile_recovery_policy(
+    client: TimewebClient, ssh: EphemeralSsh, cluster: dict[str, Any], *,
+    cluster_id: int, single_database: bool, backup_only: bool, release_sha: str | None,
+) -> None:
+    """Keep release checks read-only; retain existing policy maintenance authority."""
+    if single_database and not backup_only:
+        policy = load_policy()
+        validate_budget(cluster, policy)
+        if get_schedule(client, cluster_id)["is_enabled"] is not False:
+            raise RecoveryBlocked("The single-database copy schedule is not disabled")
+        return
+    ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
+    if not single_database:
+        inspect_restore_capacity(client, ssh, cluster_id)
+
+
 def reconcile(
     client: TimewebClient,
     *,
@@ -1111,17 +1127,10 @@ def reconcile(
                 "Managed PostgreSQL cluster is not attached to approved VPC"
             )
 
-        if single_database and not backup_only:
-            policy = load_policy()
-            validate_budget(cluster, policy)
-            if get_schedule(client, cluster_id)["is_enabled"] is not False:
-                raise RecoveryBlocked("The single-database copy schedule is not disabled")
-        else:
-            # Scheduled policy maintenance retains its existing authority. A
-            # release only reads provider state until its remote preflight passes.
-            ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
-        if not single_database:
-            inspect_restore_capacity(client, ssh, cluster_id)
+        reconcile_recovery_policy(
+            client, ssh, cluster, cluster_id=cluster_id, single_database=single_database,
+            backup_only=backup_only, release_sha=release_sha,
+        )
         if backup_only:
             status = "single_database_policy_ready" if single_database else "recovery_point_ready"
             set_output("status", status)

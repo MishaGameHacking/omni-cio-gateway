@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 
 from .assistant_store import AssistantQuotaExceeded as AssistantQuotaExceeded
 from .assistant_store import AssistantRequestConflict, AssistantStore, assistant_sources_json
+from .config import DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT, MAX_ASSISTANT_DAILY_REQUEST_LIMIT
 from .db import Database
 from .security import decrypt_secret, encrypt_secret
 from .workspace_store import WorkspaceNotFound
@@ -1110,10 +1111,10 @@ class AssistantService:
         credential_key: str,
         enabled: bool = False,
         allowed_endpoints: Sequence[str] = (),
-        daily_request_limit: int = 30,
+        daily_request_limit: int = DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
         default_client: AssistantClient | None = None,
     ) -> None:
-        if not 1 <= daily_request_limit <= 200:
+        if not 1 <= daily_request_limit <= MAX_ASSISTANT_DAILY_REQUEST_LIMIT:
             raise ValueError("assistant_daily_limit_invalid")
         self.store = AssistantStore(database)
         self.credential_key = credential_key

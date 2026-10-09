@@ -470,7 +470,8 @@ def email_upgrade_database(monkeypatch):
     if not DATABASE_URL or not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"):
         pytest.skip("disposable PostgreSQL CI launcher is required")
     options = conninfo_to_dict(DATABASE_URL)
-    assert options["host"] == "127.0.0.1" and options["dbname"] == "omnicio_test"
+    assert options["host"] == "127.0.0.1"
+    assert options["dbname"] == "omnicio_test"
     monkeypatch.syspath_prepend(str(ROOT / ".github/scripts"))
     upgrade = importlib.import_module("inplace_upgrade")
     plan = upgrade.load_plan()
@@ -595,6 +596,54 @@ def _email_check_expressions(connection):
         "to_regclass('public.email_auth_rate_limits'), to_regclass('public.sessions')) "
         "ORDER BY conrelid::regclass::text, conname",
     ).fetchall()
+
+
+def _assert_email_readiness(connection):
+    """Keep full synthetic catalog evidence in CI when a strict predicate differs."""
+    ready = connection.execute(READINESS_QUERY).fetchone()
+    if ready != (True,):
+        predicates = READINESS_QUERY.strip().removeprefix("SELECT").removesuffix("AS ready")
+        failed_predicates = []
+        for position, predicate in enumerate(predicates.split("\n    AND "), start=1):
+            result = connection.execute("SELECT " + predicate).fetchone()
+            if result != (True,):
+                failed_predicates.append({"position": position, "result": result,
+                                          "expression": predicate.strip()})
+        columns = connection.execute("""
+            SELECT relation.relname, attribute.attname,
+                   format_type(attribute.atttypid, attribute.atttypmod), attribute.attnotnull,
+                   pg_get_expr(defaults.adbin, defaults.adrelid),
+                   relation.relrowsecurity, relation.relforcerowsecurity, relation.relacl::text
+            FROM pg_class AS relation
+            JOIN pg_attribute AS attribute ON attribute.attrelid = relation.oid
+                AND attribute.attnum > 0 AND NOT attribute.attisdropped
+            LEFT JOIN pg_attrdef AS defaults ON defaults.adrelid = relation.oid
+                AND defaults.adnum = attribute.attnum
+            WHERE relation.oid IN (to_regclass('public.email_identities'),
+                to_regclass('public.email_auth_challenges'),
+                to_regclass('public.email_auth_rate_limits'))
+            ORDER BY relation.relname, attribute.attnum
+        """).fetchall()
+        constraints = connection.execute("""
+            SELECT conrelid::regclass::text, conname, contype, convalidated, conenforced,
+                   condeferrable, pg_get_constraintdef(oid)
+            FROM pg_constraint WHERE conrelid IN (to_regclass('public.email_identities'),
+                to_regclass('public.email_auth_challenges'),
+                to_regclass('public.email_auth_rate_limits'), to_regclass('public.sessions'))
+            ORDER BY conrelid::regclass::text, conname
+        """).fetchall()
+        indexes = connection.execute("""
+            SELECT indexrelid::regclass::text, pg_get_indexdef(indexrelid),
+                   indisvalid, indisready, pg_get_expr(indpred, indrelid)
+            FROM pg_index WHERE indrelid IN (to_regclass('public.email_identities'),
+                to_regclass('public.email_auth_challenges'),
+                to_regclass('public.email_auth_rate_limits'))
+            ORDER BY indexrelid::regclass::text
+        """).fetchall()
+        print(json.dumps({"failed_readiness_predicates": failed_predicates,
+                          "columns": columns, "constraints": constraints, "indexes": indexes,
+                          "check_expressions": _email_check_expressions(connection)}, indent=2))
+    assert ready == (True,)
 
 
 def test_email_upgrade_preserves_rows_and_nullable_snapshots_under_force_rls(
@@ -744,6 +793,7 @@ def test_email_readiness_rejects_malformed_auth_contracts(email_upgrade_database
     upgrade, connection, _dsn, arguments = email_upgrade_database
     receipts = []
     upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    _assert_email_readiness(connection)
     drifts = (
         "ALTER TABLE email_auth_challenges DROP COLUMN delivery_ciphertext",
         "ALTER TABLE email_auth_challenges ALTER COLUMN delivery_attempts TYPE integer",
@@ -1053,9 +1103,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
     ]
     _apply_all_migrations()
     with psycopg.connect(DATABASE_URL, autocommit=True) as readiness:
-        assert readiness.execute(READINESS_QUERY).fetchone() == (True,), _email_check_expressions(
-            readiness,
-        )
+        _assert_email_readiness(readiness)
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
         # The additive latest migration is safe to retry before release. Once

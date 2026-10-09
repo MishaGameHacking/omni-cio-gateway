@@ -109,7 +109,7 @@ SELECT
             ('email_identities', 'email_identities_password_version_check',
              $check$(password_version > 0)$check$),
             ('email_identities', 'email_identity_address_valid',
-             $check$((char_length(email) >= 3) AND (char_length(email) <= 254)
+             $check$(((char_length(email) >= 3) AND (char_length(email) <= 254))
                  AND (split_part(email, '@'::text, 2)
                      = ANY (ARRAY['gmail.com'::text, 'mail.ru'::text, 'xmail.ru'::text])))$check$),
             ('email_identities', 'email_identity_hash_valid',

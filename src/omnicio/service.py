@@ -87,6 +87,18 @@ def normalize_login_email(value: str) -> str:
     return email
 
 
+def validate_auth_email_configuration(settings: Settings) -> str:
+    """Validate local mail configuration and return its selected encryption key."""
+    crypto_key = settings.notification_crypto_key or settings.broker_token_crypto_key
+    if settings.auth_smtp_sender:
+        normalize_email(settings.auth_smtp_sender)
+    if settings.auth_email_ready:
+        probe = "omnicio-auth-email-configuration"
+        if decrypt_secret(encrypt_secret(probe, crypto_key), crypto_key) != probe:
+            raise SecurityValueError("auth_email_key_verification_failed")
+    return crypto_key
+
+
 class AuthService:
     def __init__(
         self, settings: Settings, database: Database, *,
@@ -94,15 +106,13 @@ class AuthService:
     ) -> None:
         self.settings = settings
         self.database = database
-        self._crypto_key = settings.notification_crypto_key or settings.broker_token_crypto_key
+        self._crypto_key = validate_auth_email_configuration(settings)
         self._transport = transport or NotificationTransport(NotificationConfig(
             crypto_key=self._crypto_key, email_enabled=True,
             smtp_host=settings.auth_smtp_host, smtp_port=settings.auth_smtp_port,
             smtp_username=settings.auth_smtp_username, smtp_password=settings.auth_smtp_password,
             smtp_sender=settings.auth_smtp_sender, smtp_mode=settings.auth_smtp_mode,
         ))
-        if settings.auth_smtp_sender:
-            normalize_email(settings.auth_smtp_sender)
         # A missing account performs the same KDF work as a known account.
         self._dummy_password_hash = hash_password(generate_session_token())
         self._password_slots = BoundedSemaphore(4)

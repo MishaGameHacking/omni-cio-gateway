@@ -286,7 +286,7 @@ def test_upgrade_requires_fresh_source_even_when_restore_badge_is_verified(
     ("source_system_id", "70000000000000003", "source_mismatch"),
     ("cluster_id", 99999, "proof_unverified"),
     ("target_system_id", "70000000000000001", "proof_unverified"),
-    ("target_system_id", "１２３", "proof_unverified"),
+    ("target_system_id", "1２３", "proof_unverified"),
     ("kind", "unverified_status", "proof_unverified"),
     ("source_kind", "provider_snapshot", "proof_unverified"),
     ("verified_at", (NOW + timedelta(seconds=1)).isoformat(), "proof_unverified"),
@@ -300,6 +300,19 @@ def test_upgrade_binds_proof_to_observed_source_and_supported_schema(
     proof = values["state"]["restore_verification"]["payload"] | {field: value}
     values["state"]["restore_verification"] = sign_recovery_evidence(proof, values["signing_key"])
     with pytest.raises(ValueError, match=f"^recovery_{reason}$"):
+        require_upgrade_recovery(**values)
+
+
+def test_upgrade_requires_ascii_digits_in_the_observed_system_identifier(
+    upgrade_recovery_inputs: dict[str, Any],
+) -> None:
+    values = upgrade_recovery_inputs
+    values["source_system_id"] = "1２３"
+    proof = values["state"]["restore_verification"]["payload"] | {"source_system_id": "1２３"}
+    exported = values["manifest"]["payload"] | {"source_system_id": "1２３"}
+    values["state"]["restore_verification"] = sign_recovery_evidence(proof, values["signing_key"])
+    values["manifest"] = sign_recovery_evidence(exported, values["signing_key"])
+    with pytest.raises(ValueError, match="^recovery_source_identity_invalid$"):
         require_upgrade_recovery(**values)
 
 

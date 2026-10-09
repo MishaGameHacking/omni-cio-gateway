@@ -12,6 +12,7 @@ DEFAULT_SESSION_TTL_SECONDS = 34_560_000
 DEFAULT_SMTP_PORT = 465
 DEFAULT_BILLING_PERIOD_DAYS = 30
 DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT = 30
+MAX_ASSISTANT_DAILY_REQUEST_LIMIT = 200
 
 
 class ConfigurationError(RuntimeError):
@@ -134,6 +135,14 @@ def load_settings() -> Settings:
     )
     if auth_mode not in {"tls", "starttls"} or auth_port > 65535:
         raise ConfigurationError("AUTH_SMTP_MODE or AUTH_SMTP_PORT is invalid")
+    assistant_daily_request_limit = positive_int(
+        "ASSISTANT_DAILY_REQUEST_LIMIT", DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
+    )
+    if assistant_daily_request_limit > MAX_ASSISTANT_DAILY_REQUEST_LIMIT:
+        raise ConfigurationError(
+            "ASSISTANT_DAILY_REQUEST_LIMIT must not exceed "
+            f"{MAX_ASSISTANT_DAILY_REQUEST_LIMIT}"
+        )
     return Settings(
         database_url=required("DATABASE_URL"),
         ip_key=required("CLIENT_IP_KEY"),
@@ -185,9 +194,7 @@ def load_settings() -> Settings:
             value.strip() for value in os.environ.get("ASSISTANT_ALLOWED_ENDPOINTS", "").split(",")
             if value.strip()
         ),
-        assistant_daily_request_limit=positive_int(
-            "ASSISTANT_DAILY_REQUEST_LIMIT", DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
-        ),
+        assistant_daily_request_limit=assistant_daily_request_limit,
         operator_user_id=optional_uuid("OPERATOR_USER_ID"),
         legal_operator_name=os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         legal_operator_email=os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),

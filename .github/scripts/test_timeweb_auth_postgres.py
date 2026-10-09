@@ -320,9 +320,10 @@ class PostgresTests(unittest.TestCase):
         historical = json.loads((root / "tests/fixtures/accepted_upgrade_1_3.json").read_text(
             encoding="utf-8",
         ))
-        UPGRADE.migration_bodies(historical["plan"], [
+        historical_sqls = [
             (root / path).read_text(encoding="utf-8") for path in HISTORICAL_MIGRATIONS
-        ])
+        ]
+        UPGRADE.migration_bodies(historical["plan"], historical_sqls)
         document = {"project": {"version": "1.4.0"},
                     "tool": {"omnicio": {"timeweb": {"upgrade": historical["plan"]}}}}
         client = Mock()
@@ -336,8 +337,7 @@ class PostgresTests(unittest.TestCase):
             self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"),
         ):
             UPGRADE.render_remote_upgrade(
-                [(root / path).read_text(encoding="utf-8") for path in HISTORICAL_MIGRATIONS],
-                release_sha="a" * 40, database={},
+                historical_sqls, release_sha="a" * 40, database={},
             )
         with (
             patch.object(UPGRADE.tomllib, "load", return_value=document),
@@ -375,24 +375,35 @@ class PostgresTests(unittest.TestCase):
         ssh.run.return_value = json.dumps(valid)
         arguments = dict(migration_sqls=self.reviewed_upgrade_sql(), release_sha="a" * 40,
                          endpoint=MODULE.DatabaseEndpoint("10.0.0.5", 5432), desired=self.desired)
-        with patch.object(UPGRADE, "load_plan", return_value=self.reviewed_upgrade_plan()):
+        environment = {
+            "LEGAL_OPERATOR_NAME": "Synthetic Operator",
+            "LEGAL_OPERATOR_EMAIL": "operator@example.test",
+            "LEGAL_PRIVACY_VERSION": "test-v1",
+            "LEGAL_CONSENT_VERSION": "test-v1",
+            "LEGAL_TERMS_VERSION": "test-v1",
+        }
+        with (
+            patch.dict(MODULE.os.environ, environment, clear=True),
+            patch.object(UPGRADE, "load_plan", return_value=self.reviewed_upgrade_plan()),
+        ):
             MODULE.run_inplace_upgrade(ssh, **arguments)
-        self.assertEqual(ssh.run.call_args.args, ("/opt/omnicio/current/.venv/bin/python -I -",))
-        self.assertEqual(ssh.run.call_args.kwargs["stage"], MODULE.STAGE_SCHEMA_MIGRATION)
-        compile(ssh.run.call_args.kwargs["input_text"], "reviewed-remote-program", "exec")
-        for response in ("private-canary", json.dumps(None), json.dumps(valid | {"status": []}),
-                         json.dumps(valid | {"cluster_id": 42}),
-                         json.dumps(valid | {"release_sha": "b" * 40}),
-                         json.dumps(valid | {"new_database_copies": False})):
-            ssh.run.return_value = response
-            with (
-                self.subTest(response=response),
-                patch.object(UPGRADE, "load_plan", return_value=self.reviewed_upgrade_plan()),
-                self.assertRaisesRegex(
-                    MODULE.InfraError, "^In-place upgrade result was not confirmed$",
-                ),
-            ):
-                MODULE.run_inplace_upgrade(ssh, **arguments)
+            self.assertEqual(
+                ssh.run.call_args.args, ("/opt/omnicio/current/.venv/bin/python -I -",),
+            )
+            self.assertEqual(ssh.run.call_args.kwargs["stage"], MODULE.STAGE_SCHEMA_MIGRATION)
+            compile(ssh.run.call_args.kwargs["input_text"], "reviewed-remote-program", "exec")
+            for response in ("private-canary", json.dumps(None), json.dumps(valid | {"status": []}),
+                             json.dumps(valid | {"cluster_id": 42}),
+                             json.dumps(valid | {"release_sha": "b" * 40}),
+                             json.dumps(valid | {"new_database_copies": False})):
+                ssh.run.return_value = response
+                with (
+                    self.subTest(response=response),
+                    self.assertRaisesRegex(
+                        MODULE.InfraError, "^In-place upgrade result was not confirmed$",
+                    ),
+                ):
+                    MODULE.run_inplace_upgrade(ssh, **arguments)
 
     def current_cutover_arguments(self) -> dict:
         plan = self.reviewed_upgrade_plan()
@@ -554,12 +565,14 @@ class PostgresTests(unittest.TestCase):
                     UPGRADE._verify_upgrade_role(connection)
         connection.reset_mock()
         connection.execute.return_value.fetchone.return_value = (False,)
+        plan = self.reviewed_upgrade_plan()
+        validator = Mock()
         with (
             patch.object(UPGRADE, "_operational_bytes") as read,
             self.assertRaisesRegex(UPGRADE.UpgradeBlocked,
                                    "^recovery_system_identity_access_unavailable$"),
         ):
-            UPGRADE._require_recovery(connection, self.reviewed_upgrade_plan(), {}, Mock())
+            UPGRADE._require_recovery(connection, plan, {}, validator)
         read.assert_not_called()
         self.assertTrue(connection.execute.call_args.args[0].startswith("SELECT "))
 

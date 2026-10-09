@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect, Request
 
+from omnicio.assistant import AssistantService
 from omnicio.config import ConfigurationError, load_settings, optional_uuid
 from omnicio.db import Database, UserRecord
 from omnicio.main import (
@@ -92,6 +93,43 @@ def test_disabled_email_ignores_legacy_smtp_environment_but_enabled_remains_stri
     with (
         patch.dict(os.environ, {**environment, "NOTIFICATION_EMAIL_ENABLED": "true"}, clear=True),
         pytest.raises(ConfigurationError, match="NOTIFICATION_SMTP_PORT"),
+    ):
+        load_settings()
+
+
+@pytest.mark.parametrize("enabled", ["false", "true"])
+@pytest.mark.parametrize("limit", [1, 200])
+def test_assistant_limit_boundaries_are_usable_by_the_service(enabled: str, limit: int) -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "ASSISTANT_ENABLED": enabled, "ASSISTANT_DAILY_REQUEST_LIMIT": str(limit),
+    }
+    with patch.dict(os.environ, environment, clear=True):
+        cfg = load_settings()
+    service = AssistantService(
+        Mock(spec=Database), credential_key=cfg.broker_token_crypto_key,
+        enabled=cfg.assistant_enabled, daily_request_limit=cfg.assistant_daily_request_limit,
+    )
+    assert service.daily_limit == limit
+    assert service.enabled is (enabled == "true")
+
+
+@pytest.mark.parametrize("enabled", ["false", "true"])
+@pytest.mark.parametrize("limit", [0, 201])
+def test_invalid_assistant_limit_is_rejected_before_startup_even_when_disabled(
+    enabled: str, limit: int,
+) -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "ASSISTANT_ENABLED": enabled, "ASSISTANT_DAILY_REQUEST_LIMIT": str(limit),
+    }
+    with (
+        patch.dict(os.environ, environment, clear=True),
+        pytest.raises(ConfigurationError, match="ASSISTANT_DAILY_REQUEST_LIMIT"),
     ):
         load_settings()
 

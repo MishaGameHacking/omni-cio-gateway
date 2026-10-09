@@ -324,6 +324,10 @@ def require_upgrade_product_configuration() -> dict[str, object]:
         os.environ.clear()
         os.environ.update(effective)
         settings = load_settings()
+        validate_auth_email_configuration(settings)
+        validate_push_configuration(
+            settings.notification_vapid_private_key, settings.notification_vapid_subject,
+        )
     finally:
         os.environ.clear()
         os.environ.update(previous)
@@ -345,10 +349,31 @@ def render_product_preflight() -> str:
     effective future configuration without changing files or sending messages.
     The caller supplies UpgradeBlocked, _private_file and parse_environment.
     """
-    contract = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio/config.py"
+    from inplace_upgrade import render_source_definitions
+
+    # Apply the same local checks as the app job before a database cutover can
+    # start; runtime-only validation alone does not cover publication settings.
+    validate_product_environment()
+    package = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio"
+    contract = package / "config.py"
     source = contract.read_text(encoding="utf-8").replace(
         "from __future__ import annotations\n", "", 1,
     )
+    source += (
+        "\nimport base64\nimport re\nfrom cryptography.fernet import Fernet, InvalidToken\n"
+        "from cryptography.hazmat.primitives import serialization\n"
+        "from cryptography.hazmat.primitives.asymmetric import ec\n"
+    )
+    source += render_source_definitions(package / "notifications.py", {
+        "_EMAIL", "_MAILTO_SCHEME", "_HTTPS_SCHEME", "normalize_email", "_decode", "_b64",
+        "push_public_key", "validate_push_configuration",
+    })
+    source += render_source_definitions(package / "security.py", {
+        "SecurityValueError", "encrypt_secret", "decrypt_secret",
+    })
+    source += render_source_definitions(package / "service.py", {
+        "validate_auth_email_configuration",
+    })
     return source + "\n" + _PRODUCT_PREFLIGHT_PROGRAM.replace(
         "__OMNICIO_PRESERVED_KEYS__", repr(OPTIONAL_INTEGRATION_KEYS),
     ).replace(
