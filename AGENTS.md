@@ -142,6 +142,24 @@ Legacy web/PWA:
 
 Нельзя оставлять старый исполняемый код «на всякий случай», если current consumer исчез: Git history является архивом.
 
+### 2.10. Android build authority и артефакты
+
+После появления Android module:
+
+- использовать только Gradle Wrapper репозитория для CI/release commands;
+- Android Studio является рекомендуемой IDE, но локальная IDE не является единственным доказательством собираемости;
+- каждый material Android PR обязан собирать debug APK в CI;
+- APK artifact маркируется exact commit SHA/version и хранится как CI artifact, а не коммитится в Git;
+- минимум проверок Android head: lint, unit tests, assembleDebug и применимые dependency/security checks;
+- connected/device tests обязательны для функций, которые нельзя надёжно доказать JVM-тестом, когда доступен доверенный emulator/physical-device runner;
+- release APK/AAB не собирать с debug key;
+- private release/upload key, keystore, passwords и T-Invest token не передавать в чат, PR body, artifact, log или repository;
+- release signing automation допустима только через защищённый environment/secret custody;
+- OWNER/QA получает debug APK и тестирует его на реальном устройстве; feedback привязывается к exact build SHA;
+- RuStore upload выполняется только для accepted release commit после green checks и smoke-проверки подписанной сборки.
+
+CI artifact не является опубликованным релизом, а успешная установка debug APK не доказывает корректность release signing, store metadata или модерации.
+
 ## 3. Правило минимального репозитория
 
 Каждый новый файл должен иметь одну доказуемую текущую ответственность.
