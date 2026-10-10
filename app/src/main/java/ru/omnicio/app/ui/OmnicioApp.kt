@@ -451,6 +451,7 @@ private fun AppTopBar(
     onOpenSettings: () -> Unit,
 ) {
     val title = mainDestinations.firstOrNull { it.route == selected }?.label ?: "OMNICIO"
+    val largeFont = shouldStackDetailLine(LocalDensity.current.fontScale)
     TopAppBar(
         title = {
             Column {
@@ -458,16 +459,18 @@ private fun AppTopBar(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
                 )
-                Text(
-                    text = "OMNICIO · ДЕМО",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!largeFont) {
+                    Text(
+                        text = "OMNICIO · ДЕМО",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         actions = {
             TextButton(onClick = onOpenSettings) {
-                Text("Настройки")
+                Text(if (largeFont) "Настр." else "Настройки")
             }
         },
     )
