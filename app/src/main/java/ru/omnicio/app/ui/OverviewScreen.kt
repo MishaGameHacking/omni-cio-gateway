@@ -53,7 +53,7 @@ internal fun OverviewScreen(
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                text = "Общая оценка портфеля · fixture",
+                text = "Общая оценка портфеля · демо",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -285,7 +285,7 @@ private fun PayoutGroup(
         )
         if (items.isEmpty()) {
             Text(
-                text = "Нет выплат в выбранном demo-state",
+                text = "Нет выплат в выбранном демо-состоянии",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
@@ -344,7 +344,7 @@ private fun DemoStateSelector(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Переключатель существует только для проверки UI-02 на fixture-данных.",
+            text = "Переключатель существует только для проверки UI-02 на демо-данных.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
