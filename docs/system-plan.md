@@ -151,6 +151,62 @@ Release build не должен открывать этот output локаль�
 - phone выполняет персональную проверку при sync/open/background opportunity;
 - optional fast alerts используют push и не включают portfolio amounts в payload.
 
+## Бюджет и ёмкость на старте
+
+При текущей нагрузке около двух реальных пользователей новые серверные ресурсы не создаются автоматически. Сначала переиспользуются существующие VDS/PostgreSQL и измеряются CPU, RAM, DB latency, storage, network и AI spend.
+
+Проверенный внешний ориентир Timeweb на 10.10.2026, только для расчёта будущего capacity:
+
+| Ресурс | Публичный ориентир | Как использовать в плане |
+|---|---:|---|
+| Cloud-40, 2 vCPU / 2 GB / 40 GB NVMe | 900 ₽/мес | минимальный отдельный VDS benchmark; не заказывать, если существующий сервер достаточен |
+| Cloud-50, 2 vCPU / 4 GB / 50 GB NVMe | 1 080 ₽/мес | следующий простой vertical step при измеренном RAM bottleneck |
+| Managed PostgreSQL 1 vCPU / 2 GB / 20 GB | 790 ₽/мес | benchmark отдельного кластера; новый кластер не нужен по текущему решению OWNER |
+| Публичный IP БД | 200 ₽/мес | не включать без реальной необходимости; private networking предпочтительнее |
+| AI Gateway | usage-based | ограничивается дневным рублёвым/model budget и кэшированием |
+
+Эти цены не являются счётом OMNICIO и могут измениться. Перед любым увеличением ресурсов сверить актуальный provider price и фактическую метрику bottleneck.
+
+Для раннего периода рекомендуемый внутренний AI ceiling — **300 ₽/мес** как продуктовый бюджет эксперимента, а не тариф Timeweb. После накопления телеметрии ceiling пересматривается по стоимости одного processed document и одного активного устройства.
+
+Capacity rule:
+
+- 2 пользователей не являются основанием покупать новый сервер;
+- 100 установок не являются основанием масштабироваться без измеренной нагрузки;
+- common issuer analysis выполняется один раз, поэтому стоимость не должна линейно расти вместе с числом устройств;
+- scale up только после evidence: sustained CPU/RAM/queue/DB/latency threshold;
+- сначала оптимизировать cache/dedup/batching, затем увеличивать ресурсы.
+
+## Android build/release pipeline
+
+GitHub CI для Android является воспроизводимым build authority до RuStore release.
+
+Минимальные Android jobs после появления проекта:
+
+- Gradle Wrapper validation;
+- `./gradlew lint`;
+- `./gradlew testDebugUnitTest` либо актуальная эквивалентная test task;
+- `./gradlew assembleDebug`;
+- проверка, что debug APK создан и не содержит известных production secrets;
+- dependency/security checks;
+- release bundle build без публикации при наличии безопасной signing-конфигурации.
+
+Каждый debug APK artifact привязан к exact commit SHA и не считается RuStore release.
+
+Release flow:
+
+1. accepted PR;
+2. exact accepted commit;
+3. Android checks green;
+4. signed release AAB/APK;
+5. локальная/физическая smoke-проверка;
+6. upload в RuStore;
+7. moderation;
+8. сверка опубликованной versionCode/versionName/signature с accepted release.
+
+Release private key не хранится в репозитории.
+Если OWNER использует RuStore AAB signing flow, upload key и app signing identity ведутся по актуальному контракту RuStore и не смешиваются с debug key.
+
 ## SYS-01 — 3.0.0. Локальное защищённое хранилище
 
 **Результат:** устройство может безопасно хранить локальный портфель без серверного аккаунта.
