@@ -63,7 +63,15 @@ class AssistantModelTest {
         val kinds = assistantFeed().mapNotNull { it.action?.kind }.toSet()
         val labels = assistantFeed().mapNotNull { it.action?.label }.joinToString(" ").uppercase()
 
-        assertTrue(kinds.all { it in AssistantActionKind.entries })
+        assertEquals(
+            setOf(
+                AssistantActionKind.OPEN_SOURCE,
+                AssistantActionKind.OPEN_POSITION,
+                AssistantActionKind.RUN_SCENARIO,
+                AssistantActionKind.SYNC,
+            ),
+            kinds,
+        )
         assertFalse(labels.contains("BUY"))
         assertFalse(labels.contains("SELL"))
         assertFalse(labels.contains("HOLD"))
