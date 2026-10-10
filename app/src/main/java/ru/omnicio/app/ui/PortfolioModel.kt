@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui
 
 private const val DEFAULT_PORTFOLIO_SIZE = 4
+private const val PRIMARY_ACCOUNT_LABEL = "Основной счёт"
 private const val SYNTHETIC_UID_PREFIX = "fixture-instrument-"
 
 internal enum class PriceStatus(val label: String) {
@@ -244,7 +245,7 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
             "Эмитент: ПАО Сбербанк · demo",
             "Факт источника отмечается отдельно от локального расчёта.",
         ),
-        accountLabel = "Основной счёт",
+        accountLabel = PRIMARY_ACCOUNT_LABEL,
     ),
     RawPortfolioPosition(
         instrumentUid = "uid-sber-demo",
@@ -290,7 +291,7 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
             "Тип: государственная облигация · demo",
             "Цена помечена устаревшей и не выдаётся за текущую.",
         ),
-        accountLabel = "Основной счёт",
+        accountLabel = PRIMARY_ACCOUNT_LABEL,
     ),
     RawPortfolioPosition(
         instrumentUid = "uid-no-price-demo",
@@ -312,7 +313,7 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
         issuerFacts = listOf(
             "Общих фактов недостаточно для оценки · demo.",
         ),
-        accountLabel = "Основной счёт",
+        accountLabel = PRIMARY_ACCOUNT_LABEL,
     ),
 )
 
