@@ -126,8 +126,6 @@ jobs:
           node.exe --check web\i18n.js
           if errorlevel 1 exit /b 1
           node.exe tests\i18n-contract.cjs
-          if errorlevel 1 exit /b 1
-          node.exe --check web\sw.js
 
       - name: Browser public market and account isolation
         shell: cmd
@@ -142,7 +140,6 @@ jobs:
             artifacts/frontend/*.png
             artifacts/frontend/failure-state.json
             artifacts/frontend/layout-metrics.json
-            artifacts/frontend/installability.json
           if-no-files-found: warn
           retention-days: 7
 
