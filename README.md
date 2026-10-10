@@ -106,6 +106,36 @@ Android выполняет персональную синхронизацию �
 Optional fast alerts могут использовать RuStore Push.
 Push payload не должен содержать баланс, позиции или broker token.
 
+## Как создаётся Android-приложение
+
+Android source code разрабатывается в этом репозитории на Kotlin + Jetpack Compose.
+
+Проверяемый цикл:
+
+`feature branch → PR → Android CI → debug APK artifact → установка на физический телефон → feedback → новый commit`.
+
+Для обычной проверки OWNER не обязан собирать проект вручную: CI должен создавать устанавливаемый debug APK для exact commit SHA.
+
+Android Studio рекомендуется на ноутбуке OWNER для Compose Preview, Emulator, USB-debugging, Logcat и финальной работы с release/upload signing material. Visual Studio не является канонической IDE Android-проекта.
+
+Для RuStore готовится подписанный AAB и при необходимости APK. Debug build никогда не публикуется как production release.
+
+T-Invest token и private signing key не передаются в чат/PR и не коммитятся.
+
+## Ориентир затрат
+
+Новая Android-архитектура не заказывает дополнительные серверы по умолчанию. Используются существующие Timeweb VDS/PostgreSQL, пока измеренная нагрузка не потребует масштабирования.
+
+Публичные ориентиры Timeweb, проверенные 10.10.2026:
+
+- Cloud-40 (2 vCPU, 2 GB, 40 GB): 900 ₽/мес;
+- Cloud-50 (2 vCPU, 4 GB, 50 GB): 1 080 ₽/мес;
+- Managed PostgreSQL 1 vCPU / 2 GB / 20 GB: 790 ₽/мес;
+- отдельный public IP DB: 200 ₽/мес, только если действительно нужен;
+- AI Gateway — usage-based с дневными лимитами.
+
+Это benchmark будущего capacity, не обязательный новый счёт проекта. Для первых пользователей внутренний AI ceiling предлагается держать около 300 ₽/мес до накопления реальной телеметрии.
+
 ## RuStore
 
 Целевая публикация — RuStore.
