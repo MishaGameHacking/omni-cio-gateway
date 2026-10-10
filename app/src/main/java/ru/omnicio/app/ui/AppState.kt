@@ -14,6 +14,14 @@ private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 private const val KEY_AMOUNTS_HIDDEN = "amounts_hidden"
 private const val KEY_DISPLAY_CURRENCY = "display_currency"
 private const val KEY_OVERVIEW_MODE = "overview_mode"
+private const val KEY_PORTFOLIO_PRESENT = "portfolio_present"
+private const val KEY_BROKER_CONNECTED = "broker_connected"
+private const val KEY_BROKER_CREDENTIAL_PRESENT = "broker_credential_present"
+private const val KEY_DEPENDENT_JOBS_RUNNING = "dependent_jobs_running"
+private const val KEY_RESERVE_MINOR = "reserve_minor"
+private const val KEY_GOAL_HORIZON_YEARS = "goal_horizon_years"
+private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+private const val KEY_FAST_ALERTS_ENABLED = "fast_alerts_enabled"
 
 internal data class AppUiState(
     val installationId: String,
@@ -21,6 +29,7 @@ internal data class AppUiState(
     val amountsHidden: Boolean,
     val displayCurrency: DisplayCurrency,
     val overviewMode: OverviewMode,
+    val settings: LocalSettingsState,
 )
 
 internal class OmnicioViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,6 +42,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             amountsHidden = store.areAmountsHidden(),
             displayCurrency = store.displayCurrency(),
             overviewMode = store.overviewMode(),
+            settings = store.localSettings(),
         ),
     )
 
@@ -57,6 +67,38 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     fun setOverviewMode(mode: OverviewMode) {
         store.setOverviewMode(mode)
         mutableUiState.value = mutableUiState.value.copy(overviewMode = mode)
+    }
+
+    fun connectBrokerFixture() = updateSettings(::connectBrokerFixtureState)
+
+    fun disconnectBroker() = updateSettings(::disconnectBrokerState)
+
+    fun deleteLocalPortfolio() = updateSettings(::deleteLocalPortfolioState)
+
+    fun restoreDemoPortfolio() = updateSettings(::restoreDemoPortfolioState)
+
+    fun setReserveMinor(reserveMinor: Long) {
+        updateSettings { it.copy(reserveMinor = reserveMinor) }
+    }
+
+    fun setGoalHorizonYears(years: Int) {
+        updateSettings { it.copy(goalHorizonYears = years) }
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        updateSettings { notificationsState(it, enabled) }
+    }
+
+    fun setFastAlertsEnabled(enabled: Boolean) {
+        updateSettings { fastAlertsState(it, enabled) }
+    }
+
+    private fun updateSettings(
+        transform: (LocalSettingsState) -> LocalSettingsState,
+    ) {
+        val next = transform(mutableUiState.value.settings)
+        store.setLocalSettings(next)
+        mutableUiState.value = mutableUiState.value.copy(settings = next)
     }
 }
 
@@ -106,6 +148,48 @@ private class LocalProfileStore(context: Context) {
 
     fun setOverviewMode(mode: OverviewMode) {
         prefs.edit().putString(KEY_OVERVIEW_MODE, mode.name).apply()
+    }
+
+    fun localSettings(): LocalSettingsState {
+        val defaults = LocalSettingsState()
+        return LocalSettingsState(
+            portfolioPresent = prefs.getBoolean(KEY_PORTFOLIO_PRESENT, defaults.portfolioPresent),
+            brokerConnected = prefs.getBoolean(KEY_BROKER_CONNECTED, defaults.brokerConnected),
+            brokerCredentialPresent = prefs.getBoolean(
+                KEY_BROKER_CREDENTIAL_PRESENT,
+                defaults.brokerCredentialPresent,
+            ),
+            dependentJobsRunning = prefs.getBoolean(
+                KEY_DEPENDENT_JOBS_RUNNING,
+                defaults.dependentJobsRunning,
+            ),
+            reserveMinor = prefs.getLong(KEY_RESERVE_MINOR, defaults.reserveMinor),
+            goalHorizonYears = prefs.getInt(
+                KEY_GOAL_HORIZON_YEARS,
+                defaults.goalHorizonYears,
+            ),
+            notificationsEnabled = prefs.getBoolean(
+                KEY_NOTIFICATIONS_ENABLED,
+                defaults.notificationsEnabled,
+            ),
+            fastAlertsEnabled = prefs.getBoolean(
+                KEY_FAST_ALERTS_ENABLED,
+                defaults.fastAlertsEnabled,
+            ),
+        )
+    }
+
+    fun setLocalSettings(state: LocalSettingsState) {
+        prefs.edit()
+            .putBoolean(KEY_PORTFOLIO_PRESENT, state.portfolioPresent)
+            .putBoolean(KEY_BROKER_CONNECTED, state.brokerConnected)
+            .putBoolean(KEY_BROKER_CREDENTIAL_PRESENT, state.brokerCredentialPresent)
+            .putBoolean(KEY_DEPENDENT_JOBS_RUNNING, state.dependentJobsRunning)
+            .putLong(KEY_RESERVE_MINOR, state.reserveMinor)
+            .putInt(KEY_GOAL_HORIZON_YEARS, state.goalHorizonYears)
+            .putBoolean(KEY_NOTIFICATIONS_ENABLED, state.notificationsEnabled)
+            .putBoolean(KEY_FAST_ALERTS_ENABLED, state.fastAlertsEnabled)
+            .apply()
     }
 }
 
