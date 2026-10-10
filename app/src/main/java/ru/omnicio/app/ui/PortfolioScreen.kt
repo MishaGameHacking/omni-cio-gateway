@@ -184,30 +184,37 @@ private fun PortfolioPositionRow(
             modifier = Modifier.padding(OmniSpacing.md),
             verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
+            val value = formatMoney(
+                position.currentValueMinor,
+                position.currency,
+                hidden = false,
+            )
+            if (shouldStackDetailLine(LocalDensity.current.fontScale)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+                ) {
+                    PositionIdentity(position)
                     Text(
-                        text = position.name,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = identifierLine(position),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = value,
+                        style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                Text(
-                    text = formatMoney(
-                        position.currentValueMinor,
-                        position.currency,
-                        hidden = false,
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.End,
-                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    PositionIdentity(
+                        position = position,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.End,
+                    )
+                }
             }
             Text(
                 text = formatQuantity(position.quantity) +
@@ -226,6 +233,24 @@ private fun PortfolioPositionRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun PositionIdentity(
+    position: PortfolioPosition,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = position.name,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = identifierLine(position),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
