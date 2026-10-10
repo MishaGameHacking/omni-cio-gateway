@@ -104,7 +104,12 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 selected = ROUTE_OVERVIEW,
                 onNavigate = navController::navigateMain,
             ) {
-                OverviewScreen(uiState.installationId)
+                OverviewScreen(
+                    uiState = uiState,
+                    onToggleAmounts = appViewModel::toggleAmountsHidden,
+                    onCurrency = appViewModel::setDisplayCurrency,
+                    onMode = appViewModel::setOverviewMode,
+                )
             }
         }
         composable(ROUTE_PORTFOLIO) {
@@ -175,11 +180,11 @@ private fun OnboardingScreen(
             )
             InfoCard(
                 title = "Общий рынок — отдельный слой",
-                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный портфель в UI-01 туда не отправляется.",
+                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный demo-портфель туда не отправляется.",
             )
             InfoCard(
                 title = "T-Invest подключается добровольно",
-                body = "На этом выпуске мы только объясняем read-only доступ. Брокерский токен приложение ещё не запрашивает.",
+                body = "На UI-этапе мы только показываем read-only сценарий. Брокерский токен приложение ещё не запрашивает.",
             )
 
             Button(
@@ -223,8 +228,8 @@ private fun OnboardingScreen(
             title = { Text("T-Invest · read-only") },
             text = {
                 Text(
-                    "Подключение брокера появится на системном этапе. В версии 2.0.0 " +
-                        "OMNICIO не просит, не передаёт и не сохраняет брокерский токен.",
+                    "Подключение брокера появится на системном этапе. Сейчас OMNICIO " +
+                        "не просит, не передаёт и не сохраняет брокерский токен.",
                 )
             },
             confirmButton = {
@@ -261,15 +266,15 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 
             InfoCard(
                 title = "Только на устройстве",
-                body = "Локальный ID установки, fixture-портфель, состояние onboarding и будущие персональные параметры local-first режима.",
+                body = "Локальный ID установки, fixture-портфель, настройки отображения и будущие персональные параметры local-first режима.",
             )
             InfoCard(
                 title = "Общие запросы",
-                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-01 не отправляет туда суммы, позиции или fixture-портфель.",
+                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-этап не отправляет туда суммы, позиции или fixture-портфель.",
             )
             InfoCard(
                 title = "Брокерский доступ",
-                body = "В UI-01 T-Invest token отсутствует. Позже read-only credential будет вводиться отдельно и не станет публичным логином OMNICIO.",
+                body = "На UI-этапе T-Invest token отсутствует. Позже read-only credential будет вводиться отдельно и не станет публичным логином OMNICIO.",
             )
 
             Button(
@@ -384,42 +389,6 @@ private fun ScreenContainer(
 }
 
 @Composable
-private fun OverviewScreen(installationId: String) {
-    StatusPill("ДЕМО · ЛОКАЛЬНО")
-
-    Text(
-        text = "1 284 530 ₽",
-        style = MaterialTheme.typography.displaySmall,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.semantics { heading() },
-    )
-    Text(
-        text = "Общая оценка fixture-портфеля",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    MetricCard(
-        title = "Доступно",
-        value = "184 900 ₽",
-        detail = "Отдельно от общей стоимости · fixture",
-    )
-    InfoCard(
-        title = "Существенное состояние",
-        body = "Подключения T-Invest пока нет. Интерфейс работает локально и не делает сетевых запросов портфеля.",
-    )
-    InfoCard(
-        title = "Актуальность данных",
-        body = "Демо-набор · локально. В следующих выпусках здесь будет источник и время последнего обновления.",
-    )
-    Text(
-        text = "ID устройства " + installationIdLabel(installationId),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
 private fun PortfolioScreen() {
     StatusPill("ДЕМО-ДАННЫЕ")
 
@@ -513,12 +482,12 @@ private fun AssistantScreen() {
     )
     InfoCard(
         title = "Следующее действие",
-        body = "Для UI-01 действий с реальным портфелем нет. T-Invest и системная синхронизация подключаются на следующих этапах.",
+        body = "На UI-этапе действий с реальным портфелем нет. T-Invest и системная синхронизация подключаются позже по плану.",
     )
 }
 
 @Composable
-private fun StatusPill(text: String) {
+internal fun StatusPill(text: String) {
     Surface(
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -532,39 +501,6 @@ private fun StatusPill(text: String) {
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             style = MaterialTheme.typography.labelMedium,
         )
-    }
-}
-
-@Composable
-private fun MetricCard(
-    title: String,
-    value: String,
-    detail: String,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(OmniSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            Text(
-                text = title,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
