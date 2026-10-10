@@ -36,8 +36,32 @@ private const val T_INVEST_URL = "https://www.tbank.ru/invest/"
 
 @Composable
 internal fun PortfolioScreen(
+    dataAvailable: Boolean,
     onOpenPosition: (String) -> Unit,
 ) {
+    if (!dataAvailable) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
+        ) {
+            item { StatusPill("ЛОКАЛЬНЫЕ ДАННЫЕ УДАЛЕНЫ") }
+            item {
+                Text(
+                    text = "Портфель",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
+            item {
+                InfoCard(
+                    title = "Портфель удалён с устройства",
+                    body = "OMNICIO не подменяет удалённые данные нулевыми позициями. Demo-fixture можно восстановить в настройках.",
+                )
+            }
+        }
+        return
+    }
+
     var query by rememberSaveable { mutableStateOf("") }
     var fixtureSizeName by rememberSaveable { mutableStateOf(PortfolioFixtureSize.DEFAULT.name) }
     val fixtureSize = runCatching {
@@ -207,9 +231,10 @@ private fun PortfolioPositionRow(
 @Composable
 internal fun PositionDetailScreen(
     instrumentUid: String,
+    dataAvailable: Boolean,
     onBack: () -> Unit,
 ) {
-    val position = portfolioPositionByUid(instrumentUid)
+    val position = if (dataAvailable) portfolioPositionByUid(instrumentUid) else null
     val uriHandler = LocalUriHandler.current
     var selectedScenario by rememberSaveable { mutableStateOf("Без действия") }
 

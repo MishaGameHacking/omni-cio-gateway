@@ -62,6 +62,7 @@ private const val ROUTE_OVERVIEW = "overview"
 private const val ROUTE_PORTFOLIO = "portfolio"
 private const val ROUTE_POSITION = "position"
 private const val ROUTE_ASSISTANT = "assistant"
+private const val ROUTE_SETTINGS = "settings"
 
 private data class Destination(
     val label: String,
@@ -104,6 +105,7 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
             MainShell(
                 selected = ROUTE_OVERVIEW,
                 onNavigate = navController::navigateMain,
+                onOpenSettings = { navController.navigate(ROUTE_SETTINGS) },
             ) {
                 OverviewScreen(
                     uiState = uiState,
@@ -117,9 +119,11 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
             MainShell(
                 selected = ROUTE_PORTFOLIO,
                 onNavigate = navController::navigateMain,
+                onOpenSettings = { navController.navigate(ROUTE_SETTINGS) },
                 scrollable = false,
             ) {
                 PortfolioScreen(
+                    dataAvailable = uiState.settings.portfolioPresent,
                     onOpenPosition = { uid ->
                         navController.navigate(ROUTE_POSITION + "/" + uid)
                     },
@@ -131,9 +135,11 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
             MainShell(
                 selected = ROUTE_PORTFOLIO,
                 onNavigate = navController::navigateMain,
+                onOpenSettings = { navController.navigate(ROUTE_SETTINGS) },
             ) {
                 PositionDetailScreen(
                     instrumentUid = uid,
+                    dataAvailable = uiState.settings.portfolioPresent,
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -142,6 +148,7 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
             MainShell(
                 selected = ROUTE_ASSISTANT,
                 onNavigate = navController::navigateMain,
+                onOpenSettings = { navController.navigate(ROUTE_SETTINGS) },
                 scrollable = false,
             ) {
                 AssistantScreen(
@@ -150,6 +157,20 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                     },
                 )
             }
+        }
+        composable(ROUTE_SETTINGS) {
+            SettingsScreen(
+                uiState = uiState,
+                onBack = { navController.popBackStack() },
+                onDeletePortfolio = appViewModel::deleteLocalPortfolio,
+                onRestoreDemoPortfolio = appViewModel::restoreDemoPortfolio,
+                onConnectBrokerFixture = appViewModel::connectBrokerFixture,
+                onDisconnectBroker = appViewModel::disconnectBroker,
+                onReserveMinor = appViewModel::setReserveMinor,
+                onGoalHorizonYears = appViewModel::setGoalHorizonYears,
+                onNotificationsEnabled = appViewModel::setNotificationsEnabled,
+                onFastAlertsEnabled = appViewModel::setFastAlertsEnabled,
+            )
         }
     }
 }
@@ -315,6 +336,7 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 private fun MainShell(
     selected: String,
     onNavigate: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     scrollable: Boolean = true,
     content: @Composable () -> Unit,
 ) {
@@ -336,7 +358,7 @@ private fun MainShell(
                     }
                 }
                 Scaffold(
-                    topBar = { AppTopBar(selected) },
+                    topBar = { AppTopBar(selected, onOpenSettings) },
                     modifier = Modifier.weight(1f),
                 ) { padding ->
                     ScreenContainer(padding, scrollable, content)
@@ -344,7 +366,7 @@ private fun MainShell(
             }
         } else {
             Scaffold(
-                topBar = { AppTopBar(selected) },
+                topBar = { AppTopBar(selected, onOpenSettings) },
                 bottomBar = {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         mainDestinations.forEach { destination ->
@@ -366,7 +388,10 @@ private fun MainShell(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppTopBar(selected: String) {
+private fun AppTopBar(
+    selected: String,
+    onOpenSettings: () -> Unit,
+) {
     val title = mainDestinations.firstOrNull { it.route == selected }?.label ?: "OMNICIO"
     TopAppBar(
         title = {
@@ -380,6 +405,11 @@ private fun AppTopBar(selected: String) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        },
+        actions = {
+            TextButton(onClick = onOpenSettings) {
+                Text("Настройки")
             }
         },
     )
