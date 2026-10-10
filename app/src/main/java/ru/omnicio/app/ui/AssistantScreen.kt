@@ -131,7 +131,9 @@ private fun AssistantMessageCard(
             )
             AssistantField(
                 label = "Источники",
-                value = message.sources.joinToString(separator = "\n") { it.name },
+                value = message.sources.joinToString(separator = "\n") { source ->
+                    source.url?.let { source.name + " · " + it } ?: source.name
+                },
             )
             AssistantField(
                 label = "Время",
