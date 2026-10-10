@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,6 +53,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navDeepLink
 import ru.omnicio.app.R
 import ru.omnicio.app.ui.theme.OmniSpacing
 import ru.omnicio.app.ui.theme.OmnicioTheme
@@ -63,6 +65,7 @@ private const val ROUTE_PORTFOLIO = "portfolio"
 private const val ROUTE_POSITION = "position"
 private const val ROUTE_ASSISTANT = "assistant"
 private const val ROUTE_SETTINGS = "settings"
+private const val DEEP_LINK_PREFIX = "omnicio://"
 
 private data class Destination(
     val label: String,
@@ -101,7 +104,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
         composable(ROUTE_PRIVACY) {
             PrivacyScreen(onBack = { navController.popBackStack() })
         }
-        composable(ROUTE_OVERVIEW) {
+        composable(
+            route = ROUTE_OVERVIEW,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_OVERVIEW })
+            } else {
+                emptyList()
+            },
+        ) {
             MainShell(
                 selected = ROUTE_OVERVIEW,
                 onNavigate = navController::navigateMain,
@@ -115,7 +125,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_PORTFOLIO) {
+        composable(
+            route = ROUTE_PORTFOLIO,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_PORTFOLIO })
+            } else {
+                emptyList()
+            },
+        ) {
             MainShell(
                 selected = ROUTE_PORTFOLIO,
                 onNavigate = navController::navigateMain,
@@ -130,7 +147,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_POSITION + "/{uid}") { backStackEntry ->
+        composable(
+            route = ROUTE_POSITION + "/{uid}",
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_POSITION + "/{uid}" })
+            } else {
+                emptyList()
+            },
+        ) { backStackEntry ->
             val uid = backStackEntry.arguments?.getString("uid").orEmpty()
             MainShell(
                 selected = ROUTE_PORTFOLIO,
@@ -144,7 +168,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_ASSISTANT) {
+        composable(
+            route = ROUTE_ASSISTANT,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_ASSISTANT })
+            } else {
+                emptyList()
+            },
+        ) {
             MainShell(
                 selected = ROUTE_ASSISTANT,
                 onNavigate = navController::navigateMain,
@@ -158,7 +189,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_SETTINGS) {
+        composable(
+            route = ROUTE_SETTINGS,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_SETTINGS })
+            } else {
+                emptyList()
+            },
+        ) {
             SettingsScreen(
                 uiState = uiState,
                 onBack = { navController.popBackStack() },
@@ -166,6 +204,8 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 onRestoreDemoPortfolio = appViewModel::restoreDemoPortfolio,
                 onConnectBrokerFixture = appViewModel::connectBrokerFixture,
                 onDisconnectBroker = appViewModel::disconnectBroker,
+                onRevokeBrokerFixture = appViewModel::revokeBrokerFixture,
+                onRetryMigration = appViewModel::retryLocalMigration,
                 onReserveMinor = appViewModel::setReserveMinor,
                 onGoalHorizonYears = appViewModel::setGoalHorizonYears,
                 onNotificationsEnabled = appViewModel::setNotificationsEnabled,
@@ -341,8 +381,13 @@ private fun MainShell(
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp
-        if (wide) {
+        val layoutMode = appLayoutMode(maxWidth.value.toInt())
+        val horizontalPadding = when (layoutMode) {
+            AppLayoutMode.COMPACT -> OmniSpacing.sm
+            AppLayoutMode.STANDARD -> OmniSpacing.lg
+            AppLayoutMode.WIDE -> OmniSpacing.xl
+        }
+        if (layoutMode == AppLayoutMode.WIDE) {
             Row(modifier = Modifier.fillMaxSize()) {
                 NavigationRail(
                     modifier = Modifier.fillMaxHeight(),
@@ -361,7 +406,7 @@ private fun MainShell(
                     topBar = { AppTopBar(selected, onOpenSettings) },
                     modifier = Modifier.weight(1f),
                 ) { padding ->
-                    ScreenContainer(padding, scrollable, content)
+                    ScreenContainer(padding, scrollable, horizontalPadding, content)
                 }
             }
         } else {
@@ -380,7 +425,7 @@ private fun MainShell(
                     }
                 },
             ) { padding ->
-                ScreenContainer(padding, scrollable, content)
+                ScreenContainer(padding, scrollable, horizontalPadding, content)
             }
         }
     }
@@ -419,6 +464,7 @@ private fun AppTopBar(
 private fun ScreenContainer(
     padding: PaddingValues,
     scrollable: Boolean,
+    horizontalPadding: Dp,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -431,7 +477,7 @@ private fun ScreenContainer(
             .fillMaxWidth()
             .align(Alignment.TopCenter)
             .padding(
-                horizontal = OmniSpacing.lg,
+                horizontal = horizontalPadding,
                 vertical = OmniSpacing.md,
             )
 
