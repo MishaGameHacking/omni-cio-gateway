@@ -116,8 +116,21 @@ jobs:
         run: |
           call gradlew.bat --version
           if errorlevel 1 exit /b 1
-          call gradlew.bat :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace
+          call gradlew.bat :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --write-locks --stacktrace
           if errorlevel 1 exit /b 1
+
+          if exist "app\gradle.lockfile" (
+            echo ----- app/gradle.lockfile -----
+            type "app\gradle.lockfile"
+            echo ----- end app/gradle.lockfile -----
+          ) else if exist "gradle.lockfile" (
+            echo ----- gradle.lockfile -----
+            type "gradle.lockfile"
+            echo ----- end gradle.lockfile -----
+          ) else (
+            echo Dependency lockfile was not generated.
+            exit /b 1
+          )
 
       - name: Upload exact-head debug APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

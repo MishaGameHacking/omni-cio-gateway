@@ -5,12 +5,12 @@ import org.junit.Test
 
 class AppStateTest {
     @Test
-    fun installationIdLabel_shortensLongLocalId() {
+    fun installationIdLabelShortensLongLocalId() {
         assertEquals("12345678…", installationIdLabel("12345678-1234-5678"))
     }
 
     @Test
-    fun installationIdLabel_keepsShortIdReadable() {
+    fun installationIdLabelKeepsShortIdReadable() {
         assertEquals("local", installationIdLabel("local"))
     }
 }
