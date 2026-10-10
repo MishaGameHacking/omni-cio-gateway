@@ -31,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.ui.theme.OmniSpacing
 
@@ -461,11 +465,25 @@ private fun MigrationStatusCard(
 @Composable
 private fun NotificationPermissionCard() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val required = notificationPermissionRequired(Build.VERSION.SDK_INT)
     var granted by rememberSaveable {
         mutableStateOf(!required || notificationPermissionGranted(context))
     }
     var requestAttempted by rememberSaveable { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner, required) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                granted = !required || notificationPermissionGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { result ->
