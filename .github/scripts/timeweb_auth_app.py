@@ -798,11 +798,6 @@ install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" \
     "$WEB_RELEASE/assets/brand/earth-hero.png"
 install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" \
     "$WEB_RELEASE/assets/brand/auth-mountains.png"
-# Existing installed clients may still request the former PNG URLs. All resolve
-# to the owner's unchanged original, while the new manifest uses its canonical URL.
-for name in apple-touch-icon-180.png pwa-icon-192.png pwa-icon-512.png pwa-maskable-512.png; do
-    ln -sfn omnicio-logo.png "$WEB_RELEASE/assets/brand/$name"
-done
 set -a
 . /etc/omnicio/product.env
 set +a
