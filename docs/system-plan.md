@@ -159,13 +159,13 @@ Release build не должен открывать этот output локаль�
 
 | Ресурс | Публичный ориентир | Как использовать в плане |
 |---|---:|---|
-| Cloud-40, 2 vCPU / 2 GB / 40 GB NVMe | 900 ₽/мес | минимальный отдельный VDS benchmark; не заказывать, если существующий сервер достаточен |
-| Cloud-50, 2 vCPU / 4 GB / 50 GB NVMe | 1 080 ₽/мес | следующий простой vertical step при измеренном RAM bottleneck |
+| Cloud-40, Premium 3.3 GHz, 2 vCPU / 2 GB / 40 GB NVMe, Санкт-Петербург | 2 800 ₽/мес | текущий публичный benchmark отдельного VDS; не заказывать, если существующий сервер достаточен |
+| Cloud-50, Premium 3.3 GHz, 2 vCPU / 4 GB / 50 GB NVMe, Санкт-Петербург | 3 840 ₽/мес | следующий публичный benchmark vertical step при измеренном RAM bottleneck |
 | Managed PostgreSQL 1 vCPU / 2 GB / 20 GB | 790 ₽/мес | benchmark отдельного кластера; новый кластер не нужен по текущему решению OWNER |
 | Публичный IP БД | 200 ₽/мес | не включать без реальной необходимости; private networking предпочтительнее |
 | AI Gateway | usage-based | ограничивается дневным рублёвым/model budget и кэшированием |
 
-Эти цены не являются счётом OMNICIO и могут измениться. Перед любым увеличением ресурсов сверить актуальный provider price и фактическую метрику bottleneck.
+Эти цены не являются счётом OMNICIO и зависят от региона, класса CPU и срока. Для Cloud-40/50 выше зафиксирован публичный экран Timeweb на 10.10.2026 для Premium 3.3 GHz в Санкт-Петербурге. PostgreSQL 790 ₽/мес — текущий публичный benchmark 1 vCPU / 2 GB / 20 GB; публичный IP — 200 ₽. Перед любым увеличением ресурсов сверить актуальный provider price и фактическую метрику bottleneck.
 
 Для раннего периода рекомендуемый внутренний AI ceiling — **300 ₽/мес** как продуктовый бюджет эксперимента, а не тариф Timeweb. После накопления телеметрии ceiling пересматривается по стоимости одного processed document и одного активного устройства.
 
@@ -613,3 +613,12 @@ Pipeline:
 - собственная GPU-модель;
 - новая production-БД/клон только ради Android;
 - regulated personal trade output без отдельного подтверждённого режима.
+
+## Актуальные внешние основания для Android/release
+
+- Timeweb Cloud: https://timeweb.cloud/services/cloud-servers
+- Timeweb PostgreSQL: https://timeweb.cloud/services/postgresql
+- Timeweb AI Gateway limits: https://timeweb.cloud/docs/ai-agents/pricing/token-limit
+- Android build APK/AAB: https://developer.android.com/build/build-for-release
+- RuStore APK/AAB publication: https://www.rustore.ru/help/developers/publishing-and-verifying-apps/app-publication
+- RuStore AAB signing: https://www.rustore.ru/help/developers/publishing-and-verifying-apps/app-publication/new-version-app/upload-aab
