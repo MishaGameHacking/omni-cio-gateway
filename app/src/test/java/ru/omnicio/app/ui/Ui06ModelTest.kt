@@ -57,8 +57,10 @@ class Ui06ModelTest {
 
     @Test
     fun saverLabelsExplainBackgroundDelay() {
-        assertTrue(powerSaverLabel(true).contains("отложены"))
-        assertTrue(dataSaverLabel(true).contains("отложены"))
-        assertFalse(powerSaverLabel(false).contains("отложены"))
+        val delayed = "отложены"
+
+        assertTrue(powerSaverLabel(true).contains(delayed))
+        assertTrue(dataSaverLabel(true).contains(delayed))
+        assertFalse(powerSaverLabel(false).contains(delayed))
     }
 }
