@@ -1,6 +1,16 @@
 package ru.omnicio.app.ui
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,8 +31,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +53,8 @@ internal fun SettingsScreen(
     onRestoreDemoPortfolio: () -> Unit,
     onConnectBrokerFixture: () -> Unit,
     onDisconnectBroker: () -> Unit,
+    onRevokeBrokerFixture: () -> Unit,
+    onRetryMigration: () -> Unit,
     onReserveMinor: (Long) -> Unit,
     onGoalHorizonYears: (Int) -> Unit,
     onNotificationsEnabled: (Boolean) -> Unit,
@@ -58,13 +76,19 @@ internal fun SettingsScreen(
             }
         }
         item {
-            StatusPill("ДЕМО · UI-05 · НАСТРОЙКИ")
+            StatusPill("ДЕМО · UI-06 · RELEASE CANDIDATE UX")
         }
         item {
             Text(
                 text = "Настройки",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.semantics { heading() },
+            )
+        }
+        item {
+            MigrationStatusCard(
+                status = uiState.migrationStatus,
+                onRetry = onRetryMigration,
             )
         }
         item {
@@ -88,6 +112,7 @@ internal fun SettingsScreen(
                 settings = settings,
                 onConnect = onConnectBrokerFixture,
                 onDisconnect = onDisconnectBroker,
+                onRevoke = onRevokeBrokerFixture,
             )
         }
         item {
@@ -116,12 +141,18 @@ internal fun SettingsScreen(
             )
         }
         item {
+            NotificationPermissionCard()
+        }
+        item {
+            RuntimeEnvironmentCard()
+        }
+        item {
             SubscriptionCard()
         }
         item {
             InfoCard(
                 title = "О приложении",
-                body = "OMNICIO " + BuildConfig.VERSION_NAME + " · Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. Основной пользовательский продукт не зависит от старого web workspace.",
+                body = "OMNICIO " + BuildConfig.VERSION_NAME + " · Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. Скриншоты на текущих demo/UI-экранах не блокируются: секреты здесь не отображаются, а accessibility не ограничивается без необходимости.",
             )
         }
     }
@@ -175,13 +206,17 @@ private fun BrokerCard(
     settings: LocalSettingsState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onRevoke: () -> Unit,
 ) {
     SettingsCard(title = "T-Invest · read-only") {
         Text(
-            text = if (settings.brokerConnected) {
-                "Подключено · UI-fixture. Credential отмечен как локальный."
-            } else {
-                "Не подключено. Реальный read-only token появится только на системном этапе."
+            text = when {
+                settings.brokerRevoked ->
+                    "Credential отозван · UI-fixture. Зависимые jobs остановлены."
+                settings.brokerConnected ->
+                    "Подключено · UI-fixture. Credential отмечен как локальный."
+                else ->
+                    "Не подключено. Реальный read-only token появится только на системном этапе."
             },
         )
         Text(
@@ -194,25 +229,48 @@ private fun BrokerCard(
                 if (settings.dependentJobsRunning) "fixture запущены" else "остановлены",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (settings.brokerConnected) {
-            OutlinedButton(
-                onClick = onConnect,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Переподключить fixture")
+        when {
+            settings.brokerConnected -> {
+                OutlinedButton(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Переподключить fixture")
+                }
+                OutlinedButton(
+                    onClick = onRevoke,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("QA · пометить credential отозванным")
+                }
+                Button(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Отключить и очистить локальный credential")
+                }
             }
-            Button(
-                onClick = onDisconnect,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Отключить и очистить локальный credential")
+            settings.brokerRevoked -> {
+                Button(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Переподключить read-only fixture")
+                }
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Очистить отозванный credential")
+                }
             }
-        } else {
-            Button(
-                onClick = onConnect,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Подключить read-only fixture")
+            else -> {
+                Button(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Подключить read-only fixture")
+                }
             }
         }
     }
@@ -344,9 +402,137 @@ private fun ToggleRow(
             checked = checked,
             enabled = enabled,
             onCheckedChange = onChecked,
+            modifier = Modifier.semantics {
+                contentDescription = label
+            },
         )
     }
 }
+
+@Composable
+private fun MigrationStatusCard(
+    status: LocalMigrationStatus,
+    onRetry: () -> Unit,
+) {
+    SettingsCard(title = "Локальная схема данных") {
+        Text(status.label)
+        Text(
+            text = when (status) {
+                LocalMigrationStatus.CURRENT ->
+                    "Схема локального UI-state актуальна. После перезапуска значения читаются из локального хранилища."
+                LocalMigrationStatus.MIGRATED ->
+                    "Маркер схемы обновлён атомарно. Если процесс завершится раньше записи, следующий запуск повторит миграцию."
+                LocalMigrationStatus.FAILED ->
+                    "Запись версии схемы не подтверждена. OMNICIO не считает миграцию завершённой и позволяет повторить её локально."
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (status == LocalMigrationStatus.FAILED) {
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Повторить локальную миграцию")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationPermissionCard() {
+    val context = LocalContext.current
+    val required = notificationPermissionRequired(Build.VERSION.SDK_INT)
+    var granted by rememberSaveable {
+        mutableStateOf(!required || notificationPermissionGranted(context))
+    }
+    var requestAttempted by rememberSaveable { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { result ->
+        requestAttempted = true
+        granted = result
+    }
+
+    SettingsCard(title = "Разрешение уведомлений") {
+        when {
+            !required -> {
+                Text("Для этой версии Android отдельное runtime-разрешение не требуется.")
+            }
+            granted -> {
+                StatusPill("РАЗРЕШЕНО")
+                Text("Системное разрешение выдано. Пользовательские переключатели выше всё равно остаются отдельным выбором.")
+            }
+            else -> {
+                StatusPill(if (requestAttempted) "PERMISSION DENIED" else "РАЗРЕШЕНИЕ НЕ ВЫДАНО")
+                Text(
+                    text = "Без системного разрешения Android не покажет уведомления. Портфель и локальная аналитика продолжают работать.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = {
+                        requestAttempted = true
+                        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Разрешить уведомления")
+                }
+                if (requestAttempted) {
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:" + context.packageName),
+                                ),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Открыть настройки Android")
+                    }
+                    TextButton(
+                        onClick = {
+                            granted = notificationPermissionGranted(context)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Проверить разрешение снова")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeEnvironmentCard() {
+    val context = LocalContext.current
+    val powerManager = remember(context) {
+        context.getSystemService(PowerManager::class.java)
+    }
+    val connectivityManager = remember(context) {
+        context.getSystemService(ConnectivityManager::class.java)
+    }
+    val powerSaver = powerManager?.isPowerSaveMode == true
+    val dataSaverRestricted =
+        connectivityManager?.restrictBackgroundStatus ==
+            ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+
+    SettingsCard(title = "Фоновые ограничения Android") {
+        Text("Экономия батареи: " + powerSaverLabel(powerSaver))
+        Text("Экономия трафика: " + dataSaverLabel(dataSaverRestricted))
+        Text(
+            text = "Android не является гарантированным 24/7 scheduler. Фоновые обновления могут выполняться позже, а состояние данных всегда показывается отдельно.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun notificationPermissionGranted(context: Context): Boolean =
+    !notificationPermissionRequired(Build.VERSION.SDK_INT) ||
+        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+        PackageManager.PERMISSION_GRANTED
 
 @Composable
 private fun SettingsSectionTitle(text: String) {
