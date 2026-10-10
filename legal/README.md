@@ -1,27 +1,48 @@
-# Legal publication source
+# Публикация правовых документов
 
-Current user-facing legal documents are published directly from:
+Действующие пользовательские документы находятся в одном месте:
 
 - `web/legal/privacy.html`;
 - `web/legal/consent.html`;
 - `web/legal/terms.html`.
 
-Version: `2026-10-06-v1.0.0`.
+Согласие на обработку персональных данных отделено от условий сервиса и политики.
+Этот README описывает порядок публикации, а не заменяет сами документы или юридическое заключение.
 
-The personal-data consent is intentionally separate from the terms and privacy
-policy. Production registration must fail closed unless current legal versions,
-a positive server-side `REGISTRATION_MAX_USERS`, reviewed multi-user legal
-approval, operator identity/contact values, configured login providers and end-to-end
-deployment verification are all present. Ordinary production also requires
-confirmed personal-data operator/regulatory readiness. The temporary
-owner-approved `CONTROLLED_LIVE_TEST_MODE` is the only exception: it must keep
-`RKN_NOTIFICATION_CONFIRMED=false` and is hard-capped at two user accounts.
+## Текущий статус и изменение задания
 
-Operator identity/contact values are deployment configuration and must not be
-guessed. The operator address required for a regulatory notification is handled
-through that filing and is not duplicated on the public website unless there is
-a separate legal reason to publish it. The public pages are rendered during deployment and the
-deployer rejects unresolved placeholders.
+В исходниках до новой разработки документы версии `2026-10-09-v1.4.0`.
+Настоящее изменение продуктового плана не меняет их опубликованный текст, версию или ранее полученные согласия.
+Целевой продукт описан в [README.md](../README.md), последовательность — в [плане интерфейса](../docs/ui-plan.md) и [системном плане](../docs/system-plan.md).
 
-Do not store passport details, scans, secret keys, API tokens or other sensitive
-identity material in Git.
+Старые указания `CONTROLLED_LIVE_TEST_MODE`, максимума двух пользователей, `REGISTRATION_MAX_USERS` и внешних login providers больше не являются действующими требованиями.
+Целевая регистрация самостоятельная: подтверждаемая почта и свой пароль, без квоты людей и административного допуска.
+Ограничения спама/перебора, возрастные условия фактической услуги и проверка владения адресом сохраняются.
+
+## Соответствие реальной услуге
+
+- Указывать фактического оператора, продавца и контакт; не угадывать реквизиты или регуляторные подтверждения.
+- Описывать только действительно включённые обработку, источники, сроки хранения и передачи данных.
+- При SYS-02 обновить основания/согласия под новые категории брокерской истории до включения чтений.
+- Для реальных персональных рекомендаций определить ответственного зарегистрированного советника, договор, подтверждённый профиль, применимую аккредитацию программы, ограничения и конфликты интересов.
+- Добровольное исполнение пользователем у брокера, отсутствие автоматических сделок и фраза «не является ИИР» сами по себе не заменяют правовую модель.
+- НПД не даёт права на инвестиционное консультирование. Продавец, получатель выручки, чек и договор с партнёром проверяются до активации соответствующих платежей.
+- Не обещать прибыль, сохранность при любых кризисах или точное предсказание дефолтов.
+- Применимые обязанности по персональным данным и правам источников не отмечать выполненными без фактической проверки.
+
+Изменённая версия документа публикуется вместе с соответствующим поведением сервиса; необходимость нового согласия определяют по содержанию изменений.
+Нет оснований показывать неподтверждённую юридическую готовность ради открытия функции.
+
+## Реквизиты и безопасность
+
+Реквизиты оператора/продавца задаются через действующую конфигурацию и проверяются по выбранной модели.
+Публично указываются необходимые по закону сведения; домашний адрес, паспортные сведения, сканы и другие избыточные данные не публикуются без конкретного основания.
+Нельзя хранить в Git пароли, ключи, брокерские токены или секреты SMTP.
+Deployer проверяет отсутствие неразрешённых placeholders; это проверка публикации, а не подтверждение соответствия всей услуги закону.
+
+## Первичные ориентиры
+
+- [Банк России: признаки индивидуальной рекомендации](https://www.cbr.ru/StaticHtml/File/17579/standart_17112023.pdf).
+- [Банк России: порядок допуска](https://www.cbr.ru/admissionfinmarket/navigator/purcb/).
+- [Банк России: программы автоконсультирования](https://www.cbr.ru/explan/invest/).
+- [ФНС: НПД](https://npd.nalog.ru/).
