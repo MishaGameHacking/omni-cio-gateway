@@ -6,5 +6,6 @@ plugins {
 allprojects {
     dependencyLocking {
         lockAllConfigurations()
+        lockMode.set(org.gradle.api.artifacts.dsl.LockMode.STRICT)
     }
 }
