@@ -52,6 +52,7 @@ class AssistantModelTest {
         val preview = assistantPushPreview(message)
         val impact = formatAssistantImpact(message.impact)
 
+        assertEquals("OMNICIO · важное обновление", preview.title)
         assertFalse(preview.body.contains(message.changed))
         assertFalse(preview.body.contains(impact))
         assertFalse(preview.body.contains("1 500"))
