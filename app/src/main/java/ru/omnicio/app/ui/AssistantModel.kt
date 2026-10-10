@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui
 
+private const val T_INVEST_PUBLIC_URL = "https://www.tbank.ru/invest/"
+
 internal enum class AssistantEventType(val label: String) {
     MATERIAL_EVENT("Существенное событие"),
     RISK_CHANGE("Изменение риска"),
@@ -143,7 +145,7 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         sources = listOf(
             AssistantSource(
                 name = "Общий источник эмитента · fixture",
-                url = "https://www.tbank.ru/invest/",
+                url = T_INVEST_PUBLIC_URL,
             ),
         ),
         occurredAt = "сегодня · 10:15 · fixture",
@@ -167,14 +169,14 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         sources = listOf(
             AssistantSource(
                 name = "T-Invest bond fixture",
-                url = "https://www.tbank.ru/invest/",
+                url = T_INVEST_PUBLIC_URL,
             ),
         ),
         occurredAt = "сегодня · 09:40 · fixture",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_SOURCE,
             label = "Открыть источник",
-            target = "https://www.tbank.ru/invest/",
+            target = T_INVEST_PUBLIC_URL,
         ),
     ),
     AssistantRawEvent(
