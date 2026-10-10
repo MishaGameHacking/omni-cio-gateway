@@ -174,9 +174,9 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         ),
         occurredAt = "сегодня · 09:40 · fixture",
         action = AssistantAction(
-            kind = AssistantActionKind.OPEN_POSITION,
-            label = "Открыть позицию",
-            target = "uid-ofz-26238-demo",
+            kind = AssistantActionKind.OPEN_SOURCE,
+            label = "Открыть источник",
+            target = "https://www.tbank.ru/invest/",
         ),
     ),
     AssistantRawEvent(
