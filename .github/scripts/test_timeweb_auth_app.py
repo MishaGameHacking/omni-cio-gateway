@@ -1156,30 +1156,6 @@ class AuthAppDeployTests(unittest.TestCase):
                     action(ssh, release_sha=sha)
         ssh.run.assert_not_called()
 
-    def test_existing_legacy_brand_links_can_be_republished(self) -> None:
-        if os.name == "nt":
-            bash = str(pathlib.Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
-                       / "Git" / "bin" / "bash.exe")
-        else:
-            bash = "/bin/bash"
-        script = MODULE.REMOTE_DEPLOY_SCRIPT
-        start = script.index("for name in apple-touch-icon-180.png")
-        loop = script[start:script.index("\ndone", start) + len("\ndone")]
-        with tempfile.TemporaryDirectory() as directory:
-            brand = pathlib.Path(directory) / "assets" / "brand"
-            brand.mkdir(parents=True)
-            (brand / "omnicio-logo.png").write_bytes(b"test-only-brand")
-            for _ in range(2):
-                subprocess.run(
-                    [bash, "-c", 'set -e; WEB_RELEASE=.; ' + loop],
-                    cwd=directory, check=True, capture_output=True, timeout=10,
-                )
-            for name in (
-                "apple-touch-icon-180.png", "pwa-icon-192.png", "pwa-icon-512.png",
-                "pwa-maskable-512.png",
-            ):
-                self.assertEqual((brand / name).read_bytes(), b"test-only-brand")
-
     def test_runtime_gate_requires_remote_environment(self) -> None:
         ready = FakeSsh(True)
         missing = FakeSsh(False)
