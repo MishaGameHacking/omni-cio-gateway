@@ -39,7 +39,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -381,7 +383,8 @@ private fun MainShell(
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val layoutMode = appLayoutMode(maxWidth.value.toInt())
+        val fontScale = LocalDensity.current.fontScale
+        val layoutMode = effectiveLayoutMode(maxWidth.value.toInt(), fontScale)
         val horizontalPadding = when (layoutMode) {
             AppLayoutMode.COMPACT -> OmniSpacing.sm
             AppLayoutMode.STANDARD -> OmniSpacing.lg
@@ -397,7 +400,12 @@ private fun MainShell(
                         NavigationRailItem(
                             selected = destination.route == selected,
                             onClick = { onNavigate(destination.route) },
-                            icon = { Text(destination.marker) },
+                            icon = {
+                                Text(
+                                    text = destination.marker,
+                                    modifier = Modifier.clearAndSetSemantics {},
+                                )
+                            },
                             label = { Text(destination.label) },
                         )
                     }
@@ -418,7 +426,12 @@ private fun MainShell(
                             NavigationBarItem(
                                 selected = destination.route == selected,
                                 onClick = { onNavigate(destination.route) },
-                                icon = { Text(destination.marker) },
+                                icon = {
+                                Text(
+                                    text = destination.marker,
+                                    modifier = Modifier.clearAndSetSemantics {},
+                                )
+                            },
                                 label = { Text(destination.label) },
                             )
                         }
