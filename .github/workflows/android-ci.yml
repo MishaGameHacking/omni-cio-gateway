@@ -48,35 +48,65 @@ jobs:
         with:
           cache-provider: basic
 
-      - name: Resolve Android SDK and install pinned packages
+      - name: Choose Android SDK root
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
           if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
-          if not defined SDK_ROOT set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
-          if not exist "%SDK_ROOT%" (
-            echo Android SDK was not found on the trusted self-hosted runner.
-            exit /b 1
-          )
+          if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
 
           echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
           echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
 
-          set "SDKMANAGER="
-          if exist "%SDK_ROOT%\cmdline-tools" (
-            for /r "%SDK_ROOT%\cmdline-tools" %%F in (sdkmanager.bat) do if not defined SDKMANAGER set "SDKMANAGER=%%F"
+      - name: Bootstrap verified Android command-line tools
+        shell: cmd
+        run: |
+          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
+
+          set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
+          curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
+          if errorlevel 1 exit /b 1
+
+          certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
+          if errorlevel 1 (
+            echo Android command-line tools checksum mismatch.
+            type "%TOOLS_ZIP%.sha256"
+            exit /b 1
           )
 
-          if defined SDKMANAGER (
-            call "%SDKMANAGER%" "platforms;android-37" "build-tools;36.0.0"
-            if errorlevel 1 exit /b 1
+          if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
+          tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
+          if errorlevel 1 exit /b 1
+          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
+          move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
+          if errorlevel 1 exit /b 1
+
+          :tools_ready
+          if not exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" (
+            echo sdkmanager.bat was not installed.
+            exit /b 1
           )
 
-          if not exist "%SDK_ROOT%\platforms\android-37\android.jar" (
+      - name: Install pinned Android SDK packages
+        shell: cmd
+        run: |
+          set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
+          set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
+          (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
+
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
+          if errorlevel 1 exit /b 1
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-37" "build-tools;36.0.0"
+          if errorlevel 1 exit /b 1
+
+          if not exist "%ANDROID_SDK_ROOT%\platforms\android-37\android.jar" (
             echo Android API 37 is not installed.
             exit /b 1
           )
-          if not exist "%SDK_ROOT%\build-tools\36.0.0" (
+          if not exist "%ANDROID_SDK_ROOT%\build-tools\36.0.0" (
             echo Android build-tools 36.0.0 are not installed.
             exit /b 1
           )
