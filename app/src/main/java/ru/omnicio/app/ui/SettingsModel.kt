@@ -106,7 +106,7 @@ internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
     ),
     SubscriptionTierUi(
         name = "Аналитика",
-        status = "Может стать доступна после SYS-10/SYS-11.",
+        status = "Может стать доступна после подключения соответствующей системной функции.",
         available = false,
         purchasable = false,
     ),
