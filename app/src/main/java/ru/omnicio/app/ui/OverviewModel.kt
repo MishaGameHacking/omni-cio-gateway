@@ -1,6 +1,6 @@
 package ru.omnicio.app.ui
 
-private const val RESYNC_NOTICE_TITLE = RESYNC_NOTICE_TITLE
+private const val RESYNC_NOTICE_TITLE = "Требуется повторная синхронизация"
 
 internal enum class DisplayCurrency(
     val code: String,
