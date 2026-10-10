@@ -34,6 +34,21 @@ class Ui06ModelTest {
     }
 
     @Test
+    fun largeFontScaleUsesCompactOrStackedLayoutsBeforeWideBreakpoint() {
+        assertEquals(AppLayoutMode.COMPACT, effectiveLayoutMode(599, 1.3f))
+        assertEquals(AppLayoutMode.STANDARD, effectiveLayoutMode(600, 1.3f))
+        assertEquals(AppLayoutMode.WIDE, effectiveLayoutMode(840, 1.5f))
+
+        assertTrue(shouldStackMetricCards(639, 1.0f))
+        assertFalse(shouldStackMetricCards(640, 1.0f))
+        assertTrue(shouldStackMetricCards(700, 1.3f))
+        assertFalse(shouldStackMetricCards(840, 1.3f))
+
+        assertFalse(shouldStackDetailLine(1.29f))
+        assertTrue(shouldStackDetailLine(1.3f))
+    }
+
+    @Test
     fun notificationPermissionStartsAtAndroid13() {
         assertFalse(notificationPermissionRequired(32))
         assertTrue(notificationPermissionRequired(33))
