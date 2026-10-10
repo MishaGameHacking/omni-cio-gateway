@@ -150,19 +150,34 @@ private class LocalProfileStore(context: Context) {
         prefs.edit().putString(KEY_OVERVIEW_MODE, mode.name).apply()
     }
 
-    fun localSettings(): LocalSettingsState = LocalSettingsState(
-        portfolioPresent = prefs.getBoolean(KEY_PORTFOLIO_PRESENT, true),
-        brokerConnected = prefs.getBoolean(KEY_BROKER_CONNECTED, false),
-        brokerCredentialPresent = prefs.getBoolean(KEY_BROKER_CREDENTIAL_PRESENT, false),
-        dependentJobsRunning = prefs.getBoolean(KEY_DEPENDENT_JOBS_RUNNING, false),
-        reserveMinor = prefs.getLong(KEY_RESERVE_MINOR, LocalSettingsState().reserveMinor),
-        goalHorizonYears = prefs.getInt(
-            KEY_GOAL_HORIZON_YEARS,
-            LocalSettingsState().goalHorizonYears,
-        ),
-        notificationsEnabled = prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true),
-        fastAlertsEnabled = prefs.getBoolean(KEY_FAST_ALERTS_ENABLED, false),
-    )
+    fun localSettings(): LocalSettingsState {
+        val defaults = LocalSettingsState()
+        return LocalSettingsState(
+            portfolioPresent = prefs.getBoolean(KEY_PORTFOLIO_PRESENT, defaults.portfolioPresent),
+            brokerConnected = prefs.getBoolean(KEY_BROKER_CONNECTED, defaults.brokerConnected),
+            brokerCredentialPresent = prefs.getBoolean(
+                KEY_BROKER_CREDENTIAL_PRESENT,
+                defaults.brokerCredentialPresent,
+            ),
+            dependentJobsRunning = prefs.getBoolean(
+                KEY_DEPENDENT_JOBS_RUNNING,
+                defaults.dependentJobsRunning,
+            ),
+            reserveMinor = prefs.getLong(KEY_RESERVE_MINOR, defaults.reserveMinor),
+            goalHorizonYears = prefs.getInt(
+                KEY_GOAL_HORIZON_YEARS,
+                defaults.goalHorizonYears,
+            ),
+            notificationsEnabled = prefs.getBoolean(
+                KEY_NOTIFICATIONS_ENABLED,
+                defaults.notificationsEnabled,
+            ),
+            fastAlertsEnabled = prefs.getBoolean(
+                KEY_FAST_ALERTS_ENABLED,
+                defaults.fastAlertsEnabled,
+            ),
+        )
+    }
 
     fun setLocalSettings(state: LocalSettingsState) {
         prefs.edit()
