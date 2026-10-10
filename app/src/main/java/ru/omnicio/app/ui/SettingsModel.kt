@@ -7,6 +7,7 @@ internal data class LocalSettingsState(
     val portfolioPresent: Boolean = true,
     val brokerConnected: Boolean = false,
     val brokerCredentialPresent: Boolean = false,
+    val brokerRevoked: Boolean = false,
     val dependentJobsRunning: Boolean = false,
     val reserveMinor: Long = DEFAULT_RESERVE_MINOR,
     val goalHorizonYears: Int = DEFAULT_GOAL_HORIZON_YEARS,
@@ -30,12 +31,21 @@ internal fun connectBrokerFixtureState(state: LocalSettingsState): LocalSettings
     portfolioPresent = true,
     brokerConnected = true,
     brokerCredentialPresent = true,
+    brokerRevoked = false,
     dependentJobsRunning = true,
 )
 
 internal fun disconnectBrokerState(state: LocalSettingsState): LocalSettingsState = state.copy(
     brokerConnected = false,
     brokerCredentialPresent = false,
+    brokerRevoked = false,
+    dependentJobsRunning = false,
+)
+
+internal fun revokeBrokerFixtureState(state: LocalSettingsState): LocalSettingsState = state.copy(
+    brokerConnected = false,
+    brokerCredentialPresent = true,
+    brokerRevoked = true,
     dependentJobsRunning = false,
 )
 
@@ -124,6 +134,7 @@ internal fun buildLocalExportSummary(state: LocalSettingsState): String = listOf
     "OMNICIO local export · fixture",
     "portfolio_present=" + state.portfolioPresent,
     "broker_connected=" + state.brokerConnected,
+    "broker_revoked=" + state.brokerRevoked,
     "reserve_minor=" + state.reserveMinor,
     "goal_horizon_years=" + state.goalHorizonYears,
     "notifications_enabled=" + state.notificationsEnabled,
