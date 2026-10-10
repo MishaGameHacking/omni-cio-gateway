@@ -3,6 +3,17 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+val releaseStorePath = providers.environmentVariable("OMNICIO_RELEASE_STORE_FILE")
+val releaseStorePassword = providers.environmentVariable("OMNICIO_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("OMNICIO_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("OMNICIO_RELEASE_KEY_PASSWORD")
+val releaseSigningReady = listOf(
+    releaseStorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.orNull.isNullOrBlank() }
+
 android {
     namespace = "ru.omnicio.app"
     compileSdk = 36
@@ -15,6 +26,17 @@ android {
         versionName = "2.5.0"
     }
 
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStorePath.orNull))
+                storePassword = releaseStorePassword.orNull
+                keyAlias = releaseKeyAlias.orNull
+                keyPassword = releaseKeyPassword.orNull
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -22,6 +44,7 @@ android {
         }
         release {
             isMinifyEnabled = true
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -42,6 +65,19 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = true
+    }
+}
+
+tasks.configureEach {
+    val releasePackagingTask =
+        (name.startsWith("assemble") || name.startsWith("bundle") || name.startsWith("package")) &&
+            name.contains("Release")
+    if (releasePackagingTask) {
+        doFirst {
+            check(releaseSigningReady) {
+                "Release packaging requires OMNICIO release signing credentials from protected local/CI custody."
+            }
+        }
     }
 }
 
