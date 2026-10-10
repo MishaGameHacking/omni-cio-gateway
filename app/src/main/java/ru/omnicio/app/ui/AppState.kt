@@ -11,10 +11,16 @@ import kotlinx.coroutines.flow.asStateFlow
 private const val PREFS = "omnicio_local_nonsecret_state"
 private const val KEY_INSTALLATION_ID = "installation_id"
 private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
+private const val KEY_AMOUNTS_HIDDEN = "amounts_hidden"
+private const val KEY_DISPLAY_CURRENCY = "display_currency"
+private const val KEY_OVERVIEW_MODE = "overview_mode"
 
 internal data class AppUiState(
     val installationId: String,
     val onboardingComplete: Boolean,
+    val amountsHidden: Boolean,
+    val displayCurrency: DisplayCurrency,
+    val overviewMode: OverviewMode,
 )
 
 internal class OmnicioViewModel(application: Application) : AndroidViewModel(application) {
@@ -24,6 +30,9 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         AppUiState(
             installationId = store.getOrCreateInstallationId(),
             onboardingComplete = store.isOnboardingComplete(),
+            amountsHidden = store.areAmountsHidden(),
+            displayCurrency = store.displayCurrency(),
+            overviewMode = store.overviewMode(),
         ),
     )
 
@@ -32,6 +41,22 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     fun completeOnboarding() {
         store.setOnboardingComplete()
         mutableUiState.value = mutableUiState.value.copy(onboardingComplete = true)
+    }
+
+    fun toggleAmountsHidden() {
+        val hidden = !mutableUiState.value.amountsHidden
+        store.setAmountsHidden(hidden)
+        mutableUiState.value = mutableUiState.value.copy(amountsHidden = hidden)
+    }
+
+    fun setDisplayCurrency(currency: DisplayCurrency) {
+        store.setDisplayCurrency(currency)
+        mutableUiState.value = mutableUiState.value.copy(displayCurrency = currency)
+    }
+
+    fun setOverviewMode(mode: OverviewMode) {
+        store.setOverviewMode(mode)
+        mutableUiState.value = mutableUiState.value.copy(overviewMode = mode)
     }
 }
 
@@ -53,6 +78,34 @@ private class LocalProfileStore(context: Context) {
 
     fun setOnboardingComplete() {
         prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
+    }
+
+    fun areAmountsHidden(): Boolean = prefs.getBoolean(KEY_AMOUNTS_HIDDEN, false)
+
+    fun setAmountsHidden(hidden: Boolean) {
+        prefs.edit().putBoolean(KEY_AMOUNTS_HIDDEN, hidden).apply()
+    }
+
+    fun displayCurrency(): DisplayCurrency {
+        val stored = prefs.getString(KEY_DISPLAY_CURRENCY, null)
+        return stored?.let { value ->
+            runCatching { DisplayCurrency.valueOf(value) }.getOrNull()
+        } ?: DisplayCurrency.RUB
+    }
+
+    fun setDisplayCurrency(currency: DisplayCurrency) {
+        prefs.edit().putString(KEY_DISPLAY_CURRENCY, currency.name).apply()
+    }
+
+    fun overviewMode(): OverviewMode {
+        val stored = prefs.getString(KEY_OVERVIEW_MODE, null)
+        return stored?.let { value ->
+            runCatching { OverviewMode.valueOf(value) }.getOrNull()
+        } ?: OverviewMode.READY
+    }
+
+    fun setOverviewMode(mode: OverviewMode) {
+        prefs.edit().putString(KEY_OVERVIEW_MODE, mode.name).apply()
     }
 }
 
