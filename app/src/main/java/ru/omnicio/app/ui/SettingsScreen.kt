@@ -77,7 +77,7 @@ internal fun SettingsScreen(
             }
         }
         item {
-            StatusPill("ДЕМО · UI-06 · RELEASE CANDIDATE UX")
+            StatusPill("ДЕМО · UI-06 · КАНДИДАТ ВЫПУСКА")
         }
         item {
             Text(
@@ -154,11 +154,11 @@ internal fun SettingsScreen(
             InfoCard(
                 title = "О приложении",
                 body = "OMNICIO " + BuildConfig.VERSION_NAME +
-                    " · versionCode " + BuildConfig.VERSION_CODE +
-                    " · package " + BuildConfig.APPLICATION_ID +
-                    ". Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. " +
-                    "Скриншоты на текущих demo/UI-экранах не блокируются: секреты здесь не отображаются, " +
-                    "а accessibility не ограничивается без необходимости.",
+                    " · код версии " + BuildConfig.VERSION_CODE +
+                    " · пакет " + BuildConfig.APPLICATION_ID +
+                    ". Нативный локальный Android-интерфейс. Приватность, документы и перечень источников остаются прозрачными. " +
+                    "Скриншоты на текущих демо-экранах не блокируются: секреты здесь не отображаются, " +
+                    "а специальные возможности не ограничиваются без необходимости.",
             )
         }
     }
@@ -174,13 +174,13 @@ private fun DeviceDataCard(
     SettingsCard(title = "Данные на устройстве") {
         Text(
             text = if (settings.portfolioPresent) {
-                "Локальный portfolio fixture: 1,8 МБ · обновлён сегодня · demo."
+                "Локальный демо-портфель: 1,8 МБ · обновлён сегодня."
             } else {
-                "Локальный portfolio fixture удалён · 0 Б."
+                "Локальный демо-портфель удалён · 0 Б."
             },
         )
         Text(
-            text = "Экспорт формируется локально и не включает broker credential.",
+            text = "Экспорт формируется локально и не включает учётные данные брокера.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedButton(
@@ -194,14 +194,14 @@ private fun DeviceDataCard(
                 onClick = onDelete,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Удалить портфель и broker credential")
+                Text("Удалить портфель и учётные данные брокера")
             }
         } else {
             Button(
                 onClick = onRestore,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Восстановить demo-fixture")
+                Text("Восстановить демо-набор")
             }
         }
     }
@@ -214,25 +214,25 @@ private fun BrokerCard(
     onDisconnect: () -> Unit,
     onRevoke: () -> Unit,
 ) {
-    SettingsCard(title = "T-Invest · read-only") {
+    SettingsCard(title = "T-Invest · только чтение") {
         Text(
             text = when {
                 settings.brokerRevoked ->
-                    "Credential отозван · UI-fixture. Зависимые jobs остановлены."
+                    "Учётные данные отозваны · демо-состояние. Зависимые фоновые задачи остановлены."
                 settings.brokerConnected ->
-                    "Подключено · UI-fixture. Credential отмечен как локальный."
+                    "Подключено · демо-состояние. Учётные данные отмечены как локальные."
                 else ->
-                    "Не подключено. Реальный read-only token появится только на системном этапе."
+                    "Не подключено. Реальный токен только для чтения появится только на системном этапе."
             },
         )
         Text(
-            text = "Credential: " +
-                if (settings.brokerCredentialPresent) "локально присутствует · fixture" else "отсутствует",
+            text = "Учётные данные: " +
+                if (settings.brokerCredentialPresent) "локально присутствуют · демо" else "отсутствует",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Зависимые jobs: " +
-                if (settings.dependentJobsRunning) "fixture запущены" else "остановлены",
+            text = "Зависимые фоновые задачи: " +
+                if (settings.dependentJobsRunning) "демо-задачи запущены" else "остановлены",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         when {
@@ -241,19 +241,19 @@ private fun BrokerCard(
                     onClick = onConnect,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Переподключить fixture")
+                    Text("Переподключить демо-соединение")
                 }
                 OutlinedButton(
                     onClick = onRevoke,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("QA · пометить credential отозванным")
+                    Text("QA · пометить учётные данные отозванными")
                 }
                 Button(
                     onClick = onDisconnect,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Отключить и очистить локальный credential")
+                    Text("Отключить и очистить локальные учётные данные")
                 }
             }
             settings.brokerRevoked -> {
@@ -261,13 +261,13 @@ private fun BrokerCard(
                     onClick = onConnect,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Переподключить read-only fixture")
+                    Text("Переподключить демо-режим чтения")
                 }
                 OutlinedButton(
                     onClick = onDisconnect,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Очистить отозванный credential")
+                    Text("Очистить отозванные учётные данные")
                 }
             }
             else -> {
@@ -275,7 +275,7 @@ private fun BrokerCard(
                     onClick = onConnect,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Подключить read-only fixture")
+                    Text("Подключить демо-режим чтения")
                 }
             }
         }
@@ -331,18 +331,18 @@ private fun NotificationsCard(
 ) {
     SettingsCard(title = "Уведомления") {
         ToggleRow(
-            label = "Локальные/background уведомления",
+            label = "Локальные и фоновые уведомления",
             checked = settings.notificationsEnabled,
             onChecked = onNotificationsEnabled,
         )
         ToggleRow(
-            label = "Optional fast alerts",
+            label = "Быстрые уведомления",
             checked = settings.fastAlertsEnabled,
             enabled = settings.notificationsEnabled,
             onChecked = onFastAlertsEnabled,
         )
         Text(
-            text = "Обычный push не содержит суммы портфеля и персональные позиции.",
+            text = "Обычное push-уведомление не содержит суммы портфеля и персональные позиции.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -351,9 +351,9 @@ private fun NotificationsCard(
 @Composable
 private fun SubscriptionCard() {
     SettingsCard(title = "Подписка") {
-        StatusPill("TEST MODE · RUSTORE PAY НЕ ПОДКЛЮЧЁН")
+        StatusPill("ТЕСТОВЫЙ РЕЖИМ · RUSTORE PAY НЕ ПОДКЛЮЧЁН")
         Text(
-            text = "Цены не показываются: платёжный SDK и production entitlement ещё не подключены.",
+            text = "Цены не показываются: платёжный SDK и боевой тарифный доступ ещё не подключены.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         subscriptionTiers().forEach { tier ->
@@ -439,7 +439,7 @@ private fun MigrationStatusCard(
         Text(
             text = when (status) {
                 LocalMigrationStatus.CURRENT ->
-                    "Схема локального UI-state актуальна. После перезапуска значения читаются из локального хранилища."
+                    "Схема локального состояния интерфейса актуальна. После перезапуска значения читаются из локального хранилища."
                 LocalMigrationStatus.MIGRATED ->
                     "Маркер схемы обновлён атомарно. Если процесс завершится раньше записи, следующий запуск повторит миграцию."
                 LocalMigrationStatus.FAILED ->
@@ -476,14 +476,14 @@ private fun NotificationPermissionCard() {
     SettingsCard(title = "Разрешение уведомлений") {
         when {
             !required -> {
-                Text("Для этой версии Android отдельное runtime-разрешение не требуется.")
+                Text("Для этой версии Android отдельное системное разрешение не требуется.")
             }
             granted -> {
                 StatusPill("РАЗРЕШЕНО")
                 Text("Системное разрешение выдано. Пользовательские переключатели выше всё равно остаются отдельным выбором.")
             }
             else -> {
-                StatusPill(if (requestAttempted) "PERMISSION DENIED" else "РАЗРЕШЕНИЕ НЕ ВЫДАНО")
+                StatusPill(if (requestAttempted) "ДОСТУП К УВЕДОМЛЕНИЯМ ОТКЛОНЁН" else "РАЗРЕШЕНИЕ НЕ ВЫДАНО")
                 Text(
                     text = "Без системного разрешения Android не покажет уведомления. Портфель и локальная аналитика продолжают работать.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -503,7 +503,7 @@ private fun NotificationPermissionCard() {
                             context.startActivity(
                                 Intent(
                                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.parse("package:" + context.packageName),
+                                    Uri.parse("пакет:" + context.packageName),
                                 ),
                             )
                         },
@@ -543,7 +543,7 @@ private fun RuntimeEnvironmentCard() {
         Text("Экономия батареи: " + powerSaverLabel(powerSaver))
         Text("Экономия трафика: " + dataSaverLabel(dataSaverRestricted))
         Text(
-            text = "Android не является гарантированным 24/7 scheduler. Фоновые обновления могут выполняться позже, а состояние данных всегда показывается отдельно.",
+            text = "Android не является гарантированным круглосуточным планировщиком. Фоновые обновления могут выполняться позже, а состояние данных всегда показывается отдельно.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
