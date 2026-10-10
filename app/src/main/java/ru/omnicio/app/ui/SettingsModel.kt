@@ -92,15 +92,15 @@ internal fun commonSourceCategories(): List<CommonSourceCategory> = listOf(
         detail = "Официальные общие макроэкономические и регуляторные данные.",
     ),
     CommonSourceCategory(
-        name = "T-Invest read-only",
-        detail = "Персональный доступ подключается отдельно; на UI-этапе используется только fixture.",
+        name = "T-Invest · только чтение",
+        detail = "Персональный доступ подключается отдельно; на UI-этапе используется только демо-состояние.",
     ),
 )
 
 internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
     SubscriptionTierUi(
         name = "Наблюдение",
-        status = "Доступно в текущем analytics-first режиме.",
+        status = "Доступно в текущем аналитическом режиме.",
         available = true,
         purchasable = false,
     ),
@@ -112,7 +112,7 @@ internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
     ),
     SubscriptionTierUi(
         name = "Персональный план",
-        status = "Недоступен и не продаётся при закрытом regulated gate.",
+        status = "Недоступен и не продаётся при закрытом регуляторного допуска.",
         available = false,
         purchasable = false,
     ),
@@ -131,7 +131,7 @@ internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
 )
 
 internal fun buildLocalExportSummary(state: LocalSettingsState): String = listOf(
-    "OMNICIO local export · fixture",
+    "OMNICIO · локальный экспорт демо-данных",
     "portfolio_present=" + state.portfolioPresent,
     "broker_connected=" + state.brokerConnected,
     "broker_revoked=" + state.brokerRevoked,
