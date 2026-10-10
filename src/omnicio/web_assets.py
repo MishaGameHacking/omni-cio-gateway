@@ -17,7 +17,7 @@ SCRIPT_ASSETS = ("config.js", "i18n.js", "workspace.js", "app.js")
 INDEX_ASSET = "index.html"
 PALETTE_ASSET = "tokens.css"
 STYLE_ASSETS = (PALETTE_ASSET, "app.css")
-DOCUMENT_ASSETS = (INDEX_ASSET, "offline.html", "sw.js", "manifest.webmanifest")
+DOCUMENT_ASSETS = (INDEX_ASSET,)
 VERSION_MARKER = "__OMNICIO_VERSION__"
 BUILD_MARKER = "__OMNICIO_BUILD__"
 THEME_MARKERS = {
@@ -75,7 +75,7 @@ def render_web_assets(
     rendered: dict[str, str] = {}
     for destination, name in paths.items():
         template = (source / name).read_text(encoding="utf-8")
-        if (name in (*SCRIPT_ASSETS, INDEX_ASSET, "offline.html", "sw.js", PALETTE_ASSET)
+        if (name in (*SCRIPT_ASSETS, INDEX_ASSET, PALETTE_ASSET)
                 and BUILD_MARKER not in template):
             raise ValueError(f"Missing build marker in public asset: {name}")
         if name == INDEX_ASSET and VERSION_MARKER not in template:
@@ -85,12 +85,6 @@ def render_web_assets(
             # Styles also expose their release identity to post-deploy readback.
             content = f"/* OMNICIO build: {build} */\n" + content
         rendered[destination] = content
-    manifest = json.loads(rendered["manifest.webmanifest"])
-    if not isinstance(manifest, dict) or any(
-        manifest.get(key) != replacements["__OMNICIO_THEME_COLOR__"]
-        for key in ("theme_color", "background_color")
-    ):
-        raise ValueError("Web manifest colors do not match the canonical dark theme")
     rendered["version.js"] = (
         "window.OMNICIO_RELEASE = "
         + json.dumps({"version": version, "build": build}, separators=(",", ":"))
