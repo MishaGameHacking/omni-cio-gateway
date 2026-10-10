@@ -38,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -393,16 +394,7 @@ private fun ToggleRow(
     enabled: Boolean = true,
     onChecked: (Boolean) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = OmniSpacing.md),
-        )
+    val switch: @Composable () -> Unit = {
         Switch(
             checked = checked,
             enabled = enabled,
@@ -411,6 +403,29 @@ private fun ToggleRow(
                 contentDescription = label
             },
         )
+    }
+
+    if (shouldStackDetailLine(LocalDensity.current.fontScale)) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+        ) {
+            Text(text = label)
+            switch()
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = OmniSpacing.md),
+            )
+            switch()
+        }
     }
 }
 
