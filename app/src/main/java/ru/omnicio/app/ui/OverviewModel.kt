@@ -17,7 +17,7 @@ internal enum class OverviewMode(val label: String) {
     EMPTY("Пусто"),
     STALE("Устарело"),
     PARTIAL("Частично"),
-    OFFLINE("Offline"),
+    OFFLINE("Нет сети"),
     LOADING("Загрузка"),
     ERROR("Ошибка"),
 }
@@ -58,7 +58,7 @@ internal fun overviewSnapshot(
             updatedLabel = "Снимка ещё нет",
             freshnessLabel = "нет подключения",
             noticeTitle = RESYNC_NOTICE_TITLE,
-            noticeBody = "Подключение T-Invest пока не настроено. Это demo-state: реальные брокерские данные не запрашиваются.",
+            noticeBody = "Подключение T-Invest пока не настроено. Это демо-состояние: реальные брокерские данные не запрашиваются.",
             expectedPayouts = emptyList(),
             receivedPayouts = emptyList(),
         )
@@ -68,7 +68,7 @@ internal fun overviewSnapshot(
             reserveMinor = 0,
             scenarioBudgetMinor = 0,
             sourceLabel = "Демо · подтверждённый пустой счёт",
-            updatedLabel = "Fixture-снимок · сейчас",
+            updatedLabel = "Демо-снимок · сейчас",
             freshnessLabel = "актуально",
             noticeTitle = "Существенных действий нет",
             noticeBody = "Портфель подтверждённо пуст. Ноль показан только потому, что состояние известно, а не вместо неизвестного значения.",
@@ -77,7 +77,7 @@ internal fun overviewSnapshot(
         )
         OverviewMode.STALE -> regular.copy(
             sourceLabel = "Демо · локальный снимок",
-            updatedLabel = "Fixture-снимок · 3 ч назад",
+            updatedLabel = "Демо-снимок · 3 ч назад",
             freshnessLabel = "устарело",
             noticeTitle = "Данные устарели",
             noticeBody = "Последний снимок старше допустимого окна. Значения сохранены, но требуют обновления перед новым выводом.",
@@ -85,7 +85,7 @@ internal fun overviewSnapshot(
         OverviewMode.PARTIAL -> regular.copy(
             availableMinor = null,
             scenarioBudgetMinor = null,
-            sourceLabel = "Демо · частичный T-Invest fixture",
+            sourceLabel = "Демо · частичные данные T-Invest",
             updatedLabel = "Частичный снимок · 2 мин назад",
             freshnessLabel = "частичные данные",
             noticeTitle = RESYNC_NOTICE_TITLE,
@@ -101,7 +101,7 @@ internal fun overviewSnapshot(
         OverviewMode.OFFLINE -> regular.copy(
             sourceLabel = "Демо · локальный кэш",
             updatedLabel = "Последний снимок · 40 мин назад",
-            freshnessLabel = "offline",
+            freshnessLabel = "нет сети",
             noticeTitle = RESYNC_NOTICE_TITLE,
             noticeBody = "Сети нет. OMNICIO показывает последний локальный снимок и не выдаёт его за свежие данные.",
         )
@@ -111,8 +111,8 @@ internal fun overviewSnapshot(
             reserveMinor = null,
             scenarioBudgetMinor = null,
             sourceLabel = "Демо · локальная загрузка",
-            updatedLabel = "Обновление fixture…",
-            freshnessLabel = "loading",
+            updatedLabel = "Обновление демо-данных…",
+            freshnessLabel = "загрузка",
             noticeTitle = "Существенных действий нет",
             noticeBody = "Обновление ещё не завершено. До готового снимка приложение не подставляет прежние значения как новые.",
             expectedPayouts = emptyList(),
@@ -139,11 +139,11 @@ private fun regularFixture(currency: DisplayCurrency): OverviewSnapshot = Overvi
     availableMinor = fixtureMoney(currency, rub = 18_490_000, usd = 225_100, eur = 193_700),
     reserveMinor = fixtureMoney(currency, rub = 15_000_000, usd = 182_600, eur = 157_100),
     scenarioBudgetMinor = fixtureMoney(currency, rub = 3_490_000, usd = 42_500, eur = 36_500),
-    sourceLabel = "Демо · T-Invest read-only fixture",
-    updatedLabel = "Fixture-снимок · 5 мин назад",
+    sourceLabel = "Демо · T-Invest только чтение",
+    updatedLabel = "Демо-снимок · 5 мин назад",
     freshnessLabel = "актуально",
     noticeTitle = "Появились свободные деньги",
-    noticeBody = "Доступно для новых покупок больше заданного demo-резерва. Это только UI-fixture, не инвестиционная рекомендация.",
+    noticeBody = "Доступно для новых покупок больше заданного демо-резерва. Это только демо-интерфейс, не инвестиционная рекомендация.",
     expectedPayouts = listOf(
         PayoutFixture(
             title = "ОФЗ 26238 · купон",
