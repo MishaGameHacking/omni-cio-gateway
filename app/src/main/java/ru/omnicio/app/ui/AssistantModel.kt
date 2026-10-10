@@ -129,10 +129,8 @@ internal fun assistantPushPreview(message: AssistantMessage): AssistantPushPrevi
     )
 }
 
-private fun signedNumber(value: Long): String = when {
-    value > 0L -> "+" + value
-    else -> value.toString()
-}
+private fun signedNumber(value: Long): String =
+    if (value > 0L) "+$value" else value.toString()
 
 private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
     AssistantRawEvent(
