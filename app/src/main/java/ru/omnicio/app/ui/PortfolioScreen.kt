@@ -253,8 +253,7 @@ internal fun PositionDetailScreen(
 
     InfoCard(
         title = "Подтверждённые общие факты · fixture",
-        body = position.issuerFacts.joinToString(separator = "
-"),
+        body = position.issuerFacts.joinToString(separator = "\n"),
     )
 
     AccountSourcesCard(position)
@@ -318,8 +317,7 @@ private fun PositionMetrics(position: PortfolioPosition) {
 private fun PriceSourceCard(position: PortfolioPosition) {
     InfoCard(
         title = "Источник цены",
-        body = position.priceSource + "
-Обновление: " + position.priceUpdatedLabel,
+        body = position.priceSource + "\nОбновление: " + position.priceUpdatedLabel,
     )
 }
 
