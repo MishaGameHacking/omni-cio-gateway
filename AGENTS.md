@@ -294,27 +294,30 @@ Python-код должен следовать принципам PEP 8 и PEP 20
 
 Разделять:
 
-- HTTP/UI boundary;
-- authentication/session boundary;
-- tenant authority;
+- Android UI/state boundary;
+- local secret/data boundary;
+- common Timeweb API boundary;
 - business logic;
-- persistence;
+- local persistence;
+- common persistence;
 - provider adapter;
 - deployment/release tooling.
 
-Browser input никогда не является источником tenant authority.
+В local-first Android архитектуре персональный portfolio authority находится на устройстве пользователя: локальная защищённая БД + проверенные ответы T-Invest. Серверный request parameter, push payload, purchase entitlement или общий instrument API не могут назначить/подменить локальный портфель.
 
-Tenant authority определяется только проверенной серверной сессией. Подтверждение email привязано к адресу, назначению, краткоживущему challenge и его инициатору. Пользователь получает сессию после подтверждения нового адреса либо проверки хеша пароля существующего аккаунта. Callback/query/browser input не может назначить профиль, роль или tenant. Публичный 9-значный profile ID служит только UI/поддержке и никогда не предоставляет authority.
+T-Invest credential запрещено возвращать в OMNICIO API response, логировать, отправлять в crash reporting/AI или сохранять на Timeweb в новом Android потоке. Он вводится пользователем только на устройстве, хранится через Keystore и используется приложением напрямую против официального T-Invest API.
 
-Сохранённый T-Invest credential запрещено возвращать в browser/API response, логировать или хранить в открытом виде. Browser может передать новый credential только для проверки/замены в уже аутентифицированной owner-сессии. Выбранный broker account обязан повторно подтверждаться через provider перед сохранением.
+Legacy web authority (email/session/tenant/RLS) продолжает действовать только для существующих legacy endpoints до их проверенного удаления. Новый Android код не должен воспроизводить server-side account/session architecture без отдельной необходимости.
 
-Login не предоставляет broker write authority.
+Local app state не предоставляет broker write authority.
 
 Deployment не предоставляет broker write authority.
 
 Merge не предоставляет broker write authority.
 
 AI output не предоставляет broker write authority.
+
+Purchase entitlement не предоставляет broker write authority.
 
 Любые чувствительные действия должны иметь отдельную явную authority boundary.
 
@@ -339,13 +342,11 @@ PostgreSQL является relational authority после принятого p
 - destructive migration требует отдельного recovery plan;
 - перед production schema mutation иметь проверяемую recovery точку; прямое поручение владельца от 08.10.2026 устанавливает отдельный узкий переход 1.2.0 → 1.3.0 в существующем кластере без новых копий. Для него допускаются только проверенные по digest 0027–0028 в одной транзакции, с проверкой исходной установки, схемы до/после и повторным чтением результата при неопределённом ответе. Исторические миграции, bootstrap конфигурации и произвольный SQL этим исключением не разрешены. Транзакционный откат не является подтверждением восстановления базы; требование Sonar §18 сохраняется;
 - production использует один существующий кластер 4215095. Режим single_existing_database не создаёт клоны, дополнительные кластеры, новые физические/логические копии или платные хранилища; существующие резервные данные не удаляются. Ручной экспорт production в CI этим режимом запрещён. Политика и состояние копий отображаются отдельно от готовности приложения;
-- публичный profile ID генерировать сервером/БД из монотонной sequence, не принимать его от browser;
-- email identity привязывать к user_id только после подтверждения кода; существующий owner role не назначается по адресу из браузера;
-- секрет подтверждения email хранить как purpose-separated HMAC; зашифрованный код в очереди доставки удалять после отправки или истечения срока; challenge cookie — Secure + HttpOnly + SameSite;
-- session token хранить у клиента только в Secure + HttpOnly + SameSite cookie, а в БД хранить только digest;
-- подтверждение email fail-closed при неверном/просроченном коде, исчерпанных попытках, чужом challenge или неопределённом результате; login использует существующие подтверждённые данные и не требует работоспособности SMTP;
-- broker credential хранить только encrypted-at-rest отдельным server-side ключом, не возвращать через API и не включать в audit/log metadata;
-- login/session не дают broker write authority; приложение не отправляет заявки или переводы. Сохранение стратегии является настройкой анализа.
+- новые Android common-intelligence таблицы не получают tenant/user columns без реального server-side consumer;
+- legacy публичный profile ID/email identity/session/auth таблицы продолжают защищаться существующими правилами только до проверенного удаления legacy web consumer; новый Android identity на них не строится;
+- существующие legacy broker credentials не раскрывать/не логировать и не переносить автоматически в Android; пользователь заново вводит read-only credential локально;
+- новый Android поток не создаёт server-side broker credential row;
+- local app не отправляет заявки или переводы; сохранённая локальная стратегия является входом аналитического/scenario engine, а не broker authority.
 
 ## 10. Timeweb
 
