@@ -49,39 +49,37 @@ jobs:
           cache-provider: basic
 
       - name: Resolve Android SDK and install pinned packages
-        shell: pwsh
+        shell: cmd
         run: |
-          $candidates = @(
-            $env:ANDROID_SDK_ROOT,
-            $env:ANDROID_HOME,
-            (Join-Path $env:LOCALAPPDATA "Android\Sdk")
-          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not exist "%SDK_ROOT%" (
+            echo Android SDK was not found on the trusted self-hosted runner.
+            exit /b 1
+          )
 
-          if (-not $candidates) {
-            throw "Android SDK was not found on the trusted self-hosted runner."
-          }
+          echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
+          echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
 
-          $sdkRoot = $candidates[0]
-          "ANDROID_SDK_ROOT=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ANDROID_HOME=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          set "SDKMANAGER="
+          if exist "%SDK_ROOT%\cmdline-tools" (
+            for /r "%SDK_ROOT%\cmdline-tools" %%F in (sdkmanager.bat) do if not defined SDKMANAGER set "SDKMANAGER=%%F"
+          )
 
-          $sdkManager = Get-ChildItem -Path (Join-Path $sdkRoot "cmdline-tools") -Filter "sdkmanager.bat" -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+          if defined SDKMANAGER (
+            call "%SDKMANAGER%" "platforms;android-37" "build-tools;36.0.0"
+            if errorlevel 1 exit /b 1
+          )
 
-          if ($sdkManager) {
-            & $sdkManager.FullName "platforms;android-37" "build-tools;36.0.0"
-            if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-            }
-          }
-
-          $androidJar = Join-Path $sdkRoot "platforms\android-37\android.jar"
-          $buildTools = Join-Path $sdkRoot "build-tools\36.0.0"
-          if (-not (Test-Path $androidJar)) {
-            throw "Android API 37 is not installed."
-          }
-          if (-not (Test-Path $buildTools)) {
-            throw "Android build-tools 36.0.0 are not installed."
-          }
+          if not exist "%SDK_ROOT%\platforms\android-37\android.jar" (
+            echo Android API 37 is not installed.
+            exit /b 1
+          )
+          if not exist "%SDK_ROOT%\build-tools\36.0.0" (
+            echo Android build-tools 36.0.0 are not installed.
+            exit /b 1
+          )
 
       - name: Verify wrapper and build
         shell: cmd
