@@ -1609,7 +1609,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/", "/api/", "/health/", "/assets/", "= /assets/app.css",
             "= /assets/tokens.css", "= /assets/config.js",
             "= /assets/app.js", "= /assets/workspace.js", "= /assets/i18n.js",
-            "= /sw.js", "= /offline.html", "= /manifest.webmanifest", "= /version.js",
+            "= /version.js",
         }.issubset(locations))
         for location, scope in locations.items():
             with self.subTest(location=location):
@@ -1627,7 +1627,6 @@ class AuthAppDeployTests(unittest.TestCase):
                     self.assertEqual(
                         effective["X-Omnicio-Build"], ("__OMNICIO_PUBLIC_BUILD__", False),
                     )
-        self.assertEqual(headers(locations["= /sw.js"])["Service-Worker-Allowed"], ("/", False))
         self.assertNotIn("__OMNICIO_SERVER_SECURITY_HEADERS__", script)
         self.assertNotIn("__OMNICIO_LOCATION_SECURITY_HEADERS__", script)
         self.assertNotIn("__OMNICIO_DEFAULT_REFERRER_POLICY__", script)
@@ -2010,14 +2009,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 f'"$WEB_RELEASE/assets/brand/{name}"', deployment_script,
             )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
-        manifest = json.loads((root / "web" / "manifest.webmanifest").read_text(
-            encoding="utf-8",
-        ))
-        self.assertEqual(manifest["name"], "OMNICIO")
-        for icon in manifest["icons"]:
-            name = icon["src"].rsplit("/", 1)[-1]
-            self.assertEqual(name, "omnicio-logo.png")
-            self.assertTrue((root / MODULE.BRAND_SOURCE).is_file())
+        self.assertTrue((root / MODULE.BRAND_SOURCE).is_file())
 
     def test_release_archive_rejects_an_oversized_runtime_asset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2060,10 +2052,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("location = /assets/app.js", script)
         self.assertIn("location = /assets/workspace.js", script)
         self.assertIn("location = /assets/i18n.js", script)
-        self.assertIn("location = /sw.js", script)
-        self.assertIn("location = /offline.html", script)
         self.assertIn("location = /version.js", script)
-        self.assertIn("location = /manifest.webmanifest", script)
         self.assertGreaterEqual(script.count('add_header Cache-Control "no-cache";'), 5)
         self.assertNotIn('add_header Cache-Control "public, max-age=300";', script)
 
@@ -2087,27 +2076,6 @@ class AuthAppDeployTests(unittest.TestCase):
             body = value.encode()
             with self.subTest(body=body[:100]), self.assertRaises(MODULE.InfraError):
                 MODULE.verify_public_version_script(body, sha)
-
-    def test_rendered_offline_styles_match_the_service_worker_build(self) -> None:
-        root = SCRIPT_DIR.parent.parent
-        build = "b" * 40
-        with tempfile.TemporaryDirectory() as directory:
-            output = pathlib.Path(directory)
-            subprocess.run([
-                sys.executable, "-m", "omnicio.web_assets", str(root / "web"),
-                str(output), build,
-            ], check=True, capture_output=True, timeout=10)
-            offline = (output / "offline.html").read_text(encoding="utf-8")
-            worker = (output / "sw.js").read_text(encoding="utf-8")
-            self.assertIn(f"/assets/app.css?build={build[:12]}", offline)
-            self.assertIn(f"/assets/tokens.css?build={build[:12]}", offline)
-            self.assertIn(f'const build = "{build[:12]}"', worker)
-            self.assertNotIn("__OMNICIO_BUILD__", offline)
-            self.assertNotIn("__OMNICIO_BUILD__", worker)
-            for name in ("app.js", "workspace.js", "i18n.js", "config.js", "tokens.css", "app.css"):
-                script = (output / "assets" / name).read_text(encoding="utf-8")
-                self.assertIn(build[:12], script)
-                self.assertNotIn("__OMNICIO_BUILD__", script)
 
     def test_legal_renderer_stamps_styles_without_changing_document_revision(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -2172,8 +2140,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
         root = " ".join((
-            MODULE.SITE_MARKER, MODULE.BRAND_PUBLIC_MARK, MODULE.WEB_MANIFEST_PATH,
-            self.sha[:12],
+            MODULE.SITE_MARKER, MODULE.BRAND_PUBLIC_MARK, self.sha[:12],
             f'<span data-release-version>{MODULE.release_version()}</span>',
         )).encode()
         config = json.dumps({
@@ -2195,7 +2162,6 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             MODULE.BRAND_PUBLIC_MARK: (
                 (SCRIPT_DIR.parent.parent / MODULE.BRAND_SOURCE).read_bytes(), "image/png", 200,
             ),
-            MODULE.WEB_MANIFEST_PATH: (b'{"icons": []}', "application/json", 200),
             MODULE.VERSION_PUBLIC_PATH: (
                 ('window.OMNICIO_RELEASE = ' + json.dumps({
                     "version": MODULE.release_version(), "build": self.sha[:12],
@@ -2214,11 +2180,6 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/assets/app.css", b"--sidebar:240px " + self.sha[:12].encode(), "text/css"),
             ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
-            ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
-            (
-                "/offline.html",
-                b'<html lang="ru">' + self.sha[:12].encode() + b'</html>', "text/html",
-            ),
         ):
             self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
@@ -2314,8 +2275,6 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/", self.responses["/"][0], "text/html", 503),
             (MODULE.BRAND_PUBLIC_MARK, b"", "image/png", 200),
             (MODULE.BRAND_PUBLIC_MARK, b"png", "text/html", 200),
-            (MODULE.WEB_MANIFEST_PATH, b"[]", "application/json", 200),
-            (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
             (
                 f"/assets/config.js?build={self.sha[:12]}",
@@ -2331,16 +2290,6 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                 f"/assets/brand/auth-mountains.png?build={self.sha[:12]}",
                 b"<html>fallback</html>", "text/html", 200,
             ),
-            (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
-            (
-                f"/sw.js?build={self.sha[:12]}",
-                b"omnicio-public-__OMNICIO_BUILD__", "text/javascript", 200,
-            ),
-            (
-                f"/offline.html?build={self.sha[:12]}",
-                b"<html>__OMNICIO_BUILD__</html>", "text/html", 200,
-            ),
-            (f"/offline.html?build={self.sha[:12]}", b"<html>old release</html>", "text/html", 200),
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),
