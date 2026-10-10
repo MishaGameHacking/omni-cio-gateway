@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui
 
 private const val T_INVEST_PUBLIC_URL = "https://www.tbank.ru/invest/"
+private const val OPEN_POSITION_LABEL = "Открыть позицию"
 
 internal enum class AssistantEventType(val label: String) {
     MATERIAL_EVENT("Существенное событие"),
@@ -151,7 +152,7 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         occurredAt = "сегодня · 10:15 · fixture",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_POSITION,
-            label = "Открыть позицию",
+            label = OPEN_POSITION_LABEL,
             target = "uid-sber-demo",
         ),
         sufficientData = false,
@@ -198,7 +199,7 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         occurredAt = "сегодня · 09:10 · fixture",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_POSITION,
-            label = "Открыть позицию",
+            label = OPEN_POSITION_LABEL,
             target = "uid-ofz-26238-demo",
         ),
     ),
@@ -221,7 +222,7 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         occurredAt = "сегодня · 09:12 · fixture",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_POSITION,
-            label = "Открыть позицию",
+            label = OPEN_POSITION_LABEL,
             target = "uid-ofz-26238-demo",
         ),
     ),
