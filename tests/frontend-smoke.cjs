@@ -2756,40 +2756,6 @@ const styleContracts = () => {
   for (const background of resolveStyleTokens(avatar.background, base).match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(resolveStyleTokens(avatar.color, base), background, "Profile avatar text");
   console.log("PASS style contracts: declared tokens and normal-text contrast in both themes");
 };
-function workerBindingDatabase() {
-  const values = new Map(), stores = new Set();
-  const database = {
-    objectStoreNames: {contains: name => stores.has(name)},
-    createObjectStore: name => { stores.add(name); },
-    close() {},
-    transaction() {
-      const transaction = {};
-      let pending = 0, completed = false;
-      const request = operation => {
-        const result = {};
-        pending += 1;
-        queueMicrotask(() => {
-          result.result = operation();
-          result.onsuccess?.({target: result});
-          pending -= 1;
-          queueMicrotask(() => { if (!pending && !completed) { completed = true; transaction.oncomplete?.(); } });
-        });
-        return result;
-      };
-      transaction.objectStore = () => ({get: key => request(() => values.get(key)), put: (value, key) => request(() => values.set(key, structuredClone(value))), delete: key => request(() => values.delete(key))});
-      return transaction;
-    }
-  };
-  return {values, indexedDB: {open() {
-    const request = {};
-    queueMicrotask(() => {
-      request.result = database;
-      if (!stores.size) request.onupgradeneeded?.({target: request});
-      request.onsuccess?.({target: request});
-    });
-    return request;
-  }}};
-}
 function captureBrowserLayout() {
   const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
   const readableElements = selector => [...document.querySelectorAll(selector)].filter(visible).map(element => ({
