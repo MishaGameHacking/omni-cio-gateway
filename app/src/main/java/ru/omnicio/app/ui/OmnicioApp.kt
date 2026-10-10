@@ -266,11 +266,11 @@ private fun OnboardingScreen(
             )
             InfoCard(
                 title = "Общий рынок — отдельный слой",
-                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный demo-портфель туда не отправляется.",
+                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный демо-портфель туда не отправляется.",
             )
             InfoCard(
                 title = "T-Invest подключается добровольно",
-                body = "На UI-этапе мы только показываем read-only сценарий. Брокерский токен приложение ещё не запрашивает.",
+                body = "На UI-этапе мы только показываем режим чтения. Брокерский токен приложение ещё не запрашивает.",
             )
 
             Button(
@@ -285,7 +285,7 @@ private fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(vertical = 15.dp),
             ) {
-                Text("Подключить T-Invest read-only")
+                Text("Подключить T-Invest только для чтения")
             }
             TextButton(
                 onClick = onOpenPrivacy,
@@ -311,7 +311,7 @@ private fun OnboardingScreen(
     if (showBrokerInfo) {
         AlertDialog(
             onDismissRequest = { showBrokerInfo = false },
-            title = { Text("T-Invest · read-only") },
+            title = { Text("T-Invest · только чтение") },
             text = {
                 Text(
                     "Подключение брокера появится на системном этапе. Сейчас OMNICIO " +
@@ -352,15 +352,15 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 
             InfoCard(
                 title = "Только на устройстве",
-                body = "Локальный ID установки, fixture-портфель, настройки отображения и будущие персональные параметры local-first режима.",
+                body = "Локальный ID установки, демо-портфель, настройки отображения и будущие персональные параметры локального режима.",
             )
             InfoCard(
                 title = "Общие запросы",
-                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-этап не отправляет туда суммы, позиции или fixture-портфель.",
+                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-этап не отправляет туда суммы, позиции или демо-портфель.",
             )
             InfoCard(
                 title = "Брокерский доступ",
-                body = "На UI-этапе T-Invest token отсутствует. Позже read-only credential будет вводиться отдельно и не станет публичным логином OMNICIO.",
+                body = "На UI-этапе токен T-Invest отсутствует. Позже учётные данные только для чтения будут вводиться отдельно и не станет публичным логином OMNICIO.",
             )
 
             Button(
