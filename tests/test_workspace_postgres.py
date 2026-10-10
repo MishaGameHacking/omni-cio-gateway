@@ -406,8 +406,9 @@ def test_push_test_expires_after_five_minutes_without_a_provider_request(
     digest = notification_session(database, owner)
     channel = UUID(service.subscribe_push(owner, subscription, session_digest=digest)["id"])
     service.test_push(owner, channel, session_digest=digest)
+    created = service.status(owner)["deliveries"][0]["created_at"]
     with patch.object(database, "has_legal_versions", return_value=True):
-        assert not service.deliver_one(owner, now=datetime.now(UTC) + timedelta(minutes=5))
+        assert not service.deliver_one(owner, now=created + timedelta(minutes=5))
     assert service.status(owner)["deliveries"][0]["last_error"] == "delivery_expired"
     transport.send_push.assert_not_called()
 
