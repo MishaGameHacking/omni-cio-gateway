@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -172,6 +173,7 @@ private fun MoneyBreakdown(
     hidden: Boolean,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
         val values = listOf(
             Triple(
                 "Доступно",
@@ -190,7 +192,7 @@ private fun MoneyBreakdown(
             ),
         )
 
-        if (maxWidth >= 640.dp) {
+        if (!shouldStackMetricCards(maxWidth.value.toInt(), fontScale)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
