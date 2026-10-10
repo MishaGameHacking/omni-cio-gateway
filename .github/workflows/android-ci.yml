@@ -99,11 +99,11 @@ jobs:
 
           call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
           if errorlevel 1 exit /b 1
-          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-37" "build-tools;36.0.0"
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
           if errorlevel 1 exit /b 1
 
-          if not exist "%ANDROID_SDK_ROOT%\platforms\android-37\android.jar" (
-            echo Android API 37 is not installed.
+          if not exist "%ANDROID_SDK_ROOT%\platforms\android-36\android.jar" (
+            echo Android API 36 is not installed.
             exit /b 1
           )
           if not exist "%ANDROID_SDK_ROOT%\build-tools\36.0.0" (
