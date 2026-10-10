@@ -152,7 +152,12 @@ internal fun SettingsScreen(
         item {
             InfoCard(
                 title = "О приложении",
-                body = "OMNICIO " + BuildConfig.VERSION_NAME + " · Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. Скриншоты на текущих demo/UI-экранах не блокируются: секреты здесь не отображаются, а accessibility не ограничивается без необходимости.",
+                body = "OMNICIO " + BuildConfig.VERSION_NAME +
+                    " · versionCode " + BuildConfig.VERSION_CODE +
+                    " · package " + BuildConfig.APPLICATION_ID +
+                    ". Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. " +
+                    "Скриншоты на текущих demo/UI-экранах не блокируются: секреты здесь не отображаются, " +
+                    "а accessibility не ограничивается без необходимости.",
             )
         }
     }
