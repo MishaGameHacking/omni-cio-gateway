@@ -56,7 +56,7 @@ internal fun PortfolioScreen(
             item {
                 InfoCard(
                     title = "Портфель удалён с устройства",
-                    body = "OMNICIO не подменяет удалённые данные нулевыми позициями. Demo-fixture можно восстановить в настройках.",
+                    body = "OMNICIO не подменяет удалённые данные нулевыми позициями. Демо-набор можно восстановить в настройках.",
                 )
             }
         }
@@ -97,7 +97,7 @@ internal fun PortfolioScreen(
                 onValueChange = { query = it },
                 label = { Text("Поиск по своему портфелю") },
                 supportingText = {
-                    Text("Название, тикер, ISIN или UID · только локальный fixture")
+                    Text("Название, тикер, ISIN или UID · только локальный демо-набор")
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -114,7 +114,7 @@ internal fun PortfolioScreen(
                 InfoCard(
                     title = if (positions.isEmpty()) "Портфель пуст" else "Ничего не найдено",
                     body = if (positions.isEmpty()) {
-                        "Это подтверждённый empty fixture. Ноль позиций не означает ошибку источника."
+                        "Это подтверждённый пустой демо-набор. Ноль позиций не означает ошибку источника."
                     } else {
                         "Поиск выполняется только по локально известным позициям."
                     },
@@ -133,7 +133,7 @@ internal fun PortfolioScreen(
         }
         item {
             Text(
-                text = "Stale и missing price всегда подписаны текстом. Отсутствующая цена не создаёт фиктивную стоимость.",
+                text = "Устаревшая или отсутствующая цена всегда подписана текстом. Отсутствующая цена не создаёт фиктивную стоимость.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -148,7 +148,7 @@ private fun PortfolioFixtureSelector(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs)) {
         Text(
-            text = "QA · размер fixture",
+            text = "QA · размер демо-набора",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -272,7 +272,7 @@ internal fun PositionDetailScreen(
         )
         InfoCard(
             title = "Нет локальных данных",
-            body = "UID не найден в текущем fixture. Неизвестная позиция не подменяется пустой карточкой.",
+            body = "UID не найден в текущем демо-наборе. Неизвестная позиция не подменяется пустой карточкой.",
         )
         Button(onClick = onBack) {
             Text("Назад к портфелю")
@@ -303,7 +303,7 @@ internal fun PositionDetailScreen(
     )
 
     InfoCard(
-        title = "Подтверждённые общие факты · fixture",
+        title = "Подтверждённые общие факты · демо",
         body = position.issuerFacts.joinToString(separator = "\n"),
     )
 
@@ -312,7 +312,7 @@ internal fun PositionDetailScreen(
     InfoCard(
         title = "Концентрация",
         body = formatShare(position.shareBasisPoints) +
-            ". Это доля текущей известной оценки локального fixture, а не рекомендация.",
+            ". Это доля текущей известной оценки локального демо-набора, а не рекомендация.",
     )
 
     ScenarioActionCard(
@@ -359,7 +359,7 @@ private fun PositionMetrics(position: PortfolioPosition) {
             DetailLine("Лот", position.lotSize.toString() + " шт.")
             DetailLine("Валюта", position.currency.code)
             DetailLine("Состояние цены", position.priceStatus.label)
-            DetailLine("Risk/data status", position.riskStatus.label)
+            DetailLine("Состояние риска и данных", position.riskStatus.label)
         }
     }
 }
