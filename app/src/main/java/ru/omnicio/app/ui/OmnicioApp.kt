@@ -60,6 +60,7 @@ private const val ROUTE_ONBOARDING = "onboarding"
 private const val ROUTE_PRIVACY = "privacy"
 private const val ROUTE_OVERVIEW = "overview"
 private const val ROUTE_PORTFOLIO = "portfolio"
+private const val ROUTE_POSITION = "position"
 private const val ROUTE_ASSISTANT = "assistant"
 
 private data class Destination(
@@ -116,8 +117,25 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
             MainShell(
                 selected = ROUTE_PORTFOLIO,
                 onNavigate = navController::navigateMain,
+                scrollable = false,
             ) {
-                PortfolioScreen()
+                PortfolioScreen(
+                    onOpenPosition = { uid ->
+                        navController.navigate(ROUTE_POSITION + "/" + uid)
+                    },
+                )
+            }
+        }
+        composable(ROUTE_POSITION + "/{uid}") { backStackEntry ->
+            val uid = backStackEntry.arguments?.getString("uid").orEmpty()
+            MainShell(
+                selected = ROUTE_PORTFOLIO,
+                onNavigate = navController::navigateMain,
+            ) {
+                PositionDetailScreen(
+                    instrumentUid = uid,
+                    onBack = { navController.popBackStack() },
+                )
             }
         }
         composable(ROUTE_ASSISTANT) {
@@ -292,6 +310,7 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 private fun MainShell(
     selected: String,
     onNavigate: (String) -> Unit,
+    scrollable: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -315,7 +334,7 @@ private fun MainShell(
                     topBar = { AppTopBar(selected) },
                     modifier = Modifier.weight(1f),
                 ) { padding ->
-                    ScreenContainer(padding, content)
+                    ScreenContainer(padding, scrollable, content)
                 }
             }
         } else {
@@ -334,7 +353,7 @@ private fun MainShell(
                     }
                 },
             ) { padding ->
-                ScreenContainer(padding, content)
+                ScreenContainer(padding, scrollable, content)
             }
         }
     }
@@ -364,6 +383,7 @@ private fun AppTopBar(selected: String) {
 @Composable
 private fun ScreenContainer(
     padding: PaddingValues,
+    scrollable: Boolean,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -371,94 +391,28 @@ private fun ScreenContainer(
             .fillMaxSize()
             .padding(padding),
     ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 960.dp)
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = OmniSpacing.lg,
-                    vertical = OmniSpacing.md,
-                ),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun PortfolioScreen() {
-    StatusPill("ДЕМО-ДАННЫЕ")
-
-    Text(
-        text = "Портфель",
-        style = MaterialTheme.typography.headlineMedium,
-        modifier = Modifier.semantics { heading() },
-    )
-    Text(
-        text = "Все позиции показываются без продуктового лимита. Сейчас это только fixture.",
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    listOf(
-        Triple("ОФЗ 26238", "34 шт.", "34%"),
-        Triple("SBER", "120 шт.", "28%"),
-        Triple("Денежный резерв", "184 900 ₽", "14%"),
-    ).forEach { (name, amount, share) ->
-        PortfolioRow(
-            name = name,
-            amount = amount,
-            share = share,
-        )
-    }
-
-    Text(
-        text = "Неизвестное значение будет показано как «нет данных», а не как ноль.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
-private fun PortfolioRow(
-    name: String,
-    amount: String,
-    share: String,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(OmniSpacing.md),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs),
-            ) {
-                Text(
-                    text = name,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = amount,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = share,
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.End,
+        val baseModifier = Modifier
+            .widthIn(max = 960.dp)
+            .fillMaxWidth()
+            .align(Alignment.TopCenter)
+            .padding(
+                horizontal = OmniSpacing.lg,
+                vertical = OmniSpacing.md,
             )
+
+        if (scrollable) {
+            Column(
+                modifier = baseModifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
+            ) {
+                content()
+            }
+        } else {
+            Box(
+                modifier = baseModifier.fillMaxSize(),
+            ) {
+                content()
+            }
         }
     }
 }
@@ -505,7 +459,7 @@ internal fun StatusPill(text: String) {
 }
 
 @Composable
-private fun InfoCard(
+internal fun InfoCard(
     title: String,
     body: String,
 ) {
