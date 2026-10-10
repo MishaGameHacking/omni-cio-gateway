@@ -146,7 +146,7 @@ T-Invest token и private signing key не передаются в чат/PR и 
 - Android release является нативным приложением, не WebView-обёрткой;
 - модерации предоставляется безопасный demo/test path;
 - фактические платёжные решения и категории данных декларируются;
-- минимальная ОС продукта — **Android 13 (API 33)**; `compileSdk`/`targetSdk` поддерживаются актуальными Android build-файлами и перед релизом сверяются с текущими требованиями Android/RuStore.
+- минимальный Android baseline и SDK requirements сверяются перед каждым релизом с актуальной документацией RuStore.
 
 ## Подписки
 
@@ -165,7 +165,7 @@ T-Invest token и private signing key не передаются в чат/PR и 
 ## Текущий фактический статус
 
 Legacy web/backend code существует и обслуживается до Android replacement.
-Ветка `feature/android-ui-01` содержит первый нативный Android 2.0.0 candidate; до принятого PR и green exact-head CI он не является production release.
+Документальный Android pivot сам по себе не является выпуском 2.0.0 и не изменяет production.
 Прежние server-side accounts/portfolio data не удаляются автоматически: их отключение или миграция выполняются отдельным проверенным изменением после готовности Android replacement.
 
 ## Сохранённая эксплуатация исходной версии 1.4.0

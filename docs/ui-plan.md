@@ -31,7 +31,7 @@ Timeweb не является обязательным хранилищем ег
 - Unidirectional Data Flow: immutable UI state вниз, события вверх.
 - Navigation Compose для маршрутов.
 - ViewModel/StateFlow для состояния экранов.
-- **Android 13 (API 33)+ — минимально поддерживаемая ОС OMNICIO.** Устройства ниже API 33 не входят в product/support matrix. `minSdk` является жёстким контрактом и не понижается ради охвата старых устройств; `compileSdk`/`targetSdk` поддерживаются на актуальном стабильном уровне, зафиксированном Android build-файлами.
+- Android 8.0+ как минимальный baseline публикации RuStore; точные compile/target SDK фиксируются при старте разработки по актуальным требованиям.
 - Package/applicationId: рабочее значение `ru.omnicio.app`; перед первой подписанной release-сборкой проверить доступность и закрепить навсегда.
 - Никакого пользовательского WebView как основного UI.
 - Светлая и тёмная темы используют одну семантику цветов.
@@ -132,7 +132,6 @@ Patch-исправления не перескакивают через неза
 - Создать Android project на Kotlin/Compose.
 - Ввести design tokens: типографика, размеры, поверхности, semantic colors, spacing, радиусы, состояния.
 - Реализовать splash/startup state без искусственной задержки.
-- С первого Android commit использовать современные системные контракты Android 13+: edge-to-edge, predictive back через поддерживаемые AndroidX Navigation API, adaptive layout для разных размеров окна и privacy-safe platform APIs только там, где есть реальный product consumer.
 - Первый запуск объясняет три принципа:
   - портфель может храниться локально;
   - общий анализ рынка приходит с Timeweb;

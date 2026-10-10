@@ -573,7 +573,7 @@ Pipeline:
 - privacy declaration;
 - user data wipe;
 - moderation demo flow;
-- Android 13 (API 33)+, текущий target SDK и representative current devices;
+- Android 8.0+ and representative current devices;
 - screen sizes/font scale/accessibility;
 - release rollback/halt;
 - backend compatibility with previous app version.

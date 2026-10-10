@@ -1,4 +1,5 @@
 name: Android CI
+
 on:
   pull_request:
     branches: [main]
@@ -11,16 +12,23 @@ on:
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/android-ci.yml"
+
 concurrency:
   group: android-ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
 permissions:
   contents: read
+
 jobs:
   verify:
-    name: Android 13+ debug APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Android 8+ debug APK
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.author_association == 'OWNER'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 30
+
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -28,24 +36,63 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           clean: true
-      - name: Set up JDK 27
+
+      - name: Set up JDK 17
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: "27"
+          java-version: "17"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-provider: basic
-      - name: Install Android API 37
-        run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
-      - name: Verify wrapper and build
+
+      - name: Resolve Android SDK and install pinned packages
+        shell: pwsh
         run: |
-          chmod +x ./gradlew
-          ./gradlew --version
-          ./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace
+          $candidates = @(
+            $env:ANDROID_SDK_ROOT,
+            $env:ANDROID_HOME,
+            (Join-Path $env:LOCALAPPDATA "Android\Sdk")
+          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+          if (-not $candidates) {
+            throw "Android SDK was not found on the trusted self-hosted runner."
+          }
+
+          $sdkRoot = $candidates[0]
+          "ANDROID_SDK_ROOT=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ANDROID_HOME=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $sdkManager = Get-ChildItem -Path (Join-Path $sdkRoot "cmdline-tools") -Filter "sdkmanager.bat" -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+
+          if ($sdkManager) {
+            & $sdkManager.FullName "platforms;android-37" "build-tools;36.0.0"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+          $androidJar = Join-Path $sdkRoot "platforms\android-37\android.jar"
+          $buildTools = Join-Path $sdkRoot "build-tools\36.0.0"
+          if (-not (Test-Path $androidJar)) {
+            throw "Android API 37 is not installed."
+          }
+          if (-not (Test-Path $buildTools)) {
+            throw "Android build-tools 36.0.0 are not installed."
+          }
+
+      - name: Verify wrapper and build
+        shell: cmd
+        run: |
+          call gradlew.bat --version
+          if errorlevel 1 exit /b 1
+          call gradlew.bat :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace
+          if errorlevel 1 exit /b 1
+
       - name: Upload exact-head debug APK
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: omnicio-debug-${{ github.event.pull_request.head.sha }}
           path: app/build/outputs/apk/debug/app-debug.apk
