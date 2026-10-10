@@ -70,7 +70,6 @@ BRAND_RUNTIME_FILES = (
     "assets/brand/web/auth-mountains.png",
 )
 BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
-WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 PNG_CONTENT_TYPE = "image/png"
@@ -1182,29 +1181,10 @@ __OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
-    location = /sw.js {
-        try_files $uri =404;
-__OMNICIO_LOCATION_SECURITY_HEADERS__
-        add_header Cache-Control "no-cache";
-        add_header Service-Worker-Allowed "/";
-    }
-
-    location = /offline.html {
-        try_files $uri =404;
-__OMNICIO_LOCATION_SECURITY_HEADERS__
-        add_header Cache-Control "no-cache";
-    }
-
     location /assets/ {
         try_files $uri =404;
 __OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "public, max-age=86400";
-    }
-
-    location = /manifest.webmanifest {
-        try_files $uri =404;
-__OMNICIO_LOCATION_SECURITY_HEADERS__
-        add_header Cache-Control "no-cache";
     }
 
     location = /version.js {
@@ -1439,7 +1419,6 @@ def verify_public_root(body: bytes, release_sha: str) -> None:
     required = {
         SITE_MARKER: "Public auth page verification failed",
         BRAND_PUBLIC_MARK: "Public auth page does not use approved brand mark",
-        WEB_MANIFEST_PATH: "Public auth page does not expose web manifest",
         release_sha[:12]: "Public auth page asset build does not match release",
     }
     for marker, message in required.items():
@@ -1518,11 +1497,6 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
             or hashlib.sha256(brand).digest() != hashlib.sha256(approved).digest()):
         raise InfraError("Public approved brand mark verification failed")
 
-    manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context, expected_build=build)
-    manifest = json.loads(manifest_body)
-    if not isinstance(manifest, dict) or not isinstance(manifest.get("icons"), list):
-        raise InfraError("Public web manifest verification failed")
-
     version_body, _ = fetch_public(VERSION_PUBLIC_PATH, context, expected_build=build)
     verify_public_version_script(version_body, release_sha)
 
@@ -1535,16 +1509,13 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         ("/assets/app.css", b"--sidebar", ("text/css",)),
         ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
         ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
-        ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
-        ("/offline.html", b"<html", ("text/html",)),
     )
     for path, marker, content_types in runtime_assets:
         body, content_type = fetch_public(f"{path}?build={build}", context, expected_build=build)
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
-        if path in {"/sw.js", "/offline.html", "/assets/app.js", "/assets/app.css",
-                    "/assets/workspace.js", "/assets/i18n.js", "/assets/config.js",
-                    "/assets/tokens.css"} and (
+        if path in {"/assets/app.js", "/assets/app.css", "/assets/workspace.js",
+                    "/assets/i18n.js", "/assets/config.js", "/assets/tokens.css"} and (
             release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
         ):
             raise InfraError(f"Public runtime asset build does not match release: {path}")
