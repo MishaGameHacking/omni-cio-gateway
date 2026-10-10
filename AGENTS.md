@@ -31,6 +31,7 @@ Green CI необходим, но сам по себе не означает, ч
 Поддерживаемая целевая архитектура:
 
 - **Android / Kotlin / Jetpack Compose** — единственный основной пользовательский клиент нового продукта;
+- **Android 13 / API 33** — минимальная поддерживаемая версия ОС; понижать `minSdk` ниже 33 без нового явного решения OWNER нельзя; `compileSdk` и `targetSdk` держать на актуальном стабильном Android API, совместимом с принятой stable toolchain;
 - **RuStore** — целевой канал Android-публикации;
 - **GitHub** — код, PR, CI, review и release provenance;
 - **Timeweb Cloud** — общий backend/API, разрешённые рыночные источники, AI Gateway, PostgreSQL для общей аналитики и технические secrets;
@@ -146,7 +147,10 @@ Legacy web/PWA:
 
 После появления Android module:
 
+- Android build-файлы являются authority для точных `minSdk`/`compileSdk`/`targetSdk`, AGP, Gradle, Compose и AndroidX версий; не дублировать их как изменяемую конфигурацию в документации;
 - использовать только Gradle Wrapper репозитория для CI/release commands;
+- для UI использовать актуальные platform/AndroidX возможности, доступные всему baseline Android 13+, а новые API Android 14/15/16/17+ подключать с корректной version/feature проверкой, когда функция имеет реального consumer;
+- edge-to-edge, predictive back, adaptive layouts и runtime permission model считаются базовыми современными контрактами, а не optional polish;
 - Android Studio является рекомендуемой IDE, но локальная IDE не является единственным доказательством собираемости;
 - каждый material Android PR обязан собирать debug APK в CI;
 - APK artifact маркируется exact commit SHA/version и хранится как CI artifact, а не коммитится в Git;
