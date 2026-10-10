@@ -9,3 +9,11 @@ __pycache__/
 artifacts/
 node_modules/
 .env
+.gradle/
+.idea/
+local.properties
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml

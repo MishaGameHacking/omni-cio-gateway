@@ -1,0 +1,611 @@
+package ru.omnicio.app.ui
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import ru.omnicio.app.R
+import ru.omnicio.app.ui.theme.OmniSpacing
+import ru.omnicio.app.ui.theme.OmnicioTheme
+
+private const val ROUTE_ONBOARDING = "onboarding"
+private const val ROUTE_PRIVACY = "privacy"
+private const val ROUTE_OVERVIEW = "overview"
+private const val ROUTE_PORTFOLIO = "portfolio"
+private const val ROUTE_ASSISTANT = "assistant"
+
+private data class Destination(
+    val label: String,
+    val marker: String,
+    val route: String,
+)
+
+private val mainDestinations = listOf(
+    Destination("Обзор", "●", ROUTE_OVERVIEW),
+    Destination("Портфель", "◆", ROUTE_PORTFOLIO),
+    Destination("Помощник", "✦", ROUTE_ASSISTANT),
+)
+
+@Composable
+internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
+    val uiState by appViewModel.uiState.collectAsStateWithLifecycle()
+    val navController = rememberNavController()
+    val startDestination = if (uiState.onboardingComplete) ROUTE_OVERVIEW else ROUTE_ONBOARDING
+
+    NavHost(
+        navController = navController,
+        startDestination = startDestination,
+    ) {
+        composable(ROUTE_ONBOARDING) {
+            OnboardingScreen(
+                installationId = uiState.installationId,
+                onTryLocal = {
+                    appViewModel.completeOnboarding()
+                    navController.navigate(ROUTE_OVERVIEW) {
+                        popUpTo(ROUTE_ONBOARDING) { inclusive = true }
+                    }
+                },
+                onOpenPrivacy = { navController.navigate(ROUTE_PRIVACY) },
+            )
+        }
+        composable(ROUTE_PRIVACY) {
+            PrivacyScreen(onBack = { navController.popBackStack() })
+        }
+        composable(ROUTE_OVERVIEW) {
+            MainShell(
+                selected = ROUTE_OVERVIEW,
+                onNavigate = navController::navigateMain,
+            ) {
+                OverviewScreen(uiState.installationId)
+            }
+        }
+        composable(ROUTE_PORTFOLIO) {
+            MainShell(
+                selected = ROUTE_PORTFOLIO,
+                onNavigate = navController::navigateMain,
+            ) {
+                PortfolioScreen()
+            }
+        }
+        composable(ROUTE_ASSISTANT) {
+            MainShell(
+                selected = ROUTE_ASSISTANT,
+                onNavigate = navController::navigateMain,
+            ) {
+                AssistantScreen()
+            }
+        }
+    }
+}
+
+private fun NavHostController.navigateMain(route: String) {
+    navigate(route) {
+        popUpTo(ROUTE_OVERVIEW) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+@Composable
+private fun OnboardingScreen(
+    installationId: String,
+    onTryLocal: () -> Unit,
+    onOpenPrivacy: () -> Unit,
+) {
+    var showBrokerInfo by rememberSaveable { mutableStateOf(false) }
+
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = OmniSpacing.xl,
+                    vertical = OmniSpacing.xxl,
+                ),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.omnicio_logo),
+                contentDescription = "Логотип OMNICIO",
+                modifier = Modifier.size(72.dp),
+            )
+            Text(
+                text = "OMNICIO",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                text = "Инвестиционная аналитика с локальным персональным контуром.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            InfoCard(
+                title = "Портфель может остаться на устройстве",
+                body = "Базовый режим не требует email, телефона или аккаунта OMNICIO. Демо-портфель работает без сети.",
+            )
+            InfoCard(
+                title = "Общий рынок — отдельный слой",
+                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный портфель в UI-01 туда не отправляется.",
+            )
+            InfoCard(
+                title = "T-Invest подключается добровольно",
+                body = "На этом выпуске мы только объясняем read-only доступ. Брокерский токен приложение ещё не запрашивает.",
+            )
+
+            Button(
+                onClick = onTryLocal,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 15.dp),
+            ) {
+                Text("Попробовать локально")
+            }
+            OutlinedButton(
+                onClick = { showBrokerInfo = true },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 15.dp),
+            ) {
+                Text("Подключить T-Invest read-only")
+            }
+            TextButton(
+                onClick = onOpenPrivacy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Как устроена приватность")
+            }
+
+            HorizontalDivider()
+            Text(
+                text = "Локальный ID: " + installationIdLabel(installationId),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Поддерживается Android 8.0 и новее. Демо-данные всегда помечаются отдельно.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (showBrokerInfo) {
+        AlertDialog(
+            onDismissRequest = { showBrokerInfo = false },
+            title = { Text("T-Invest · read-only") },
+            text = {
+                Text(
+                    "Подключение брокера появится на системном этапе. В версии 2.0.0 " +
+                        "OMNICIO не просит, не передаёт и не сохраняет брокерский токен.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showBrokerInfo = false }) {
+                    Text("Понятно")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PrivacyScreen(onBack: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = OmniSpacing.xl,
+                    vertical = OmniSpacing.xxl,
+                ),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
+        ) {
+            Text(
+                text = "Приватность",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                text = "Что остаётся локально и что может использовать общий слой OMNICIO.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            InfoCard(
+                title = "Только на устройстве",
+                body = "Локальный ID установки, fixture-портфель, состояние onboarding и будущие персональные параметры local-first режима.",
+            )
+            InfoCard(
+                title = "Общие запросы",
+                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-01 не отправляет туда суммы, позиции или fixture-портфель.",
+            )
+            InfoCard(
+                title = "Брокерский доступ",
+                body = "В UI-01 T-Invest token отсутствует. Позже read-only credential будет вводиться отдельно и не станет публичным логином OMNICIO.",
+            )
+
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Назад")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainShell(
+    selected: String,
+    onNavigate: (String) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 840.dp
+        if (wide) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                NavigationRail(
+                    modifier = Modifier.fillMaxHeight(),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ) {
+                    mainDestinations.forEach { destination ->
+                        NavigationRailItem(
+                            selected = destination.route == selected,
+                            onClick = { onNavigate(destination.route) },
+                            icon = { Text(destination.marker) },
+                            label = { Text(destination.label) },
+                        )
+                    }
+                }
+                Scaffold(
+                    topBar = { AppTopBar(selected) },
+                    modifier = Modifier.weight(1f),
+                ) { padding ->
+                    ScreenContainer(padding, content)
+                }
+            }
+        } else {
+            Scaffold(
+                topBar = { AppTopBar(selected) },
+                bottomBar = {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        mainDestinations.forEach { destination ->
+                            NavigationBarItem(
+                                selected = destination.route == selected,
+                                onClick = { onNavigate(destination.route) },
+                                icon = { Text(destination.marker) },
+                                label = { Text(destination.label) },
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                ScreenContainer(padding, content)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppTopBar(selected: String) {
+    val title = mainDestinations.firstOrNull { it.route == selected }?.label ?: "OMNICIO"
+    TopAppBar(
+        title = {
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = "OMNICIO · ДЕМО",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun ScreenContainer(
+    padding: PaddingValues,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding),
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 960.dp)
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = OmniSpacing.lg,
+                    vertical = OmniSpacing.md,
+                ),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun OverviewScreen(installationId: String) {
+    StatusPill("ДЕМО · ЛОКАЛЬНО")
+
+    Text(
+        text = "1 284 530 ₽",
+        style = MaterialTheme.typography.displaySmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.semantics { heading() },
+    )
+    Text(
+        text = "Общая оценка fixture-портфеля",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    MetricCard(
+        title = "Доступно",
+        value = "184 900 ₽",
+        detail = "Отдельно от общей стоимости · fixture",
+    )
+    InfoCard(
+        title = "Существенное состояние",
+        body = "Подключения T-Invest пока нет. Интерфейс работает локально и не делает сетевых запросов портфеля.",
+    )
+    InfoCard(
+        title = "Актуальность данных",
+        body = "Демо-набор · локально. В следующих выпусках здесь будет источник и время последнего обновления.",
+    )
+    Text(
+        text = "ID устройства " + installationIdLabel(installationId),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun PortfolioScreen() {
+    StatusPill("ДЕМО-ДАННЫЕ")
+
+    Text(
+        text = "Портфель",
+        style = MaterialTheme.typography.headlineMedium,
+        modifier = Modifier.semantics { heading() },
+    )
+    Text(
+        text = "Все позиции показываются без продуктового лимита. Сейчас это только fixture.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    listOf(
+        Triple("ОФЗ 26238", "34 шт.", "34%"),
+        Triple("SBER", "120 шт.", "28%"),
+        Triple("Денежный резерв", "184 900 ₽", "14%"),
+    ).forEach { (name, amount, share) ->
+        PortfolioRow(
+            name = name,
+            amount = amount,
+            share = share,
+        )
+    }
+
+    Text(
+        text = "Неизвестное значение будет показано как «нет данных», а не как ноль.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun PortfolioRow(
+    name: String,
+    amount: String,
+    share: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(OmniSpacing.md),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs),
+            ) {
+                Text(
+                    text = name,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = amount,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = share,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.End,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AssistantScreen() {
+    StatusPill("БЕЗ ЧАТА")
+
+    Text(
+        text = "Помощник",
+        style = MaterialTheme.typography.headlineMedium,
+        modifier = Modifier.semantics { heading() },
+    )
+    InfoCard(
+        title = "Что изменилось",
+        body = "Сейчас показан локальный fixture. В рабочем режиме здесь будет короткая лента только существенных событий.",
+    )
+    InfoCard(
+        title = "Почему это важно",
+        body = "OMNICIO будет отделять общий факт об инструменте от персонального расчёта на устройстве.",
+    )
+    InfoCard(
+        title = "Следующее действие",
+        body = "Для UI-01 действий с реальным портфелем нет. T-Invest и системная синхронизация подключаются на следующих этапах.",
+    )
+}
+
+@Composable
+private fun StatusPill(text: String) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(
+                horizontal = OmniSpacing.sm,
+                vertical = OmniSpacing.xs,
+            ),
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
+@Composable
+private fun MetricCard(
+    title: String,
+    value: String,
+    detail: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(OmniSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+        ) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(
+    title: String,
+    body: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(OmniSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+        ) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = body,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Preview(
+    showBackground = true,
+    backgroundColor = 0xFF0F1012,
+)
+@Composable
+private fun OnboardingPreview() {
+    OmnicioTheme {
+        OnboardingScreen(
+            installationId = "12345678-1234-1234-1234-123456789abc",
+            onTryLocal = {},
+            onOpenPrivacy = {},
+        )
+    }
+}
