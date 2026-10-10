@@ -29,6 +29,23 @@ internal fun appLayoutMode(widthDp: Int): AppLayoutMode = when {
     else -> AppLayoutMode.WIDE
 }
 
+internal fun effectiveLayoutMode(
+    widthDp: Int,
+    fontScale: Float,
+): AppLayoutMode =
+    if (fontScale >= 1.3f && widthDp < 600) {
+        AppLayoutMode.COMPACT
+    } else {
+        appLayoutMode(widthDp)
+    }
+
+internal fun shouldStackMetricCards(
+    widthDp: Int,
+    fontScale: Float,
+): Boolean = widthDp < 640 || (fontScale >= 1.3f && widthDp < 840)
+
+internal fun shouldStackDetailLine(fontScale: Float): Boolean = fontScale >= 1.3f
+
 internal fun notificationPermissionRequired(sdkInt: Int): Boolean = sdkInt >= 33
 
 internal fun powerSaverLabel(enabled: Boolean): String =
