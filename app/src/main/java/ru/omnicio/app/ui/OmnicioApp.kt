@@ -74,7 +74,7 @@ private val mainDestinations = listOf(
 )
 
 @Composable
-fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
+internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
     val uiState by appViewModel.uiState.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val startDestination = if (uiState.onboardingComplete) ROUTE_OVERVIEW else ROUTE_ONBOARDING
