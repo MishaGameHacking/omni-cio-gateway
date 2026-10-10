@@ -160,6 +160,28 @@ Legacy web/PWA:
 
 CI artifact не является опубликованным релизом, а успешная установка debug APK не доказывает корректность release signing, store metadata или модерации.
 
+### 2.11. OWNER: обновление и запуск актуального Android debug с GitHub
+
+Если OWNER просит «обновить приложение», «установить актуальную версию из GitHub» или аналогичное без дополнительных уточнений, это означает именно следующий локальный Windows/Android Studio поток:
+
+1. Использовать корень текущего checkout `omni-cio-gateway`, а не случайную текущую папку PowerShell и не старую feature branch.
+2. Целевое состояние исходников — accepted `origin/main`. Перед переключением выполнить `git fetch origin --prune`.
+3. Если рабочее дерево содержит незакоммиченные изменения, сначала сохранить их через `git stash push -u -m "backup-before-owner-update"`; не удалять их и не делать destructive reset молча.
+4. Переключиться на accepted main. Для чистого checkout использовать `git switch main` + `git merge --ff-only origin/main`. Если локальный `main` расходится с `origin/main`, не merge/rebase автоматически: сохранить локальную ветку/работу и явно привести рабочий checkout к `origin/main` только ради этой установки.
+5. Проверить exact SHA через `git rev-parse --short HEAD`; не считать обновление успешным, пока HEAD не соответствует текущему accepted `origin/main`.
+6. Для сборки/установки использовать Gradle Wrapper репозитория: `./gradlew :app:installDebug --no-configuration-cache` (Windows: `.\gradlew.bat :app:installDebug --no-configuration-cache`). Не использовать `assembleDebug` как замену установке.
+7. Debug-вариант имеет отдельный package `ru.omnicio.app.debug`; он может существовать рядом с release `ru.omnicio.app`. После установки запускать именно debug package, а не старую release/старую debug-иконку.
+8. Если `installDebug` завершился `BUILD SUCCESSFUL`, но приложение само не открылось, это не ошибка установки: запустить `ru.omnicio.app.debug` через Android Studio Run или ADB. Каноническая PowerShell-проверка/запуск:
+   - `$adb="$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"`
+   - `& $adb shell dumpsys package ru.omnicio.app.debug | Select-String "versionName|versionCode"`
+   - `& $adb shell am force-stop ru.omnicio.app.debug`
+   - `& $adb shell monkey -p ru.omnicio.app.debug -c android.intent.category.LAUNCHER 1`
+9. Если Android Studio после обновления показывает unresolved AndroidX imports и баннер о changed Gradle files, сначала выполнить Sync Project with Gradle Files. Не переписывать корректный Kotlin-код только ради красной IDE-подсветки до успешного Gradle Sync.
+10. При ошибке dependency locking на IDE-only конфигурации вида `debugRuntimeClasspathCopy` проверять текущую каноническую lock policy репозитория; не генерировать произвольный новый lock state и не отключать dependency locking локальным обходом.
+11. После успешной установки OWNER ожидает две вещи: подтверждённый exact Git SHA/версию и фактически запущенное приложение на подключённом устройстве.
+
+Этот контракт является ответом по умолчанию на будущие запросы OWNER об обновлении Android-приложения с GitHub; не заставлять OWNER заново объяснять различие между старой feature branch, accepted main, установкой APK и запуском debug package.
+
 ## 3. Правило минимального репозитория
 
 Каждый новый файл должен иметь одну доказуемую текущую ответственность.
