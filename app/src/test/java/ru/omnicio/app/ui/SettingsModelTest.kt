@@ -7,6 +7,21 @@ import org.junit.Test
 
 class SettingsModelTest {
     @Test
+    fun revokedCredentialStopsJobsButRemainsLocalUntilDisconnect() {
+        val connected = connectBrokerFixtureState(LocalSettingsState())
+        val revoked = revokeBrokerFixtureState(connected)
+
+        assertFalse(revoked.brokerConnected)
+        assertTrue(revoked.brokerCredentialPresent)
+        assertTrue(revoked.brokerRevoked)
+        assertFalse(revoked.dependentJobsRunning)
+
+        val cleared = disconnectBrokerState(revoked)
+        assertFalse(cleared.brokerCredentialPresent)
+        assertFalse(cleared.brokerRevoked)
+    }
+
+    @Test
     fun disconnectClearsLocalCredentialAndDependentJobs() {
         val connected = connectBrokerFixtureState(LocalSettingsState())
         val disconnected = disconnectBrokerState(connected)
