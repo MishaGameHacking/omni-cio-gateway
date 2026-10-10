@@ -50,7 +50,7 @@ internal fun notificationsState(
     enabled: Boolean,
 ): LocalSettingsState = state.copy(
     notificationsEnabled = enabled,
-    fastAlertsEnabled = if (enabled) state.fastAlertsEnabled else false,
+    fastAlertsEnabled = enabled && state.fastAlertsEnabled,
 )
 
 internal fun fastAlertsState(
