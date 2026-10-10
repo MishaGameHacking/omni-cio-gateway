@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui
 
+private const val RESYNC_NOTICE_TITLE = RESYNC_NOTICE_TITLE
+
 internal enum class DisplayCurrency(
     val code: String,
     val symbol: String,
@@ -55,7 +57,7 @@ internal fun overviewSnapshot(
             sourceLabel = "Источник не подключён",
             updatedLabel = "Снимка ещё нет",
             freshnessLabel = "нет подключения",
-            noticeTitle = "Требуется повторная синхронизация",
+            noticeTitle = RESYNC_NOTICE_TITLE,
             noticeBody = "Подключение T-Invest пока не настроено. Это demo-state: реальные брокерские данные не запрашиваются.",
             expectedPayouts = emptyList(),
             receivedPayouts = emptyList(),
@@ -86,7 +88,7 @@ internal fun overviewSnapshot(
             sourceLabel = "Демо · частичный T-Invest fixture",
             updatedLabel = "Частичный снимок · 2 мин назад",
             freshnessLabel = "частичные данные",
-            noticeTitle = "Требуется повторная синхронизация",
+            noticeTitle = RESYNC_NOTICE_TITLE,
             noticeBody = "Часть данных отсутствует. Неизвестные деньги и бюджет не заменяются нулём.",
             expectedPayouts = listOf(
                 PayoutFixture(
@@ -100,7 +102,7 @@ internal fun overviewSnapshot(
             sourceLabel = "Демо · локальный кэш",
             updatedLabel = "Последний снимок · 40 мин назад",
             freshnessLabel = "offline",
-            noticeTitle = "Требуется повторная синхронизация",
+            noticeTitle = RESYNC_NOTICE_TITLE,
             noticeBody = "Сети нет. OMNICIO показывает последний локальный снимок и не выдаёт его за свежие данные.",
         )
         OverviewMode.LOADING -> regular.copy(
@@ -124,7 +126,7 @@ internal fun overviewSnapshot(
             sourceLabel = "Демо · источник недоступен",
             updatedLabel = "Последняя попытка · сейчас",
             freshnessLabel = "ошибка",
-            noticeTitle = "Требуется повторная синхронизация",
+            noticeTitle = RESYNC_NOTICE_TITLE,
             noticeBody = "Источник вернул ошибку. UI сохраняет честное состояние недоступности без фиктивных нулей.",
             expectedPayouts = emptyList(),
             receivedPayouts = emptyList(),
