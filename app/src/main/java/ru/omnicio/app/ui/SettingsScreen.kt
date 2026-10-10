@@ -5,8 +5,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
@@ -24,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.ui.theme.OmniSpacing
 
 @Composable
@@ -43,6 +46,10 @@ internal fun SettingsScreen(
     val settings = uiState.settings
 
     LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(horizontal = OmniSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
     ) {
         item {
@@ -114,7 +121,7 @@ internal fun SettingsScreen(
         item {
             InfoCard(
                 title = "О приложении",
-                body = "OMNICIO 2.4.0 · Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. Основной пользовательский продукт не зависит от старого web workspace.",
+                body = "OMNICIO " + BuildConfig.VERSION_NAME + " · Android local-first UI. Privacy, документы и перечень источников остаются прозрачными. Основной пользовательский продукт не зависит от старого web workspace.",
             )
         }
     }
