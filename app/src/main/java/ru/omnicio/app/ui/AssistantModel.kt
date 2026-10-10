@@ -103,7 +103,7 @@ internal fun formatAssistantImpact(impact: AssistantImpact?): String {
 
     val value = when (impact.unit) {
         AssistantImpactUnit.MONEY_MINOR -> formatMoney(
-            amountMinor = impact.value,
+            minorUnits = impact.value,
             currency = impact.currency,
             hidden = false,
         )
