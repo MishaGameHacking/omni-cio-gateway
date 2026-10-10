@@ -58,4 +58,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# Temporary PR 784 diagnostics trigger; reverted before merge.
