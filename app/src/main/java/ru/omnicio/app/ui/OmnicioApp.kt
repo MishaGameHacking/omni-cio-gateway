@@ -142,8 +142,13 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
             MainShell(
                 selected = ROUTE_ASSISTANT,
                 onNavigate = navController::navigateMain,
+                scrollable = false,
             ) {
-                AssistantScreen()
+                AssistantScreen(
+                    onOpenPosition = { uid ->
+                        navController.navigate(ROUTE_POSITION + "/" + uid)
+                    },
+                )
             }
         }
     }
@@ -415,29 +420,6 @@ private fun ScreenContainer(
             }
         }
     }
-}
-
-@Composable
-private fun AssistantScreen() {
-    StatusPill("БЕЗ ЧАТА")
-
-    Text(
-        text = "Помощник",
-        style = MaterialTheme.typography.headlineMedium,
-        modifier = Modifier.semantics { heading() },
-    )
-    InfoCard(
-        title = "Что изменилось",
-        body = "Сейчас показан локальный fixture. В рабочем режиме здесь будет короткая лента только существенных событий.",
-    )
-    InfoCard(
-        title = "Почему это важно",
-        body = "OMNICIO будет отделять общий факт об инструменте от персонального расчёта на устройстве.",
-    )
-    InfoCard(
-        title = "Следующее действие",
-        body = "На UI-этапе действий с реальным портфелем нет. T-Invest и системная синхронизация подключаются позже по плану.",
-    )
 }
 
 @Composable
