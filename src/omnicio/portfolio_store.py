@@ -1600,6 +1600,7 @@ class PortfolioStore:
                     limits_loading_in_progress,
                     jsonb_build_object(
                         'analysis', evidence->'analysis',
+                        'sources', evidence->'sources',
                         'account', jsonb_build_object(
                             'type', evidence->'account'->'type',
                             'status', evidence->'account'->'status',
@@ -1724,6 +1725,7 @@ class PortfolioStore:
             "history": history,
             "latest": {
                 "snapshot_id": str(snapshot_id),
+                "sources": evidence.get("sources", []) if isinstance(evidence, dict) else [],
                 "account_id": account_id,
                 "environment": environment,
                 "captured_at": captured_at,
@@ -2339,3 +2341,4 @@ def _json_default(value: object) -> object:
     if isinstance(value, Decimal):
         return str(value)
     raise TypeError(f"unsupported JSON value: {type(value).__name__}")
+

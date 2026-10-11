@@ -42,9 +42,9 @@ private val DarkColors = darkColorScheme(
 )
 
 private val LightColors = lightColorScheme(
-    primary = ActionYellow,
-    onPrimary = LightInk,
-    primaryContainer = Color(0xFFFFF4AD),
+    primary = Color(0xFF705900),
+    onPrimary = Color.White,
+    primaryContainer = ActionYellow,
     onPrimaryContainer = Color(0xFF342D00),
     secondary = Color(0xFF55585E),
     onSecondary = Color.White,
@@ -57,8 +57,8 @@ private val LightColors = lightColorScheme(
     surface = LightSurface,
     onSurface = LightInk,
     surfaceVariant = LightRaised,
-    onSurfaceVariant = Color(0xFF737782),
-    outline = Color(0xFFD6D9DE),
+    onSurfaceVariant = Color(0xFF606570),
+    outline = Color(0xFF747982),
     error = Color(0xFFD92D3A),
     onError = Color.White,
 )
@@ -75,3 +75,4 @@ fun OmnicioTheme(
         content = content,
     )
 }
+

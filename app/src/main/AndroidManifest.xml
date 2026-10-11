@@ -1,6 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -18,18 +17,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="omnicio" android:host="overview" />
-                <data android:scheme="omnicio" android:host="portfolio" />
-                <data android:scheme="omnicio" android:host="position" />
-                <data android:scheme="omnicio" android:host="assistant" />
-                <data android:scheme="omnicio" android:host="settings" />
-            </intent-filter>
         </activity>
     </application>
 </manifest>
+

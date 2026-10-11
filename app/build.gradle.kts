@@ -22,8 +22,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "2.5.1"
+        versionCode = 8
+        versionName = "2.6.0"
     }
 
     signingConfigs {
@@ -93,9 +93,9 @@ dependencies {
     implementation(libs.core.splashscreen)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
-    implementation(libs.navigation.compose)
 
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
 }
+

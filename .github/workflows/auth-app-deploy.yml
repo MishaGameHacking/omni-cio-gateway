@@ -28,33 +28,10 @@ on:
       - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
+  # Release verification requires tests for every exact accepted main, including Android-only updates.
   push:
     branches:
       - main
-    paths:
-      - ".github/scripts/timeweb_addresses.py"
-      - ".github/scripts/timeweb_http.py"
-      - ".github/scripts/bootstrap_self_hosted_python.cmd"
-      - "uv.lock"
-      - "requirements-runtime.txt"
-      - "requirements-dev.txt"
-      - ".github/workflows/auth-app-deploy.yml"
-      - ".github/scripts/verify_main_release.py"
-      - ".github/scripts/test_release_gate.py"
-      - ".github/scripts/timeweb_auth_app.py"
-      - ".github/scripts/test_timeweb_auth_app.py"
-      - ".github/scripts/timeweb_auth_postgres.py"
-      - ".github/scripts/inplace_upgrade.py"
-      - ".github/scripts/timeweb_recovery.py"
-      - ".github/scripts/timeweb_ssh_trust.py"
-      - ".github/scripts/test_timeweb_ssh_trust.py"
-      - "src/omnicio/**"
-      - "web/**"
-      - "tests/frontend-smoke.cjs"
-      - "tests/frontend_server_contract.py"
-      - "tests/i18n-contract.cjs"
-      - "assets/brand/**"
-      - "pyproject.toml"
   workflow_dispatch:
 
 permissions:
@@ -293,3 +270,4 @@ jobs:
           "%OMNICIO_PYTHON%" -c "import os, sys; sys.exit(0 if os.environ.get('AUTH_DEPLOY_STATUS') == 'app_ready' else '::error::Application deployment did not reach app_ready; inspect the database and release prerequisites.')"
           if errorlevel 1 exit /b 1
           echo OmniCIO is healthy over HTTPS. Public access and email authentication configuration are ready.
+

@@ -29,34 +29,10 @@ on:
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
+  # Release verification requires tests for every exact accepted main, including Android-only updates.
   push:
     branches:
       - main
-    paths:
-      - ".github/scripts/timeweb_addresses.py"
-      - ".github/scripts/timeweb_http.py"
-      - ".github/scripts/bootstrap_self_hosted_python.cmd"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "requirements-runtime.txt"
-      - ".github/workflows/auth-app-deploy.yml"
-      - ".github/scripts/timeweb_auth_app.py"
-      - ".github/scripts/test_timeweb_auth_app.py"
-      - "src/omnicio/**"
-      - "web/**"
-      - "assets/brand/**"
-      - ".github/workflows/auth-postgres.yml"
-      - ".github/scripts/verify_main_release.py"
-      - ".github/scripts/test_release_gate.py"
-      - ".github/scripts/timeweb_auth_postgres.py"
-      - ".github/scripts/inplace_upgrade.py"
-      - ".github/scripts/timeweb_recovery.py"
-      - ".github/scripts/run_recovery_drill.py"
-      - ".github/scripts/test_timeweb_recovery.py"
-      - ".github/scripts/timeweb_ssh_trust.py"
-      - ".github/scripts/test_timeweb_ssh_trust.py"
-      - ".github/scripts/test_timeweb_auth_postgres.py"
-      - "migrations/**"
   workflow_dispatch:
     inputs:
       operation:
@@ -330,3 +306,4 @@ jobs:
         if: always()
         shell: cmd
         run: '"%OMNICIO_PYTHON%" .github\scripts\run_recovery_drill.py --cleanup-artifact'
+

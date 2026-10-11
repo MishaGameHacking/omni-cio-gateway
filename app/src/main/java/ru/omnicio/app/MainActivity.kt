@@ -11,9 +11,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
             OmnicioRoot()
         }
     }
 }
+

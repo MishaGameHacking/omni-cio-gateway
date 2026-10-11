@@ -1740,6 +1740,14 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", deploy_if)
         self.assertNotIn("Detect schema-first release", app_workflow)
 
+        for workflow in (app_workflow, postgres_workflow):
+            push_trigger = workflow.split("\n  push:\n", 1)[1].split(
+                "\n  workflow_dispatch:", 1,
+            )[0]
+            self.assertEqual(push_trigger.strip(), "branches:\n      - main")
+        postgres_pr_trigger = postgres_workflow.split("\n  pull_request:\n", 1)[1].split(
+            "\n  push:\n", 1,
+        )[0]
         for release_path in (
             '"uv.lock"',
             '"requirements-runtime.txt"',
@@ -1751,11 +1759,7 @@ class AuthAppDeployTests(unittest.TestCase):
             '"assets/brand/**"',
             '"pyproject.toml"',
         ):
-            self.assertGreaterEqual(
-                postgres_workflow.count(release_path),
-                2,
-                release_path,
-            )
+            self.assertIn(release_path, postgres_pr_trigger)
 
     def test_workflow_events_preserve_validation_and_only_manual_main_deploys(self) -> None:
         workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
@@ -2412,3 +2416,4 @@ class PublicReleaseVerificationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
