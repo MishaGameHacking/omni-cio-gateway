@@ -61,8 +61,7 @@ DEPLOY_LOCK = "/run/omnicio-auth-deploy.lock"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 INVALID_RELEASE_SHA = "Release SHA must be a full lowercase 40-character SHA"
 BRAND_SOURCE = "assets/brand/omnicio-logo.png"
-# The unchanged owner-provided PNG and the two existing backgrounds total 6 MiB.
-# Keep a bounded archive budget that includes that explicit brand requirement.
+# Keep the existing bounded archive budget; only the original brand is shipped.
 MAX_RELEASE_ARCHIVE_BYTES = 8 * 1024 * 1024
 BRAND_RUNTIME_FILES = (BRAND_SOURCE,)
 BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
@@ -1143,8 +1142,6 @@ __OMNICIO_SERVER_SECURITY_HEADERS__
 __OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
-
-
 
     location = /assets/app.css {
         try_files $uri =404;

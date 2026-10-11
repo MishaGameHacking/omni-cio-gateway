@@ -964,6 +964,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_app_entrypoint_allows_explicit_main_apply_and_reconciliation_attempts(self) -> None:
         args = SimpleNamespace(
+            scope="application",
             release_sha="a" * 40, server_name="fixture-server", server_comment="fixture-managed",
             repository_root=str(SCRIPT_DIR.parent.parent), cluster_name="fixture-database",
             vpc_name="fixture-vpc", location="fixture-location", availability_zone="fixture-zone",
@@ -993,6 +994,26 @@ class AuthAppDeployTests(unittest.TestCase):
                     cluster_name=args.cluster_name, vpc_name=args.vpc_name,
                     location=args.location, availability_zone=args.availability_zone,
                 )
+
+    def test_public_scope_never_enters_application_or_database_reconcile(self) -> None:
+        args = SimpleNamespace(scope="public_site", release_sha="a" * 40,
+                               server_name="fixture-server", server_comment="fixture-managed",
+                               repository_root=str(SCRIPT_DIR.parent.parent))
+        environment = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+                       "GITHUB_SHA": "a" * 40, "TIMEWEB_CLOUD_TOKEN": "synthetic-private-token"}
+        with (patch.dict(os.environ, environment, clear=True),
+              patch.object(MODULE, "parse_args", return_value=args),
+              patch.object(MODULE, "TimewebClient") as client,
+              patch.object(MODULE, "reconcile") as reconcile,
+              patch("timeweb_public_site.publish_public_site") as publish,
+              patch.object(MODULE, "set_output") as output,
+              patch.object(MODULE, "add_summary")):
+            self.assertEqual(MODULE.main(), 0)
+            reconcile.assert_not_called()
+            publish.assert_called_once_with(client.return_value,
+                root=SCRIPT_DIR.parent.parent.resolve(), sha=args.release_sha,
+                server_name=args.server_name, server_comment=args.server_comment)
+            output.assert_called_once_with("status", "public_site_ready")
 
     def test_release_sha_requires_full_lowercase_commit(self) -> None:
         self.assertIsNotNone(MODULE.RELEASE_RE.fullmatch("a" * 40))
@@ -1773,7 +1794,7 @@ class AuthAppDeployTests(unittest.TestCase):
             expressions.append(match[1].strip())
         self.assertNotIn("Require successful PostgreSQL release prerequisite", tests)
         diagnostic_conditions = {
-            "Upload synthetic interface screenshots": (
+            "Upload public site browser evidence": (
                 "always() && steps.checkout.outcome == 'success'"
             ),
             "Report source-specific Sonar": (
@@ -1850,20 +1871,22 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("          if errorlevel 1 exit /b 1\n", step)
         match = re.search(r'^          "%OMNICIO_PYTHON%" -c "(.+)"$', step, flags=re.M)
         self.assertIsNotNone(match)
-        for status in (
-            None, "", "pending_database", "unknown", "APP_READY", "app_ready\n", "app_ready",
-        ):
-            environment = dict(os.environ)
-            environment.pop("AUTH_DEPLOY_STATUS", None)
-            if status is not None:
-                environment["AUTH_DEPLOY_STATUS"] = status
-            result = subprocess.run([sys.executable, "-c", match[1]], env=environment,
-                                    text=True, capture_output=True, timeout=10)
-            with self.subTest(status=status):
-                self.assertEqual(result.returncode, 0 if status == "app_ready" else 1)
-                if status != "app_ready":
-                    self.assertIn("::error::Application deployment did not reach app_ready",
-                                  result.stderr)
+        self.assertIn("EXPECTED_DEPLOY_STATUS: ${{ inputs.scope == 'public_site' && "
+                      "'public_site_ready' || 'app_ready' }}", step)
+        for expected in ("app_ready", "public_site_ready"):
+            for status in (None, "", "pending_database", "unknown", "APP_READY",
+                           "app_ready\n", "app_ready", "public_site_ready"):
+                environment = {**os.environ, "EXPECTED_DEPLOY_STATUS": expected}
+                environment.pop("AUTH_DEPLOY_STATUS", None)
+                if status is not None:
+                    environment["AUTH_DEPLOY_STATUS"] = status
+                result = subprocess.run([sys.executable, "-c", match[1]], env=environment,
+                                        text=True, capture_output=True, timeout=10)
+                with self.subTest(expected=expected, status=status):
+                    self.assertEqual(result.returncode, 0 if status == expected else 1)
+                    if status != expected:
+                        self.assertIn("::error::Application deployment did not reach app_ready",
+                                      result.stderr)
 
     def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT

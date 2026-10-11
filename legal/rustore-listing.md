@@ -1,7 +1,7 @@
 # OMNICIO 2.6.1 — черновик карточки RuStore
 
 Статус: текст для проверки exact signed build; не подтверждение публикации.
-Package: `ru.omnicio.app`. VersionCode: `8`. Брендовая иконка сохраняется.
+Package: `ru.omnicio.app`. VersionCode: `9`. Брендовая иконка сохраняется.
 
 ## Краткое описание
 

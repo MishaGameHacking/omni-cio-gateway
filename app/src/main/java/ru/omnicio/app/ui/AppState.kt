@@ -91,8 +91,10 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         }
         mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
             legalConsent = if (expired) null else mutable.value.legalConsent)
-        if (error is ApiFailure && error.code == "updated_legal_consent_required") {
-            mutable.value = mutable.value.copy(legalConsent = JSONObject())
+        if (error is ApiFailure && error.code in setOf(
+                "updated_legal_consent_required", "legal_versions_changed")) {
+            mutable.value = if (mutable.value.authenticated) mutable.value.copy(legalConsent = JSONObject())
+                else mutable.value.copy(authConfig = null)
         }
     }
 
