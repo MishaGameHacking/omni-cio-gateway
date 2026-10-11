@@ -6010,6 +6010,7 @@ async function exercisePushLifecycle(context) {
   assert.equal(pushWrites(fixture)[0].body.intent, "enable");
   assert.equal(pushWrites(fixture)[0].profile, fixture.user);
   assert.equal(await evaluate("window.__pushFixture.lastSubscribeOptions.userVisibleOnly"), true);
+  await wait('document.querySelector("#notification-settings [data-action=notification-push-test]")?.disabled===false', "Activation finishes before the next push action is available");
   await click('#notification-settings [data-action="notification-push-test"]');
   await wait('document.querySelector("[data-push-test-status=queued]")', "A test message acknowledges only its server queue receipt");
   assert.equal(fixture.notificationDeliveries[0].status, "queued");

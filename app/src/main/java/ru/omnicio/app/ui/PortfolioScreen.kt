@@ -1,5 +1,6 @@
 package ru.omnicio.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +23,7 @@ internal fun PortfolioScreen(state: AppUiState) {
         it.name.contains(search, true) || it.ticker.contains(search, true) || it.uid.contains(search, true)
     }
     val detail = portfolio?.positions?.find { it.uid == selected }
+    BackHandler(enabled = detail != null) { selected = null }
     if (detail != null) {
         PositionDetail(detail, portfolio, state.amountsHidden) { selected = null }
     } else LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -1,5 +1,6 @@
 package ru.omnicio.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -61,6 +62,7 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var page by rememberSaveable { mutableStateOf("Обзор") }
+    BackHandler(enabled = state.authenticated && page != "Обзор") { page = "Обзор" }
     val destinations = listOf("Обзор" to R.drawable.ic_overview,
         "Портфель" to R.drawable.ic_portfolio, "Помощник" to R.drawable.ic_assistant)
     LaunchedEffect(state.authenticated) { if (state.authenticated) model.refresh() else page = "Обзор" }
