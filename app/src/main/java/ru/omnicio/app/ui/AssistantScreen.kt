@@ -24,8 +24,9 @@ internal data class AssistantActions(
 internal fun AssistantScreen(
     state: AppUiState, onMarkRead: (String) -> Unit, onLoadMore: () -> Unit,
     actions: AssistantActions = AssistantActions(),
+    eventsOnly: Boolean = false,
 ) {
-    var events by remember { mutableStateOf(false) }
+    val events = eventsOnly
     val workspace = state.workspace
     val listState = rememberLazyListState()
     LaunchedEffect(events, state.assistant.conversation?.id, state.assistant.conversation?.messages?.lastOrNull()?.position) {
@@ -37,17 +38,14 @@ internal fun AssistantScreen(
     }
     LazyColumn(state = listState, modifier = Modifier.imePadding(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Text("Помощник", style = MaterialTheme.typography.headlineLarge)
-            Text("Ваш портфель и вопросы об инвестициях", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !events, onClick = { events = false }, label = { Text("Диалог") })
-                FilterChip(selected = events, onClick = { events = true }, label = { Text("События") })
-            }
+            Text(if (events) "Пульс" else "Чат", style = MaterialTheme.typography.headlineLarge)
+            Text(if (events) "События вашего портфеля" else "Ваш портфель и вопросы об инвестициях",
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         when {
         !events -> chatItems(state, actions)
         workspace == null -> item { EmptyState("События не получены", "Обновите данные. Сообщения не создаются в приложении.", R.drawable.ic_assistant) }
-        state.amountsHidden -> item { EmptyState("События скрыты", "Отключите скрытие сумм на Обзоре, чтобы прочитать финансовые сведения в событиях.") }
+        state.amountsHidden -> item { EmptyState("События скрыты", "Отключите скрытие сумм в Портфеле, чтобы прочитать финансовые сведения в событиях.") }
         else -> {
             if (workspace.events.isEmpty()) item { EmptyState("Пока нет событий", "Сервер ещё не передал события для этого аккаунта.", R.drawable.ic_assistant) }
             items(workspace.events, key = { it.id }) { event ->
@@ -72,7 +70,7 @@ internal fun AssistantScreen(
 private fun LazyListScope.chatItems(state: AppUiState, actions: AssistantActions) {
     val chat = state.assistant
     if (state.amountsHidden) {
-        item { EmptyState("Диалог скрыт", "Отключите скрытие сумм на Обзоре, чтобы читать и отправлять сообщения.") }
+        item { EmptyState("Диалог скрыт", "Отключите скрытие сумм в Портфеле, чтобы читать и отправлять сообщения.") }
         return
     }
     item {
@@ -189,3 +187,4 @@ private fun ChatBubble(message: ChatMessage) {
         }
     }
 }
+

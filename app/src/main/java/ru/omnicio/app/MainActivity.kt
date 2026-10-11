@@ -5,6 +5,8 @@ import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.ViewModelProvider
+import ru.omnicio.app.ui.OmnicioViewModel
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -18,15 +20,24 @@ import ru.omnicio.app.ui.PortfolioScreen
 import ru.omnicio.app.ui.theme.OmnicioTheme
 
 class MainActivity : ComponentActivity() {
+    private lateinit var model: OmnicioViewModel
+    private val unlock = DeviceUnlock(this)
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        model = ViewModelProvider(this)[OmnicioViewModel::class.java]
         enableEdgeToEdge()
         setContent {
-            OmnicioRoot()
+            OmnicioRoot(model, authenticate = unlock::authenticate)
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) model.lock()
+    }
+
+    override fun onDestroy() { unlock.cancel(); super.onDestroy() }
 }
 
 // Android Studio entry points: render real UI without a ViewModel, network or financial fixtures.
@@ -65,4 +76,5 @@ private fun AssistantPreview() {
         Surface { AssistantScreen(AppUiState(), onMarkRead = {}, onLoadMore = {}) }
     }
 }
+
 

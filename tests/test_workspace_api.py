@@ -819,3 +819,48 @@ def test_mobile_workspace_pending_state_never_invents_a_balance(
         response = client.get("/api/mobile/workspace", headers=HEADERS)
     assert response.status_code == 200
     assert response.json()["portfolio"] == {"status": "pending", "history": [], "latest": None}
+
+
+
+def test_selected_broker_account_is_bound_to_session_and_requires_write_authority(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    from omnicio.broker import BrokerConnectionStatus, BrokerService
+
+    client, auth, _, database = workspace_http
+    broker = Mock(spec=BrokerService)
+    broker.select_account.return_value = BrokerConnectionStatus(
+        True, "prod", "second", "Broker account",
+    )
+    refresh = Mock()
+    refresh.request.return_value = {"status": "queued"}
+    body = {"account_id": "second", "expected_account_id": "first"}
+    with (
+        patch("omnicio.main.broker_service", return_value=broker),
+        patch("omnicio.main.portfolio_refresh", return_value=refresh),
+        patch("omnicio.main.settings", return_value=SimpleNamespace(terms_version="test-current")),
+    ):
+        assert client.put("/api/broker/tbank/account", json=body).status_code == 403
+        database.has_legal_versions.return_value = False
+        denied = client.put("/api/broker/tbank/account", headers=HEADERS, json=body)
+        assert denied.status_code == 409
+        broker.select_account.assert_not_called()
+        database.has_legal_versions.return_value = True
+        result = client.put("/api/broker/tbank/account", headers=HEADERS, json=body)
+        assert result.status_code == 200
+        assert result.json()["account_id"] == "second"
+        assert broker.select_account.call_args.args[:3] == (OWNER.id, "second", "first")
+        refresh.request.assert_called_once_with(OWNER.id)
+        assert client.put("/api/broker/tbank/account", headers=HEADERS,
+                          json={**body, "user_id": str(OTHER.id)}).status_code == 422
+
+        def switched(*_args):
+            auth.refresh_session.side_effect = None
+            auth.refresh_session.return_value = OTHER
+            return BrokerConnectionStatus(True, "prod", "private-account-marker", "Broker account")
+
+        broker.select_account.side_effect = switched
+        result = client.put("/api/broker/tbank/account", headers=HEADERS, json=body)
+        assert result.status_code == 409
+        assert "private-account-marker" not in result.text
+        assert refresh.request.call_count == 1

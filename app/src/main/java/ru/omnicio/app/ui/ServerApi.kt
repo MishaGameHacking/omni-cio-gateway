@@ -4,6 +4,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.net.CookieManager
 import java.net.CookiePolicy
+import java.net.HttpCookie
 import java.net.URI
 import java.time.Instant
 import javax.net.ssl.HttpsURLConnection
@@ -16,12 +17,34 @@ private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 internal class ApiFailure(val status: Int, val code: String) : IOException()
 
-/** One session, one memory-only cookie jar; never a global CookieHandler or disk cache. */
+/** Per-session cookie jar. Only the authenticated session is exported to the encrypted vault. */
 internal class ServerApi {
     private val cookies = CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER)
     var profile: String? = null
         private set
     private var build: String? = null
+    private var sessionExpiresAt = 0L
+
+    fun restore(session: StoredSession) {
+        require(session.valid())
+        cookies.cookieStore.add(URI(SERVER_ORIGIN), HttpCookie("omnicio_session", session.token).apply {
+            version = 0
+            path = "/"
+            secure = true
+            isHttpOnly = true
+            maxAge = (session.expiresAt - System.currentTimeMillis()) / 1000
+        })
+        profile = session.publicId
+        sessionExpiresAt = session.expiresAt
+    }
+
+    fun savedSession(): StoredSession? {
+        val id = profile ?: return null
+        val cookie = cookies.cookieStore.get(URI(SERVER_ORIGIN)).firstOrNull {
+            it.name == "omnicio_session" && !it.hasExpired() && it.secure
+        } ?: return null
+        return StoredSession(cookie.value, id, sessionExpiresAt).takeIf { it.valid() }
+    }
 
     fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject {
         require(path.startsWith("/api/") && !path.contains("..") && !path.contains('#'))
@@ -49,6 +72,12 @@ internal class ServerApi {
             val status = connection.responseCode
             val headers = connection.headerFields.filterKeys { it != null }
             cookies.put(uri, headers)
+            headers.filterKeys { it.equals("Set-Cookie", ignoreCase = true) }.values.flatten().forEach { header ->
+                HttpCookie.parse(header).filter { it.name == "omnicio_session" }.forEach { cookie ->
+                    sessionExpiresAt = if (cookie.maxAge > 0) System.currentTimeMillis() +
+                        cookie.maxAge.coerceAtMost(34_560_000) * 1000 else 0
+                }
+            }
             connection.getHeaderField("X-Omnicio-Build")?.takeIf {
                 it.matches(Regex("[0-9a-f]{12}"))
             }?.let { build = it }
@@ -96,7 +125,7 @@ internal class ServerApi {
         val events = root.getJSONObject("events")
         return ServerWorkspace(
             ServerConnection(connection.getBoolean("connected"), connection.text("account_name"),
-                connection.text("verified_at")),
+                connection.text("verified_at"), connection.text("account_id")),
             latest?.let { parsePortfolio(it, portfolio.getJSONArray("history")) },
             parseEvents(events), events.text("next_cursor"),
             root.getJSONObject("goals").getJSONArray("items").objects().map {
@@ -151,6 +180,8 @@ internal fun apiError(error: Exception): String = when (error) {
 }
 
 private fun apiFailureError(error: ApiFailure): String = when {
+    error.code == "session_storage_unavailable" ->
+        "Вход выполнен, но сохранить его на устройстве не удалось. Проверьте свободное место и повторите обновление."
     error.code == "settings_version_conflict" ->
         "Условия изменились на сервере. Загрузите сохранённые условия и повторите изменение."
     error.code.startsWith("strategy_") ->
@@ -179,3 +210,4 @@ private fun apiFailureError(error: ApiFailure): String = when {
     error.status in 400..499 -> "Запрос отклонён. Проверьте введённые данные и доступ к счёту."
     else -> "Сервер не предоставил корректные данные. Попробуйте обновить экран."
 }
+

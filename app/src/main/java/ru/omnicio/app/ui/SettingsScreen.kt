@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -14,17 +15,75 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.R
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
+internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel,
+    authenticate: ((Boolean) -> Unit) -> Unit) {
+    var section by remember { mutableStateOf<String?>(null) }
+    val sections = listOf("Оформление" to R.drawable.ic_moon, "Доступ" to R.drawable.ic_shield,
+        "Счёт" to R.drawable.ic_bank, "Стратегия" to R.drawable.ic_portfolio,
+        "Цели" to R.drawable.ic_goal, "О приложении" to R.drawable.ic_info)
+    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Text("Профиль", style = MaterialTheme.typography.headlineLarge)
+            Text("OMNICIO · ${state.publicId.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        sections.forEach { (title, icon) -> item {
+            Card(Modifier.fillMaxWidth().clickable { section = title },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                ListItem(headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
+                    leadingContent = { OmniIcon(icon) }, trailingContent = { OmniIcon(R.drawable.ic_chevron) })
+            }
+        } }
+        item { TextButton(onClick = model::logout, enabled = !state.busy) { Text("Выйти из аккаунта") } }
+    }
+    section?.let { current ->
+        ModalBottomSheet(onDismissRequest = { section = null },
+            properties = sheetProperties(state.screenshotsBlocked)) {
+            Box(Modifier.fillMaxHeight(0.9f)) { SettingsDetails(state, model, current, authenticate) }
+        }
+    }
+}
+
+@Composable
+private fun SettingsDetails(state: AppUiState, model: OmnicioViewModel, section: String,
+    authenticate: ((Boolean) -> Unit) -> Unit) {
     var credential by remember { mutableStateOf("") }
     var accepted by remember { mutableStateOf(false) }
     var disconnect by remember { mutableStateOf(false) }
     var goalForm by remember { mutableStateOf(false) }
     val connected = state.workspace?.connection?.connected == true
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { AccessSettings(state, model) }
-        item { StrategySettings(state, model) }
-        item {
+        item { Text(section, style = MaterialTheme.typography.headlineMedium) }
+        if (section == "Доступ") item { AccessSettings(state, model) }
+        if (section == "Доступ") item {
+            var authError by remember { mutableStateOf(false) }
+            OmniCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Защита входа", style = MaterialTheme.typography.titleMedium)
+                        Text("Отпечаток или код телефона", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(state.biometricLock, { value -> authenticate { success ->
+                        authError = !success
+                        if (success) model.setBiometricLock(value)
+                    } }, modifier = Modifier.semantics { contentDescription = "Защита входа" })
+                }
+                if (authError) Text("Подтверждение не получено. Проверьте блокировку экрана в настройках телефона.",
+                    style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Запретить скриншоты", style = MaterialTheme.typography.titleMedium)
+                        Text(if (state.screenshotsBlocked) "Снимки и запись экрана запрещены" else "Снимки и запись экрана разрешены",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(state.screenshotsBlocked, model::setScreenshotsBlocked,
+                        modifier = Modifier.semantics { contentDescription = "Запретить скриншоты" })
+                }
+            }
+        }
+        if (section == "Стратегия") item { StrategySettings(state, model) }
+        if (section == "Оформление") item {
             OmniCard {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OmniIcon(R.drawable.ic_moon)
@@ -35,7 +94,7 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
                 Text("Оформление сохраняется на этом устройстве.", style = MaterialTheme.typography.bodySmall)
             }
         }
-        item {
+        if (section == "Счёт") item {
             OmniCard {
                 OmniIcon(R.drawable.ic_bank)
                 SectionTitle("Т-Инвестиции")
@@ -69,13 +128,13 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
                 }
             }
         }
-        item {
+        if (section == "Цели") item {
             OmniCard {
                 OmniIcon(R.drawable.ic_goal)
                 SectionTitle("Цели")
                 when {
                     state.workspace == null -> Text("Цели не загружены.")
-                    state.amountsHidden -> Text("Суммы целей скрыты. Измените настройку на Обзоре.")
+                    state.amountsHidden -> Text("Суммы целей скрыты. Измените настройку в Портфеле.")
                     state.workspace.goals.isEmpty() -> Text("Сервер не вернул сохранённых целей.")
                     else -> state.workspace.goals.forEach {
                         Text(it.title, style = MaterialTheme.typography.titleMedium)
@@ -89,12 +148,12 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
                 if (goalForm && connected) GoalForm(state.busy, model)
             }
         }
-        item {
+        if (section == "Доступ") item {
             OmniCard {
                 OmniIcon(R.drawable.ic_shield)
                 SectionTitle("Данные и доступ")
                 Text("Портфель, история и события хранятся на сервере. Приложение держит полученные ответы только в памяти текущего процесса; офлайн-копий нет.")
-                Text("Токен брокера и сессия не записываются на устройство. Сессия завершается при выходе; после завершения процесса требуется повторный вход.")
+                Text("Вход сохраняется в зашифрованном виде на этом устройстве. Выход удаляет сохранённую сессию. Токен брокера хранится только на сервере.")
                 Text("Профиль: ${state.publicId ?: "не определён"}", style = MaterialTheme.typography.bodySmall)
                 LegalLinks()
                 OutlinedButton(onClick = model::logout, enabled = !state.busy) {
@@ -104,12 +163,12 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
                 }
             }
         }
-        item {
+        if (section == "О приложении") item {
             OmniCard {
                 SectionTitle("О приложении")
                 Text("OMNICIO ${BuildConfig.VERSION_NAME}")
                 Text("Аналитика по официальным источникам. Нет торговых действий и обещаний доходности.", style = MaterialTheme.typography.bodySmall)
-                Text("Уведомления вне приложения пока не подключены. События доступны в разделе «Помощник».", style = MaterialTheme.typography.bodySmall)
+                Text("Уведомления вне приложения пока не подключены. События доступны в разделе «Пульс».", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -136,3 +195,4 @@ private fun GoalForm(busy: Boolean, model: OmnicioViewModel) {
         Text("Сохранить на сервере")
     }
 }
+

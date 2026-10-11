@@ -27,7 +27,7 @@ internal fun OverviewScreen(
     val portfolio = workspace?.portfolio
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Text("Обзор", style = MaterialTheme.typography.headlineLarge)
+            Text("Аналитика", style = MaterialTheme.typography.headlineLarge)
             Text(workspace?.connection?.name ?: "Ваш инвестиционный счёт",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -63,6 +63,7 @@ internal fun OverviewScreen(
                 }
             }
             item { PortfolioHistory(portfolio?.history.orEmpty(), state.amountsHidden) }
+            item { PortfolioStructure(portfolio, state.amountsHidden) }
             item {
                 Button(onClick = onSyncPortfolio, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                     OmniIcon(R.drawable.ic_refresh)
@@ -71,6 +72,42 @@ internal fun OverviewScreen(
                 }
             }
             item { SourcesCard(portfolio?.sources.orEmpty()) }
+        }
+    }
+}
+
+@Composable
+private fun PortfolioStructure(portfolio: ServerPortfolio?, hidden: Boolean) {
+    val allocation = portfolio?.let(::portfolioAllocation).orEmpty()
+    val colors = listOf(androidx.compose.ui.graphics.Color(0xFF79AAFF),
+        androidx.compose.ui.graphics.Color(0xFF73C6AD), androidx.compose.ui.graphics.Color(0xFFF4C96A),
+        androidx.compose.ui.graphics.Color(0xFFC4A5EF), androidx.compose.ui.graphics.Color(0xFF97A2B5),
+        androidx.compose.ui.graphics.Color(0xFFED9C91))
+    OmniCard {
+        SectionTitle("Структура портфеля")
+        if (hidden) Text("Суммы скрыты")
+        else if (allocation.isEmpty()) Text("Для структуры пока недостаточно данных.")
+        else {
+            val total = requireNotNull(portfolio?.total)
+            Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(200.dp)) {
+                    var start = -90f
+                    allocation.forEachIndexed { index, item ->
+                        val sweep = item.value.divide(total, 12, java.math.RoundingMode.HALF_UP).toFloat() * 360f
+                        drawArc(colors[index % colors.size], start, sweep, useCenter = false,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 10.dp.toPx()))
+                        start += sweep
+                    }
+                }
+                Text(money(total), style = MaterialTheme.typography.titleLarge)
+            }
+            allocation.forEach { item ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(item.label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(item.value.multiply(java.math.BigDecimal(100)).divide(total, 1,
+                        java.math.RoundingMode.HALF_UP).toPlainString() + " %")
+                }
+            }
         }
     }
 }
@@ -191,3 +228,4 @@ private fun HistoryPlot(points: List<HistoryPoint>, selected: Int) {
         Text(money(min), style = MaterialTheme.typography.labelMedium)
     }
 }
+

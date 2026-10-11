@@ -2492,3 +2492,54 @@ def test_all_quotes_is_explicit_and_an_empty_requested_batch_performs_no_io():
         result = client.get_all_last_prices("synthetic-shared-token", "prod")
     assert result.prices[0].instrument_uid == "not-individually-requested"
     assert json.loads(network.call_args.args[0].data)["instrumentId"] == []
+
+
+
+def test_switch_account_reuses_owner_credential_and_rejects_changed_context() -> None:
+    database, provider = FakeDatabase(), FakeTBank()
+    owner = UUID(int=1)
+    service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
+    service.connect(user_id=owner, credential="t.fake-owner-credential-1234567890",
+                    environment="prod", account_id="account-1", terms_version="2026-10-01-v2")
+    original = database.record
+    assert original is not None
+    provider.accounts.append(replace(provider.accounts[0], id="account-2"))
+    assert [item.id for item in service.connected_accounts(owner)] == ["account-1", "account-2"]
+    with patch.object(
+        database, "upsert_tbank_connection", wraps=database.upsert_tbank_connection,
+    ) as save:
+        selected = service.select_account(owner, "account-2", "account-1", "2026-10-01-v2")
+        assert selected.account_id == "account-2"
+        assert save.call_args.kwargs["expected_connection"] == original
+        assert database.saved_ciphertext == original.encrypted_credential
+        save.reset_mock()
+        with pytest.raises(BrokerConnectionError):
+            service.select_account(owner, "account-1", "account-1", "2026-10-01-v2")
+        with pytest.raises(BrokerAccountNotAccessible):
+            service.select_account(owner, "foreign-account", "account-2", "2026-10-01-v2")
+        with pytest.raises(BrokerNotConnected):
+            service.connected_accounts(UUID(int=2))
+        provider.accounts[0] = replace(provider.accounts[0], status="ACCOUNT_STATUS_CLOSED")
+        with pytest.raises(BrokerAccountNotAccessible):
+            service.select_account(owner, "account-1", "account-2", "2026-10-01-v2")
+        save.assert_not_called()
+
+
+def test_account_selection_rechecks_connection_after_provider_read() -> None:
+    database, provider = FakeDatabase(), FakeTBank()
+    owner = UUID(int=1)
+    service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
+    service.connect(user_id=owner, credential="t.fake-owner-credential-1234567890",
+                    environment="prod", account_id="account-1", terms_version="2026-10-01-v2")
+    provider.accounts.append(replace(provider.accounts[0], id="account-2"))
+
+    def disconnected(*_args):
+        database.delete_tbank_connection(owner)
+        return provider.accounts
+
+    with (
+        patch.object(provider, "get_accounts", side_effect=disconnected),
+        pytest.raises(BrokerConnectionError),
+    ):
+        service.select_account(owner, "account-2", "account-1", "2026-10-01-v2")
+    assert database.record is None

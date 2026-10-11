@@ -27,6 +27,7 @@ internal val OmniShapes = Shapes(
 )
 
 internal val OmniTypography = Typography(
+    labelSmall = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
     displaySmall = TextStyle(
         fontSize = 36.sp,
         lineHeight = 40.sp,
@@ -53,13 +54,13 @@ internal val OmniTypography = Typography(
         fontWeight = FontWeight.SemiBold,
     ),
     titleMedium = TextStyle(
-        fontSize = 15.sp,
+        fontSize = 16.sp,
         lineHeight = 20.sp,
         fontWeight = FontWeight.Medium,
     ),
     bodyLarge = TextStyle(
-        fontSize = 15.sp,
-        lineHeight = 21.sp,
+        fontSize = 16.sp,
+        lineHeight = 22.sp,
     ),
     bodyMedium = TextStyle(
         fontSize = 14.sp,
@@ -80,3 +81,4 @@ internal val OmniTypography = Typography(
         fontWeight = FontWeight.SemiBold,
     ),
 )
+

@@ -19,6 +19,10 @@ import org.json.JSONObject
 internal data class AppUiState(
     val darkTheme: Boolean = false,
     val amountsHidden: Boolean = false,
+    val screenshotsBlocked: Boolean = false,
+    val biometricLock: Boolean = false,
+    val locked: Boolean = false,
+    val restoring: Boolean = true,
     val authenticated: Boolean = false,
     val publicId: String? = null,
     val busy: Boolean = false,
@@ -33,6 +37,7 @@ internal data class AppUiState(
     val sessions: List<JSONObject> = emptyList(),
     val assistant: AssistantUiState = AssistantUiState(),
     val strategy: StrategyUiState = StrategyUiState(),
+    val market: MarketUiState = MarketUiState(),
 )
 
 internal data class SocialFlow(
@@ -40,14 +45,19 @@ internal data class SocialFlow(
     val expiresAt: Long, val registrationRequired: Boolean = false, val launchPending: Boolean = true,
 )
 
-/** Financial data and credentials never enter SavedStateHandle or persistent storage. */
+/** Financial data and broker credentials stay in memory; only the login uses SessionVault. */
 internal class OmnicioViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences("omnicio_appearance", Context.MODE_PRIVATE)
+    private val vault = SessionVault(application)
+    private var lastStoredSession: StoredSession? = null
     private var api = ServerApi()
     private var generation = 0
     private val mutable = MutableStateFlow(AppUiState(
         darkTheme = preferences.getBoolean("dark_theme", false),
         amountsHidden = preferences.getBoolean("amounts_hidden", false),
+        screenshotsBlocked = preferences.getBoolean("screenshots_blocked", false),
+        biometricLock = preferences.getBoolean("biometric_lock", false),
+        locked = preferences.getBoolean("biometric_lock", false),
     ))
     val uiState: StateFlow<AppUiState> = mutable.asStateFlow()
 
@@ -55,7 +65,52 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         // Remove all state from the retired fixture implementation, including fake connections.
         application.getSharedPreferences("omnicio_local_nonsecret_state", Context.MODE_PRIVATE)
             .edit().clear().apply()
-        loadConfig()
+        if (!mutable.value.locked) restoreSession()
+    }
+
+    fun restoreSession() = request({ client ->
+        if (client.profile == null) {
+            val saved = try { vault.read() } catch (_: java.security.GeneralSecurityException) {
+                null
+            } catch (_: java.io.IOException) {
+                null
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+            saved?.let { client.restore(it) }
+        }
+        if (client.profile != null) {
+            val expected = client.profile
+            val result = client.request("/api/me")
+            if (result.getString("public_id") != expected) throw ApiFailure(409, "profile_context_changed")
+            client.acceptLogin(result)
+        }
+        client.request("/api/auth/config")
+    }) {
+        if (api.profile == null) vault.clear()
+        mutable.value = mutable.value.copy(restoring = false, authenticated = api.profile != null,
+            publicId = api.profile, authConfig = it)
+    }
+
+    fun setScreenshotsBlocked(value: Boolean) {
+        preferences.edit().putBoolean("screenshots_blocked", value).apply()
+        mutable.value = mutable.value.copy(screenshotsBlocked = value)
+    }
+
+    // Call only after the system authentication dialog confirms the user's presence.
+    fun setBiometricLock(value: Boolean) {
+        preferences.edit().putBoolean("biometric_lock", value).apply()
+        mutable.value = mutable.value.copy(biometricLock = value, locked = false)
+    }
+
+    fun unlock() {
+        mutable.value = mutable.value.copy(locked = false, error = null)
+        if (mutable.value.restoring) restoreSession()
+    }
+
+    fun lock() {
+        if (!mutable.value.biometricLock || mutable.value.locked) return
+        mutable.value = mutable.value.copy(locked = true)
     }
 
     fun setDarkTheme(value: Boolean) {
@@ -70,14 +125,28 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     }
 
     private fun <T> request(action: suspend (ServerApi) -> T, success: (T) -> Unit) {
-        if (mutable.value.busy) return
+        if (mutable.value.busy || mutable.value.locked) return
         val current = api
         val expectedGeneration = generation
         mutable.value = mutable.value.copy(busy = true, error = null, notice = null)
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) { action(current) }
-                if (generation == expectedGeneration) success(result)
+                if (generation == expectedGeneration) {
+                    success(result)
+                    current.savedSession()?.let { saved ->
+                        if (saved != lastStoredSession) {
+                            try {
+                                vault.write(saved)
+                                lastStoredSession = saved
+                            } catch (_: java.security.GeneralSecurityException) {
+                                throw ApiFailure(0, "session_storage_unavailable")
+                            } catch (_: java.io.IOException) {
+                                throw ApiFailure(0, "session_storage_unavailable")
+                            }
+                        }
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -89,13 +158,17 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     }
 
     private fun handleFailure(error: Exception) {
-        val expired = mutable.value.authenticated && error is ApiFailure &&
+        val expired = api.profile != null && error is ApiFailure &&
             (error.status == 401 || error.code == "profile_context_changed")
         if (expired) {
+            vault.clear()
+            lastStoredSession = null
             api = ServerApi()
-            mutable.value = mutable.value.copy(authenticated = false, publicId = null)
+            mutable.value = mutable.value.copy(authenticated = false, publicId = null, restoring = false)
         }
-        mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
+        val resetWorkspace = expired || (error is ApiFailure && error.code == "broker_connection_changed")
+        mutable.value = mutable.value.copy(error = apiError(error),
+            workspace = if (resetWorkspace) null else mutable.value.workspace, accounts = emptyList(),
             strategy = mutable.value.strategy.afterFailure(error, expired),
             assistant = if (expired) AssistantUiState() else mutable.value.assistant.withoutServerData(),
             legalConsent = if (expired) null else mutable.value.legalConsent,
@@ -187,8 +260,14 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     fun refresh() {
         if (!mutable.value.authenticated || mutable.value.socialFlow != null) return
         request({ client ->
+            client.request("/api/me")
             val legal = client.request("/api/auth/legal")
-            legal to if (legal.getBoolean("accepted")) client.workspace() else null
+            legal to if (legal.getBoolean("accepted")) {
+                val workspace = client.workspace()
+                if (workspace.connection.connected && workspace.portfolio == null) {
+                    waitForPortfolio(client)
+                } else workspace
+            } else null
         }) { (legal, workspace) ->
             mutable.value = mutable.value.copy(workspace = workspace,
                 legalConsent = if (legal.getBoolean("accepted")) null else legal.getJSONObject("legal_versions"))
@@ -207,20 +286,47 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun syncPortfolio() {
-        val id = mutable.value.publicId ?: return
+        if (mutable.value.publicId == null) return
         request({ client ->
-            client.request("/api/workspace/refresh", "POST", JSONObject().put("expected_public_id", id).put("scope", "quick"))
-            var finished = false
-            for (attempt in 0 until 10) {
-                delay(2_000)
-                val status = client.request("/api/workspace/refresh").getString("status")
-                if (status !in setOf("queued", "running")) { finished = true; break }
-            }
-            client.workspace() to finished
-        }) { (workspace, finished) ->
+            waitForPortfolio(client)
+        }) { workspace ->
             mutable.value = mutable.value.copy(workspace = workspace,
-                notice = if (finished) "Ответ сервера получен. Проверьте время и состояние данных."
-                    else "Сервер продолжает обновление. Повторите проверку позже.")
+                notice = if (workspace.portfolio != null) "Данные счёта получены."
+                    else "Снимок ещё не получен. Повторите обновление через некоторое время.")
+        }
+    }
+
+    private suspend fun waitForPortfolio(client: ServerApi): ServerWorkspace {
+        val id = requireNotNull(client.profile)
+        client.request("/api/workspace/refresh", "POST", JSONObject()
+            .put("expected_public_id", id).put("scope", "quick"))
+        for (attempt in 0 until 10) {
+            delay(2_000)
+            val status = client.request("/api/workspace/refresh").getString("status")
+            if (status == "failed") throw ApiFailure(503, "portfolio_refresh_failed")
+            if (status !in setOf("queued", "running")) break
+        }
+        return client.workspace()
+    }
+
+    fun loadBrokerAccounts() = request({ it.request("/api/broker/tbank/accounts") }) {
+        mutable.value = mutable.value.copy(accounts = it.getJSONArray("accounts").objects().map { row ->
+            BrokerAccount(row.getString("id"), row.getString("name"), row.getString("status"))
+        })
+    }
+
+    fun selectBrokerAccount(account: String) {
+        if (mutable.value.busy || mutable.value.locked) return
+        val expected = mutable.value.workspace?.connection?.accountId ?: return
+        mutable.value = mutable.value.copy(workspace = null, accounts = emptyList(),
+            assistant = AssistantUiState(), strategy = StrategyUiState())
+        request({ client ->
+            client.request("/api/broker/tbank/account", "PUT", JSONObject()
+                .put("account_id", account).put("expected_account_id", expected))
+            waitForPortfolio(client)
+        }) {
+            mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(),
+                assistant = AssistantUiState(), strategy = StrategyUiState())
         }
     }
 
@@ -233,13 +339,32 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
 
     fun clearAccounts() { mutable.value = mutable.value.copy(accounts = emptyList()) }
 
+    fun searchMarket(query: String) = request({ client ->
+        client.request("/api/market/instruments/search?q=" + URLEncoder.encode(query.trim(), "UTF-8"))
+    }) { result ->
+        mutable.value = mutable.value.copy(market = MarketUiState(query = query.trim(), loaded = true,
+            items = result.getJSONArray("items").objects().map {
+                MarketInstrument(it.getString("uid"), it.getString("ticker"), it.getString("name"), it.getInt("lot"))
+            }))
+    }
+
+    fun loadMarketInstrument(item: MarketInstrument) = request({ client ->
+        val uid = java.util.UUID.fromString(item.uid).toString()
+        parseMarketQuote(client.request("/api/market/instruments/$uid"))
+    }) { mutable.value = mutable.value.copy(market = mutable.value.market.copy(selected = item, quote = it)) }
+
+    fun closeMarketInstrument() {
+        mutable.value = mutable.value.copy(market = mutable.value.market.copy(selected = null, quote = null))
+    }
+
     fun connectBroker(credential: String, account: String) = request({ client ->
         client.request("/api/broker/tbank", "PUT", JSONObject().put("credential", credential.trim())
             .put("environment", "prod").put("account_id", account).put("accept_personal_terms", true))
-        client.workspace()
+        waitForPortfolio(client)
     }) {
         mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState(), strategy = StrategyUiState(),
-            notice = "Счёт подключён. Сервер получает первый снимок; используйте «Обновить у брокера».")
+            notice = if (it.portfolio != null) "Счёт подключён. Данные загружены с сервера."
+                else "Счёт подключён. Первый снимок ещё загружается.")
     }
 
     fun disconnectBroker() = request({ client ->
@@ -374,9 +499,13 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     fun logout() {
         val previous = api
         generation += 1
+        vault.clear()
+        lastStoredSession = null
         api = ServerApi()
         mutable.value = AppUiState(darkTheme = mutable.value.darkTheme,
-            amountsHidden = mutable.value.amountsHidden, authConfig = mutable.value.authConfig)
+            amountsHidden = mutable.value.amountsHidden, authConfig = mutable.value.authConfig,
+            screenshotsBlocked = mutable.value.screenshotsBlocked,
+            biometricLock = mutable.value.biometricLock, restoring = false)
         viewModelScope.launch(Dispatchers.IO) {
             // Local access ends immediately even when server revocation is unavailable.
             try { previous.request("/api/auth/logout", "POST", JSONObject()) }
@@ -384,3 +513,4 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         }
     }
 }
+
