@@ -98,10 +98,10 @@ def test_one_package_release_reaches_framework_http_and_public_config() -> None:
     assert config["mode"] == "public"
     assert config["registration_enabled"]
     assert config["login_enabled"]
-    assert config["auth_providers"] == ["email"]
+    assert config["auth_providers"] == ["email", "telegram", "vkid"]
+    assert config["social_providers"] == {"telegram": False, "vkid": False}
     assert config["email_domains"] == ["gmail.com", "mail.ru", "xmail.ru"]
     assert "registration_max_users" not in config
-    assert "vkid" not in str(config)
     assert "tid_enabled" not in config
 
 
@@ -447,8 +447,9 @@ def test_http_email_proof_rotates_cookie_and_revokes_previous_browser_session():
 def test_own_email_is_not_disclosed_after_session_is_revoked_during_read():
     auth, db, _ = auth_service()
     db.refresh_session_digest.side_effect = [OWNER, None]
-    db.email_identity_status.return_value = {"email": "private-address@gmail.com"}
+    auth.social.store.identities = Mock(return_value={"email": "private-address@gmail.com"})
     with (
+        patch.object(app.state, "settings", auth.settings, create=True),
         patch.object(app.state, "auth_service", auth, create=True),
         patch.object(app.state, "database", db, create=True),
     ):
@@ -457,7 +458,7 @@ def test_own_email_is_not_disclosed_after_session_is_revoked_during_read():
         )
     assert response.status_code in {401, 409}
     assert "private-address@gmail.com" not in response.text
-    db.email_identity_status.assert_called_once_with(OWNER.id)
+    auth.social.store.identities.assert_called_once_with(OWNER.id)
 
 
 def test_native_legal_renewal_requires_current_versions_origin_and_owner_session():

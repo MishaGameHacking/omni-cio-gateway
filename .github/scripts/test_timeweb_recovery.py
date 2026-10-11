@@ -756,7 +756,7 @@ class MigrationGateTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         reviewed_plan = inplace_upgrade.load_plan()
         reviewed = [(root / "migrations" / name).read_text(encoding="utf-8") for name in (
-            "0029_email_auth.sql", "0030_portfolio_read_only.sql",
+            "0029_email_auth.sql", "0030_portfolio_read_only.sql", "0031_social_auth.sql",
         )]
         for single, backup_only, rejected in cases:
             with (self.subTest(single=single, scheduled=backup_only, rejected=rejected),

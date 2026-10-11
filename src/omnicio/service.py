@@ -32,6 +32,7 @@ from .security import (
     validate_new_password,
     verify_password,
 )
+from .social_auth import SocialAuthService
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ class AuthService:
     ) -> None:
         self.settings = settings
         self.database = database
+        self.social = SocialAuthService(settings, database)
         self._crypto_key = validate_auth_email_configuration(settings)
         self._transport = transport or NotificationTransport(NotificationConfig(
             crypto_key=self._crypto_key, email_enabled=True,

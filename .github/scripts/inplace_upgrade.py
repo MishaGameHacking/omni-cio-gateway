@@ -25,7 +25,7 @@ from typing import Any, BinaryIO
 MODE = "single_existing_database"
 OPERATIONS = ("preflight", "email_probe", "apply")
 RELEASE_SHA_PATTERN = r"[0-9a-f]{40}"
-RECEIPT_PATH = pathlib.Path("/var/lib/omnicio-upgrade/1.4.0.json")
+RECEIPT_PATH = pathlib.Path("/var/lib/omnicio-upgrade/1.5.0.json")
 RELEASE_ROOT = pathlib.Path("/opt/omnicio/releases")
 CURRENT_RELEASE = pathlib.Path("/opt/omnicio/current")
 RECOVERY_DIRECTORY = pathlib.Path("/var/lib/omnicio-recovery")
@@ -87,6 +87,8 @@ UPGRADE_1_4_SOURCE_QUERY = """
 SELECT to_regclass('public.email_identities') IS NULL
     AND to_regclass('public.email_auth_challenges') IS NULL
     AND to_regclass('public.email_auth_rate_limits') IS NULL
+    AND to_regclass('public.telegram_identities') IS NULL
+    AND to_regclass('public.social_auth_flows') IS NULL
     AND (
         SELECT count(*) = 3 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'portfolio_snapshots'
@@ -145,13 +147,15 @@ def validate_plan(value: Any) -> dict[str, Any]:
         raise UpgradeBlocked("invalid_upgrade_plan")
     transition = (value["source_version"], value["target_version"])
     if (value["mode"] != MODE
-            or transition not in (("1.2.0", "1.3.0"), ("1.3.0", "1.4.0"))):
+            or transition not in (("1.2.0", "1.3.0"), ("1.3.0", "1.4.0"),
+                                  ("1.3.0", "1.5.0"))):
         raise UpgradeBlocked("unreviewed_version_transition")
     if (not isinstance(value["source_release"], str)
             or re.fullmatch(RELEASE_SHA_PATTERN, value["source_release"]) is None):
         raise UpgradeBlocked("invalid_source_release")
     hashes = value["migration_sha256"]
-    if not isinstance(hashes, list) or len(hashes) != 2:
+    expected_count = 3 if value["target_version"] == "1.5.0" else 2
+    if not isinstance(hashes, list) or len(hashes) != expected_count:
         raise UpgradeBlocked("unreviewed_migration_count")
     for digest in [value["source_schema_sha256"], *hashes]:
         if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
@@ -172,13 +176,13 @@ def load_plan() -> dict[str, Any]:
 def source_absence_query(plan: dict[str, Any]) -> str:
     """Reject partially applied migrations and drift outside the reviewed source schema."""
     validate_plan(plan)
-    return (UPGRADE_1_4_SOURCE_QUERY if plan["target_version"] == "1.4.0"
+    return (UPGRADE_1_4_SOURCE_QUERY if plan["target_version"] in {"1.4.0", "1.5.0"}
             else NEW_SCHEMA_ABSENT)
 
 
 def migration_bodies(plan: dict[str, Any], statements: list[str]) -> list[str]:
     validate_plan(plan)
-    if len(statements) != 2:
+    if len(statements) != len(plan["migration_sha256"]):
         raise UpgradeBlocked("unreviewed_migration_count")
     result = []
     for index, (source, expected) in enumerate(zip(
@@ -187,7 +191,7 @@ def migration_bodies(plan: dict[str, Any], statements: list[str]) -> list[str]:
         normalized = source.replace("\r\n", "\n")
         if _digest(normalized) != expected:
             raise UpgradeBlocked("migration_digest_mismatch")
-        if plan["target_version"] == "1.4.0" and index == 1:
+        if plan["target_version"] in {"1.4.0", "1.5.0"} and index == 1:
             # Accepted 0030 has no transaction wrapper. Its complete reviewed
             # digest is still mandatory; the controller owns the outer transaction.
             result.append(normalized)
@@ -708,7 +712,7 @@ def apply_upgrade(
     validate_receipt(operation, identity)
     result = "already_applied"
     with connection.transaction():
-        # Both reviewed migrations use unqualified table names. Explicitly pin
+        # Reviewed migrations use unqualified table names. Explicitly pin
         # their namespace before checking and changing the public schema.
         connection.execute("SET LOCAL search_path TO public, pg_temp")
         connection.execute("SET LOCAL statement_timeout = '30s'")
@@ -726,7 +730,7 @@ def apply_upgrade(
                 raise UpgradeBlocked("initial_upgrade_requires_source_installation")
             _apply_pending(connection, bodies, source_query, target_query, receipt,
                            operation, save_receipt, source_absence_query(plan),
-                           require_recovery, plan["target_version"] == "1.4.0")
+                           require_recovery, plan["target_version"] in {"1.4.0", "1.5.0"})
             result = "applied"
     # A lost write/SSH response leaves the pending receipt. The next invocation
     # first reads the target schema under the same lock; it does not repeat SQL.
@@ -1176,7 +1180,7 @@ def remote_main(
                 )
                 print(json.dumps(report))
                 return
-            if plan["target_version"] == "1.4.0":
+            if plan["target_version"] in {"1.4.0", "1.5.0"}:
                 result = _apply_current_upgrade(
                     connection, payload=payload, plan=plan, url=url, identity=identity,
                     receipt=receipt, source_query=source_query, installed_release=installed_release,

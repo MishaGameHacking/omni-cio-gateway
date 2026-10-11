@@ -32,6 +32,14 @@ internal data class AppUiState(
     val legalConsent: JSONObject? = null,
     val workspace: ServerWorkspace? = null,
     val accounts: List<BrokerAccount> = emptyList(),
+    val socialFlow: SocialFlow? = null,
+    val identities: JSONObject? = null,
+    val sessions: List<JSONObject> = emptyList(),
+)
+
+internal data class SocialFlow(
+    val id: String, val provider: String, val authorizationUrl: String,
+    val expiresAt: Long, val registrationRequired: Boolean = false, val launchPending: Boolean = true,
 )
 
 /** Financial data and credentials never enter SavedStateHandle or persistent storage. */
@@ -90,7 +98,10 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             mutable.value = mutable.value.copy(authenticated = false, publicId = null)
         }
         mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
-            legalConsent = if (expired) null else mutable.value.legalConsent)
+            legalConsent = if (expired) null else mutable.value.legalConsent,
+            socialFlow = if (expired) null else mutable.value.socialFlow,
+            identities = if (expired) null else mutable.value.identities,
+            sessions = if (expired) emptyList() else mutable.value.sessions)
         if (error is ApiFailure && error.code in setOf(
                 "updated_legal_consent_required", "legal_versions_changed")) {
             mutable.value = if (mutable.value.authenticated) mutable.value.copy(legalConsent = JSONObject())
@@ -115,17 +126,18 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         client.acceptLogin(result)
         client.profile
     }) { id ->
-        mutable.value = mutable.value.copy(authenticated = true, publicId = id, challengeId = null)
+        mutable.value = mutable.value.copy(authenticated = true, publicId = id, challengeId = null,
+            challengePurpose = null, socialFlow = null, identities = null, sessions = emptyList())
         // The next composition requests the workspace after busy is cleared.
     }
 
-    fun register(email: String, password: String) {
+    fun register(email: String, password: String, enroll: Boolean = false) {
         val legal = mutable.value.authConfig?.optJSONObject("legal_versions") ?: return
-        request({ it.request("/api/auth/email/register", "POST", JSONObject()
+        request({ it.request(if (enroll) "/api/auth/email/enroll" else "/api/auth/email/register", "POST", JSONObject()
             .put("email", email.trim()).put("password", password)
             .put("accept_privacy", true).put("accept_personal_data", true)
             .put("accept_terms", true).put("confirm_age_18", true).put("legal_versions", legal)) }) {
-            adoptChallenge(it, "register")
+            adoptChallenge(it, if (enroll) "enroll" else "register")
         }
     }
 
@@ -146,7 +158,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             client.profile
         }) { profile ->
             mutable.value = mutable.value.copy(challengeId = null, challengePurpose = null,
-                authenticated = !reset, publicId = profile,
+                authenticated = !reset, publicId = profile, identities = null, sessions = emptyList(),
                 notice = if (reset) "Пароль изменён. Войдите с новым паролем." else null)
         }
     }
@@ -170,8 +182,74 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         if (!mutable.value.busy) mutable.value = mutable.value.copy(challengeId = null, challengePurpose = null)
     }
 
+    fun startSocial(provider: String) = request({ client ->
+        client.request("/api/auth/social/$provider/start", "POST", JSONObject()
+            .put("purpose", if (mutable.value.authenticated) "link" else "login")
+            .put("android_package", ru.omnicio.app.BuildConfig.APPLICATION_ID))
+    }) { result ->
+        val url = result.getString("authorization_url")
+        val parsed = java.net.URI(url)
+        val host = if (provider == "telegram") "oauth.telegram.org" else "id.vk.ru"
+        if (parsed.scheme != "https" || parsed.host != host || parsed.userInfo != null ||
+            parsed.port != -1 || parsed.fragment != null) throw ApiFailure(200, "invalid_response")
+        mutable.value = mutable.value.copy(socialFlow = SocialFlow(result.getString("flow_id"), provider,
+            url, android.os.SystemClock.elapsedRealtime() + result.getLong("expires_in_seconds") * 1000),
+            challengeId = null, challengePurpose = null)
+    }
+
+    fun socialOpened() {
+        mutable.value = mutable.value.copy(socialFlow = mutable.value.socialFlow?.copy(launchPending = false))
+    }
+
+    fun completeSocial(accepted: Boolean = false) {
+        val flow = mutable.value.socialFlow ?: return
+        if (android.os.SystemClock.elapsedRealtime() >= flow.expiresAt) {
+            mutable.value = mutable.value.copy(error = "Время входа истекло. Начните вход заново.")
+            return
+        }
+        if (flow.registrationRequired && !accepted) return
+        val legal = mutable.value.authConfig?.optJSONObject("legal_versions") ?: return
+        request({ client ->
+            val body = JSONObject().put("flow_id", flow.id)
+            if (accepted) body.put("consent", JSONObject().put("accept_privacy", true)
+                .put("accept_personal_data", true).put("accept_terms", true)
+                .put("confirm_age_18", true).put("legal_versions", legal))
+            val result = client.request("/api/auth/social/complete", "POST", body)
+            if (result.has("public_id")) client.acceptLogin(result)
+            result
+        }) { result ->
+            when (result.optString("status")) {
+                "pending" -> mutable.value = mutable.value.copy(notice = "Ожидаем подтверждение. Завершите вход у провайдера и вернитесь в приложение.")
+                "registration_required" -> mutable.value = mutable.value.copy(socialFlow = flow.copy(registrationRequired = true))
+                else -> mutable.value = mutable.value.copy(authenticated = true,
+                    publicId = result.getString("public_id"), socialFlow = null,
+                    workspace = null, identities = null, sessions = emptyList(), notice = "Вход подтверждён.")
+            }
+        }
+    }
+
+    fun cancelSocial() {
+        val flow = mutable.value.socialFlow ?: return
+        request({ it.request("/api/auth/social/cancel", "POST", JSONObject().put("flow_id", flow.id)) }) {
+            mutable.value = mutable.value.copy(socialFlow = null)
+        }
+    }
+
+    fun loadAccess() = request({ client ->
+        client.request("/api/auth/identities") to client.request("/api/me/sessions")
+    }) { (identities, sessions) ->
+        mutable.value = mutable.value.copy(identities = identities,
+            sessions = sessions.getJSONArray("sessions").objects())
+    }
+
+    fun revokeOtherSessions() = request({ client ->
+        client.request("/api/me/sessions/revoke-others", "POST", JSONObject())
+        client.request("/api/me/sessions")
+    }) { mutable.value = mutable.value.copy(sessions = it.getJSONArray("sessions").objects(),
+        notice = "Другие сессии завершены.") }
+
     fun refresh() {
-        if (!mutable.value.authenticated) return
+        if (!mutable.value.authenticated || mutable.value.socialFlow != null) return
         request({ client ->
             val legal = client.request("/api/auth/legal")
             legal to if (legal.getBoolean("accepted")) client.workspace() else null

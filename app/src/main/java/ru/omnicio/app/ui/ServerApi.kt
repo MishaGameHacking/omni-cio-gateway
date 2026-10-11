@@ -147,6 +147,16 @@ internal fun parseEvents(root: JSONObject): List<ServerEvent> = root.getJSONArra
 internal fun apiError(error: Exception): String = when {
     error is ApiFailure && error.code == "server_update_required" ->
         "Сервер ещё не поддерживает эту версию приложения. Требуется обновление OMNICIO на сервере."
+    error is ApiFailure && error.code == "recent_login_required" ->
+        "Для привязки способа входа выйдите и войдите заново, затем повторите действие."
+    error is ApiFailure && error.code in setOf("identity_already_linked", "provider_already_linked") ->
+        "Этот способ входа уже привязан к аккаунту. Аккаунты автоматически не объединяются."
+    error is ApiFailure && error.code in setOf("social_flow_expired", "social_flow_failed", "social_proof_invalid") ->
+        "Вход не подтверждён или срок ожидания истёк. Начните вход заново."
+    error is ApiFailure && error.code == "social_provider_not_configured" ->
+        "Этот способ входа ещё не подключён на сервере. Выберите другой доступный способ."
+    error is ApiFailure && error.code == "social_session_changed" ->
+        "Сессия изменилась. Начните привязку заново из своего профиля."
     error is ApiFailure && error.code == "email_or_password_invalid" -> "Проверьте почту и пароль."
     error is ApiFailure && error.code == "email_code_invalid_or_expired" -> "Код неверный или истёк. Запросите новый."
     error is ApiFailure && error.code == "updated_legal_consent_required" ->

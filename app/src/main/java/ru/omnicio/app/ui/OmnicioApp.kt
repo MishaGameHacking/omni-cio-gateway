@@ -65,14 +65,19 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
     BackHandler(enabled = state.authenticated && page != "Обзор") { page = "Обзор" }
     val destinations = listOf("Обзор" to R.drawable.ic_overview,
         "Портфель" to R.drawable.ic_portfolio, "Помощник" to R.drawable.ic_assistant)
-    LaunchedEffect(state.authenticated) { if (state.authenticated) model.refresh() else page = "Обзор" }
+    LaunchedEffect(state.authenticated, state.socialFlow == null, state.challengePurpose) {
+        if (state.authenticated && state.socialFlow == null && state.challengePurpose == null) model.refresh()
+        else if (!state.authenticated) page = "Обзор"
+    }
     LaunchedEffect(lifecycle, state.authenticated) {
         if (state.authenticated) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (isActive) { model.refresh(); delay(60_000) }
+            while (isActive) { if (state.socialFlow == null) model.refresh(); delay(60_000) }
         }
     }
     OmnicioTheme(darkTheme = state.darkTheme) {
-        if (!state.authenticated) {
+        if (state.socialFlow != null) {
+            SocialFlowScreen(state, model)
+        } else if (!state.authenticated || state.challengePurpose == "enroll") {
             AuthScreen(state, model)
         } else if (state.legalConsent != null) {
             LegalConsentScreen(state, model)
@@ -139,7 +144,7 @@ private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel, co
 }
 
 @Composable
-private fun StatusMessages(state: AppUiState) {
+internal fun StatusMessages(state: AppUiState) {
     if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     state.error?.let {
         Surface(color = MaterialTheme.colorScheme.errorContainer) {
@@ -150,7 +155,7 @@ private fun StatusMessages(state: AppUiState) {
 }
 
 @Stable
-private class AuthFormState {
+internal class AuthFormState {
     var mode by mutableStateOf("login")
     var email by mutableStateOf("")
     var password by mutableStateOf("")
@@ -199,7 +204,14 @@ private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 StatusMessages(state)
                 if (state.challengeId != null) VerifyForm(state, model, form)
-                else SignInForm(state, model, form)
+                else {
+                    if (form.mode == "login") {
+                        SocialButtons(state, model)
+                        HorizontalDivider()
+                        Text("Или войдите по почте", style = MaterialTheme.typography.titleMedium)
+                    }
+                    SignInForm(state, model, form)
+                }
                 HorizontalDivider()
                 Text("Финансовые данные не сохраняются на телефоне. После закрытия процесса приложения потребуется новый вход.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -232,7 +244,7 @@ private fun VerifyForm(state: AppUiState, model: OmnicioViewModel, form: AuthFor
         Text(if (now >= state.resendAt) "Отправить код повторно"
             else "Повторная отправка через ${(state.resendAt - now + 999) / 1000} с")
     }
-    TextButton(onClick = model::cancelChallenge, enabled = !state.busy) { Text("Вернуться ко входу") }
+    TextButton(onClick = model::cancelChallenge, enabled = !state.busy) { Text(if (state.authenticated) "Вернуться в профиль" else "Вернуться ко входу") }
 }
 
 @Composable
@@ -259,7 +271,7 @@ private fun SignInForm(state: AppUiState, model: OmnicioViewModel, form: AuthFor
 }
 
 @Composable
-private fun RegistrationConsent(form: AuthFormState) {
+internal fun RegistrationConsent(form: AuthFormState) {
     CheckLine("Мне исполнилось 18 лет", form.adult) { form.adult = it }
     CheckLine("Принимаю условия использования", form.terms) { form.terms = it }
     CheckLine("Ознакомлен с политикой конфиденциальности", form.privacy) { form.privacy = it }

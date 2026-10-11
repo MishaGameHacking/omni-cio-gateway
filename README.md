@@ -135,3 +135,34 @@ OMNICIO_PYTHON=.venv/bin/python node tests/frontend-smoke.cjs
 - [Банк России: стандарт инвестиционных советников](https://www.cbr.ru/StaticHtml/File/17579/standart_17112023.pdf), [допуск к консультированию](https://www.cbr.ru/admissionfinmarket/navigator/purcb/), [псевдоинвестиционное консультирование](https://www.cbr.ru/protection_rights/behavioral_surveillance/ko_case_14/).
 - [ФНС: НПД](https://npd.nalog.ru/), [вопросы и ответы](https://npd.nalog.ru/faq/?from=index).
 
+
+### Telegram, VK ID и почта в Android 2.7
+
+Серверная интеграция использует `TELEGRAM_CLIENT_ID` (GitHub Variable),
+`TELEGRAM_CLIENT_SECRET` (GitHub Secret) и существующий `VKID_APP_ID` (Variable).
+Client ID и Secret Telegram берутся в BotFather → бот OMNICIO → Login Widget;
+для Telegram оставить алгоритм подписи RS256. Бот не получает доступ к перепискам,
+не отправляет сообщения и не запрашивает номер телефона.
+
+В разрешённых URL провайдеров зарегистрировать точные HTTPS-адреса:
+
+- Telegram: `https://omnicio.ru/api/auth/social/telegram/callback`
+- VK ID: `https://omnicio.ru/api/auth/social/vkid/callback`
+
+Android открывает браузер провайдера. После подтверждения ссылка возвращает в
+`ru.omnicio.app://auth` или `ru.omnicio.app.debug://auth` без кода/сессии в URL.
+Самостоятельный запуск deep link не авторизует пользователя. Приложение завершает
+одноразовый поток через свой cookie, существующий только в памяти.
+
+Для почты нужны `AUTH_SMTP_HOST`, `AUTH_SMTP_PORT`, `AUTH_SMTP_SENDER`, `AUTH_SMTP_MODE`
+в Variables и `AUTH_SMTP_USERNAME`, `AUTH_SMTP_PASSWORD` в Secrets. Подтверждение
+и восстановление не работают без реальной доставки. Для существующих пользователей
+VK сохраняются идентификатор профиля и портфель. Другие способы подключаются из
+«Настройки → Способы входа» после недавнего входа. Автоматического слияния нет.
+
+Проверять на устройстве: первый и повторный вход каждым способом, отказ провайдера,
+возврат после поворота/сворачивания, истечение 10 минут, привязка из своего профиля,
+конфликт чужой привязки, восстановление почтового пароля и отзыв других сессий.
+Ключи и production-учётные данные в APK не входят. Публичный выпуск требует
+конфигурации провайдеров, проверенного восстановления существующей БД и живого
+прохождения этих сценариев; успешный CI сам по себе этого не подтверждает.

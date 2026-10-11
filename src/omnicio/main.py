@@ -18,7 +18,7 @@ from uuid import UUID, uuid4, uuid5
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Receive, Scope, Send
 
@@ -87,6 +87,7 @@ from .service import (
     LoginSucceeded,
     LoginUnavailable,
 )
+from .social_auth import SocialAuthError
 from .strategy import strategy_catalog, validate_selection
 from .strategy_service import current_account_assessment, replay_research_inputs, strategy_research
 from .support import public_support_contact
@@ -95,6 +96,8 @@ from .workspace_store import WorkspaceNotFound, WorkspaceStore
 
 SESSION_COOKIE = "omnicio_session"
 EMAIL_FLOW_COOKIE = "omnicio_email_flow"
+SOCIAL_FLOW_COOKIE = "omnicio_social_flow"
+_SOCIAL_AUTH_COOKIE_PATH = "/api/auth/social"
 _EMAIL_AUTH_COOKIE_PATH = "/api/auth/email"
 _AUTHENTICATION_REQUIRED_DETAIL = "authentication required"
 CANONICAL_ORIGIN = "https://omnicio.ru"
@@ -128,6 +131,15 @@ class StrictRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SocialStartBody(StrictRequestBody):
+    purpose: Literal["login", "link"] = "login"
+    android_package: Literal["ru.omnicio.app", "ru.omnicio.app.debug"]
+
+
+class SocialFlowBody(StrictRequestBody):
+    flow_id: UUID
+
+
 class EmailLoginBody(StrictRequestBody):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH, repr=False)
@@ -139,6 +151,10 @@ class LegalConsentBody(StrictRequestBody):
     accept_terms: bool = Field(strict=True)
     confirm_age_18: bool = Field(strict=True)
     legal_versions: dict[str, str]
+
+
+class SocialCompleteBody(SocialFlowBody):
+    consent: LegalConsentBody | None = None
 
 
 class EmailRegistrationBody(EmailLoginBody, LegalConsentBody):
@@ -569,7 +585,9 @@ def auth_config(request: Request) -> dict[str, object]:
     cfg = settings(request)
     return {
         "release": {"version": __version__, "build": cfg.release_build},
-        "mode": cfg.access_mode, "auth_provider": "email", "auth_providers": ["email"],
+        "mode": cfg.access_mode, "auth_provider": "email",
+        "auth_providers": ["email", "telegram", "vkid"],
+        "social_providers": cfg.social_providers,
         "registration_enabled": True, "login_enabled": cfg.login_ready,
         "email_enabled": cfg.auth_email_ready,
         "registration_available": service(request).registration_available,
@@ -590,6 +608,11 @@ def public_support(request: Request) -> dict[str, object]:
 def _auth_action[AuthResult](action: Callable[[], AuthResult]) -> AuthResult:
     try:
         return action()
+    except SocialAuthError as exc:
+        code = str(exc)
+        status = (429 if code == "social_rate_limited" else
+                  503 if code == "social_provider_not_configured" else 400)
+        raise HTTPException(status_code=status, detail=code) from exc
     except AuthRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc),
                             headers={"Retry-After": "60"}) from exc
@@ -622,10 +645,14 @@ def _login_response(result: LoginSucceeded, response: Response) -> dict[str, obj
     )
     response.delete_cookie(EMAIL_FLOW_COOKIE, path=_EMAIL_AUTH_COOKIE_PATH, secure=True,
                            httponly=True, samesite="strict")
+    response.delete_cookie(SOCIAL_FLOW_COOKIE, path=_SOCIAL_AUTH_COOKIE_PATH, secure=True,
+                           httponly=True, samesite="strict")
     return {"public_id": result.public_id, "created": result.created}
 
 
 def _registration_legal(body: LegalConsentBody, request: Request) -> dict[str, str]:
+    if not all(service(request).legal_versions().values()):
+        raise HTTPException(status_code=503, detail="legal_versions_unavailable")
     if not (body.accept_privacy and body.accept_personal_data and body.accept_terms):
         raise HTTPException(status_code=400, detail="legal_acknowledgments_required")
     if not body.confirm_age_18:
@@ -662,6 +689,89 @@ def accept_legal(
         user.id, session_digest(session_token or ""), versions,
         client_ip_hash=client_ip_digest(client_ip(request), settings(request).ip_key),
     ))
+
+
+@app.post("/api/auth/social/{provider}/start", responses=_API_FAILURES)
+def start_social(
+    provider: Literal["telegram", "vkid"], body: SocialStartBody,
+    request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token) if body.purpose == "link" else None
+    if body.purpose == "login" and session_token:
+        raise HTTPException(status_code=409, detail="use_identity_link")
+    result = _auth_action(lambda: service(request).social.start(
+        provider, purpose=body.purpose, android_package=body.android_package,
+        client_ip=client_ip(request), user=user, current_session=session_token,
+    ))
+    response.set_cookie(
+        SOCIAL_FLOW_COOKIE, result.pop("flow_token"), max_age=result["expires_in_seconds"],
+        httponly=True, secure=True, samesite="strict", path=_SOCIAL_AUTH_COOKIE_PATH,
+    )
+    return result
+
+
+@app.get("/api/auth/social/{provider}/callback", response_class=HTMLResponse)
+def social_callback(provider: Literal["telegram", "vkid"], request: Request) -> HTMLResponse:
+    query = request.query_params
+    keys = ("state", "code", "device_id", "error")
+    if any(len(query.getlist(key)) > 1 for key in keys):
+        raise HTTPException(status_code=400, detail="social_proof_invalid")
+    package, verified = _auth_action(lambda: service(request).social.callback(
+        provider, state=query.get("state", ""), code=query.get("code", ""),
+        device_id=query.get("device_id", ""), denied="error" in query,
+    ))
+    # The deep link only wakes the app. It carries no code, token, user or flow ID.
+    title = "Подтверждение получено" if verified else "Вход не завершён"
+    return HTMLResponse(
+        '<!doctype html><html lang="ru"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>OMNICIO — вход</title><body><main><h1>' + title + '</h1>'
+        '<p>Вернитесь в приложение OMNICIO, чтобы продолжить.</p>'
+        '<p><a href="' + package + '://auth">Открыть OMNICIO</a></p>'
+        '<p>Если приложение не открылось, переключитесь в него вручную.</p>'
+        '</main></body></html>',
+        headers={"Cache-Control": _PRIVATE_NO_STORE, "Referrer-Policy": "no-referrer",
+                 "Content-Security-Policy": ("default-src 'none'; frame-ancestors 'none'; "
+                                             "base-uri 'none'"),
+                 "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/api/auth/social/complete", responses=_API_FAILURES)
+def complete_social(
+    body: SocialCompleteBody, request: Request, response: Response,
+    flow_token: str | None = Cookie(default=None, alias=SOCIAL_FLOW_COOKIE),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    if session_token:
+        authenticated_user(request, session_token)
+    versions = _registration_legal(body.consent, request) if body.consent else {}
+    result = _auth_action(lambda: service(request).social.complete(
+        body.flow_id, flow_token or "", client_ip=client_ip(request),
+        legal_versions=versions, current_session=session_token,
+    ))
+    if isinstance(result, str):
+        return {"status": result}
+    user, created, token = result
+    return _login_response(LoginSucceeded(
+        token, format_public_id(user.public_id), created, settings(request).session_ttl_seconds,
+    ), response)
+
+
+@app.post("/api/auth/social/cancel", responses=_API_FAILURES)
+def cancel_social(
+    body: SocialFlowBody, request: Request, response: Response,
+    flow_token: str | None = Cookie(default=None, alias=SOCIAL_FLOW_COOKIE),
+) -> dict[str, str]:
+    require_same_origin(request)
+    if flow_token and len(flow_token) <= 256:
+        service(request).social.store.cancel(body.flow_id, session_digest(flow_token))
+    response.delete_cookie(SOCIAL_FLOW_COOKIE, path=_SOCIAL_AUTH_COOKIE_PATH, secure=True,
+                           httponly=True, samesite="strict")
+    return {"status": "cancelled"}
 
 
 @app.post("/api/auth/email/register", status_code=202, responses=_API_FAILURES)
@@ -813,9 +923,10 @@ def auth_identities(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
-    database: Database = request.app.state.database
     return _session_action(request, session_token, user, lambda: {
-        **database.email_identity_status(user.id), "available_providers": {"email": True},
+        **service(request).social.store.identities(user.id),
+        "available_providers": {"email": settings(request).auth_email_ready,
+                                **settings(request).social_providers},
     }, write=False)
 
 

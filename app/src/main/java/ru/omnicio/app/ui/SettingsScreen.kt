@@ -22,6 +22,7 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
     var goalForm by remember { mutableStateOf(false) }
     val connected = state.workspace?.connection?.connected == true
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { AccessSettings(state, model) }
         item {
             OmniCard {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

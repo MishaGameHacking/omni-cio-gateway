@@ -199,7 +199,9 @@ class Database:
             if purpose == "enroll":
                 if user_id is None or enrollment_session_digest is None:
                     raise PermissionError("enrollment_session_required")
-                self._active_session(cur, user_id, enrollment_session_digest)
+                current = self._active_session(cur, user_id, enrollment_session_digest)
+                if not current["recently_authenticated"]:
+                    raise ValueError("recent_login_required")
                 cur.execute("SELECT 1 FROM email_identities WHERE user_id = %s", (user_id,))
                 if cur.fetchone() is not None:
                     raise ValueError("email_already_enrolled")
@@ -268,15 +270,17 @@ class Database:
             return int(cast(dict[str, Any], row)["ttl"]) if row is not None else None
 
     @staticmethod
-    def _insert_email_session(
+    def _insert_session(
         cur: Any, user_id: UUID, *, token_digest: bytes, client_ip_hash: bytes,
-        session_ttl_seconds: int,
+        session_ttl_seconds: int, provider: str = "email",
     ) -> None:
+        if provider not in {"email", "telegram", "vkid"}:
+            raise ValueError("auth_provider_invalid")
         cur.execute(
             "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at, "
             "authenticated_provider, authenticated_at) "
-            "VALUES (%s, %s, %s, now() + make_interval(secs => %s), 'email', now())",
-            (user_id, token_digest, client_ip_hash, session_ttl_seconds),
+            "VALUES (%s, %s, %s, now() + make_interval(secs => %s), %s, now())",
+            (user_id, token_digest, client_ip_hash, session_ttl_seconds, provider),
         )
 
     def complete_email_login(
@@ -298,7 +302,7 @@ class Database:
             if row is None:
                 return None
             user = _user(cast(dict[str, Any], row))
-            self._insert_email_session(cur, user.id, token_digest=token_digest,
+            self._insert_session(cur, user.id, token_digest=token_digest,
                                        client_ip_hash=client_ip_hash,
                                        session_ttl_seconds=session_ttl_seconds)
             cur.execute(
@@ -373,7 +377,7 @@ class Database:
                         "(user_id, document_type, document_version) DO NOTHING",
                         (user.id, document_type, version, client_ip_hash),
                     )
-                self._insert_email_session(cur, user.id, token_digest=token_digest,
+                self._insert_session(cur, user.id, token_digest=token_digest,
                                            client_ip_hash=client_ip_hash,
                                            session_ttl_seconds=session_ttl_seconds)
             cur.execute(
@@ -526,7 +530,8 @@ class Database:
                 WHERE s.user_id = u.id
                   AND (EXISTS (SELECT 1 FROM email_identities AS e WHERE e.user_id = u.id)
                        OR EXISTS (SELECT 1 FROM vkid_identities AS v WHERE v.user_id = u.id)
-                       OR EXISTS (SELECT 1 FROM tid_identities AS t WHERE t.user_id = u.id))
+                       OR EXISTS (SELECT 1 FROM tid_identities AS t WHERE t.user_id = u.id)
+                       OR EXISTS (SELECT 1 FROM telegram_identities AS t WHERE t.user_id = u.id))
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
@@ -887,6 +892,15 @@ class Database:
                 # NULL. They must not retain the deleted login or its verifier.
                 cur.execute("DELETE FROM email_auth_challenges WHERE email = %s",
                             (identity["email"],))
+
+            cur.execute(
+                "DELETE FROM social_auth_flows WHERE user_id = %s "
+                "OR (provider = 'vkid' AND subject IN "
+                "(SELECT vk_user_id FROM vkid_identities WHERE user_id = %s)) "
+                "OR (provider = 'telegram' AND subject IN "
+                "(SELECT telegram_subject FROM telegram_identities WHERE user_id = %s))",
+                (user.id, user.id, user.id),
+            )
 
             cur.execute(
                 _SET_USER_CONTEXT_SQL,
