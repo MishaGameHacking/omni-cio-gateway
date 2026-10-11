@@ -145,6 +145,10 @@ internal fun parseEvents(root: JSONObject): List<ServerEvent> = root.getJSONArra
 }
 
 internal fun apiError(error: Exception): String = when {
+    error is ApiFailure && error.code in setOf("assistant_not_configured", "assistant_activation_disabled") ->
+        "ИИ ещё не подключён на сервере. Настройки модели выполняет OMNICIO; ключ пользователю не нужен."
+    error is ApiFailure && error.code.startsWith("assistant_") ->
+        "Ответ помощника не получен. Нажмите «Проверить ответ»: приложение проверит сохранённый результат без повторной отправки вопроса."
     error is ApiFailure && error.code == "server_update_required" ->
         "Сервер ещё не поддерживает эту версию приложения. Требуется обновление OMNICIO на сервере."
     error is ApiFailure && error.code == "recent_login_required" ->

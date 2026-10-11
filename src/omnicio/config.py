@@ -95,6 +95,7 @@ class Settings:
     assistant_base_url: str = ""
     assistant_api_key: str = ""
     assistant_model: str = ""
+    assistant_provider: str = "ollama"
     notifications_enabled: bool = False
     notification_email_enabled: bool = False
     notification_crypto_key: str = ""
@@ -145,6 +146,9 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    assistant_provider = os.environ.get("ASSISTANT_PROVIDER", "ollama").strip()
+    if assistant_provider not in {"ollama", "openai_compatible"}:
+        raise ConfigurationError("ASSISTANT_PROVIDER must be ollama or openai_compatible")
     email_enabled = boolean("NOTIFICATION_EMAIL_ENABLED", False)
     auth_host = os.environ.get("AUTH_SMTP_HOST", "").strip()
     auth_mode = os.environ.get("AUTH_SMTP_MODE", "tls").strip() if auth_host else "tls"
@@ -184,6 +188,7 @@ def load_settings() -> Settings:
                             if boolean("ASSISTANT_ENABLED", False) else ""),
         assistant_api_key=os.environ.get("ASSISTANT_API_KEY", ""),
         assistant_model=os.environ.get("ASSISTANT_MODEL", "").strip(),
+        assistant_provider=assistant_provider,
         notifications_enabled=boolean("NOTIFICATIONS_ENABLED", False),
         notification_email_enabled=email_enabled,
         notification_crypto_key=os.environ.get("NOTIFICATION_CRYPTO_KEY", "").strip(),

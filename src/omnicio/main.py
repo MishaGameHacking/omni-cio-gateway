@@ -413,6 +413,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         default_client=AssistantClient(
             base_url=cfg.assistant_base_url, model=cfg.assistant_model,
             api_key=cfg.assistant_api_key,
+            provider=cfg.assistant_provider,
         ),
     )
     app.state.news_client = NewsClient()

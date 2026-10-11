@@ -31,6 +31,7 @@ internal data class AppUiState(
     val socialFlow: SocialFlow? = null,
     val identities: JSONObject? = null,
     val sessions: List<JSONObject> = emptyList(),
+    val assistant: AssistantUiState = AssistantUiState(),
 )
 
 internal data class SocialFlow(
@@ -94,6 +95,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             mutable.value = mutable.value.copy(authenticated = false, publicId = null)
         }
         mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
+            assistant = if (expired) AssistantUiState() else mutable.value.assistant.withoutServerData(),
             legalConsent = if (expired) null else mutable.value.legalConsent,
             socialFlow = if (expired) null else mutable.value.socialFlow,
             identities = if (expired) null else mutable.value.identities,
@@ -234,19 +236,70 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             .put("environment", "prod").put("account_id", account).put("accept_personal_terms", true))
         client.workspace()
     }) {
-        mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(),
+        mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState(),
             notice = "Счёт подключён. Сервер получает первый снимок; используйте «Обновить у брокера».")
     }
 
     fun disconnectBroker() = request({ client ->
         client.request("/api/broker/tbank", "DELETE")
         client.workspace()
-    }) { mutable.value = mutable.value.copy(workspace = it, accounts = emptyList()) }
+    }) { mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState()) }
 
     fun markRead(id: String) = request({ client ->
         client.request("/api/events/read", "POST", JSONObject().put("ids", JSONArray().put(id)).put("read", true))
         client.workspace()
     }) { mutable.value = mutable.value.copy(workspace = it) }
+
+    fun loadAssistant(id: String? = null) {
+        val previous = mutable.value.assistant
+        request({ it.loadAssistant(previous, id) }) {
+            mutable.value = mutable.value.copy(assistant = it)
+        }
+    }
+
+    fun newConversation() = request({ client ->
+        val created = client.request("/api/assistant/conversations", "POST",
+            JSONObject().put("title", "Мой портфель"))
+        client.loadAssistant(mutable.value.assistant, created.getString("id"))
+    }) { mutable.value = mutable.value.copy(assistant = it.copy(draft = "")) }
+
+    fun setAssistantDraft(value: String) {
+        if (value.length <= 4000) mutable.value = mutable.value.copy(
+            assistant = mutable.value.assistant.copy(draft = value))
+    }
+
+    fun acceptAssistantContext(value: Boolean) {
+        mutable.value = mutable.value.copy(assistant = mutable.value.assistant.copy(contextAccepted = value))
+    }
+
+    fun sendAssistantMessage() {
+        val chat = mutable.value.assistant
+        if (mutable.value.busy || mutable.value.amountsHidden || !chat.canSend) return
+        val conversation = chat.conversation ?: return
+        val requestId = java.util.UUID.randomUUID().toString()
+        mutable.value = mutable.value.copy(assistant = chat.copy(pendingRequest = requestId))
+        request({ client ->
+            client.request("/api/assistant/messages", "POST", JSONObject()
+                .put("conversation_id", conversation.id).put("request_id", requestId)
+                .put("expected_version", conversation.version).put("message", chat.draft.trim())
+                .put("context", "investment").put("include_news", true))
+            client.loadAssistant(chat.copy(draft = ""), conversation.id)
+        }) { mutable.value = mutable.value.copy(assistant = it) }
+    }
+
+    fun loadOlderMessages() {
+        val chat = mutable.value.assistant
+        val conversation = chat.conversation ?: return
+        val before = conversation.nextBefore ?: return
+        request({ client ->
+            val older = parseConversation(client.request("/api/assistant/conversations/${conversation.id}?before=$before"))
+            if (older.version != conversation.version) throw ApiFailure(409, "assistant_context_changed")
+            older
+        }) { older ->
+            mutable.value = mutable.value.copy(assistant = chat.copy(conversation = older.copy(
+                messages = (older.messages + conversation.messages).distinctBy { it.position }.sortedBy { it.position })))
+        }
+    }
 
     fun loadMoreEvents() {
         val workspace = mutable.value.workspace ?: return

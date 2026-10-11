@@ -142,7 +142,14 @@ private fun AppToolbar(page: String, busy: Boolean, refresh: () -> Unit, navigat
 private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel, connect: () -> Unit) {
     when (page) {
         "Портфель" -> PortfolioScreen(state)
-        "Помощник" -> AssistantScreen(state, model::markRead, model::loadMoreEvents)
+        "Помощник" -> {
+            LaunchedEffect(Unit) { model.loadAssistant() }
+            AssistantScreen(state, model::markRead, model::loadMoreEvents, AssistantActions(
+                reload = { model.loadAssistant() }, create = model::newConversation,
+                select = { model.loadAssistant(it) }, edit = model::setAssistantDraft,
+                accept = model::acceptAssistantContext, send = model::sendAssistantMessage,
+                older = model::loadOlderMessages))
+        }
         SETTINGS -> SettingsScreen(state, model)
         else -> OverviewScreen(state, model::toggleAmountsHidden, model::syncPortfolio, onConnect = connect)
     }
