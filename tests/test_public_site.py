@@ -38,6 +38,7 @@ def test_remote_publication_readback_and_rollback_without_api_mutation(tmp_path,
     payload = json.loads(MODULE["public_payload"](root, sha))
     program = MODULE["REMOTE_PUBLISH"].replace("/var/www/omnicio.ru/releases", str(base))
     program = program.replace("/etc/nginx/sites-available/omnicio.ru", str(site))
+    compiled_program = compile(program, "remote-publication", "exec")
     commands = []
 
     def command(args, **kwargs):
@@ -66,9 +67,9 @@ def test_remote_publication_readback_and_rollback_without_api_mutation(tmp_path,
           contextlib.redirect_stdout(io.StringIO()) as output):
         if fail_readback:
             with pytest.raises(ValueError, match="public_asset_mismatch"):
-                exec(compile(program, "remote-publication", "exec"), {})
+                exec(compiled_program, {})
         else:
-            exec(compile(program, "remote-publication", "exec"), {})
+            exec(compiled_program, {})
             assert json.loads(output.getvalue())["api_unchanged"] is True
     assert site.read_text() == (original if fail_readback else original.replace(
         str(previous), str(base / (sha + "-public")),

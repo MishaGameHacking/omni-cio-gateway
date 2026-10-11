@@ -41,7 +41,7 @@
         return;
       }
       if (release.status !== "published" || release.package !== "ru.omnicio.app" ||
-          !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(release.version) ||
+          !/^\d+\.\d+\.\d+$/.test(release.version) ||
           !Number.isSafeInteger(release.version_code) || release.version_code < 1 ||
           !/^[a-f0-9]{64}$/.test(release.sha256) ||
           !/^[a-f0-9]{64}$/.test(release.certificate_sha256) ||
@@ -62,7 +62,7 @@
     }
   }
   check.addEventListener("click", checkRelease);
-  checkRelease();
+  void checkRelease();
   // Retire the old PWA and its cached workspace on existing installations.
   // This worker deletes only OMNICIO-owned caches, then unregisters itself.
   if ("serviceWorker" in navigator) {

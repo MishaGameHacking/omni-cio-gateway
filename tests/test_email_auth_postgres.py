@@ -630,7 +630,8 @@ def test_legal_renewal_is_idempotent_and_bound_to_live_owner_session(workspace_d
                            (owner.id, "new-current")).fetchone()
         assert row["n"] == 3
     database.revoke_session(token)
+    revoked_versions = dict.fromkeys(VERSIONS, "revoked")
     with pytest.raises(PermissionError):
-        database.accept_legal_versions(owner.id, token, dict.fromkeys(VERSIONS, "revoked"),
+        database.accept_legal_versions(owner.id, token, revoked_versions,
                                        client_ip_hash=b"i" * 32)
     assert not database.has_legal_versions(owner.id, dict.fromkeys(VERSIONS, "revoked"))

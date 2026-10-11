@@ -60,7 +60,11 @@ async function run(base) {
       await send("Page.navigate",{url:base+"/?width="+width});
       await wait('document.readyState==="complete" && document.querySelector("#download-status")?.textContent.includes("Публичный выпуск")');
       assert.equal(await evaluate('document.querySelectorAll("form,input,textarea").length'),0,"No web account or personal data collection");
-      assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,"No horizontal overflow at "+width);
+      const layout=await evaluate('({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll("body *")].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.right>innerWidth+1||r.left<0);}).map(el=>({tag:el.tagName,classes:el.className,id:el.id,rect:el.getBoundingClientRect().toJSON()}))})');
+      if(layout.scrollWidth>width){writeFileSync(join(artifacts,"failure-state.json"),JSON.stringify(layout,null,2));console.error(JSON.stringify(layout));}
+      const screen=await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:true});
+      writeFileSync(join(artifacts,`public-${width}.png`),Buffer.from(screen.data,"base64"));
+      assert.equal(layout.scrollWidth<=width,true,"No horizontal overflow at "+width);
       assert.deepEqual(await evaluate('window.__errors'),[]);
       await click('#tab-portfolio');assert.equal(await evaluate('document.querySelector("#panel-portfolio").hidden'),false);
       await evaluate('document.querySelector("#tab-portfolio").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}))');
@@ -70,8 +74,6 @@ async function run(base) {
       await click('details summary');assert.equal(await evaluate('document.querySelector("details").open'),true);
       await click('details summary');
       assert.equal(await evaluate('document.querySelector("#apk-download").hasAttribute("href")'),false);
-      const screen=await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:true});
-      writeFileSync(join(artifacts,`public-${width}.png`),Buffer.from(screen.data,"base64"));
       console.log("PASS public layout, tabs, keyboard, FAQ, unavailable release "+width+"px");
     }
     // Release errors must never retain a previously enabled download URL.
@@ -85,7 +87,7 @@ async function run(base) {
     }
     unavailable=true;await click('#check-release');await wait('document.querySelector("#download-status").textContent.includes("Не удалось")');
     unavailable=false;release={status:"unpublished"};await click('#check-release');await wait('document.querySelector("#download-status").textContent.includes("Публичный выпуск")');
-    await evaluate('caches.open("omnicio-public-obsolete");caches.open("unrelated-test-cache")');
+    await evaluate('Promise.all([caches.open("omnicio-public-obsolete"),caches.open("unrelated-test-cache")])');
     await evaluate('navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"})');
     await until(()=>evaluate('(async()=>!(await caches.keys()).some(k=>k.startsWith("omnicio-")))()'),"Retire old cache");
     assert.equal(await evaluate('(async()=>(await caches.keys()).includes("unrelated-test-cache"))()'),true);
