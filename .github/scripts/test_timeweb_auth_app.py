@@ -167,6 +167,25 @@ class ProductPreflightTests(unittest.TestCase):
         })
         self.assertNotIn("fixture", json.dumps(result))
 
+    def test_missing_social_provider_has_valid_diagnostics_without_sending(self) -> None:
+        from inplace_upgrade import _valid_configuration_observation
+
+        for key in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET", "VKID_APP_ID"):
+            with self.subTest(key=key):
+                candidate = self._candidate({})
+                diagnostics: dict[str, object] = {}
+                with (
+                    patch("omnicio.notifications.NotificationTransport.send_email") as send,
+                    self.assertRaisesRegex(
+                        candidate.UpgradeBlocked, "^social_auth_configuration_required$",
+                    ),
+                ):
+                    self._run(candidate, self.auth_product + f'{key}=""\n',
+                              diagnostics=diagnostics)
+                self.assertTrue(_valid_configuration_observation(diagnostics))
+                self.assertEqual(diagnostics["stage"], "social_readiness")
+                send.assert_not_called()
+
     def test_diagnostics_distinguish_missing_effective_smtp_fields_without_sending(self) -> None:
         for host_present, sender_present in ((False, False), (True, False), (False, True),
                                              (True, True)):

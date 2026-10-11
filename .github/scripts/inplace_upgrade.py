@@ -41,7 +41,7 @@ RECOVERY_FILES = {
 CONFIGURATION_STAGES = (
     "not_started", "candidate_validation", "runtime_environment", "product_environment",
     "environment_merge", "settings_validation", "auth_email_validation", "push_validation",
-    "email_readiness", "validated",
+    "email_readiness", "social_readiness", "validated",
 )
 CONFIGURATION_CUSTODY_FIELDS = ("existing_receipt_key_present", "existing_archive_key_present")
 CONFIGURATION_SETTINGS_FIELDS = (
