@@ -195,53 +195,50 @@ private fun PortfolioPositionRow(
             modifier = Modifier.padding(OmniSpacing.md),
             verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
         ) {
-            val value = formatMoney(
-                position.currentValueMinor,
-                position.currency,
-                hidden = false,
-            )
-            if (shouldStackDetailLine(LocalDensity.current.fontScale)) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-                ) {
-                    PositionIdentity(position)
-                    Text(
-                        text = value,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    PositionIdentity(
-                        position = position,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = value,
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.End,
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                PositionIdentity(
+                    position = position,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = formatMoney(
+                        position.currentValueMinor,
+                        position.currency,
+                        hidden = false,
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                )
             }
-            Text(
-                text = formatQuantity(position.quantity) +
-                    " · доступно " + formatQuantity(position.availableQuantity) +
-                    " · заблокировано " + formatQuantity(position.blockedQuantity),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = formatShare(position.shareBasisPoints),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = formatQuantity(position.quantity) +
+                        " · доступно " + formatQuantity(position.availableQuantity),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = formatShare(position.shareBasisPoints),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = position.priceStatus.label + " · " + position.riskStatus.label,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (position.priceStatus == PriceStatus.CURRENT) {
+                    MaterialTheme.colorScheme.tertiary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
     }
