@@ -352,7 +352,7 @@ RuStore/QA:
 - приложение usable без OMNICIO server account;
 - fixture path полностью тестирует UX без доступа к production;
 - серверные регулируемые gates нельзя открыть UI-флагом;
-- готов контракт всех данных для этапа 2;
+- готов [контракт данных UI → system](android-ui-data-contract.md) для этапа 2;
 - PR/CI/release evidence сохранены для каждого опубликованного выпуска.
 
 ## Что удаляется из старого UI scope
