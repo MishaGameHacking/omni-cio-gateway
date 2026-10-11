@@ -1815,8 +1815,8 @@ class AuthAppDeployTests(unittest.TestCase):
             expressions.append(match[1].strip())
         self.assertNotIn("Require successful PostgreSQL release prerequisite", tests)
         diagnostic_conditions = {
-            "Upload public site browser evidence": (
-                "always() && steps.checkout.outcome == 'success'"
+            "Preserve browser evidence on the self-hosted runner": (
+                "always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success'"
             ),
             "Report source-specific Sonar": (
                 "github.event_name == 'pull_request' && always() "
@@ -2434,4 +2434,5 @@ class PublicReleaseVerificationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

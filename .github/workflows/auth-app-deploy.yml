@@ -14,6 +14,8 @@ on:
       - ".github/workflows/auth-app-deploy.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
+      - ".github/scripts/ci_evidence.py"
+      - ".github/scripts/test_ci_evidence.py"
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/timeweb_public_site.py"
       - ".github/scripts/test_timeweb_auth_app.py"
@@ -108,20 +110,9 @@ jobs:
           node.exe --check web\sw.js
 
       - name: Browser public site, releases and cache retirement
+        id: browser
         shell: cmd
         run: node.exe tests\frontend-smoke.cjs
-
-      - name: Upload public site browser evidence
-        if: always() && steps.checkout.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: frontend-screenshots
-          path: |
-            artifacts/frontend/*.png
-            artifacts/frontend/failure-state.json
-            artifacts/frontend/public-requests.json
-          if-no-files-found: warn
-          retention-days: 7
 
       - name: Run deployer tests
         shell: cmd
@@ -134,6 +125,14 @@ jobs:
         shell: cmd
         run: >-
           "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
+
+      - name: Preserve browser evidence on the self-hosted runner
+        if: always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success'
+        shell: cmd
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVIDENCE_OUTCOME: ${{ steps.browser.outcome }}
+        run: '"%OMNICIO_PYTHON%" .github/scripts/ci_evidence.py frontend'
 
       - name: Report source-specific Sonar diagnostics
         if: github.event_name == 'pull_request' && always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success'
@@ -283,4 +282,5 @@ jobs:
           "%OMNICIO_PYTHON%" -c "import os, sys; sys.exit(0 if os.environ.get('AUTH_DEPLOY_STATUS') == os.environ['EXPECTED_DEPLOY_STATUS'] else '::error::Application deployment did not reach app_ready; inspect the database and release prerequisites.')"
           if errorlevel 1 exit /b 1
           echo Requested release scope passed its readback checks.
+
 
