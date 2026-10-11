@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from uuid import UUID
@@ -17,6 +18,46 @@ MAX_ASSISTANT_DAILY_REQUEST_LIMIT = 200
 
 class ConfigurationError(RuntimeError):
     """Raised when required configuration is missing."""
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantRoute:
+    task: str
+    model: str
+    reasoning_effort: str
+    max_output_tokens: int
+    max_input_chars: int
+
+
+def assistant_routes(raw: str) -> tuple[AssistantRoute, ...]:
+    """Operator-verified Gateway model IDs/capabilities; no guessed aliases or prices."""
+    if not raw:
+        return ()
+    try:
+        rows = json.loads(raw)
+        if (not isinstance(rows, dict) or "explain" not in rows
+                or set(rows) - {"explain", "analyze", "review"}):
+            raise ValueError
+        return tuple(_assistant_route(task, row) for task, row in rows.items())
+    except (ValueError, TypeError):
+        raise ConfigurationError("ASSISTANT_ROUTES is invalid") from None
+
+
+def _assistant_route(task: str, row: object) -> AssistantRoute:
+    if not isinstance(row, dict) or set(row) != {
+        "model", "reasoning_effort", "max_output_tokens", "max_input_chars",
+    }:
+        raise ValueError
+    route = AssistantRoute(task=task, **row)
+    if (not isinstance(route.model, str) or not 1 <= len(route.model) <= 200
+            or any(ord(c) < 33 or ord(c) > 126 for c in route.model)
+            or route.reasoning_effort not in ("low", "medium", "high")
+            or type(route.max_output_tokens) is not int
+            or not 256 <= route.max_output_tokens <= 16384
+            or type(route.max_input_chars) is not int
+            or not 4000 <= route.max_input_chars <= 128000):
+        raise ValueError
+    return route
 
 
 def required(name: str) -> str:
@@ -96,6 +137,7 @@ class Settings:
     assistant_api_key: str = ""
     assistant_model: str = ""
     assistant_provider: str = "ollama"
+    assistant_routes: tuple[AssistantRoute, ...] = ()
     notifications_enabled: bool = False
     notification_email_enabled: bool = False
     notification_crypto_key: str = ""
@@ -149,6 +191,9 @@ def load_settings() -> Settings:
     assistant_provider = os.environ.get("ASSISTANT_PROVIDER", "ollama").strip()
     if assistant_provider not in {"ollama", "openai_compatible"}:
         raise ConfigurationError("ASSISTANT_PROVIDER must be ollama or openai_compatible")
+    routes = assistant_routes(os.environ.get("ASSISTANT_ROUTES", "").strip())
+    if routes and assistant_provider != "openai_compatible":
+        raise ConfigurationError("ASSISTANT_ROUTES requires openai_compatible")
     email_enabled = boolean("NOTIFICATION_EMAIL_ENABLED", False)
     auth_host = os.environ.get("AUTH_SMTP_HOST", "").strip()
     auth_mode = os.environ.get("AUTH_SMTP_MODE", "tls").strip() if auth_host else "tls"
@@ -189,6 +234,7 @@ def load_settings() -> Settings:
         assistant_api_key=os.environ.get("ASSISTANT_API_KEY", ""),
         assistant_model=os.environ.get("ASSISTANT_MODEL", "").strip(),
         assistant_provider=assistant_provider,
+        assistant_routes=routes,
         notifications_enabled=boolean("NOTIFICATIONS_ENABLED", False),
         notification_email_enabled=email_enabled,
         notification_crypto_key=os.environ.get("NOTIFICATION_CRYPTO_KEY", "").strip(),

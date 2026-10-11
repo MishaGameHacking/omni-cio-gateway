@@ -17,6 +17,7 @@ internal data class AssistantActions(
     val select: (String) -> Unit = {}, val edit: (String) -> Unit = {},
     val accept: (Boolean) -> Unit = {}, val send: () -> Unit = {}, val older: () -> Unit = {},
     val retry: () -> Unit = {},
+    val task: (String) -> Unit = {},
 )
 
 @Composable
@@ -125,6 +126,7 @@ private fun LazyListScope.chatItems(state: AppUiState, actions: AssistantActions
 private fun ChatComposer(state: AppUiState, actions: AssistantActions) {
     val chat = state.assistant
     Column {
+        AssistantTaskChoice(state, actions.task)
         if (chat.pendingRequest != null || chat.conversation?.requestStatus == "running") {
             Text("Ответ ещё не подтверждён. Нажмите «Проверить ответ» через некоторое время.")
             if (chat.pendingMissing) {
@@ -147,6 +149,22 @@ private fun ChatComposer(state: AppUiState, actions: AssistantActions) {
             minLines = 2, maxLines = 6, supportingText = { Text("${chat.draft.length} / 4000") })
         Button(onClick = actions.send, enabled = !state.busy && chat.canSend,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Отправить") }
+    }
+}
+
+@Composable
+private fun AssistantTaskChoice(state: AppUiState, select: (String) -> Unit) {
+    val chat = state.assistant
+    if (chat.availableTasks.size <= 1) return
+    Column {
+        mapOf("explain" to "Объяснить кратко", "analyze" to "Подробно разобрать",
+            "review" to "Проверить противоречия").forEach { (task, label) ->
+            if (task in chat.availableTasks) FilterChip(selected = chat.task == task,
+                onClick = { select(task) }, label = { Text(label) },
+                enabled = !state.busy && chat.pendingRequest == null)
+        }
+        Text("Подробный разбор и проверка могут занять больше времени. Источники ограничены данными, полученными сервером.",
+            style = MaterialTheme.typography.bodySmall)
     }
 }
 

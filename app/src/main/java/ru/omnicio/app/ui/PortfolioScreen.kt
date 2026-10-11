@@ -5,10 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.R
 
@@ -56,12 +58,28 @@ private fun PositionDetail(detail: PortfolioPosition, portfolio: ServerPortfolio
                 MetricRow("Текущая цена", if (detail.currency == null) NO_POSITION_DATA else money(detail.price, hidden, detail.currency.uppercase()))
                 MetricRow("Доля портфеля", if (hidden) "••••" else detail.share?.let { "$it %" } ?: NO_POSITION_DATA)
                 MetricRow("Блокировка", if (detail.blocked) "Есть ограничение брокера" else "В снимке не отмечена")
-                Text("Идентификатор: ${detail.uid}", style = MaterialTheme.typography.bodySmall)
+                SelectionContainer { Text("Тикер: ${detail.ticker}\nИдентификатор: ${detail.uid}", style = MaterialTheme.typography.bodySmall) }
                 Text(timestampLabel(portfolio.capturedAt), style = MaterialTheme.typography.bodySmall)
                 Text(statusLabel(portfolio.freshness), style = MaterialTheme.typography.bodySmall)
             }
         }
+        item { BrokerInstrumentAction(detail) }
         item { SourcesCard(portfolio.sources) }
+    }
+}
+
+@Composable
+private fun BrokerInstrumentAction(position: PortfolioPosition) {
+    val uri = LocalUriHandler.current
+    var unavailable by remember(position.uid) { mutableStateOf(false) }
+    val link = brokerInstrumentUrl(position)
+    OmniCard {
+        if (link != null) OutlinedButton(onClick = { unavailable = runCatching { uri.openUri(link) }.isFailure }) {
+            Text("Открыть в Т-Инвестициях")
+        }
+        if (link == null || unavailable) Text("Карточка недоступна. Скопируйте тикер долгим нажатием и найдите инструмент в Т-Инвестициях.")
+        Text("Android откроет приложение брокера или его сайт. Проверьте название инструмента; переход не означает совершение сделки.",
+            style = MaterialTheme.typography.bodySmall)
     }
 }
 

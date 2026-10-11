@@ -88,7 +88,7 @@ from .service import (
     LoginUnavailable,
 )
 from .social_auth import SocialAuthError
-from .strategy import strategy_catalog, validate_selection
+from .strategy import strategy_catalog, strategy_rule_set, validate_selection
 from .strategy_service import current_account_assessment, replay_research_inputs, strategy_research
 from .support import public_support_contact
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
@@ -293,6 +293,7 @@ class AssistantMessageBody(AssistantContextBody):
     expected_version: int = Field(ge=0, strict=True)
     message: str = Field(min_length=1, max_length=4000)
     memory_ids: list[UUID] = Field(default_factory=list, max_length=20)
+    task: Literal["explain", "analyze", "review"] = "explain"
 
 
 class AssistantSourceSearchBody(AssistantContextBody):
@@ -415,6 +416,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             api_key=cfg.assistant_api_key,
             provider=cfg.assistant_provider,
         ),
+        task_clients={route.task: AssistantClient(
+            base_url=cfg.assistant_base_url, model=route.model, api_key=cfg.assistant_api_key,
+            provider=cfg.assistant_provider, route=route,
+        ) for route in cfg.assistant_routes},
     )
     app.state.news_client = NewsClient()
     broker = BrokerService(
@@ -1191,6 +1196,25 @@ def _assistant_position_context(
     return position
 
 
+def _assistant_strategy_context(strategy: dict[str, Any] | None) -> dict[str, Any] | None:
+    return ({
+        "template_id": strategy["document"]["base_preset_id"], "version": strategy["version"],
+        "status": "draft_not_confirmed",
+        "method": strategy_rule_set(strategy["document"]["base_preset_id"])["ranking"],
+        "approach": "custom" if strategy["document"]["customized"] else "preset",
+        **{key: strategy["document"]["profile"][key] for key in (
+            "horizon_months", "reserve_rub", "planned_withdrawal_rub", "max_drawdown_percent",
+        )},
+        **{key: strategy["document"]["policy"][key] for key in (
+            "max_issuer_percent", "max_sector_percent", "max_group_percent",
+        )},
+        **{f"target_{key}_percent": value
+           for key, value in strategy["document"]["allocation"].items()},
+        "limitations": "Рабочая стратегия для анализа; "
+        "не подтверждённый профиль и не торговый план.",
+    } if strategy else None)
+
+
 def _assistant_investment_context(
     request: Request, user: UserRecord, body: AssistantContextBody, snapshot: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1204,11 +1228,9 @@ def _assistant_investment_context(
     latest = cast(dict[str, Any], visualization.get("latest") or {})
     positions = [_assistant_position_context(item, latest.get("captured_at"))
                  for item in latest.get("positions", [])]
-    selected_strategy = ({"template_id": strategy["document"]["base_preset_id"],
-                          "version": strategy["version"]} if strategy else None)
     return investment_context(
         snapshot, positions=positions, goals=goals,
-        strategy=selected_strategy, research=research, news=news,
+        strategy=_assistant_strategy_context(strategy), research=research, news=news,
     )
 
 
@@ -1286,7 +1308,7 @@ def assistant_message(
         return assistant.chat(
             user.id, body.conversation_id, message=body.message, context=evidence,
             request_id=body.request_id, expected_version=body.expected_version,
-            validate_context=validate_context, memory_ids=body.memory_ids,
+            validate_context=validate_context, memory_ids=body.memory_ids, task=body.task,
         )
 
     return _assistant_action(request, session_token, user, send)
@@ -1323,7 +1345,7 @@ def assistant_message_stream(
         return assistant.stream(
             user.id, body.conversation_id, message=body.message, context=evidence,
             request_id=body.request_id, expected_version=body.expected_version,
-            validate_context=validate, memory_ids=body.memory_ids,
+            validate_context=validate, memory_ids=body.memory_ids, task=body.task,
         )
 
     events = _assistant_action(request, session_token, user, start)

@@ -31,6 +31,8 @@ internal data class AssistantUiState(
     val pendingMissing: Boolean = false,
     val draft: String = "",
     val contextAccepted: Boolean = false,
+    val task: String = "explain",
+    val availableTasks: Set<String> = setOf("explain"),
 ) {
     val canSend: Boolean get() = available && loaded && contextAccepted &&
         conversation != null && pendingRequest == null &&
@@ -40,7 +42,8 @@ internal data class AssistantUiState(
         conversations = emptyList(), conversation = null)
 }
 
-internal data class PendingQuestion(val id: String, val conversationId: String, val version: Int, val message: String)
+internal data class PendingQuestion(val id: String, val conversationId: String, val version: Int, val message: String,
+    val task: String = "explain")
 
 internal data class ChatSummary(val id: String, val title: String, val at: String? = null)
 internal data class ChatConversation(
@@ -83,7 +86,11 @@ internal fun ServerApi.loadAssistant(previous: AssistantUiState, selectedId: Str
     val id: String? = pending?.chatId("conversation_id") ?: previous.pendingRequest?.conversationId ?: selectedId ?: previous.conversation?.id
         ?: summaries.firstOrNull()?.id
     val conversation = id?.let { parseConversation(request("/api/assistant/conversations/$it")) }
+    val tasks = status.optJSONArray("available_tasks")?.let { values ->
+        (0 until values.length()).map { values.getString(it) }.toSet()
+    } ?: setOf("explain")
     return previous.copy(loaded = true,
+        availableTasks = tasks, task = previous.task.takeIf { it in tasks } ?: "explain",
         available = status.getBoolean("enabled") && status.getBoolean("configured"),
         conversations = summaries, conversation = conversation,
         draft = if (pending != null) "" else previous.draft,

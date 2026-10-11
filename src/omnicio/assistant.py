@@ -23,7 +23,11 @@ from uuid import UUID, uuid4
 
 from .assistant_store import AssistantQuotaExceeded as AssistantQuotaExceeded
 from .assistant_store import AssistantRequestConflict, AssistantStore, assistant_sources_json
-from .config import DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT, MAX_ASSISTANT_DAILY_REQUEST_LIMIT
+from .config import (
+    DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
+    MAX_ASSISTANT_DAILY_REQUEST_LIMIT,
+    AssistantRoute,
+)
 from .db import Database
 from .security import decrypt_secret, encrypt_secret
 from .workspace_store import WorkspaceNotFound
@@ -616,10 +620,14 @@ class AssistantClient:
         api_key: str = "",
         timeout_seconds: int = 24,
         provider: str = "ollama",
+        route: AssistantRoute | None = None,
     ) -> None:
+        if route and (provider != "openai_compatible" or model != route.model):
+            raise ValueError("assistant_route_invalid")
         self._base_url = base_url
         self.model = model
         self.provider = provider
+        self.route = route
         self._api_key = api_key
         self.timeout_seconds = timeout_seconds
         self._slots = threading.BoundedSemaphore(2)
@@ -714,6 +722,14 @@ class AssistantClient:
         self, messages: list[dict[str, str]], context: Mapping[str, Any] | None, *, stream: bool,
     ) -> dict[str, Any]:
         prompt = _SYSTEM_PROMPT
+        if self.route:
+            prompt += {
+                "explain": " Дай короткое объяснение имеющихся фактов и обозначь пробелы.",
+                "analyze": " Сопоставь источники, ограничения стратегии и сценарии. "
+                "Раздели факты и допущения.",
+                "review": " Проверь выводы на противоречия, неполноту и устаревшие данные. "
+                "Не считай повтор новости независимым подтверждением.",
+            }[self.route.task]
         if context is not None:
             prompt += "\nФакты текущего снимка портфеля (JSON):\n" + json.dumps(
                 context,
@@ -732,9 +748,14 @@ class AssistantClient:
             "messages": [{"role": "system", "content": prompt}, *messages],
             "stream": stream,
         }
-        if self.provider == "ollama":
+        if self.route:
+            if len(json.dumps(body["messages"], ensure_ascii=False)) > self.route.max_input_chars:
+                raise ValueError("assistant_input_budget_exceeded")
+            body.update(max_completion_tokens=self.route.max_output_tokens,
+                        reasoning_effort=self.route.reasoning_effort)
+        elif self.provider == "ollama":
             body.update(think=False, options={"num_predict": 1024, "temperature": 0.2})
-        elif self.model.startswith("gpt-5"):
+        elif self.model.rsplit("/", 1)[-1].startswith(("gpt-5", "gpt-6")):
             body.update(max_completion_tokens=1024)
         else:
             body.update(max_tokens=1024, temperature=0.2)
@@ -971,8 +992,13 @@ def investment_context(
                 "status",
                 "method",
                 "limitations",
+                "horizon_months", "reserve_rub", "planned_withdrawal_rub", "max_drawdown_percent",
+                "max_issuer_percent", "max_sector_percent", "max_group_percent",
+                "target_shares_percent", "target_bonds_percent",
+                "target_funds_percent", "target_cash_percent",
             )
-            if key in strategy and isinstance(strategy[key], (str, int, bool))
+            if key in strategy
+            and (strategy[key] is None or isinstance(strategy[key], (str, int, bool)))
         }
     if research is not None:
         result["research"] = _research_context(research)
@@ -1117,6 +1143,7 @@ class AssistantService:
         allowed_endpoints: Sequence[str] = (),
         daily_request_limit: int = DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
         default_client: AssistantClient | None = None,
+        task_clients: Mapping[str, AssistantClient] | None = None,
     ) -> None:
         if not 1 <= daily_request_limit <= MAX_ASSISTANT_DAILY_REQUEST_LIMIT:
             raise ValueError("assistant_daily_limit_invalid")
@@ -1126,6 +1153,7 @@ class AssistantService:
         self.allowed_endpoints = tuple(sorted({url.rstrip("/") for url in allowed_endpoints}))
         self.daily_limit = daily_request_limit
         self.default_client = default_client
+        self.task_clients = dict(task_clients or {})
         self._slots = threading.BoundedSemaphore(2)
         self._active_lock = threading.Lock()
         self._active: dict[tuple[UUID, UUID], _Cancellation] = {}
@@ -1157,9 +1185,12 @@ class AssistantService:
         self,
         user_id: UUID,
         connection: dict[str, Any] | None,
+        task: str = "explain",
     ) -> AssistantClient | None:
         if connection is None:
-            return self.default_client
+            return self.task_clients.get(task, self.default_client if task == "explain" else None)
+        if task != "explain":
+            return None
         if not connection["active"]:
             return None
         if connection["base_url"] not in self.allowed_endpoints:
@@ -1200,12 +1231,21 @@ class AssistantService:
             "allowed_endpoints": list(self.allowed_endpoints),
             "context_supported": True,
             "max_message_length": 4000,
+            "available_tasks": self.available_tasks(connection),
             "quota": self.store.quota(user_id, self.daily_limit),
             "capabilities": {"streaming": True, "cancellation": True, "request_readback": True,
                              "explicit_memory": True, "automatic_memory": False,
                              "source_search": "selected_sources", "source_read": "selected_sources",
                              "web_search": False, "external_activation": self.enabled},
         }
+
+    def available_tasks(self, connection: dict[str, Any] | None) -> list[str]:
+        if connection is not None:
+            return ["explain"]
+        tasks = {key for key, client in self.task_clients.items() if client.configured}
+        if self.default_client and self.default_client.configured:
+            tasks.add("explain")
+        return sorted(tasks)
 
     def list_memory(self, user_id: UUID) -> dict[str, Any]:
         return self.store.list_memory(user_id)
@@ -1433,17 +1473,20 @@ class AssistantService:
         self, user_id: UUID, conversation_id: UUID, *, message: str,
         context: Mapping[str, Any] | None, request_id: UUID, expected_version: int,
         memory_ids: Sequence[UUID],
+        task: str = "explain",
     ) -> tuple[AssistantClient, dict[str, Any], dict[str, Any] | None]:
         if not self.enabled:
             raise AssistantNotConfigured("assistant_activation_disabled")
         if self._closing.is_set():
             raise AssistantNotConfigured("assistant_shutting_down")
         validate_messages(message, [])
+        if task not in {"explain", "analyze", "review"}:
+            raise ValueError("assistant_task_invalid")
         if type(expected_version) is not int or expected_version < 0:
             raise ValueError("assistant_version_invalid")
         prepared, versions = self._prepare_context(user_id, context, memory_ids)
         connection = self.store.connection(user_id)
-        client = self._client(user_id, connection)
+        client = self._client(user_id, connection, task)
         if client is None or not client.configured:
             raise AssistantNotConfigured("assistant_not_configured")
         fingerprint_document: dict[str, Any] = {
@@ -1453,6 +1496,8 @@ class AssistantService:
         }
         if versions:
             fingerprint_document["memory_versions"] = versions
+        if task != "explain":
+            fingerprint_document["task"] = task
         fingerprint = hashlib.sha256(
             json.dumps(fingerprint_document, sort_keys=True).encode(),
         ).hexdigest()
@@ -1484,10 +1529,11 @@ class AssistantService:
         expected_version: int,
         validate_context: Callable[[], None] | None = None,
         memory_ids: Sequence[UUID] = (),
+        task: str = "explain",
     ) -> dict[str, Any]:
         client, admission, prepared = self._admit(
             user_id, conversation_id, message=message, context=context, request_id=request_id,
-            expected_version=expected_version, memory_ids=memory_ids,
+            expected_version=expected_version, memory_ids=memory_ids, task=task,
         )
         try:
             if "completed" in admission:
@@ -1513,10 +1559,11 @@ class AssistantService:
         self, user_id: UUID, conversation_id: UUID, *, message: str,
         context: Mapping[str, Any] | None, request_id: UUID, expected_version: int,
         validate_context: Callable[[], None] | None = None, memory_ids: Sequence[UUID] = (),
+        task: str = "explain",
     ) -> Iterator[dict[str, Any]]:
         client, admission, prepared = self._admit(
             user_id, conversation_id, message=message, context=context, request_id=request_id,
-            expected_version=expected_version, memory_ids=memory_ids,
+            expected_version=expected_version, memory_ids=memory_ids, task=task,
         )
         if "completed" in admission:
             self._slots.release()

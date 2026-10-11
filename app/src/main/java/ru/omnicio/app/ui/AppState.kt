@@ -32,6 +32,7 @@ internal data class AppUiState(
     val identities: JSONObject? = null,
     val sessions: List<JSONObject> = emptyList(),
     val assistant: AssistantUiState = AssistantUiState(),
+    val strategy: StrategyUiState = StrategyUiState(),
 )
 
 internal data class SocialFlow(
@@ -95,6 +96,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             mutable.value = mutable.value.copy(authenticated = false, publicId = null)
         }
         mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
+            strategy = StrategyUiState(),
             assistant = if (expired) AssistantUiState() else mutable.value.assistant.withoutServerData(),
             legalConsent = if (expired) null else mutable.value.legalConsent,
             socialFlow = if (expired) null else mutable.value.socialFlow,
@@ -236,14 +238,14 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             .put("environment", "prod").put("account_id", account).put("accept_personal_terms", true))
         client.workspace()
     }) {
-        mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState(),
+        mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState(), strategy = StrategyUiState(),
             notice = "Счёт подключён. Сервер получает первый снимок; используйте «Обновить у брокера».")
     }
 
     fun disconnectBroker() = request({ client ->
         client.request("/api/broker/tbank", "DELETE")
         client.workspace()
-    }) { mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState()) }
+    }) { mutable.value = mutable.value.copy(workspace = it, accounts = emptyList(), assistant = AssistantUiState(), strategy = StrategyUiState()) }
 
     fun markRead(id: String) = request({ client ->
         client.request("/api/events/read", "POST", JSONObject().put("ids", JSONArray().put(id)).put("read", true))
@@ -272,12 +274,19 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         mutable.value = mutable.value.copy(assistant = mutable.value.assistant.copy(contextAccepted = value))
     }
 
+    fun setAssistantTask(task: String) {
+        val chat = mutable.value.assistant
+        if (!mutable.value.busy && chat.pendingRequest == null && task in chat.availableTasks) {
+            mutable.value = mutable.value.copy(assistant = chat.copy(task = task))
+        }
+    }
+
     fun sendAssistantMessage() {
         val chat = mutable.value.assistant
         if (mutable.value.busy || mutable.value.amountsHidden || !chat.canSend) return
         val conversation = chat.conversation ?: return
         submitQuestion(PendingQuestion(java.util.UUID.randomUUID().toString(),
-            conversation.id, conversation.version, chat.draft.trim()))
+            conversation.id, conversation.version, chat.draft.trim(), chat.task))
     }
 
     fun retryAssistantMessage() {
@@ -294,7 +303,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             client.request("/api/assistant/messages", "POST", JSONObject()
                 .put("conversation_id", question.conversationId).put("request_id", question.id)
                 .put("expected_version", question.version).put("message", question.message)
-                .put("context", "investment").put("include_news", true))
+                .put("context", "investment").put("include_news", true).put("task", question.task))
             client.loadAssistant(chat.copy(draft = "", pendingRequest = question), question.conversationId)
         }) { mutable.value = mutable.value.copy(assistant = it) }
     }
@@ -311,6 +320,35 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             mutable.value = mutable.value.copy(assistant = chat.copy(conversation = older.copy(
                 messages = (older.messages + conversation.messages).distinctBy { it.position }.sortedBy { it.position })))
         }
+    }
+
+    fun loadStrategy() {
+        val id = mutable.value.publicId ?: return
+        request({ it.loadStrategy(id) }) { mutable.value = mutable.value.copy(strategy = it) }
+    }
+
+    fun saveStrategy(document: JSONObject, intent: String) {
+        val id = mutable.value.publicId ?: return
+        val current = mutable.value.strategy
+        if (!current.loaded) return
+        request({ client ->
+            client.request("/api/profile/strategy", "PUT", JSONObject()
+                .put("expected_public_id", id).put("expected_version", current.version)
+                .put("intent", intent).put("document", document))
+            client.loadStrategy(id)
+        }) { mutable.value = mutable.value.copy(strategy = it, notice = "Рабочая стратегия сохранена. Запустите проверку по счёту.") }
+    }
+
+    fun assessStrategy() {
+        val id = mutable.value.publicId ?: return
+        val current = mutable.value.strategy
+        if (!current.loaded || current.version == 0) return
+        request({ client ->
+            client.request("/api/profile/strategy/account-assessment", "POST", JSONObject()
+                .put("expected_public_id", id).put("expected_version", current.version)).also {
+                if (it.getString("public_id") != id) throw ApiFailure(409, "profile_context_changed")
+            }
+        }) { mutable.value = mutable.value.copy(strategy = current.copy(assessment = it)) }
     }
 
     fun loadMoreEvents() {

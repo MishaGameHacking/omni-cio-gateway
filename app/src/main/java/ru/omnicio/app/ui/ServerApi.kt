@@ -117,7 +117,7 @@ internal class ServerApi {
             PortfolioPosition(it.getString("instrument_uid"), it.text("ticker").orEmpty(),
                 it.text("name").orEmpty(), it.decimal("quantity"), it.decimal("value_rub"),
                 it.decimal("current_price_value"), it.text("current_price_currency"),
-                it.decimal("nav_percent"), it.optBoolean("blocked", false), it.text("risk_state"))
+                it.decimal("nav_percent"), it.optBoolean("blocked", false), it.text("risk_state"), it.text("instrument_type"))
         },
         history = history.objects().map {
             HistoryPoint(Instant.parse(it.getString("captured_at")), it.decimal("nav_rub"),
@@ -145,6 +145,10 @@ internal fun parseEvents(root: JSONObject): List<ServerEvent> = root.getJSONArra
 }
 
 internal fun apiError(error: Exception): String = when {
+    error is ApiFailure && error.code == "settings_version_conflict" ->
+        "Условия изменились на сервере. Загрузите сохранённые условия и повторите изменение."
+    error is ApiFailure && error.code.startsWith("strategy_") ->
+        "Проверка стратегии не завершена. Проверьте введённые условия, подключение счёта и загрузите актуальные данные."
     error is ApiFailure && error.code in setOf("assistant_not_configured", "assistant_activation_disabled") ->
         "ИИ ещё не подключён на сервере. Настройки модели выполняет OMNICIO; ключ пользователю не нужен."
     error is ApiFailure && error.code.startsWith("assistant_") ->
