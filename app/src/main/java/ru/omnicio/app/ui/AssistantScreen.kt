@@ -166,12 +166,10 @@ private fun AssistantMessageCard(
 @Composable
 private fun assistantAccent(type: AssistantEventType): Color = when (type) {
     AssistantEventType.MATERIAL_EVENT,
-    AssistantEventType.RISK_CHANGE,
-    -> MaterialTheme.colorScheme.error
+    AssistantEventType.RISK_CHANGE -> MaterialTheme.colorScheme.error
     AssistantEventType.PAYOUT -> MaterialTheme.colorScheme.tertiary
     AssistantEventType.CASH_CHANGE -> MaterialTheme.colorScheme.secondary
     AssistantEventType.SCENARIO_RESULT -> MaterialTheme.colorScheme.primary
     AssistantEventType.ANALYSIS_STALE,
-    AssistantEventType.SYNC_REQUIRED,
-    -> MaterialTheme.colorScheme.onSurfaceVariant
+    AssistantEventType.SYNC_REQUIRED -> MaterialTheme.colorScheme.onSurfaceVariant
 }
