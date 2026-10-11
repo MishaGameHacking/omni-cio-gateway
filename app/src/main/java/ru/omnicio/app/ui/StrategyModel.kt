@@ -9,6 +9,13 @@ internal data class StrategyUiState(
     val assessment: JSONObject? = null,
 ) {
     val version: Int get() = selection?.getInt("version") ?: 0
+
+    fun afterFailure(error: Exception, expired: Boolean): StrategyUiState {
+        if (expired) return StrategyUiState()
+        val rejected = error is ApiFailure &&
+            (error.code.startsWith("strategy_") || error.code == "settings_version_conflict")
+        return if (rejected) copy(assessment = null) else StrategyUiState()
+    }
 }
 
 internal fun ServerApi.loadStrategy(publicId: String): StrategyUiState {
