@@ -49,6 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.ui.theme.OmniSpacing
 
+private const val ANDROID_LABEL = "Android"
+private const val STATUS_LABEL = "Статус"
+
 @Composable
 internal fun SettingsScreen(
     uiState: AppUiState,
@@ -317,7 +320,7 @@ private fun BrokerDetails(
     )
     when {
         settings.brokerConnected -> {
-            CompactStatusLine("Статус", "Подключено · демо")
+            CompactStatusLine(STATUS_LABEL, "Подключено · демо")
             OutlinedButton(onClick = onRevoke, modifier = Modifier.fillMaxWidth()) {
                 Text("QA · отозвать демо-доступ")
             }
@@ -326,7 +329,7 @@ private fun BrokerDetails(
             }
         }
         settings.brokerRevoked -> {
-            CompactStatusLine("Статус", "Доступ отозван · демо")
+            CompactStatusLine(STATUS_LABEL, "Доступ отозван · демо")
             Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
                 Text("Переподключить демо-режим")
             }
@@ -335,7 +338,7 @@ private fun BrokerDetails(
             }
         }
         else -> {
-            CompactStatusLine("Статус", "Не подключено")
+            CompactStatusLine(STATUS_LABEL, "Не подключено")
             Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
                 Text("Включить демо-режим чтения")
             }
@@ -494,9 +497,9 @@ private fun NotificationPermissionCard(
     }
 
     when {
-        !notificationsEnabled -> CompactStatusLine("Android", "Системный запрос не нужен")
-        !required -> CompactStatusLine("Android", "Отдельное разрешение не требуется")
-        granted -> CompactStatusLine("Android", "Разрешение выдано")
+        !notificationsEnabled -> CompactStatusLine(ANDROID_LABEL, "Системный запрос не нужен")
+        !required -> CompactStatusLine(ANDROID_LABEL, "Отдельное разрешение не требуется")
+        granted -> CompactStatusLine(ANDROID_LABEL, "Разрешение выдано")
         else -> {
             CompactStatusLine(
                 "Android",
