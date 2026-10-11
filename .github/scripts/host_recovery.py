@@ -30,6 +30,41 @@ from omnicio import recovery as contract
 BINARY = pathlib.Path("/usr/lib/postgresql/18/bin")
 ROOT = pathlib.Path("/var/lib/omnicio-recovery")
 PGDG_FINGERPRINT = "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+MIN_MEMORY_BYTES = 192 * 1024 * 1024
+MIN_DISK_BYTES = 1024**3
+RECOVERY_STAGES = frozenset({
+    "bootstrap", "source_validation", "key_custody", "resume_previous_maintenance",
+    "capacity", "pause_source", "capacity_after_pause", "postgres_install",
+    "capacity_after_install", "temporary_restore", "resume_source", "publish_evidence",
+})
+
+
+def failure_report(stage: str, error: Exception) -> dict[str, Any]:
+    """Only fixed identifiers and validated resource counts cross the SSH boundary."""
+    kind = "unexpected_error"
+    if isinstance(error, recovery.RecoveryBlocked):
+        kind = "recovery_blocked"
+    elif isinstance(error, upgrade.UpgradeBlocked):
+        kind = "upgrade_blocked"
+    capacity = upgrade.inspect_host_capacity()
+    if not upgrade._valid_host_capacity(capacity):
+        capacity = {"status": "unavailable", "code": "host_capacity_unavailable"}
+    return {
+        "status": "recovery_failed", "stage": stage if stage in RECOVERY_STAGES else "bootstrap",
+        "error_kind": kind, "host_capacity": capacity,
+    }
+
+
+def validate_failure_report(report: Any) -> bool:
+    return (
+        isinstance(report, dict)
+        and set(report) == {"status", "stage", "error_kind", "host_capacity"}
+        and report["status"] == "recovery_failed"
+        and isinstance(report["stage"], str) and report["stage"] in RECOVERY_STAGES
+        and isinstance(report["error_kind"], str)
+        and report["error_kind"] in {"recovery_blocked", "upgrade_blocked", "unexpected_error"}
+        and upgrade._valid_host_capacity(report["host_capacity"])
+    )
 
 
 def native(
@@ -171,8 +206,67 @@ def ensure_capacity() -> None:
         for line in pathlib.Path("/proc/meminfo").read_text().splitlines()
         if line.startswith("MemAvailable:")
     )
-    if available < 192 * 1024 * 1024 or shutil.disk_usage(ROOT).free < 1024**3:
+    if available < MIN_MEMORY_BYTES or shutil.disk_usage(ROOT).free < MIN_DISK_BYTES:
         raise recovery.RecoveryBlocked("Insufficient existing-host capacity for isolated recovery")
+
+
+def resume_maintenance(
+    path: pathlib.Path, dsn: str, expected: dict[str, Any], plan: dict[str, Any], source_query: str,
+) -> None:
+    receipt = json.loads(upgrade._private_file(path, 16384))
+    if (not isinstance(receipt, dict) or set(receipt) != {"schema", "source_release", "writers"}
+            or receipt["schema"] != 1 or receipt["source_release"] != plan["source_release"]):
+        raise recovery.RecoveryBlocked("Recovery maintenance receipt does not match the source")
+    upgrade._validate_writer_state(receipt["writers"])
+    # Prove the original schema, role and installed release before restarting any writer.
+    if not upgrade._resume_source_after_failure(
+        dsn, expected, plan, source_query, receipt["writers"],
+    ):
+        raise recovery.RecoveryBlocked("Recovery source runtime could not be safely resumed")
+    path.unlink()
+
+
+@contextmanager
+def existing_host_capacity(
+    dsn: str, expected: dict[str, Any], plan: dict[str, Any], source_query: str,
+    observation: dict[str, str],
+) -> Iterator[bool]:
+    """Temporarily pause only this application's writers when RAM is insufficient."""
+    receipt = ROOT / "maintenance.json"
+    observation["stage"] = "resume_previous_maintenance"
+    if receipt.exists() or receipt.is_symlink():
+        resume_maintenance(receipt, dsn, expected, plan, source_query)
+    observation["stage"] = "capacity"
+    try:
+        ensure_capacity()
+    except recovery.RecoveryBlocked:
+        # Pausing cannot fix disk shortage; never stop the application for that case.
+        if shutil.disk_usage(ROOT).free < MIN_DISK_BYTES:
+            raise
+        writers = upgrade._capture_writer_state()
+        atomic_file(receipt, json.dumps({
+            "schema": 1, "source_release": plan["source_release"], "writers": writers,
+        }).encode())
+    else:
+        yield False
+        return
+    try:
+        observation["stage"] = "pause_source"
+        # Keep enablement intact: a host reboot still starts the unchanged source runtime.
+        upgrade._change_units("stop", [
+            upgrade.OBSERVER_TIMER, upgrade.OBSERVER_SERVICE, upgrade.AUTH_SERVICE,
+        ])
+        for unit in upgrade.WRITER_UNITS:
+            if upgrade._unit_state("is-active", unit) == "active":
+                raise recovery.RecoveryBlocked("Recovery source pause was not confirmed")
+        observation["stage"] = "capacity_after_pause"
+        ensure_capacity()
+        yield True
+    finally:
+        previous = observation["stage"]
+        observation["stage"] = "resume_source"
+        resume_maintenance(receipt, dsn, expected, plan, source_query)
+        observation["stage"] = previous
 
 
 def ensure_keys() -> tuple[str, str]:
@@ -287,7 +381,12 @@ def publish_evidence(
     atomic_file(state_path, json.dumps(updated).encode(), 0o644)
 
 
-def recover(payload: dict[str, Any]) -> dict[str, Any]:
+def recover(
+    payload: dict[str, Any], *, observation: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    if observation is None:
+        observation = {}
+    observation["stage"] = "source_validation"
     if sys.platform != "linux" or os.geteuid() != 0:
         raise recovery.RecoveryBlocked("Recovery requires the existing Linux host operator")
     plan = upgrade.validate_plan(payload["plan"])
@@ -301,29 +400,34 @@ def recover(payload: dict[str, Any]) -> dict[str, Any]:
             upgrade._verify_connected_database(source, expected)
             if source.execute(source_query).fetchone() != (True,):
                 raise recovery.RecoveryBlocked("Source schema differs from reviewed installation")
+        observation["stage"] = "key_custody"
         signing, archive = ensure_keys()
-        ensure_capacity()
-        provision_postgres()
-        ensure_capacity()
-        with isolated_postgres() as isolated:
-            manifest = export_tenant_archive(
-                dsn,
-                isolated,
-                BINARY,
-                cluster_id=expected["cluster_id"],
-                source_release=installed,
-                signing_key=signing,
-                archive_key=archive,
-            )
-            receipt = recovery.verify_logical_archive(
-                isolated,
-                BINARY,
-                manifest,
-                release_sha=installed,
-                signing_key=signing,
-                archive_key=archive,
-            )
+        with existing_host_capacity(dsn, expected, plan, source_query, observation) as paused:
+            observation["stage"] = "postgres_install"
+            provision_postgres()
+            observation["stage"] = "capacity_after_install"
+            ensure_capacity()
+            observation["stage"] = "temporary_restore"
+            with isolated_postgres() as isolated:
+                manifest = export_tenant_archive(
+                    dsn,
+                    isolated,
+                    BINARY,
+                    cluster_id=expected["cluster_id"],
+                    source_release=installed,
+                    signing_key=signing,
+                    archive_key=archive,
+                )
+                receipt = recovery.verify_logical_archive(
+                    isolated,
+                    BINARY,
+                    manifest,
+                    release_sha=installed,
+                    signing_key=signing,
+                    archive_key=archive,
+                )
         # Only after successful destruction of temporary databases and cluster.
+        observation["stage"] = "publish_evidence"
         if upgrade.CURRENT_RELEASE.resolve().name != installed:
             raise recovery.RecoveryBlocked("Installed source changed during recovery verification")
         publish_evidence(manifest, receipt, signing, archive, expected, installed)
@@ -337,5 +441,7 @@ def recover(payload: dict[str, Any]) -> dict[str, Any]:
         "new_servers": 0,
         "permanent_database_clones": 0,
         "temporary_restore_removed": True,
+        "source_runtime_paused": paused,
         "source_kind": "tenant_snapshot_pg_dump",
     }
+

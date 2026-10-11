@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -142,3 +143,138 @@ def test_atomic_evidence_refuses_link_destination(tmp_path):
     with pytest.raises(host.recovery.RecoveryBlocked):
         host.atomic_file(link, b"replace")
     assert other.read_bytes() == b"keep"
+
+
+@pytest.fixture
+def capacity_runtime(monkeypatch, tmp_path):
+    monkeypatch.setattr(host, "ROOT", tmp_path)
+    writers = {unit: {"active": unit == host.upgrade.AUTH_SERVICE, "enabled": "enabled"}
+               for unit in host.upgrade.WRITER_UNITS}
+    monkeypatch.setattr(host.upgrade, "_capture_writer_state", lambda: writers)
+    monkeypatch.setattr(host.upgrade, "_unit_state", lambda *_args: "inactive")
+    monkeypatch.setattr(host, "atomic_file", lambda path, data: path.write_bytes(data))
+    monkeypatch.setattr(host.shutil, "disk_usage", lambda _path: Mock(free=2 * 1024**3))
+    return tmp_path / "maintenance.json"
+
+
+def test_sufficient_capacity_keeps_application_running(capacity_runtime):
+    with (
+        patch.object(host, "ensure_capacity"),
+        patch.object(host.upgrade, "_change_units") as change,
+        patch.object(host, "resume_maintenance") as resume,
+    ):
+        with host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}):
+            pass
+    change.assert_not_called()
+    resume.assert_not_called()
+    assert not capacity_runtime.exists()
+
+
+@pytest.mark.parametrize("fails_during_restore", [False, True])
+def test_low_memory_pause_has_durable_receipt_and_always_resumes(
+    capacity_runtime, fails_during_restore,
+):
+    observation = {}
+    calls = []
+
+    def change(command, units):
+        assert capacity_runtime.exists()  # Durable intent must precede the first stop.
+        calls.append((command, units))
+
+    with (
+        patch.object(host, "ensure_capacity", side_effect=[host.recovery.RecoveryBlocked(), None]),
+        patch.object(host.upgrade, "_change_units", side_effect=change),
+        patch.object(host, "resume_maintenance") as resume,
+    ):
+        try:
+            with host.existing_host_capacity(
+                "private", {}, {"source_release": SHA}, "query", observation,
+            ) as paused:
+                assert paused is True
+                observation["stage"] = "temporary_restore"
+                if fails_during_restore:
+                    raise RuntimeError("private database failure")
+        except RuntimeError:
+            assert fails_during_restore
+    assert calls == [("stop", [host.upgrade.OBSERVER_TIMER, host.upgrade.OBSERVER_SERVICE,
+                              host.upgrade.AUTH_SERVICE])]
+    resume.assert_called_once_with(capacity_runtime, "private", {}, {"source_release": SHA}, "query")
+    assert observation["stage"] == "temporary_restore"
+
+
+def test_disk_shortage_does_not_stop_application(capacity_runtime, monkeypatch):
+    monkeypatch.setattr(host.shutil, "disk_usage", lambda _path: Mock(free=1))
+    with (
+        patch.object(host, "ensure_capacity", side_effect=host.recovery.RecoveryBlocked()),
+        patch.object(host.upgrade, "_change_units") as change,
+        pytest.raises(host.recovery.RecoveryBlocked),
+        host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}),
+    ):
+        pytest.fail("Recovery must remain blocked")
+    change.assert_not_called()
+    assert not capacity_runtime.exists()
+
+
+@pytest.mark.parametrize("source_proven", [False, True])
+def test_resume_requires_source_proof_and_retains_receipt_on_failure(tmp_path, source_proven):
+    path = tmp_path / "maintenance.json"
+    receipt = {"schema": 1, "source_release": SHA, "writers": {
+        unit: {"active": unit == host.upgrade.AUTH_SERVICE, "enabled": "enabled"}
+        for unit in host.upgrade.WRITER_UNITS
+    }}
+    path.write_text(json.dumps(receipt))
+    with (
+        patch.object(host.upgrade, "_private_file", return_value=path.read_text()),
+        patch.object(host.upgrade, "_resume_source_after_failure", return_value=source_proven) as prove,
+    ):
+        if source_proven:
+            host.resume_maintenance(path, "private", {}, {"source_release": SHA}, "query")
+        else:
+            with pytest.raises(host.recovery.RecoveryBlocked):
+                host.resume_maintenance(path, "private", {}, {"source_release": SHA}, "query")
+    prove.assert_called_once_with("private", {}, {"source_release": SHA}, "query", receipt["writers"])
+    assert path.exists() is not source_proven
+
+
+def test_interrupted_maintenance_is_resumed_before_another_capacity_check(capacity_runtime):
+    capacity_runtime.write_text("previous maintenance")
+    order = []
+    with (
+        patch.object(host, "resume_maintenance", side_effect=lambda *_args: order.append("resume")),
+        patch.object(host, "ensure_capacity", side_effect=lambda: order.append("capacity")),
+    ):
+        with host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}):
+            order.append("work")
+    assert order == ["resume", "capacity", "work"]
+
+
+def test_failure_report_preserves_stage_without_sql_secrets_or_rows(capsys):
+    capacity = {"status": "unavailable", "code": "host_capacity_unavailable"}
+    with patch.object(host.upgrade, "inspect_host_capacity", return_value=capacity):
+        report = host.failure_report("temporary_restore", RuntimeError("secret DSN; SELECT private"))
+    assert host.validate_failure_report(report)
+    with pytest.raises(host.recovery.RecoveryBlocked):
+        runner.parse_host_report(json.dumps(report), {})
+    output = capsys.readouterr().out
+    assert "temporary_restore" in output and "unexpected_error" in output
+    assert "secret" not in output and "SELECT" not in output
+
+
+@pytest.mark.parametrize("change", [
+    {"detail": "secret"}, {"stage": "SQL secret"}, {"error_kind": []},
+    {"host_capacity": {"secret": "value"}}, {"status": "recovery_verified"},
+])
+def test_untrusted_failure_report_is_rejected_without_echo(change, capsys):
+    report = {"status": "recovery_failed", "stage": "capacity", "error_kind": "recovery_blocked",
+              "host_capacity": {"status": "unavailable", "code": "host_capacity_unavailable"}}
+    report.update(change)
+    with pytest.raises(host.recovery.RecoveryBlocked):
+        runner.parse_host_report(json.dumps(report), {})
+    assert capsys.readouterr().out == ""
+
+
+def test_oversized_host_report_is_rejected_without_echo(capsys):
+    with pytest.raises(host.recovery.RecoveryBlocked):
+        runner.parse_host_report("private" * 3000, {})
+    assert capsys.readouterr().out == ""
+

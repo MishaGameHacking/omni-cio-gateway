@@ -21,6 +21,7 @@ import tomllib
 from typing import Any
 
 from cryptography.fernet import Fernet
+from host_recovery import validate_failure_report
 from inplace_upgrade import load_plan
 from psycopg.conninfo import make_conninfo
 from test_with_postgres import _wait_owned_process, available_port, install_binaries
@@ -255,6 +256,7 @@ def interrupted(_signal, _frame):
     raise RuntimeError('Recovery operation interrupted')
 signal.signal(signal.SIGTERM, interrupted)
 signal.signal(signal.SIGHUP, interrupted)
+observation = {'stage': 'bootstrap'}
 try:
     bundle = json.loads(base64.b64decode('"""
         + encoded
@@ -270,17 +272,43 @@ try:
     sys.path.insert(0, str(work / '.github/scripts'))
     sys.path.insert(0, str(work / 'src'))
     from host_recovery import recover
-    print(json.dumps(recover(bundle['payload'])), flush=True)
+    print(json.dumps(recover(bundle['payload'], observation=observation)), flush=True)
 except Exception as exc:
-    from inplace_upgrade import UpgradeBlocked
-    from timeweb_recovery import RecoveryBlocked
-    detail = str(exc) if isinstance(exc, (UpgradeBlocked, RecoveryBlocked)) else type(exc).__name__
-    print('Recovery blocked: ' + detail, file=sys.stderr, flush=True)
-    raise SystemExit(1) from None
+    from host_recovery import failure_report
+    # Complete transport normally so the controller can read the safe failure report.
+    # The controller rejects this result and fails CI; no failure becomes success.
+    print(json.dumps(failure_report(observation['stage'], exc)), flush=True)
 finally:
     shutil.rmtree(work)
 """
     )
+
+
+def parse_host_report(raw: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if len(raw) > 16384:
+        raise RecoveryBlocked("Host recovery report exceeded its safe bound")
+    report = json.loads(raw)
+    if validate_failure_report(report):
+        print(json.dumps(report, sort_keys=True))
+        raise RecoveryBlocked("Host recovery did not complete; see the safe stage report")
+    if (
+        not isinstance(report, dict)
+        or set(report) != {
+            "status", "cluster_id", "source_release", "operator_release", "new_servers",
+            "permanent_database_clones", "temporary_restore_removed", "source_runtime_paused",
+            "source_kind",
+        }
+        or report["status"] != "recovery_verified"
+        or report["cluster_id"] != payload["database"]["cluster_id"]
+        or report["source_release"] != payload["plan"]["source_release"]
+        or report["operator_release"] != payload["release_sha"]
+        or report["new_servers"] != 0 or report["permanent_database_clones"] != 0
+        or report["temporary_restore_removed"] is not True
+        or type(report["source_runtime_paused"]) is not bool
+        or report["source_kind"] != "tenant_snapshot_pg_dump"
+    ):
+        raise RecoveryBlocked("Host recovery result was not confirmed; inspect before retrying")
+    return report
 
 
 def host_main() -> int:
@@ -320,23 +348,13 @@ def host_main() -> int:
     wait_for_main_release(sha, token, timeout=600)
     command = (
         "systemd-run --quiet --wait --pipe --collect --unit=omnicio-recovery "
-        "--property=RuntimeMaxSec=1200 --property=TimeoutStopSec=60 "
+        "--property=RuntimeMaxSec=1200 --property=TimeoutStopSec=240 "
         "--property=KillMode=control-group --property=MemoryMax=512M "
         "/opt/omnicio/current/.venv/bin/python -"
     )
     with EphemeralSsh(client=client, server_id=managed_id, server_ip=managed_ip) as ssh:
-        raw = ssh.run(command, input_text=host_program(payload), timeout=1300)
-    report = json.loads(raw)
-    if (
-        report.get("status") != "recovery_verified"
-        or report.get("cluster_id") != cluster_id
-        or report.get("source_release") != payload["plan"]["source_release"]
-        or report.get("operator_release") != sha
-        or report.get("new_servers") != 0
-        or report.get("permanent_database_clones") != 0
-        or report.get("temporary_restore_removed") is not True
-    ):
-        raise RecoveryBlocked("Host recovery result was not confirmed; inspect before retrying")
+        raw = ssh.run(command, input_text=host_program(payload), timeout=1500)
+    report = parse_host_report(raw, payload)
     print(json.dumps(report, sort_keys=True))
     return 0
 
@@ -348,3 +366,4 @@ if __name__ == "__main__":
         # A driver exception can include connection details, SQL values, or row data.
         print(f"Restore drill blocked: {type(exc).__name__}", file=sys.stderr)
         raise SystemExit(1) from None
+
