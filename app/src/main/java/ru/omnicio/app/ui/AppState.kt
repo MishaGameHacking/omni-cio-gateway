@@ -27,6 +27,9 @@ internal data class AppUiState(
     val authConfig: JSONObject? = null,
     val challengeId: String? = null,
     val challengePurpose: String? = null,
+    val resendAt: Long = 0,
+    val challengeExpiresAt: Long = 0,
+    val legalConsent: JSONObject? = null,
     val workspace: ServerWorkspace? = null,
     val accounts: List<BrokerAccount> = emptyList(),
 )
@@ -86,7 +89,13 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             api = ServerApi()
             mutable.value = mutable.value.copy(authenticated = false, publicId = null)
         }
-        mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList())
+        mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
+            legalConsent = if (expired) null else mutable.value.legalConsent)
+        if (error is ApiFailure && error.code in setOf(
+                "updated_legal_consent_required", "legal_versions_changed")) {
+            mutable.value = if (mutable.value.authenticated) mutable.value.copy(legalConsent = JSONObject())
+                else mutable.value.copy(authConfig = null)
+        }
     }
 
     fun loadConfig() = request({ client ->
@@ -94,6 +103,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         if (config.text("auth_provider") != "email" || config.optJSONObject("legal_versions") == null) {
             throw ApiFailure(409, "server_update_required")
         }
+        if (config.optInt("email_code_digits") !in 4..12) throw ApiFailure(200, "invalid_response")
         config
     }) {
         mutable.value = mutable.value.copy(authConfig = it)
@@ -115,13 +125,13 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             .put("email", email.trim()).put("password", password)
             .put("accept_privacy", true).put("accept_personal_data", true)
             .put("accept_terms", true).put("confirm_age_18", true).put("legal_versions", legal)) }) {
-            mutable.value = mutable.value.copy(challengeId = it.getString("challenge_id"), challengePurpose = "register")
+            adoptChallenge(it, "register")
         }
     }
 
     fun resetPassword(email: String) = request({ it.request("/api/auth/email/password-reset/request", "POST",
         JSONObject().put("email", email.trim())) }) {
-        mutable.value = mutable.value.copy(challengeId = it.getString("challenge_id"), challengePurpose = "reset")
+        adoptChallenge(it, "reset")
     }
 
     fun verify(code: String, newPassword: String) {
@@ -141,10 +151,18 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         }
     }
 
+    private fun adoptChallenge(result: JSONObject, purpose: String) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        mutable.value = mutable.value.copy(challengeId = result.getString("challenge_id"),
+            challengePurpose = purpose, resendAt = now + result.getLong("resend_after_seconds") * 1000,
+            challengeExpiresAt = now + result.getLong("expires_in_seconds") * 1000)
+    }
+
     fun resendCode() {
+        if (android.os.SystemClock.elapsedRealtime() < mutable.value.resendAt) return
         val id = mutable.value.challengeId ?: return
         request({ it.request("/api/auth/email/resend", "POST", JSONObject().put("challenge_id", id)) }) {
-            mutable.value = mutable.value.copy(challengeId = it.getString("challenge_id"), notice = "Новый код отправлен.")
+            adoptChallenge(it, mutable.value.challengePurpose ?: return@request)
         }
     }
 
@@ -154,7 +172,24 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
 
     fun refresh() {
         if (!mutable.value.authenticated) return
-        request({ it.workspace() }) { mutable.value = mutable.value.copy(workspace = it) }
+        request({ client ->
+            val legal = client.request("/api/auth/legal")
+            legal to if (legal.getBoolean("accepted")) client.workspace() else null
+        }) { (legal, workspace) ->
+            mutable.value = mutable.value.copy(workspace = workspace,
+                legalConsent = if (legal.getBoolean("accepted")) null else legal.getJSONObject("legal_versions"))
+        }
+    }
+
+    fun acceptLegal() {
+        val versions = mutable.value.legalConsent?.takeIf { it.length() > 0 } ?: return
+        request({ client ->
+            val result = client.request("/api/auth/legal", "POST", JSONObject()
+                .put("accept_privacy", true).put("accept_personal_data", true)
+                .put("accept_terms", true).put("confirm_age_18", true).put("legal_versions", versions))
+            if (!result.getBoolean("accepted")) throw ApiFailure(409, "updated_legal_consent_required")
+            client.workspace()
+        }) { mutable.value = mutable.value.copy(legalConsent = null, workspace = it) }
     }
 
     fun syncPortfolio() {
@@ -224,12 +259,15 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     }) { mutable.value = mutable.value.copy(workspace = it, notice = "Цель сохранена на сервере.") }
 
     fun logout() {
-        if (mutable.value.busy) return
-        request({ it.request("/api/auth/logout", "POST", JSONObject()) }) {
-            generation += 1
-            api = ServerApi()
-            mutable.value = AppUiState(darkTheme = mutable.value.darkTheme,
-                amountsHidden = mutable.value.amountsHidden, authConfig = mutable.value.authConfig)
+        val previous = api
+        generation += 1
+        api = ServerApi()
+        mutable.value = AppUiState(darkTheme = mutable.value.darkTheme,
+            amountsHidden = mutable.value.amountsHidden, authConfig = mutable.value.authConfig)
+        viewModelScope.launch(Dispatchers.IO) {
+            // Local access ends immediately even when server revocation is unavailable.
+            try { previous.request("/api/auth/logout", "POST", JSONObject()) }
+            catch (_: java.io.IOException) { /* The discarded session is no longer usable by this client. */ }
         }
     }
 }

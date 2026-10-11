@@ -22,8 +22,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "2.6.0"
+        versionCode = 9
+        versionName = "2.6.1"
     }
 
     signingConfigs {

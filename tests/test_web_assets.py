@@ -17,7 +17,7 @@ SHA = BUILD + "0" * 28
 WEB_SOURCE = Path(__file__).resolve().parents[1] / "web"
 PUBLIC_PATHS = {
     "index.html", "offline.html", "sw.js", "manifest.webmanifest", "version.js",
-    "assets/config.js", "assets/i18n.js", "assets/workspace.js", "assets/app.js",
+    "assets/app.js", "downloads/android.json",
     "assets/tokens.css", "assets/app.css",
 }
 
@@ -54,7 +54,7 @@ def test_actual_templates_render_one_package_and_build_identity() -> None:
     assert set(versions) == {__version__}
     for path, body in rendered.items():
         assert "__OMNICIO_" not in body, path
-        if path != "manifest.webmanifest":
+        if path not in {"manifest.webmanifest", "downloads/android.json"}:
             assert BUILD in body, path
     assert f"/assets/tokens.css?build={BUILD}" in rendered["index.html"]
     assert f"/assets/tokens.css?build={BUILD}" in rendered["offline.html"]
@@ -105,7 +105,7 @@ def test_commented_palette_definition_cannot_certify_active_browser_theme(
         web_assets.render_web_assets(public_source, BUILD)
 
 
-@pytest.mark.parametrize("name", ["config.js", "i18n.js", "workspace.js", "app.js",
+@pytest.mark.parametrize("name", ["app.js",
                                    "index.html", "offline.html", "sw.js", "tokens.css"])
 def test_a_stale_asset_without_build_marker_cannot_join_a_release(
     public_source: Path, name: str,

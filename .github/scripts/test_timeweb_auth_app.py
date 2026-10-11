@@ -964,6 +964,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_app_entrypoint_allows_explicit_main_apply_and_reconciliation_attempts(self) -> None:
         args = SimpleNamespace(
+            scope="application",
             release_sha="a" * 40, server_name="fixture-server", server_comment="fixture-managed",
             repository_root=str(SCRIPT_DIR.parent.parent), cluster_name="fixture-database",
             vpc_name="fixture-vpc", location="fixture-location", availability_zone="fixture-zone",
@@ -993,6 +994,26 @@ class AuthAppDeployTests(unittest.TestCase):
                     cluster_name=args.cluster_name, vpc_name=args.vpc_name,
                     location=args.location, availability_zone=args.availability_zone,
                 )
+
+    def test_public_scope_never_enters_application_or_database_reconcile(self) -> None:
+        args = SimpleNamespace(scope="public_site", release_sha="a" * 40,
+                               server_name="fixture-server", server_comment="fixture-managed",
+                               repository_root=str(SCRIPT_DIR.parent.parent))
+        environment = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+                       "GITHUB_SHA": "a" * 40, "TIMEWEB_CLOUD_TOKEN": "synthetic-private-token"}
+        with (patch.dict(os.environ, environment, clear=True),
+              patch.object(MODULE, "parse_args", return_value=args),
+              patch.object(MODULE, "TimewebClient") as client,
+              patch.object(MODULE, "reconcile") as reconcile,
+              patch("timeweb_public_site.publish_public_site") as publish,
+              patch.object(MODULE, "set_output") as output,
+              patch.object(MODULE, "add_summary")):
+            self.assertEqual(MODULE.main(), 0)
+            reconcile.assert_not_called()
+            publish.assert_called_once_with(client.return_value,
+                root=SCRIPT_DIR.parent.parent.resolve(), sha=args.release_sha,
+                server_name=args.server_name, server_comment=args.server_comment)
+            output.assert_called_once_with("status", "public_site_ready")
 
     def test_release_sha_requires_full_lowercase_commit(self) -> None:
         self.assertIsNotNone(MODULE.RELEASE_RE.fullmatch("a" * 40))
@@ -1607,8 +1628,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertEqual(len(locations), len(re.findall(r"^    location ", https, re.M)))
         self.assertTrue({
             "/", "/api/", "/health/", "/assets/", "= /assets/app.css",
-            "= /assets/tokens.css", "= /assets/config.js",
-            "= /assets/app.js", "= /assets/workspace.js", "= /assets/i18n.js",
+            "= /assets/tokens.css",
+            "= /assets/app.js",
             "= /sw.js", "= /offline.html", "= /manifest.webmanifest", "= /version.js",
         }.issubset(locations))
         for location, scope in locations.items():
@@ -1773,7 +1794,7 @@ class AuthAppDeployTests(unittest.TestCase):
             expressions.append(match[1].strip())
         self.assertNotIn("Require successful PostgreSQL release prerequisite", tests)
         diagnostic_conditions = {
-            "Upload synthetic interface screenshots": (
+            "Upload public site browser evidence": (
                 "always() && steps.checkout.outcome == 'success'"
             ),
             "Report source-specific Sonar": (
@@ -1850,20 +1871,22 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("          if errorlevel 1 exit /b 1\n", step)
         match = re.search(r'^          "%OMNICIO_PYTHON%" -c "(.+)"$', step, flags=re.M)
         self.assertIsNotNone(match)
-        for status in (
-            None, "", "pending_database", "unknown", "APP_READY", "app_ready\n", "app_ready",
-        ):
-            environment = dict(os.environ)
-            environment.pop("AUTH_DEPLOY_STATUS", None)
-            if status is not None:
-                environment["AUTH_DEPLOY_STATUS"] = status
-            result = subprocess.run([sys.executable, "-c", match[1]], env=environment,
-                                    text=True, capture_output=True, timeout=10)
-            with self.subTest(status=status):
-                self.assertEqual(result.returncode, 0 if status == "app_ready" else 1)
-                if status != "app_ready":
-                    self.assertIn("::error::Application deployment did not reach app_ready",
-                                  result.stderr)
+        self.assertIn("EXPECTED_DEPLOY_STATUS: ${{ inputs.scope == 'public_site' && "
+                      "'public_site_ready' || 'app_ready' }}", step)
+        for expected in ("app_ready", "public_site_ready"):
+            for status in (None, "", "pending_database", "unknown", "APP_READY",
+                           "app_ready\n", "app_ready", "public_site_ready"):
+                environment = {**os.environ, "EXPECTED_DEPLOY_STATUS": expected}
+                environment.pop("AUTH_DEPLOY_STATUS", None)
+                if status is not None:
+                    environment["AUTH_DEPLOY_STATUS"] = status
+                result = subprocess.run([sys.executable, "-c", match[1]], env=environment,
+                                        text=True, capture_output=True, timeout=10)
+                with self.subTest(expected=expected, status=status):
+                    self.assertEqual(result.returncode, 0 if status == expected else 1)
+                    if status != expected:
+                        self.assertIn("::error::Application deployment did not reach app_ready",
+                                      result.stderr)
 
     def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -1986,10 +2009,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertLessEqual(required, routes, required - routes)
         self.assertNotIn(("post", "/api/profile/strategy/feasibility"), routes)
         self.assertIn(MODULE.SITE_MARKER, page)
-        self.assertIn('id="app-sidebar"', page)
-        self.assertIn('id="auth-dialog"', page)
-        self.assertIn('id="global-search-form"', page)
-        self.assertIn('type="password"', page)
+        self.assertIn('id="download"', page)
+        self.assertNotIn('<form', page)
+        self.assertNotIn('type="password"', page)
         for path in MODULE.LEGAL_PAGES:
             self.assertIn(path, page)
 
@@ -2004,20 +2026,11 @@ class AuthAppDeployTests(unittest.TestCase):
             shipped = set(archive.getnames())
         for asset in MODULE.BRAND_RUNTIME_FILES:
             self.assertIn(asset, shipped)
-        self.assertIn("assets/brand/web/earth-hero.png", shipped)
-        self.assertIn("assets/brand/web/auth-mountains.png", shipped)
-        # Join shell continuations while preserving quoted paths, argument order and modes.
-        deployment_script = re.sub(r"\\\n[ \t]*", "", MODULE.REMOTE_DEPLOY_SCRIPT)
-        for name in ("earth-hero.png", "auth-mountains.png"):
-            self.assertIn(
-                f'install -m 0644 "$RELEASE/assets/brand/web/{name}" '
-                f'"$WEB_RELEASE/assets/brand/{name}"', deployment_script,
-            )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
         manifest = json.loads((root / "web" / "manifest.webmanifest").read_text(
             encoding="utf-8",
         ))
-        self.assertEqual(manifest["name"], "OMNICIO")
+        self.assertEqual(manifest["name"], "OMNICIO — о приложении")
         for icon in manifest["icons"]:
             name = icon["src"].rsplit("/", 1)[-1]
             self.assertEqual(name, "omnicio-logo.png")
@@ -2039,14 +2052,11 @@ class AuthAppDeployTests(unittest.TestCase):
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
         deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
 
-        self.assertGreaterEqual(page.count("data-app-version"), 3)
-        self.assertIn("data-app-build", page)
+        self.assertEqual(page.count("data-app-version"), 1)
         self.assertIn("__OMNICIO_VERSION__", page)
         self.assertIn("__OMNICIO_BUILD__", page)
-        self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('/assets/config.js?build=__OMNICIO_BUILD__', page)
         self.assertIn('/assets/tokens.css?build=__OMNICIO_BUILD__', page)
         self.assertIn(
             '"$RELEASE/.venv/bin/python" -m omnicio.web_assets '
@@ -2060,10 +2070,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn("location = /assets/app.css", script)
         self.assertIn("location = /assets/tokens.css", script)
-        self.assertIn("location = /assets/config.js", script)
         self.assertIn("location = /assets/app.js", script)
-        self.assertIn("location = /assets/workspace.js", script)
-        self.assertIn("location = /assets/i18n.js", script)
         self.assertIn("location = /sw.js", script)
         self.assertIn("location = /offline.html", script)
         self.assertIn("location = /version.js", script)
@@ -2108,7 +2115,7 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'const build = "{build[:12]}"', worker)
             self.assertNotIn("__OMNICIO_BUILD__", offline)
             self.assertNotIn("__OMNICIO_BUILD__", worker)
-            for name in ("app.js", "workspace.js", "i18n.js", "config.js", "tokens.css", "app.css"):
+            for name in ("app.js", "tokens.css", "app.css"):
                 script = (output / "assets" / name).read_text(encoding="utf-8")
                 self.assertIn(build[:12], script)
                 self.assertNotIn("__OMNICIO_BUILD__", script)
@@ -2209,16 +2216,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "/api/auth/config": (config, "application/json", 200),
         }
         for path, body, content_type in (
-            ("/assets/config.js", b"OMNICIO_CONFIG " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/tokens.css", b"--browser-theme-dark " + self.sha[:12].encode(), "text/css"),
-            ("/assets/app.js", b"window.OmniUI " + self.sha[:12].encode(), "text/javascript"),
-            ("/assets/workspace.js", b"window.OmniUI " + self.sha[:12].encode(),
-             "application/javascript"),
-            ("/assets/i18n.js", b"OMNICIO_I18N " + self.sha[:12].encode(), "text/javascript"),
-            ("/assets/app.css", b"--sidebar:240px " + self.sha[:12].encode(), "text/css"),
-            ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
-            ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
-            ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/app.js", b"Public product site " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/app.css", b".site-header " + self.sha[:12].encode(), "text/css"),
+            ("/sw.js", b"OMNICIO build " + self.sha[:12].encode(), "text/javascript"),
             (
                 "/offline.html",
                 b'<html lang="ru">' + self.sha[:12].encode() + b'</html>', "text/html",
@@ -2322,19 +2323,14 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
             (
-                f"/assets/config.js?build={self.sha[:12]}",
-                b"OMNICIO_CONFIG old", "text/javascript", 200,
+                f"/assets/app.js?build={self.sha[:12]}",
+                b"Public product site old", "text/javascript", 200,
             ),
             (
                 f"/assets/tokens.css?build={self.sha[:12]}",
                 b"--browser-theme-dark old", "text/css", 200,
             ),
-            (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
-            (f"/assets/brand/earth-hero.png?build={self.sha[:12]}", b"missing", "image/png", 200),
-            (
-                f"/assets/brand/auth-mountains.png?build={self.sha[:12]}",
-                b"<html>fallback</html>", "text/html", 200,
-            ),
+            (f"/assets/app.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
             (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
             (
                 f"/sw.js?build={self.sha[:12]}",

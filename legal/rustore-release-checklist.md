@@ -1,12 +1,12 @@
-# OMNICIO 2.6.0 — RuStore release-candidate checklist
+# OMNICIO 2.6.1 — RuStore release-candidate checklist
 
 Статус: checklist для серверного Android-клиента. Он не означает, что приложение уже опубликовано.
 
 ## Identity
 
 - package/applicationId: `ru.omnicio.app`;
-- versionName: `2.6.0`;
-- versionCode: `8`;
+- versionName: `2.6.1`;
+- versionCode: `9`;
 - первая опубликованная release signature после публикации становится частью неизменяемой identity приложения;
 - private release/upload key, keystore и пароли не хранятся в Git и не передаются в PR/chat.
 
@@ -68,7 +68,7 @@ https://www.rustore.ru/help/developers/publishing-and-verifying-apps/app-publica
 ## Privacy / permissions
 
 Перед upload сверить release manifest с `legal/android-privacy-declaration.md`.
-Android 2.6.0 ожидает только `INTERNET`; push permission отсутствует. Появление нового чувствительного permission требует отдельной проверки декларации и store metadata.
+Android 2.6.1 ожидает только `INTERNET`; push permission отсутствует. Появление нового чувствительного permission требует отдельной проверки декларации и store metadata.
 
 ## Остановка выпуска
 

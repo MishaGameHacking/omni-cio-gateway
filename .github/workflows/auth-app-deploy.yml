@@ -15,6 +15,7 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_app.py"
+      - ".github/scripts/timeweb_public_site.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
       - ".github/scripts/inplace_upgrade.py"
@@ -24,8 +25,6 @@ on:
       - "src/omnicio/**"
       - "web/**"
       - "tests/frontend-smoke.cjs"
-      - "tests/frontend_server_contract.py"
-      - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
   # Release verification requires tests for every exact accepted main, including Android-only updates.
@@ -33,6 +32,14 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "application = API + site; public_site = static site only, existing API unchanged"
+        type: choice
+        default: application
+        options:
+          - application
+          - public_site
 
 permissions:
   contents: read
@@ -94,23 +101,15 @@ jobs:
             echo ::error::node.exe is required for browser JavaScript syntax validation.
             exit /b 1
           )
-          node.exe --check web\config.js
-          if errorlevel 1 exit /b 1
           node.exe --check web\app.js
-          if errorlevel 1 exit /b 1
-          node.exe --check web\workspace.js
-          if errorlevel 1 exit /b 1
-          node.exe --check web\i18n.js
-          if errorlevel 1 exit /b 1
-          node.exe tests\i18n-contract.cjs
           if errorlevel 1 exit /b 1
           node.exe --check web\sw.js
 
-      - name: Browser public market and account isolation
+      - name: Browser public site, releases and cache retirement
         shell: cmd
         run: node.exe tests\frontend-smoke.cjs
 
-      - name: Upload synthetic interface screenshots
+      - name: Upload public site browser evidence
         if: always() && steps.checkout.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -118,8 +117,7 @@ jobs:
           path: |
             artifacts/frontend/*.png
             artifacts/frontend/failure-state.json
-            artifacts/frontend/layout-metrics.json
-            artifacts/frontend/installability.json
+            artifacts/frontend/public-requests.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -248,11 +246,21 @@ jobs:
             exit /b 1
           )
 
+      - name: Install reviewed renderer for public-only publication
+        if: inputs.scope == 'public_site'
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
+          if errorlevel 1 exit /b 1
+
       - name: Deploy accepted auth release
         id: app
         shell: cmd
         run: |
           "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_app.py ^
+            --scope "${{ inputs.scope || 'application' }}" ^
             --server-name "%SERVER_NAME%" ^
             --server-comment "%SERVER_COMMENT%" ^
             --release-sha "%GITHUB_SHA%" ^
@@ -266,8 +274,9 @@ jobs:
         shell: cmd
         env:
           AUTH_DEPLOY_STATUS: ${{ steps.app.outputs.status }}
+          EXPECTED_DEPLOY_STATUS: ${{ inputs.scope == 'public_site' && 'public_site_ready' || 'app_ready' }}
         run: |
-          "%OMNICIO_PYTHON%" -c "import os, sys; sys.exit(0 if os.environ.get('AUTH_DEPLOY_STATUS') == 'app_ready' else '::error::Application deployment did not reach app_ready; inspect the database and release prerequisites.')"
+          "%OMNICIO_PYTHON%" -c "import os, sys; sys.exit(0 if os.environ.get('AUTH_DEPLOY_STATUS') == os.environ['EXPECTED_DEPLOY_STATUS'] else '::error::Application deployment did not reach app_ready; inspect the database and release prerequisites.')"
           if errorlevel 1 exit /b 1
-          echo OmniCIO is healthy over HTTPS. Public access and email authentication configuration are ready.
+          echo Requested release scope passed its readback checks.
 

@@ -1,6 +1,6 @@
 # OMNICIO Android — фактические данные и разрешения
 
-Редакция для Android 2.6.0, versionCode 8. Сверяется с exact signed release перед публикацией.
+Редакция для Android 2.6.1, versionCode 9. Сверяется с exact signed release перед публикацией.
 
 ## Серверная обработка
 

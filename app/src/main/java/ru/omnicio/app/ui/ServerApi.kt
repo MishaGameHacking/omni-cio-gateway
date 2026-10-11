@@ -150,7 +150,7 @@ internal fun apiError(error: Exception): String = when {
     error is ApiFailure && error.code == "email_or_password_invalid" -> "Проверьте почту и пароль."
     error is ApiFailure && error.code == "email_code_invalid_or_expired" -> "Код неверный или истёк. Запросите новый."
     error is ApiFailure && error.code == "updated_legal_consent_required" ->
-        "Требуется принять обновлённые условия в личном кабинете OMNICIO."
+        "Ознакомьтесь с обновлёнными документами и подтвердите их в приложении."
     error is ApiFailure && error.status == 401 -> "Сессия завершена. Войдите снова."
     error is ApiFailure && error.status == 409 -> "Данные или условия изменились. Обновите экран перед повтором."
     error is ApiFailure && error.status == 429 -> "Слишком много запросов. Повторите позже."

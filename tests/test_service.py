@@ -458,3 +458,41 @@ def test_own_email_is_not_disclosed_after_session_is_revoked_during_read():
     assert response.status_code in {401, 409}
     assert "private-address@gmail.com" not in response.text
     db.email_identity_status.assert_called_once_with(OWNER.id)
+
+
+def test_native_legal_renewal_requires_current_versions_origin_and_owner_session():
+    auth, db, _ = auth_service()
+    db.has_legal_versions.return_value = False
+    db.accept_legal_versions.return_value = {
+        "accepted": True, "legal_versions": auth.legal_versions(),
+    }
+    body = {key: value for key, value in registration_payload(auth).items()
+            if key not in {"email", "password"}}
+    headers = {"Origin": CANONICAL_ORIGIN, "X-Omnicio-Profile": "000000101"}
+    with (patch.object(app.state, "auth_service", auth, create=True),
+          patch.object(app.state, "database", db, create=True),
+          patch.object(app.state, "settings", auth.settings, create=True)):
+        client = TestClient(app, base_url=CANONICAL_ORIGIN)
+        client.cookies.set("omnicio_session", "synthetic-session")
+        status = client.get("/api/auth/legal", headers=headers)
+        assert status.status_code == 200
+        assert status.json() == {"accepted": False, "legal_versions": auth.legal_versions()}
+        assert status.headers["cache-control"] == "private, no-store"
+        for changed, expected in [({"legal_versions": {}}, 409),
+                                  ({"accept_personal_data": False}, 400),
+                                  ({"confirm_age_18": False}, 400)]:
+            assert client.post("/api/auth/legal", headers=headers,
+                               json={**body, **changed}).status_code == expected
+        assert client.post("/api/auth/legal", json=body).status_code == 403
+        assert client.post("/api/auth/legal", headers={**headers, "X-Omnicio-Profile": "000000102"},
+                           json=body).status_code == 409
+        db.accept_legal_versions.assert_not_called()
+        db.has_legal_versions.return_value = True
+        result = client.post("/api/auth/legal", headers=headers, json=body)
+        assert result.status_code == 200
+        assert result.json()["accepted"] is True
+        args = db.accept_legal_versions.call_args
+        assert args.args == (OWNER.id, session_digest("synthetic-session"), auth.legal_versions())
+        assert len(args.kwargs["client_ip_hash"]) == 32
+        db.accept_legal_versions.side_effect = PermissionError("session_expired")
+        assert client.post("/api/auth/legal", headers=headers, json=body).status_code == 409
