@@ -82,6 +82,14 @@ private val mainDestinations = listOf(
 )
 
 @Composable
+internal fun OmnicioRoot(appViewModel: OmnicioViewModel = viewModel()) {
+    val uiState by appViewModel.uiState.collectAsStateWithLifecycle()
+    OmnicioTheme(darkTheme = uiState.settings.darkTheme) {
+        OmnicioApp(appViewModel)
+    }
+}
+
+@Composable
 internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
     val uiState by appViewModel.uiState.collectAsStateWithLifecycle()
     val navController = rememberNavController()
@@ -212,6 +220,7 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 onGoalHorizonYears = appViewModel::setGoalHorizonYears,
                 onNotificationsEnabled = appViewModel::setNotificationsEnabled,
                 onFastAlertsEnabled = appViewModel::setFastAlertsEnabled,
+                onDarkTheme = appViewModel::setDarkTheme,
             )
         }
     }
@@ -255,7 +264,17 @@ private fun OnboardingScreen(
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                text = "Инвестиционная аналитика с локальным персональным контуром.",
+                text = "Больше, чем инвестиции",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Добро пожаловать",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "Соберите инвестиции в одном месте и принимайте решения увереннее.",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -278,7 +297,7 @@ private fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(vertical = 15.dp),
             ) {
-                Text("Попробовать локально")
+                Text("Продолжить в демо-режиме")
             }
             OutlinedButton(
                 onClick = { showBrokerInfo = true },
@@ -411,6 +430,7 @@ private fun MainShell(
                     }
                 }
                 Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
                     topBar = { AppTopBar(selected, onOpenSettings) },
                     modifier = Modifier.weight(1f),
                 ) { padding ->
@@ -419,6 +439,7 @@ private fun MainShell(
             }
         } else {
             Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
                 topBar = { AppTopBar(selected, onOpenSettings) },
                 bottomBar = {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
@@ -450,19 +471,19 @@ private fun AppTopBar(
     selected: String,
     onOpenSettings: () -> Unit,
 ) {
-    val title = mainDestinations.firstOrNull { it.route == selected }?.label ?: "OMNICIO"
     val largeFont = shouldStackDetailLine(LocalDensity.current.fontScale)
     TopAppBar(
         title = {
             Column {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
+                    text = "OMNICIO",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                 )
                 if (!largeFont) {
                     Text(
-                        text = "OMNICIO · ДЕМО",
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "Больше, чем инвестиции",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -470,7 +491,11 @@ private fun AppTopBar(
         },
         actions = {
             TextButton(onClick = onOpenSettings) {
-                Text(if (largeFont) "Настр." else "Настройки")
+                Text(
+                    text = if (largeFont) "⚙" else "Настройки",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         },
     )
@@ -494,7 +519,7 @@ private fun ScreenContainer(
             .align(Alignment.TopCenter)
             .padding(
                 horizontal = horizontalPadding,
-                vertical = OmniSpacing.md,
+                vertical = OmniSpacing.sm,
             )
 
         if (scrollable) {
