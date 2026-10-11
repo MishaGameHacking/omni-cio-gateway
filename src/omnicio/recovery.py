@@ -22,6 +22,7 @@ BACKUP_TIMEZONE = timezone(timedelta(hours=3))
 RESTORE_MAX_AGE = timedelta(days=30)
 RESTORE_CHECKS = frozenset({"content", "schema", "foreign_keys", "tenant_isolation"})
 SHA256_PATTERN = r"[0-9a-f]{64}"
+LOGICAL_SOURCES = frozenset({"runtime_pg_dump", "tenant_snapshot_pg_dump"})
 
 
 def sign_recovery_evidence(payload: dict[str, Any], key: str) -> dict[str, Any]:
@@ -91,6 +92,41 @@ def evidence_digest(value: object) -> str:
     ).encode()).hexdigest()
 
 
+def snapshot_fingerprints(
+    conn: Connection[Any], scopes: dict[str, list[str]] | None = None,
+) -> dict[str, tuple[int, str]]:
+    """Hash every row, retaining duplicates, independent of tenant traversal order.
+
+    The export controller validates the exhaustive tenant partition first. The
+    isolated restore uses an unrestricted local owner and no scopes. Neither
+    path changes production RLS. Hash storage is bounded per table.
+    """
+    result: dict[str, tuple[int, str]] = {}
+    with conn.transaction():
+        conn.execute("SET LOCAL TIME ZONE 'UTC'")
+        tables = conn.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
+        ).fetchall()
+        for (name,) in tables:
+            hashes: list[bytes] = []
+            for identity in (scopes or {}).get(name, [""]):
+                conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (identity,))
+                with conn.cursor(name="omnicio_snapshot_hash") as rows:
+                    rows.execute(sql.SQL("SELECT row_to_json(t)::text FROM {} t").format(
+                        sql.Identifier("public", name),
+                    ))
+                    for (row,) in rows:
+                        if len(hashes) >= 1_000_000:
+                            raise ValueError("recovery_row_limit")
+                        hashes.append(hashlib.sha256(row.encode()).digest())
+            hashes.sort()
+            digest = hashlib.sha256()
+            for row_hash in hashes:
+                digest.update(row_hash)
+            result[name] = (len(hashes), digest.hexdigest())
+    return result
+
+
 def _restore_verification(
     payload: dict[str, object], now: datetime, *, signing_key: str | None = None,
 ) -> dict[str, object]:
@@ -105,7 +141,7 @@ def _restore_verification(
     source_at = _timestamp(proof.get("source_at"))
     checks = proof.get("checks")
     if (proof.get("kind") != "logical_restore_v1"
-            or proof.get("source_kind") != "runtime_pg_dump"
+            or proof.get("source_kind") not in LOGICAL_SOURCES
             or type(proof.get("cluster_id")) is not int
             or proof["cluster_id"] != payload.get("cluster_id")
             or verified_at is None or source_at is None or not source_at <= verified_at <= now
@@ -186,7 +222,7 @@ def _require_upgrade_archive(
                      "content_digest", "schema_digest"}
     if (exported is None or set(exported) != export_fields
             or exported["kind"] != "logical_export_v1"
-            or exported["source_kind"] != "runtime_pg_dump"
+            or exported["source_kind"] != proof["source_kind"]
             or type(exported["cluster_id"]) is not int
             or any(exported[name] != proof[name] for name in (
                 "cluster_id", "release_sha", "source_at", "source_system_id", "archive_sha256",

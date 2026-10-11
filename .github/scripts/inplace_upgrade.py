@@ -530,7 +530,7 @@ def render_recovery_validator() -> str:
     """Ship the canonical verifier definitions without importing the old installed module."""
     path = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio/recovery.py"
     names = {
-        "BACKUP_MAX_AGE", "RESTORE_MAX_AGE", "RESTORE_CHECKS", "SHA256_PATTERN",
+        "BACKUP_MAX_AGE", "RESTORE_MAX_AGE", "RESTORE_CHECKS", "SHA256_PATTERN", "LOGICAL_SOURCES",
         "sign_recovery_evidence",
         "verified_recovery_evidence", "_restore_verification", "_timestamp",
         "require_upgrade_recovery", "_require_upgrade_archive",

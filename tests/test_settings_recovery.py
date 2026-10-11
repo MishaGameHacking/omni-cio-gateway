@@ -344,8 +344,11 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
     not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"),
     reason="the disposable PostgreSQL CI launcher supplies isolated cluster binaries",
 )
+@pytest.mark.parametrize("tenant_safe", [False, True])
 def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_export(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tenant_safe: bool,
 ) -> None:
     """Exercise the actual operator commands on two synthetic disposable clusters."""
     from omnicio.recovery import verified_recovery_evidence
@@ -371,6 +374,7 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
     assert options["host"] == "127.0.0.1"
     assert options["dbname"] == "omnicio_test"
     source_name = "omnicio_export_" + uuid4().hex
+    reader = "omnicio_backup_" + uuid4().hex
     target_data = tmp_path / "target"
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -380,13 +384,32 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
     release_sha = "a" * 40
     try:
         runner.native(
-            [str(binary / f"initdb{suffix}"), "-D", str(target_data),
-             "-U", "postgres", "-A", "trust"], timeout=90,
+            [
+                str(binary / f"initdb{suffix}"),
+                "-D",
+                str(target_data),
+                "-U",
+                "postgres",
+                "-A",
+                "trust",
+            ],
+            timeout=90,
         )
         runner.native(
-            [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data),
-             "-l", str(tmp_path / "pg.log"), "-o", f"-h 127.0.0.1 -p {port} -F",
-             "-w", "-t", "30", "start"], timeout=45,
+            [
+                str(binary / f"pg_ctl{suffix}"),
+                "-D",
+                str(target_data),
+                "-l",
+                str(tmp_path / "pg.log"),
+                "-o",
+                f"-h 127.0.0.1 -p {port} -F",
+                "-w",
+                "-t",
+                "30",
+                "start",
+            ],
+            timeout=45,
         )
         with psycopg.connect(base, autocommit=True) as control:
             control.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(source_name)))
@@ -402,42 +425,113 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
                             "VALUES (%s, 1, %s::jsonb)",
                             (owner, json.dumps(default_preferences())),
                         )
-                manifest = recovery.export_logical_archive(
-                    source_dsn, binary, cluster_id=recovery.load_policy().cluster_id,
-                    release_sha=release_sha, signing_key=signing_key, archive_key=archive_key,
-                )
+                isolated = f"postgresql://postgres@127.0.0.1:{port}/postgres"
+                if tenant_safe:
+                    tenant = importlib.import_module("tenant_archive")
+                    monkeypatch.setattr(tenant, "recovery", recovery)
+                    control.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(reader)))
+                    with psycopg.connect(source_dsn, autocommit=True) as source:
+                        source.execute(
+                            sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {}").format(
+                                sql.Identifier(reader)
+                            )
+                        )
+                        source.execute(
+                            sql.SQL("GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO {}").format(
+                                sql.Identifier(reader)
+                            )
+                        )
+                        source.execute(
+                            sql.SQL("GRANT EXECUTE ON FUNCTION pg_control_system() TO {}").format(
+                                sql.Identifier(reader)
+                            )
+                        )
+                    restricted = make_conninfo(source_dsn, user=reader)
+                    with psycopg.connect(restricted) as source:
+                        assert source.execute(
+                            "SELECT count(*) FROM workspace_preferences"
+                        ).fetchone() == (0,)
+                    manifest = tenant.export_tenant_archive(
+                        restricted,
+                        isolated,
+                        binary,
+                        cluster_id=recovery.load_policy().cluster_id,
+                        source_release=release_sha,
+                        signing_key=signing_key,
+                        archive_key=archive_key,
+                    )
+                else:
+                    manifest = recovery.export_logical_archive(
+                        source_dsn,
+                        binary,
+                        cluster_id=recovery.load_policy().cluster_id,
+                        release_sha=release_sha,
+                        signing_key=signing_key,
+                        archive_key=archive_key,
+                    )
                 archive = recovery.restore_artifact_path("database.dump.encrypted")
                 assert not archive.read_bytes().startswith(b"PGDMP")
                 with pytest.raises(recovery.RecoveryBlocked, match="same PostgreSQL cluster"):
                     recovery.verify_logical_archive(
-                        base, binary, manifest, release_sha=release_sha,
-                        signing_key=signing_key, archive_key=archive_key,
+                        base,
+                        binary,
+                        manifest,
+                        release_sha=release_sha,
+                        signing_key=signing_key,
+                        archive_key=archive_key,
                     )
                 isolated = f"postgresql://postgres@127.0.0.1:{port}/postgres"
                 receipt = recovery.verify_logical_archive(
-                    isolated, binary, manifest, release_sha=release_sha,
-                    signing_key=signing_key, archive_key=archive_key,
+                    isolated,
+                    binary,
+                    manifest,
+                    release_sha=release_sha,
+                    signing_key=signing_key,
+                    archive_key=archive_key,
                 )
                 proof = verified_recovery_evidence(receipt, signing_key)
                 assert proof is not None
                 assert all(proof["checks"].values())
                 assert proof["source_system_id"] != proof["target_system_id"]
                 with psycopg.connect(isolated) as target:
-                    assert target.execute(
-                        "SELECT count(*) FROM pg_database WHERE datname LIKE 'omnicio_restore_%%'",
-                    ).fetchone()[0] == 0
-                    assert target.execute(
-                        "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'omnicio_restore_%%'",
-                    ).fetchone()[0] == 0
+                    assert (
+                        target.execute(
+                            "SELECT count(*) FROM pg_database "
+                            "WHERE datname LIKE 'omnicio_restore_%%'",
+                        ).fetchone()[0]
+                        == 0
+                    )
+                    assert (
+                        target.execute(
+                            "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'omnicio_restore_%%'",
+                        ).fetchone()[0]
+                        == 0
+                    )
             finally:
-                control.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
-                    sql.Identifier(source_name),
-                ))
+                control.execute(
+                    sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
+                        sql.Identifier(source_name),
+                    )
+                )
+                if tenant_safe:
+                    control.execute(
+                        sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(reader))
+                    )
     finally:
         if (target_data / "postmaster.pid").exists():
             runner.native(
-                [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data),
-                 "-m", "fast", "-w", "-t", "30", "stop"], timeout=45,
+                [
+                    str(binary / f"pg_ctl{suffix}"),
+                    "-D",
+                    str(target_data),
+                    "-m",
+                    "fast",
+                    "-w",
+                    "-t",
+                    "30",
+                    "stop",
+                ],
+                timeout=45,
             )
 
 

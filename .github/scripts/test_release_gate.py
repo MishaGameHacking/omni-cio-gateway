@@ -645,15 +645,17 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
                 self.assertIn("    needs: tests\n", reconcile)
                 self.assertIn("- name: Verify current main release checks\n", reconcile)
 
-    def test_inactive_restore_uses_shared_gate_without_sonar_credentials(self) -> None:
+    def test_host_restore_uses_shared_gate_and_keeps_data_on_server(self) -> None:
         workflow = (
             pathlib.Path(__file__).resolve().parent.parent / "workflows" / "auth-postgres.yml"
         ).read_text(encoding="utf-8")
         restore = workflow.split("\n  isolated-restore:\n", 1)[1]
-        self.assertIn("OMNICIO_RESTORE_DRILL_ALLOWED: \"false\"", restore)
+        self.assertIn("OMNICIO_RESTORE_DRILL_ALLOWED: \"true\"", restore)
         self.assertIn("github.event_name == 'workflow_dispatch'", restore)
         self.assertIn("github.ref == 'refs/heads/main' && inputs.restore_drill", restore)
-        self.assertIn("run_recovery_drill.py", restore)
+        self.assertIn("run_recovery_drill.py --on-host", restore)
+        self.assertNotIn("upload-artifact", restore)
+        self.assertNotIn("OMNICIO_RESTORE_SOURCE_DSN", restore)
         self.assertIn("pull-requests: read", restore)
         self.assertNotIn("SONAR_TOKEN", workflow)
 

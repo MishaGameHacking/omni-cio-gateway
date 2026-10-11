@@ -34,6 +34,7 @@ rollback_contract = "mobile-social-email-holdings-v1"
 [tool.omnicio.timeweb]
 server-id = 9235089
 ipv4 = "194.87.151.244"
+manual_host_recovery = true
 
 [tool.omnicio.timeweb.backups]
 cluster_id = 4215095
