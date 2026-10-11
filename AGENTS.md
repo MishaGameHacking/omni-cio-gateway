@@ -155,6 +155,7 @@ CI artifact не является опубликованным релизом. D
 9. Если Android Studio после обновления показывает unresolved AndroidX imports и баннер о changed Gradle files, сначала выполнить Sync Project with Gradle Files. Не переписывать корректный Kotlin-код только ради красной IDE-подсветки до успешного Gradle Sync.
 10. При ошибке dependency locking на IDE-only конфигурации вида `debugRuntimeClasspathCopy` проверять текущую каноническую lock policy репозитория; не генерировать произвольный новый lock state и не отключать dependency locking локальным обходом.
 11. После успешной установки OWNER ожидает две вещи: подтверждённый exact Git SHA/версию и фактически запущенное приложение на подключённом устройстве.
+12. `INSTALL_FAILED_UPDATE_INCOMPATIBLE` означает несовпадение подписи, а не ошибку компиляции. Для сохранения данных нужен прежний debug keystore; без него предложить явно обозначенную переустановку только `ru.omnicio.app.debug`. Не удалять приложение/ключ автоматически, не коммитить keystore и не менять package: Telegram/VK callback allowlist и схема БД разрешают только действующие packages. Подробные команды — в README.
 
 Этот контракт является ответом по умолчанию на будущие запросы OWNER об обновлении Android-приложения с GitHub; не заставлять OWNER заново объяснять различие между старой feature branch, accepted main, установкой APK и запуском debug package.
 

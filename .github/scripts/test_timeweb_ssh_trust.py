@@ -311,6 +311,56 @@ class SshTrustTests(unittest.TestCase):
             self.assertIsNone(session._tmp)
             self.assertEqual(client.mock_calls, [])
 
+    def test_pending_provider_key_blocks_before_any_new_mutation(self) -> None:
+        client = Mock()
+        client.verify_ephemeral_key_cleanup.side_effect = postgres.InfraError("pending key")
+        session = postgres.EphemeralSsh(client=client, server_id=9235089, server_ip=SERVER)
+        with (
+            patch.dict(os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY}),
+            patch.object(subprocess, "run"),
+            patch.object(pathlib.Path, "read_text", return_value="synthetic-public-key"),
+            self.assertRaisesRegex(postgres.InfraError, "pending key"),
+        ):
+            session.__enter__()
+        client.create_ssh_key.assert_not_called()
+        client.attach_ssh_key.assert_not_called()
+        client.detach_ssh_key.assert_not_called()
+        client.delete_ssh_key.assert_not_called()
+        self.assertIsNone(session._tmp)
+
+    def test_lost_attachment_response_uses_bounded_probes_without_repeating_post(self) -> None:
+        for ready in (True, False):
+            client = Mock()
+            client.create_ssh_key.return_value = 123
+            client.attach_ssh_key.side_effect = postgres.AmbiguousProviderError("lost response")
+            session = postgres.EphemeralSsh(client=client, server_id=9235089, server_ip=SERVER)
+            with (
+                self.subTest(ready=ready),
+                patch.dict(os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY}),
+                patch.object(subprocess, "run"),
+                patch.object(pathlib.Path, "read_text", return_value="synthetic-public-key"),
+                patch.object(postgres, "SSH_READY_ATTEMPTS", 2),
+                patch.object(postgres.time, "sleep") as sleep,
+                patch.object(postgres, "add_summary"),
+                patch.object(session, "_probe", side_effect=[
+                    (False, "not propagated"), (ready, "not propagated"),
+                ]) as probe,
+            ):
+                if ready:
+                    with session:
+                        self.assertEqual(probe.call_count, 2)
+                else:
+                    with self.assertRaisesRegex(postgres.InfraError, "propagation window"):
+                        session.__enter__()
+                self.assertEqual(probe.call_count, 2)
+                sleep.assert_called_once_with(postgres.SSH_READY_DELAY_SECONDS)
+            client.verify_ephemeral_key_cleanup.assert_called_once_with()
+            client.create_ssh_key.assert_called_once()
+            client.attach_ssh_key.assert_called_once_with(9235089, 123)
+            client.detach_ssh_key.assert_called_once_with(9235089, 123)
+            client.delete_ssh_key.assert_called_once_with(123)
+            self.assertIsNone(session._tmp)
+
     def test_openssh_resolves_only_pinned_trust_and_identity(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
@@ -331,3 +381,4 @@ class SshTrustTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

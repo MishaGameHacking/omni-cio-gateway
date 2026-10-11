@@ -49,6 +49,26 @@ GitHub хранит исходники и сценарии сборки/разв
 
 На ноутбуке после принятия выпуска: сохранить собственные изменения, получить `origin/main`, перейти на актуальный main, выполнить Gradle Sync и `./gradlew :app:installDebug --no-configuration-cache` (Windows: `.\gradlew.bat :app:installDebug --no-configuration-cache`). Запускать `ru.omnicio.app.debug`, отдельно от `ru.omnicio.app`.
 
+### Android Studio: `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+
+Эта ошибка означает, что APK уже собран, но установленный `ru.omnicio.app.debug` подписан другим ключом. Очистка Gradle, повторная сборка, `adb install -r` и увеличение версии не заменяют подпись. Для обновления с сохранением локальных данных нужен прежний debug keystore. Стандартное расположение в Windows — `%USERPROFILE%\.android\debug.keystore`; проверить используемый сертификат можно командой `.\gradlew.bat :app:signingReport`. Не удалять текущий ключ и не передавать keystore или его пароли в чат/GitHub. Для скачанного CI APK сравнить сертификат с `android-build.json` того же выпуска.
+
+Если прежний ключ недоступен, Android требует удалить старый debug package перед новой установкой. Следующая команда удаляет **его локальные данные и настройки**, но не release `ru.omnicio.app` и не серверный аккаунт. Выполнять только после осознанного выбора переустановки:
+
+```powershell
+.\gradlew.bat :app:uninstallDebug :app:installDebug --no-configuration-cache
+```
+
+После `BUILD SUCCESSFUL` запустить **Run → app**, либо:
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb shell dumpsys package ru.omnicio.app.debug | Select-String "versionName|versionCode"
+& $adb shell monkey -p ru.omnicio.app.debug -c android.intent.category.LAUNCHER 1
+```
+
+Нельзя произвольно менять applicationId ради обхода подписи: сервер разрешает только зарегистрированные Android packages для Telegram/VK callbacks. Переустановка устраняет конфликт сертификатов, но доступность сервера проверяется отдельно.
+
 Release-подпись хранится в защищённом окружении; debug APK не является выпуском RuStore. Подписанную сборку и работу на устройстве проверяют отдельно.
 
 Для скачиваемого установочного файла запустить `Android CI` → `Run workflow` на accepted `main`. После обязательного main release gate, Android lint/unit/build и проверки APK-подписи workflow создаёт debug prerelease в [GitHub Releases](https://github.com/MishaGameHacking/omni-cio-gateway/releases). В нём находятся APK, `android-build.json` (версия, commit, SHA-256, сертификат, run) и `SHA256SUMS.txt`. При несовпадении сертификата с прежним debug APK Android не разрешит обновление поверх него; не удалять старую установку и данные автоматически. Подписанный магазинный выпуск по-прежнему требует защищённого release key и проверки на устройстве.

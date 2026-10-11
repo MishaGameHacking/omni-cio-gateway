@@ -220,6 +220,28 @@ class TimewebClient:
             raise InfraError("Timeweb did not return the created SSH key id")
         return int(float(key["id"]))
 
+    def verify_ephemeral_key_cleanup(self) -> None:
+        """Read the complete inventory before creating another auth SSH key."""
+        response = self.request("GET", "/ssh-keys")
+        keys = response.get("ssh_keys")
+        meta = response.get("meta")
+        if (not isinstance(keys, list) or not isinstance(meta, dict)
+                or type(meta.get("total")) is not int or meta["total"] != len(keys)):
+            raise InfraError("Timeweb SSH key inventory is incomplete")
+        pending = []
+        for key in keys:
+            if (not isinstance(key, dict) or not isinstance(key.get("name"), str)
+                    or type(key.get("id")) is not int or key["id"] < 1):
+                raise InfraError("Timeweb SSH key inventory is malformed")
+            if key["name"].startswith("omnicio-auth-"):
+                pending.append(key["id"])
+        if pending:
+            raise InfraError(
+                "Previous auth SSH keys remain; no new key was created. "
+                f"Review provider key ids: {','.join(str(value) for value in pending)}"
+            )
+        add_summary("SSH key inventory verified: no previous auth keys remain")
+
     def attach_ssh_key(self, server_id: int, ssh_key_id: int) -> None:
         self.request(
             "POST",
@@ -512,9 +534,18 @@ class EphemeralSsh:
                 timeout=30,
             )
             public_key = self._key_path.with_suffix(".pub").read_text().strip()
+            self.client.verify_ephemeral_key_cleanup()
             key_name = f"omnicio-auth-{os.environ.get('GITHUB_RUN_ID', 'manual')}"
             self._ssh_key_id = self.client.create_ssh_key(public_key, key_name)
-            self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
+            try:
+                self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
+            except AmbiguousProviderError:
+                # A pinned-host SSH probe proves whether this exact key arrived.
+                # Never repeat the provider POST after a lost response.
+                add_summary(
+                    "SSH key attachment response was lost; reconciling with "
+                    "bounded authenticated read-only SSH probes"
+                )
 
             last_error = "SSH not attempted"
             for attempt in range(SSH_READY_ATTEMPTS):
@@ -1258,3 +1289,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

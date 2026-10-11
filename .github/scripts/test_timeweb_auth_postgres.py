@@ -40,6 +40,48 @@ HISTORICAL_MIGRATIONS = (
 )
 
 
+class SshInventoryTests(unittest.TestCase):
+    def test_complete_inventory_allows_only_unrelated_keys(self) -> None:
+        client = MODULE.TimewebClient("synthetic-token")
+        for keys in ([], [{"id": 17, "name": "operator"}]):
+            with self.subTest(keys=keys), patch.object(
+                client, "request", return_value={"ssh_keys": keys, "meta": {"total": len(keys)}},
+            ) as request, patch.object(MODULE, "add_summary"):
+                client.verify_ephemeral_key_cleanup()
+                request.assert_called_once_with("GET", "/ssh-keys")
+
+    def test_pending_key_blocks_without_mutations_or_public_key_disclosure(self) -> None:
+        client = MODULE.TimewebClient("synthetic-token")
+        response = {"ssh_keys": [{"id": 42, "name": "omnicio-auth-123",
+                                  "body": "private-diagnostic-canary"}],
+                    "meta": {"total": 1}}
+        with patch.object(client, "request", return_value=response) as request:
+            with self.assertRaises(MODULE.InfraError) as error:
+                client.verify_ephemeral_key_cleanup()
+            request.assert_called_once_with("GET", "/ssh-keys")
+        self.assertIn("42", str(error.exception))
+        self.assertNotIn("canary", str(error.exception))
+
+    def test_incomplete_and_malformed_inventories_never_allow_a_new_key(self) -> None:
+        client = MODULE.TimewebClient("synthetic-token")
+        cases = (
+            {}, {"ssh_keys": [], "meta": {}},
+            {"ssh_keys": [], "meta": {"total": 1}},
+            {"ssh_keys": [], "meta": {"total": False}},
+            {"ssh_keys": {}, "meta": {"total": 0}},
+            {"ssh_keys": [None], "meta": {"total": 1}},
+            {"ssh_keys": [{"id": True, "name": "operator"}], "meta": {"total": 1}},
+            {"ssh_keys": [{"id": 0, "name": "operator"}], "meta": {"total": 1}},
+            {"ssh_keys": [{"id": 17}], "meta": {"total": 1}},
+        )
+        for response in cases:
+            with self.subTest(response=response), patch.object(
+                client, "request", return_value=response,
+            ) as request, self.assertRaises(MODULE.InfraError):
+                client.verify_ephemeral_key_cleanup()
+            request.assert_called_once_with("GET", "/ssh-keys")
+
+
 class PostgresTests(unittest.TestCase):
     def setUp(self) -> None:
         self.desired = MODULE.DesiredDatabase(
@@ -1682,3 +1724,4 @@ class RemoteDiagnosticsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
