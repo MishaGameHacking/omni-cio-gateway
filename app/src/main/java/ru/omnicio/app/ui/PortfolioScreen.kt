@@ -76,7 +76,7 @@ internal fun PortfolioScreen(
         verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
     ) {
         item {
-            StatusPill("ДЕМО · UI-03 · " + positions.size + " позиций")
+            StatusPill("ДЕМО · " + positions.size + " позиций")
         }
         item {
             Text(
