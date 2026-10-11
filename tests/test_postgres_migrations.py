@@ -197,8 +197,10 @@ def remote_inplace_database(inplace_database, monkeypatch):
                         lambda: copy.deepcopy(receipts[-1]) if receipts else None)
     monkeypatch.setattr(upgrade, "_write_receipt",
                         lambda value: receipts.append(copy.deepcopy(value)))
-    monkeypatch.setattr(upgrade, "_existing_installation", lambda _plan, _receipt, _release, _verified:
-                        (arguments["source_query"], arguments["installed_release"]))
+    monkeypatch.setattr(
+        upgrade, "_existing_installation", lambda _plan, _receipt, _release, _verified:
+        (arguments["source_query"], arguments["installed_release"]),
+    )
     payload = {
         "plan": arguments["plan"], "statements": arguments["statements"],
         "target_query": arguments["target_query"], "release_sha": arguments["release_sha"],
