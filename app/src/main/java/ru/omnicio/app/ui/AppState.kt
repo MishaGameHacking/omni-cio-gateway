@@ -89,7 +89,13 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList())
     }
 
-    fun loadConfig() = request({ it.request("/api/auth/config") }) {
+    fun loadConfig() = request({ client ->
+        val config = client.request("/api/auth/config")
+        if (config.text("auth_provider") != "email" || config.optJSONObject("legal_versions") == null) {
+            throw ApiFailure(409, "server_update_required")
+        }
+        config
+    }) {
         mutable.value = mutable.value.copy(authConfig = it)
     }
 

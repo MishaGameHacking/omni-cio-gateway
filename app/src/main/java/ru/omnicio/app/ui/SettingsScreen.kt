@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.BuildConfig
@@ -25,7 +27,8 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OmniIcon(R.drawable.ic_moon)
                     Text("Тёмная тема", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    Switch(state.darkTheme, model::setDarkTheme)
+                    Switch(state.darkTheme, model::setDarkTheme,
+                        modifier = Modifier.semantics { contentDescription = "Тёмная тема" })
                 }
                 Text("Оформление сохраняется на этом устройстве.", style = MaterialTheme.typography.bodySmall)
             }
