@@ -132,7 +132,7 @@ internal class ServerApi {
 internal fun JSONObject.text(key: String): String? = if (isNull(key)) null else getString(key)
 internal fun JSONObject.decimal(key: String): BigDecimal? {
     if (isNull(key)) return null
-    return opt(key).toString().takeIf { it.length <= 100 }?.toBigDecimalOrNull()
+    return get(key).toString().takeIf { it.length <= 100 }?.toBigDecimalOrNull()
         ?.takeIf { it.precision() <= 40 && it.scale() in -18..18 }
         ?: throw ApiFailure(200, "invalid_number")
 }
@@ -141,7 +141,7 @@ internal fun parseEvents(root: JSONObject): List<ServerEvent> = root.getJSONArra
     val source = it.optJSONObject("source")
     ServerEvent(it.getString("id"), it.getString("title"), it.text("detail").orEmpty(),
         it.text("occurred_at"), it.text("severity"),
-        source?.text("name") ?: source?.text("type"), !it.isNull("read_at"))
+        source?.text("name"), !it.isNull("read_at"))
 }
 
 internal fun apiError(error: Exception): String = when {

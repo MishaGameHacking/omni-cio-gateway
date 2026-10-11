@@ -72,19 +72,21 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (generation == expectedGeneration) {
-                    val expired = mutable.value.authenticated && error is ApiFailure &&
-                        (error.status == 401 || error.code == "profile_context_changed")
-                    if (expired) {
-                        api = ServerApi()
-                        mutable.value = mutable.value.copy(authenticated = false, publicId = null)
-                    }
-                    mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList())
-                }
+                if (generation == expectedGeneration) handleFailure(error)
             } finally {
                 if (generation == expectedGeneration) mutable.value = mutable.value.copy(busy = false)
             }
         }
+    }
+
+    private fun handleFailure(error: Exception) {
+        val expired = mutable.value.authenticated && error is ApiFailure &&
+            (error.status == 401 || error.code == "profile_context_changed")
+        if (expired) {
+            api = ServerApi()
+            mutable.value = mutable.value.copy(authenticated = false, publicId = null)
+        }
+        mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList())
     }
 
     fun loadConfig() = request({ it.request("/api/auth/config") }) {
