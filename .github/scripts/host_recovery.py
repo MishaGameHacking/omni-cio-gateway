@@ -166,13 +166,11 @@ def provision_postgres() -> None:
 
 
 def ensure_capacity() -> None:
-    memory = {
-        key: value
-        for key, value in (
-            line.split(":", 1) for line in pathlib.Path("/proc/meminfo").read_text().splitlines()
-        )
-    }
-    available = int(memory["MemAvailable"].split()[0]) * 1024
+    available = next(
+        int(line.split()[1]) * 1024
+        for line in pathlib.Path("/proc/meminfo").read_text().splitlines()
+        if line.startswith("MemAvailable:")
+    )
     if available < 192 * 1024 * 1024 or shutil.disk_usage(ROOT).free < 1024**3:
         raise recovery.RecoveryBlocked("Insufficient existing-host capacity for isolated recovery")
 
