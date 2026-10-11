@@ -22,8 +22,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "2.5.1"
+        versionCode = 8
+        versionName = "2.6.0"
     }
 
     signingConfigs {
@@ -99,3 +99,4 @@ dependencies {
 
     testImplementation(libs.junit)
 }
+

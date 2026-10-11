@@ -16,6 +16,7 @@ from typing import Any, Literal, cast
 from uuid import UUID, uuid4, uuid5
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -1324,6 +1325,43 @@ def get_workspace(
     user = authenticated_user(request, session_token)
     payload = workspace_store(request).dashboard(user.id, history_period=history_period)
     return _workspace_result(request, session_token, user, payload)
+
+
+@app.get("/api/mobile/workspace", responses=_API_FAILURES)
+def mobile_workspace(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    """Read the native client's server-owned snapshot without an on-device cache.
+
+    Recheck both the session and connection after the reads so a concurrent
+    disconnect/account switch cannot return a previous account's holdings.
+    Financial decimals remain decimal strings across the JSON boundary.
+    """
+    user = authenticated_user(request, session_token)
+    broker = broker_service(request)
+    before = broker.status(user.id)
+    portfolio = portfolio_store(request).portfolio_visualization(user.id, history_limit=365)
+    latest = portfolio.get("latest")
+    if isinstance(latest, dict) and (
+        not before.connected or latest.get("account_id") != before.account_id
+        or latest.get("environment") != before.environment
+    ):
+        raise HTTPException(status_code=409, detail="broker_connection_changed")
+    workspace = workspace_store(request)
+    events = workspace.events(user.id)
+    goals = workspace.goals(user.id)
+    if broker.status(user.id) != before:
+        raise HTTPException(status_code=409, detail="broker_connection_changed")
+    payload = _workspace_result(request, session_token, user, {
+        "contract_version": 1,
+        "public_id": format_public_id(user.public_id),
+        "connection": asdict(before),
+        "portfolio": portfolio,
+        "events": events,
+        "goals": goals,
+    })
+    return cast(dict[str, Any], jsonable_encoder(payload, custom_encoder={Decimal: str}))
 
 
 @app.get(
@@ -3244,3 +3282,4 @@ def logout(
     )
     response.status_code = 204
     return response
+

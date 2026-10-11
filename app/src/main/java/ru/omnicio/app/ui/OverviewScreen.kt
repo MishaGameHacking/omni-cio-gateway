@@ -1,423 +1,145 @@
 package ru.omnicio.app.ui
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import ru.omnicio.app.BuildConfig
-import ru.omnicio.app.ui.theme.OmniSpacing
-
-private enum class OverviewTab(val label: String) {
-    SUMMARY("Обзор"),
-    PAYOUTS("Выплаты"),
-    SCENARIOS("Сценарии"),
-    EVENTS("События"),
-}
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+import ru.omnicio.app.R
 
 @Composable
-internal fun OverviewScreen(
-    uiState: AppUiState,
-    onToggleAmounts: () -> Unit,
-    onCurrency: (DisplayCurrency) -> Unit,
-    onMode: (OverviewMode) -> Unit,
-) {
-    val snapshot = overviewSnapshot(uiState.overviewMode, uiState.displayCurrency)
-    var tabName by rememberSaveable { mutableStateOf(OverviewTab.SUMMARY.name) }
-    val selectedTab = runCatching { OverviewTab.valueOf(tabName) }
-        .getOrDefault(OverviewTab.SUMMARY)
-    var showQa by rememberSaveable { mutableStateOf(false) }
-
-    OverviewTabs(
-        selected = selectedTab,
-        onSelected = { tabName = it.name },
-    )
-
-    when (selectedTab) {
-        OverviewTab.SUMMARY -> {
-            PortfolioHeroCard(
-                snapshot = snapshot,
-                currency = uiState.displayCurrency,
-                hidden = uiState.amountsHidden,
-                onToggleAmounts = onToggleAmounts,
-                onCurrency = onCurrency,
-            )
-            AttentionCard(snapshot)
-            PayoutPreview(
-                snapshot = snapshot,
-                currency = uiState.displayCurrency,
-                hidden = uiState.amountsHidden,
-            )
+internal fun OverviewScreen(state: AppUiState, model: OmnicioViewModel, onConnect: () -> Unit) {
+    val workspace = state.workspace
+    val portfolio = workspace?.portfolio
+    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Text("Обзор", style = MaterialTheme.typography.headlineLarge)
+            Text(workspace?.connection?.name ?: "Ваш инвестиционный счёт",
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        OverviewTab.PAYOUTS -> {
-            PayoutsSection(
-                snapshot = snapshot,
-                currency = uiState.displayCurrency,
-                hidden = uiState.amountsHidden,
-            )
-        }
-        OverviewTab.SCENARIOS -> {
-            Text(
-                text = "Сценарии портфеля",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.semantics { heading() },
-            )
-            MoneyBreakdown(
-                snapshot = snapshot,
-                currency = uiState.displayCurrency,
-                hidden = uiState.amountsHidden,
-            )
-            InfoCard(
-                title = "Локальный расчёт",
-                body = "Резерв и бюджет сценария остаются на устройстве. Демо-режим не создаёт брокерскую заявку.",
-            )
-        }
-        OverviewTab.EVENTS -> {
-            AttentionCard(snapshot)
-            DataSourceCard(snapshot)
-        }
-    }
-
-    if (BuildConfig.DEBUG) {
-        TextButton(onClick = { showQa = !showQa }) {
-            Text(if (showQa) "Скрыть демо-состояния" else "Демо-состояния")
-        }
-        if (showQa) {
-            DemoStateSelector(
-                selected = uiState.overviewMode,
-                onMode = onMode,
-            )
-        }
-    }
-
-    Text(
-        text = "Демо-данные · " + snapshot.updatedLabel,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
-private fun OverviewTabs(
-    selected: OverviewTab,
-    onSelected: (OverviewTab) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-    ) {
-        OverviewTab.entries.forEach { tab ->
-            Column(
-                modifier = Modifier.widthIn(min = 76.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                TextButton(onClick = { onSelected(tab) }) {
-                    Text(
-                        text = tab.label,
-                        color = if (tab == selected) {
-                            MaterialTheme.colorScheme.onBackground
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        fontWeight = if (tab == selected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                }
-                HorizontalDivider(
-                    thickness = 3.dp,
-                    color = if (tab == selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        Color.Transparent
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PortfolioHeroCard(
-    snapshot: OverviewSnapshot,
-    currency: DisplayCurrency,
-    hidden: Boolean,
-    onToggleAmounts: () -> Unit,
-    onCurrency: (DisplayCurrency) -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            modifier = Modifier.padding(OmniSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        text = "Стоимость портфеля",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = formatMoney(snapshot.totalMinor, currency, hidden),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                }
-                TextButton(onClick = onToggleAmounts) {
-                    Text(if (hidden) "Показать" else "Скрыть")
-                }
-            }
-
-            PortfolioSparkline()
-
-            CompactMoneyRow(
-                snapshot = snapshot,
-                currency = currency,
-                hidden = hidden,
-            )
-
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-            ) {
-                DisplayCurrency.entries.forEach { item ->
-                    FilterChip(
-                        selected = item == currency,
-                        onClick = { onCurrency(item) },
-                        label = { Text(item.code) },
-                    )
-                }
-            }
-
-            Text(
-                text = snapshot.sourceLabel + " · " + snapshot.freshnessLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PortfolioSparkline() {
-    val lineColor = MaterialTheme.colorScheme.tertiary
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(54.dp),
-    ) {
-        val points = listOf(
-            0.58f, 0.54f, 0.56f, 0.49f, 0.47f, 0.45f, 0.39f,
-            0.42f, 0.34f, 0.31f, 0.27f, 0.29f, 0.21f, 0.17f, 0.11f,
-        )
-        val path = Path()
-        points.forEachIndexed { index, value ->
-            val x = size.width * index / (points.size - 1)
-            val y = size.height * value
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawPath(
-            path = path,
-            color = lineColor,
-            style = Stroke(width = 3.dp.toPx()),
-        )
-    }
-}
-
-@Composable
-private fun CompactMoneyRow(
-    snapshot: OverviewSnapshot,
-    currency: DisplayCurrency,
-    hidden: Boolean,
-) {
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val fontScale = LocalDensity.current.fontScale
-        val stack = maxWidth < 340.dp || fontScale >= 1.4f
-        val values = listOf(
-            "Доступно" to snapshot.availableMinor,
-            "Резерв" to snapshot.reserveMinor,
-            "Бюджет" to snapshot.scenarioBudgetMinor,
-        )
-        if (stack) {
-            Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs)) {
-                values.forEach { (label, value) ->
-                    CompactMetricLine(
-                        label = label,
-                        value = formatMoney(value, currency, hidden),
-                    )
-                }
-            }
+        if (workspace == null) {
+            item { EmptyState(if (state.busy) "Загружаем данные" else "Данные не получены",
+                "Суммы и история появятся после ответа сервера. Отсутствующие значения не заменяются нулями.") }
+        } else if (!workspace.connection.connected) {
+            item { EmptyState("Подключите свой счёт", "Разрешите чтение данных выбранного счёта Т-Инвестиций. Торговые операции недоступны.", R.drawable.ic_bank) }
+            item { Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Text("Подключить счёт") } }
         } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
-            ) {
-                values.forEach { (label, value) ->
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = formatMoney(value, currency, hidden),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CompactMetricLine(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun AttentionCard(snapshot: OverviewSnapshot) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-    ) {
-        Column(
-            modifier = Modifier.padding(OmniSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            Text(
-                text = snapshot.noticeTitle,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = snapshot.noticeBody,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PayoutPreview(
-    snapshot: OverviewSnapshot,
-    currency: DisplayCurrency,
-    hidden: Boolean,
-) {
-    Text(
-        text = "Ближайшие выплаты",
-        style = MaterialTheme.typography.headlineSmall,
-        modifier = Modifier.semantics { heading() },
-    )
-    PayoutGroup(
-        title = "Ожидается",
-        items = snapshot.expectedPayouts.take(2),
-        currency = currency,
-        hidden = hidden,
-    )
-}
-
-@Composable
-private fun PayoutsSection(
-    snapshot: OverviewSnapshot,
-    currency: DisplayCurrency,
-    hidden: Boolean,
-) {
-    Text(
-        text = "Выплаты",
-        style = MaterialTheme.typography.headlineSmall,
-        modifier = Modifier.semantics { heading() },
-    )
-    PayoutGroup("Ожидается", snapshot.expectedPayouts, currency, hidden)
-    PayoutGroup("Получено", snapshot.receivedPayouts, currency, hidden)
-}
-
-@Composable
-private fun PayoutGroup(
-    title: String,
-    items: List<PayoutFixture>,
-    currency: DisplayCurrency,
-    hidden: Boolean,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs)) {
-        Text(text = title, style = MaterialTheme.typography.labelLarge)
-        if (items.isEmpty()) {
-            Text(
-                text = "Нет выплат в выбранном демо-состоянии",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            items.forEach { payout ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(OmniSpacing.md),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs),
-                        ) {
-                            Text(payout.title, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                payout.dateLabel,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+            item {
+                OmniCard {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Стоимость портфеля", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = model::toggleAmountsHidden) {
+                            OmniIcon(R.drawable.ic_eye, if (state.amountsHidden) "Показать суммы" else "Скрыть суммы")
                         }
-                        Text(
-                            text = formatMoney(payout.amountMinor, currency, hidden),
-                            textAlign = TextAlign.End,
-                        )
+                    }
+                    Text(money(portfolio?.total, state.amountsHidden), style = MaterialTheme.typography.displaySmall)
+                    Text(statusLabel(if (portfolio?.freshness == "fresh") portfolio.analysisStatus else portfolio?.freshness),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(timestampLabel(portfolio?.capturedAt), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            item {
+                OmniCard {
+                    SectionTitle("Деньги на счёте")
+                    MetricRow("Всего", money(portfolio?.cash, state.amountsHidden))
+                    MetricRow("Не заблокировано", money(portfolio?.freeCash, state.amountsHidden))
+                    MetricRow("Заблокировано", money(portfolio?.blockedCash, state.amountsHidden))
+                    Text("Незаблокированный остаток по ответу брокера. Это не обещание доступности любой покупки.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            item { PortfolioHistory(portfolio?.history.orEmpty(), state.amountsHidden) }
+            item {
+                Button(onClick = model::syncPortfolio, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                    OmniIcon(R.drawable.ic_refresh)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Обновить у брокера")
+                }
+            }
+            item { SourcesCard(portfolio?.sources.orEmpty()) }
+        }
+    }
+}
+
+@Composable
+internal fun MetricRow(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+internal fun SourcesCard(sources: List<SourceInfo>) {
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    OmniCard {
+        SectionTitle("Источники и актуальность")
+        if (sources.isEmpty()) Text("Сервер не передал сведения об источнике. Данные не считаются подтверждёнными.")
+        sources.forEach { source ->
+            Text(source.name, style = MaterialTheme.typography.titleMedium)
+            Text(timestampLabel(source.at), style = MaterialTheme.typography.bodySmall)
+            val url = source.url?.takeIf {
+                val parsed = runCatching { java.net.URI(it) }.getOrNull()
+                parsed?.scheme == "https" && parsed.host != null && parsed.userInfo == null
+            }
+            if (url != null) TextButton(onClick = { uri.openUri(url) }) {
+                OmniIcon(R.drawable.ic_link)
+                Spacer(Modifier.width(8.dp))
+                Text("Открыть источник")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PortfolioHistory(history: List<HistoryPoint>, hidden: Boolean) {
+    var days by remember { mutableStateOf<Int?>(null) }
+    var index by remember(history, days) { mutableIntStateOf(0) }
+    var table by remember { mutableStateOf(false) }
+    val periods = listOf("Неделя" to 7, "Месяц" to 30, "Год" to 365, "Всё" to null)
+    val cutoff = days?.let { Instant.now().minus(it.toLong(), ChronoUnit.DAYS) }
+    val points = history.filter { cutoff == null || !it.at.isBefore(cutoff) }
+    val valid = points.filter { it.complete && it.value != null }
+    val selected = points.getOrNull(index.coerceIn(0, (points.size - 1).coerceAtLeast(0)))
+    OmniCard {
+        SectionTitle("История стоимости")
+        Text("До 365 последних наблюдений сервера. Изменение стоимости включает пополнения и выводы и не является доходностью.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            periods.forEach { (label, value) -> FilterChip(days == value, { days = value }, label = { Text(label) }) }
+        }
+        when {
+            hidden -> Text("История скрыта вместе с суммами.")
+            valid.isEmpty() -> Text("Нет подтверждённой истории за выбранный период.")
+            else -> {
+                if (selected != null) {
+                    Text(if (selected.complete) money(selected.value) else "Неполное наблюдение — значение не показано",
+                        style = MaterialTheme.typography.headlineSmall)
+                    Text(timestampLabel(selected.at.toString()), style = MaterialTheme.typography.bodySmall)
+                }
+                HistoryPlot(points, index)
+                if (points.size > 1) Slider(value = index.toFloat(), onValueChange = { index = it.toInt() },
+                    valueRange = 0f..(points.size - 1).toFloat(), steps = (points.size - 2).coerceAtLeast(0),
+                    modifier = Modifier.semantics { contentDescription = "Выбрать наблюдение на графике" })
+                Text("Период: ${timestampLabel(points.first().at.toString())} — ${timestampLabel(points.last().at.toString())}",
+                    style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { table = !table }) { Text(if (table) "Скрыть значения" else "Показать значения") }
+                if (table) Column(Modifier.heightIn(max = 240.dp).verticalScrollForHistory()) {
+                    points.forEach {
+                        ListItem(headlineContent = { Text(if (it.complete) money(it.value) else "Нет полного значения") },
+                            supportingContent = { Text(timestampLabel(it.at.toString())) })
                     }
                 }
             }
@@ -426,90 +148,43 @@ private fun PayoutGroup(
 }
 
 @Composable
-private fun MoneyBreakdown(
-    snapshot: OverviewSnapshot,
-    currency: DisplayCurrency,
-    hidden: Boolean,
-) {
-    val rows = listOf(
-        "Доступно" to snapshot.availableMinor,
-        "Резерв" to snapshot.reserveMinor,
-        "Бюджет сценария" to snapshot.scenarioBudgetMinor,
-    )
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            modifier = Modifier.padding(OmniSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
-        ) {
-            rows.forEach { (label, value) ->
-                CompactMetricLine(label, formatMoney(value, currency, hidden))
+private fun Modifier.verticalScrollForHistory(): Modifier =
+    this.then(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()))
+
+@Composable
+private fun HistoryPlot(points: List<HistoryPoint>, selected: Int) {
+    val values = points.filter { it.complete }.mapNotNull { it.value }
+    val min = values.minOrNull() ?: return
+    val max = values.maxOrNull() ?: return
+    val color = MaterialTheme.colorScheme.onSurface
+    val grid = MaterialTheme.colorScheme.outlineVariant
+    val accent = MaterialTheme.colorScheme.primary
+    Column {
+        Text(money(max), style = MaterialTheme.typography.labelMedium)
+        Canvas(Modifier.fillMaxWidth().height(160.dp).semantics {
+            contentDescription = "График стоимости в рублях. Точные значения доступны ползунком и в списке."
+        }) {
+            val pad = 8.dp.toPx()
+            val start = points.first().at.toEpochMilli()
+            val span = (points.last().at.toEpochMilli() - start).coerceAtLeast(1)
+            fun position(point: HistoryPoint): Offset = Offset(
+                pad + (size.width - 2 * pad) * (point.at.toEpochMilli() - start).toDouble().div(span).toFloat(),
+                pad + (size.height - 2 * pad) * (1 - chartFraction(requireNotNull(point.value), min, max)),
+            )
+            for (level in 0..2) {
+                val y = pad + (size.height - 2 * pad) * level / 2
+                drawLine(grid, Offset(pad, y), Offset(size.width - pad, y), 1.dp.toPx())
+            }
+            var previous: HistoryPoint? = null
+            points.forEachIndexed { index, point ->
+                if (!point.complete || point.value == null) { previous = null } else {
+                    val offset = position(point)
+                    previous?.let { drawLine(color, position(it), offset, 2.dp.toPx(), StrokeCap.Round) }
+                    drawCircle(if (index == selected) accent else color, if (index == selected) 6.dp.toPx() else 2.dp.toPx(), offset)
+                    previous = point
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun DataSourceCard(snapshot: OverviewSnapshot) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            modifier = Modifier.padding(OmniSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            Text("Состояние данных", fontWeight = FontWeight.SemiBold)
-            LabelValue("Источник", snapshot.sourceLabel)
-            LabelValue("Обновлено", snapshot.updatedLabel)
-            LabelValue("Актуальность", snapshot.freshnessLabel)
-        }
-    }
-}
-
-@Composable
-private fun LabelValue(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(1.5f),
-        )
-    }
-}
-
-@Composable
-private fun DemoStateSelector(
-    selected: OverviewMode,
-    onMode: (OverviewMode) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs)) {
-        Text(
-            text = "QA · состояние данных",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            OverviewMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = mode == selected,
-                    onClick = { onMode(mode) },
-                    label = { Text(mode.label) },
-                )
-            }
-        }
+        Text(money(min), style = MaterialTheme.typography.labelMedium)
     }
 }

@@ -1,12 +1,12 @@
-# OMNICIO 2.5.0 — RuStore release-candidate checklist
+# OMNICIO 2.6.0 — RuStore release-candidate checklist
 
-Статус: checklist для UI-06. Он не означает, что приложение уже опубликовано.
+Статус: checklist для серверного Android-клиента. Он не означает, что приложение уже опубликовано.
 
 ## Identity
 
 - package/applicationId: `ru.omnicio.app`;
-- versionName: `2.5.0`;
-- versionCode: `6`;
+- versionName: `2.6.0`;
+- versionCode: `8`;
 - первая опубликованная release signature после публикации становится частью неизменяемой identity приложения;
 - private release/upload key, keystore и пароли не хранятся в Git и не передаются в PR/chat.
 
@@ -53,7 +53,7 @@ RuStore принимает APK и AAB. Для первой APK-версии фа
 3. Помощник;
 4. Настройки (рекомендуется как четвёртый кадр).
 
-Не скрывать маркировку demo/fixture там, где опубликованная версия действительно остаётся demo UI.
+Деморежима нет. Использовать только реальные разрешённые данные или пустые состояния; не публиковать персональные сведения. FLAG_SECURE не отключать в production ради скриншотов.
 
 Текущие требования RuStore для мобильных screenshots:
 - 1–10 изображений;
@@ -68,7 +68,7 @@ https://www.rustore.ru/help/developers/publishing-and-verifying-apps/app-publica
 ## Privacy / permissions
 
 Перед upload сверить release manifest с `legal/android-privacy-declaration.md`.
-UI-06/2.5.1 ожидает `POST_NOTIFICATIONS` и обычное `ACCESS_NETWORK_STATE` для чтения Data Saver. Появление нового чувствительного permission требует отдельной проверки декларации и store metadata.
+Android 2.6.0 ожидает только `INTERNET`; push permission отсутствует. Появление нового чувствительного permission требует отдельной проверки декларации и store metadata.
 
 ## Остановка выпуска
 
@@ -79,3 +79,4 @@ UI-06/2.5.1 ожидает `POST_NOTIFICATIONS` и обычное `ACCESS_NETWOR
 - manifest permissions отличаются от декларации;
 - screenshot или описание заявляет функцию, которой нет в exact release;
 - package/version identity расходится с RuStore.
+

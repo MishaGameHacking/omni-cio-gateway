@@ -718,3 +718,104 @@ def test_events_filters_and_durable_read_request_reach_the_owner_store(
     )
     assert response.status_code == 200
     store.mark_events_read.assert_called_once_with(OWNER.id, [EVENT], read=False)
+
+
+
+def test_mobile_workspace_uses_session_and_keeps_exact_decimal_strings(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    from decimal import Decimal
+
+    from omnicio.broker import BrokerConnectionStatus, BrokerService
+    from omnicio.portfolio_store import PortfolioStore
+
+    client, _, workspace, _ = workspace_http
+    broker = Mock(spec=BrokerService)
+    broker.status.return_value = BrokerConnectionStatus(True, "prod", "account-a", "Account")
+    portfolio = Mock(spec=PortfolioStore)
+    portfolio.portfolio_visualization.return_value = {
+        "status": "observed", "history": [],
+        "latest": {"account_id": "account-a", "environment": "prod",
+                   "nav_rub": Decimal("123456789012345.6789"), "rub_cash_unblocked": None,
+                   "positions": [], "sources": []},
+    }
+    workspace.events.return_value = {"items": [], "next_cursor": None}
+    workspace.goals.return_value = {"items": []}
+    with (
+        patch.object(app.state, "broker_service", broker, create=True),
+        patch.object(app.state, "portfolio_store", portfolio, create=True),
+    ):
+        response = client.get("/api/mobile/workspace", headers=HEADERS)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["contract_version"] == 1
+        assert data["public_id"] == "000000501"
+        assert data["portfolio"]["latest"]["nav_rub"] == "123456789012345.6789"
+        assert data["portfolio"]["latest"]["rub_cash_unblocked"] is None
+        assert response.headers["cache-control"] == "private, no-store"
+        portfolio.portfolio_visualization.assert_called_once_with(OWNER.id, history_limit=365)
+        workspace.events.assert_called_once_with(OWNER.id)
+        workspace.goals.assert_called_once_with(OWNER.id)
+        assert client.get("/api/mobile/workspace", headers={
+            **HEADERS, "X-Omnicio-Profile": "000000502",
+        }).status_code == 409
+        client.cookies.clear()
+        assert client.get("/api/mobile/workspace").status_code == 401
+        assert portfolio.portfolio_visualization.call_count == 1
+
+
+@pytest.mark.parametrize("change", ["connection", "account", "session"])
+def test_mobile_workspace_rejects_context_changes_during_reads(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], change: str,
+) -> None:
+    from omnicio.broker import BrokerConnectionStatus, BrokerService
+    from omnicio.portfolio_store import PortfolioStore
+
+    client, auth, workspace, _ = workspace_http
+    before = BrokerConnectionStatus(True, "prod", "account-a", "Account")
+    broker = Mock(spec=BrokerService)
+    broker.status.side_effect = (
+        [before, BrokerConnectionStatus(False)] if change == "connection" else [before, before]
+    )
+    portfolio = Mock(spec=PortfolioStore)
+    portfolio.portfolio_visualization.return_value = {
+        "status": "observed", "history": [], "latest": {
+            "account_id": "other-account" if change == "account" else "account-a",
+            "environment": "prod", "nav_rub": "private-financial-value",
+        },
+    }
+    workspace.events.return_value = {"items": []}
+    workspace.goals.return_value = {"items": []}
+    if change == "session":
+        auth.refresh_session.side_effect = [OWNER, OTHER]
+    with (
+        patch.object(app.state, "broker_service", broker, create=True),
+        patch.object(app.state, "portfolio_store", portfolio, create=True),
+    ):
+        response = client.get("/api/mobile/workspace", headers=HEADERS)
+    assert response.status_code == 409
+    assert "private-financial-value" not in response.text
+
+
+def test_mobile_workspace_pending_state_never_invents_a_balance(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    from omnicio.broker import BrokerConnectionStatus, BrokerService
+    from omnicio.portfolio_store import PortfolioStore
+
+    client, _, workspace, _ = workspace_http
+    broker = Mock(spec=BrokerService)
+    broker.status.return_value = BrokerConnectionStatus(False)
+    portfolio = Mock(spec=PortfolioStore)
+    portfolio.portfolio_visualization.return_value = {
+        "status": "pending", "history": [], "latest": None,
+    }
+    workspace.events.return_value = {"items": []}
+    workspace.goals.return_value = {"items": []}
+    with (
+        patch.object(app.state, "broker_service", broker, create=True),
+        patch.object(app.state, "portfolio_store", portfolio, create=True),
+    ):
+        response = client.get("/api/mobile/workspace", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["portfolio"] == {"status": "pending", "history": [], "latest": None}
