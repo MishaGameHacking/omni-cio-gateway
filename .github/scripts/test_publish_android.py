@@ -100,13 +100,14 @@ class PublishTests(unittest.TestCase):
     def test_transport_redirects_never_receive_the_write_token(self) -> None:
         connection = Mock()
         connection.getresponse.return_value = Mock(status=302)
+        api = publisher.ReleaseAPI("test-token")
         with (
             patch.object(
                 publisher.http.client, "HTTPSConnection", return_value=connection,
             ) as https,
             self.assertRaises(publisher.gate.ReleaseBlocked),
         ):
-            publisher.ReleaseAPI("test-token").request("POST", "/releases")
+            api.request("POST", "/releases")
         https.assert_called_once_with("api.github.com", timeout=120)
         connection.close.assert_called_once()
 

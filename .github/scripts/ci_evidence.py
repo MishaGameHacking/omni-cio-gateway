@@ -49,7 +49,7 @@ def require_complete(files: list[Path], kind: str) -> None:
 
 def archive(root: Path, cache: Path, kind: str, identity: dict[str, str]) -> dict[str, Any]:
     for field in ("run_id", "attempt"):
-        if not re.fullmatch(r"[1-9][0-9]*", identity[field]):
+        if not re.fullmatch(r"[1-9]\d*", identity[field], flags=re.ASCII):
             raise ValueError("Invalid Actions run identity")
     for field in ("source_sha", "workflow_sha"):
         if not re.fullmatch(r"[0-9a-f]{40}", identity[field]):
@@ -80,7 +80,7 @@ def archive(root: Path, cache: Path, kind: str, identity: dict[str, str]) -> dic
         temporary.unlink(missing_ok=True)
     # Only this helper's reproducible, seven-day cache is pruned, never GitHub history.
     for old in destination.glob("*.zip"):
-        if (re.fullmatch(r"(postgres|frontend|android)-[0-9]+-[0-9]+\.zip", old.name)
+        if (re.fullmatch(r"(postgres|frontend|android)-\d+-\d+\.zip", old.name, flags=re.ASCII)
                 and not old.is_symlink() and time.time() - old.stat().st_mtime > RETENTION_SECONDS):
             old.unlink()
     manifest["archive"] = str(target)

@@ -57,7 +57,7 @@ def build_assets(root: Path, sha: str, run_id: str, attempt: str) -> tuple[str, 
     output = elements[0]
     version = output.get("versionName", "")
     if (output.get("outputFile") != "app-debug.apk"
-            or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-debug", version)
+            or not re.fullmatch(r"\d+\.\d+\.\d+-debug", version, flags=re.ASCII)
             or type(output.get("versionCode")) is not int or output["versionCode"] < 1):
         raise gate.ReleaseBlocked("Invalid Android build metadata")
     apk = directory / "app-debug.apk"
@@ -152,7 +152,7 @@ def main() -> int:
         sha, token = gate.release_context()
         gate.require_checkout(sha)
         run_id, attempt = os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
-        if not all(re.fullmatch(r"[1-9][0-9]*", value) for value in (run_id, attempt)):
+        if not all(re.fullmatch(r"[1-9]\d*", value, flags=re.ASCII) for value in (run_id, attempt)):
             raise gate.ReleaseBlocked("Invalid build run identity")
         version, assets = build_assets(Path(__file__).resolve().parents[2], sha, run_id, attempt)
         gate.wait_for_main_release(sha, token)
