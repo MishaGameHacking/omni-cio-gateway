@@ -162,9 +162,9 @@ def test_sufficient_capacity_keeps_application_running(capacity_runtime):
         patch.object(host, "ensure_capacity"),
         patch.object(host.upgrade, "_change_units") as change,
         patch.object(host, "resume_maintenance") as resume,
+        host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}),
     ):
-        with host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}):
-            pass
+        pass
     change.assert_not_called()
     resume.assert_not_called()
     assert not capacity_runtime.exists()
@@ -248,9 +248,9 @@ def test_interrupted_maintenance_is_resumed_before_another_capacity_check(capaci
     with (
         patch.object(host, "resume_maintenance", side_effect=lambda *_args: order.append("resume")),
         patch.object(host, "ensure_capacity", side_effect=lambda: order.append("capacity")),
+        host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}),
     ):
-        with host.existing_host_capacity("private", {}, {"source_release": SHA}, "query", {}):
-            order.append("work")
+        order.append("work")
     assert order == ["resume", "capacity", "work"]
 
 
@@ -261,11 +261,14 @@ def test_failure_report_preserves_stage_without_sql_secrets_or_rows(capsys):
             "temporary_restore", RuntimeError("secret DSN; SELECT private"),
         )
     assert host.validate_failure_report(report)
+    raw = json.dumps(report)
     with pytest.raises(host.recovery.RecoveryBlocked):
-        runner.parse_host_report(json.dumps(report), {})
+        runner.parse_host_report(raw, {})
     output = capsys.readouterr().out
-    assert "temporary_restore" in output and "unexpected_error" in output
-    assert "secret" not in output and "SELECT" not in output
+    assert "temporary_restore" in output
+    assert "unexpected_error" in output
+    assert "secret" not in output
+    assert "SELECT" not in output
 
 
 @pytest.mark.parametrize("change", [
@@ -276,8 +279,9 @@ def test_untrusted_failure_report_is_rejected_without_echo(change, capsys):
     report = {"status": "recovery_failed", "stage": "capacity", "error_kind": "recovery_blocked",
               "host_capacity": {"status": "unavailable", "code": "host_capacity_unavailable"}}
     report.update(change)
+    raw = json.dumps(report)
     with pytest.raises(host.recovery.RecoveryBlocked):
-        runner.parse_host_report(json.dumps(report), {})
+        runner.parse_host_report(raw, {})
     assert capsys.readouterr().out == ""
 
 
