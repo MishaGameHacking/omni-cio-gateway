@@ -89,6 +89,7 @@ internal fun SourcesCard(sources: List<SourceInfo>) {
         if (sources.isEmpty()) Text("Сервер не передал сведения об источнике. Данные не считаются подтверждёнными.")
         sources.forEach { source ->
             Text(source.name, style = MaterialTheme.typography.titleMedium)
+            Text(statusLabel(source.status), style = MaterialTheme.typography.bodySmall)
             Text(timestampLabel(source.at), style = MaterialTheme.typography.bodySmall)
             val url = source.url?.takeIf {
                 val parsed = runCatching { java.net.URI(it) }.getOrNull()

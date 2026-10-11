@@ -32,7 +32,7 @@ internal fun chartFraction(value: BigDecimal, min: BigDecimal, max: BigDecimal):
         .toFloat().coerceIn(0f, 1f)
 
 internal fun statusLabel(status: String?): String = when (status) {
-    "fresh", "observed", "complete" -> "Данные получены"
+    "fresh", "observed", "complete", "received" -> "Данные получены"
     "stale" -> "Данные устарели"
     "partial" -> "Неполные данные"
     "pending" -> "Ожидаем данные"
