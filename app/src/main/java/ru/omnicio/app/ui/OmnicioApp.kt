@@ -185,7 +185,8 @@ private class AuthFormState {
 
 @Composable
 private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
-    val form = remember { AuthFormState() }
+    val legalVersions = state.authConfig?.optJSONObject("legal_versions")?.toString()
+    val form = remember(legalVersions) { AuthFormState() }
     val uri = LocalUriHandler.current
     Surface(Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().imePadding().fillMaxSize().verticalScroll(rememberScrollState())
