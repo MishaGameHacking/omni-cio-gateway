@@ -27,6 +27,7 @@ from omnicio.assistant import (
     portfolio_context,
 )
 from omnicio.broker import BrokerConnectionStatus, BrokerService
+from omnicio.config import AssistantRoute, ConfigurationError, assistant_routes
 from omnicio.main import app
 from omnicio.news import NewsClient, NewsUnavailable
 from omnicio.portfolio_store import PortfolioStore
@@ -41,6 +42,61 @@ def configured(**changes: Any) -> AssistantClient:
             **changes,
         }
     )
+
+
+def test_task_routes_bound_reasoning_and_never_invent_model_aliases() -> None:
+    raw = {"explain": {"model": "vendor/configured-model", "reasoning_effort": "low",
+                       "max_output_tokens": 2048, "max_input_chars": 8000}}
+    route, = assistant_routes(json.dumps(raw))
+    client = configured(provider="openai_compatible", model=route.model, route=route)
+    body = client._body([{"role": "user", "content": "Объясни"}], None, stream=False)
+    assert body["model"] == "vendor/configured-model"
+    assert body["max_completion_tokens"] == 2048
+    assert body["reasoning_effort"] == "low"
+    assert "temperature" not in body
+    with (patch.object(client, "_request") as transport,
+          pytest.raises(ValueError, match="input_budget")):
+        client.chat(message="Объясни", history=[{"role": "user", "content": "x" * 7900}])
+    transport.assert_not_called()
+    for field, value in (("max_output_tokens", 1000000), ("max_output_tokens", True),
+                         ("max_input_chars", 999999), ("model", "bad\nmodel"),
+                         ("reasoning_effort", "none")):
+        invalid = {"explain": {**raw["explain"], field: value}}
+        encoded = json.dumps(invalid)
+        with pytest.raises(ConfigurationError):
+            assistant_routes(encoded)
+
+
+def test_task_selection_cannot_fallback_to_costly_or_personal_model() -> None:
+    small = configured()
+    large = configured(model="configured-complex-model")
+    service = AssistantService(Mock(), credential_key="", default_client=small,
+                               task_clients={"analyze": large})
+    user = uuid4()
+    assert service._client(user, None) is small
+    assert service._client(user, None, "analyze") is large
+    assert service._client(user, None, "review") is None
+    assert service._client(user, {"active": True}, "analyze") is None
+    invalid_route = AssistantRoute("explain", "different-model", "low", 2048, 8000)
+    with pytest.raises(ValueError, match="route_invalid"):
+        configured(route=invalid_route)
+
+
+def test_request_fingerprint_binds_analysis_mode_before_provider_call() -> None:
+    service = AssistantService(Mock(), credential_key="", enabled=True,
+        default_client=configured(), task_clients={"analyze": configured()})
+    service.store = Mock()
+    service.store.connection.return_value = None
+    service.store.claim.return_value = {"completed": {"reply": "Saved"}}
+    arguments = {"message": "Вопрос", "context": None, "request_id": uuid4(), "expected_version": 0}
+    owner, conversation = uuid4(), uuid4()
+    service.chat(owner, conversation, **arguments)
+    first_hash = service.store.claim.call_args.kwargs["input_hash"]
+    service.chat(owner, conversation, **arguments, task="analyze")
+    assert first_hash != service.store.claim.call_args.kwargs["input_hash"]
+    with pytest.raises(AssistantNotConfigured):
+        service.chat(owner, conversation, **arguments, task="review")
+    assert service.store.claim.call_count == 2
 
 
 @pytest.mark.parametrize(

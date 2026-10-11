@@ -13,10 +13,10 @@ from collections.abc import Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
-CATALOG_VERSION = "1.0.0"
+CATALOG_VERSION = "1.1.0"
 # Catalog editions are not schema versions. Retain every released edition whose
 # exact document schema remains readable; changing that schema requires migration.
-_RELEASED_DOCUMENT_EDITIONS = ("2026-10-06.1", "1.0.0")
+_RELEASED_DOCUMENT_EDITIONS = ("2026-10-06.1", "1.0.0", "1.1.0")
 _LEGACY_PRESETS = {
     "near_goal": {"title": "Ближайшая цель", "current_id": "conservative"},
     "floating": {"title": "Переменная ставка", "current_id": "income"},
@@ -441,15 +441,22 @@ def _template(spec: tuple[Any, ...]) -> dict[str, Any]:
 
 
 def strategy_catalog() -> dict[str, Any]:
+    # Retired mandates remain readable for saved drafts/research, but are not
+    # offered as additional product strategies.
+    presets = [_template(spec) for spec in _SPECS if spec[0] in {"balanced", "income", "growth"}]
+    titles = {"income": "Купоны и дивиденды", "growth": "Долгосрочное накопление"}
+    for preset in presets:
+        preset["title"] = titles.get(preset["id"], preset["title"])
     return {
         "version": CATALOG_VERSION,
         "default_id": "balanced",
         "compatible_document_versions": list(compatible_document_versions()),
         "sources": copy.deepcopy(list(SOURCES)),
-        "presets": [_template(spec) for spec in _SPECS],
+        "presets": presets,
+        "custom": {"id": "custom", "title": "Своя стратегия", "base_id": "balanced"},
         "rating_levels": list(RATING_LEVELS),
         "legacy_presets": copy.deepcopy(_LEGACY_PRESETS),
-        "note": "10 редактируемых подходов. Доходность и вероятность успеха не гарантируются. "
+        "note": "Три подхода и своя стратегия. Доходность и вероятность успеха не гарантируются. "
         "Сохранение черновика не меняет подтверждённые условия и не создаёт сделок.",
     }
 

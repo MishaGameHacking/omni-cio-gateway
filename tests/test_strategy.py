@@ -19,7 +19,7 @@ from omnicio.strategy import (
 
 
 @pytest.mark.parametrize("preset", strategy_catalog()["presets"], ids=lambda p: p["id"])
-def test_all_ten_templates_are_complete_exact_and_not_probabilities(preset):
+def test_product_templates_are_complete_exact_and_not_probabilities(preset):
     document = normalize_document(preset["document"])
     assert sum(document["allocation"].values()) == 100
     assert set(document["allocation"]) == set(ALLOCATION_KEYS)
@@ -36,31 +36,23 @@ def test_all_ten_templates_are_complete_exact_and_not_probabilities(preset):
 
 def test_catalog_cannot_be_mutated_by_consumer_and_has_distinct_templates():
     first = strategy_catalog()
-    assert len(first["presets"]) == 10
-    assert len({item["id"] for item in first["presets"]}) == 10
-    assert len({document_hash(item["document"]) for item in first["presets"]}) == 10
+    assert len(first["presets"]) == 3
+    assert len({item["id"] for item in first["presets"]}) == 3
+    assert len({document_hash(item["document"]) for item in first["presets"]}) == 3
     first["presets"][0]["document"]["policy"]["max_issuer_percent"] = "99"
     first["sources"][0]["url"] = "https://invalid.test/"
     assert strategy_catalog()["presets"][0]["document"]["policy"]["max_issuer_percent"] == "5"
     assert "invalid.test" not in strategy_catalog()["sources"][0]["url"]
 
 
-def test_catalog_matches_the_ten_requested_mandates_without_invented_results():
+def test_catalog_offers_three_approaches_and_custom_without_invented_results():
     catalog = strategy_catalog()
     assert [item["title"] for item in catalog["presets"]] == [
-        "Сбалансированная",
-        "Консервативная",
-        "Агрессивная",
-        "Доходная",
-        "Накопление",
-        "Стратегия Баффета",
-        "Стратегия Богла",
-        "Стратегия Далио",
-        "Лестница облигаций",
-        "Дивидендная",
+        "Сбалансированная", "Купоны и дивиденды", "Долгосрочное накопление",
     ]
+    assert catalog["custom"] == {"id": "custom", "title": "Своя стратегия", "base_id": "balanced"}
     assert "sample_illustration" not in catalog
-    assert len({item["selection_rules"]["ranking"] for item in catalog["presets"]}) == 10
+    assert len({item["selection_rules"]["ranking"] for item in catalog["presets"]}) == 3
 
 
 @pytest.mark.parametrize("legacy", ["near_goal", "floating"])

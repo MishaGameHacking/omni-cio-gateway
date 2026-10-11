@@ -475,7 +475,7 @@ def email_upgrade_database(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / ".github/scripts"))
     upgrade = importlib.import_module("inplace_upgrade")
     plan = upgrade.load_plan()
-    assert (plan["source_version"], plan["target_version"]) == ("1.3.0", "1.4.0")
+    assert (plan["source_version"], plan["target_version"]) == ("1.3.0", "1.5.0")
     historical = json.loads((ROOT / "tests/fixtures/accepted_upgrade_1_3.json").read_text())
     source_query = upgrade.schema_query(historical["target_schema"], plan["source_schema_sha256"])
     name = "omnicio_email_upgrade_" + secrets.token_hex(8)
@@ -502,7 +502,7 @@ def email_upgrade_database(monkeypatch):
                 _seed_email_upgrade_rows(connection)
                 arguments = dict(
                     plan=plan,
-                    statements=[path.read_text(encoding="utf-8") for path in MIGRATIONS[-2:]],
+                    statements=[path.read_text(encoding="utf-8") for path in MIGRATIONS[-3:]],
                     source_query=source_query, target_query=READINESS_QUERY,
                     identity=upgrade.operation_identity(plan, {"database": name}),
                     release_sha="a" * 40, installed_release=plan["source_release"],
@@ -1132,8 +1132,8 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-2:] == [
-        "0029_email_auth.sql", "0030_portfolio_read_only.sql",
+    assert [item.name for item in MIGRATIONS][-3:] == [
+        "0029_email_auth.sql", "0030_portfolio_read_only.sql", "0031_social_auth.sql",
     ]
     _apply_all_migrations()
     with psycopg.connect(DATABASE_URL, autocommit=True) as readiness:

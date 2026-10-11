@@ -32,6 +32,7 @@ UPGRADE = importlib.import_module("inplace_upgrade")
 REVIEWED_MIGRATIONS = (
     "migrations/0029_email_auth.sql",
     "migrations/0030_portfolio_read_only.sql",
+    "migrations/0031_social_auth.sql",
 )
 HISTORICAL_MIGRATIONS = (
     "migrations/0027_assistant_stream_memory.sql",
@@ -175,8 +176,8 @@ class PostgresTests(unittest.TestCase):
         root = MODULE_PATH.parents[2]
         workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
         migrations = list(REVIEWED_MIGRATIONS)
-        self.assertEqual(len(migrations), 2)
-        self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0029", "0030"])
+        self.assertEqual(len(migrations), 3)
+        self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0029", "0030", "0031"])
         MODULE.migration_bodies(self.reviewed_upgrade_plan(), [
             (root / path).read_text(encoding="utf-8") for path in migrations
         ])
@@ -186,7 +187,7 @@ class PostgresTests(unittest.TestCase):
         expected.append(f"--migration {migrations[-1]}")
         self.assertEqual(lines[first:first + len(migrations)], expected)
         self.assertTrue(lines[first - 1].endswith(" ^"))
-        self.assertEqual(workflow.count("--migration "), 2)
+        self.assertEqual(workflow.count("--migration "), 3)
         for path in migrations:
             with self.subTest(migration=path):
                 self.assertEqual(workflow.count(f"--migration {path}"), 1)
@@ -321,7 +322,7 @@ class PostgresTests(unittest.TestCase):
             (root / path).read_text(encoding="utf-8") for path in HISTORICAL_MIGRATIONS
         ]
         UPGRADE.migration_bodies(historical["plan"], historical_sqls)
-        document = {"project": {"version": "1.4.0"},
+        document = {"project": {"version": "1.5.0"},
                     "tool": {"omnicio": {"timeweb": {"upgrade": historical["plan"]}}}}
         client = Mock()
         with (

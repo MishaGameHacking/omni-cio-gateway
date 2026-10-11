@@ -133,6 +133,8 @@ class ProductPreflightTests(unittest.TestCase):
     ) -> dict[str, object]:
         broker_key = base64.urlsafe_b64encode(b"b" * 32).decode("ascii")
         runtime = (
+            'TELEGRAM_CLIENT_ID="123456"\nTELEGRAM_CLIENT_SECRET="synthetic-secret"\n'
+            'VKID_APP_ID="789012"\n'
             'DATABASE_URL="postgresql://fixture@127.0.0.1/test"\n'
             'CLIENT_IP_KEY="fixture-ip-key"\n'
             f'BROKER_TOKEN_CRYPTO_KEY="{broker_key}"\n'
@@ -164,6 +166,25 @@ class ProductPreflightTests(unittest.TestCase):
             "market_token_configured": True, "market_distribution_approved": False,
         })
         self.assertNotIn("fixture", json.dumps(result))
+
+    def test_missing_social_provider_has_valid_diagnostics_without_sending(self) -> None:
+        from inplace_upgrade import _valid_configuration_observation
+
+        for key in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET", "VKID_APP_ID"):
+            with self.subTest(key=key):
+                candidate = self._candidate({})
+                diagnostics: dict[str, object] = {}
+                with (
+                    patch("omnicio.notifications.NotificationTransport.send_email") as send,
+                    self.assertRaisesRegex(
+                        candidate.UpgradeBlocked, "^social_auth_configuration_required$",
+                    ),
+                ):
+                    self._run(candidate, self.auth_product + f'{key}=""\n',
+                              diagnostics=diagnostics)
+                self.assertTrue(_valid_configuration_observation(diagnostics))
+                self.assertEqual(diagnostics["stage"], "social_readiness")
+                send.assert_not_called()
 
     def test_diagnostics_distinguish_missing_effective_smtp_fields_without_sending(self) -> None:
         for host_present, sender_present in ((False, False), (True, False), (False, True),
@@ -1308,9 +1329,9 @@ class AuthAppDeployTests(unittest.TestCase):
     def _base_registration_environment(self) -> None:
         os.environ.update({
             "LEGAL_OPERATOR_NAME": "Test Operator", "LEGAL_OPERATOR_EMAIL": "operator@example.com",
-            "LEGAL_PRIVACY_VERSION": "2026-10-09-v1.4.0",
-            "LEGAL_CONSENT_VERSION": "2026-10-09-v1.4.0",
-            "LEGAL_TERMS_VERSION": "2026-10-09-v1.4.0",
+            "LEGAL_PRIVACY_VERSION": "2026-10-11-v1.5.0",
+            "LEGAL_CONSENT_VERSION": "2026-10-11-v1.5.0",
+            "LEGAL_TERMS_VERSION": "2026-10-11-v1.5.0",
             "AUTH_SMTP_HOST": "smtp.example.org", "AUTH_SMTP_SENDER": "auth@example.org",
             "AUTH_SMTP_MODE": "tls", "AUTH_SMTP_PORT": "465",
         })
@@ -1391,14 +1412,14 @@ class AuthAppDeployTests(unittest.TestCase):
                           MODULE.build_product_environment())
         self.assertNotIn("MARKET_DATA_DISTRIBUTION_APPROVED", MODULE.OPTIONAL_INTEGRATION_KEYS)
 
-    def test_deployment_never_retires_users_or_reintroduces_social_login(self) -> None:
+    def test_deployment_preserves_users_and_only_configures_current_identity_providers(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
         workflow = (SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml").read_text(
             encoding="utf-8",
         )
         self.assertNotIn("retire_legacy_profile", source)
         self.assertNotIn("DELETE FROM users", source)
-        for key in ("VKID_APP_ID", "TID_CLIENT_ID", "LEGACY_PROFILE_RESET_ENABLED",
+        for key in ("TID_CLIENT_ID", "LEGACY_PROFILE_RESET_ENABLED",
                     "REGISTRATION_MAX_USERS", "CONTROLLED_LIVE_TEST_MODE",
                     "PORTFOLIO_LIVE_EXECUTION_ENABLED"):
             self.assertNotIn(key, source)
@@ -1409,7 +1430,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_legal_templates_require_operator_placeholders(self) -> None:
         versions = {
-            f"LEGAL_{name}_VERSION": "2026-10-09-v1.4.0"
+            f"LEGAL_{name}_VERSION": "2026-10-11-v1.5.0"
             for name in ("PRIVACY", "CONSENT", "TERMS")
         }
         with patch.dict(os.environ, versions):
@@ -1522,7 +1543,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 'AUTH_SMTP_PASSWORD="test-only-value"\n'
                 'AUTH_SMTP_MODE="tls"\n'
                 'ASSISTANT_ENABLED="true"\n'
-                'VKID_APP_ID="must-not-migrate"\n'
+                'VKID_APP_ID="123456"\n'
                 'UNRELATED_KEY="must-not-migrate"\n',
                 encoding="utf-8",
             )
@@ -1544,7 +1565,7 @@ class AuthAppDeployTests(unittest.TestCase):
             'ASSISTANT_ENABLED="false"',
             'MARKET_DATA_DISTRIBUTION_APPROVED="false"',
             'AUTH_SMTP_PASSWORD="test-only-value"',
-            'AUTH_SMTP_MODE="tls"',
+            'AUTH_SMTP_MODE="tls"', 'VKID_APP_ID="123456"',
         ])
 
     def test_optional_passwords_preserve_exact_bytes_and_config_values_are_trimmed(self) -> None:
@@ -1971,9 +1992,9 @@ class AuthAppDeployTests(unittest.TestCase):
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
         for document, version in (
-            (privacy, "2026-10-09-v1.4.0"),
-            (consent, "2026-10-09-v1.4.0"),
-            (terms, "2026-10-09-v1.4.0"),
+            (privacy, "2026-10-11-v1.5.0"),
+            (consent, "2026-10-11-v1.5.0"),
+            (terms, "2026-10-11-v1.5.0"),
         ):
             self.assertIn('content="noindex,nofollow"', document)
             self.assertIn(version, document)
@@ -2175,7 +2196,7 @@ class PublicResponse(io.BytesIO):
 class PublicReleaseVerificationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.sha = "a" * 40
-        self.legal_version = "2026-10-09-v1.4.0"
+        self.legal_version = "2026-10-11-v1.5.0"
         environment = patch.dict(os.environ, {
             f"LEGAL_{name}_VERSION": self.legal_version
             for name in ("PRIVACY", "CONSENT", "TERMS")
@@ -2190,7 +2211,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         config = json.dumps({
             "release": {"version": MODULE.release_version(), "build": self.sha[:12]},
             "mode": "public", "registration_enabled": True,
-            "auth_provider": "email", "auth_providers": ["email"],
+            "auth_provider": "email", "auth_providers": ["email", "telegram", "vkid"],
+            "social_providers": {"telegram": True, "vkid": True},
             "login_enabled": True, "email_enabled": True,
             "registration_available": True, "password_reset_available": True,
             "email_domains": ["gmail.com", "mail.ru", "xmail.ru"],

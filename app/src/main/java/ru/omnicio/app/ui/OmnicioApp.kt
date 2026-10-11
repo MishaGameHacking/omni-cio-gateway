@@ -65,43 +65,53 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
     BackHandler(enabled = state.authenticated && page != "Обзор") { page = "Обзор" }
     val destinations = listOf("Обзор" to R.drawable.ic_overview,
         "Портфель" to R.drawable.ic_portfolio, "Помощник" to R.drawable.ic_assistant)
-    LaunchedEffect(state.authenticated) { if (state.authenticated) model.refresh() else page = "Обзор" }
+    LaunchedEffect(state.authenticated, state.socialFlow == null) {
+        if (state.authenticated && state.socialFlow == null) model.refresh()
+        else if (!state.authenticated) page = "Обзор"
+    }
     LaunchedEffect(lifecycle, state.authenticated) {
         if (state.authenticated) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (isActive) { model.refresh(); delay(60_000) }
+            while (isActive) { if (state.socialFlow == null) model.refresh(); delay(60_000) }
         }
     }
     OmnicioTheme(darkTheme = state.darkTheme) {
-        if (!state.authenticated) {
-            AuthScreen(state, model)
-        } else if (state.legalConsent != null) {
-            LegalConsentScreen(state, model)
-        } else BoxWithConstraints(Modifier.fillMaxSize()) {
-            val wide = maxWidth >= 600.dp
-            Scaffold(
-                topBar = {
-                    AppToolbar(page, state.busy, model::refresh) { page = it }
-                },
-                bottomBar = {
-                    if (!wide) NavigationBar {
-                        destinations.forEach { (title, icon) ->
-                            NavigationBarItem(selected = page == title, onClick = { page = title },
-                                icon = { OmniIcon(icon) }, label = { Text(title) })
+        when {
+            state.socialFlow != null -> {
+                SocialFlowScreen(state, model)
+            }
+            !state.authenticated -> {
+                AuthScreen(state, model::startSocial, model::loadConfig)
+            }
+            state.legalConsent != null -> {
+                LegalConsentScreen(state, model)
+            }
+            else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth >= 600.dp
+                Scaffold(
+                    topBar = {
+                        AppToolbar(page, state.busy, model::refresh) { page = it }
+                    },
+                    bottomBar = {
+                        if (!wide) NavigationBar {
+                            destinations.forEach { (title, icon) ->
+                                NavigationBarItem(selected = page == title, onClick = { page = title },
+                                    icon = { OmniIcon(icon) }, label = { Text(title) })
+                            }
                         }
-                    }
-                },
-            ) { padding ->
-                Row(Modifier.padding(padding).fillMaxSize()) {
-                    if (wide) NavigationRail {
-                        destinations.forEach { (title, icon) ->
-                            NavigationRailItem(selected = page == title, onClick = { page = title },
-                                icon = { OmniIcon(icon) }, label = { Text(title) })
+                    },
+                ) { padding ->
+                    Row(Modifier.padding(padding).fillMaxSize()) {
+                        if (wide) NavigationRail {
+                            destinations.forEach { (title, icon) ->
+                                NavigationRailItem(selected = page == title, onClick = { page = title },
+                                    icon = { OmniIcon(icon) }, label = { Text(title) })
+                            }
                         }
-                    }
-                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        StatusMessages(state)
-                        Box(Modifier.weight(1f).widthIn(max = 900.dp)) {
-                            AppPage(page, state, model) { page = SETTINGS }
+                        Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            StatusMessages(state)
+                            Box(Modifier.weight(1f).widthIn(max = 900.dp)) {
+                                AppPage(page, state, model) { page = SETTINGS }
+                            }
                         }
                     }
                 }
@@ -132,14 +142,22 @@ private fun AppToolbar(page: String, busy: Boolean, refresh: () -> Unit, navigat
 private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel, connect: () -> Unit) {
     when (page) {
         "Портфель" -> PortfolioScreen(state)
-        "Помощник" -> AssistantScreen(state, model)
+        "Помощник" -> {
+            LaunchedEffect(Unit) { model.loadAssistant() }
+            AssistantScreen(state, model::markRead, model::loadMoreEvents, AssistantActions(
+                reload = { model.loadAssistant() }, create = model::newConversation,
+                select = { model.loadAssistant(it) }, edit = model::setAssistantDraft,
+                accept = model::acceptAssistantContext, send = model::sendAssistantMessage,
+                older = model::loadOlderMessages, retry = model::retryAssistantMessage,
+                task = model::setAssistantTask))
+        }
         SETTINGS -> SettingsScreen(state, model)
-        else -> OverviewScreen(state, model, onConnect = connect)
+        else -> OverviewScreen(state, model::toggleAmountsHidden, model::syncPortfolio, onConnect = connect)
     }
 }
 
 @Composable
-private fun StatusMessages(state: AppUiState) {
+internal fun StatusMessages(state: AppUiState) {
     if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     state.error?.let {
         Surface(color = MaterialTheme.colorScheme.errorContainer) {
@@ -150,43 +168,15 @@ private fun StatusMessages(state: AppUiState) {
 }
 
 @Stable
-private class AuthFormState {
-    var mode by mutableStateOf("login")
-    var email by mutableStateOf("")
-    var password by mutableStateOf("")
-    var code by mutableStateOf("")
+internal class ConsentFormState {
     var privacy by mutableStateOf(false)
     var consent by mutableStateOf(false)
     var terms by mutableStateOf(false)
     var adult by mutableStateOf(false)
-
-    val title: String get() = when (mode) {
-        "register" -> "Создать аккаунт"
-        "reset" -> "Восстановить доступ"
-        else -> "Вход"
-    }
-    val submitLabel: String get() = when (mode) {
-        "register" -> "Зарегистрироваться"
-        "reset" -> "Получить код"
-        else -> "Войти"
-    }
-    val valid: Boolean get() = email.isNotBlank() && (mode == "reset" || password.isNotEmpty()) &&
-        (mode != "register" || adult && terms && privacy && consent)
-
-    fun submit(model: OmnicioViewModel) {
-        when (mode) {
-            "register" -> model.register(email, password)
-            "reset" -> model.resetPassword(email)
-            else -> model.login(email, password)
-        }
-        password = ""
-    }
 }
 
 @Composable
-private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
-    val legalVersions = state.authConfig?.optJSONObject("legal_versions")?.toString()
-    val form = remember(legalVersions) { AuthFormState() }
+internal fun AuthScreen(state: AppUiState, onStartSocial: (String) -> Unit, onReloadConfig: () -> Unit) {
     val uri = LocalUriHandler.current
     Surface(Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().imePadding().fillMaxSize().verticalScroll(rememberScrollState())
@@ -198,8 +188,15 @@ private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
                 Text("Войдите в OMNICIO. Счета, история и расчёты загружаются с сервера.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 StatusMessages(state)
-                if (state.challengeId != null) VerifyForm(state, model, form)
-                else SignInForm(state, model, form)
+                SocialButtons(state, onStartSocial)
+                Text("Если аккаунта ещё нет, после подтверждения входа и согласий сервер создаст его автоматически.",
+                    style = MaterialTheme.typography.bodyMedium)
+                val providers = state.authConfig?.optJSONObject("social_providers")
+                if (providers == null || !providers.optBoolean("telegram") || !providers.optBoolean("vkid")) {
+                    OutlinedButton(onClick = onReloadConfig, enabled = !state.busy) {
+                        Text("Проверить доступность входа")
+                    }
+                }
                 HorizontalDivider()
                 Text("Финансовые данные не сохраняются на телефоне. После закрытия процесса приложения потребуется новый вход.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -210,56 +207,7 @@ private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
 }
 
 @Composable
-private fun VerifyForm(state: AppUiState, model: OmnicioViewModel, form: AuthFormState) {
-    val digits = state.authConfig?.optInt("email_code_digits") ?: 0
-    var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
-    LaunchedEffect(state.challengeId) {
-        while (isActive) { now = android.os.SystemClock.elapsedRealtime(); delay(1000) }
-    }
-    SectionTitle("Проверьте почту")
-    Text("Введите код из письма. Не закрывайте приложение до подтверждения.")
-    OutlinedTextField(form.code, { form.code = it.filter { c -> c in '0'..'9' }.take(digits) },
-        label = { Text("Код из письма · $digits цифр") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-    if (state.challengePurpose == "reset") SecretField(form.password, { form.password = it }, "Новый пароль")
-    Button(onClick = { model.verify(form.code, form.password); form.password = ""; form.code = "" },
-        enabled = !state.busy && digits > 0 && form.code.length == digits && now < state.challengeExpiresAt &&
-            (state.challengePurpose != "reset" || form.password.isNotBlank()), modifier = Modifier.fillMaxWidth()) {
-        Text("Подтвердить")
-    }
-    if (now >= state.challengeExpiresAt) Text("Срок действия кода истёк. Запросите новый код.")
-    TextButton(onClick = model::resendCode, enabled = !state.busy && now >= state.resendAt) {
-        Text(if (now >= state.resendAt) "Отправить код повторно"
-            else "Повторная отправка через ${(state.resendAt - now + 999) / 1000} с")
-    }
-    TextButton(onClick = model::cancelChallenge, enabled = !state.busy) { Text("Вернуться ко входу") }
-}
-
-@Composable
-private fun SignInForm(state: AppUiState, model: OmnicioViewModel, form: AuthFormState) {
-    val available = state.authConfig?.optBoolean(when (form.mode) {
-        "register" -> "registration_available"
-        "reset" -> "password_reset_available"
-        else -> "login_enabled"
-    }, false) == true
-    SectionTitle(form.title)
-    if (state.authConfig != null && !available) Text("Этот способ доступа временно недоступен. Повторите проверку позже.")
-    OutlinedTextField(form.email, { form.email = it }, label = { Text("Электронная почта") },
-        modifier = Modifier.fillMaxWidth(), singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
-    if (form.mode != "reset") SecretField(form.password, { form.password = it }, "Пароль")
-    if (form.mode == "register") RegistrationConsent(form)
-    Button(onClick = { form.submit(model) }, enabled = !state.busy && available && form.valid,
-        modifier = Modifier.fillMaxWidth()) { Text(form.submitLabel) }
-    if ((state.authConfig == null || !available) && !state.busy) OutlinedButton(onClick = model::loadConfig) { Text("Повторить подключение") }
-    TextButton(onClick = { form.mode = if (form.mode == "login") "register" else "login"; form.password = "" }, enabled = !state.busy) {
-        Text(if (form.mode == "login") "Создать аккаунт" else "Уже есть аккаунт — войти")
-    }
-    if (form.mode == "login") TextButton(onClick = { form.mode = "reset"; form.password = "" }, enabled = !state.busy) { Text("Забыли пароль?") }
-}
-
-@Composable
-private fun RegistrationConsent(form: AuthFormState) {
+internal fun RegistrationConsent(form: ConsentFormState) {
     CheckLine("Мне исполнилось 18 лет", form.adult) { form.adult = it }
     CheckLine("Принимаю условия использования", form.terms) { form.terms = it }
     CheckLine("Ознакомлен с политикой конфиденциальности", form.privacy) { form.privacy = it }
@@ -297,7 +245,7 @@ internal fun LegalLinks() {
 @Composable
 private fun LegalConsentScreen(state: AppUiState, model: OmnicioViewModel) {
     val versions = state.legalConsent?.toString()
-    val form = remember(versions) { AuthFormState() }
+    val form = remember(versions) { ConsentFormState() }
     Surface(Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().padding(24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {

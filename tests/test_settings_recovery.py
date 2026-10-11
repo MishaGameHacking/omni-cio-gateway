@@ -461,7 +461,7 @@ def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_se
         client = TestClient(app, cookies={"omnicio_session": "a"})
         catalog = client.get("/api/strategy/catalog")
         assert catalog.status_code == 200
-        assert len(catalog.json()["presets"]) == 10
+        assert len(catalog.json()["presets"]) == 3
         store.current_strategy_draft.return_value = None
         loaded = client.get("/api/profile/strategy", headers=headers)
         assert loaded.status_code == 200

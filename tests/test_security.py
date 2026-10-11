@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect, Request
 
-from omnicio.assistant import AssistantService
+from omnicio.assistant import AssistantClient, AssistantService
 from omnicio.config import ConfigurationError, load_settings, optional_uuid
 from omnicio.db import Database, UserRecord
 from omnicio.main import (
@@ -93,6 +93,30 @@ def test_disabled_email_ignores_legacy_smtp_environment_but_enabled_remains_stri
     with (
         patch.dict(os.environ, {**environment, "NOTIFICATION_EMAIL_ENABLED": "true"}, clear=True),
         pytest.raises(ConfigurationError, match="NOTIFICATION_SMTP_PORT"),
+    ):
+        load_settings()
+
+
+@pytest.mark.parametrize("provider", ["ollama", "openai_compatible"])
+def test_operator_model_protocol_is_explicit_and_validated(provider: str) -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "ASSISTANT_ENABLED": "true", "ASSISTANT_PROVIDER": provider,
+        "ASSISTANT_BASE_URL": "https://model.example.invalid" +
+        ("/v1" if provider == "openai_compatible" else "/api"),
+        "ASSISTANT_MODEL": "configured-test-model",
+    }
+    with patch.dict(os.environ, environment, clear=True):
+        cfg = load_settings()
+    client = AssistantClient(base_url=cfg.assistant_base_url, model=cfg.assistant_model,
+                             api_key=cfg.assistant_api_key, provider=cfg.assistant_provider)
+    assert client.configured
+    assert client.status()["provider"] == provider
+    with (
+        patch.dict(os.environ, {**environment, "ASSISTANT_PROVIDER": "unknown"}, clear=True),
+        pytest.raises(ConfigurationError, match="ASSISTANT_PROVIDER"),
     ):
         load_settings()
 

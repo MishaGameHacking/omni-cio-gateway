@@ -7,6 +7,22 @@ SELECT
     AND NOT EXISTS (
         SELECT 1
         FROM (VALUES
+            ('telegram_identities', 'user_id', 'uuid', true, NULL),
+            ('telegram_identities', 'telegram_subject', 'text', true, NULL),
+            ('telegram_identities', 'verified_at', 'timestamp with time zone', true, 'now()'),
+            ('social_auth_flows', 'id', 'uuid', true, NULL),
+            ('social_auth_flows', 'provider', 'text', true, NULL),
+            ('social_auth_flows', 'purpose', 'text', true, NULL),
+            ('social_auth_flows', 'user_id', 'uuid', false, NULL),
+            ('social_auth_flows', 'session_digest', 'bytea', false, NULL),
+            ('social_auth_flows', 'flow_digest', 'bytea', true, NULL),
+            ('social_auth_flows', 'state_digest', 'bytea', true, NULL),
+            ('social_auth_flows', 'secrets_ciphertext', 'bytea', false, NULL),
+            ('social_auth_flows', 'android_package', 'text', true, NULL),
+            ('social_auth_flows', 'status', 'text', true, '''pending''::text'),
+            ('social_auth_flows', 'subject', 'text', false, NULL),
+            ('social_auth_flows', 'created_at', 'timestamp with time zone', true, 'now()'),
+            ('social_auth_flows', 'expires_at', 'timestamp with time zone', true, NULL),
             ('email_identities', 'user_id', 'uuid', true, NULL),
             ('email_identities', 'email', 'text', true, NULL),
             ('email_identities', 'password_hash', 'text', true, NULL),
@@ -67,6 +83,13 @@ SELECT
     AND NOT EXISTS (
         SELECT 1
         FROM (VALUES
+            ('telegram_identities', 'telegram_identities_pkey', 'p', ARRAY['user_id']),
+            ('telegram_identities', 'telegram_identities_telegram_subject_key', 'u',
+             ARRAY['telegram_subject']),
+            ('telegram_identities', 'telegram_identities_user_id_fkey', 'f', ARRAY['user_id']),
+            ('social_auth_flows', 'social_auth_flows_pkey', 'p', ARRAY['id']),
+            ('social_auth_flows', 'social_auth_flows_state_digest_key', 'u', ARRAY['state_digest']),
+            ('social_auth_flows', 'social_auth_flows_user_id_fkey', 'f', ARRAY['user_id']),
             ('email_identities', 'email_identities_pkey', 'p', ARRAY['user_id']),
             ('email_identities', 'email_identities_email_key', 'u', ARRAY['email']),
             ('email_identities', 'email_identities_user_id_fkey', 'f', ARRAY['user_id']),
@@ -106,6 +129,32 @@ SELECT
     AND NOT EXISTS (
         SELECT 1
         FROM (VALUES
+            ('telegram_identities', 'telegram_identities_telegram_subject_check',
+             $check$(telegram_subject ~ '^[0-9]{1,128}$'::text)$check$),
+            ('social_auth_flows', 'social_auth_flows_provider_check',
+             $check$(provider = ANY (ARRAY['telegram'::text, 'vkid'::text]))$check$),
+            ('social_auth_flows', 'social_auth_flows_purpose_check',
+             $check$(purpose = ANY (ARRAY['login'::text, 'link'::text]))$check$),
+            ('social_auth_flows', 'social_auth_flows_flow_digest_check',
+             $check$(octet_length(flow_digest) = 32)$check$),
+            ('social_auth_flows', 'social_auth_flows_state_digest_check',
+             $check$(octet_length(state_digest) = 32)$check$),
+            ('social_auth_flows', 'social_auth_flows_android_package_check',
+             $check$(android_package = ANY (ARRAY['ru.omnicio.app'::text,
+                 'ru.omnicio.app.debug'::text]))$check$),
+            ('social_auth_flows', 'social_auth_flows_status_check',
+             $check$(status = ANY (ARRAY['pending'::text, 'exchanging'::text, 'verified'::text,
+                 'failed'::text, 'consumed'::text]))$check$),
+            ('social_auth_flows', 'social_auth_flows_subject_check',
+             $check$(subject ~ '^[0-9]{1,128}$'::text)$check$),
+            ('social_auth_flows', 'social_flow_expiry',
+             $check$(expires_at > created_at)$check$),
+            ('social_auth_flows', 'social_flow_proof',
+             $check$((status <> 'verified'::text) OR (subject IS NOT NULL))$check$),
+            ('social_auth_flows', 'social_flow_link',
+             $check$(((purpose = 'link'::text) AND (user_id IS NOT NULL) AND (session_digest IS
+                 NOT NULL) AND (octet_length(session_digest) = 32)) OR ((purpose = 'login'::text)
+                 AND (session_digest IS NULL)))$check$),
             ('email_identities', 'email_identities_password_version_check',
              $check$(password_version > 0)$check$),
             ('email_identities', 'email_identity_address_valid',
@@ -152,7 +201,7 @@ SELECT
              $check$(((authenticated_provider IS NULL) AND (authenticated_at IS NULL))
                  OR ((authenticated_provider IS NOT NULL)
                      AND (authenticated_provider
-                         = ANY (ARRAY['vkid'::text, 'tid'::text, 'email'::text]))
+                         = ANY (ARRAY['vkid'::text, 'tid'::text, 'email'::text, 'telegram'::text]))
                      AND (authenticated_at IS NOT NULL)))$check$)
         ) AS expected(table_name, constraint_name, expression)
         WHERE NOT EXISTS (

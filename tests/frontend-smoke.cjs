@@ -2,7 +2,8 @@
 "use strict";
 const assert = require("node:assert/strict");
 const {createServer} = require("node:http");
-const {readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, rmSync} = require("node:fs");
+const {readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync} = require("node:fs");
+const {rm} = require("node:fs/promises");
 const {join, resolve, extname} = require("node:path");
 const {tmpdir} = require("node:os");
 const {spawn, spawnSync} = require("node:child_process");
@@ -39,14 +40,22 @@ async function protocol(url) {
   socket.addEventListener("message",({data})=>{const result=JSON.parse(data),p=pending.get(result.id);if(!p)return;pending.delete(result.id);clearTimeout(p.timer);if(result.error)p.reject(Error(JSON.stringify(result.error)));else p.done(result.result);});
   return {close:()=>socket.close(),send(method,params={},sessionId){return new Promise((done,reject)=>{const n=++id;const timer=setTimeout(()=>{pending.delete(n);reject(Error(method+" timeout"));},15000);pending.set(n,{done,reject,timer});socket.send(JSON.stringify({id:n,method,params,sessionId}));});}};
 }
+async function stopBrowser(child, client, closed) {
+  if(client){try{await client.send("Browser.close");}catch{}client.close();}
+  // Browser.close acknowledges shutdown before Windows releases profile handles.
+  // Let graceful shutdown finish; forcing the parent down immediately can orphan renderers.
+  try { await until(closed,"graceful browser shutdown"); }
+  catch { child.kill(); await until(closed,"forced browser shutdown"); }
+}
 async function run(base) {
   const executable=[process.env.OMNICIO_TEST_BROWSER,"/usr/bin/google-chrome","/usr/bin/chromium","C:/Program Files/Google/Chrome/Application/chrome.exe","C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe","C:/Program Files/Microsoft/Edge/Application/msedge.exe"].filter(Boolean).find(existsSync);
   assert.ok(executable,"A real browser is required; set OMNICIO_TEST_BROWSER");
   const profile=mkdtempSync(join(tmpdir(),"omnicio-public-test-"));
   const child=spawn(executable,["--headless=new","--no-sandbox","--disable-dev-shm-usage","--disable-background-networking","--no-first-run","--remote-debugging-port=0",`--user-data-dir=${profile}`,"about:blank"],{stdio:["ignore","ignore","pipe"]});
-  let websocket="",exited=false,client;
+  let websocket="",exited=false,closed=false,client;
   child.stderr.on("data",chunk=>{const found=/DevTools listening on (ws:\/\/[^\s]+)/.exec(String(chunk));if(found)websocket=found[1];});
   child.on("exit",()=>{exited=true;});child.on("error",()=>{exited=true;});
+  child.on("close",()=>{closed=true;});
   try {
     await until(()=>websocket||exited,"browser start");assert.ok(websocket);
     client=await protocol(websocket);
@@ -105,10 +114,8 @@ async function run(base) {
     writeFileSync(join(artifacts,"public-requests.json"),JSON.stringify(requests,null,2));
     console.log("PASS release rejection/recovery, PWA cache retirement and zero personal requests");
   } finally {
-    if(client){try{await client.send("Browser.close");}catch{}client.close();}
-    if(!exited)child.kill();
-    await until(()=>exited,"browser exit");
-    rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:200});
+    await stopBrowser(child,client,()=>closed);
+    await rm(profile,{recursive:true,force:true,maxRetries:10,retryDelay:200});
   }
 }
 (async()=>{await new Promise(done=>server.listen(0,"127.0.0.1",done));try{await run(`http://127.0.0.1:${server.address().port}`);}finally{server.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

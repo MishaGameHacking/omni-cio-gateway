@@ -84,7 +84,9 @@ PUBLIC_SECURITY_HEADERS = {
 OPTIONAL_INTEGRATION_KEYS = (
     "AUTH_SMTP_HOST", "AUTH_SMTP_PORT", "AUTH_SMTP_USERNAME", "AUTH_SMTP_PASSWORD",
     "AUTH_SMTP_SENDER", "AUTH_SMTP_MODE", "MARKET_DATA_TOKEN",
+    "TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET", "VKID_APP_ID",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
+    "ASSISTANT_PROVIDER", "ASSISTANT_ROUTES",
     "ASSISTANT_ALLOWED_ENDPOINTS", "ASSISTANT_DAILY_REQUEST_LIMIT",
     "NOTIFICATIONS_ENABLED", "NOTIFICATION_EMAIL_ENABLED", "NOTIFICATION_CRYPTO_KEY",
     "NOTIFICATION_VAPID_PRIVATE_KEY",
@@ -96,7 +98,8 @@ OPTIONAL_INTEGRATION_KEYS = (
     "BILLING_TAX",
 )
 OPTIONAL_SECRET_KEYS = frozenset({
-    "AUTH_SMTP_PASSWORD", "MARKET_DATA_TOKEN", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
+    "AUTH_SMTP_PASSWORD", "TELEGRAM_CLIENT_SECRET", "MARKET_DATA_TOKEN",
+    "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
     "NOTIFICATION_VAPID_PRIVATE_KEY", "NOTIFICATION_SMTP_PASSWORD",
     "OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY", "BILLING_PASSWORD",
 })
@@ -352,6 +355,9 @@ def _load_upgrade_product_settings(diagnostics: dict[str, object] | None = None)
     observation["stage"] = "email_readiness"
     if not settings.auth_email_ready:
         raise UpgradeBlocked("auth_email_configuration_required")
+    observation["stage"] = "social_readiness"
+    if not all(settings.social_providers.values()):
+        raise UpgradeBlocked("social_auth_configuration_required")
     observation["stage"] = "validated"
     return settings
 
@@ -845,7 +851,7 @@ Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app \
     --host 127.0.0.1 --port 8001 --workers 1 --limit-concurrency 64 \
     --backlog 128 --timeout-keep-alive 5 --timeout-graceful-shutdown 30 \
-    --proxy-headers --forwarded-allow-ips=127.0.0.1
+    --no-access-log --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=45
@@ -1024,6 +1030,25 @@ __OMNICIO_SERVER_SECURITY_HEADERS__
 
     location ^~ /api/auth/email/ {
         client_max_body_size 4k;
+        limit_req zone=omnicio_auth_start burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location ^~ /api/auth/social/ {
+        access_log off;
+        error_log /dev/null crit;
+        client_max_body_size 4k;
+        proxy_hide_header Referrer-Policy;
+__OMNICIO_SOCIAL_SECURITY_HEADERS__
         limit_req zone=omnicio_auth_start burst=5 nodelay;
         limit_req_status 429;
         proxy_pass http://127.0.0.1:8001;
@@ -1230,6 +1255,9 @@ REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
     + '\n        add_header X-Omnicio-Build "__OMNICIO_PUBLIC_BUILD__";',
 ).replace(
     "__OMNICIO_DEFAULT_REFERRER_POLICY__", json.dumps(PUBLIC_SECURITY_HEADERS["Referrer-Policy"]),
+).replace(
+    "__OMNICIO_SOCIAL_SECURITY_HEADERS__",
+    nginx_security_headers(8).replace("strict-origin-when-cross-origin", "no-referrer"),
 )
 
 
@@ -1457,8 +1485,11 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
         raise InfraError("Public access mode does not match the email release contract")
     if "registration_max_users" in payload:
         raise InfraError("Public registration must not have a user capacity limit")
-    if payload.get("auth_provider") != "email" or payload.get("auth_providers") != ["email"]:
-        raise InfraError("Public auth provider must be email only")
+    if (payload.get("auth_provider") != "email"
+            or payload.get("auth_providers") != ["email", "telegram", "vkid"]):
+        raise InfraError("Public auth providers must be email, Telegram and VK ID")
+    if payload.get("social_providers") != {"telegram": True, "vkid": True}:
+        raise InfraError("Telegram and VK ID must both be configured")
     if payload.get("login_enabled") is not True:
         raise InfraError("Verified account login must remain enabled independently of SMTP")
     if (payload.get("email_domains") != ["gmail.com", "mail.ru", "xmail.ru"]

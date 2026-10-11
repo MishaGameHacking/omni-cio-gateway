@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnicio-gateway"
-version = "1.4.0"
+version = "1.5.0"
 description = "OmniCIO public market analytics and private portfolio monitoring"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -29,7 +29,7 @@ build = ["setuptools>=75"]
 
 [tool.omnicio.runtime]
 # Change this contract when the previous runtime cannot safely read the new data.
-rollback_contract = "public-email-holdings-v1"
+rollback_contract = "mobile-social-email-holdings-v1"
 
 [tool.omnicio.timeweb]
 server-id = 9235089
@@ -47,11 +47,12 @@ rub_per_gib = 6
 mode = "single_existing_database"
 source_release = "a775679cc353eeb64fb51721fdd963eb660e5edb"
 source_version = "1.3.0"
-target_version = "1.4.0"
+target_version = "1.5.0"
 source_schema_sha256 = "287e991cdb3e98879b4be876b7291bd2459c617cb93d8b45c9930a335863c2d2"
 migration_sha256 = [
   "a541cc6e56a0a93b8930f2204c13a934e7dd9dd3255dd2173aed5e4048b6dff0",
   "b37ea71ac1bea7522baad32f4e99babe4135bc4ad885db51bbe5c22f0705bb25",
+  "fc4346e037ffc8e4965a341005f857f305d42bf56c88ee0d15f2b034b2b2bdeb",
 ]
 
 [tool.setuptools.packages.find]
