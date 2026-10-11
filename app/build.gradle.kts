@@ -73,6 +73,9 @@ val releasePackagingRequested = gradle.startParameter.taskNames.any { requestedT
         "assembleRelease",
         "bundleRelease",
         "packageRelease",
+        "assemble",
+        "bundle",
+        "build",
     )
 }
 check(!releasePackagingRequested || releaseSigningReady) {
