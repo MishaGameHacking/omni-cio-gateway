@@ -11,9 +11,11 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,18 +27,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -44,11 +46,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.ui.theme.OmniSpacing
+
+private const val ANDROID_LABEL = "Android"
+private const val STATUS_LABEL = "Статус"
 
 @Composable
 internal fun SettingsScreen(
@@ -64,402 +66,417 @@ internal fun SettingsScreen(
     onGoalHorizonYears: (Int) -> Unit,
     onNotificationsEnabled: (Boolean) -> Unit,
     onFastAlertsEnabled: (Boolean) -> Unit,
+    onDarkTheme: (Boolean) -> Unit,
 ) {
-    val context = LocalContext.current
     val settings = uiState.settings
+    var brokerExpanded by rememberSaveable { mutableStateOf(false) }
+    var goalsExpanded by rememberSaveable { mutableStateOf(false) }
+    var notificationsExpanded by rememberSaveable { mutableStateOf(false) }
+    var privacyExpanded by rememberSaveable { mutableStateOf(false) }
+    var subscriptionExpanded by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(horizontal = OmniSpacing.lg),
-        verticalArrangement = Arrangement.spacedBy(OmniSpacing.md),
+            .safeDrawingPadding(),
+        contentPadding = PaddingValues(
+            start = OmniSpacing.lg,
+            end = OmniSpacing.lg,
+            top = OmniSpacing.sm,
+            bottom = OmniSpacing.xxl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
     ) {
+        item { SettingsHeader(onBack = onBack) }
         item {
-            TextButton(onClick = onBack) {
-                Text("← Назад")
-            }
-        }
-        item {
-            StatusPill("ДЕМО · НАСТРОЙКИ")
-        }
-        item {
-            Text(
-                text = "Настройки",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.semantics { heading() },
+            ThemeCard(
+                darkTheme = settings.darkTheme,
+                onDarkTheme = onDarkTheme,
             )
         }
         item {
-            MigrationStatusCard(
-                status = uiState.migrationStatus,
-                onRetry = onRetryMigration,
-            )
-        }
-        item {
-            DeviceDataCard(
-                settings = settings,
-                onExport = {
-                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, buildLocalExportSummary(settings))
-                    }
-                    context.startActivity(
-                        Intent.createChooser(sendIntent, "Экспорт OMNICIO"),
-                    )
+            ExpandableSettingsCard(
+                title = "Подключение T-Invest",
+                subtitle = when {
+                    settings.brokerRevoked -> "Доступ отозван · демо"
+                    settings.brokerConnected -> "Подключено · демо"
+                    else -> "Не подключено · только чтение"
                 },
-                onDelete = onDeletePortfolio,
-                onRestore = onRestoreDemoPortfolio,
-            )
-        }
-        item {
-            BrokerCard(
-                settings = settings,
-                onConnect = onConnectBrokerFixture,
-                onDisconnect = onDisconnectBroker,
-                onRevoke = onRevokeBrokerFixture,
-            )
-        }
-        item {
-            SettingsSectionTitle("Общие источники")
-        }
-        commonSourceCategories().forEach { source ->
-            item {
-                InfoCard(
-                    title = source.name,
-                    body = source.detail,
+                marker = "↗",
+                expanded = brokerExpanded,
+                onToggle = { brokerExpanded = !brokerExpanded },
+            ) {
+                BrokerDetails(
+                    settings = settings,
+                    onConnect = onConnectBrokerFixture,
+                    onDisconnect = onDisconnectBroker,
+                    onRevoke = onRevokeBrokerFixture,
                 )
             }
         }
         item {
-            GoalReserveCard(
-                settings = settings,
-                onReserveMinor = onReserveMinor,
-                onGoalHorizonYears = onGoalHorizonYears,
+            ExpandableSettingsCard(
+                title = "Цели и резерв",
+                subtitle = "Резерв " +
+                    formatMoney(settings.reserveMinor, DisplayCurrency.RUB, hidden = false) +
+                    " · горизонт " + settings.goalHorizonYears + " г.",
+                marker = "◎",
+                expanded = goalsExpanded,
+                onToggle = { goalsExpanded = !goalsExpanded },
+            ) {
+                GoalReserveDetails(
+                    settings = settings,
+                    onReserveMinor = onReserveMinor,
+                    onGoalHorizonYears = onGoalHorizonYears,
+                )
+            }
+        }
+        item {
+            ExpandableSettingsCard(
+                title = "Уведомления",
+                subtitle = if (settings.notificationsEnabled) {
+                    "Включены · важные события"
+                } else {
+                    "Выключены"
+                },
+                marker = "◉",
+                expanded = notificationsExpanded,
+                onToggle = { notificationsExpanded = !notificationsExpanded },
+            ) {
+                NotificationsDetails(
+                    settings = settings,
+                    onNotificationsEnabled = onNotificationsEnabled,
+                    onFastAlertsEnabled = onFastAlertsEnabled,
+                )
+            }
+        }
+        item {
+            ExpandableSettingsCard(
+                title = "Конфиденциальность",
+                subtitle = "Локальные данные, экспорт и удаление",
+                marker = "◇",
+                expanded = privacyExpanded,
+                onToggle = { privacyExpanded = !privacyExpanded },
+            ) {
+                PrivacyDetails(
+                    uiState = uiState,
+                    onDeletePortfolio = onDeletePortfolio,
+                    onRestoreDemoPortfolio = onRestoreDemoPortfolio,
+                    onRetryMigration = onRetryMigration,
+                )
+            }
+        }
+        item {
+            ExpandableSettingsCard(
+                title = "Подписка",
+                subtitle = "Покупки пока не подключены",
+                marker = "♛",
+                expanded = subscriptionExpanded,
+                onToggle = { subscriptionExpanded = !subscriptionExpanded },
+            ) {
+                SubscriptionDetails()
+            }
+        }
+        item { AboutCard() }
+    }
+}
+
+@Composable
+private fun SettingsHeader(onBack: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+    ) {
+        TextButton(onClick = onBack) {
+            Text("‹")
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Настройки",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.semantics { heading() },
             )
-        }
-        item {
-            NotificationsCard(
-                settings = settings,
-                onNotificationsEnabled = onNotificationsEnabled,
-                onFastAlertsEnabled = onFastAlertsEnabled,
-            )
-        }
-        item {
-            NotificationPermissionCard(
-                notificationsEnabled = settings.notificationsEnabled,
-            )
-        }
-        item {
-            RuntimeEnvironmentCard()
-        }
-        item {
-            SubscriptionCard()
-        }
-        item {
-            InfoCard(
-                title = "О приложении",
-                body = "OMNICIO " + BuildConfig.VERSION_NAME +
-                    " · код версии " + BuildConfig.VERSION_CODE +
-                    " · пакет " + BuildConfig.APPLICATION_ID +
-                    ". Нативный локальный Android-интерфейс. Приватность, документы и перечень источников остаются прозрачными. " +
-                    "Скриншоты на текущих демо-экранах не блокируются: секреты здесь не отображаются, " +
-                    "а специальные возможности не ограничиваются без необходимости.",
+            Text(
+                text = "Управляйте приложением под себя",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }
 }
 
 @Composable
-private fun DeviceDataCard(
-    settings: LocalSettingsState,
-    onExport: () -> Unit,
-    onDelete: () -> Unit,
-    onRestore: () -> Unit,
+private fun ThemeCard(
+    darkTheme: Boolean,
+    onDarkTheme: (Boolean) -> Unit,
 ) {
-    SettingsCard(title = "Данные на устройстве") {
-        Text(
-            text = if (settings.portfolioPresent) {
-                "Локальный демо-портфель: 1,8 МБ · обновлён сегодня."
-            } else {
-                "Локальный демо-портфель удалён · 0 Б."
-            },
-        )
-        Text(
-            text = "Экспорт формируется локально и не включает учётные данные брокера.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedButton(
-            onClick = onExport,
-            modifier = Modifier.fillMaxWidth(),
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(OmniSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
         ) {
-            Text("Экспортировать локально")
-        }
-        if (settings.portfolioPresent) {
-            Button(
-                onClick = onDelete,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Удалить портфель и учётные данные брокера")
+            Text(
+                text = if (darkTheme) "●" else "○",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (darkTheme) "Тёмная тема" else "Светлая тема",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (darkTheme) "Оттенки чёрного" else "Светлые нейтральные оттенки",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
-        } else {
-            Button(
-                onClick = onRestore,
-                modifier = Modifier.fillMaxWidth(),
+            Switch(
+                checked = darkTheme,
+                onCheckedChange = onDarkTheme,
+                modifier = Modifier.semantics { contentDescription = "Тёмная тема" },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpandableSettingsCard(
+    title: String,
+    subtitle: String,
+    marker: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    details: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(OmniSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
             ) {
-                Text("Восстановить демо-набор")
+                Text(
+                    text = marker,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = if (expanded) "⌃" else "›",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+            if (expanded) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                Column(
+                    modifier = Modifier.padding(OmniSpacing.md),
+                    verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
+                ) {
+                    details()
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BrokerCard(
+private fun BrokerDetails(
     settings: LocalSettingsState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onRevoke: () -> Unit,
 ) {
-    SettingsCard(title = "T-Invest · только чтение") {
-        Text(
-            text = when {
-                settings.brokerRevoked ->
-                    "Учётные данные отозваны · демо-состояние. Зависимые фоновые задачи остановлены."
-                settings.brokerConnected ->
-                    "Подключено · демо-состояние. Учётные данные отмечены как локальные."
-                else ->
-                    "Не подключено. Реальный токен только для чтения в этой версии ещё не подключён."
-            },
-        )
-        Text(
-            text = "Учётные данные: " +
-                if (settings.brokerCredentialPresent) "локально присутствуют · демо" else "отсутствует",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = "Зависимые фоновые задачи: " +
-                if (settings.dependentJobsRunning) "демо-задачи запущены" else "остановлены",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        when {
-            settings.brokerConnected -> {
-                OutlinedButton(
-                    onClick = onConnect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Переподключить демо-соединение")
-                }
-                OutlinedButton(
-                    onClick = onRevoke,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("QA · пометить учётные данные отозванными")
-                }
-                Button(
-                    onClick = onDisconnect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Отключить и очистить локальные учётные данные")
-                }
+    Text(
+        text = "Реальный токен в версии 2.5.1 ещё не запрашивается. Здесь доступен безопасный демо-контур.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    when {
+        settings.brokerConnected -> {
+            CompactStatusLine(STATUS_LABEL, "Подключено · демо")
+            OutlinedButton(onClick = onRevoke, modifier = Modifier.fillMaxWidth()) {
+                Text("QA · отозвать демо-доступ")
             }
-            settings.brokerRevoked -> {
-                Button(
-                    onClick = onConnect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Переподключить демо-режим чтения")
-                }
-                OutlinedButton(
-                    onClick = onDisconnect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Очистить отозванные учётные данные")
-                }
+            Button(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {
+                Text("Отключить демо-доступ")
             }
-            else -> {
-                Button(
-                    onClick = onConnect,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Подключить демо-режим чтения")
-                }
+        }
+        settings.brokerRevoked -> {
+            CompactStatusLine(STATUS_LABEL, "Доступ отозван · демо")
+            Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
+                Text("Переподключить демо-режим")
+            }
+            OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {
+                Text("Очистить демо-состояние")
+            }
+        }
+        else -> {
+            CompactStatusLine(STATUS_LABEL, "Не подключено")
+            Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
+                Text("Включить демо-режим чтения")
             }
         }
     }
 }
 
 @Composable
-private fun GoalReserveCard(
+private fun GoalReserveDetails(
     settings: LocalSettingsState,
     onReserveMinor: (Long) -> Unit,
     onGoalHorizonYears: (Int) -> Unit,
 ) {
-    SettingsCard(title = "Цели и резерв") {
-        Text(
-            text = "Резерв для локальных сценариев: " +
-                formatMoney(settings.reserveMinor, DisplayCurrency.RUB, hidden = false),
-        )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            reservePresetsMinor().forEach { reserve ->
-                FilterChip(
-                    selected = reserve == settings.reserveMinor,
-                    onClick = { onReserveMinor(reserve) },
-                    label = {
-                        Text(formatMoney(reserve, DisplayCurrency.RUB, hidden = false))
-                    },
-                )
-            }
+    Text("Резерв", style = MaterialTheme.typography.labelLarge)
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+    ) {
+        reservePresetsMinor().forEach { reserve ->
+            FilterChip(
+                selected = reserve == settings.reserveMinor,
+                onClick = { onReserveMinor(reserve) },
+                label = { Text(formatMoney(reserve, DisplayCurrency.RUB, hidden = false)) },
+            )
         }
-        Text("Горизонт цели: " + settings.goalHorizonYears + " г.")
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            goalHorizonPresets().forEach { years ->
-                FilterChip(
-                    selected = years == settings.goalHorizonYears,
-                    onClick = { onGoalHorizonYears(years) },
-                    label = { Text(years.toString() + " г.") },
-                )
-            }
+    }
+    Text("Горизонт цели", style = MaterialTheme.typography.labelLarge)
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+    ) {
+        goalHorizonPresets().forEach { years ->
+            FilterChip(
+                selected = years == settings.goalHorizonYears,
+                onClick = { onGoalHorizonYears(years) },
+                label = { Text(years.toString() + " г.") },
+            )
         }
     }
 }
 
 @Composable
-private fun NotificationsCard(
+private fun NotificationsDetails(
     settings: LocalSettingsState,
     onNotificationsEnabled: (Boolean) -> Unit,
     onFastAlertsEnabled: (Boolean) -> Unit,
 ) {
-    SettingsCard(title = "Уведомления") {
-        ToggleRow(
-            label = "Локальные и фоновые уведомления",
-            checked = settings.notificationsEnabled,
-            onChecked = onNotificationsEnabled,
-        )
-        ToggleRow(
-            label = "Быстрые уведомления",
-            checked = settings.fastAlertsEnabled,
-            enabled = settings.notificationsEnabled,
-            onChecked = onFastAlertsEnabled,
-        )
-        Text(
-            text = "Обычное push-уведомление не содержит суммы портфеля и персональные позиции.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    ToggleRow(
+        label = "Важные уведомления",
+        checked = settings.notificationsEnabled,
+        onChecked = onNotificationsEnabled,
+    )
+    ToggleRow(
+        label = "Быстрые уведомления",
+        checked = settings.fastAlertsEnabled,
+        enabled = settings.notificationsEnabled,
+        onChecked = onFastAlertsEnabled,
+    )
+    NotificationPermissionCard(notificationsEnabled = settings.notificationsEnabled)
+    RuntimeEnvironmentCard()
 }
 
 @Composable
-private fun SubscriptionCard() {
-    SettingsCard(title = "Подписка") {
-        StatusPill("ТЕСТОВЫЙ РЕЖИМ · RUSTORE PAY НЕ ПОДКЛЮЧЁН")
-        Text(
-            text = "Цены не показываются: платёжный SDK и боевой тарифный доступ ещё не подключены.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        subscriptionTiers().forEach { tier ->
-            Column(
-                verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs),
-                modifier = Modifier.padding(vertical = OmniSpacing.xs),
-            ) {
-                Text(
-                    text = tier.name,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = tier.status,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = when {
-                        tier.purchasable -> "Можно приобрести"
-                        tier.available -> "Доступно без покупки"
-                        else -> "Недоступно"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-        Text(
-            text = "Семейного тарифа и связанных аккаунтов нет.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun ToggleRow(
-    label: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onChecked: (Boolean) -> Unit,
+private fun PrivacyDetails(
+    uiState: AppUiState,
+    onDeletePortfolio: () -> Unit,
+    onRestoreDemoPortfolio: () -> Unit,
+    onRetryMigration: () -> Unit,
 ) {
-    val switch: @Composable () -> Unit = {
-        Switch(
-            checked = checked,
-            enabled = enabled,
-            onCheckedChange = onChecked,
-            modifier = Modifier.semantics {
-                contentDescription = label
-            },
-        )
+    val context = LocalContext.current
+    val settings = uiState.settings
+    CompactStatusLine(
+        "Данные",
+        if (settings.portfolioPresent) "Локальный демо-портфель" else "Портфель удалён",
+    )
+    CompactStatusLine("ID устройства", installationIdLabel(uiState.installationId))
+    CompactStatusLine("Схема данных", uiState.migrationStatus.label)
+    if (uiState.migrationStatus == LocalMigrationStatus.FAILED) {
+        Button(onClick = onRetryMigration, modifier = Modifier.fillMaxWidth()) {
+            Text("Повторить локальную миграцию")
+        }
     }
-
-    if (shouldStackDetailLine(LocalDensity.current.fontScale)) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
-        ) {
-            Text(text = label)
-            switch()
+    OutlinedButton(
+        onClick = {
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, buildLocalExportSummary(settings))
+            }
+            runCatching {
+                context.startActivity(Intent.createChooser(sendIntent, "Экспорт OMNICIO"))
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Экспортировать локально")
+    }
+    if (settings.portfolioPresent) {
+        Button(onClick = onDeletePortfolio, modifier = Modifier.fillMaxWidth()) {
+            Text("Удалить локальный демо-портфель")
         }
     } else {
+        Button(onClick = onRestoreDemoPortfolio, modifier = Modifier.fillMaxWidth()) {
+            Text("Восстановить демо-портфель")
+        }
+    }
+    Text(
+        text = "Брокерский токен в экспорт не включается.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun SubscriptionDetails() {
+    StatusPill("RUSTORE PAY ПОКА НЕ ПОДКЛЮЧЁН")
+    subscriptionTiers().forEach { tier ->
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
         ) {
-            Text(
-                text = label,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = OmniSpacing.md),
-            )
-            switch()
-        }
-    }
-}
-
-@Composable
-private fun MigrationStatusCard(
-    status: LocalMigrationStatus,
-    onRetry: () -> Unit,
-) {
-    SettingsCard(title = "Локальная схема данных") {
-        Text(status.label)
-        Text(
-            text = when (status) {
-                LocalMigrationStatus.CURRENT ->
-                    "Схема локального состояния интерфейса актуальна. После перезапуска значения читаются из локального хранилища."
-                LocalMigrationStatus.MIGRATED ->
-                    "Маркер схемы обновлён атомарно. Если процесс завершится раньше записи, следующий запуск повторит миграцию."
-                LocalMigrationStatus.FAILED ->
-                    "Запись версии схемы не подтверждена. OMNICIO не считает миграцию завершённой и позволяет повторить её локально."
-            },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (status == LocalMigrationStatus.FAILED) {
-            Button(
-                onClick = onRetry,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Повторить локальную миграцию")
+            Column(modifier = Modifier.weight(1f)) {
+                Text(tier.name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    tier.status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+            Text(
+                text = if (tier.available) "Доступно" else "Позже",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (tier.available) {
+                    MaterialTheme.colorScheme.tertiary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }
@@ -469,85 +486,55 @@ private fun NotificationPermissionCard(
     notificationsEnabled: Boolean,
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val required = notificationPermissionRequired(Build.VERSION.SDK_INT)
-    var granted by rememberSaveable {
-        mutableStateOf(!required || notificationPermissionGranted(context))
-    }
-    var requestAttempted by rememberSaveable { mutableStateOf(false) }
-
-    DisposableEffect(lifecycleOwner, required) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                granted = !required || notificationPermissionGranted(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-
+    var granted by rememberSaveable { mutableStateOf(safeNotificationPermissionGranted(context)) }
+    var attempted by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { result ->
-        requestAttempted = true
+        attempted = true
         granted = result
     }
 
-    SettingsCard(title = "Разрешение уведомлений") {
-        when {
-            !notificationsEnabled -> {
-                StatusPill("УВЕДОМЛЕНИЯ В ПРИЛОЖЕНИИ ВЫКЛЮЧЕНЫ")
-                Text(
-                    text = "Сначала включите локальные уведомления выше. Системный запрос Android не показывается без необходимости.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    when {
+        !notificationsEnabled -> CompactStatusLine(ANDROID_LABEL, "Системный запрос не нужен")
+        !required -> CompactStatusLine(ANDROID_LABEL, "Отдельное разрешение не требуется")
+        granted -> CompactStatusLine(ANDROID_LABEL, "Разрешение выдано")
+        else -> {
+            CompactStatusLine(
+                "Android",
+                if (attempted) "Разрешение отклонено" else "Разрешение не выдано",
+            )
+            Button(
+                onClick = {
+                    attempted = true
+                    launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Разрешить уведомления")
             }
-            !required -> {
-                Text("Для этой версии Android отдельное системное разрешение не требуется.")
-            }
-            granted -> {
-                StatusPill("РАЗРЕШЕНО")
-                Text("Системное разрешение выдано. Пользовательские переключатели выше всё равно остаются отдельным выбором.")
-            }
-            else -> {
-                StatusPill(if (requestAttempted) "ДОСТУП К УВЕДОМЛЕНИЯМ ОТКЛОНЁН" else "РАЗРЕШЕНИЕ НЕ ВЫДАНО")
-                Text(
-                    text = "Без системного разрешения Android не покажет уведомления. Портфель и локальная аналитика продолжают работать.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
+            if (attempted) {
+                OutlinedButton(
                     onClick = {
-                        requestAttempted = true
-                        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Разрешить уведомления")
-                }
-                if (requestAttempted) {
-                    OutlinedButton(
-                        onClick = {
+                        runCatching {
                             context.startActivity(
                                 Intent(
                                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                                     Uri.parse("package:" + context.packageName),
                                 ),
                             )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Открыть настройки Android")
-                    }
-                    TextButton(
-                        onClick = {
-                            granted = notificationPermissionGranted(context)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Проверить разрешение снова")
-                    }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Открыть настройки Android")
+                }
+                TextButton(
+                    onClick = { granted = safeNotificationPermissionGranted(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Проверить разрешение")
                 }
             }
         }
@@ -557,62 +544,111 @@ private fun NotificationPermissionCard(
 @Composable
 private fun RuntimeEnvironmentCard() {
     val context = LocalContext.current
-    val powerManager = remember(context) {
-        context.getSystemService(PowerManager::class.java)
-    }
-    val connectivityManager = remember(context) {
-        context.getSystemService(ConnectivityManager::class.java)
-    }
-    val powerSaver = powerManager?.isPowerSaveMode == true
-    val dataSaverRestricted =
-        connectivityManager?.restrictBackgroundStatus ==
-            ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
-
-    SettingsCard(title = "Фоновые ограничения Android") {
-        Text("Экономия батареи: " + powerSaverLabel(powerSaver))
-        Text("Экономия трафика: " + dataSaverLabel(dataSaverRestricted))
-        Text(
-            text = "Android не является гарантированным круглосуточным планировщиком. Фоновые обновления могут выполняться позже, а состояние данных всегда показывается отдельно.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs)) {
+        Text("Ограничения Android", style = MaterialTheme.typography.labelLarge)
+        CompactStatusLine("Батарея", powerSaverLabelSafe(safePowerSaver(context)))
+        CompactStatusLine("Трафик", dataSaverLabelSafe(safeDataSaver(context)))
     }
 }
 
-private fun notificationPermissionGranted(context: Context): Boolean =
+private fun safeNotificationPermissionGranted(context: Context): Boolean = runCatching {
     !notificationPermissionRequired(Build.VERSION.SDK_INT) ||
         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
         PackageManager.PERMISSION_GRANTED
+}.getOrDefault(false)
 
-@Composable
-private fun SettingsSectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.SemiBold,
-    )
+private fun safePowerSaver(context: Context): Boolean? = runCatching {
+    context.getSystemService(PowerManager::class.java)?.isPowerSaveMode
+}.getOrNull()
+
+private fun safeDataSaver(context: Context): Boolean? = runCatching {
+    context.getSystemService(ConnectivityManager::class.java)?.restrictBackgroundStatus ==
+        ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+}.getOrNull()
+
+private fun powerSaverLabelSafe(enabled: Boolean?): String = when (enabled) {
+    true -> "Экономия включена"
+    false -> "Без ограничений"
+    null -> "Не удалось определить"
+}
+
+private fun dataSaverLabelSafe(enabled: Boolean?): String = when (enabled) {
+    true -> "Фоновый трафик ограничен"
+    false -> "Без ограничений"
+    null -> "Не удалось определить"
 }
 
 @Composable
-private fun SettingsCard(
-    title: String,
-    content: @Composable () -> Unit,
+private fun ToggleRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onChecked: (Boolean) -> Unit,
 ) {
+    val largeFont = shouldStackDetailLine(LocalDensity.current.fontScale)
+    if (largeFont) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
+        ) {
+            Text(label)
+            Switch(
+                checked = checked,
+                enabled = enabled,
+                onCheckedChange = onChecked,
+                modifier = Modifier.semantics { contentDescription = label },
+            )
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = label, modifier = Modifier.weight(1f))
+            Switch(
+                checked = checked,
+                enabled = enabled,
+                onCheckedChange = onChecked,
+                modifier = Modifier.semantics { contentDescription = label },
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactStatusLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.8f),
+        )
+        Text(text = value, modifier = Modifier.weight(1.4f))
+    }
+}
+
+@Composable
+private fun AboutCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
             modifier = Modifier.padding(OmniSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs),
         ) {
+            Text("О приложении", fontWeight = FontWeight.SemiBold)
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                text = "OMNICIO " + BuildConfig.VERSION_NAME +
+                    " · код " + BuildConfig.VERSION_CODE +
+                    " · " + BuildConfig.APPLICATION_ID,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
             )
-            content()
         }
     }
 }

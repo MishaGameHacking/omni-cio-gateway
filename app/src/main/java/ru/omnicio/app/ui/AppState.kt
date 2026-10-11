@@ -22,6 +22,7 @@ private const val KEY_RESERVE_MINOR = "reserve_minor"
 private const val KEY_GOAL_HORIZON_YEARS = "goal_horizon_years"
 private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
 private const val KEY_FAST_ALERTS_ENABLED = "fast_alerts_enabled"
+private const val KEY_DARK_THEME = "dark_theme"
 private const val KEY_BROKER_REVOKED = "broker_revoked"
 private const val KEY_LOCAL_SCHEMA_VERSION = "local_schema_version"
 
@@ -104,6 +105,10 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
 
     fun setFastAlertsEnabled(enabled: Boolean) {
         updateSettings { fastAlertsState(it, enabled) }
+    }
+
+    fun setDarkTheme(enabled: Boolean) {
+        updateSettings { it.copy(darkTheme = enabled) }
     }
 
     private fun updateSettings(
@@ -193,6 +198,10 @@ private class LocalProfileStore(context: Context) {
                 KEY_FAST_ALERTS_ENABLED,
                 defaults.fastAlertsEnabled,
             ),
+            darkTheme = prefs.getBoolean(
+                KEY_DARK_THEME,
+                defaults.darkTheme,
+            ),
         )
     }
 
@@ -219,6 +228,7 @@ private class LocalProfileStore(context: Context) {
             .putInt(KEY_GOAL_HORIZON_YEARS, state.goalHorizonYears)
             .putBoolean(KEY_NOTIFICATIONS_ENABLED, state.notificationsEnabled)
             .putBoolean(KEY_FAST_ALERTS_ENABLED, state.fastAlertsEnabled)
+            .putBoolean(KEY_DARK_THEME, state.darkTheme)
             .apply()
     }
 }

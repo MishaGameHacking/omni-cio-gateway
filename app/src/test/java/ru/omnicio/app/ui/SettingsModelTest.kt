@@ -83,4 +83,14 @@ class SettingsModelTest {
         assertTrue(goalHorizonPresets().contains(defaults.goalHorizonYears))
         assertEquals(3, defaults.goalHorizonYears)
     }
+    @Test
+    fun darkThemeCanChangeIndependently() {
+        val original = LocalSettingsState(darkTheme = false)
+        val changed = original.copy(darkTheme = true)
+
+        assertFalse(original.darkTheme)
+        assertTrue(changed.darkTheme)
+        assertEquals(original.reserveMinor, changed.reserveMinor)
+    }
 }
+

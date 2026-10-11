@@ -68,7 +68,7 @@ https://www.rustore.ru/help/developers/publishing-and-verifying-apps/app-publica
 ## Privacy / permissions
 
 Перед upload сверить release manifest с `legal/android-privacy-declaration.md`.
-UI-06 ожидает только `POST_NOTIFICATIONS`; появление нового чувствительного permission требует отдельной проверки декларации и store metadata.
+UI-06/2.5.1 ожидает `POST_NOTIFICATIONS` и обычное `ACCESS_NETWORK_STATE` для чтения Data Saver. Появление нового чувствительного permission требует отдельной проверки декларации и store metadata.
 
 ## Остановка выпуска
 

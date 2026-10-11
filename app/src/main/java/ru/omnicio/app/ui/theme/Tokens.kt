@@ -10,68 +10,68 @@ import androidx.compose.ui.unit.sp
 
 internal object OmniSpacing {
     val xxs = 4.dp
-    val xs = 8.dp
-    val sm = 12.dp
-    val md = 16.dp
-    val lg = 20.dp
-    val xl = 24.dp
-    val xxl = 32.dp
+    val xs = 6.dp
+    val sm = 10.dp
+    val md = 14.dp
+    val lg = 18.dp
+    val xl = 22.dp
+    val xxl = 28.dp
 }
 
 internal val OmniShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(18.dp),
     large = RoundedCornerShape(22.dp),
     extraLarge = RoundedCornerShape(28.dp),
 )
 
 internal val OmniTypography = Typography(
     displaySmall = TextStyle(
-        fontSize = 40.sp,
-        lineHeight = 44.sp,
+        fontSize = 36.sp,
+        lineHeight = 40.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     headlineLarge = TextStyle(
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     headlineMedium = TextStyle(
-        fontSize = 24.sp,
-        lineHeight = 30.sp,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     headlineSmall = TextStyle(
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
+        fontSize = 19.sp,
+        lineHeight = 24.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     titleLarge = TextStyle(
         fontSize = 18.sp,
-        lineHeight = 24.sp,
+        lineHeight = 23.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     titleMedium = TextStyle(
-        fontSize = 16.sp,
-        lineHeight = 22.sp,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
         fontWeight = FontWeight.Medium,
     ),
     bodyLarge = TextStyle(
-        fontSize = 16.sp,
-        lineHeight = 23.sp,
+        fontSize = 15.sp,
+        lineHeight = 21.sp,
     ),
     bodyMedium = TextStyle(
         fontSize = 14.sp,
-        lineHeight = 20.sp,
+        lineHeight = 19.sp,
     ),
     bodySmall = TextStyle(
         fontSize = 12.sp,
-        lineHeight = 17.sp,
+        lineHeight = 16.sp,
     ),
     labelLarge = TextStyle(
         fontSize = 14.sp,
-        lineHeight = 20.sp,
+        lineHeight = 18.sp,
         fontWeight = FontWeight.SemiBold,
     ),
     labelMedium = TextStyle(

@@ -2,6 +2,7 @@ package ru.omnicio.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -37,20 +39,17 @@ internal fun AssistantScreen(
         verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
     ) {
         item {
-            StatusPill("ДЕМО · АВТОМАТИЧЕСКАЯ ЛЕНТА")
-        }
-        item {
-            Text(
-                text = "Помощник",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.semantics { heading() },
-            )
-        }
-        item {
-            Text(
-                text = "Без поля ввода, выбора модели и свободного чата. Повторное открытие этой ленты не запускает языковую модель и не расходует токены.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs)) {
+                Text(
+                    text = "Ваш помощник",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    text = "Автоматически собирает важные события и локальные расчёты.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         actionNotice?.let { notice ->
             item {
@@ -68,19 +67,15 @@ internal fun AssistantScreen(
                 message = message,
                 onAction = { action ->
                     when (action.kind) {
-                        AssistantActionKind.OPEN_SOURCE -> {
-                            action.target?.let(uriHandler::openUri)
-                        }
-                        AssistantActionKind.OPEN_POSITION -> {
-                            action.target?.let(onOpenPosition)
-                        }
+                        AssistantActionKind.OPEN_SOURCE -> action.target?.let(uriHandler::openUri)
+                        AssistantActionKind.OPEN_POSITION -> action.target?.let(onOpenPosition)
                         AssistantActionKind.RUN_SCENARIO -> {
                             actionNotice =
-                                "Сценарий отмечен локально. Приложение не отправляет заявку брокеру и не запускает языковую модель."
+                                "Сценарий отмечен локально. Приложение не отправляет брокерскую заявку."
                         }
                         AssistantActionKind.SYNC -> {
                             actionNotice =
-                                "Синхронизация появится на системном этапе. Сейчас это безопасное демо-состояние без сети."
+                                "Синхронизация пока доступна только как безопасное демо-состояние."
                         }
                     }
                 },
@@ -88,7 +83,7 @@ internal fun AssistantScreen(
         }
         item {
             Text(
-                text = "Обычное push-уведомление для этих событий содержит только общий безопасный текст без сумм, позиций и персональных деталей.",
+                text = "Push-уведомления не содержат сумму портфеля и персональные позиции.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -101,57 +96,65 @@ private fun AssistantMessageCard(
     message: AssistantMessage,
     onAction: (AssistantAction) -> Unit,
 ) {
+    val accent = assistantAccent(message.type)
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = accent.copy(alpha = 0.10f),
         ),
     ) {
         Column(
             modifier = Modifier.padding(OmniSpacing.md),
             verticalArrangement = Arrangement.spacedBy(OmniSpacing.xs),
         ) {
-            Text(
-                text = message.type.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = message.changed,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            AssistantField(
-                label = "Почему это относится к портфелю",
-                value = message.relevance,
-            )
-            AssistantField(
-                label = "Локальный расчёт",
-                value = formatAssistantImpact(message.impact),
-            )
-            AssistantField(
-                label = "Источники",
-                value = message.sources.joinToString(separator = "\n") { source ->
-                    source.url?.let { source.name + " · " + it } ?: source.name
-                },
-            )
-            AssistantField(
-                label = "Время",
-                value = message.occurredAt,
-            )
-
-            if (!message.sufficientData) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
                 Text(
-                    text = "Данных недостаточно: OMNICIO не придумывает действие.",
+                    text = message.type.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = accent,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = message.occurredAt,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
+            Text(
+                text = message.changed,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = message.relevance,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = formatAssistantImpact(message.impact),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            if (message.sources.isNotEmpty()) {
+                Text(
+                    text = message.sources.joinToString(separator = " · ") { it.name },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!message.sufficientData) {
+                Text(
+                    text = "Недостаточно данных для дополнительного действия.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             message.action?.let { action ->
                 Button(
                     onClick = { onAction(action) },
-                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(action.label)
                 }
@@ -161,19 +164,12 @@ private fun AssistantMessageCard(
 }
 
 @Composable
-private fun AssistantField(
-    label: String,
-    value: String,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(OmniSpacing.xxs)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
+private fun assistantAccent(type: AssistantEventType): Color = when (type) {
+    AssistantEventType.MATERIAL_EVENT,
+    AssistantEventType.RISK_CHANGE -> MaterialTheme.colorScheme.error
+    AssistantEventType.PAYOUT -> MaterialTheme.colorScheme.tertiary
+    AssistantEventType.CASH_CHANGE -> MaterialTheme.colorScheme.secondary
+    AssistantEventType.SCENARIO_RESULT -> MaterialTheme.colorScheme.primary
+    AssistantEventType.ANALYSIS_STALE,
+    AssistantEventType.SYNC_REQUIRED -> MaterialTheme.colorScheme.onSurfaceVariant
 }

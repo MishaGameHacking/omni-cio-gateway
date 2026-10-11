@@ -13,6 +13,7 @@ internal data class LocalSettingsState(
     val goalHorizonYears: Int = DEFAULT_GOAL_HORIZON_YEARS,
     val notificationsEnabled: Boolean = true,
     val fastAlertsEnabled: Boolean = false,
+    val darkTheme: Boolean = false,
 )
 
 internal data class CommonSourceCategory(
@@ -112,7 +113,7 @@ internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
     ),
     SubscriptionTierUi(
         name = "Персональный план",
-        status = "Недоступен и не продаётся при закрытом регуляторного допуска.",
+        status = "Недоступен до отдельного регуляторного допуска.",
         available = false,
         purchasable = false,
     ),
@@ -139,5 +140,6 @@ internal fun buildLocalExportSummary(state: LocalSettingsState): String = listOf
     "goal_horizon_years=" + state.goalHorizonYears,
     "notifications_enabled=" + state.notificationsEnabled,
     "fast_alerts_enabled=" + state.fastAlertsEnabled,
+    "dark_theme=" + state.darkTheme,
     "broker_credential=not_exported",
 ).joinToString(separator = "\n")
