@@ -113,8 +113,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
     def test_previous_release_proof_does_not_authorize_new_deployment(self) -> None:
         with patch.dict(BRANCH, {"commit": {"sha": "f" * 40}}):
             gate.verify_accepted_release(client_with_evidence(), SHA)
+            previous = client_with_evidence()
             with self.assertRaises(gate.ReleaseBlocked):
-                gate.verify(client_with_evidence(), SHA)
+                gate.verify(previous, SHA)
             failed = client_with_evidence(final_sonar=sonar(conclusion="failure"))
             with self.assertRaises(gate.ReleaseBlocked):
                 gate.verify_accepted_release(failed, SHA)
