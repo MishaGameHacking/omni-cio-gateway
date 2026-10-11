@@ -52,13 +52,30 @@ def _validate_partition_table(source: Any, name: str) -> None:
     relation = f"public.{name}"
     if source.execute(
         """
-        SELECT a.attnotnull AND EXISTS (
-            SELECT 1 FROM pg_constraint c
-            WHERE c.conrelid = a.attrelid AND c.contype = 'f' AND c.convalidated
-              AND c.confrelid = 'public.users'::regclass AND c.conkey = ARRAY[a.attnum]
-              AND c.confkey = ARRAY[(SELECT attnum FROM pg_attribute
-                  WHERE attrelid = 'public.users'::regclass AND attname = 'id')]
-        ) FROM pg_attribute a WHERE a.attrelid = %s::regclass AND a.attname = 'user_id'
+        WITH RECURSIVE ownership(relation, attribute, visited) AS (
+            SELECT a.attrelid, a.attnum, ARRAY[a.attrelid]
+            FROM pg_attribute a
+            WHERE a.attrelid = %s::regclass AND a.attname = 'user_id'
+              AND a.attnotnull AND NOT a.attisdropped
+            UNION ALL
+            SELECT c.confrelid, c.confkey[k.position], o.visited || c.confrelid
+            FROM ownership o
+            JOIN pg_constraint c ON c.conrelid = o.relation
+            CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attribute, position)
+            WHERE c.contype = 'f' AND c.convalidated AND c.conenforced
+              AND k.attribute = o.attribute AND NOT c.confrelid = ANY(o.visited)
+              AND NOT EXISTS (
+                  SELECT 1 FROM unnest(c.conkey) AS key(attribute)
+                  JOIN pg_attribute a ON a.attrelid = c.conrelid
+                    AND a.attnum = key.attribute
+                  WHERE NOT a.attnotnull OR a.attisdropped
+              )
+        )
+        SELECT EXISTS (
+            SELECT 1 FROM ownership o
+            JOIN pg_attribute a ON a.attrelid = o.relation AND a.attnum = o.attribute
+            WHERE o.relation = 'public.users'::regclass AND a.attname = 'id'
+        )
     """,
         (relation,),
     ).fetchone() != (True,):

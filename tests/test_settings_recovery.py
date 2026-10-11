@@ -194,6 +194,38 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert store.current_profile(B).version == 1
 
 
+def _assert_partition_ownership_guards(source, tenant) -> None:
+    """A nullable composite key must never certify that every row has an owner."""
+    source.execute(
+        "CREATE TABLE backup_parent_probe ("
+        "user_id uuid NOT NULL REFERENCES users(id), id uuid NOT NULL, "
+        "PRIMARY KEY (user_id, id))"
+    )
+    source.execute(
+        "CREATE TABLE backup_child_probe (user_id uuid NOT NULL, parent_id uuid, "
+        "CONSTRAINT probe_owner FOREIGN KEY (user_id, parent_id) "
+        "REFERENCES backup_parent_probe(user_id, id))"
+    )
+    source.execute("ALTER TABLE backup_child_probe ENABLE ROW LEVEL SECURITY")
+    source.execute("ALTER TABLE backup_child_probe FORCE ROW LEVEL SECURITY")
+    source.execute(
+        "CREATE POLICY probe_tenant ON backup_child_probe "
+        "USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid) "
+        "WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)"
+    )
+    try:
+        with pytest.raises(tenant.recovery.RecoveryBlocked, match="ownership is not exhaustive"):
+            tenant.tenant_partition(source)
+        source.execute("ALTER TABLE backup_child_probe ALTER COLUMN parent_id SET NOT NULL")
+        _, scopes = tenant.tenant_partition(source)
+        assert "backup_child_probe" in scopes
+        source.execute("ALTER TABLE backup_child_probe DROP CONSTRAINT probe_owner")
+        with pytest.raises(tenant.recovery.RecoveryBlocked, match="ownership is not exhaustive"):
+            tenant.tenant_partition(source)
+    finally:
+        source.execute("DROP TABLE backup_child_probe, backup_parent_probe")
+
+
 @pytest.mark.skipif(
     not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"),
     reason="the disposable PostgreSQL CI launcher supplies dump/restore binaries",
@@ -493,6 +525,9 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
                 assert proof is not None
                 assert all(proof["checks"].values())
                 assert proof["source_system_id"] != proof["target_system_id"]
+                if tenant_safe:
+                    with psycopg.connect(source_dsn, autocommit=True) as source:
+                        _assert_partition_ownership_guards(source, tenant)
                 with psycopg.connect(isolated) as target:
                     assert (
                         target.execute(
