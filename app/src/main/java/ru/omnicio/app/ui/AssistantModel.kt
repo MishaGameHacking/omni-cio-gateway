@@ -80,7 +80,7 @@ internal fun ServerApi.loadAssistant(previous: AssistantUiState, selectedId: Str
         try { request("/api/assistant/requests/${question.id}") }
         catch (error: ApiFailure) { if (error.status == 404) null else throw error }
     }
-    val id = pending?.chatId("conversation_id") ?: previous.pendingRequest?.conversationId ?: selectedId ?: previous.conversation?.id
+    val id: String? = pending?.chatId("conversation_id") ?: previous.pendingRequest?.conversationId ?: selectedId ?: previous.conversation?.id
         ?: summaries.firstOrNull()?.id
     val conversation = id?.let { parseConversation(request("/api/assistant/conversations/$it")) }
     return previous.copy(loaded = true,

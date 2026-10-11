@@ -43,10 +43,11 @@ internal fun AssistantScreen(
                 FilterChip(selected = events, onClick = { events = true }, label = { Text("События") })
             }
         }
-        if (!events) chatItems(state, actions)
-        else if (workspace == null) item { EmptyState("События не получены", "Обновите данные. Сообщения не создаются в приложении.", R.drawable.ic_assistant) }
-        else if (state.amountsHidden) item { EmptyState("События скрыты", "Отключите скрытие сумм на Обзоре, чтобы прочитать финансовые сведения в событиях.") }
-        else {
+        when {
+        !events -> chatItems(state, actions)
+        workspace == null -> item { EmptyState("События не получены", "Обновите данные. Сообщения не создаются в приложении.", R.drawable.ic_assistant) }
+        state.amountsHidden -> item { EmptyState("События скрыты", "Отключите скрытие сумм на Обзоре, чтобы прочитать финансовые сведения в событиях.") }
+        else -> {
             if (workspace.events.isEmpty()) item { EmptyState("Пока нет событий", "Сервер ещё не передал события для этого аккаунта.", R.drawable.ic_assistant) }
             items(workspace.events, key = { it.id }) { event ->
                 OmniCard {
@@ -61,6 +62,7 @@ internal fun AssistantScreen(
             if (workspace.nextEventCursor != null) item {
                 OutlinedButton(onClick = onLoadMore, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Загрузить ещё") }
             }
+        }
         }
     }
 }
@@ -116,8 +118,14 @@ private fun LazyListScope.chatItems(state: AppUiState, actions: AssistantActions
     items(conversation.messages, key = { "message-${conversation.id}-${it.position}" }) { message ->
         ChatBubble(message)
     }
-    item {
-        if (chat.pendingRequest != null || conversation.requestStatus == "running") {
+    item { ChatComposer(state, actions) }
+}
+
+@Composable
+private fun ChatComposer(state: AppUiState, actions: AssistantActions) {
+    val chat = state.assistant
+    Column {
+        if (chat.pendingRequest != null || chat.conversation?.requestStatus == "running") {
             Text("Ответ ещё не подтверждён. Нажмите «Проверить ответ» через некоторое время.")
             if (chat.pendingMissing) {
                 Text("Сервер ещё не нашёл запрос. Можно повторить именно его: идентификатор останется прежним.")
@@ -125,7 +133,7 @@ private fun LazyListScope.chatItems(state: AppUiState, actions: AssistantActions
                     Text("Повторить этот запрос")
                 }
             }
-        } else if (conversation.requestStatus in setOf("uncertain", "cancelled")) {
+        } else if (chat.conversation?.requestStatus in setOf("uncertain", "cancelled")) {
             Text("Предыдущий запрос не завершён. Готового ответа нет; новый вопрос отправляется только по вашему нажатию.")
         }
         Row {
