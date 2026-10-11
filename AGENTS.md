@@ -36,7 +36,7 @@ Green CI необходим, но сам по себе не означает, ч
 - **Timeweb Cloud** — общий backend/API, разрешённые рыночные источники, AI Gateway, PostgreSQL для общей аналитики и технические secrets;
 - **T-Invest API** — read-only доступ сервера к выбранному собственному счёту пользователя через существующий защищённый broker boundary.
 
-Уточнение OWNER от 11.10.2026 20:08 МСК: используется только бесплатный GitHub. Платные планы, покупки, платное превышение лимитов Actions и добавление способа оплаты не входят в разрешённый объём. Бюджет GitHub остаётся $0; исчерпание квоты решается в пределах бесплатного тарифа. Использовать существующие self-hosted runners, обоснованное хранение артефактов и повтор проверок после пересчёта квоты. Обязательные проверки выпуска сохраняются.
+Уточнение OWNER от 11.10.2026 20:08 МСК: используется только бесплатный GitHub. Платные планы, покупки, платное превышение лимитов Actions и добавление способа оплаты не входят в разрешённый объём. Бюджет GitHub остаётся $0; исчерпание квоты решается в пределах бесплатного тарифа. Использовать четыре существующих Windows/X64 self-hosted runner с label `omni-cio-ci`. Проверки не зависят от платного хранилища Actions: сводки и SHA-256 остаются в run logs/job summary, полные диагностические файлы и PR APK — в семидневном архиве на выполнившем job runner. Установочный APK принятого main публикуется через бесплатные GitHub Release assets. Обязательные проверки выпуска сохраняются; заполнение artifact storage не требует покупки или отмены проверок.
 
 ### 2.1. Server authority
 
@@ -123,7 +123,7 @@ Timeweb выполняет серверное наблюдение, поиск, 
 - использовать только Gradle Wrapper репозитория для CI/release commands;
 - Android Studio является рекомендуемой IDE, но локальная IDE не является единственным доказательством собираемости;
 - каждый material Android PR обязан собирать debug APK в CI;
-- APK artifact маркируется exact commit SHA/version и хранится как CI artifact, а не коммитится в Git;
+- APK artifact маркируется exact commit SHA/version и не коммитится в Git; PR build хранится в архиве self-hosted runner со ссылкой на run и SHA-256 в job summary; установочная сборка accepted main выдаётся через GitHub Release assets;
 - минимум проверок Android head: lint, unit tests, assembleDebug и применимые dependency/security checks;
 - connected/device tests обязательны для функций, которые нельзя надёжно доказать JVM-тестом, когда доступен доверенный emulator/physical-device runner;
 - release APK/AAB не собирать с debug key;
@@ -132,7 +132,7 @@ Timeweb выполняет серверное наблюдение, поиск, 
 - OWNER/QA получает debug APK и тестирует его на реальном устройстве; feedback привязывается к exact build SHA;
 - RuStore upload выполняется только для accepted release commit после green checks и smoke-проверки подписанной сборки.
 
-CI artifact не является опубликованным релизом, а успешная установка debug APK не доказывает корректность release signing, store metadata или модерации.
+CI artifact не является опубликованным релизом. Debug APK в GitHub Releases маркируется prerelease/debug и имеет отдельный package, манифест версии/commit/сертификата и SHA256SUMS. Публиковать его может только manual workflow из accepted main после существующего release gate; PR token остаётся read-only. Успешная установка debug APK не доказывает корректность release signing, store metadata, модерации или живого пользовательского сценария.
 
 ### 2.11. OWNER: обновление Android и совместимого сервера
 
@@ -911,5 +911,6 @@ AGENTS.md можно улучшать по мере взросления про�
 Не усложняй систему без доказуемой необходимости.
 
 Сделай систему правильной, затем докажи это.
+
 
 
