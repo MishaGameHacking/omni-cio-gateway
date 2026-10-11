@@ -58,16 +58,16 @@ async function run(base) {
     await send("Page.addScriptToEvaluateOnNewDocument",{source:'window.__errors=[];addEventListener("error",e=>__errors.push(e.message));addEventListener("unhandledrejection",e=>__errors.push(String(e.reason)));addEventListener("securitypolicyviolation",e=>__errors.push(e.effectiveDirective));'});
     const wait=text=>until(()=>evaluate(text),text);
     const click=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
-    for(const width of [1440,768,390,320]) {
+    for(const width of [1440,1363,1024,901,900,768,390,320]) {
       await send("Emulation.setDeviceMetricsOverride",{width,height:960,deviceScaleFactor:1,mobile:width<680});
       await send("Page.navigate",{url:base+"/?width="+width});
       await wait('document.readyState==="complete" && document.querySelector("#download-status")?.textContent.includes("Публичный выпуск")');
       assert.equal(await evaluate('document.querySelectorAll("form,input,textarea").length'),0,"No web account or personal data collection");
-      const layout=await evaluate('({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll("body *")].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.right>innerWidth+1||r.left<0);}).map(el=>({tag:el.tagName,classes:el.className,id:el.id,rect:el.getBoundingClientRect().toJSON()}))})');
-      if(layout.scrollWidth>width){writeFileSync(join(artifacts,"failure-state.json"),JSON.stringify(layout,null,2));console.error(JSON.stringify(layout));}
+      const layout=await evaluate('({width:innerWidth,clientWidth:document.documentElement.clientWidth,scrollWidth:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll("body *")].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.right>innerWidth+1||r.left<0);}).map(el=>({tag:el.tagName,classes:el.className,id:el.id,rect:el.getBoundingClientRect().toJSON()}))})');
+      if(layout.scrollWidth>layout.clientWidth){writeFileSync(join(artifacts,"failure-state.json"),JSON.stringify(layout,null,2));console.error(JSON.stringify(layout));}
       const screen=await send("Page.captureScreenshot",{format:"png",captureBeyondViewport:true});
       writeFileSync(join(artifacts,`public-${width}.png`),Buffer.from(screen.data,"base64"));
-      assert.equal(layout.scrollWidth<=width,true,"No horizontal overflow at "+width);
+      assert.equal(layout.scrollWidth<=layout.clientWidth,true,"No horizontal overflow at "+width);
       assert.deepEqual(await evaluate('window.__errors'),[]);
       await click('#tab-portfolio');assert.equal(await evaluate('document.querySelector("#panel-portfolio").hidden'),false);
       await evaluate('document.querySelector("#tab-portfolio").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}))');
