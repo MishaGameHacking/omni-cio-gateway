@@ -1044,6 +1044,7 @@ __OMNICIO_SERVER_SECURITY_HEADERS__
 
     location ^~ /api/auth/social/ {
         access_log off;
+        error_log /dev/null crit;
         client_max_body_size 4k;
         proxy_hide_header Referrer-Policy;
 __OMNICIO_SOCIAL_SECURITY_HEADERS__

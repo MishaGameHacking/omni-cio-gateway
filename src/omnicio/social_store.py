@@ -39,9 +39,7 @@ class SocialAuthStore:
             if purpose == "link":
                 if user_id is None or session_digest is None:
                     raise PermissionError("session_required")
-                current = self.database._active_session(cur, user_id, session_digest)
-                if not current["recently_authenticated"]:
-                    raise ValueError("recent_login_required")
+                self.database._recent_session(cur, user_id, session_digest)
             cur.execute(
                 "DELETE FROM social_auth_flows WHERE id IN (SELECT id FROM social_auth_flows "
                 "WHERE expires_at < now() - interval '1 hour' LIMIT 100 FOR UPDATE SKIP LOCKED)"
@@ -91,45 +89,15 @@ class SocialAuthStore:
         legal_versions: dict[str, str], current_session_digest: bytes | None,
     ) -> tuple[UserRecord, bool] | str:
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM social_auth_flows WHERE id = %s AND flow_digest = %s "
-                "AND expires_at > now()", (flow_id, flow_digest),
-            )
-            context = cast(dict[str, Any] | None, cur.fetchone())
-            if context is None:
-                return "social_flow_expired"
-            if context["status"] in {"pending", "exchanging"}:
-                return "pending"
-            if context["status"] != "verified":
-                return "social_flow_failed"
-            # Serialize competing first logins before resolving the owner. This
-            # lock is never acquired by tenant deletion; tenant lock precedes rows.
-            cur.execute(_LOCK_SQL, (f"social-identity:{context['provider']}:{context['subject']}",))
-            owner = _identity(cur, context["provider"], context["subject"])
-            user_id = context["user_id"] if context["purpose"] == "link" else owner
-            if user_id is not None:
-                cur.execute(_LOCK_SQL, (live_execution_lock_key(user_id),))
-            cur.execute(
-                "SELECT * FROM social_auth_flows WHERE id = %s AND flow_digest = %s "
-                "AND status = 'verified' AND expires_at > clock_timestamp() FOR UPDATE",
-                (flow_id, flow_digest),
-            )
-            row = cast(dict[str, Any] | None, cur.fetchone())
-            if row is None:
-                return "social_flow_failed"
-            if row["purpose"] == "link":
-                if current_session_digest is None or not hmac.compare_digest(
-                    bytes(row["session_digest"]), current_session_digest,
-                ):
-                    return "social_session_changed"
-                if user_id is None:
-                    return self._reject(cur, flow_id, "social_session_changed")
-                self.database._active_session(cur, user_id, current_session_digest)
-                if owner is not None and owner != user_id:
-                    return self._reject(cur, flow_id, "identity_already_linked")
-            elif current_session_digest is not None:
-                return self._reject(cur, flow_id, "social_session_changed")
-            elif user_id is None and not legal_versions:
+            context = self._locked_flow(cur, flow_id, flow_digest)
+            if isinstance(context, str):
+                return context
+            row, owner = context
+            user_id = row["user_id"] if row["purpose"] == "link" else owner
+            error = self._check_owner(cur, row, owner, user_id, current_session_digest)
+            if error:
+                return error
+            if user_id is None and not legal_versions:
                 return "registration_required"
             created = user_id is None
             user = self._resolve_user(cur, user_id)
@@ -156,13 +124,62 @@ class SocialAuthStore:
                 "UPDATE social_auth_flows SET status = 'consumed', subject = NULL, user_id = %s "
                 "WHERE id = %s", (user.id, flow_id),
             )
+            event = "account_created" if created else "login_succeeded"
+            if row["purpose"] == "link":
+                event = "identity_linked"
             cur.execute(
                 "INSERT INTO audit_events (user_id, event_type, metadata) "
                 "VALUES (%s,%s,jsonb_build_object('method', %s::text))",
-                (user.id, "identity_linked" if row["purpose"] == "link" else
-                 "account_created" if created else "login_succeeded", row["provider"]),
+                (user.id, event, row["provider"]),
             )
             return user, created
+
+    @staticmethod
+    def _locked_flow(
+        cur: Any, flow_id: UUID, flow_digest: bytes,
+    ) -> tuple[dict[str, Any], UUID | None] | str:
+        cur.execute(
+            "SELECT * FROM social_auth_flows WHERE id = %s AND flow_digest = %s "
+            "AND expires_at > now()", (flow_id, flow_digest),
+        )
+        context = cur.fetchone()
+        if context is None:
+            return "social_flow_expired"
+        if context["status"] in {"pending", "exchanging"}:
+            return "pending"
+        if context["status"] != "verified":
+            return "social_flow_failed"
+        # Serialize first logins before resolving the owner. Deletion does not
+        # acquire this lock; the tenant lock always precedes tenant/flow rows.
+        cur.execute(_LOCK_SQL, (f"social-identity:{context['provider']}:{context['subject']}",))
+        owner = _identity(cur, context["provider"], context["subject"])
+        user_id = context["user_id"] if context["purpose"] == "link" else owner
+        if user_id is not None:
+            cur.execute(_LOCK_SQL, (live_execution_lock_key(user_id),))
+        cur.execute(
+            "SELECT * FROM social_auth_flows WHERE id = %s AND flow_digest = %s "
+            "AND status = 'verified' AND expires_at > clock_timestamp() FOR UPDATE",
+            (flow_id, flow_digest),
+        )
+        row = cur.fetchone()
+        return (row, owner) if row else "social_flow_failed"
+
+    def _check_owner(
+        self, cur: Any, row: dict[str, Any], owner: UUID | None,
+        user_id: UUID | None, current_session_digest: bytes | None,
+    ) -> str | None:
+        if row["purpose"] == "login":
+            if current_session_digest is not None:
+                return self._reject(cur, row["id"], "social_session_changed")
+            return None
+        if user_id is None or current_session_digest is None:
+            return "social_session_changed"
+        if not hmac.compare_digest(bytes(row["session_digest"]), current_session_digest):
+            return "social_session_changed"
+        self.database._active_session(cur, user_id, current_session_digest)
+        if owner is not None and owner != user_id:
+            return self._reject(cur, row["id"], "identity_already_linked")
+        return None
 
     @staticmethod
     def _resolve_user(cur: Any, user_id: UUID | None) -> UserRecord | None:

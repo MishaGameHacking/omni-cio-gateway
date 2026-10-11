@@ -64,6 +64,14 @@ def optional_uuid(name: str) -> UUID | None:
     return value
 
 
+def optional_provider_id(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if value and (not value.isascii() or not value.isdecimal()
+                  or len(value) > 20 or int(value) <= 0):
+        raise ConfigurationError(f"{name} must be a positive provider identifier")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     database_url: str
@@ -138,12 +146,6 @@ class Settings:
 
 def load_settings() -> Settings:
     email_enabled = boolean("NOTIFICATION_EMAIL_ENABLED", False)
-    provider_ids = {name: os.environ.get(name, "").strip()
-                    for name in ("TELEGRAM_CLIENT_ID", "VKID_APP_ID")}
-    for name, value in provider_ids.items():
-        if value and (not value.isascii() or not value.isdecimal()
-                      or len(value) > 20 or int(value) <= 0):
-            raise ConfigurationError(f"{name} must be a positive provider identifier")
     auth_host = os.environ.get("AUTH_SMTP_HOST", "").strip()
     auth_mode = os.environ.get("AUTH_SMTP_MODE", "tls").strip() if auth_host else "tls"
     auth_port = (
@@ -173,9 +175,9 @@ def load_settings() -> Settings:
         auth_smtp_password=os.environ.get("AUTH_SMTP_PASSWORD", ""),
         auth_smtp_sender=os.environ.get("AUTH_SMTP_SENDER", "").strip(),
         auth_smtp_mode=auth_mode,
-        telegram_client_id=provider_ids["TELEGRAM_CLIENT_ID"],
+        telegram_client_id=optional_provider_id("TELEGRAM_CLIENT_ID"),
         telegram_client_secret=os.environ.get("TELEGRAM_CLIENT_SECRET", ""),
-        vkid_app_id=provider_ids["VKID_APP_ID"],
+        vkid_app_id=optional_provider_id("VKID_APP_ID"),
         market_data_token=os.environ.get("MARKET_DATA_TOKEN", ""),
         market_data_distribution_approved=boolean("MARKET_DATA_DISTRIBUTION_APPROVED", False),
         assistant_base_url=(os.environ.get("ASSISTANT_BASE_URL", "").strip()

@@ -610,8 +610,9 @@ def _auth_action[AuthResult](action: Callable[[], AuthResult]) -> AuthResult:
         return action()
     except SocialAuthError as exc:
         code = str(exc)
-        status = (429 if code == "social_rate_limited" else
-                  503 if code == "social_provider_not_configured" else 400)
+        status = {"social_rate_limited": 429, "social_provider_not_configured": 503}.get(
+            code, 400,
+        )
         raise HTTPException(status_code=status, detail=code) from exc
     except AuthRateLimited as exc:
         raise HTTPException(status_code=429, detail=str(exc),
@@ -712,7 +713,8 @@ def start_social(
     return result
 
 
-@app.get("/api/auth/social/{provider}/callback", response_class=HTMLResponse)
+@app.get("/api/auth/social/{provider}/callback", response_class=HTMLResponse,
+         responses=_API_FAILURES)
 def social_callback(provider: Literal["telegram", "vkid"], request: Request) -> HTMLResponse:
     query = request.query_params
     keys = ("state", "code", "device_id", "error")

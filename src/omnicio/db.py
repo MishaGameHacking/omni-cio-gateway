@@ -199,9 +199,7 @@ class Database:
             if purpose == "enroll":
                 if user_id is None or enrollment_session_digest is None:
                     raise PermissionError("enrollment_session_required")
-                current = self._active_session(cur, user_id, enrollment_session_digest)
-                if not current["recently_authenticated"]:
-                    raise ValueError("recent_login_required")
+                self._recent_session(cur, user_id, enrollment_session_digest)
                 cur.execute("SELECT 1 FROM email_identities WHERE user_id = %s", (user_id,))
                 if cur.fetchone() is not None:
                     raise ValueError("email_already_enrolled")
@@ -602,6 +600,13 @@ class Database:
         if row is None:
             raise PermissionError("session_expired")
         return cast(dict[str, Any], row)
+
+    @staticmethod
+    def _recent_session(cur: Any, user_id: UUID, token_digest: bytes) -> dict[str, Any]:
+        current = Database._active_session(cur, user_id, token_digest)
+        if not current["recently_authenticated"]:
+            raise ValueError("recent_login_required")
+        return current
 
     @staticmethod
     def _prune_sessions(cur: Any, user_id: UUID | None = None) -> int:

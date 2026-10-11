@@ -56,17 +56,21 @@ def test_telegram_requires_signed_subject_audience_issuer_time_and_nonce(signed_
     assert provider._telegram_subject(token(), "test-nonce") == "123456789"
     for changes in [{"aud": "another-app"}, {"iss": "https://attacker.invalid"},
                     {"exp": int(time.time()) - 1}, {"iat": int(time.time()) + 300},
-                    {"iat": True}, {"nonce": "another-flow"}, {"sub": True}, {"sub": "0"}]:
+                    {"iat": True}, {"nbf": int(time.time()) + 300}, {"nonce": "another-flow"},
+                    {"sub": True}, {"sub": "0"}]:
+        invalid = token(**changes)
         with pytest.raises(SocialAuthError, match="social_proof_invalid"):
-            provider._telegram_subject(token(**changes), "test-nonce")
+            provider._telegram_subject(invalid, "test-nonce")
     valid = token()
     parts = valid.split(".")
     parts[1] = b64(json.dumps({"sub": "999"}).encode())
+    invalid = ".".join(parts)
     with pytest.raises(SocialAuthError):
-        provider._telegram_subject(".".join(parts), "test-nonce")
+        provider._telegram_subject(invalid, "test-nonce")
     parts[0] = b64(b'{"alg":"none","kid":"test-key"}')
+    invalid = ".".join(parts)
     with pytest.raises(SocialAuthError):
-        provider._telegram_subject(".".join(parts), "test-nonce")
+        provider._telegram_subject(invalid, "test-nonce")
 
 
 def test_vk_exchange_binds_state_device_verifier_and_verified_user():
@@ -149,3 +153,24 @@ def test_unconfigured_provider_and_malformed_state_never_call_provider():
         auth.social.start("telegram", purpose="login", android_package="ru.omnicio.app",
                           client_ip="127.0.0.1", user=None, current_session=None)
     assert not auth.social.provider.exchange.called
+
+
+def test_provider_failure_consumes_callback_once_without_exposing_credentials():
+    auth, _, _ = auth_service(telegram_client_id="1234", telegram_client_secret="secret")
+    auth.social.store = Mock(spec=SocialAuthStore)
+    auth.social.provider = Mock(spec=SocialProvider)
+    from omnicio.security import encrypt_secret
+    flow_id = uuid4()
+    auth.social.store.claim.side_effect = [{
+        "id": flow_id, "android_package": "ru.omnicio.app",
+        "secrets_ciphertext": encrypt_secret(
+            '{"verifier":"test","nonce":"test"}', auth.settings.broker_token_crypto_key,
+        ),
+    }, None]
+    auth.social.provider.exchange.side_effect = SocialAuthError("social_provider_unavailable")
+    arguments = {"state": "a" * 43, "code": "sensitive-code", "device_id": "", "denied": False}
+    assert auth.social.callback("telegram", **arguments) == ("ru.omnicio.app", False)
+    auth.social.store.verified.assert_called_once_with(flow_id, None)
+    with pytest.raises(SocialAuthError, match="social_flow_expired"):
+        auth.social.callback("telegram", **arguments)
+    auth.social.provider.exchange.assert_called_once()

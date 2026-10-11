@@ -58,7 +58,7 @@ def _subject(value: Any) -> str:
     if isinstance(value, bool) or not isinstance(value, (str, int)):
         raise SocialAuthError("social_proof_invalid")
     result = str(value)
-    if not re.fullmatch(r"[0-9]{1,128}", result) or int(result) <= 0:
+    if not re.fullmatch(r"\d{1,128}", result, flags=re.ASCII) or int(result) <= 0:
         raise SocialAuthError("social_proof_invalid")
     return result
 
@@ -97,7 +97,7 @@ class SocialProvider:
             if not isinstance(payload, dict) or "error" in payload:
                 raise SocialAuthError("social_proof_invalid")
             return payload
-        except (urllib.error.URLError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise SocialAuthError("social_provider_unavailable") from exc
 
     def url(self, provider: str, state: str, verifier: str, nonce: str) -> str:

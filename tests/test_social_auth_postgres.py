@@ -53,12 +53,14 @@ def test_create_login_consent_replay_and_cookie_binding(workspace_database):
     assert finish(store, flow, legal_versions={}) == "registration_required"
     token = secrets.token_bytes(32)
     owner, created = finish(store, flow, token_digest=token)
-    assert created and database.refresh_session_digest(token, session_ttl_seconds=3600) == owner
+    assert created
+    assert database.refresh_session_digest(token, session_ttl_seconds=3600) == owner
     assert database.has_legal_versions(owner.id, VERSIONS)
     assert finish(store, flow) == "social_flow_failed"
     another = proof(store, subject=subject)
     same, created = finish(store, another, legal_versions={})
-    assert same.id == owner.id and not created
+    assert same.id == owner.id
+    assert not created
     assert store.identities(owner.id)["providers"] == ["telegram"]
 
 
@@ -81,7 +83,8 @@ def test_link_preserves_owner_requires_live_session_and_rejects_conflicts(worksp
     flow = proof(store, owner=owner, session=session, subject=subject)
     assert finish(store, flow, current_session_digest=b"x" * 32) == "social_session_changed"
     linked, created = finish(store, flow, current_session_digest=session)
-    assert linked.id == owner.id and not created
+    assert linked.id == owner.id
+    assert not created
     assert database.refresh_session_digest(session, session_ttl_seconds=3600) is None
     assert store.identities(owner.id)["providers"] == ["email", "telegram"]
     other, _, other_session = login(database)
@@ -104,7 +107,8 @@ def test_existing_vk_login_keeps_legacy_account_and_role(workspace_database):
                            (owner.id,)).fetchone()
     flow = proof(store, provider="vkid", subject=row["vk_user_id"])
     authenticated, created = finish(store, flow, legal_versions={})
-    assert authenticated == owner and not created
+    assert authenticated == owner
+    assert not created
 
 
 def test_expired_cancelled_blocked_and_changed_session_do_not_grant_login(workspace_database):

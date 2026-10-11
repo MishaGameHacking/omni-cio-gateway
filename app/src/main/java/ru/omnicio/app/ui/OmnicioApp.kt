@@ -75,38 +75,43 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
         }
     }
     OmnicioTheme(darkTheme = state.darkTheme) {
-        if (state.socialFlow != null) {
-            SocialFlowScreen(state, model)
-        } else if (!state.authenticated || state.challengePurpose == "enroll") {
-            AuthScreen(state, model)
-        } else if (state.legalConsent != null) {
-            LegalConsentScreen(state, model)
-        } else BoxWithConstraints(Modifier.fillMaxSize()) {
-            val wide = maxWidth >= 600.dp
-            Scaffold(
-                topBar = {
-                    AppToolbar(page, state.busy, model::refresh) { page = it }
-                },
-                bottomBar = {
-                    if (!wide) NavigationBar {
-                        destinations.forEach { (title, icon) ->
-                            NavigationBarItem(selected = page == title, onClick = { page = title },
-                                icon = { OmniIcon(icon) }, label = { Text(title) })
+        when {
+            state.socialFlow != null -> {
+                SocialFlowScreen(state, model)
+            }
+            !state.authenticated || state.challengePurpose == "enroll" -> {
+                AuthScreen(state, model)
+            }
+            state.legalConsent != null -> {
+                LegalConsentScreen(state, model)
+            }
+            else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth >= 600.dp
+                Scaffold(
+                    topBar = {
+                        AppToolbar(page, state.busy, model::refresh) { page = it }
+                    },
+                    bottomBar = {
+                        if (!wide) NavigationBar {
+                            destinations.forEach { (title, icon) ->
+                                NavigationBarItem(selected = page == title, onClick = { page = title },
+                                    icon = { OmniIcon(icon) }, label = { Text(title) })
+                            }
                         }
-                    }
-                },
-            ) { padding ->
-                Row(Modifier.padding(padding).fillMaxSize()) {
-                    if (wide) NavigationRail {
-                        destinations.forEach { (title, icon) ->
-                            NavigationRailItem(selected = page == title, onClick = { page = title },
-                                icon = { OmniIcon(icon) }, label = { Text(title) })
+                    },
+                ) { padding ->
+                    Row(Modifier.padding(padding).fillMaxSize()) {
+                        if (wide) NavigationRail {
+                            destinations.forEach { (title, icon) ->
+                                NavigationRailItem(selected = page == title, onClick = { page = title },
+                                    icon = { OmniIcon(icon) }, label = { Text(title) })
+                            }
                         }
-                    }
-                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        StatusMessages(state)
-                        Box(Modifier.weight(1f).widthIn(max = 900.dp)) {
-                            AppPage(page, state, model) { page = SETTINGS }
+                        Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            StatusMessages(state)
+                            Box(Modifier.weight(1f).widthIn(max = 900.dp)) {
+                                AppPage(page, state, model) { page = SETTINGS }
+                            }
                         }
                     }
                 }
