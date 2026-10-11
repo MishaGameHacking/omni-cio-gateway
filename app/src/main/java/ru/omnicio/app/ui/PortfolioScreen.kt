@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.ui.theme.OmniSpacing
 
 private const val T_INVEST_URL = "https://www.tbank.ru/invest/"
@@ -64,6 +65,7 @@ internal fun PortfolioScreen(
     }
 
     var query by rememberSaveable { mutableStateOf("") }
+    var showQa by rememberSaveable { mutableStateOf(false) }
     var fixtureSizeName by rememberSaveable { mutableStateOf(PortfolioFixtureSize.DEFAULT.name) }
     val fixtureSize = runCatching {
         PortfolioFixtureSize.valueOf(fixtureSizeName)
@@ -87,7 +89,7 @@ internal fun PortfolioScreen(
         }
         item {
             Text(
-                text = "Все локально известные позиции показаны без тарифного лимита. Одинаковый инструмент по счетам объединяется с раскрытием источников.",
+                text = "Все локально известные позиции без тарифного лимита. Одинаковый инструмент по счетам объединяется.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -103,11 +105,20 @@ internal fun PortfolioScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        item {
-            PortfolioFixtureSelector(
-                selected = fixtureSize,
-                onSelected = { fixtureSizeName = it.name },
-            )
+        if (BuildConfig.DEBUG) {
+            item {
+                TextButton(onClick = { showQa = !showQa }) {
+                    Text(if (showQa) "Скрыть QA" else "Демо-набор")
+                }
+            }
+            if (showQa) {
+                item {
+                    PortfolioFixtureSelector(
+                        selected = fixtureSize,
+                        onSelected = { fixtureSizeName = it.name },
+                    )
+                }
+            }
         }
         if (filtered.isEmpty()) {
             item {
