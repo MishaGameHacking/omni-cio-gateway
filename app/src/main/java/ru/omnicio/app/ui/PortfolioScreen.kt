@@ -92,22 +92,7 @@ internal fun PortfolioScreen(
     if (sheet != null) ModalBottomSheet(onDismissRequest = { sheet = null },
         properties = sheetProperties(state.screenshotsBlocked)) {
         when (sheet) {
-            "accounts" -> LazyColumn(contentPadding = PaddingValues(20.dp)) {
-                item { SectionTitle("Выберите счёт") }
-                if (state.accounts.isEmpty()) item {
-                    Text(if (state.busy) "Загружаем счета…" else "Список счетов не получен.")
-                    TextButton(onClick = loadAccounts, enabled = !state.busy) { Text("Повторить") }
-                }
-                items(state.accounts, key = { it.id }) { account ->
-                    ListItem(headlineContent = { Text(account.name) },
-                        supportingContent = { Text("•• ${account.id.takeLast(4)}") },
-                        trailingContent = { if (account.id == workspace?.connection?.accountId) Text("Выбран") },
-                        modifier = Modifier.clickable(enabled = !state.busy && account.status == "ACCOUNT_STATUS_OPEN") {
-                            sheet = null
-                            if (account.id != workspace?.connection?.accountId) selectAccount(account.id)
-                        })
-                }
-            }
+            "accounts" -> AccountPicker(state, loadAccounts, selectAccount) { sheet = null }
             "analytics" -> Box(Modifier.fillMaxHeight(0.9f)) {
                 OverviewScreen(state, toggleAmounts, sync, connect)
             }
@@ -120,6 +105,28 @@ internal fun PortfolioScreen(
             }
         }
     }
+}
+
+@Composable
+private fun AccountPicker(state: AppUiState, loadAccounts: () -> Unit,
+    selectAccount: (String) -> Unit, dismiss: () -> Unit) {
+    LazyColumn(contentPadding = PaddingValues(20.dp)) {
+        item { SectionTitle("Выберите счёт") }
+        if (state.accounts.isEmpty()) item {
+            Text(if (state.busy) "Загружаем счета…" else "Список счетов не получен.")
+            TextButton(onClick = loadAccounts, enabled = !state.busy) { Text("Повторить") }
+        }
+        items(state.accounts, key = { it.id }) { account ->
+            ListItem(headlineContent = { Text(account.name) },
+                supportingContent = { Text("•• ${account.id.takeLast(4)}") },
+                trailingContent = { if (account.id == state.workspace?.connection?.accountId) Text("Выбран") },
+                modifier = Modifier.clickable(enabled = !state.busy && account.status == "ACCOUNT_STATUS_OPEN") {
+                    dismiss()
+                    if (account.id != state.workspace?.connection?.accountId) selectAccount(account.id)
+                })
+        }
+    }
+
 }
 
 @Composable

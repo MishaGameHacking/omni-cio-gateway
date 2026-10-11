@@ -72,12 +72,7 @@ internal class ServerApi {
             val status = connection.responseCode
             val headers = connection.headerFields.filterKeys { it != null }
             cookies.put(uri, headers)
-            headers.filterKeys { it.equals("Set-Cookie", ignoreCase = true) }.values.flatten().forEach { header ->
-                HttpCookie.parse(header).filter { it.name == "omnicio_session" }.forEach { cookie ->
-                    sessionExpiresAt = if (cookie.maxAge > 0) System.currentTimeMillis() +
-                        cookie.maxAge.coerceAtMost(34_560_000) * 1000 else 0
-                }
-            }
+            updateSessionExpiry(headers)
             connection.getHeaderField("X-Omnicio-Build")?.takeIf {
                 it.matches(Regex("[0-9a-f]{12}"))
             }?.let { build = it }
@@ -105,6 +100,15 @@ internal class ServerApi {
             return json
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun updateSessionExpiry(headers: Map<String, List<String>>) {
+        headers.filterKeys { it.equals("Set-Cookie", ignoreCase = true) }.values.flatten().forEach { header ->
+            HttpCookie.parse(header).filter { it.name == "omnicio_session" }.forEach { cookie ->
+                sessionExpiresAt = if (cookie.maxAge > 0) System.currentTimeMillis() +
+                    cookie.maxAge.coerceAtMost(34_560_000) * 1000 else 0
+            }
         }
     }
 

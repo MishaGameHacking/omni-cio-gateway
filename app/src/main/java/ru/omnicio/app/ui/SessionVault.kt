@@ -39,8 +39,8 @@ internal class SessionVault(context: Context) {
     }
 
     fun read(): StoredSession? {
-        if (!file.baseFile.exists()) return null
-        val encrypted = file.openRead().use { input ->
+        val stored = try { file.openRead() } catch (_: java.io.FileNotFoundException) { return null }
+        val encrypted = stored.use { input ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(512)
             while (output.size() <= 4096) {

@@ -57,6 +57,7 @@ from .tbank import (
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 STRATEGY_RATING_READ_LIMIT = 8
 _NOT_CONNECTED_MESSAGE = "T-Invest is not connected"
+_READ_ONLY_ACCOUNT_REQUIRED = "only a real read-only broker account is supported"
 _ACCOUNT_DISPLAY_NAME = "Брокерский счёт"
 
 
@@ -189,7 +190,7 @@ class BrokerService:
         environment: TBankEnvironment,
     ) -> list[TBankAccount]:
         if environment != "prod":
-            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
+            raise BrokerAccountNotAccessible(_READ_ONLY_ACCOUNT_REQUIRED)
         accounts = self.tbank.get_accounts(credential, environment)
         if not accounts or any(account.access_level != READ_ONLY_ACCESS for account in accounts):
             raise BrokerAccountNotAccessible("all returned accounts must have read-only access")
@@ -265,7 +266,7 @@ class BrokerService:
         if record is None:
             raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         if record.environment != "prod":
-            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
+            raise BrokerAccountNotAccessible(_READ_ONLY_ACCOUNT_REQUIRED)
         credential = decrypt_secret(record.encrypted_credential, self.credential_key)
         accounts = self.preview_accounts(credential=credential, environment="prod")
         return record, accounts
@@ -1274,7 +1275,7 @@ class BrokerService:
         if record is None:
             raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         if record.environment != "prod":
-            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
+            raise BrokerAccountNotAccessible(_READ_ONLY_ACCOUNT_REQUIRED)
         credential = decrypt_secret(record.encrypted_credential, self.credential_key)
         accounts = self.preview_accounts(credential=credential, environment="prod")
         account = next((item for item in accounts if item.id == record.account_id), None)

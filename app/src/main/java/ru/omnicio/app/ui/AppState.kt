@@ -70,13 +70,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
 
     fun restoreSession() = request({ client ->
         if (client.profile == null) {
-            val saved = try { vault.read() } catch (_: java.security.GeneralSecurityException) {
-                null
-            } catch (_: java.io.IOException) {
-                null
-            } catch (_: IllegalArgumentException) {
-                null
-            }
+            val saved = readStoredSession()
             saved?.let { client.restore(it) }
         }
         if (client.profile != null) {
@@ -134,18 +128,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
                 val result = withContext(Dispatchers.IO) { action(current) }
                 if (generation == expectedGeneration) {
                     success(result)
-                    current.savedSession()?.let { saved ->
-                        if (saved != lastStoredSession) {
-                            try {
-                                vault.write(saved)
-                                lastStoredSession = saved
-                            } catch (_: java.security.GeneralSecurityException) {
-                                throw ApiFailure(0, "session_storage_unavailable")
-                            } catch (_: java.io.IOException) {
-                                throw ApiFailure(0, "session_storage_unavailable")
-                            }
-                        }
-                    }
+                    persistSession(current)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -154,6 +137,29 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             } finally {
                 if (generation == expectedGeneration) mutable.value = mutable.value.copy(busy = false)
             }
+        }
+    }
+
+    private fun readStoredSession(): StoredSession? = try {
+        vault.read()
+    } catch (_: java.security.GeneralSecurityException) {
+        null
+    } catch (_: java.io.IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    private fun persistSession(client: ServerApi) {
+        val saved = client.savedSession() ?: return
+        if (saved == lastStoredSession) return
+        try {
+            vault.write(saved)
+            lastStoredSession = saved
+        } catch (_: java.security.GeneralSecurityException) {
+            throw ApiFailure(0, "session_storage_unavailable")
+        } catch (_: java.io.IOException) {
+            throw ApiFailure(0, "session_storage_unavailable")
         }
     }
 

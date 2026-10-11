@@ -29,11 +29,13 @@ def test_account_selection_serializes_concurrent_choices_and_rejects_foreign_con
     owner, other = user(database, account=True), user(database, account=True)
     original = database.tbank_connection(owner)
     foreign = database.tbank_connection(other)
-    assert original is not None and foreign is not None
+    assert original is not None
+    assert foreign is not None
     with pytest.raises(BrokerConnectionConflict):
         select(database, owner, foreign, "foreign-choice")
+    stale = replace(original, encrypted_credential=b"stale-token")
     with pytest.raises(BrokerConnectionConflict):
-        select(database, owner, replace(original, encrypted_credential=b"stale-token"), "stale")
+        select(database, owner, stale, "stale")
 
     start = Barrier(2)
 

@@ -15,14 +15,17 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.R
 
+private const val ACCESS_SECTION = "Доступ"
+private const val ABOUT_SECTION = "О приложении"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel,
     authenticate: ((Boolean) -> Unit) -> Unit) {
     var section by remember { mutableStateOf<String?>(null) }
-    val sections = listOf("Оформление" to R.drawable.ic_moon, "Доступ" to R.drawable.ic_shield,
+    val sections = listOf("Оформление" to R.drawable.ic_moon, ACCESS_SECTION to R.drawable.ic_shield,
         "Счёт" to R.drawable.ic_bank, "Стратегия" to R.drawable.ic_portfolio,
-        "Цели" to R.drawable.ic_goal, "О приложении" to R.drawable.ic_info)
+        "Цели" to R.drawable.ic_goal, ABOUT_SECTION to R.drawable.ic_info)
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Профиль", style = MaterialTheme.typography.headlineLarge)
@@ -48,40 +51,12 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel,
 @Composable
 private fun SettingsDetails(state: AppUiState, model: OmnicioViewModel, section: String,
     authenticate: ((Boolean) -> Unit) -> Unit) {
-    var credential by remember { mutableStateOf("") }
-    var accepted by remember { mutableStateOf(false) }
-    var disconnect by remember { mutableStateOf(false) }
     var goalForm by remember { mutableStateOf(false) }
     val connected = state.workspace?.connection?.connected == true
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Text(section, style = MaterialTheme.typography.headlineMedium) }
-        if (section == "Доступ") item { AccessSettings(state, model) }
-        if (section == "Доступ") item {
-            var authError by remember { mutableStateOf(false) }
-            OmniCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Защита входа", style = MaterialTheme.typography.titleMedium)
-                        Text("Отпечаток или код телефона", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(state.biometricLock, { value -> authenticate { success ->
-                        authError = !success
-                        if (success) model.setBiometricLock(value)
-                    } }, modifier = Modifier.semantics { contentDescription = "Защита входа" })
-                }
-                if (authError) Text("Подтверждение не получено. Проверьте блокировку экрана в настройках телефона.",
-                    style = MaterialTheme.typography.bodySmall)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Запретить скриншоты", style = MaterialTheme.typography.titleMedium)
-                        Text(if (state.screenshotsBlocked) "Снимки и запись экрана запрещены" else "Снимки и запись экрана разрешены",
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(state.screenshotsBlocked, model::setScreenshotsBlocked,
-                        modifier = Modifier.semantics { contentDescription = "Запретить скриншоты" })
-                }
-            }
-        }
+        if (section == ACCESS_SECTION) item { AccessSettings(state, model) }
+        if (section == ACCESS_SECTION) item { SecuritySettings(state, model, authenticate) }
         if (section == "Стратегия") item { StrategySettings(state, model) }
         if (section == "Оформление") item {
             OmniCard {
@@ -94,40 +69,7 @@ private fun SettingsDetails(state: AppUiState, model: OmnicioViewModel, section:
                 Text("Оформление сохраняется на этом устройстве.", style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (section == "Счёт") item {
-            OmniCard {
-                OmniIcon(R.drawable.ic_bank)
-                SectionTitle("Т-Инвестиции")
-                when {
-                    state.workspace == null -> {
-                        Text("Состояние подключения не получено.")
-                        OutlinedButton(onClick = model::refresh, enabled = !state.busy) { Text("Проверить подключение") }
-                    }
-                    connected -> {
-                        Text(state.workspace.connection.name ?: "Подключённый счёт")
-                        Text("Проверка: ${timestampLabel(state.workspace.connection.verifiedAt)}", style = MaterialTheme.typography.bodySmall)
-                        Text("Сервер читает данные счёта. Приложение не отправляет торговые поручения.")
-                        OutlinedButton(onClick = model::syncPortfolio, enabled = !state.busy) { Text("Обновить у брокера") }
-                        TextButton(onClick = { disconnect = true }, enabled = !state.busy) { Text("Отключить счёт") }
-                    }
-                    else -> {
-                        Text("Нужен токен только для чтения выбранного счёта. Он будет передан по HTTPS на сервер OMNICIO и сохранён там в зашифрованном виде. На телефоне токен не сохраняется.")
-                        SecretField(credential, { credential = it; model.clearAccounts() }, "Токен Т-Инвестиций")
-                        CheckLine("Разрешаю серверу OMNICIO читать данные моего счёта", accepted) { accepted = it }
-                        Button(onClick = { model.previewBroker(credential) },
-                            enabled = accepted && credential.length >= 20 && !state.busy) { Text("Проверить и выбрать счёт") }
-                        state.accounts.forEach { account ->
-                            OutlinedButton(onClick = {
-                                model.connectBroker(credential, account.id)
-                                credential = ""
-                            }, enabled = accepted && credential.length >= 20 && !state.busy && account.status == "ACCOUNT_STATUS_OPEN",
-                                modifier = Modifier.fillMaxWidth()) { Text(account.name.ifBlank { account.id }) }
-                        }
-                        LegalLinks()
-                    }
-                }
-            }
-        }
+        if (section == "Счёт") item { BrokerSettings(state, model) }
         if (section == "Цели") item {
             OmniCard {
                 OmniIcon(R.drawable.ic_goal)
@@ -148,7 +90,7 @@ private fun SettingsDetails(state: AppUiState, model: OmnicioViewModel, section:
                 if (goalForm && connected) GoalForm(state.busy, model)
             }
         }
-        if (section == "Доступ") item {
+        if (section == ACCESS_SECTION) item {
             OmniCard {
                 OmniIcon(R.drawable.ic_shield)
                 SectionTitle("Данные и доступ")
@@ -163,12 +105,82 @@ private fun SettingsDetails(state: AppUiState, model: OmnicioViewModel, section:
                 }
             }
         }
-        if (section == "О приложении") item {
+        if (section == ABOUT_SECTION) item {
             OmniCard {
-                SectionTitle("О приложении")
+                SectionTitle(ABOUT_SECTION)
                 Text("OMNICIO ${BuildConfig.VERSION_NAME}")
                 Text("Аналитика по официальным источникам. Нет торговых действий и обещаний доходности.", style = MaterialTheme.typography.bodySmall)
                 Text("Уведомления вне приложения пока не подключены. События доступны в разделе «Пульс».", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+
+}
+
+@Composable
+private fun SecuritySettings(state: AppUiState, model: OmnicioViewModel,
+    authenticate: ((Boolean) -> Unit) -> Unit) {
+    var authError by remember { mutableStateOf(false) }
+    OmniCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Защита входа", style = MaterialTheme.typography.titleMedium)
+                Text("Отпечаток или код телефона", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(state.biometricLock, { value -> authenticate { success ->
+                authError = !success
+                if (success) model.setBiometricLock(value)
+            } }, modifier = Modifier.semantics { contentDescription = "Защита входа" })
+        }
+        if (authError) Text("Подтверждение не получено. Проверьте блокировку экрана в настройках телефона.",
+            style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Запретить скриншоты", style = MaterialTheme.typography.titleMedium)
+                Text(if (state.screenshotsBlocked) "Снимки и запись экрана запрещены" else "Снимки и запись экрана разрешены",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(state.screenshotsBlocked, model::setScreenshotsBlocked,
+                modifier = Modifier.semantics { contentDescription = "Запретить скриншоты" })
+        }
+    }
+}
+
+@Composable
+private fun BrokerSettings(state: AppUiState, model: OmnicioViewModel) {
+    var credential by remember { mutableStateOf("") }
+    var accepted by remember { mutableStateOf(false) }
+    var disconnect by remember { mutableStateOf(false) }
+    val connected = state.workspace?.connection?.connected == true
+    OmniCard {
+        OmniIcon(R.drawable.ic_bank)
+        SectionTitle("Т-Инвестиции")
+        when {
+            state.workspace == null -> {
+                Text("Состояние подключения не получено.")
+                OutlinedButton(onClick = model::refresh, enabled = !state.busy) { Text("Проверить подключение") }
+            }
+            connected -> {
+                Text(state.workspace.connection.name ?: "Подключённый счёт")
+                Text("Проверка: ${timestampLabel(state.workspace.connection.verifiedAt)}", style = MaterialTheme.typography.bodySmall)
+                Text("Сервер читает данные счёта. Приложение не отправляет торговые поручения.")
+                OutlinedButton(onClick = model::syncPortfolio, enabled = !state.busy) { Text("Обновить у брокера") }
+                TextButton(onClick = { disconnect = true }, enabled = !state.busy) { Text("Отключить счёт") }
+            }
+            else -> {
+                Text("Нужен токен только для чтения выбранного счёта. Он будет передан по HTTPS на сервер OMNICIO и сохранён там в зашифрованном виде. На телефоне токен не сохраняется.")
+                SecretField(credential, { credential = it; model.clearAccounts() }, "Токен Т-Инвестиций")
+                CheckLine("Разрешаю серверу OMNICIO читать данные моего счёта", accepted) { accepted = it }
+                Button(onClick = { model.previewBroker(credential) },
+                    enabled = accepted && credential.length >= 20 && !state.busy) { Text("Проверить и выбрать счёт") }
+                state.accounts.forEach { account ->
+                    OutlinedButton(onClick = {
+                        model.connectBroker(credential, account.id)
+                        credential = ""
+                    }, enabled = accepted && credential.length >= 20 && !state.busy && account.status == "ACCOUNT_STATUS_OPEN",
+                        modifier = Modifier.fillMaxWidth()) { Text(account.name.ifBlank { account.id }) }
+                }
+                LegalLinks()
             }
         }
     }
