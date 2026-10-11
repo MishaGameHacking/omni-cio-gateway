@@ -3,6 +3,7 @@ package ru.omnicio.app.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +16,7 @@ internal data class AssistantActions(
     val reload: () -> Unit = {}, val create: () -> Unit = {},
     val select: (String) -> Unit = {}, val edit: (String) -> Unit = {},
     val accept: (Boolean) -> Unit = {}, val send: () -> Unit = {}, val older: () -> Unit = {},
+    val retry: () -> Unit = {},
 )
 
 @Composable
@@ -24,7 +26,15 @@ internal fun AssistantScreen(
 ) {
     var events by remember { mutableStateOf(false) }
     val workspace = state.workspace
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(events, state.assistant.conversation?.id, state.assistant.conversation?.messages?.lastOrNull()?.position) {
+        if (!events && state.assistant.conversation != null) {
+            withFrameNanos { }
+            val count = listState.layoutInfo.totalItemsCount
+            if (count > 0) listState.scrollToItem(count - 1)
+        }
+    }
+    LazyColumn(state = listState, modifier = Modifier.imePadding(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("Помощник", style = MaterialTheme.typography.headlineLarge)
             Text("Ваш портфель и вопросы об инвестициях", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -83,7 +93,7 @@ private fun LazyListScope.chatItems(state: AppUiState, actions: AssistantActions
                 }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     chat.conversations.forEach { summary ->
-                        DropdownMenuItem(text = { Text(summary.title) }, onClick = {
+                        DropdownMenuItem(text = { Text("${summary.title} · ${timestampLabel(summary.at)}") }, onClick = {
                             expanded = false
                             actions.select(summary.id)
                         })
@@ -109,6 +119,12 @@ private fun LazyListScope.chatItems(state: AppUiState, actions: AssistantActions
     item {
         if (chat.pendingRequest != null || conversation.requestStatus == "running") {
             Text("Ответ ещё не подтверждён. Нажмите «Проверить ответ» через некоторое время.")
+            if (chat.pendingMissing) {
+                Text("Сервер ещё не нашёл запрос. Можно повторить именно его: идентификатор останется прежним.")
+                OutlinedButton(onClick = actions.retry, enabled = !state.busy && chat.available && chat.contextAccepted) {
+                    Text("Повторить этот запрос")
+                }
+            }
         } else if (conversation.requestStatus in setOf("uncertain", "cancelled")) {
             Text("Предыдущий запрос не завершён. Готового ответа нет; новый вопрос отправляется только по вашему нажатию.")
         }

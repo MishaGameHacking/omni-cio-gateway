@@ -5,6 +5,7 @@ import org.junit.Test
 
 class AssistantModelTest {
     private val conversation = ChatConversation("id", "title", 0, emptyList(), null, null)
+    private val pending = PendingQuestion("pending", "id", 0, "Вопрос")
     private val ready = AssistantUiState(available = true, loaded = true,
         conversation = conversation, draft = "Вопрос", contextAccepted = true)
 
@@ -19,16 +20,16 @@ class AssistantModelTest {
     }
 
     @Test fun uncertainDeliveryAndRunningServerRequestPreventDuplicateSubmission() {
-        assertFalse(ready.copy(pendingRequest = "pending").canSend)
+        assertFalse(ready.copy(pendingRequest = pending).canSend)
         assertFalse(ready.copy(conversation = conversation.copy(requestStatus = "running")).canSend)
     }
 
     @Test fun networkFailureClearsServerContentButPreservesRequestRecovery() {
-        val failed = ready.copy(pendingRequest = "pending",
+        val failed = ready.copy(pendingRequest = pending,
             conversations = listOf(ChatSummary("id", "title"))).withoutServerData()
         assertNull(failed.conversation)
         assertTrue(failed.conversations.isEmpty())
-        assertEquals("pending", failed.pendingRequest)
+        assertEquals(pending, failed.pendingRequest)
         assertFalse(failed.canSend)
         assertNull(AssistantUiState().pendingRequest)
         assertEquals("", AssistantUiState().draft)

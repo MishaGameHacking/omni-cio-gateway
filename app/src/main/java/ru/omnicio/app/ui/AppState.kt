@@ -276,14 +276,26 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         val chat = mutable.value.assistant
         if (mutable.value.busy || mutable.value.amountsHidden || !chat.canSend) return
         val conversation = chat.conversation ?: return
-        val requestId = java.util.UUID.randomUUID().toString()
-        mutable.value = mutable.value.copy(assistant = chat.copy(pendingRequest = requestId))
+        submitQuestion(PendingQuestion(java.util.UUID.randomUUID().toString(),
+            conversation.id, conversation.version, chat.draft.trim()))
+    }
+
+    fun retryAssistantMessage() {
+        val chat = mutable.value.assistant
+        if (mutable.value.busy || mutable.value.amountsHidden || !chat.available ||
+            !chat.contextAccepted || !chat.pendingMissing) return
+        chat.pendingRequest?.let { submitQuestion(it) }
+    }
+
+    private fun submitQuestion(question: PendingQuestion) {
+        val chat = mutable.value.assistant
+        mutable.value = mutable.value.copy(assistant = chat.copy(pendingRequest = question, pendingMissing = false))
         request({ client ->
             client.request("/api/assistant/messages", "POST", JSONObject()
-                .put("conversation_id", conversation.id).put("request_id", requestId)
-                .put("expected_version", conversation.version).put("message", chat.draft.trim())
+                .put("conversation_id", question.conversationId).put("request_id", question.id)
+                .put("expected_version", question.version).put("message", question.message)
                 .put("context", "investment").put("include_news", true))
-            client.loadAssistant(chat.copy(draft = ""), conversation.id)
+            client.loadAssistant(chat.copy(draft = "", pendingRequest = question), question.conversationId)
         }) { mutable.value = mutable.value.copy(assistant = it) }
     }
 

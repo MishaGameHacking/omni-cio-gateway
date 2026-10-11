@@ -9,7 +9,8 @@ internal data class AssistantUiState(
     val loaded: Boolean = false,
     val conversations: List<ChatSummary> = emptyList(),
     val conversation: ChatConversation? = null,
-    val pendingRequest: String? = null,
+    val pendingRequest: PendingQuestion? = null,
+    val pendingMissing: Boolean = false,
     val draft: String = "",
     val contextAccepted: Boolean = false,
 ) {
@@ -21,7 +22,9 @@ internal data class AssistantUiState(
         conversations = emptyList(), conversation = null)
 }
 
-internal data class ChatSummary(val id: String, val title: String)
+internal data class PendingQuestion(val id: String, val conversationId: String, val version: Int, val message: String)
+
+internal data class ChatSummary(val id: String, val title: String, val at: String? = null)
 internal data class ChatConversation(
     val id: String, val title: String, val version: Int,
     val messages: List<ChatMessage>, val nextBefore: Int?, val requestStatus: String?,
@@ -53,18 +56,20 @@ internal fun ServerApi.loadAssistant(previous: AssistantUiState, selectedId: Str
     // GETs only. Reopening a tab never creates a conversation or invokes the model.
     val status = request("/api/assistant/status")
     val summaries = request("/api/assistant/conversations").getJSONArray("items").objects().map {
-        ChatSummary(it.chatId("id"), it.getString("title"))
+        ChatSummary(it.chatId("id"), it.getString("title"), it.text("created_at"))
     }
-    val pending = previous.pendingRequest?.let { id ->
-        try { request("/api/assistant/requests/$id") }
+    val pending = previous.pendingRequest?.let { question ->
+        try { request("/api/assistant/requests/${question.id}") }
         catch (error: ApiFailure) { if (error.status == 404) null else throw error }
     }
-    val id = pending?.chatId("conversation_id") ?: selectedId ?: previous.conversation?.id
+    val id = pending?.chatId("conversation_id") ?: previous.pendingRequest?.conversationId ?: selectedId ?: previous.conversation?.id
         ?: summaries.firstOrNull()?.id
     val conversation = id?.let { parseConversation(request("/api/assistant/conversations/$it")) }
     return previous.copy(loaded = true,
         available = status.getBoolean("enabled") && status.getBoolean("configured"),
         conversations = summaries, conversation = conversation,
         draft = if (pending != null) "" else previous.draft,
-        pendingRequest = if (pending?.text("status") == "running") previous.pendingRequest else null)
+        pendingMissing = previous.pendingRequest != null && pending == null,
+        // A GET 404 can race a delayed POST. Never replace its id with a new question id.
+        pendingRequest = if (pending == null || pending.text("status") == "running") previous.pendingRequest else null)
 }
