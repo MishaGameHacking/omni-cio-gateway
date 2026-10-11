@@ -48,7 +48,7 @@ internal fun AssistantScreen(
         }
         item {
             Text(
-                text = "Без поля ввода, выбора модели и свободного чата. Повторное открытие этой ленты не запускает языковую модель и не расходует токены.",
+                text = "Автоматическая лента важных событий без свободного чата.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
