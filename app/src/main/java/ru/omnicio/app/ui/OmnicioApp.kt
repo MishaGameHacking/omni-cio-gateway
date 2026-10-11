@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
@@ -55,19 +56,36 @@ internal fun EmptyState(title: String, detail: String, icon: Int = R.drawable.ic
     }
 }
 
-private const val SETTINGS = "Настройки"
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun sheetProperties(blocked: Boolean) = ModalBottomSheetProperties(
+    securePolicy = if (blocked) androidx.compose.ui.window.SecureFlagPolicy.SecureOn
+        else androidx.compose.ui.window.SecureFlagPolicy.SecureOff,
+)
+
+private const val PORTFOLIO = "Портфель"
+private const val SETTINGS = "Профиль"
 
 @Composable
-internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
+internal fun OmnicioRoot(model: OmnicioViewModel = viewModel(), authenticate: ((Boolean) -> Unit) -> Unit = {}) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var page by rememberSaveable { mutableStateOf("Обзор") }
-    BackHandler(enabled = state.authenticated && page != "Обзор") { page = "Обзор" }
-    val destinations = listOf("Обзор" to R.drawable.ic_overview,
-        "Портфель" to R.drawable.ic_portfolio, "Помощник" to R.drawable.ic_assistant)
+    var page by rememberSaveable { mutableStateOf(PORTFOLIO) }
+    val activity = LocalActivity.current
+    SideEffect {
+        if (state.screenshotsBlocked) activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        else activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    }
+    BackHandler(enabled = state.authenticated && page != PORTFOLIO) { page = PORTFOLIO }
+    val destinations = listOf(PORTFOLIO to R.drawable.ic_portfolio,
+        "Что купить" to R.drawable.ic_search, "Пульс" to R.drawable.ic_pulse,
+        "Чат" to R.drawable.ic_assistant, SETTINGS to R.drawable.ic_profile)
     LaunchedEffect(state.authenticated, state.socialFlow == null) {
         if (state.authenticated && state.socialFlow == null) model.refresh()
-        else if (!state.authenticated) page = "Обзор"
+        else if (!state.authenticated) page = PORTFOLIO
+    }
+    LaunchedEffect(state.authenticated, state.busy, state.locked) {
+        if (state.authenticated && !state.busy && !state.locked && !state.restoring &&
+            state.workspace == null && state.legalConsent == null && state.error == null) model.refresh()
     }
     LaunchedEffect(lifecycle, state.authenticated) {
         if (state.authenticated) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -76,6 +94,7 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
     }
     OmnicioTheme(darkTheme = state.darkTheme) {
         when {
+            state.locked || state.restoring -> SessionOpeningScreen(state, model, authenticate)
             state.socialFlow != null -> {
                 SocialFlowScreen(state, model)
             }
@@ -92,10 +111,16 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
                         AppToolbar(page, state.busy, model::refresh) { page = it }
                     },
                     bottomBar = {
-                        if (!wide) NavigationBar {
+                        if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.background,
+                            tonalElevation = 0.dp) {
                             destinations.forEach { (title, icon) ->
                                 NavigationBarItem(selected = page == title, onClick = { page = title },
-                                    icon = { OmniIcon(icon) }, label = { Text(title) })
+                                    icon = { OmniIcon(icon) }, label = { Text(title, maxLines = 1,
+                                        style = MaterialTheme.typography.labelSmall) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                                        selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                        indicatorColor = MaterialTheme.colorScheme.background))
                             }
                         }
                     },
@@ -110,12 +135,34 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
                         Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                             StatusMessages(state)
                             Box(Modifier.weight(1f).widthIn(max = 900.dp)) {
-                                AppPage(page, state, model) { page = SETTINGS }
+                                AppPage(page, state, model, authenticate) { page = SETTINGS }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SessionOpeningScreen(state: AppUiState, model: OmnicioViewModel,
+    authenticate: ((Boolean) -> Unit) -> Unit) {
+    var unlockFailed by remember { mutableStateOf(false) }
+    Surface(Modifier.fillMaxSize()) {
+        Column(Modifier.safeDrawingPadding().padding(24.dp),
+            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("OMNICIO", style = MaterialTheme.typography.headlineLarge)
+            Spacer(Modifier.height(24.dp))
+            StatusMessages(state)
+            if (unlockFailed) Text("Подтвердите вход отпечатком или кодом. Если блокировка экрана отключена, включите её в настройках телефона.")
+            if (state.locked) Button(onClick = { authenticate { success ->
+                unlockFailed = !success
+                if (success) model.unlock()
+            } }) {
+                Text("Разблокировать")
+            } else if (!state.busy) Button(onClick = model::restoreSession) { Text("Повторить подключение") }
+            else Text("Восстанавливаем вход…")
         }
     }
 }
@@ -129,7 +176,7 @@ private fun AppToolbar(page: String, busy: Boolean, refresh: () -> Unit, navigat
             Text(if (page == SETTINGS) page else "OMNICIO")
         }
     }, navigationIcon = {
-        if (page == SETTINGS) IconButton(onClick = { navigate("Обзор") }) {
+        if (page == SETTINGS) IconButton(onClick = { navigate(PORTFOLIO) }) {
             OmniIcon(R.drawable.ic_back, "Назад")
         }
     }, actions = {
@@ -139,10 +186,14 @@ private fun AppToolbar(page: String, busy: Boolean, refresh: () -> Unit, navigat
 }
 
 @Composable
-private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel, connect: () -> Unit) {
+private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel,
+    authenticate: ((Boolean) -> Unit) -> Unit, connect: () -> Unit) {
     when (page) {
-        "Портфель" -> PortfolioScreen(state)
-        "Помощник" -> {
+        PORTFOLIO -> PortfolioScreen(state, model::syncPortfolio, model::toggleAmountsHidden,
+            model::loadBrokerAccounts, model::selectBrokerAccount, connect)
+        "Что купить" -> MarketScreen(state, model)
+        "Пульс" -> AssistantScreen(state, model::markRead, model::loadMoreEvents, eventsOnly = true)
+        "Чат" -> {
             LaunchedEffect(Unit) { model.loadAssistant() }
             AssistantScreen(state, model::markRead, model::loadMoreEvents, AssistantActions(
                 reload = { model.loadAssistant() }, create = model::newConversation,
@@ -151,7 +202,7 @@ private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel, co
                 older = model::loadOlderMessages, retry = model::retryAssistantMessage,
                 task = model::setAssistantTask))
         }
-        SETTINGS -> SettingsScreen(state, model)
+        SETTINGS -> SettingsScreen(state, model, authenticate)
         else -> OverviewScreen(state, model::toggleAmountsHidden, model::syncPortfolio, onConnect = connect)
     }
 }
@@ -198,7 +249,7 @@ internal fun AuthScreen(state: AppUiState, onStartSocial: (String) -> Unit, onRe
                     }
                 }
                 HorizontalDivider()
-                Text("Финансовые данные не сохраняются на телефоне. После закрытия процесса приложения потребуется новый вход.",
+                Text("Вход сохраняется на этом устройстве в зашифрованном виде. Финансовые данные загружаются с сервера.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = { uri.openUri("$SERVER_ORIGIN/legal/privacy.html") }) { Text("Конфиденциальность") }
             }
@@ -265,3 +316,4 @@ private fun LegalConsentScreen(state: AppUiState, model: OmnicioViewModel) {
         }
     }
 }
+

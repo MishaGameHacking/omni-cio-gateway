@@ -1009,6 +1009,7 @@ class Database:
         account_name: str,
         encrypted_credential: bytes,
         terms_version: str,
+        expected_connection: TBankConnectionRecord | None = None,
     ) -> TBankConnectionRecord:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
@@ -1020,14 +1021,29 @@ class Database:
             if cur.fetchone() is None:
                 raise BrokerConnectionConflict("broker_account_unavailable")
             cur.execute(
-                "SELECT account_id, environment FROM tbank_connection WHERE user_id = %s",
+                "SELECT account_id, environment, token_ciphertext, updated_at "
+                "FROM tbank_connection WHERE user_id = %s FOR UPDATE",
                 (user_id,),
             )
             current = cast(dict[str, Any] | None, cur.fetchone())
+            if expected_connection is not None and (
+                current is None or expected_connection.user_id != user_id
+                or current["account_id"] != expected_connection.account_id
+                or current["environment"] != expected_connection.environment
+                or bytes(current["token_ciphertext"]) != expected_connection.encrypted_credential
+                or current["updated_at"] != expected_connection.updated_at
+            ):
+                raise BrokerConnectionConflict("broker_connection_changed")
             if current is not None and (
                 current["account_id"] != account_id or current["environment"] != environment
-            ):
+            ) and expected_connection is None:
                 raise BrokerConnectionConflict("broker_disconnect_required")
+            if expected_connection is not None and current is not None:
+                # Keep account-scoped history; revoke previous execution authority atomically.
+                cur.execute(
+                    "UPDATE portfolio_live_execution_mandates SET revoked_at = now() "
+                    "WHERE user_id = %s AND revoked_at IS NULL", (user_id,),
+                )
             cur.execute(
                 """
                 INSERT INTO tbank_connection (
@@ -1286,3 +1302,4 @@ def _tbank_connection(row: dict[str, Any]) -> TBankConnectionRecord:
         verified_at=row["verified_at"],
         updated_at=row["updated_at"],
     )
+

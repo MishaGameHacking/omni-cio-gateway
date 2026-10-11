@@ -57,6 +57,7 @@ from .tbank import (
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 STRATEGY_RATING_READ_LIMIT = 8
 _NOT_CONNECTED_MESSAGE = "T-Invest is not connected"
+_READ_ONLY_ACCOUNT_REQUIRED = "only a real read-only broker account is supported"
 _ACCOUNT_DISPLAY_NAME = "Брокерский счёт"
 
 
@@ -189,7 +190,7 @@ class BrokerService:
         environment: TBankEnvironment,
     ) -> list[TBankAccount]:
         if environment != "prod":
-            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
+            raise BrokerAccountNotAccessible(_READ_ONLY_ACCOUNT_REQUIRED)
         accounts = self.tbank.get_accounts(credential, environment)
         if not accounts or any(account.access_level != READ_ONLY_ACCESS for account in accounts):
             raise BrokerAccountNotAccessible("all returned accounts must have read-only access")
@@ -233,6 +234,42 @@ class BrokerService:
         if record is None:
             return BrokerConnectionStatus(connected=False)
         return _status(record)
+
+    def connected_accounts(self, user_id: UUID) -> list[TBankAccount]:
+        record, accounts = self._connection_accounts(user_id)
+        self._require_current_connection(record)
+        return accounts
+
+    def select_account(
+        self, user_id: UUID, account_id: str, expected_account_id: str, terms_version: str,
+    ) -> BrokerConnectionStatus:
+        record, accounts = self._connection_accounts(user_id)
+        if record.account_id != expected_account_id:
+            raise BrokerConnectionError("broker_connection_changed")
+        selected = next((item for item in accounts if item.id == account_id), None)
+        if selected is None or selected.status != "ACCOUNT_STATUS_OPEN":
+            raise BrokerAccountNotAccessible("selected T-Invest account is not accessible")
+        self._require_current_connection(record)
+        if selected.id == record.account_id:
+            return _status(record)
+        updated = self.database.upsert_tbank_connection(
+            user_id=user_id, environment=record.environment, account_id=selected.id,
+            account_name=selected.name, encrypted_credential=record.encrypted_credential,
+            terms_version=terms_version, expected_connection=record,
+        )
+        return _status(updated)
+
+    def _connection_accounts(
+        self, user_id: UUID,
+    ) -> tuple[TBankConnectionRecord, list[TBankAccount]]:
+        record = self.database.tbank_connection(user_id)
+        if record is None:
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
+        if record.environment != "prod":
+            raise BrokerAccountNotAccessible(_READ_ONLY_ACCOUNT_REQUIRED)
+        credential = decrypt_secret(record.encrypted_credential, self.credential_key)
+        accounts = self.preview_accounts(credential=credential, environment="prod")
+        return record, accounts
 
     def portfolio(self, user_id: UUID) -> BrokerPortfolioSnapshot:
         bundle = self.observation_bundle(user_id)
@@ -1238,7 +1275,7 @@ class BrokerService:
         if record is None:
             raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         if record.environment != "prod":
-            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
+            raise BrokerAccountNotAccessible(_READ_ONLY_ACCOUNT_REQUIRED)
         credential = decrypt_secret(record.encrypted_credential, self.credential_key)
         accounts = self.preview_accounts(credential=credential, environment="prod")
         account = next((item for item in accounts if item.id == record.account_id), None)
@@ -1290,3 +1327,4 @@ def _status(record: TBankConnectionRecord) -> BrokerConnectionStatus:
         account_name=_ACCOUNT_DISPLAY_NAME,
         verified_at=record.verified_at,
     )
+

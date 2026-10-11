@@ -187,6 +187,11 @@ class TBankConnectBody(TBankCredentialBody):
     account_id: str = Field(min_length=1, max_length=128)
 
 
+class TBankSelectAccountBody(StrictRequestBody):
+    account_id: str = Field(min_length=1, max_length=128)
+    expected_account_id: str = Field(min_length=1, max_length=128)
+
+
 class DeleteAccountBody(StrictRequestBody):
     confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     confirm_irreversible: bool
@@ -3293,6 +3298,49 @@ def tbank_accounts(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
+@app.get("/api/broker/tbank/accounts", responses=_API_FAILURES)
+def connected_tbank_accounts(
+    request: Request, session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    try:
+        accounts = broker_service(request).connected_accounts(user.id)
+    except (BrokerConnectionError, TBankTokenRejected) as exc:
+        raise HTTPException(status_code=409, detail="broker_connection_changed") from exc
+    except (TBankUnavailable, SecurityValueError) as exc:
+        raise HTTPException(status_code=503, detail="broker_unavailable") from exc
+    payload = {"accounts": [
+        {"id": item.id, "name": item.name, "type": item.type, "status": item.status}
+        for item in accounts
+    ]}
+    return _workspace_result(request, session_token, user, payload)
+
+
+@app.put("/api/broker/tbank/account", responses=_API_FAILURES)
+def select_tbank_account(
+    body: TBankSelectAccountBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    try:
+        connection = broker_service(request).select_account(
+            user.id, body.account_id, body.expected_account_id, settings(request).terms_version,
+        )
+    except BrokerConnectionConflict as exc:
+        raise HTTPException(status_code=409, detail="broker_connection_changed") from exc
+    except (BrokerConnectionError, TBankTokenRejected) as exc:
+        raise HTTPException(status_code=409, detail="broker_connection_changed") from exc
+    except (TBankUnavailable, SecurityValueError) as exc:
+        raise HTTPException(status_code=503, detail="broker_unavailable") from exc
+    payload = _workspace_result(request, session_token, user, asdict(connection), write=True)
+    try:
+        payload["refresh"] = portfolio_refresh(request).request(user.id)
+    except PortfolioRefreshBusy:
+        # Selection is already durable; the client can retry read-only observation.
+        payload["refresh"] = {"status": "busy", "retry_after_seconds": 2}
+    return payload
+
+
 @app.put(
     "/api/broker/tbank",
     responses={
@@ -3454,4 +3502,5 @@ def logout(
     )
     response.status_code = 204
     return response
+
 
