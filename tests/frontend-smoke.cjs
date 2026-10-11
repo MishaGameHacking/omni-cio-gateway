@@ -22,6 +22,9 @@ const server = createServer((request,response) => {
   response.setHeader("Content-Type",types[extname(path)] || "text/html");
   response.setHeader("Cache-Control","no-store");
   response.setHeader("Content-Security-Policy","default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  if(path === "/fixture-previous-worker.js") {
+    response.end('self.addEventListener("install",e=>e.waitUntil(self.skipWaiting()));self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()));');return;
+  }
   if(path === "/downloads/android.json") { response.statusCode = unavailable ? 503 : 200; response.end(JSON.stringify(release)); return; }
   if(path === "/assets/brand/omnicio-logo.png") {response.end(readFileSync(join(root,"assets/brand/omnicio-logo.png")));return;}
   const body = assets[path === "/" ? "index.html" : path.slice(1)];
@@ -87,10 +90,15 @@ async function run(base) {
     }
     unavailable=true;await click('#check-release');await wait('document.querySelector("#download-status").textContent.includes("Не удалось")');
     unavailable=false;release={status:"unpublished"};await click('#check-release');await wait('document.querySelector("#download-status").textContent.includes("Публичный выпуск")');
+    // Install a stable previous generation first. Registering the same active
+    // retiring worker does not fire another activate event and creates a test race.
+    await evaluate('navigator.serviceWorker.register("/fixture-previous-worker.js")');
+    await until(()=>evaluate('(async()=>(await navigator.serviceWorker.getRegistration())?.active?.scriptURL.endsWith("/fixture-previous-worker.js"))()'),"Previous worker active");
     await evaluate('Promise.all([caches.open("omnicio-public-obsolete"),caches.open("unrelated-test-cache")])');
     await evaluate('navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"})');
     await until(()=>evaluate('(async()=>!(await caches.keys()).some(k=>k.startsWith("omnicio-")))()'),"Retire old cache");
     assert.equal(await evaluate('(async()=>(await caches.keys()).includes("unrelated-test-cache"))()'),true);
+    await until(()=>evaluate('(async()=>(await navigator.serviceWorker.getRegistrations()).length===0)()'),"Retired worker unregistered");
     assert.deepEqual(await evaluate('window.__errors'),[]);
     assert.equal(requests.some(r=>r.path.startsWith("/api/")||r.method!=="GET"),false,"No personal API, market or LLM traffic");
     assert.equal(requests.filter(r=>r.path==="/downloads/android.json").some(r=>r.cookie),false);
