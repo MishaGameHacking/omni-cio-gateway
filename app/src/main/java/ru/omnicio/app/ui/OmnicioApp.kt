@@ -431,7 +431,7 @@ private fun MainShell(
                 }
                 Scaffold(
                     containerColor = MaterialTheme.colorScheme.background,
-                    topBar = { AppTopBar(selected, onOpenSettings) },
+                    topBar = { AppTopBar(onOpenSettings) },
                     modifier = Modifier.weight(1f),
                 ) { padding ->
                     ScreenContainer(padding, scrollable, horizontalPadding, content)
@@ -440,7 +440,7 @@ private fun MainShell(
         } else {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
-                topBar = { AppTopBar(selected, onOpenSettings) },
+                topBar = { AppTopBar(onOpenSettings) },
                 bottomBar = {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         mainDestinations.forEach { destination ->
@@ -468,7 +468,6 @@ private fun MainShell(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppTopBar(
-    selected: String,
     onOpenSettings: () -> Unit,
 ) {
     val largeFont = shouldStackDetailLine(LocalDensity.current.fontScale)
