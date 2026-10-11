@@ -198,7 +198,9 @@ def test_low_memory_pause_has_durable_receipt_and_always_resumes(
             assert fails_during_restore
     assert calls == [("stop", [host.upgrade.OBSERVER_TIMER, host.upgrade.OBSERVER_SERVICE,
                               host.upgrade.AUTH_SERVICE])]
-    resume.assert_called_once_with(capacity_runtime, "private", {}, {"source_release": SHA}, "query")
+    resume.assert_called_once_with(
+        capacity_runtime, "private", {}, {"source_release": SHA}, "query",
+    )
     assert observation["stage"] == "temporary_restore"
 
 
@@ -225,14 +227,18 @@ def test_resume_requires_source_proof_and_retains_receipt_on_failure(tmp_path, s
     path.write_text(json.dumps(receipt))
     with (
         patch.object(host.upgrade, "_private_file", return_value=path.read_text()),
-        patch.object(host.upgrade, "_resume_source_after_failure", return_value=source_proven) as prove,
+        patch.object(
+            host.upgrade, "_resume_source_after_failure", return_value=source_proven,
+        ) as prove,
     ):
         if source_proven:
             host.resume_maintenance(path, "private", {}, {"source_release": SHA}, "query")
         else:
             with pytest.raises(host.recovery.RecoveryBlocked):
                 host.resume_maintenance(path, "private", {}, {"source_release": SHA}, "query")
-    prove.assert_called_once_with("private", {}, {"source_release": SHA}, "query", receipt["writers"])
+    prove.assert_called_once_with(
+        "private", {}, {"source_release": SHA}, "query", receipt["writers"],
+    )
     assert path.exists() is not source_proven
 
 
@@ -251,7 +257,9 @@ def test_interrupted_maintenance_is_resumed_before_another_capacity_check(capaci
 def test_failure_report_preserves_stage_without_sql_secrets_or_rows(capsys):
     capacity = {"status": "unavailable", "code": "host_capacity_unavailable"}
     with patch.object(host.upgrade, "inspect_host_capacity", return_value=capacity):
-        report = host.failure_report("temporary_restore", RuntimeError("secret DSN; SELECT private"))
+        report = host.failure_report(
+            "temporary_restore", RuntimeError("secret DSN; SELECT private"),
+        )
     assert host.validate_failure_report(report)
     with pytest.raises(host.recovery.RecoveryBlocked):
         runner.parse_host_report(json.dumps(report), {})
