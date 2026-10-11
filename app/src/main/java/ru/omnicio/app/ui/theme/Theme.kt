@@ -8,32 +8,35 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val ActionYellow = Color(0xFFFFDD2D)
-private val Graphite = Color(0xFF0F1012)
-private val GraphiteSurface = Color(0xFF18191C)
-private val GraphiteRaised = Color(0xFF23252A)
-private val DarkText = Color(0xFFF5F5F6)
-private val DarkMuted = Color(0xFFA6A9B0)
-private val LightInk = Color(0xFF17181A)
-private val LightBackground = Color(0xFFF4F5F6)
+private val Positive = Color(0xFF13A85B)
+private val DarkBackground = Color(0xFF0A0B0D)
+private val DarkSurface = Color(0xFF151619)
+private val DarkRaised = Color(0xFF202126)
+private val DarkText = Color(0xFFF7F7F8)
+private val DarkMuted = Color(0xFFA7AAB2)
+private val LightInk = Color(0xFF151619)
+private val LightBackground = Color(0xFFF5F6F8)
 private val LightSurface = Color(0xFFFFFFFF)
-private val LightRaised = Color(0xFFE9EBEE)
+private val LightRaised = Color(0xFFEEF0F3)
 
 private val DarkColors = darkColorScheme(
     primary = ActionYellow,
-    onPrimary = Graphite,
-    primaryContainer = Color(0xFF3A3516),
-    onPrimaryContainer = ActionYellow,
+    onPrimary = Color(0xFF161300),
+    primaryContainer = Color(0xFF3B3412),
+    onPrimaryContainer = Color(0xFFFFE86D),
     secondary = Color(0xFFD7D9DE),
-    onSecondary = Graphite,
-    secondaryContainer = GraphiteRaised,
+    onSecondary = DarkBackground,
+    secondaryContainer = DarkRaised,
     onSecondaryContainer = DarkText,
-    background = Graphite,
+    tertiary = Positive,
+    onTertiary = Color.White,
+    background = DarkBackground,
     onBackground = DarkText,
-    surface = GraphiteSurface,
+    surface = DarkSurface,
     onSurface = DarkText,
-    surfaceVariant = GraphiteRaised,
+    surfaceVariant = DarkRaised,
     onSurfaceVariant = DarkMuted,
-    outline = Color(0xFF3A3C42),
+    outline = Color(0xFF3A3C43),
     error = Color(0xFFFF626A),
     onError = Color(0xFF260006),
 )
@@ -41,27 +44,32 @@ private val DarkColors = darkColorScheme(
 private val LightColors = lightColorScheme(
     primary = ActionYellow,
     onPrimary = LightInk,
-    primaryContainer = Color(0xFFFFF2A3),
+    primaryContainer = Color(0xFFFFF4AD),
     onPrimaryContainer = Color(0xFF342D00),
     secondary = Color(0xFF55585E),
     onSecondary = Color.White,
     secondaryContainer = LightRaised,
     onSecondaryContainer = LightInk,
+    tertiary = Positive,
+    onTertiary = Color.White,
     background = LightBackground,
     onBackground = LightInk,
     surface = LightSurface,
     onSurface = LightInk,
     surfaceVariant = LightRaised,
-    onSurfaceVariant = Color(0xFF676B72),
-    outline = Color(0xFFD1D4D9),
-    error = Color(0xFFC62836),
+    onSurfaceVariant = Color(0xFF737782),
+    outline = Color(0xFFD6D9DE),
+    error = Color(0xFFD92D3A),
     onError = Color.White,
 )
 
 @Composable
-fun OmnicioTheme(content: @Composable () -> Unit) {
+fun OmnicioTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = OmniTypography,
         shapes = OmniShapes,
         content = content,
