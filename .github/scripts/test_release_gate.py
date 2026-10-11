@@ -110,6 +110,15 @@ def client_with_evidence(*, final_sonar: dict | None = None) -> Mock:
 
 
 class ReleaseEvidenceTests(unittest.TestCase):
+    def test_previous_release_proof_does_not_authorize_new_deployment(self) -> None:
+        with patch.dict(BRANCH, {"commit": {"sha": "f" * 40}}):
+            gate.verify_accepted_release(client_with_evidence(), SHA)
+            with self.assertRaises(gate.ReleaseBlocked):
+                gate.verify(client_with_evidence(), SHA)
+            failed = client_with_evidence(final_sonar=sonar(conclusion="failure"))
+            with self.assertRaises(gate.ReleaseBlocked):
+                gate.verify_accepted_release(failed, SHA)
+
     def test_current_main_with_all_successful_checks_passes(self) -> None:
         client = client_with_evidence()
         gate.verify(client, SHA)

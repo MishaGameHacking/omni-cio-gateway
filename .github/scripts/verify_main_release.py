@@ -352,8 +352,8 @@ def require_current_main(client: GitHubClient, sha: str) -> None:
         raise ReleaseBlocked("Release SHA is no longer the current main")
 
 
-def verify(client: GitHubClient, sha: str) -> None:
-    require_current_main(client, sha)
+def verify_accepted_release(client: GitHubClient, sha: str) -> None:
+    """Verify a previously accepted main release, including its exact tree and CI."""
     pull = accepted_pull_request(client, sha)
     number, head, _ = pull
     # The owner's release policy requires PR Sonar, not main LOC/overall analysis.
@@ -366,6 +366,11 @@ def verify(client: GitHubClient, sha: str) -> None:
         raise PendingChecks("Merged PR head changed during verification")
     if require_sonar(client.collect(path, "check_runs"), head, number) != sonar_check:
         raise PendingChecks("Merged PR SonarCloud check changed during verification")
+
+
+def verify(client: GitHubClient, sha: str) -> None:
+    require_current_main(client, sha)
+    verify_accepted_release(client, sha)
     require_current_main(client, sha)
 
 
