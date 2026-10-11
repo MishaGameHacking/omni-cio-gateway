@@ -93,7 +93,7 @@ internal fun commonSourceCategories(): List<CommonSourceCategory> = listOf(
     ),
     CommonSourceCategory(
         name = "T-Invest · только чтение",
-        detail = "Персональный доступ подключается отдельно; на UI-этапе используется только демо-состояние.",
+        detail = "Персональный доступ подключается отдельно; в этой версии используется только демо-состояние.",
     ),
 )
 
