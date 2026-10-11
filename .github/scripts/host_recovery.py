@@ -101,6 +101,8 @@ def native(
 def atomic_file(path: pathlib.Path, data: bytes, mode: int = 0o600) -> None:
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise recovery.RecoveryBlocked("Recovery destination is not an ordinary file")
+    if sys.platform != "linux":
+        raise recovery.RecoveryBlocked("Recovery evidence writes require the existing Linux host")
     temp = path.with_name(path.name + ".recovery-new")
     with temp.open("xb") as stream:
         os.chmod(temp, mode)
@@ -296,6 +298,8 @@ def ensure_keys() -> tuple[str, str]:
 
 @contextmanager
 def isolated_postgres() -> Iterator[str]:
+    if sys.platform != "linux":
+        raise recovery.RecoveryBlocked("Recovery database requires the existing Linux host")
     import pwd
 
     account = pwd.getpwnam("postgres")
