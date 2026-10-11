@@ -22,6 +22,8 @@ private const val KEY_RESERVE_MINOR = "reserve_minor"
 private const val KEY_GOAL_HORIZON_YEARS = "goal_horizon_years"
 private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
 private const val KEY_FAST_ALERTS_ENABLED = "fast_alerts_enabled"
+private const val KEY_BROKER_REVOKED = "broker_revoked"
+private const val KEY_LOCAL_SCHEMA_VERSION = "local_schema_version"
 
 internal data class AppUiState(
     val installationId: String,
@@ -30,10 +32,12 @@ internal data class AppUiState(
     val displayCurrency: DisplayCurrency,
     val overviewMode: OverviewMode,
     val settings: LocalSettingsState,
+    val migrationStatus: LocalMigrationStatus,
 )
 
 internal class OmnicioViewModel(application: Application) : AndroidViewModel(application) {
     private val store = LocalProfileStore(application.applicationContext)
+    private val initialMigrationStatus = store.migrateIfNeeded()
 
     private val mutableUiState = MutableStateFlow(
         AppUiState(
@@ -43,6 +47,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
             displayCurrency = store.displayCurrency(),
             overviewMode = store.overviewMode(),
             settings = store.localSettings(),
+            migrationStatus = initialMigrationStatus,
         ),
     )
 
@@ -72,6 +77,14 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     fun connectBrokerFixture() = updateSettings(::connectBrokerFixtureState)
 
     fun disconnectBroker() = updateSettings(::disconnectBrokerState)
+
+    fun revokeBrokerFixture() = updateSettings(::revokeBrokerFixtureState)
+
+    fun retryLocalMigration() {
+        mutableUiState.value = mutableUiState.value.copy(
+            migrationStatus = store.migrateIfNeeded(),
+        )
+    }
 
     fun deleteLocalPortfolio() = updateSettings(::deleteLocalPortfolioState)
 
@@ -159,6 +172,10 @@ private class LocalProfileStore(context: Context) {
                 KEY_BROKER_CREDENTIAL_PRESENT,
                 defaults.brokerCredentialPresent,
             ),
+            brokerRevoked = prefs.getBoolean(
+                KEY_BROKER_REVOKED,
+                defaults.brokerRevoked,
+            ),
             dependentJobsRunning = prefs.getBoolean(
                 KEY_DEPENDENT_JOBS_RUNNING,
                 defaults.dependentJobsRunning,
@@ -179,11 +196,24 @@ private class LocalProfileStore(context: Context) {
         )
     }
 
+    fun migrateIfNeeded(): LocalMigrationStatus {
+        val storedVersion = prefs.getInt(KEY_LOCAL_SCHEMA_VERSION, 0)
+        if (storedVersion >= CURRENT_LOCAL_SCHEMA_VERSION) {
+            return LocalMigrationStatus.CURRENT
+        }
+
+        val persisted = prefs.edit()
+            .putInt(KEY_LOCAL_SCHEMA_VERSION, CURRENT_LOCAL_SCHEMA_VERSION)
+            .commit()
+        return migrationStatusFor(storedVersion, persisted)
+    }
+
     fun setLocalSettings(state: LocalSettingsState) {
         prefs.edit()
             .putBoolean(KEY_PORTFOLIO_PRESENT, state.portfolioPresent)
             .putBoolean(KEY_BROKER_CONNECTED, state.brokerConnected)
             .putBoolean(KEY_BROKER_CREDENTIAL_PRESENT, state.brokerCredentialPresent)
+            .putBoolean(KEY_BROKER_REVOKED, state.brokerRevoked)
             .putBoolean(KEY_DEPENDENT_JOBS_RUNNING, state.dependentJobsRunning)
             .putLong(KEY_RESERVE_MINOR, state.reserveMinor)
             .putInt(KEY_GOAL_HORIZON_YEARS, state.goalHorizonYears)

@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -33,7 +34,7 @@ internal fun OverviewScreen(
 ) {
     val snapshot = overviewSnapshot(uiState.overviewMode, uiState.displayCurrency)
 
-    StatusPill("ДЕМО · UI-02 · " + snapshot.freshnessLabel)
+    StatusPill("ДЕМО · " + snapshot.freshnessLabel)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -52,7 +53,7 @@ internal fun OverviewScreen(
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                text = "Общая оценка портфеля · fixture",
+                text = "Общая оценка портфеля · демо",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -172,6 +173,7 @@ private fun MoneyBreakdown(
     hidden: Boolean,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
         val values = listOf(
             Triple(
                 "Доступно",
@@ -190,7 +192,7 @@ private fun MoneyBreakdown(
             ),
         )
 
-        if (maxWidth >= 640.dp) {
+        if (!shouldStackMetricCards(maxWidth.value.toInt(), fontScale)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
@@ -283,7 +285,7 @@ private fun PayoutGroup(
         )
         if (items.isEmpty()) {
             Text(
-                text = "Нет выплат в выбранном demo-state",
+                text = "Нет выплат в выбранном демо-состоянии",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
@@ -342,7 +344,7 @@ private fun DemoStateSelector(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Переключатель существует только для проверки UI-02 на fixture-данных.",
+            text = "Переключатель существует только для проверки состояний на демо-данных.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

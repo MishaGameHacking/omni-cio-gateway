@@ -236,13 +236,13 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
         currentValueMinor = 2_187_500,
         priceStatus = PriceStatus.CURRENT,
         riskStatus = RiskDataStatus.NORMAL,
-        priceSource = "T-Invest exchange fixture",
+        priceSource = "T-Invest · биржевые данные (демо)",
         priceUpdatedLabel = "5 мин назад",
         lotSize = 10,
         currency = DisplayCurrency.RUB,
-        payoutLabel = "Дивиденд: ожидается · fixture",
+        payoutLabel = "Дивиденд: ожидается · демо",
         issuerFacts = listOf(
-            "Эмитент: ПАО Сбербанк · demo",
+            "Эмитент: ПАО Сбербанк · демо",
             "Факт источника отмечается отдельно от локального расчёта.",
         ),
         accountLabel = PRIMARY_ACCOUNT_LABEL,
@@ -259,13 +259,13 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
         currentValueMinor = 1_562_500,
         priceStatus = PriceStatus.CURRENT,
         riskStatus = RiskDataStatus.NORMAL,
-        priceSource = "T-Invest exchange fixture",
+        priceSource = "T-Invest · биржевые данные (демо)",
         priceUpdatedLabel = "5 мин назад",
         lotSize = 10,
         currency = DisplayCurrency.RUB,
-        payoutLabel = "Дивиденд: ожидается · fixture",
+        payoutLabel = "Дивиденд: ожидается · демо",
         issuerFacts = listOf(
-            "Эмитент: ПАО Сбербанк · demo",
+            "Эмитент: ПАО Сбербанк · демо",
             "Факт источника отмечается отдельно от локального расчёта.",
         ),
         accountLabel = "ИИС",
@@ -282,13 +282,13 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
         currentValueMinor = 1_972_000,
         priceStatus = PriceStatus.STALE,
         riskStatus = RiskDataStatus.ATTENTION,
-        priceSource = "T-Invest bond fixture",
-        priceUpdatedLabel = "3 ч назад · stale",
+        priceSource = "T-Invest · облигации (демо)",
+        priceUpdatedLabel = "3 ч назад · данные устарели",
         lotSize = 1,
         currency = DisplayCurrency.RUB,
-        payoutLabel = "Купон: 18 окт · fixture",
+        payoutLabel = "Купон: 18 окт · демо",
         issuerFacts = listOf(
-            "Тип: государственная облигация · demo",
+            "Тип: государственная облигация · демо",
             "Цена помечена устаревшей и не выдаётся за текущую.",
         ),
         accountLabel = PRIMARY_ACCOUNT_LABEL,
@@ -305,13 +305,13 @@ private fun defaultRawPositions(): List<RawPortfolioPosition> = listOf(
         currentValueMinor = null,
         priceStatus = PriceStatus.MISSING,
         riskStatus = RiskDataStatus.INCOMPLETE,
-        priceSource = "Цена отсутствует · fixture",
+        priceSource = "Цена отсутствует · демо",
         priceUpdatedLabel = "нет данных",
         lotSize = 1,
         currency = DisplayCurrency.RUB,
         payoutLabel = "Выплаты: нет подтверждённых данных",
         issuerFacts = listOf(
-            "Общих фактов недостаточно для оценки · demo.",
+            "Общих фактов недостаточно для оценки · демо.",
         ),
         accountLabel = PRIMARY_ACCOUNT_LABEL,
     ),
@@ -326,7 +326,7 @@ private fun generateSyntheticPositions(count: Int): List<PortfolioPosition> = Li
     val value = if (status == PriceStatus.MISSING) null else 100_000L + index * 10_000L
     PortfolioPosition(
         instrumentUid = SYNTHETIC_UID_PREFIX + index,
-        name = "Fixture инструмент " + (index + 1),
+        name = "Демо-инструмент " + (index + 1),
         ticker = "FX" + index.toString().padStart(4, '0'),
         isin = "RUDEMO" + index.toString().padStart(6, '0'),
         quantity = (index % 50 + 1).toLong(),
@@ -341,19 +341,19 @@ private fun generateSyntheticPositions(count: Int): List<PortfolioPosition> = Li
         } else {
             RiskDataStatus.NORMAL
         },
-        priceSource = "Synthetic local fixture",
+        priceSource = "Локальный синтетический демо-набор",
         priceUpdatedLabel = when (status) {
-            PriceStatus.CURRENT -> "сейчас · fixture"
-            PriceStatus.STALE -> "3 ч назад · stale"
+            PriceStatus.CURRENT -> "сейчас · демо"
+            PriceStatus.STALE -> "3 ч назад · данные устарели"
             PriceStatus.MISSING -> "нет данных"
         },
         lotSize = 1,
         currency = DisplayCurrency.RUB,
-        payoutLabel = "Выплаты: fixture",
+        payoutLabel = "Выплаты: демо",
         issuerFacts = listOf("Синтетический QA-инструмент."),
         accounts = listOf(
             AccountPositionFixture(
-                accountLabel = "Fixture-счёт",
+                accountLabel = "Демо-счёт",
                 quantity = (index % 50 + 1).toLong(),
                 availableQuantity = (index % 50 + 1).toLong(),
                 blockedQuantity = 0,

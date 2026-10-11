@@ -141,15 +141,15 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         revision = 1,
         type = AssistantEventType.MATERIAL_EVENT,
         changed = "Зафиксировано новое событие по эмитенту, но данных недостаточно для числовой оценки.",
-        relevance = "Инструмент присутствует в локальном fixture-портфеле.",
+        relevance = "Инструмент присутствует в локальном демо-портфеле.",
         impact = null,
         sources = listOf(
             AssistantSource(
-                name = "Общий источник эмитента · fixture",
+                name = "Общий источник эмитента · демо",
                 url = T_INVEST_PUBLIC_URL,
             ),
         ),
-        occurredAt = "сегодня · 10:15 · fixture",
+        occurredAt = "сегодня · 10:15 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_POSITION,
             label = OPEN_POSITION_LABEL,
@@ -161,19 +161,19 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         eventKey = "risk-ofz-demo",
         revision = 1,
         type = AssistantEventType.RISK_CHANGE,
-        changed = "Локальный risk/data status по ОФЗ требует внимания из-за устаревшей цены.",
-        relevance = "Позиция занимает заметную долю локального fixture-портфеля.",
+        changed = "Локальное состояние риска и данных по ОФЗ требует внимания из-за устаревшей цены.",
+        relevance = "Позиция занимает заметную долю локального демо-портфеля.",
         impact = AssistantImpact(
             value = 80,
             unit = AssistantImpactUnit.BASIS_POINTS,
         ),
         sources = listOf(
             AssistantSource(
-                name = "T-Invest bond fixture",
+                name = "T-Invest · облигации (демо)",
                 url = T_INVEST_PUBLIC_URL,
             ),
         ),
-        occurredAt = "сегодня · 09:40 · fixture",
+        occurredAt = "сегодня · 09:40 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_SOURCE,
             label = "Открыть источник",
@@ -192,11 +192,11 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         ),
         sources = listOf(
             AssistantSource(
-                name = "Календарь выплат · fixture",
+                name = "Календарь выплат · демо",
                 url = null,
             ),
         ),
-        occurredAt = "сегодня · 09:10 · fixture",
+        occurredAt = "сегодня · 09:10 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_POSITION,
             label = OPEN_POSITION_LABEL,
@@ -215,11 +215,11 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         ),
         sources = listOf(
             AssistantSource(
-                name = "Календарь выплат · fixture revision 2",
+                name = "Календарь выплат · демо, уточнение 2",
                 url = null,
             ),
         ),
-        occurredAt = "сегодня · 09:12 · fixture",
+        occurredAt = "сегодня · 09:12 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.OPEN_POSITION,
             label = OPEN_POSITION_LABEL,
@@ -230,7 +230,7 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         eventKey = "cash-demo",
         revision = 1,
         type = AssistantEventType.CASH_CHANGE,
-        changed = "Свободные деньги увеличились после локального обновления fixture.",
+        changed = "Свободные деньги увеличились после локального обновления демо-данных.",
         relevance = "Доступные деньги показываются отдельно от общей стоимости портфеля.",
         impact = AssistantImpact(
             value = 1_500_000,
@@ -238,11 +238,11 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         ),
         sources = listOf(
             AssistantSource(
-                name = "Локальный snapshot · fixture",
+                name = "Локальный снимок · демо",
                 url = null,
             ),
         ),
-        occurredAt = "вчера · 18:30 · fixture",
+        occurredAt = "вчера · 18:30 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.RUN_SCENARIO,
             label = "Открыть локальный сценарий",
@@ -253,19 +253,19 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         eventKey = "scenario-demo",
         revision = 1,
         type = AssistantEventType.SCENARIO_RESULT,
-        changed = "Пользовательский сценарий завершён локальным deterministic code.",
-        relevance = "Результат относится только к выбранному пользователем fixture-сценарию.",
+        changed = "Пользовательский сценарий завершён локальным детерминированным расчётом.",
+        relevance = "Результат относится только к выбранному пользователем демо-сценарию.",
         impact = AssistantImpact(
             value = -750_000,
             unit = AssistantImpactUnit.MONEY_MINOR,
         ),
         sources = listOf(
             AssistantSource(
-                name = "Локальный scenario calculator · fixture",
+                name = "Локальный расчёт сценария · демо",
                 url = null,
             ),
         ),
-        occurredAt = "вчера · 17:05 · fixture",
+        occurredAt = "вчера · 17:05 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.RUN_SCENARIO,
             label = "Повторить сценарий",
@@ -284,11 +284,11 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         ),
         sources = listOf(
             AssistantSource(
-                name = "Локальная отметка свежести · fixture",
+                name = "Локальная отметка свежести · демо",
                 url = null,
             ),
         ),
-        occurredAt = "сегодня · 08:50 · fixture",
+        occurredAt = "сегодня · 08:50 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.SYNC,
             label = "Проверить синхронизацию",
@@ -300,18 +300,18 @@ private fun assistantRawFixture(): List<AssistantRawEvent> = listOf(
         revision = 1,
         type = AssistantEventType.SYNC_REQUIRED,
         changed = "Последняя персональная синхронизация не подтверждена.",
-        relevance = "Без свежего snapshot персональные расчёты ограничены.",
+        relevance = "Без свежего снимка персональные расчёты ограничены.",
         impact = AssistantImpact(
             value = 240,
             unit = AssistantImpactUnit.MINUTES,
         ),
         sources = listOf(
             AssistantSource(
-                name = "Локальное состояние синхронизации · fixture",
+                name = "Локальное состояние синхронизации · демо",
                 url = null,
             ),
         ),
-        occurredAt = "сегодня · 08:20 · fixture",
+        occurredAt = "сегодня · 08:20 · демо",
         action = AssistantAction(
             kind = AssistantActionKind.SYNC,
             label = "Проверить синхронизацию",

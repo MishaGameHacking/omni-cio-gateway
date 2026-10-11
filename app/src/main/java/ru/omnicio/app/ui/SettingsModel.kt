@@ -7,6 +7,7 @@ internal data class LocalSettingsState(
     val portfolioPresent: Boolean = true,
     val brokerConnected: Boolean = false,
     val brokerCredentialPresent: Boolean = false,
+    val brokerRevoked: Boolean = false,
     val dependentJobsRunning: Boolean = false,
     val reserveMinor: Long = DEFAULT_RESERVE_MINOR,
     val goalHorizonYears: Int = DEFAULT_GOAL_HORIZON_YEARS,
@@ -30,12 +31,21 @@ internal fun connectBrokerFixtureState(state: LocalSettingsState): LocalSettings
     portfolioPresent = true,
     brokerConnected = true,
     brokerCredentialPresent = true,
+    brokerRevoked = false,
     dependentJobsRunning = true,
 )
 
 internal fun disconnectBrokerState(state: LocalSettingsState): LocalSettingsState = state.copy(
     brokerConnected = false,
     brokerCredentialPresent = false,
+    brokerRevoked = false,
+    dependentJobsRunning = false,
+)
+
+internal fun revokeBrokerFixtureState(state: LocalSettingsState): LocalSettingsState = state.copy(
+    brokerConnected = false,
+    brokerCredentialPresent = true,
+    brokerRevoked = true,
     dependentJobsRunning = false,
 )
 
@@ -82,27 +92,27 @@ internal fun commonSourceCategories(): List<CommonSourceCategory> = listOf(
         detail = "Официальные общие макроэкономические и регуляторные данные.",
     ),
     CommonSourceCategory(
-        name = "T-Invest read-only",
-        detail = "Персональный доступ подключается отдельно; на UI-этапе используется только fixture.",
+        name = "T-Invest · только чтение",
+        detail = "Персональный доступ подключается отдельно; в этой версии используется только демо-состояние.",
     ),
 )
 
 internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
     SubscriptionTierUi(
         name = "Наблюдение",
-        status = "Доступно в текущем analytics-first режиме.",
+        status = "Доступно в текущем аналитическом режиме.",
         available = true,
         purchasable = false,
     ),
     SubscriptionTierUi(
         name = "Аналитика",
-        status = "Может стать доступна после SYS-10/SYS-11.",
+        status = "Может стать доступна после подключения соответствующей системной функции.",
         available = false,
         purchasable = false,
     ),
     SubscriptionTierUi(
         name = "Персональный план",
-        status = "Недоступен и не продаётся при закрытом regulated gate.",
+        status = "Недоступен и не продаётся при закрытом регуляторного допуска.",
         available = false,
         purchasable = false,
     ),
@@ -121,9 +131,10 @@ internal fun subscriptionTiers(): List<SubscriptionTierUi> = listOf(
 )
 
 internal fun buildLocalExportSummary(state: LocalSettingsState): String = listOf(
-    "OMNICIO local export · fixture",
+    "OMNICIO · локальный экспорт демо-данных",
     "portfolio_present=" + state.portfolioPresent,
     "broker_connected=" + state.brokerConnected,
+    "broker_revoked=" + state.brokerRevoked,
     "reserve_minor=" + state.reserveMinor,
     "goal_horizon_years=" + state.goalHorizonYears,
     "notifications_enabled=" + state.notificationsEnabled,

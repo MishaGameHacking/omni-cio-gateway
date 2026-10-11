@@ -39,12 +39,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,6 +55,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navDeepLink
 import ru.omnicio.app.R
 import ru.omnicio.app.ui.theme.OmniSpacing
 import ru.omnicio.app.ui.theme.OmnicioTheme
@@ -63,6 +67,7 @@ private const val ROUTE_PORTFOLIO = "portfolio"
 private const val ROUTE_POSITION = "position"
 private const val ROUTE_ASSISTANT = "assistant"
 private const val ROUTE_SETTINGS = "settings"
+private const val DEEP_LINK_PREFIX = "omnicio://"
 
 private data class Destination(
     val label: String,
@@ -101,7 +106,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
         composable(ROUTE_PRIVACY) {
             PrivacyScreen(onBack = { navController.popBackStack() })
         }
-        composable(ROUTE_OVERVIEW) {
+        composable(
+            route = ROUTE_OVERVIEW,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_OVERVIEW })
+            } else {
+                emptyList()
+            },
+        ) {
             MainShell(
                 selected = ROUTE_OVERVIEW,
                 onNavigate = navController::navigateMain,
@@ -115,7 +127,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_PORTFOLIO) {
+        composable(
+            route = ROUTE_PORTFOLIO,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_PORTFOLIO })
+            } else {
+                emptyList()
+            },
+        ) {
             MainShell(
                 selected = ROUTE_PORTFOLIO,
                 onNavigate = navController::navigateMain,
@@ -130,7 +149,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_POSITION + "/{uid}") { backStackEntry ->
+        composable(
+            route = ROUTE_POSITION + "/{uid}",
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_POSITION + "/{uid}" })
+            } else {
+                emptyList()
+            },
+        ) { backStackEntry ->
             val uid = backStackEntry.arguments?.getString("uid").orEmpty()
             MainShell(
                 selected = ROUTE_PORTFOLIO,
@@ -144,7 +170,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_ASSISTANT) {
+        composable(
+            route = ROUTE_ASSISTANT,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_ASSISTANT })
+            } else {
+                emptyList()
+            },
+        ) {
             MainShell(
                 selected = ROUTE_ASSISTANT,
                 onNavigate = navController::navigateMain,
@@ -158,7 +191,14 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 )
             }
         }
-        composable(ROUTE_SETTINGS) {
+        composable(
+            route = ROUTE_SETTINGS,
+            deepLinks = if (uiState.onboardingComplete) {
+                listOf(navDeepLink { uriPattern = DEEP_LINK_PREFIX + ROUTE_SETTINGS })
+            } else {
+                emptyList()
+            },
+        ) {
             SettingsScreen(
                 uiState = uiState,
                 onBack = { navController.popBackStack() },
@@ -166,6 +206,8 @@ internal fun OmnicioApp(appViewModel: OmnicioViewModel = viewModel()) {
                 onRestoreDemoPortfolio = appViewModel::restoreDemoPortfolio,
                 onConnectBrokerFixture = appViewModel::connectBrokerFixture,
                 onDisconnectBroker = appViewModel::disconnectBroker,
+                onRevokeBrokerFixture = appViewModel::revokeBrokerFixture,
+                onRetryMigration = appViewModel::retryLocalMigration,
                 onReserveMinor = appViewModel::setReserveMinor,
                 onGoalHorizonYears = appViewModel::setGoalHorizonYears,
                 onNotificationsEnabled = appViewModel::setNotificationsEnabled,
@@ -224,11 +266,11 @@ private fun OnboardingScreen(
             )
             InfoCard(
                 title = "Общий рынок — отдельный слой",
-                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный demo-портфель туда не отправляется.",
+                body = "Общие рыночные данные и аналитика могут приходить с Timeweb. Локальный демо-портфель туда не отправляется.",
             )
             InfoCard(
                 title = "T-Invest подключается добровольно",
-                body = "На UI-этапе мы только показываем read-only сценарий. Брокерский токен приложение ещё не запрашивает.",
+                body = "В этой версии мы только показываем режим чтения. Брокерский токен приложение ещё не запрашивает.",
             )
 
             Button(
@@ -243,7 +285,7 @@ private fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(vertical = 15.dp),
             ) {
-                Text("Подключить T-Invest read-only")
+                Text("Подключить T-Invest только для чтения")
             }
             TextButton(
                 onClick = onOpenPrivacy,
@@ -269,7 +311,7 @@ private fun OnboardingScreen(
     if (showBrokerInfo) {
         AlertDialog(
             onDismissRequest = { showBrokerInfo = false },
-            title = { Text("T-Invest · read-only") },
+            title = { Text("T-Invest · только чтение") },
             text = {
                 Text(
                     "Подключение брокера появится на системном этапе. Сейчас OMNICIO " +
@@ -310,15 +352,15 @@ private fun PrivacyScreen(onBack: () -> Unit) {
 
             InfoCard(
                 title = "Только на устройстве",
-                body = "Локальный ID установки, fixture-портфель, настройки отображения и будущие персональные параметры local-first режима.",
+                body = "Локальный ID установки, демо-портфель, настройки отображения и будущие персональные параметры локального режима.",
             )
             InfoCard(
                 title = "Общие запросы",
-                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-этап не отправляет туда суммы, позиции или fixture-портфель.",
+                body = "Timeweb предназначен для общих рыночных данных и аналитики. UI-этап не отправляет туда суммы, позиции или демо-портфель.",
             )
             InfoCard(
                 title = "Брокерский доступ",
-                body = "На UI-этапе T-Invest token отсутствует. Позже read-only credential будет вводиться отдельно и не станет публичным логином OMNICIO.",
+                body = "В этой версии токен T-Invest отсутствует. Позже учётные данные только для чтения будут вводиться отдельно и не станут публичным логином OMNICIO.",
             )
 
             Button(
@@ -341,8 +383,14 @@ private fun MainShell(
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp
-        if (wide) {
+        val fontScale = LocalDensity.current.fontScale
+        val layoutMode = effectiveLayoutMode(maxWidth.value.toInt(), fontScale)
+        val horizontalPadding = when (layoutMode) {
+            AppLayoutMode.COMPACT -> OmniSpacing.sm
+            AppLayoutMode.STANDARD -> OmniSpacing.lg
+            AppLayoutMode.WIDE -> OmniSpacing.xl
+        }
+        if (layoutMode == AppLayoutMode.WIDE) {
             Row(modifier = Modifier.fillMaxSize()) {
                 NavigationRail(
                     modifier = Modifier.fillMaxHeight(),
@@ -352,7 +400,12 @@ private fun MainShell(
                         NavigationRailItem(
                             selected = destination.route == selected,
                             onClick = { onNavigate(destination.route) },
-                            icon = { Text(destination.marker) },
+                            icon = {
+                                Text(
+                                    text = destination.marker,
+                                    modifier = Modifier.clearAndSetSemantics {},
+                                )
+                            },
                             label = { Text(destination.label) },
                         )
                     }
@@ -361,7 +414,7 @@ private fun MainShell(
                     topBar = { AppTopBar(selected, onOpenSettings) },
                     modifier = Modifier.weight(1f),
                 ) { padding ->
-                    ScreenContainer(padding, scrollable, content)
+                    ScreenContainer(padding, scrollable, horizontalPadding, content)
                 }
             }
         } else {
@@ -373,14 +426,19 @@ private fun MainShell(
                             NavigationBarItem(
                                 selected = destination.route == selected,
                                 onClick = { onNavigate(destination.route) },
-                                icon = { Text(destination.marker) },
+                                icon = {
+                                Text(
+                                    text = destination.marker,
+                                    modifier = Modifier.clearAndSetSemantics {},
+                                )
+                            },
                                 label = { Text(destination.label) },
                             )
                         }
                     }
                 },
             ) { padding ->
-                ScreenContainer(padding, scrollable, content)
+                ScreenContainer(padding, scrollable, horizontalPadding, content)
             }
         }
     }
@@ -393,6 +451,7 @@ private fun AppTopBar(
     onOpenSettings: () -> Unit,
 ) {
     val title = mainDestinations.firstOrNull { it.route == selected }?.label ?: "OMNICIO"
+    val largeFont = shouldStackDetailLine(LocalDensity.current.fontScale)
     TopAppBar(
         title = {
             Column {
@@ -400,16 +459,18 @@ private fun AppTopBar(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
                 )
-                Text(
-                    text = "OMNICIO · ДЕМО",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!largeFont) {
+                    Text(
+                        text = "OMNICIO · ДЕМО",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         actions = {
             TextButton(onClick = onOpenSettings) {
-                Text("Настройки")
+                Text(if (largeFont) "Настр." else "Настройки")
             }
         },
     )
@@ -419,6 +480,7 @@ private fun AppTopBar(
 private fun ScreenContainer(
     padding: PaddingValues,
     scrollable: Boolean,
+    horizontalPadding: Dp,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -431,7 +493,7 @@ private fun ScreenContainer(
             .fillMaxWidth()
             .align(Alignment.TopCenter)
             .padding(
-                horizontal = OmniSpacing.lg,
+                horizontal = horizontalPadding,
                 vertical = OmniSpacing.md,
             )
 
