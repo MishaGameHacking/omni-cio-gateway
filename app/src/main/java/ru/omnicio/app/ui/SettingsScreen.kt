@@ -146,7 +146,9 @@ internal fun SettingsScreen(
             )
         }
         item {
-            NotificationPermissionCard()
+            NotificationPermissionCard(
+                notificationsEnabled = settings.notificationsEnabled,
+            )
         }
         item {
             RuntimeEnvironmentCard()
@@ -463,7 +465,9 @@ private fun MigrationStatusCard(
 }
 
 @Composable
-private fun NotificationPermissionCard() {
+private fun NotificationPermissionCard(
+    notificationsEnabled: Boolean,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val required = notificationPermissionRequired(Build.VERSION.SDK_INT)
@@ -493,6 +497,13 @@ private fun NotificationPermissionCard() {
 
     SettingsCard(title = "Разрешение уведомлений") {
         when {
+            !notificationsEnabled -> {
+                StatusPill("УВЕДОМЛЕНИЯ В ПРИЛОЖЕНИИ ВЫКЛЮЧЕНЫ")
+                Text(
+                    text = "Сначала включите локальные уведомления выше. Системный запрос Android не показывается без необходимости.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             !required -> {
                 Text("Для этой версии Android отдельное системное разрешение не требуется.")
             }
