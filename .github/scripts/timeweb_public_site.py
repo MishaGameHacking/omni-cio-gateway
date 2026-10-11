@@ -22,9 +22,9 @@ if re.fullmatch('[a-f0-9]{40}', sha) is None:
 base = pathlib.Path('/var/www/omnicio.ru/releases')
 site = pathlib.Path('/etc/nginx/sites-available/omnicio.ru')
 original = site.read_text()
-roots = set(re.findall(r'root (/var/www/omnicio.ru/releases/[a-f0-9]{40}(?:-public)?);', original))
-root_count = len(re.findall(
-    r'root /var/www/omnicio.ru/releases/[a-f0-9]{40}(?:-public)?;', original))
+root_pattern = r'root (' + re.escape(base.as_posix()) + r'/[a-f0-9]{40}(?:-public)?);'
+roots = set(re.findall(root_pattern, original))
+root_count = len(re.findall(root_pattern, original))
 if len(roots) != 1 or original.count('root ') != root_count:
     raise SystemExit('unrecognized_public_root')
 previous = pathlib.Path(roots.pop())
@@ -70,7 +70,7 @@ if (previous / 'downloads').is_dir():
     if manifest.is_file() and json.loads(manifest.read_text()).get('status') == 'published':
         shutil.copytree(previous / 'downloads', target / 'downloads',
                         dirs_exist_ok=True, symlinks=False)
-changed = original.replace(str(previous), str(target))
+changed = original.replace(previous.as_posix(), target.as_posix())
 changed, count = re.subn(r'add_header X-Omnicio-Build "[a-f0-9]{12}";',
                         'add_header X-Omnicio-Build "'+sha[:12]+'";', changed)
 if not count or 'proxy_pass http://127.0.0.1:8001;' not in changed:

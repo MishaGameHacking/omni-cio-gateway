@@ -29,15 +29,17 @@ def test_remote_publication_readback_and_rollback_without_api_mutation(tmp_path,
     for name in ("privacy.html", "terms.html", "consent.html"):
         (previous / "legal" / name).write_text("current-running-api-legal-version")
     site = tmp_path / "nginx.conf"
-    original = (f"root {previous};\n"
+    original = (f"root {previous.as_posix()};\n"
                 'add_header X-Omnicio-Build "aaaaaaaaaaaa";\n'
                 'location /api/ { proxy_pass http://127.0.0.1:8001; }')
     site.write_text(original)
     sha = "b" * 40
     root = SCRIPT.parents[2]
     payload = json.loads(MODULE["public_payload"](root, sha))
-    program = MODULE["REMOTE_PUBLISH"].replace("/var/www/omnicio.ru/releases", str(base))
-    program = program.replace("/etc/nginx/sites-available/omnicio.ru", str(site))
+    program = MODULE["REMOTE_PUBLISH"].replace(
+        "pathlib.Path('/var/www/omnicio.ru/releases')", f"pathlib.Path({str(base)!r})")
+    program = program.replace("pathlib.Path('/etc/nginx/sites-available/omnicio.ru')",
+                              f"pathlib.Path({str(site)!r})")
     compiled_program = compile(program, "remote-publication", "exec")
     commands = []
 
@@ -72,7 +74,7 @@ def test_remote_publication_readback_and_rollback_without_api_mutation(tmp_path,
             exec(compiled_program, {})
             assert json.loads(output.getvalue())["api_unchanged"] is True
     assert site.read_text() == (original if fail_readback else original.replace(
-        str(previous), str(base / (sha + "-public")),
+        previous.as_posix(), (base / (sha + "-public")).as_posix(),
     ).replace("aaaaaaaaaaaa", sha[:12]))
     assert set(tuple(command) for command in commands) == {
         ("nginx", "-t"), ("systemctl", "reload", "nginx"),
