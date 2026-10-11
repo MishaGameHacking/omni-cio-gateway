@@ -116,8 +116,25 @@ jobs:
         run: |
           call gradlew.bat --version
           if errorlevel 1 exit /b 1
-          call gradlew.bat :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:compileReleaseKotlin --stacktrace
+          call gradlew.bat :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:assembleDebug :app:compileReleaseKotlin --stacktrace
           if errorlevel 1 exit /b 1
+
+      - name: Verify release signing guard
+        shell: cmd
+        run: |
+          set "GUARD_LOG=%RUNNER_TEMP%\omnicio-release-signing-guard.log"
+          call gradlew.bat :app:assembleRelease --no-configuration-cache > "%GUARD_LOG%" 2>&1
+          if not errorlevel 1 (
+            echo Release packaging unexpectedly succeeded without protected signing credentials.
+            type "%GUARD_LOG%"
+            exit /b 1
+          )
+          findstr /C:"Release packaging requires OMNICIO release signing credentials" "%GUARD_LOG%" >nul
+          if errorlevel 1 (
+            echo Release packaging failed for an unexpected reason.
+            type "%GUARD_LOG%"
+            exit /b 1
+          )
 
       - name: Upload exact-head debug APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
