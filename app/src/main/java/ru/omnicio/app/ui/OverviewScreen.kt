@@ -34,7 +34,7 @@ internal fun OverviewScreen(
 ) {
     val snapshot = overviewSnapshot(uiState.overviewMode, uiState.displayCurrency)
 
-    StatusPill("ДЕМО · UI-02 · " + snapshot.freshnessLabel)
+    StatusPill("ДЕМО · " + snapshot.freshnessLabel)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -344,7 +344,7 @@ private fun DemoStateSelector(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "Переключатель существует только для проверки UI-02 на демо-данных.",
+            text = "Переключатель существует только для проверки состояний на демо-данных.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
