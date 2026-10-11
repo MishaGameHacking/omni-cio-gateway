@@ -1607,8 +1607,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertEqual(len(locations), len(re.findall(r"^    location ", https, re.M)))
         self.assertTrue({
             "/", "/api/", "/health/", "/assets/", "= /assets/app.css",
-            "= /assets/tokens.css", "= /assets/config.js",
-            "= /assets/app.js", "= /assets/workspace.js", "= /assets/i18n.js",
+            "= /assets/tokens.css",
+            "= /assets/app.js",
             "= /sw.js", "= /offline.html", "= /manifest.webmanifest", "= /version.js",
         }.issubset(locations))
         for location, scope in locations.items():
@@ -1986,10 +1986,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertLessEqual(required, routes, required - routes)
         self.assertNotIn(("post", "/api/profile/strategy/feasibility"), routes)
         self.assertIn(MODULE.SITE_MARKER, page)
-        self.assertIn('id="app-sidebar"', page)
-        self.assertIn('id="auth-dialog"', page)
-        self.assertIn('id="global-search-form"', page)
-        self.assertIn('type="password"', page)
+        self.assertIn('id="download"', page)
+        self.assertNotIn('<form', page)
+        self.assertNotIn('type="password"', page)
         for path in MODULE.LEGAL_PAGES:
             self.assertIn(path, page)
 
@@ -2004,20 +2003,11 @@ class AuthAppDeployTests(unittest.TestCase):
             shipped = set(archive.getnames())
         for asset in MODULE.BRAND_RUNTIME_FILES:
             self.assertIn(asset, shipped)
-        self.assertIn("assets/brand/web/earth-hero.png", shipped)
-        self.assertIn("assets/brand/web/auth-mountains.png", shipped)
-        # Join shell continuations while preserving quoted paths, argument order and modes.
-        deployment_script = re.sub(r"\\\n[ \t]*", "", MODULE.REMOTE_DEPLOY_SCRIPT)
-        for name in ("earth-hero.png", "auth-mountains.png"):
-            self.assertIn(
-                f'install -m 0644 "$RELEASE/assets/brand/web/{name}" '
-                f'"$WEB_RELEASE/assets/brand/{name}"', deployment_script,
-            )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
         manifest = json.loads((root / "web" / "manifest.webmanifest").read_text(
             encoding="utf-8",
         ))
-        self.assertEqual(manifest["name"], "OMNICIO")
+        self.assertEqual(manifest["name"], "OMNICIO — о приложении")
         for icon in manifest["icons"]:
             name = icon["src"].rsplit("/", 1)[-1]
             self.assertEqual(name, "omnicio-logo.png")
@@ -2039,14 +2029,11 @@ class AuthAppDeployTests(unittest.TestCase):
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
         deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
 
-        self.assertGreaterEqual(page.count("data-app-version"), 3)
-        self.assertIn("data-app-build", page)
+        self.assertEqual(page.count("data-app-version"), 1)
         self.assertIn("__OMNICIO_VERSION__", page)
         self.assertIn("__OMNICIO_BUILD__", page)
-        self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('/assets/config.js?build=__OMNICIO_BUILD__', page)
         self.assertIn('/assets/tokens.css?build=__OMNICIO_BUILD__', page)
         self.assertIn(
             '"$RELEASE/.venv/bin/python" -m omnicio.web_assets '
@@ -2060,10 +2047,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn("location = /assets/app.css", script)
         self.assertIn("location = /assets/tokens.css", script)
-        self.assertIn("location = /assets/config.js", script)
         self.assertIn("location = /assets/app.js", script)
-        self.assertIn("location = /assets/workspace.js", script)
-        self.assertIn("location = /assets/i18n.js", script)
         self.assertIn("location = /sw.js", script)
         self.assertIn("location = /offline.html", script)
         self.assertIn("location = /version.js", script)
@@ -2108,7 +2092,7 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'const build = "{build[:12]}"', worker)
             self.assertNotIn("__OMNICIO_BUILD__", offline)
             self.assertNotIn("__OMNICIO_BUILD__", worker)
-            for name in ("app.js", "workspace.js", "i18n.js", "config.js", "tokens.css", "app.css"):
+            for name in ("app.js", "tokens.css", "app.css"):
                 script = (output / "assets" / name).read_text(encoding="utf-8")
                 self.assertIn(build[:12], script)
                 self.assertNotIn("__OMNICIO_BUILD__", script)
@@ -2209,16 +2193,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "/api/auth/config": (config, "application/json", 200),
         }
         for path, body, content_type in (
-            ("/assets/config.js", b"OMNICIO_CONFIG " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/tokens.css", b"--browser-theme-dark " + self.sha[:12].encode(), "text/css"),
-            ("/assets/app.js", b"window.OmniUI " + self.sha[:12].encode(), "text/javascript"),
-            ("/assets/workspace.js", b"window.OmniUI " + self.sha[:12].encode(),
-             "application/javascript"),
-            ("/assets/i18n.js", b"OMNICIO_I18N " + self.sha[:12].encode(), "text/javascript"),
-            ("/assets/app.css", b"--sidebar:240px " + self.sha[:12].encode(), "text/css"),
-            ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
-            ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
-            ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/app.js", b"Public product site " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/app.css", b".site-header " + self.sha[:12].encode(), "text/css"),
+            ("/sw.js", b"OMNICIO build " + self.sha[:12].encode(), "text/javascript"),
             (
                 "/offline.html",
                 b'<html lang="ru">' + self.sha[:12].encode() + b'</html>', "text/html",
@@ -2322,19 +2300,14 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
             (
-                f"/assets/config.js?build={self.sha[:12]}",
-                b"OMNICIO_CONFIG old", "text/javascript", 200,
+                f"/assets/app.js?build={self.sha[:12]}",
+                b"Public product site old", "text/javascript", 200,
             ),
             (
                 f"/assets/tokens.css?build={self.sha[:12]}",
                 b"--browser-theme-dark old", "text/css", 200,
             ),
-            (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
-            (f"/assets/brand/earth-hero.png?build={self.sha[:12]}", b"missing", "image/png", 200),
-            (
-                f"/assets/brand/auth-mountains.png?build={self.sha[:12]}",
-                b"<html>fallback</html>", "text/html", 200,
-            ),
+            (f"/assets/app.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
             (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
             (
                 f"/sw.js?build={self.sha[:12]}",

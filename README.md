@@ -1,7 +1,7 @@
 # OMNICIO — Android и сервер Timeweb
 
 Актуальное поручение владельца от **11.10.2026** заменяет прежний local-first/fixture этап.
-Android 2.6.0 (`versionCode=8`) — нативный Kotlin/Compose клиент существующего HTTPS API `https://omnicio.ru`.
+Android 2.6.1 (`versionCode=9`) — нативный Kotlin/Compose клиент существующего HTTPS API `https://omnicio.ru`.
 Брендовая иконка и applicationId сохранены. Деморежима нет ни в debug, ни в release.
 
 ## Архитектура

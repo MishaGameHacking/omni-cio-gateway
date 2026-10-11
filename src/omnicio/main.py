@@ -73,6 +73,7 @@ from .security import (
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
     SecurityValueError,
+    client_ip_digest,
     format_public_id,
     session_digest,
 )
@@ -132,12 +133,16 @@ class EmailLoginBody(StrictRequestBody):
     password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH, repr=False)
 
 
-class EmailRegistrationBody(EmailLoginBody):
+class LegalConsentBody(StrictRequestBody):
     accept_privacy: bool = Field(strict=True)
     accept_personal_data: bool = Field(strict=True)
     accept_terms: bool = Field(strict=True)
     confirm_age_18: bool = Field(strict=True)
     legal_versions: dict[str, str]
+
+
+class EmailRegistrationBody(EmailLoginBody, LegalConsentBody):
+    pass
 
 
 class EmailChallengeBody(StrictRequestBody):
@@ -620,7 +625,7 @@ def _login_response(result: LoginSucceeded, response: Response) -> dict[str, obj
     return {"public_id": result.public_id, "created": result.created}
 
 
-def _registration_legal(body: EmailRegistrationBody, request: Request) -> dict[str, str]:
+def _registration_legal(body: LegalConsentBody, request: Request) -> dict[str, str]:
     if not (body.accept_privacy and body.accept_personal_data and body.accept_terms):
         raise HTTPException(status_code=400, detail="legal_acknowledgments_required")
     if not body.confirm_age_18:
@@ -628,6 +633,35 @@ def _registration_legal(body: EmailRegistrationBody, request: Request) -> dict[s
     if body.legal_versions != service(request).legal_versions():
         raise HTTPException(status_code=409, detail="legal_versions_changed")
     return body.legal_versions
+
+
+@app.get("/api/auth/legal", responses=_API_FAILURES)
+def legal_status(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    database: Database = request.app.state.database
+    versions = service(request).legal_versions()
+    return _workspace_result(request, session_token, user, {
+        "legal_versions": versions,
+        "accepted": database.has_legal_versions(user.id, versions),
+    })
+
+
+@app.post("/api/auth/legal", responses=_API_FAILURES)
+def accept_legal(
+    body: LegalConsentBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    versions = _registration_legal(body, request)
+    database: Database = request.app.state.database
+    return _session_action(request, session_token, user, lambda: database.accept_legal_versions(
+        user.id, session_digest(session_token or ""), versions,
+        client_ip_hash=client_ip_digest(client_ip(request), settings(request).ip_key),
+    ))
 
 
 @app.post("/api/auth/email/register", status_code=202, responses=_API_FAILURES)

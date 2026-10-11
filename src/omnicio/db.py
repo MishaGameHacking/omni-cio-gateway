@@ -913,6 +913,26 @@ class Database:
             )
             return cur.fetchone() is not None
 
+    def accept_legal_versions(
+        self, user_id: UUID, current_digest: bytes, legal_versions: dict[str, str],
+        *, client_ip_hash: bytes,
+    ) -> dict[str, Any]:
+        """Record explicit current consent atomically under the existing session lock."""
+        if (set(legal_versions) != {"privacy_policy", "personal_data_consent", "terms"}
+                or any(not value for value in legal_versions.values())):
+            raise ValueError("legal_versions_unavailable")
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._active_session(cur, user_id, current_digest)
+            for document_type, version in legal_versions.items():
+                cur.execute(
+                    "INSERT INTO legal_acceptances "
+                    "(user_id, document_type, document_version, client_ip_hash) "
+                    "VALUES (%s, %s, %s, %s) ON CONFLICT "
+                    "(user_id, document_type, document_version) DO NOTHING",
+                    (user_id, document_type, version, client_ip_hash),
+                )
+        return {"accepted": True, "legal_versions": legal_versions}
+
     def has_legal_versions(
         self,
         user_id: UUID,

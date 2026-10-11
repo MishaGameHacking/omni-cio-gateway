@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import __version__
 
-SCRIPT_ASSETS = ("config.js", "i18n.js", "workspace.js", "app.js")
+SCRIPT_ASSETS = ("app.js",)
 INDEX_ASSET = "index.html"
 PALETTE_ASSET = "tokens.css"
 STYLE_ASSETS = (PALETTE_ASSET, "app.css")
@@ -96,6 +96,7 @@ def render_web_assets(
         + json.dumps({"version": version, "build": build}, separators=(",", ":"))
         + ";\n"
     )
+    rendered["downloads/android.json"] = json.dumps({"status": "unpublished"}) + "\n"
     return rendered
 
 

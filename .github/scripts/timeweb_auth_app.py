@@ -64,11 +64,7 @@ BRAND_SOURCE = "assets/brand/omnicio-logo.png"
 # The unchanged owner-provided PNG and the two existing backgrounds total 6 MiB.
 # Keep a bounded archive budget that includes that explicit brand requirement.
 MAX_RELEASE_ARCHIVE_BYTES = 8 * 1024 * 1024
-BRAND_RUNTIME_FILES = (
-    BRAND_SOURCE,
-    "assets/brand/web/earth-hero.png",
-    "assets/brand/web/auth-mountains.png",
-)
+BRAND_RUNTIME_FILES = (BRAND_SOURCE,)
 BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
@@ -795,10 +791,6 @@ python3 -m venv "$RELEASE/.venv"
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/assets/brand/omnicio-logo.png" \
     "$WEB_RELEASE/assets/brand/omnicio-logo.png"
-install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" \
-    "$WEB_RELEASE/assets/brand/earth-hero.png"
-install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" \
-    "$WEB_RELEASE/assets/brand/auth-mountains.png"
 # Existing installed clients may still request the former PNG URLs. All resolve
 # to the owner's unchanged original, while the new manifest uses its canonical URL.
 for name in apple-touch-icon-180.png pwa-icon-192.png pwa-icon-512.png pwa-maskable-512.png; do
@@ -1152,11 +1144,7 @@ __OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
-    location = /assets/config.js {
-        try_files $uri =404;
-__OMNICIO_LOCATION_SECURITY_HEADERS__
-        add_header Cache-Control "no-cache";
-    }
+
 
     location = /assets/app.css {
         try_files $uri =404;
@@ -1170,17 +1158,9 @@ __OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
-    location = /assets/workspace.js {
-        try_files $uri =404;
-__OMNICIO_LOCATION_SECURITY_HEADERS__
-        add_header Cache-Control "no-cache";
-    }
 
-    location = /assets/i18n.js {
-        try_files $uri =404;
-__OMNICIO_LOCATION_SECURITY_HEADERS__
-        add_header Cache-Control "no-cache";
-    }
+
+
 
     location = /sw.js {
         try_files $uri =404;
@@ -1527,15 +1507,10 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     verify_public_version_script(version_body, release_sha)
 
     runtime_assets = (
-        ("/assets/config.js", b"OMNICIO_CONFIG", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/tokens.css", b"--browser-theme-dark", ("text/css",)),
-        ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
-        ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
-        ("/assets/i18n.js", b"OMNICIO_I18N", JAVASCRIPT_CONTENT_TYPES),
-        ("/assets/app.css", b"--sidebar", ("text/css",)),
-        ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
-        ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
-        ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/app.js", b"Public product site", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/app.css", b".site-header", ("text/css",)),
+        ("/sw.js", b"OMNICIO build", JAVASCRIPT_CONTENT_TYPES),
         ("/offline.html", b"<html", ("text/html",)),
     )
     for path, marker, content_types in runtime_assets:
@@ -1543,7 +1518,6 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
         if path in {"/sw.js", "/offline.html", "/assets/app.js", "/assets/app.css",
-                    "/assets/workspace.js", "/assets/i18n.js", "/assets/config.js",
                     "/assets/tokens.css"} and (
             release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
         ):
@@ -1670,6 +1644,7 @@ def reconcile(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--scope", choices=("application", "public_site"), default="application")
     parser.add_argument("--server-name", required=True)
     parser.add_argument("--server-comment", required=True)
     parser.add_argument("--release-sha", required=True)
@@ -1686,6 +1661,14 @@ def main() -> int:
     try:
         validate_operation("apply", release_sha=args.release_sha)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
+        if args.scope == "public_site":
+            from timeweb_public_site import publish_public_site
+            publish_public_site(client, root=pathlib.Path(args.repository_root).resolve(),
+                                sha=args.release_sha, server_name=args.server_name,
+                                server_comment=args.server_comment)
+            set_output("status", "public_site_ready")
+            add_summary("- Public site verified; API release and database unchanged.")
+            return 0
         return reconcile(
             client,
             server_name=args.server_name,

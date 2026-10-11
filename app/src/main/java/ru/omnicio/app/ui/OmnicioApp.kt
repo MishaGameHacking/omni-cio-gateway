@@ -74,6 +74,8 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
     OmnicioTheme(darkTheme = state.darkTheme) {
         if (!state.authenticated) {
             AuthScreen(state, model)
+        } else if (state.legalConsent != null) {
+            LegalConsentScreen(state, model)
         } else BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 600.dp
             Scaffold(
@@ -208,32 +210,47 @@ private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
 
 @Composable
 private fun VerifyForm(state: AppUiState, model: OmnicioViewModel, form: AuthFormState) {
+    val digits = state.authConfig?.optInt("email_code_digits") ?: 0
+    var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+    LaunchedEffect(state.challengeId) {
+        while (isActive) { now = android.os.SystemClock.elapsedRealtime(); delay(1000) }
+    }
     SectionTitle("Проверьте почту")
     Text("Введите код из письма. Не закрывайте приложение до подтверждения.")
-    OutlinedTextField(form.code, { form.code = it.filter(Char::isDigit).take(6) },
-        label = { Text("Код из письма") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+    OutlinedTextField(form.code, { form.code = it.filter { c -> c in '0'..'9' }.take(digits) },
+        label = { Text("Код из письма · $digits цифр") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
     if (state.challengePurpose == "reset") SecretField(form.password, { form.password = it }, "Новый пароль")
     Button(onClick = { model.verify(form.code, form.password); form.password = ""; form.code = "" },
-        enabled = !state.busy && form.code.length == 6 &&
+        enabled = !state.busy && digits > 0 && form.code.length == digits && now < state.challengeExpiresAt &&
             (state.challengePurpose != "reset" || form.password.isNotBlank()), modifier = Modifier.fillMaxWidth()) {
         Text("Подтвердить")
     }
-    TextButton(onClick = model::resendCode, enabled = !state.busy) { Text("Отправить код повторно") }
+    if (now >= state.challengeExpiresAt) Text("Срок действия кода истёк. Запросите новый код.")
+    TextButton(onClick = model::resendCode, enabled = !state.busy && now >= state.resendAt) {
+        Text(if (now >= state.resendAt) "Отправить код повторно"
+            else "Повторная отправка через ${(state.resendAt - now + 999) / 1000} с")
+    }
     TextButton(onClick = model::cancelChallenge, enabled = !state.busy) { Text("Вернуться ко входу") }
 }
 
 @Composable
 private fun SignInForm(state: AppUiState, model: OmnicioViewModel, form: AuthFormState) {
+    val available = state.authConfig?.optBoolean(when (form.mode) {
+        "register" -> "registration_available"
+        "reset" -> "password_reset_available"
+        else -> "login_enabled"
+    }, false) == true
     SectionTitle(form.title)
+    if (state.authConfig != null && !available) Text("Этот способ доступа временно недоступен. Повторите проверку позже.")
     OutlinedTextField(form.email, { form.email = it }, label = { Text("Электронная почта") },
         modifier = Modifier.fillMaxWidth(), singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
     if (form.mode != "reset") SecretField(form.password, { form.password = it }, "Пароль")
     if (form.mode == "register") RegistrationConsent(form)
-    Button(onClick = { form.submit(model) }, enabled = !state.busy && state.authConfig != null && form.valid,
+    Button(onClick = { form.submit(model) }, enabled = !state.busy && available && form.valid,
         modifier = Modifier.fillMaxWidth()) { Text(form.submitLabel) }
-    if (state.authConfig == null && !state.busy) OutlinedButton(onClick = model::loadConfig) { Text("Повторить подключение") }
+    if ((state.authConfig == null || !available) && !state.busy) OutlinedButton(onClick = model::loadConfig) { Text("Повторить подключение") }
     TextButton(onClick = { form.mode = if (form.mode == "login") "register" else "login"; form.password = "" }, enabled = !state.busy) {
         Text(if (form.mode == "login") "Создать аккаунт" else "Уже есть аккаунт — войти")
     }
@@ -272,6 +289,30 @@ internal fun LegalLinks() {
     Column {
         listOf("Условия использования" to "terms", "Конфиденциальность" to "privacy", "Согласие на обработку" to "consent").forEach { (title, path) ->
             TextButton(onClick = { uri.openUri("$SERVER_ORIGIN/legal/$path.html") }) { Text(title) }
+        }
+    }
+}
+
+@Composable
+private fun LegalConsentScreen(state: AppUiState, model: OmnicioViewModel) {
+    val versions = state.legalConsent?.toString()
+    val form = remember(versions) { AuthFormState() }
+    Surface(Modifier.fillMaxSize()) {
+        Column(Modifier.safeDrawingPadding().padding(24.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            SectionTitle("Обновились документы")
+            Text("Ознакомьтесь с актуальными условиями. Согласия сохраняются только после вашего подтверждения.")
+            StatusMessages(state)
+            if (state.legalConsent?.length() == 0) {
+                OutlinedButton(onClick = model::refresh, enabled = !state.busy) { Text("Загрузить документы") }
+            } else {
+                RegistrationConsent(form)
+                Button(onClick = model::acceptLegal,
+                    enabled = !state.busy && form.adult && form.terms && form.privacy && form.consent) {
+                    Text("Подтвердить и продолжить")
+                }
+            }
+            TextButton(onClick = model::logout) { Text("Выйти без подтверждения") }
         }
     }
 }

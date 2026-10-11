@@ -608,3 +608,29 @@ def test_disabling_mail_does_not_stop_expired_challenge_cleanup(workspace_databa
                             (proof.id,)).fetchone() is None
     assert challenge_row(database, fresh)["delivery_state"] == "pending"
     assert challenge_row(database, fresh)["delivery_attempts"] == 0
+
+
+def test_legal_renewal_is_idempotent_and_bound_to_live_owner_session(workspace_database):
+    database, _, _ = workspace_database
+    owner, _, token = login(database)
+    other, _, other_token = login(database)
+    versions = dict.fromkeys(VERSIONS, "new-current")
+    assert not database.has_legal_versions(owner.id, versions)
+    with pytest.raises(PermissionError):
+        database.accept_legal_versions(owner.id, other_token, versions, client_ip_hash=b"i" * 32)
+    assert not database.has_legal_versions(owner.id, versions)
+    for _ in range(2):
+        assert database.accept_legal_versions(owner.id, token, versions,
+                                             client_ip_hash=b"i" * 32)["accepted"] is True
+    assert database.has_legal_versions(owner.id, versions)
+    assert not database.has_legal_versions(other.id, versions)
+    with database.pool.connection() as conn:
+        row = conn.execute("SELECT count(*) AS n FROM legal_acceptances "
+                           "WHERE user_id=%s AND document_version=%s",
+                           (owner.id, "new-current")).fetchone()
+        assert row["n"] == 3
+    database.revoke_session(token)
+    with pytest.raises(PermissionError):
+        database.accept_legal_versions(owner.id, token, dict.fromkeys(VERSIONS, "revoked"),
+                                       client_ip_hash=b"i" * 32)
+    assert not database.has_legal_versions(owner.id, dict.fromkeys(VERSIONS, "revoked"))
