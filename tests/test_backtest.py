@@ -454,6 +454,8 @@ def test_current_fingerprint_is_independent_of_structured_evidence_key_order():
 
 def test_archived_131_income_result_exactly_reproduces_the_published_engine():
     document = research_document("income")
+    # Reproduce the archived input edition, not the currently offered catalog.
+    document["catalog_version"] = "1.0.0"
     document["rules"]["yield_floor"] = "none"
     payments = tuple(HistoricalCashflow(
         START + timedelta(days=entitlement), START + timedelta(days=paid),
