@@ -25,10 +25,6 @@ internal data class AppUiState(
     val error: String? = null,
     val notice: String? = null,
     val authConfig: JSONObject? = null,
-    val challengeId: String? = null,
-    val challengePurpose: String? = null,
-    val resendAt: Long = 0,
-    val challengeExpiresAt: Long = 0,
     val legalConsent: JSONObject? = null,
     val workspace: ServerWorkspace? = null,
     val accounts: List<BrokerAccount> = emptyList(),
@@ -111,75 +107,12 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
 
     fun loadConfig() = request({ client ->
         val config = client.request("/api/auth/config")
-        if (config.text("auth_provider") != "email" || config.optJSONObject("legal_versions") == null) {
+        if (config.optJSONObject("social_providers") == null || config.optJSONObject("legal_versions") == null) {
             throw ApiFailure(409, "server_update_required")
         }
-        if (config.optInt("email_code_digits") !in 4..12) throw ApiFailure(200, "invalid_response")
         config
     }) {
         mutable.value = mutable.value.copy(authConfig = it)
-    }
-
-    fun login(email: String, password: String) = request({ client ->
-        val result = client.request("/api/auth/email/login", "POST",
-            JSONObject().put("email", email.trim()).put("password", password))
-        client.acceptLogin(result)
-        client.profile
-    }) { id ->
-        mutable.value = mutable.value.copy(authenticated = true, publicId = id, challengeId = null,
-            challengePurpose = null, socialFlow = null, identities = null, sessions = emptyList())
-        // The next composition requests the workspace after busy is cleared.
-    }
-
-    fun register(email: String, password: String, enroll: Boolean = false) {
-        val legal = mutable.value.authConfig?.optJSONObject("legal_versions") ?: return
-        request({ it.request(if (enroll) "/api/auth/email/enroll" else "/api/auth/email/register", "POST", JSONObject()
-            .put("email", email.trim()).put("password", password)
-            .put("accept_privacy", true).put("accept_personal_data", true)
-            .put("accept_terms", true).put("confirm_age_18", true).put("legal_versions", legal)) }) {
-            adoptChallenge(it, if (enroll) "enroll" else "register")
-        }
-    }
-
-    fun resetPassword(email: String) = request({ it.request("/api/auth/email/password-reset/request", "POST",
-        JSONObject().put("email", email.trim())) }) {
-        adoptChallenge(it, "reset")
-    }
-
-    fun verify(code: String, newPassword: String) {
-        val id = mutable.value.challengeId ?: return
-        val reset = mutable.value.challengePurpose == "reset"
-        request({ client ->
-            val body = JSONObject().put("challenge_id", id).put("code", code)
-            if (reset) body.put("password", newPassword)
-            val result = client.request(if (reset) "/api/auth/email/password-reset/confirm"
-                else "/api/auth/email/verify", "POST", body)
-            if (!reset) client.acceptLogin(result)
-            client.profile
-        }) { profile ->
-            mutable.value = mutable.value.copy(challengeId = null, challengePurpose = null,
-                authenticated = !reset, publicId = profile, identities = null, sessions = emptyList(),
-                notice = if (reset) "Пароль изменён. Войдите с новым паролем." else null)
-        }
-    }
-
-    private fun adoptChallenge(result: JSONObject, purpose: String) {
-        val now = android.os.SystemClock.elapsedRealtime()
-        mutable.value = mutable.value.copy(challengeId = result.getString("challenge_id"),
-            challengePurpose = purpose, resendAt = now + result.getLong("resend_after_seconds") * 1000,
-            challengeExpiresAt = now + result.getLong("expires_in_seconds") * 1000)
-    }
-
-    fun resendCode() {
-        if (android.os.SystemClock.elapsedRealtime() < mutable.value.resendAt) return
-        val id = mutable.value.challengeId ?: return
-        request({ it.request("/api/auth/email/resend", "POST", JSONObject().put("challenge_id", id)) }) {
-            adoptChallenge(it, mutable.value.challengePurpose ?: return@request)
-        }
-    }
-
-    fun cancelChallenge() {
-        if (!mutable.value.busy) mutable.value = mutable.value.copy(challengeId = null, challengePurpose = null)
     }
 
     fun startSocial(provider: String) = request({ client ->
@@ -193,8 +126,7 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
         if (parsed.scheme != "https" || parsed.host != host || parsed.userInfo != null ||
             parsed.port != -1 || parsed.fragment != null) throw ApiFailure(200, "invalid_response")
         mutable.value = mutable.value.copy(socialFlow = SocialFlow(result.getString("flow_id"), provider,
-            url, android.os.SystemClock.elapsedRealtime() + result.getLong("expires_in_seconds") * 1000),
-            challengeId = null, challengePurpose = null)
+            url, android.os.SystemClock.elapsedRealtime() + result.getLong("expires_in_seconds") * 1000))
     }
 
     fun socialOpened() {

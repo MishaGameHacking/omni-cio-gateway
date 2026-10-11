@@ -47,7 +47,7 @@ internal fun SocialFlowScreen(state: AppUiState, model: OmnicioViewModel) {
     val flow = state.socialFlow ?: return
     val uri = LocalUriHandler.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val form = remember(flow.id, state.authConfig?.optJSONObject("legal_versions")?.toString()) { AuthFormState() }
+    val form = remember(flow.id, state.authConfig?.optJSONObject("legal_versions")?.toString()) { ConsentFormState() }
     var browserError by remember(flow.id) { mutableStateOf(false) }
     fun openBrowser() {
         try { uri.openUri(flow.authorizationUrl); browserError = false }
@@ -90,8 +90,6 @@ internal fun SocialFlowScreen(state: AppUiState, model: OmnicioViewModel) {
 
 @Composable
 internal fun AccessSettings(state: AppUiState, model: OmnicioViewModel) {
-    var enroll by remember { mutableStateOf(false) }
-    val form = remember(state.authConfig?.optJSONObject("legal_versions")?.toString()) { AuthFormState() }
     LaunchedEffect(state.publicId, state.identities == null) {
         if (state.identities == null) model.loadAccess()
     }
@@ -104,23 +102,6 @@ internal fun AccessSettings(state: AppUiState, model: OmnicioViewModel) {
             OutlinedButton(onClick = model::loadAccess, enabled = !state.busy) { Text("Обновить способы входа") }
         }
         SocialButtons(state, model, linking = true)
-        val email = state.identities?.text("email")
-        if (email != null) Text("Почта подтверждена: $email")
-        else if (state.identities != null) {
-            TextButton(onClick = { enroll = !enroll },
-                enabled = !state.busy && state.authConfig?.optBoolean("registration_available") == true) {
-                Text(if (enroll) "Закрыть форму" else "Подключить почту")
-            }
-            if (enroll) {
-                OutlinedTextField(form.email, { form.email = it }, label = { Text("Электронная почта") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
-                SecretField(form.password, { form.password = it }, "Пароль OMNICIO")
-                RegistrationConsent(form)
-                Button(onClick = { model.register(form.email, form.password, enroll = true); form.password = "" },
-                    enabled = !state.busy && form.email.isNotBlank() && form.password.isNotBlank() &&
-                        form.adult && form.terms && form.privacy && form.consent) { Text("Подтвердить почту") }
-            }
-        }
         if (state.sessions.isNotEmpty()) {
             HorizontalDivider()
             SectionTitle("Активные сессии")

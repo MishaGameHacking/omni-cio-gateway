@@ -93,7 +93,7 @@ internal fun SettingsScreen(state: AppUiState, model: OmnicioViewModel) {
                 OmniIcon(R.drawable.ic_shield)
                 SectionTitle("Данные и доступ")
                 Text("Портфель, история и события хранятся на сервере. Приложение держит полученные ответы только в памяти текущего процесса; офлайн-копий нет.")
-                Text("Пароль и токен не записываются на устройство. Сессия завершается при выходе; после завершения процесса требуется повторный вход.")
+                Text("Токен брокера и сессия не записываются на устройство. Сессия завершается при выходе; после завершения процесса требуется повторный вход.")
                 Text("Профиль: ${state.publicId ?: "не определён"}", style = MaterialTheme.typography.bodySmall)
                 LegalLinks()
                 OutlinedButton(onClick = model::logout, enabled = !state.busy) {

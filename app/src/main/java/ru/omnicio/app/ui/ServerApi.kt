@@ -157,8 +157,6 @@ internal fun apiError(error: Exception): String = when {
         "Этот способ входа ещё не подключён на сервере. Выберите другой доступный способ."
     error is ApiFailure && error.code == "social_session_changed" ->
         "Сессия изменилась. Начните привязку заново из своего профиля."
-    error is ApiFailure && error.code == "email_or_password_invalid" -> "Проверьте почту и пароль."
-    error is ApiFailure && error.code == "email_code_invalid_or_expired" -> "Код неверный или истёк. Запросите новый."
     error is ApiFailure && error.code == "updated_legal_consent_required" ->
         "Ознакомьтесь с обновлёнными документами и подтвердите их в приложении."
     error is ApiFailure && error.status == 401 -> "Сессия завершена. Войдите снова."
