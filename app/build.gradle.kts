@@ -68,17 +68,15 @@ android {
     }
 }
 
-tasks.configureEach {
-    val releasePackagingTask =
-        (name.startsWith("assemble") || name.startsWith("bundle") || name.startsWith("package")) &&
-            name.contains("Release")
-    if (releasePackagingTask) {
-        doFirst {
-            check(releaseSigningReady) {
-                "Release packaging requires OMNICIO release signing credentials from protected local/CI custody."
-            }
-        }
-    }
+val releasePackagingRequested = gradle.startParameter.taskNames.any { requestedTask ->
+    requestedTask.substringAfterLast(':') in setOf(
+        "assembleRelease",
+        "bundleRelease",
+        "packageRelease",
+    )
+}
+check(!releasePackagingRequested || releaseSigningReady) {
+    "Release packaging requires OMNICIO release signing credentials from protected local/CI custody."
 }
 
 dependencies {
