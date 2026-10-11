@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.R
 
 @Composable
-internal fun AssistantScreen(state: AppUiState, model: OmnicioViewModel) {
+internal fun AssistantScreen(state: AppUiState, onMarkRead: (String) -> Unit, onLoadMore: () -> Unit) {
     val workspace = state.workspace
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
@@ -28,11 +28,11 @@ internal fun AssistantScreen(state: AppUiState, model: OmnicioViewModel) {
                     SectionTitle(event.title)
                     Text(event.detail)
                     Text("Источник: ${event.source ?: "не указан сервером"}", style = MaterialTheme.typography.bodySmall)
-                    if (!event.read) TextButton(onClick = { model.markRead(event.id) }, enabled = !state.busy) { Text("Отметить прочитанным") }
+                    if (!event.read) TextButton(onClick = { onMarkRead(event.id) }, enabled = !state.busy) { Text("Отметить прочитанным") }
                 }
             }
             if (workspace.nextEventCursor != null) item {
-                OutlinedButton(onClick = model::loadMoreEvents, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Загрузить ещё") }
+                OutlinedButton(onClick = onLoadMore, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("Загрузить ещё") }
             }
         }
     }

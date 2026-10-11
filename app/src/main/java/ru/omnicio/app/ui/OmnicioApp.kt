@@ -80,7 +80,7 @@ internal fun OmnicioRoot(model: OmnicioViewModel = viewModel()) {
                 SocialFlowScreen(state, model)
             }
             !state.authenticated -> {
-                AuthScreen(state, model)
+                AuthScreen(state, model::startSocial, model::loadConfig)
             }
             state.legalConsent != null -> {
                 LegalConsentScreen(state, model)
@@ -142,9 +142,9 @@ private fun AppToolbar(page: String, busy: Boolean, refresh: () -> Unit, navigat
 private fun AppPage(page: String, state: AppUiState, model: OmnicioViewModel, connect: () -> Unit) {
     when (page) {
         "Портфель" -> PortfolioScreen(state)
-        "Помощник" -> AssistantScreen(state, model)
+        "Помощник" -> AssistantScreen(state, model::markRead, model::loadMoreEvents)
         SETTINGS -> SettingsScreen(state, model)
-        else -> OverviewScreen(state, model, onConnect = connect)
+        else -> OverviewScreen(state, model::toggleAmountsHidden, model::syncPortfolio, onConnect = connect)
     }
 }
 
@@ -168,7 +168,7 @@ internal class ConsentFormState {
 }
 
 @Composable
-private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
+internal fun AuthScreen(state: AppUiState, onStartSocial: (String) -> Unit, onReloadConfig: () -> Unit) {
     val uri = LocalUriHandler.current
     Surface(Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().imePadding().fillMaxSize().verticalScroll(rememberScrollState())
@@ -180,12 +180,12 @@ private fun AuthScreen(state: AppUiState, model: OmnicioViewModel) {
                 Text("Войдите в OMNICIO. Счета, история и расчёты загружаются с сервера.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 StatusMessages(state)
-                SocialButtons(state, model)
+                SocialButtons(state, onStartSocial)
                 Text("Если аккаунта ещё нет, после подтверждения входа и согласий сервер создаст его автоматически.",
                     style = MaterialTheme.typography.bodyMedium)
                 val providers = state.authConfig?.optJSONObject("social_providers")
                 if (providers == null || !providers.optBoolean("telegram") || !providers.optBoolean("vkid")) {
-                    OutlinedButton(onClick = model::loadConfig, enabled = !state.busy) {
+                    OutlinedButton(onClick = onReloadConfig, enabled = !state.busy) {
                         Text("Проверить доступность входа")
                     }
                 }

@@ -20,7 +20,9 @@ import java.time.temporal.ChronoUnit
 import ru.omnicio.app.R
 
 @Composable
-internal fun OverviewScreen(state: AppUiState, model: OmnicioViewModel, onConnect: () -> Unit) {
+internal fun OverviewScreen(
+    state: AppUiState, onToggleAmountsHidden: () -> Unit, onSyncPortfolio: () -> Unit, onConnect: () -> Unit,
+) {
     val workspace = state.workspace
     val portfolio = workspace?.portfolio
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -40,7 +42,7 @@ internal fun OverviewScreen(state: AppUiState, model: OmnicioViewModel, onConnec
                 OmniCard {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Стоимость портфеля", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        IconButton(onClick = model::toggleAmountsHidden) {
+                        IconButton(onClick = onToggleAmountsHidden) {
                             OmniIcon(R.drawable.ic_eye, if (state.amountsHidden) "Показать суммы" else "Скрыть суммы")
                         }
                     }
@@ -62,7 +64,7 @@ internal fun OverviewScreen(state: AppUiState, model: OmnicioViewModel, onConnec
             }
             item { PortfolioHistory(portfolio?.history.orEmpty(), state.amountsHidden) }
             item {
-                Button(onClick = model::syncPortfolio, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onSyncPortfolio, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                     OmniIcon(R.drawable.ic_refresh)
                     Spacer(Modifier.width(8.dp))
                     Text("Обновить у брокера")

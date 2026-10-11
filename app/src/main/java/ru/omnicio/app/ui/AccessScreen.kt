@@ -22,12 +22,12 @@ internal fun providerLabel(provider: String): String = when (provider) {
 }
 
 @Composable
-internal fun SocialButtons(state: AppUiState, model: OmnicioViewModel, linking: Boolean = false) {
+internal fun SocialButtons(state: AppUiState, onStartSocial: (String) -> Unit, linking: Boolean = false) {
     val linked = state.identities?.optJSONArray("providers")
     listOf("telegram" to R.drawable.ic_telegram, "vkid" to R.drawable.ic_vk).forEach { (provider, icon) ->
         val present = linked != null && (0 until linked.length()).any { linked.optString(it) == provider }
         val available = state.authConfig?.optJSONObject("social_providers")?.optBoolean(provider) == true
-        OutlinedButton(onClick = { model.startSocial(provider) },
+        OutlinedButton(onClick = { onStartSocial(provider) },
             enabled = !state.busy && available && !present && (!linking || state.identities != null),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             OmniIcon(icon)
@@ -101,7 +101,7 @@ internal fun AccessSettings(state: AppUiState, model: OmnicioViewModel) {
             Text("Способы входа ещё не загружены.")
             OutlinedButton(onClick = model::loadAccess, enabled = !state.busy) { Text("Обновить способы входа") }
         }
-        SocialButtons(state, model, linking = true)
+        SocialButtons(state, model::startSocial, linking = true)
         if (state.sessions.isNotEmpty()) {
             HorizontalDivider()
             SectionTitle("Активные сессии")
