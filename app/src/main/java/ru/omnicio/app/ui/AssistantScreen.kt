@@ -37,7 +37,7 @@ internal fun AssistantScreen(
         verticalArrangement = Arrangement.spacedBy(OmniSpacing.sm),
     ) {
         item {
-            StatusPill("ДЕМО · UI-04 · АВТОМАТИЧЕСКАЯ ЛЕНТА")
+            StatusPill("ДЕМО · АВТОМАТИЧЕСКАЯ ЛЕНТА")
         }
         item {
             Text(
@@ -76,7 +76,7 @@ internal fun AssistantScreen(
                         }
                         AssistantActionKind.RUN_SCENARIO -> {
                             actionNotice =
-                                "Сценарий отмечен локально. UI-04 не отправляет заявку брокеру и не запускает языковую модель."
+                                "Сценарий отмечен локально. Приложение не отправляет заявку брокеру и не запускает языковую модель."
                         }
                         AssistantActionKind.SYNC -> {
                             actionNotice =
