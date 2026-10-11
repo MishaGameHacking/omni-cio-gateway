@@ -1025,7 +1025,9 @@ def _private_json(name: str, payload: dict[str, Any]) -> None:
         output.write(encoded)
 
 
-def _postgres_process(binary: pathlib.Path, arguments: list[str], dsn: str) -> None:
+def _postgres_process(
+    binary: pathlib.Path, arguments: list[str], dsn: str, *, tenant: str | None = None,
+) -> None:
     """Credentials exist only in the child environment; native output never reaches logs."""
     from psycopg.conninfo import conninfo_to_dict
 
@@ -1042,6 +1044,12 @@ def _postgres_process(binary: pathlib.Path, arguments: list[str], dsn: str) -> N
     environment.update({allowed[key]: str(value) for key, value in options.items()
                         if value is not None})
     environment["PGOPTIONS"] = "-c statement_timeout=900000 -c lock_timeout=15000"
+    if tenant is not None:
+        from uuid import UUID
+
+        if str(UUID(tenant)) != tenant:
+            raise RecoveryBlocked("Invalid backup tenant identity")
+        environment["PGOPTIONS"] += f" -c omnicio.user_id={tenant}"
     try:
         result = subprocess.run(
             [str(binary), *arguments], env=environment, capture_output=True,
@@ -1163,7 +1171,8 @@ def _read_logical_export(
                 "source_system_id", "archive_sha256", "encrypted_sha256",
                 "content_digest", "schema_digest"}
     if (proof is None or set(proof) != required or proof["kind"] != "logical_export_v1"
-            or proof["source_kind"] != "runtime_pg_dump" or proof["release_sha"] != release_sha
+            or proof["source_kind"] not in contract.LOGICAL_SOURCES
+            or proof["release_sha"] != release_sha
             or proof["cluster_id"] != load_policy().cluster_id):
         raise RecoveryBlocked("A matching accepted-main signed export manifest is required")
     if not 0 < archive.stat().st_size <= MAX_LOGICAL_ARCHIVE_BYTES * 2:
@@ -1233,7 +1242,10 @@ def verify_logical_archive(
                     "--no-acl", "--dbname", name, "--role", role, str(dump),
                 ], target_dsn)
             with psycopg.connect(target_dsn, autocommit=True) as restored:
-                if (contract.evidence_digest(contract.table_fingerprints(restored))
+                fingerprint = (contract.snapshot_fingerprints
+                               if proof["source_kind"] == "tenant_snapshot_pg_dump"
+                               else contract.table_fingerprints)
+                if (contract.evidence_digest(fingerprint(restored))
                         != proof["content_digest"]):
                     raise RecoveryBlocked("Restored contents differ from the source snapshot")
                 guards = contract.database_guards(restored)
@@ -1254,7 +1266,7 @@ def verify_logical_archive(
             if created_role:
                 control.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
     payload = {
-        "kind": "logical_restore_v1", "source_kind": "runtime_pg_dump",
+        "kind": "logical_restore_v1", "source_kind": proof["source_kind"],
         "cluster_id": proof["cluster_id"], "release_sha": release_sha,
         "source_at": proof["source_at"], "source_system_id": proof["source_system_id"],
         "target_system_id": target_system_id, "archive_sha256": proof["archive_sha256"],

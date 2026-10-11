@@ -273,7 +273,13 @@ class PostgresTests(unittest.TestCase):
                 self.assertIn("github.ref == 'refs/heads/main'", block)
         self.assertLess(reconcile.index("name: Verify current main release checks"),
                         reconcile.index("name: Validate Timeweb secret"))
-        self.assertIn('OMNICIO_RESTORE_DRILL_ALLOWED: "false"', restore)
+        self.assertIn("github.event_name == 'workflow_dispatch'", restore)
+        self.assertIn("&& inputs.restore_drill", restore)
+        self.assertIn('OMNICIO_RESTORE_DRILL_ALLOWED: "true"', restore)
+        self.assertIn("run_recovery_drill.py --on-host", restore)
+        self.assertNotIn("OMNICIO_RESTORE_SOURCE_DSN", restore)
+        self.assertNotIn("OMNICIO_RESTORE_ARCHIVE_KEY", restore)
+        self.assertNotIn("OMNICIO_RESTORE_RECEIPT_KEY", restore)
 
     def test_parser_accepts_multiple_migrations(self) -> None:
         old = sys.argv
