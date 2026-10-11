@@ -532,7 +532,7 @@ private fun NotificationPermissionCard(
                             context.startActivity(
                                 Intent(
                                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.parse("пакет:" + context.packageName),
+                                    Uri.parse("package:" + context.packageName),
                                 ),
                             )
                         },
