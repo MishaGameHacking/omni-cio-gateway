@@ -91,12 +91,14 @@ internal class OmnicioViewModel(application: Application) : AndroidViewModel(app
     private fun handleFailure(error: Exception) {
         val expired = mutable.value.authenticated && error is ApiFailure &&
             (error.status == 401 || error.code == "profile_context_changed")
+        val strategyRejected = error is ApiFailure &&
+            (error.code.startsWith("strategy_") || error.code == "settings_version_conflict")
         if (expired) {
             api = ServerApi()
             mutable.value = mutable.value.copy(authenticated = false, publicId = null)
         }
         mutable.value = mutable.value.copy(error = apiError(error), workspace = null, accounts = emptyList(),
-            strategy = StrategyUiState(),
+            strategy = if (!expired && strategyRejected) mutable.value.strategy.copy(assessment = null) else StrategyUiState(),
             assistant = if (expired) AssistantUiState() else mutable.value.assistant.withoutServerData(),
             legalConsent = if (expired) null else mutable.value.legalConsent,
             socialFlow = if (expired) null else mutable.value.socialFlow,

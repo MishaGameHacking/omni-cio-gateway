@@ -1197,7 +1197,9 @@ def _assistant_position_context(
 
 
 def _assistant_strategy_context(strategy: dict[str, Any] | None) -> dict[str, Any] | None:
-    return ({
+    if strategy is None:
+        return None
+    return {
         "template_id": strategy["document"]["base_preset_id"], "version": strategy["version"],
         "status": "draft_not_confirmed",
         "method": strategy_rule_set(strategy["document"]["base_preset_id"])["ranking"],
@@ -1212,7 +1214,7 @@ def _assistant_strategy_context(strategy: dict[str, Any] | None) -> dict[str, An
            for key, value in strategy["document"]["allocation"].items()},
         "limitations": "Рабочая стратегия для анализа; "
         "не подтверждённый профиль и не торговый план.",
-    } if strategy else None)
+    }
 
 
 def _assistant_investment_context(

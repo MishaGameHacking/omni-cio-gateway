@@ -62,8 +62,9 @@ def test_task_routes_bound_reasoning_and_never_invent_model_aliases() -> None:
                          ("max_input_chars", 999999), ("model", "bad\nmodel"),
                          ("reasoning_effort", "none")):
         invalid = {"explain": {**raw["explain"], field: value}}
+        encoded = json.dumps(invalid)
         with pytest.raises(ConfigurationError):
-            assistant_routes(json.dumps(invalid))
+            assistant_routes(encoded)
 
 
 def test_task_selection_cannot_fallback_to_costly_or_personal_model() -> None:
@@ -76,8 +77,9 @@ def test_task_selection_cannot_fallback_to_costly_or_personal_model() -> None:
     assert service._client(user, None, "analyze") is large
     assert service._client(user, None, "review") is None
     assert service._client(user, {"active": True}, "analyze") is None
+    invalid_route = AssistantRoute("explain", "different-model", "low", 2048, 8000)
     with pytest.raises(ValueError, match="route_invalid"):
-        configured(route=AssistantRoute("explain", "different-model", "low", 2048, 8000))
+        configured(route=invalid_route)
 
 
 def test_request_fingerprint_binds_analysis_mode_before_provider_call() -> None:

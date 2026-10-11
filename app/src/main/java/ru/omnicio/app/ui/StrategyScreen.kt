@@ -30,10 +30,11 @@ internal fun StrategySettings(state: AppUiState, model: OmnicioViewModel) {
 private fun StrategyEditor(state: StrategyUiState, busy: Boolean, model: OmnicioViewModel) {
     val catalog = state.catalog ?: return
     val saved = state.selection?.optJSONObject("document")
+    val savedAt = timestampLabel(state.selection?.text("updated_at"))
     val presets = catalog.getJSONArray("presets").objects()
-    var document by remember(state) { mutableStateOf(saved?.let { JSONObject(it.toString()) }) }
-    var intent by remember(state) { mutableStateOf("edit") }
-    var showCustom by remember(state) { mutableStateOf(saved?.optBoolean("customized") == true) }
+    var document by remember(state.catalog, state.selection) { mutableStateOf(saved?.let { JSONObject(it.toString()) }) }
+    var intent by remember(state.catalog, state.selection) { mutableStateOf("edit") }
+    var showCustom by remember(state.catalog, state.selection) { mutableStateOf(saved?.optBoolean("customized") == true) }
     presets.forEach { preset ->
         val selected = !showCustom && document?.text("base_preset_id") == preset.getString("id")
         FilterChip(selected, onClick = {
@@ -67,7 +68,7 @@ private fun StrategyEditor(state: StrategyUiState, busy: Boolean, model: Omnicio
             enabled = !busy && strategyAllocationValid(current)) { Text("Сохранить на сервере") }
     }
     if (saved != null) {
-        Text("На сервере: версия ${state.version} · ${timestampLabel(state.selection?.text("updated_at"))}",
+        Text("На сервере: версия ${state.version} · $savedAt",
             style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = model::assessStrategy, enabled = !busy) { Text("Проверить сохранённую стратегию по счёту") }
     }

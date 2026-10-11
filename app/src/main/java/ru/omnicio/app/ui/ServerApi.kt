@@ -144,34 +144,38 @@ internal fun parseEvents(root: JSONObject): List<ServerEvent> = root.getJSONArra
         source?.text("name"), !it.isNull("read_at"))
 }
 
-internal fun apiError(error: Exception): String = when {
-    error is ApiFailure && error.code == "settings_version_conflict" ->
-        "Условия изменились на сервере. Загрузите сохранённые условия и повторите изменение."
-    error is ApiFailure && error.code.startsWith("strategy_") ->
-        "Проверка стратегии не завершена. Проверьте введённые условия, подключение счёта и загрузите актуальные данные."
-    error is ApiFailure && error.code in setOf("assistant_not_configured", "assistant_activation_disabled") ->
-        "ИИ ещё не подключён на сервере. Настройки модели выполняет OMNICIO; ключ пользователю не нужен."
-    error is ApiFailure && error.code.startsWith("assistant_") ->
-        "Ответ помощника не получен. Нажмите «Проверить ответ»: приложение проверит сохранённый результат без повторной отправки вопроса."
-    error is ApiFailure && error.code == "server_update_required" ->
-        "Сервер ещё не поддерживает эту версию приложения. Требуется обновление OMNICIO на сервере."
-    error is ApiFailure && error.code == "recent_login_required" ->
-        "Для привязки способа входа выйдите и войдите заново, затем повторите действие."
-    error is ApiFailure && error.code in setOf("identity_already_linked", "provider_already_linked") ->
-        "Этот способ входа уже привязан к аккаунту. Аккаунты автоматически не объединяются."
-    error is ApiFailure && error.code in setOf("social_flow_expired", "social_flow_failed", "social_proof_invalid") ->
-        "Вход не подтверждён или срок ожидания истёк. Начните вход заново."
-    error is ApiFailure && error.code == "social_provider_not_configured" ->
-        "Этот способ входа ещё не подключён на сервере. Выберите другой доступный способ."
-    error is ApiFailure && error.code == "social_session_changed" ->
-        "Сессия изменилась. Начните привязку заново из своего профиля."
-    error is ApiFailure && error.code == "updated_legal_consent_required" ->
-        "Ознакомьтесь с обновлёнными документами и подтвердите их в приложении."
-    error is ApiFailure && error.status == 401 -> "Сессия завершена. Войдите снова."
-    error is ApiFailure && error.status == 409 -> "Данные или условия изменились. Обновите экран перед повтором."
-    error is ApiFailure && error.status == 429 -> "Слишком много запросов. Повторите позже."
-    error is ApiFailure && error.status in 400..499 -> "Запрос отклонён. Проверьте введённые данные и доступ к счёту."
-    error is ApiFailure -> "Сервер не предоставил корректные данные. Попробуйте обновить экран."
-    error is JSONException || error is java.time.DateTimeException -> "Формат ответа сервера не поддерживается."
+internal fun apiError(error: Exception): String = when (error) {
+    is ApiFailure -> apiFailureError(error)
+    is JSONException, is java.time.DateTimeException -> "Формат ответа сервера не поддерживается."
     else -> "Не удалось связаться с сервером. Проверьте интернет и повторите запрос."
+}
+
+private fun apiFailureError(error: ApiFailure): String = when {
+    error.code == "settings_version_conflict" ->
+        "Условия изменились на сервере. Загрузите сохранённые условия и повторите изменение."
+    error.code.startsWith("strategy_") ->
+        "Проверка стратегии не завершена. Проверьте введённые условия, подключение счёта и загрузите актуальные данные."
+    error.code in setOf("assistant_not_configured", "assistant_activation_disabled") ->
+        "ИИ ещё не подключён на сервере. Настройки модели выполняет OMNICIO; ключ пользователю не нужен."
+    error.code.startsWith("assistant_") ->
+        "Ответ помощника не получен. Нажмите «Проверить ответ»: приложение проверит сохранённый результат без повторной отправки вопроса."
+    error.code == "server_update_required" ->
+        "Сервер ещё не поддерживает эту версию приложения. Требуется обновление OMNICIO на сервере."
+    error.code == "recent_login_required" ->
+        "Для привязки способа входа выйдите и войдите заново, затем повторите действие."
+    error.code in setOf("identity_already_linked", "provider_already_linked") ->
+        "Этот способ входа уже привязан к аккаунту. Аккаунты автоматически не объединяются."
+    error.code in setOf("social_flow_expired", "social_flow_failed", "social_proof_invalid") ->
+        "Вход не подтверждён или срок ожидания истёк. Начните вход заново."
+    error.code == "social_provider_not_configured" ->
+        "Этот способ входа ещё не подключён на сервере. Выберите другой доступный способ."
+    error.code == "social_session_changed" ->
+        "Сессия изменилась. Начните привязку заново из своего профиля."
+    error.code == "updated_legal_consent_required" ->
+        "Ознакомьтесь с обновлёнными документами и подтвердите их в приложении."
+    error.status == 401 -> "Сессия завершена. Войдите снова."
+    error.status == 409 -> "Данные или условия изменились. Обновите экран перед повтором."
+    error.status == 429 -> "Слишком много запросов. Повторите позже."
+    error.status in 400..499 -> "Запрос отклонён. Проверьте введённые данные и доступ к счёту."
+    else -> "Сервер не предоставил корректные данные. Попробуйте обновить экран."
 }
