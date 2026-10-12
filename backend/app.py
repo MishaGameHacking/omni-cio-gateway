@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
+import logging
 import os
 import secrets
 import sqlite3
 import time
 from contextlib import asynccontextmanager, closing
+from html import escape
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -14,7 +17,7 @@ import httpx
 import jwt
 from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from jwt import PyJWKClient
 from pydantic import BaseModel
 
@@ -40,7 +43,7 @@ TINVEST_ACCOUNTS_URL = (
 )
 
 LOGIN_TX_TTL = 10 * 60
-LOGIN_CODE_TTL = 2 * 60
+LOGIN_CODE_TTL = 5 * 60
 SESSION_TTL = 30 * 24 * 60 * 60
 
 @asynccontextmanager
@@ -55,6 +58,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 jwks_client = PyJWKClient(TELEGRAM_JWKS_URL)
+logger = logging.getLogger(__name__)
 
 
 class SessionExchange(BaseModel):
@@ -185,6 +189,60 @@ def telegram_start() -> RedirectResponse:
     return RedirectResponse(f"{TELEGRAM_AUTH_URL}?{query}", status_code=302)
 
 
+def mobile_login_result(
+    *,
+    code: str | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    """Try to return to Android; keep a user-clickable fallback for browsers blocking deep links."""
+    query = {"code": code} if code else {"error": error or "telegram_failed"}
+    target = f"{APP_DEEP_LINK}?{urlencode(query)}"
+    link_href = escape(target, quote=True)
+    script_target = json.dumps(target).replace("<", "\\u003c").replace(">", "\\u003e")
+    message = (
+        "Telegram подтверждён. Возвращаем вас в Analyst AI."
+        if code else
+        "Авторизация не завершена. Вернитесь в Analyst AI, чтобы попробовать ещё раз."
+    )
+    page = f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Возврат в Analyst AI</title>
+<style>
+  body {{ min-height: 100vh; display: grid; place-items: center; margin: 0;
+          padding: 20px; box-sizing: border-box; background: #151c25;
+          color: #f8fafc; font: 16px/1.5 system-ui, sans-serif; }}
+  main {{ text-align: center; max-width: 440px; }}
+  a {{ display: block; margin-top: 22px; padding: 14px 20px; border-radius: 12px;
+       background: #229ed9; color: white; font-weight: 600; text-decoration: none; }}
+  small {{ color: #a8b4c3; }}
+</style>
+</head>
+<body>
+<main>
+  <h1>Analyst AI</h1>
+  <p>{message}</p>
+  <a href="{link_href}">Открыть Analyst AI</a>
+  <p><small>Если приложение не открылось автоматически, нажмите кнопку выше.</small></p>
+</main>
+<script>window.location.replace({script_target});</script>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=page,
+        status_code=status_code,
+        headers={
+            "Cache-Control": "no-store, private",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'",
+        },
+    )
+
+
 @app.get("/api/auth/social/telegram/callback", include_in_schema=False)
 @app.get(
     "/auth/telegram/callback",
@@ -193,7 +251,15 @@ def telegram_start() -> RedirectResponse:
         401: {"description": "Telegram token exchange or ID token validation failed."},
     },
 )
-def telegram_callback(code: str, state: str) -> RedirectResponse:
+def telegram_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> HTMLResponse:
+    if error is not None:
+        return mobile_login_result(error="telegram_denied")
+    if not code or not state:
+        return mobile_login_result(error="telegram_invalid_response", status_code=400)
     with closing(connect()) as db:
         purge_expired(db)
         tx = db.execute(
@@ -204,38 +270,46 @@ def telegram_callback(code: str, state: str) -> RedirectResponse:
         db.commit()
 
     if tx is None or int(time.time()) - tx["created_at"] > LOGIN_TX_TTL:
-        raise HTTPException(status_code=400, detail="invalid_login_state")
+        return mobile_login_result(error="telegram_expired", status_code=400)
 
     redirect_uri = TELEGRAM_REDIRECT_URI
-    with httpx.Client(timeout=15.0) as client:
-        response = client.post(
-            TELEGRAM_TOKEN_URL,
-            auth=(TELEGRAM_CLIENT_ID, TELEGRAM_CLIENT_SECRET),
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": redirect_uri,
-                "client_id": TELEGRAM_CLIENT_ID,
-                "code_verifier": tx["verifier"],
-            },
-        )
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.post(
+                TELEGRAM_TOKEN_URL,
+                auth=(TELEGRAM_CLIENT_ID, TELEGRAM_CLIENT_SECRET),
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": TELEGRAM_CLIENT_ID,
+                    "code_verifier": tx["verifier"],
+                },
+            )
+    except httpx.HTTPError:
+        logger.exception("Telegram token exchange is unavailable")
+        return mobile_login_result(error="telegram_unavailable", status_code=503)
     if response.status_code != 200:
-        raise HTTPException(status_code=401, detail="telegram_exchange_failed")
+        logger.warning("Telegram token exchange returned HTTP %s", response.status_code)
+        return mobile_login_result(error="telegram_exchange_failed", status_code=401)
 
-    id_token = response.json().get("id_token")
-    if not id_token:
-        raise HTTPException(status_code=401, detail="telegram_id_token_missing")
-
-    signing_key = jwks_client.get_signing_key_from_jwt(id_token)
-    claims = jwt.decode(
-        id_token,
-        signing_key.key,
-        algorithms=["RS256"],
-        audience=TELEGRAM_CLIENT_ID,
-        issuer=TELEGRAM_ISSUER,
-    )
-
-    sub = str(claims["sub"])
+    try:
+        id_token = response.json()["id_token"]
+        signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+        claims = jwt.decode(
+            id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=TELEGRAM_CLIENT_ID,
+            issuer=TELEGRAM_ISSUER,
+        )
+        sub = str(claims["sub"])
+    except (KeyError, ValueError, jwt.PyJWTError, TypeError):
+        logger.exception("Telegram ID token is invalid")
+        return mobile_login_result(error="telegram_invalid_token", status_code=401)
+    except Exception:
+        logger.exception("Telegram signing keys are temporarily unavailable")
+        return mobile_login_result(error="telegram_unavailable", status_code=503)
     telegram_id = str(claims.get("id") or sub)
     now = int(time.time())
 
@@ -289,10 +363,7 @@ def telegram_callback(code: str, state: str) -> RedirectResponse:
         )
         db.commit()
 
-    return RedirectResponse(
-        f"{APP_DEEP_LINK}?{urlencode({'code': one_time})}",
-        status_code=302,
-    )
+    return mobile_login_result(code=one_time)
 
 
 @app.post(

@@ -53,6 +53,17 @@ jobs:
           "%BACKEND_CI_VENV%\Scripts\python.exe" -m compileall -q backend
           if errorlevel 1 exit /b 1
 
+      - name: Test Telegram callback and persistent backend sessions
+        shell: cmd
+        run: |
+          set "TELEGRAM_CLIENT_ID=123456"
+          set "TELEGRAM_CLIENT_SECRET=test-only"
+          set "BACKEND_PUBLIC_URL=https://example.invalid"
+          set "DATABASE_PATH=%RUNNER_TEMP%\\analyst-ai-backend-tests.sqlite3"
+          set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "%BACKEND_CI_VENV%\\Scripts\\python.exe" -m unittest discover -s backend\\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+
       - name: Verify health endpoint and OpenAPI
         shell: cmd
         run: |
