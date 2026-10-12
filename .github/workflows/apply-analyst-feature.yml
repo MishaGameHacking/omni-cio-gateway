@@ -13,60 +13,125 @@ permissions:
 
 jobs:
   apply-and-verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 45
 
     steps:
       - name: Checkout feature branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: feat/portfolio-currency-five-tabs-ai-policy
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+          clean: true
 
       - name: Apply source transformation
-        run: python .github/scripts/apply_analyst_feature.py
+        shell: cmd
+        run: |
+          py -3 .github\scripts\apply_analyst_feature.py
+          if errorlevel 1 exit /b 1
+          py -3 -c "from pathlib import Path; p=Path(r'app\src\main\java\ru\omnicio\app\ui\AnalystBottomBar.kt'); s=p.read_text(encoding='utf-8'); old='import androidx.compose.foundation.layout.size\n'; new=old+'import androidx.compose.foundation.layout.weight\n'; assert old in s; p.write_text(s.replace(old,new,1),encoding='utf-8')"
+          if errorlevel 1 exit /b 1
 
-      - name: Check generated diff
+      - name: Create isolated Python environment
+        shell: cmd
+        run: |
+          set "VENV=%RUNNER_TEMP%\analyst-ai-feature-ci"
+          if exist "%VENV%" rmdir /s /q "%VENV%"
+          py -3 -m venv "%VENV%"
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --no-cache-dir -r backend\requirements.txt
+          if errorlevel 1 exit /b 1
+          echo FEATURE_CI_VENV=%VENV%>>"%GITHUB_ENV%"
+
+      - name: Check generated diff and compile backend
+        shell: cmd
         run: |
           git diff --check
-          python -m compileall -q backend
-
-      - name: Install backend dependencies
-        run: python -m pip install --disable-pip-version-check --no-cache-dir -r backend/requirements.txt
+          if errorlevel 1 exit /b 1
+          "%FEATURE_CI_VENV%\Scripts\python.exe" -m compileall -q backend
+          if errorlevel 1 exit /b 1
 
       - name: Run backend tests
-        env:
-          TELEGRAM_CLIENT_ID: "123456"
-          TELEGRAM_CLIENT_SECRET: test-only
-          BACKEND_PUBLIC_URL: https://example.invalid
-          DATABASE_PATH: /tmp/analyst-ai-feature-tests.sqlite3
-          FERNET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-        run: python -m unittest discover -s backend/tests -p "test_*.py" -v
+        shell: cmd
+        run: |
+          set "TELEGRAM_CLIENT_ID=123456"
+          set "TELEGRAM_CLIENT_SECRET=test-only"
+          set "BACKEND_PUBLIC_URL=https://example.invalid"
+          set "DATABASE_PATH=%RUNNER_TEMP%\analyst-ai-feature-tests.sqlite3"
+          set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "%FEATURE_CI_VENV%\Scripts\python.exe" -m unittest discover -s backend\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Build and lint Android app
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Choose Android SDK root
+        shell: cmd
         run: |
-          chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:lintDebug --no-daemon
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
+          echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
+          echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
+
+      - name: Ensure Android SDK 36 is installed
+        shell: cmd
+        run: |
+          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
+
+          set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
+          curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
+          if errorlevel 1 exit /b 1
+
+          certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
+          if errorlevel 1 (
+            echo ::error::Android command-line tools checksum mismatch.
+            exit /b 1
+          )
+
+          if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
+          tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
+          if errorlevel 1 exit /b 1
+          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
+          move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
+          if errorlevel 1 exit /b 1
+
+          :tools_ready
+          set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
+          set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
+          (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
+          if errorlevel 1 exit /b 1
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
+          if errorlevel 1 exit /b 1
+
+      - name: Lint and build Android variants
+        shell: cmd
+        run: |
+          call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
+          if errorlevel 1 exit /b 1
 
       - name: Commit transformed source
+        shell: cmd
         run: |
           git config user.name "Analyst AI automation"
           git config user.email "actions@users.noreply.github.com"
           git add AGENTS.md README.md app backend
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit"
-            exit 0
-          fi
+          git diff --cached --quiet
+          if not errorlevel 1 (
+            echo No generated changes to commit
+            exit /b 0
+          )
           git commit -m "feat: add real portfolio currencies, five tabs and AI spend gate"
+          if errorlevel 1 exit /b 1
           git push origin HEAD:feat/portfolio-currency-five-tabs-ai-policy
+          if errorlevel 1 exit /b 1
