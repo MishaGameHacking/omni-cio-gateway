@@ -12,6 +12,7 @@ on:
       - "gradlew"
       - "gradlew.bat"
       - ".github/scripts/**"
+      - ".github/actions/check-apk/**"
       - ".github/apk-signing-certificate.sha256"
       - ".github/workflows/android-ci.yml"
       - ".github/workflows/android-apk.yml"
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    name: Android builds and installation tests
+    name: Android debug and release build
     permissions:
       contents: read
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -109,11 +110,5 @@ jobs:
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);
 
-      - name: Validate preview, install clean, upgrade and launch on Android 13 and 16
-        shell: cmd
-        env:
-          PYTHONIOENCODING: utf-8
-          PYTHONUNBUFFERED: '1'
-        run: |
-          py -3 .github\scripts\validate_distribution.py --sdk "%ANDROID_SDK_ROOT%" --previous "%PREVIOUS_APK%" --api 33 36
-          if errorlevel 1 exit /b 1
+      - name: Validate preview installation and update compatibility
+        uses: ./.github/actions/check-apk
