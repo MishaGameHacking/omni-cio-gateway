@@ -13,11 +13,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Read existing Sonar annotations only
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
           script: |
-            const pr = (await github.rest.pulls.get({...context.repo,pull_number:826})).data;
+            const pr = (await github.rest.pulls.get({...context.repo,pull_number:827})).data;
             const checks = (await github.rest.checks.listForRef({...context.repo,ref:pr.head.sha,check_name:'SonarCloud Code Analysis'})).data.check_runs;
             if (!checks.length) throw new Error('No Sonar check on current PR head');
             const check = checks[0];
