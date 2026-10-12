@@ -11,6 +11,8 @@ on:
       - "gradle/**"
       - "gradlew"
       - "gradlew.bat"
+      - ".github/scripts/**"
+      - ".github/apk-signing-certificate.sha256"
       - ".github/workflows/android-ci.yml"
       - ".github/workflows/android-apk.yml"
 concurrency:
@@ -19,11 +21,11 @@ concurrency:
 
 jobs:
   build:
-    name: Android debug and release build
+    name: Android builds and installation tests
     permissions:
       contents: read
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout source
@@ -55,26 +57,19 @@ jobs:
         shell: cmd
         run: |
           if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
-
           set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
           curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
           if errorlevel 1 exit /b 1
-
           certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
           if errorlevel 1 exit /b 1
           findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
-          if errorlevel 1 (
-            echo ::error::Android command-line tools checksum mismatch.
-            exit /b 1
-          )
-
+          if errorlevel 1 exit /b 1
           if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
           tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
           if errorlevel 1 exit /b 1
           if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
           move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
           if errorlevel 1 exit /b 1
-
           :tools_ready
           set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
           set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
@@ -84,8 +79,41 @@ jobs:
           call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
           if errorlevel 1 exit /b 1
 
-      - name: Lint and build Android variants
+      - name: Test APK verification rules
         shell: cmd
         run: |
-          call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
+          py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+
+      - name: Lint and build all Android variants
+        shell: cmd
+        run: |
+          call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview --stacktrace
+          if errorlevel 1 exit /b 1
+
+      - name: Download previous published APK for update compatibility test
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-debug-0cbb7ee3668c4093007831d310780fa47afe9dda'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-debug-0cbb7ee.apk');
+            if (!asset) throw new Error('Reference APK missing');
+            const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
+            const bytes = Buffer.from(response.data);
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '9c45e7600edb8c9044b933ada9ba896595eff5c44fdf93382684456c99b4c009') throw new Error('Reference APK checksum mismatch');
+            const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
+            fs.writeFileSync(dest, bytes);
+            core.exportVariable('PREVIOUS_APK', dest);
+
+      - name: Validate preview, install clean, upgrade and launch on Android 13 and 16
+        shell: cmd
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: '1'
+        run: |
+          py -3 .github\scripts\validate_distribution.py --sdk "%ANDROID_SDK_ROOT%" --previous "%PREVIOUS_APK%" --api 33 36
           if errorlevel 1 exit /b 1
