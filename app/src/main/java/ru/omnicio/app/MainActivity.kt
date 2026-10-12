@@ -18,19 +18,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { OmnicioApp() }
+        setContent { AnalystAiApp() }
     }
 }
 
 @Composable
-private fun OmnicioApp() {
+private fun AnalystAiApp() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = "OMNICIO")
+                Text(text = "Analyst AI")
             }
         }
     }
@@ -38,6 +38,6 @@ private fun OmnicioApp() {
 
 @Preview(showBackground = true)
 @Composable
-private fun OmnicioAppPreview() {
-    OmnicioApp()
+private fun AnalystAiAppPreview() {
+    AnalystAiApp()
 }
