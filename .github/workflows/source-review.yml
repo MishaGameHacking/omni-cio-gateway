@@ -27,6 +27,23 @@ jobs:
         run: |
           py -3 ..\maintenance\.github\scripts\refine_050.py
           if errorlevel 1 exit /b 1
+      - name: Place profile checks inside emulator cleanup protection
+        shell: python
+        working-directory: work
+        run: |
+          from pathlib import Path
+          from textwrap import indent
+          path = Path('.github/scripts/test_apk_installation.py')
+          text = path.read_text(encoding='utf-8')
+          begin = text.index('\n        if args.api == 33 and os.getenv("RUN_PROFILE_UI_TESTS")')
+          end = text.index('\n        finally:', begin)
+          text = text[:begin + 1] + indent(text[begin + 1:end], '    ') + text[end:]
+          path.write_bytes(text.encode('utf-8'))
+          compile(text, str(path), 'exec')
+      - name: Validate Python syntax
+        shell: cmd
+        working-directory: work
+        run: |
           py -3 -m compileall -q backend .github\scripts
           if errorlevel 1 exit /b 1
       - name: Commit source-only changes with optimistic concurrency check
