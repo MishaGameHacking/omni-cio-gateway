@@ -6,6 +6,7 @@ on:
       - ops/timeweb-ai-bootstrap
     paths:
       - ".github/scripts/probe_timeweb_ai.py"
+      - ".github/scripts/inspect_timeweb_ai_resources.py"
       - ".github/workflows/timeweb-ai-probe.yml"
   workflow_dispatch:
 
@@ -32,4 +33,10 @@ jobs:
         shell: cmd
         run: |
           py -3 .github\scripts\probe_timeweb_ai.py
+          if errorlevel 1 exit /b 1
+
+      - name: Inspect configured agents and model catalog
+        shell: cmd
+        run: |
+          py -3 .github\scripts\inspect_timeweb_ai_resources.py
           if errorlevel 1 exit /b 1
