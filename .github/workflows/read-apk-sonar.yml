@@ -6,23 +6,17 @@ on:
 permissions:
   contents: read
   checks: read
-  pull-requests: read
 jobs:
   read:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read existing Sonar annotations only
+      - name: Read failed Android check annotations
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
           script: |
-            const pr = (await github.rest.pulls.get({...context.repo,pull_number:827})).data;
-            const checks = (await github.rest.checks.listForRef({...context.repo,ref:pr.head.sha,check_name:'SonarCloud Code Analysis'})).data.check_runs;
-            if (!checks.length) throw new Error('No Sonar check on current PR head');
-            const check = checks[0];
-            core.info('SHA=' + pr.head.sha + ' conclusion=' + check.conclusion);
-            const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:check.id, per_page:100});
+            const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:115019132973, per_page:100});
             for (const annotation of annotations) {
               core.info(JSON.stringify({path:annotation.path, line:annotation.start_line, title:annotation.title, message:annotation.message, level:annotation.annotation_level}));
             }
