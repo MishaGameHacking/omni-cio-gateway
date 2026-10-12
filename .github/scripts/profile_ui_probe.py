@@ -27,8 +27,9 @@ class ProfileProbe:
         return ET.fromstring(xml[xml.index("<?xml"):])
 
     def find(self, text):
+        # Compose clickable cards merge title/subtitle into a multiline accessibility node.
         for node in self.tree().iter("node"):
-            if node.get("text") == text:
+            if text in node.get("text", "").splitlines():
                 return node
         raise AssertionError("UI label not found: " + text)
 
