@@ -133,13 +133,30 @@ def mcp_tools(endpoint: str) -> list[dict[str, Any]]:
     raise RuntimeError(last_error or "MCP initialization failed")
 
 
-def is_ai_related_tool_name(name: str) -> bool:
+def tool_tokens(name: str) -> tuple[str, ...]:
     normalized = name.lower().replace("-", "_")
-    tokens = tuple(part for part in normalized.split("_") if part)
+    return tuple(part for part in normalized.split("_") if part)
+
+
+def is_ai_related_tool_name(name: str) -> bool:
+    tokens = tool_tokens(name)
     return any(
         token in {"ai", "agent", "agents", "gateway", "model", "models", "llm", "token", "tokens"}
         for token in tokens
     )
+
+
+def is_key_related_tool_name(name: str) -> bool:
+    tokens = tool_tokens(name)
+    return any(token in {"key", "keys", "credential", "credentials", "secret", "secrets"} for token in tokens)
+
+
+def compact_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": str(tool.get("name") or ""),
+        "description": str(tool.get("description") or "")[:900],
+        "inputSchema": tool.get("inputSchema") or tool.get("input_schema"),
+    }
 
 
 def main() -> None:
@@ -161,31 +178,20 @@ def main() -> None:
         print("MCP_PROBE_ERRORS=" + json.dumps(errors, ensure_ascii=True))
         raise SystemExit(2)
 
-    filtered = []
-    all_names = []
-    for tool in tools:
-        name = str(tool.get("name") or "")
-        all_names.append(name)
-        if is_ai_related_tool_name(name):
-            filtered.append(
-                {
-                    "name": name,
-                    "description": str(tool.get("description") or "")[:800],
-                    "inputSchema": tool.get("inputSchema") or tool.get("input_schema"),
-                }
-            )
+    ai_tools = [compact_tool(tool) for tool in tools if is_ai_related_tool_name(str(tool.get("name") or ""))]
+    key_tools = [compact_tool(tool) for tool in tools if is_key_related_tool_name(str(tool.get("name") or ""))]
 
     print("MCP_ENDPOINT=" + str(endpoint_used))
     print("MCP_TOOL_COUNT=" + str(len(tools)))
-    print("MCP_AI_TOOL_COUNT=" + str(len(filtered)))
-    print("MCP_AI_TOOL_NAMES=" + json.dumps([item["name"] for item in filtered], ensure_ascii=True))
-    for index, item in enumerate(filtered[:80], start=1):
-        print(
-            f"MCP_AI_TOOL_{index}="
-            + json.dumps(item, ensure_ascii=True, separators=(",", ":"))
-        )
-    if not filtered:
-        print("MCP_TOOL_NAMES=" + json.dumps(all_names, ensure_ascii=True))
+    print("MCP_AI_TOOL_COUNT=" + str(len(ai_tools)))
+    print("MCP_AI_TOOL_NAMES=" + json.dumps([item["name"] for item in ai_tools], ensure_ascii=True))
+    for index, item in enumerate(ai_tools[:80], start=1):
+        print(f"MCP_AI_TOOL_{index}=" + json.dumps(item, ensure_ascii=True, separators=(",", ":")))
+
+    print("MCP_KEY_TOOL_COUNT=" + str(len(key_tools)))
+    print("MCP_KEY_TOOL_NAMES=" + json.dumps([item["name"] for item in key_tools], ensure_ascii=True))
+    for index, item in enumerate(key_tools[:80], start=1):
+        print(f"MCP_KEY_TOOL_{index}=" + json.dumps(item, ensure_ascii=True, separators=(",", ":")))
 
 
 if __name__ == "__main__":
