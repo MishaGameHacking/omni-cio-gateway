@@ -103,7 +103,14 @@ def call_tool(session_id: str | None, request_id: int, name: str, arguments: dic
     result = payload.get("result")
     if isinstance(result, dict):
         if result.get("isError"):
-            raise RuntimeError(f"{name}: tool error: {result!r}")
+            content = result.get("content")
+            message = None
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        message = item["text"]
+                        break
+            raise RuntimeError(f"{name}: {message or result!r}")
         structured = result.get("structuredContent") or result.get("structured_content")
         if structured is not None:
             return structured
@@ -121,6 +128,18 @@ def call_tool(session_id: str | None, request_id: int, name: str, arguments: dic
                     continue
             return {"text": "\n".join(texts)}
     return result
+
+
+def safe_call(
+    session_id: str | None,
+    request_id: int,
+    name: str,
+    arguments: dict[str, Any],
+) -> tuple[Any | None, str | None]:
+    try:
+        return call_tool(session_id, request_id, name, arguments), None
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def walk(value: Any):
@@ -162,24 +181,32 @@ def summarize_models(payload: Any) -> list[dict[str, Any]]:
 
 def main() -> None:
     session_id = initialize()
-    agents = call_tool(session_id, 10, "list_ai_agents", {})
-    llm_models = call_tool(
+    llm_models, llm_error = safe_call(
         session_id,
         11,
         "list_ai_models",
         {"type": "llm", "include_deprecated": False, "include_params_info": True},
     )
-    hosted_models = call_tool(
+    hosted_models, hosted_error = safe_call(
         session_id,
         12,
         "list_ai_models",
         {"type": "hosted-llm", "include_deprecated": False, "include_params_info": True},
     )
+    agents, agents_error = safe_call(session_id, 13, "list_ai_agents", {})
 
-    print("TIMEWEB_AI_AGENTS=" + json.dumps(agents, ensure_ascii=True, separators=(",", ":")))
+    print("TIMEWEB_AI_AGENTS_ERROR=" + json.dumps(agents_error, ensure_ascii=True))
+    if agents is not None:
+        print("TIMEWEB_AI_AGENTS=" + json.dumps(agents, ensure_ascii=True, separators=(",", ":")))
+
+    print("TIMEWEB_AI_LLM_MODELS_ERROR=" + json.dumps(llm_error, ensure_ascii=True))
+    print("TIMEWEB_AI_HOSTED_MODELS_ERROR=" + json.dumps(hosted_error, ensure_ascii=True))
     models = summarize_models(llm_models) + summarize_models(hosted_models)
     print("TIMEWEB_AI_MODEL_COUNT=" + str(len(models)))
     print("TIMEWEB_AI_MODELS=" + json.dumps(models, ensure_ascii=True, separators=(",", ":")))
+
+    if agents_error and llm_error and hosted_error:
+        raise SystemExit(3)
 
 
 if __name__ == "__main__":
