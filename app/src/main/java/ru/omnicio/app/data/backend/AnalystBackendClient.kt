@@ -142,15 +142,20 @@ class AnalystBackendClient(
                 connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             }
 
+            val detail = if (status in 200..299) null else runCatching {
+                JSONObject(responseBody).optString("detail")
+            }.getOrNull()
+
             when {
                 status in 200..299 -> BackendResult.Success(responseBody)
                 status == HttpURLConnection.HTTP_UNAUTHORIZED ||
                     status == HttpURLConnection.HTTP_FORBIDDEN -> {
                     BackendResult.Failure(
-                        "Сеанс недействителен или доступ отклонён.",
+                        "Сеанс Analyst AI истёк или недействителен. Войдите через Telegram заново.",
                         retryable = false,
                     )
                 }
+                path == "/tinvest/token" -> tinvestFailure(detail, status)
                 status == 429 || status >= 500 -> {
                     BackendResult.Failure(
                         "Сервис временно недоступен. Попробуйте ещё раз.",
@@ -158,9 +163,6 @@ class AnalystBackendClient(
                     )
                 }
                 else -> {
-                    val detail = runCatching {
-                        JSONObject(responseBody).optString("detail")
-                    }.getOrNull()
                     BackendResult.Failure(
                         detail?.takeIf { it.isNotBlank() }
                             ?: "Сервер отклонил запрос.",
@@ -176,6 +178,36 @@ class AnalystBackendClient(
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun tinvestFailure(detail: String?, status: Int): BackendResult.Failure {
+        val message = when (detail) {
+            "invalid_tinvest_token" ->
+                "T-Invest отклонил токен. Проверьте срок действия, права доступа и правильность копирования."
+            "tinvest_tls_error" ->
+                "Сервер не смог проверить сертификат T-Invest. Ошибка защищённого соединения, а не токена."
+            "tinvest_connection_failed" ->
+                "Сервер Analyst AI не может подключиться к T-Invest. Проверьте соединение позже."
+            "tinvest_timeout" ->
+                "T-Invest не ответил вовремя. Попробуйте ещё раз."
+            "tinvest_rate_limited" ->
+                "T-Invest ограничил частоту запросов. Подождите и повторите попытку."
+            "tinvest_upstream_unavailable" ->
+                "Сервис T-Invest временно недоступен. Попробуйте позже."
+            "tinvest_unexpected_status", "tinvest_invalid_response" ->
+                "T-Invest вернул неожиданный ответ. Не удалось подтвердить токен."
+            "empty_tinvest_token" ->
+                "Вставьте токен доступа T-Invest."
+            else -> when (status) {
+                502 -> "Ошибка ответа T-Invest. Подключение не завершено."
+                503, 504 -> "Связь с T-Invest временно недоступна. Попробуйте позже."
+                else -> "Не удалось подтвердить токен T-Invest."
+            }
+        }
+        return BackendResult.Failure(
+            message = message,
+            retryable = status == 429 || status >= 500,
+        )
     }
 
     private fun parseSession(json: JSONObject): AnalystSession {
