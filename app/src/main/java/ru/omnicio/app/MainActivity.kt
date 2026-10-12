@@ -1,6 +1,7 @@
 package ru.omnicio.app
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.portfolio.PortfolioUiState
@@ -26,15 +28,41 @@ private enum class AppScreen {
 }
 
 class MainActivity : ComponentActivity() {
+    private lateinit var settingsStore: AppSettingsStore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { AnalystAiApp() }
+
+        settingsStore = AppSettingsStore(this)
+        val initialScreenshotsBlocked = settingsStore.screenshotsBlocked()
+        applyScreenshotPolicy(initialScreenshotsBlocked)
+
+        setContent {
+            AnalystAiApp(
+                initialScreenshotsBlocked = initialScreenshotsBlocked,
+                onScreenshotsBlockedChange = { blocked ->
+                    settingsStore.setScreenshotsBlocked(blocked)
+                    applyScreenshotPolicy(blocked)
+                },
+            )
+        }
+    }
+
+    private fun applyScreenshotPolicy(blocked: Boolean) {
+        if (blocked) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 }
 
 @Composable
-private fun AnalystAiApp() {
+private fun AnalystAiApp(
+    initialScreenshotsBlocked: Boolean,
+    onScreenshotsBlockedChange: (Boolean) -> Unit,
+) {
     val context = LocalContext.current
     val tokenStore = remember(context) { TInvestTokenStore(context) }
 
@@ -44,6 +72,9 @@ private fun AnalystAiApp() {
     }
     var tApiConfigured by remember {
         mutableStateOf(tokenStore.hasToken())
+    }
+    var screenshotsBlocked by rememberSaveable {
+        mutableStateOf(initialScreenshotsBlocked)
     }
 
     MaterialTheme {
@@ -64,6 +95,11 @@ private fun AnalystAiApp() {
             AppScreen.Profile -> {
                 ProfileScreen(
                     tApiConfigured = tApiConfigured,
+                    screenshotsBlocked = screenshotsBlocked,
+                    onScreenshotsBlockedChange = { blocked ->
+                        screenshotsBlocked = blocked
+                        onScreenshotsBlockedChange(blocked)
+                    },
                     onPortfolioClick = {
                         screenName = AppScreen.Portfolio.name
                     },
