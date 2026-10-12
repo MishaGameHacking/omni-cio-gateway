@@ -13,7 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -113,8 +114,7 @@ fun PortfolioScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(ScreenBackground)
-                .padding(innerPadding)
-                .statusBarsPadding(),
+                .padding(innerPadding),
             contentPadding = PaddingValues(
                 start = 20.dp,
                 top = 12.dp,
@@ -649,6 +649,7 @@ private fun AllocationRow(allocation: PortfolioAllocation) {
 @Composable
 private fun PortfolioBottomBar() {
     Surface(
+        modifier = Modifier.navigationBarsPadding(),
         color = Color.White,
         shadowElevation = 10.dp,
     ) {
@@ -706,7 +707,7 @@ private fun BigDecimal.formattedNumber(
     maxFractionDigits: Int,
     withSign: Boolean,
 ): String {
-    val formatter = NumberFormat.getNumberInstance(Locale("ru", "RU")).apply {
+    val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("ru-RU")).apply {
         minimumFractionDigits = minFractionDigits
         maximumFractionDigits = maxFractionDigits
         isGroupingUsed = true
