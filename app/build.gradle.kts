@@ -49,6 +49,7 @@ dependencies {
 
     implementation(composeBom)
     implementation(libs.activity.compose)
+    implementation(libs.coroutines.android)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)

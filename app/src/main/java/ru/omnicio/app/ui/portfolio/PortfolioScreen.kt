@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
+import ru.omnicio.app.ui.AnalystBottomBar
+import ru.omnicio.app.ui.AnalystTab
 
 data class ApiDecimal(
     val units: Long,
@@ -86,6 +87,7 @@ data class PortfolioSnapshot(
 
 sealed interface PortfolioUiState {
     data object NotConnected : PortfolioUiState
+    data object ApiConnected : PortfolioUiState
     data object Loading : PortfolioUiState
     data class Ready(val snapshot: PortfolioSnapshot) : PortfolioUiState
     data class Error(val message: String) : PortfolioUiState
@@ -102,12 +104,19 @@ private val Divider = Color(0xFFE8EAED)
 @Composable
 fun PortfolioScreen(
     state: PortfolioUiState,
+    onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = ScreenBackground,
-        bottomBar = { PortfolioBottomBar() },
+        bottomBar = {
+            AnalystBottomBar(
+                selected = AnalystTab.Portfolio,
+                onPortfolioClick = {},
+                onProfileClick = onProfileClick,
+            )
+        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -136,6 +145,20 @@ fun PortfolioScreen(
                     }
                     item {
                         EmptyAccountsCard()
+                    }
+                }
+
+                PortfolioUiState.ApiConnected -> {
+                    item {
+                        ApiConnectedCard()
+                    }
+                    item {
+                        SectionTitle("Счета")
+                    }
+                    item {
+                        EmptyAccountsCard(
+                            message = "T‑API подключён. Реальные счета появятся после загрузки данных портфеля.",
+                        )
                     }
                 }
 
@@ -265,6 +288,34 @@ private fun ApiSourceBadge() {
             color = Color(0xFF356EC9),
             style = MaterialTheme.typography.labelLarge,
         )
+    }
+}
+
+@Composable
+private fun ApiConnectedCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "T‑API подключён",
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = PositiveGreen,
+            )
+            Text(
+                text = "Read-only токен подтверждён. Analyst AI не показывает выдуманные суммы и будет использовать только фактические данные T‑Invest API.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MutedText,
+            )
+            ApiSourceBadge()
+        }
     }
 }
 
@@ -409,14 +460,16 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun EmptyAccountsCard() {
+private fun EmptyAccountsCard(
+    message: String = "Счета появятся после получения реальных данных T‑Invest API.",
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
     ) {
         Text(
-            text = "Счета появятся после получения реальных данных T‑Invest API.",
+            text = message,
             modifier = Modifier.padding(22.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = MutedText,
@@ -645,46 +698,6 @@ private fun AllocationRow(allocation: PortfolioAllocation) {
     }
 }
 
-@Composable
-private fun PortfolioBottomBar() {
-    Surface(
-        modifier = Modifier.navigationBarsPadding(),
-        color = Color.White,
-        shadowElevation = 10.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Surface(
-                    modifier = Modifier.size(34.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFF22262D),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "▰",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                        )
-                    }
-                }
-                Text(
-                    text = "Портфель",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-    }
-}
-
 private fun MoneyAmount.formatted(withSign: Boolean = false): String {
     val decimal = value.toBigDecimal()
     val number = decimal.formattedNumber(
@@ -728,6 +741,9 @@ private fun currencySymbol(currency: String): String =
 @Composable
 private fun PortfolioScreenPreview() {
     MaterialTheme {
-        PortfolioScreen(state = PortfolioUiState.NotConnected)
+        PortfolioScreen(
+            state = PortfolioUiState.NotConnected,
+            onProfileClick = {},
+        )
     }
 }
