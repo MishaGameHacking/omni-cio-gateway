@@ -64,3 +64,12 @@
 - Если функция требует решения OWNER, сначала уточнить, а не угадывать.
 
 Этот файл должен оставаться коротким и актуальным. Новые постоянные договорённости OWNER добавлять сюда, а устаревшие — заменять или удалять.
+
+## AI orchestration
+
+- Users do not directly prompt the investment AI. It emits proactive, structured insights.
+- Routine data collection, calculations, caching and risk thresholds must run without LLMs.
+- Use the balanced `fast` / `standard` / `premium` gate in `backend/ai_policy.py`; no material change means no model call.
+- Timeweb AI Gateway model IDs and API keys are server configuration, never APK constants.
+- The primary navigation has five tabs: Portfolio, Ideas, Pulse, Chat and Profile.
+- Portfolio display currency cycles RUB -> USD -> EUR by tapping the total; request that currency from T-Invest rather than inventing local FX conversion.

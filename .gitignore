@@ -8,3 +8,10 @@ captures/
 *.iml
 *.jks
 *.keystore
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
