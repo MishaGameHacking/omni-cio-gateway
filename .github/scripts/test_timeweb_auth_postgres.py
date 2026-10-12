@@ -40,6 +40,64 @@ HISTORICAL_MIGRATIONS = (
 )
 
 
+class InstalledReleaseTests(unittest.TestCase):
+    def test_deployed_release_requires_accepted_github_evidence(self) -> None:
+        installed = "c" * 40
+        ssh = Mock()
+        ssh.run.return_value = f"/opt/omnicio/releases/{installed}\n"
+        with (
+            patch.dict(MODULE.os.environ, {"GITHUB_TOKEN": "synthetic-token"}, clear=True),
+            patch.object(MODULE, "GitHubClient") as client,
+            patch.object(MODULE, "verify_accepted_release") as verify,
+        ):
+            self.assertEqual(MODULE.verified_installed_release(ssh, release_sha="a" * 40),
+                             installed)
+            verify.assert_called_once_with(client.return_value, installed)
+            for failure in (MODULE.ReleaseBlocked("rejected"), MODULE.PendingChecks("pending")):
+                verify.side_effect = failure
+                with self.subTest(failure=type(failure)), self.assertRaises(MODULE.ReleaseBlocked):
+                    MODULE.verified_installed_release(ssh, release_sha="a" * 40)
+        ssh.run.assert_called_with("readlink -f /opt/omnicio/current")
+
+    def test_installed_release_rejects_unmanaged_path_and_missing_evidence_token(self) -> None:
+        ssh = Mock()
+        with patch.dict(MODULE.os.environ, {}, clear=True):
+            for path in ("/tmp/" + "c" * 40, "/opt/omnicio/releases/latest", ""):
+                ssh.run.return_value = path
+                with self.subTest(path=path), self.assertRaises(MODULE.InfraError):
+                    MODULE.verified_installed_release(ssh, release_sha="a" * 40)
+            ssh.run.return_value = "/opt/omnicio/releases/" + "c" * 40
+            with self.assertRaises(MODULE.ReleaseBlocked):
+                MODULE.verified_installed_release(ssh, release_sha="a" * 40)
+
+    def test_verified_deployment_keeps_receipt_version_and_race_checks(self) -> None:
+        plan = UPGRADE.load_plan()
+        installed = "c" * 40
+        receipt = {"phase": "completed", "release_sha": "d" * 40,
+                   "installed_release": plan["source_release"]}
+        current = Mock()
+        current.resolve.return_value = UPGRADE.RELEASE_ROOT / installed
+        with (
+            patch.object(UPGRADE, "CURRENT_RELEASE", current),
+            patch("importlib.metadata.version", return_value=plan["target_version"]) as version,
+            patch.object(pathlib.Path, "read_text", return_value="synthetic-schema"),
+            patch.object(UPGRADE, "schema_query", return_value="checked-schema"),
+        ):
+            self.assertEqual(UPGRADE._existing_installation(plan, receipt, "a" * 40, installed),
+                             ("checked-schema", installed))
+            for evidence, actual_receipt in ((None, receipt), ("e" * 40, receipt),
+                                             (installed, None),
+                                             (installed, receipt | {"phase": "pending"})):
+                with (
+                    self.subTest(evidence=evidence, receipt=actual_receipt),
+                    self.assertRaisesRegex(UPGRADE.UpgradeBlocked, "source_release_mismatch"),
+                ):
+                    UPGRADE._existing_installation(plan, actual_receipt, "a" * 40, evidence)
+            version.return_value = "unexpected-version"
+            with self.assertRaisesRegex(UPGRADE.UpgradeBlocked, "installed_version_mismatch"):
+                UPGRADE._existing_installation(plan, receipt, "a" * 40, installed)
+
+
 class SshInventoryTests(unittest.TestCase):
     def test_complete_inventory_allows_only_unrelated_keys(self) -> None:
         client = MODULE.TimewebClient("synthetic-token")
@@ -434,6 +492,7 @@ class PostgresTests(unittest.TestCase):
         with (
             patch.dict(MODULE.os.environ, environment, clear=True),
             patch.object(UPGRADE, "load_plan", return_value=self.reviewed_upgrade_plan()),
+            patch.object(MODULE, "verified_installed_release", return_value="c" * 40),
         ):
             MODULE.run_inplace_upgrade(ssh, **arguments)
             self.assertEqual(
@@ -931,6 +990,7 @@ class PostgresTests(unittest.TestCase):
                 with (
                     self.subTest(operation=operation, invalid=invalid_local_configuration),
                     patch.dict(MODULE.os.environ, values, clear=True),
+                    patch.object(MODULE, "verified_installed_release", return_value="c" * 40),
                 ):
                     actual = MODULE.run_inplace_upgrade(
                         ssh, migration_sqls=self.reviewed_upgrade_sql(), release_sha="a" * 40,

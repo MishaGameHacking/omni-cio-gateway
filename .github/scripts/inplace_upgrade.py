@@ -761,13 +761,22 @@ def _apply_pending(
 
 
 def _existing_installation(plan: dict[str, Any], receipt: dict[str, Any] | None,
-                           release_sha: str) -> tuple[str, str]:
+                           release_sha: str,
+                           verified_installed_release: str | None = None) -> tuple[str, str]:
     from importlib.metadata import version
 
     current = CURRENT_RELEASE.resolve(strict=True)
     allowed = {plan["source_release"]}
     if receipt is not None:
         allowed.update({release_sha, receipt["release_sha"], receipt["installed_release"]})
+    if verified_installed_release is not None:
+        if (not isinstance(verified_installed_release, str)
+                or re.fullmatch(RELEASE_SHA_PATTERN, verified_installed_release) is None):
+            raise UpgradeBlocked("invalid_verified_installed_release")
+        # The controller checked this exact deployed commit's merged PR and CI.
+        # Keep the SQL transition receipt and recheck the symlink under our locks.
+        if receipt is not None and receipt["phase"] == "completed":
+            allowed.add(verified_installed_release)
     if current.parent != RELEASE_ROOT or current.name not in allowed:
         raise UpgradeBlocked("source_release_mismatch")
     expected = (plan["source_version"] if current.name == plan["source_release"]
@@ -1169,7 +1178,9 @@ def remote_main(
             receipt = _read_receipt()
             identity = operation_identity(plan, expected)
             validate_receipt(receipt, identity)
-            source_query, installed_release = _existing_installation(plan, receipt, release_sha)
+            source_query, installed_release = _existing_installation(
+                plan, receipt, release_sha, payload.get("verified_installed_release"),
+            )
             _verify_connected_database(connection, expected)
             if operation != "apply":
                 report = _inspect_current_upgrade(
@@ -1203,6 +1214,7 @@ def remote_main(
 def render_remote_upgrade(
     statements: list[str], *, release_sha: str, database: dict[str, Any],
     operation: str = "preflight",
+    verified_installed_release: str | None = None,
 ) -> str:
     from timeweb_auth_app import DEPLOY_LOCK, render_product_preflight
 
@@ -1221,6 +1233,7 @@ def render_remote_upgrade(
               ))
     contract = root / "src/omnicio/schema.py"
     payload = {"plan": plan, "statements": statements, "release_sha": release_sha,
+               "verified_installed_release": verified_installed_release,
                "database": database, "application_version": application_version,
                "operation": operation, "deployment_lock": DEPLOY_LOCK,
                "target_query": schema_query(contract.read_text(encoding="utf-8"))}

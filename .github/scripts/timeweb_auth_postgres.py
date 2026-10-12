@@ -53,7 +53,14 @@ from timeweb_ssh_trust import (
     trusted_host_entry,
     trusted_host_fingerprint,
 )
-from verify_main_release import ReleaseBlocked, release_context, require_checkout
+from verify_main_release import (
+    GitHubClient,
+    PendingChecks,
+    ReleaseBlocked,
+    release_context,
+    require_checkout,
+    verify_accepted_release,
+)
 
 API_ROOT = "https://api.timeweb.cloud/api"
 REMOTE_SECRET_PATH = "/etc/omnicio/auth-secrets.env"
@@ -981,13 +988,36 @@ def _read_upgrade_result(
     return result
 
 
+def verified_installed_release(ssh: EphemeralSsh, *, release_sha: str) -> str:
+    """Bind the installed application to accepted GitHub evidence, not an old SQL receipt."""
+    current = ssh.run("readlink -f /opt/omnicio/current").strip()
+    match = re.fullmatch(r"/opt/omnicio/releases/([0-9a-f]{40})", current)
+    if match is None:
+        raise InfraError("Installed release path is not a managed exact commit")
+    installed = match.group(1)
+    if installed in {release_sha, load_plan()["source_release"]}:
+        return installed
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        raise ReleaseBlocked("GitHub evidence is required for the installed release")
+    client = GitHubClient(token, deadline=time.monotonic() + 120)
+    try:
+        verify_accepted_release(client, installed)
+    except PendingChecks as exc:
+        raise ReleaseBlocked("Installed release evidence is not complete") from exc
+    return installed
+
+
 def run_inplace_upgrade(
     ssh: EphemeralSsh, *, migration_sqls: list[str], release_sha: str,
     endpoint: DatabaseEndpoint, desired: DesiredDatabase, operation: str = "preflight",
 ) -> dict[str, Any]:
+    validate_operation(operation, release_sha=release_sha)
+    installed = verified_installed_release(ssh, release_sha=release_sha)
     cluster_id = load_policy().cluster_id
     program = render_remote_upgrade(
         migration_sqls, release_sha=release_sha, operation=operation,
+        verified_installed_release=installed,
         database={"cluster_id": cluster_id, "host": endpoint.host, "port": endpoint.port,
                   "database": desired.instance_name, "user": desired.admin_login},
     )
