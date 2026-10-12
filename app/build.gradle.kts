@@ -11,8 +11,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.2.1"
+        versionCode = 15
+        versionName = "0.2.2"
     }
 
     buildTypes {
