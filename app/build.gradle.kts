@@ -11,8 +11,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.2.0"
+        versionCode = 14
+        versionName = "0.2.1"
     }
 
     buildTypes {
@@ -51,6 +51,7 @@ dependencies {
     implementation(composeBom)
     implementation(libs.activity.compose)
     implementation(libs.coroutines.android)
+    implementation(libs.browser)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
