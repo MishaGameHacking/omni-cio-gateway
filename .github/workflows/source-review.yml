@@ -27,8 +27,8 @@ jobs:
         run: |
           py -3 ..\maintenance\.github\scripts\refine_050.py
           if errorlevel 1 exit /b 1
-      - name: Place profile checks inside emulator cleanup protection
-        shell: python
+      - name: Correct emulator test scope and use actual Activity owner
+        shell: py -3 {0}
         working-directory: work
         run: |
           from pathlib import Path
@@ -40,6 +40,17 @@ jobs:
           text = text[:begin + 1] + indent(text[begin + 1:end], '    ') + text[end:]
           path.write_bytes(text.encode('utf-8'))
           compile(text, str(path), 'exec')
+          root = Path('app/src/main/java/ru/omnicio/app')
+          for name in ['ui/portfolio/AccountDataState.kt', 'data/portfolio/LivePortfolio.kt', 'ui/theme/AnalystTheme.kt']:
+              path = root / name
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('import androidx.activity.ComponentActivity', 'import androidx.activity.ComponentActivity\nimport androidx.activity.compose.LocalActivity')
+              text = text.replace('(LocalContext.current as? ComponentActivity)', '(LocalActivity.current as? ComponentActivity)')
+              if name.endswith('LivePortfolio.kt'):
+                  text = text.replace('    val context = LocalContext.current\n', '    val activity = LocalActivity.current\n').replace('(context as? ComponentActivity)', '(activity as? ComponentActivity)')
+              if name.endswith('AnalystTheme.kt'):
+                  text = text.replace('    val context = LocalContext.current\n', '    val context = LocalContext.current\n    val activity = LocalActivity.current\n').replace('(context as? ComponentActivity)', '(activity as? ComponentActivity)')
+              path.write_bytes(text.encode('utf-8'))
       - name: Validate Python syntax
         shell: cmd
         working-directory: work
@@ -64,6 +75,6 @@ jobs:
             if (!paths.length || paths.some(p => !allowed.test(p))) throw new Error('Unexpected source path');
             const tree = paths.map(p => ({path:p,mode:'100644',type:'blob',content:fs.readFileSync(path.join('work',p),'utf8').replace(/\r\n/g,'\n')}));
             const created = (await github.rest.git.createTree({...context.repo,base_tree:commit.tree.sha,tree})).data;
-            const next = (await github.rest.git.createCommit({...context.repo,message:'fix: calendar portability, documented API errors and verified profile UI',tree:created.sha,parents:[head]})).data;
+            const next = (await github.rest.git.createCommit({...context.repo,message:'fix: portable calendar, Activity ownership and tested profile interactions',tree:created.sha,parents:[head]})).data;
             await github.rest.git.updateRef({...context.repo,ref,sha:next.sha,force:false});
             core.info('REFINED_SHA=' + next.sha);
