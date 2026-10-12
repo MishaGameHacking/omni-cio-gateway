@@ -80,7 +80,7 @@ class TelegramLoginTests(unittest.TestCase):
 
         self.assertEqual(callback.status_code, 200)
         self.assertIn("window.location.replace", callback.text)
-        match = re.search(r'href="analystai://auth\\?code=([^"]+)"', callback.text)
+        match = re.search(r'href="analystai://auth\?code=([^"]+)"', callback.text)
         self.assertIsNotNone(match)
         login_code = match.group(1)
         exchange = self.client.post("/auth/session", json={"code": login_code})
