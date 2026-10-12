@@ -69,11 +69,11 @@ fun AnalystTheme(content: @Composable () -> Unit) {
         ThemeMode.DARK -> true
     }
     SideEffect {
-        (activity as? ComponentActivity)?.window?.isNavigationBarContrastEnforced = false
         (activity as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark },
             navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark },
         )
+        activity?.window?.isNavigationBarContrastEnforced = false
     }
     val preference = ThemePreference(mode) { selected ->
         modeName = selected.name
