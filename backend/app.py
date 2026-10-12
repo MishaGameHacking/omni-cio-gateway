@@ -57,7 +57,17 @@ SESSION_TTL = 30 * 24 * 60 * 60
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    yield
+    try:
+        from .autonomous_ai import init_autonomous_db, start_scheduler, stop_scheduler
+    except ImportError:
+        from autonomous_ai import init_autonomous_db, start_scheduler, stop_scheduler
+
+    init_autonomous_db()
+    scheduler_task = start_scheduler()
+    try:
+        yield
+    finally:
+        await stop_scheduler(scheduler_task)
 
 
 app = FastAPI(
@@ -566,3 +576,10 @@ except ImportError:
     from tinvest_portfolio import router as tinvest_portfolio_router
 
 app.include_router(tinvest_portfolio_router)
+
+try:
+    from .autonomous_ai import router as autonomous_ai_router
+except ImportError:
+    from autonomous_ai import router as autonomous_ai_router
+
+app.include_router(autonomous_ai_router)

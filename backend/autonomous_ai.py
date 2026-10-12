@@ -18,9 +18,8 @@ import time
 import uuid
 from contextlib import closing
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Mapping
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -54,7 +53,7 @@ except ImportError:  # pragma: no cover - uvicorn top-level import compatibility
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analysis", tags=["analysis"])
-MOSCOW = ZoneInfo("Europe/Moscow")
+MOSCOW = timezone(timedelta(hours=3), name="Europe/Moscow")
 
 SCHEDULER_INTERVAL_SECONDS = max(
     60,
@@ -480,13 +479,20 @@ def _signals(
     minutes_since = None
     if last is not None:
         minutes_since = max(0, int((now.timestamp() - int(last["created_at"])) / 60))
+    recent_same_risk = (
+        last is not None
+        and last["reason"] == AnalysisReason.RISK_EVENT.value
+        and minutes_since is not None
+        and minutes_since < 360
+        and not material_changed
+    )
     return (
         AnalysisSignals(
             morning_due=morning,
             evening_due=evening,
             portfolio_changed=portfolio_changed,
             cash_changed=cash_changed,
-            critical_risk=critical and bool(profile["notify_critical"]),
+            critical_risk=(critical and bool(profile["notify_critical"]) and not recent_same_risk),
             market_regime_changed=False,
             data_recovered=previous_row is not None and previous_row["status"] != "ready",
             digest_changed=material_changed or morning or evening,

@@ -57,6 +57,7 @@ fun ProfileScreen(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onPortfolioClick: () -> Unit,
     onOpenTApi: () -> Unit,
+    onOpenAnalysisSettings: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -142,6 +143,14 @@ fun ProfileScreen(
                             symbol = "T",
                             accent = tApiConfigured,
                             onClick = onOpenTApi,
+                        )
+                    }
+                    item {
+                        ProfileCard(
+                            title = "Инвестиционный профиль",
+                            subtitle = "Риск, горизонт, резерв и фоновые обзоры",
+                            symbol = "AI",
+                            onClick = onOpenAnalysisSettings,
                         )
                     }
                     item {

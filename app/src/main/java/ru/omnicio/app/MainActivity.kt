@@ -32,7 +32,10 @@ import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.LocalAnalystTabNavigator
-import ru.omnicio.app.ui.PlaceholderTabScreen
+import ru.omnicio.app.ui.analysis.AnalysisProfileSettingsScreen
+import ru.omnicio.app.ui.analysis.IdeasScreen
+import ru.omnicio.app.ui.analysis.InsightFeedScreen
+import ru.omnicio.app.ui.analysis.PulseScreen
 import ru.omnicio.app.ui.auth.TelegramLoginScreen
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
@@ -44,6 +47,7 @@ private enum class AppScreen {
     Pulse,
     Chat,
     Profile,
+    AnalysisSettings,
     TApi,
 }
 
@@ -380,26 +384,41 @@ private fun AnalystAiApp(
                         }
 
                         AppScreen.Ideas -> {
-                            PlaceholderTabScreen(
-                                selected = AnalystTab.Ideas,
-                                title = "Что купить",
-                                description = "Здесь появятся персональные подборки активов после согласования правил риска, горизонта и допустимых рынков.",
+                            IdeasScreen(
+                                accessToken = current.accessToken,
+                                onPortfolioClick = {
+                                    screenName = AppScreen.Portfolio.name
+                                },
+                                onProfileClick = {
+                                    screenName = AppScreen.Profile.name
+                                },
+                                onOpenProfileSettings = {
+                                    screenName = AppScreen.AnalysisSettings.name
+                                },
                             )
                         }
 
                         AppScreen.Pulse -> {
-                            PlaceholderTabScreen(
-                                selected = AnalystTab.Pulse,
-                                title = "Пульс",
-                                description = "Раздел подготовлен для важных событий рынка и компаний из портфеля без лишнего информационного шума.",
+                            PulseScreen(
+                                accessToken = current.accessToken,
+                                onPortfolioClick = {
+                                    screenName = AppScreen.Portfolio.name
+                                },
+                                onProfileClick = {
+                                    screenName = AppScreen.Profile.name
+                                },
                             )
                         }
 
                         AppScreen.Chat -> {
-                            PlaceholderTabScreen(
-                                selected = AnalystTab.Chat,
-                                title = "Чат",
-                                description = "Здесь будет лента важных сообщений Analyst AI. Пользователь не задаёт модели произвольные вопросы — система сообщает только полезные выводы.",
+                            InsightFeedScreen(
+                                accessToken = current.accessToken,
+                                onPortfolioClick = {
+                                    screenName = AppScreen.Portfolio.name
+                                },
+                                onProfileClick = {
+                                    screenName = AppScreen.Profile.name
+                                },
                             )
                         }
 
@@ -418,12 +437,30 @@ private fun AnalystAiApp(
                                 onOpenTApi = {
                                     screenName = AppScreen.TApi.name
                                 },
+                                onOpenAnalysisSettings = {
+                                    screenName = AppScreen.AnalysisSettings.name
+                                },
                                 onLogout = {
                                     sessionStore.clear()
                                     screenName = AppScreen.Portfolio.name
                                     tApiConfigured = false
                                     portfolioState = PortfolioUiState.NotConnected
                                     authState = AuthUiState.SignedOut()
+                                },
+                            )
+                        }
+
+                        AppScreen.AnalysisSettings -> {
+                            AnalysisProfileSettingsScreen(
+                                accessToken = current.accessToken,
+                                onBack = {
+                                    screenName = AppScreen.Profile.name
+                                },
+                                onPortfolioClick = {
+                                    screenName = AppScreen.Portfolio.name
+                                },
+                                onProfileClick = {
+                                    screenName = AppScreen.Profile.name
                                 },
                             )
                         }
