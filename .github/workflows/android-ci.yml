@@ -12,6 +12,7 @@ on:
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-apk.yml"
 permissions:
   contents: read
 
