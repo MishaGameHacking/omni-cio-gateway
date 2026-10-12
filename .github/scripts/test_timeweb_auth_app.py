@@ -1414,7 +1414,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_deployment_preserves_users_and_only_configures_current_identity_providers(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
-        workflow = (SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml").read_text(
+        workflow = (SCRIPT_DIR.parent / "workflows" / "auth-app-release.yml").read_text(
             encoding="utf-8",
         )
         self.assertNotIn("retire_legacy_profile", source)
@@ -1446,63 +1446,38 @@ class AuthAppDeployTests(unittest.TestCase):
                 MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
 
 
-    def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
-        workflow = (
-            SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml"
-        ).read_text(encoding="utf-8")
-        concurrency = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
+    def test_auth_deploy_workflow_separates_validation_and_production_concurrency(self) -> None:
+        workflow_dir = SCRIPT_DIR.parent / "workflows"
+        validation = (workflow_dir / "auth-app-deploy.yml").read_text(encoding="utf-8")
+        release = (workflow_dir / "auth-app-release.yml").read_text(encoding="utf-8")
+
+        concurrency = validation.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
         group = re.search(r"^  group: (.*?)\$\{\{\s*(.*?)\s*\}\}(.*?)$", concurrency, re.M)
         cancel = re.search(r"^  cancel-in-progress: \$\{\{\s*(.*?)\s*\}\}$", concurrency, re.M)
         self.assertIsNotNone(group)
         self.assertIsNotNone(cancel)
-        self.assertNotIn("queue:", concurrency, "PR cancellation cannot use a bounded queue")
+        self.assertNotIn("queue:", concurrency)
+        self.assertIn("github.event.pull_request.number || github.run_id", concurrency)
 
-        scenarios = (
-            ("first PR run", "pull_request", 765, 1001),
-            ("newer same PR", "pull_request", 765, 1002),
-            ("different PR", "pull_request", 766, 1003),
-            ("main push", "push", None, 2001),
-            ("manual release", "workflow_dispatch", None, 2002),
-            ("later main push", "push", None, 2003),
-            ("later manual release", "workflow_dispatch", None, 2004),
-        )
-        contexts = [
-            {"event_name": event, "run_id": run_id, "sha": "a" * 40,
-             "event": {"pull_request": {"number": pr}}}
-            for _, event, pr, run_id in scenarios
-        ]
-        # Evaluate the actual workflow expressions using their shared string,
-        # truthiness and boolean semantics in Node, already required by this job.
-        node = shutil.which("node")
-        self.assertIsNotNone(node, "Node is required by the application workflow")
-        source = (
-            "const contexts = " + json.dumps(contexts) + ";\n"
-            "const results = contexts.map(github => [\n"
-            f"  {json.dumps(group[1])} + String({group[2]}) + {json.dumps(group[3])},\n"
-            f"  Boolean({cancel[1]})\n"
-            "]);\nprocess.stdout.write(JSON.stringify(results));\n"
-        )
-        result = subprocess.run([node, "-"], input=source, text=True,
-                                capture_output=True, check=True, timeout=10)
-        actual = json.loads(result.stdout)
-        self.assertEqual(actual[0], actual[1], "New commits of one PR share their queue")
-        self.assertEqual(len({item[0] for item in actual}), len(scenarios) - 1,
-                         "Different PRs and every non-PR run need independent queues")
-        for (name, event, _, _), (_, cancels) in zip(scenarios, actual, strict=True):
-            with self.subTest(event=name):
-                self.assertEqual(cancels, event == "pull_request")
+        validation_jobs = validation.split("\njobs:\n", 1)[1]
+        self.assertIn("\n  tests:\n", "\n" + validation_jobs)
+        self.assertNotIn("\n  deploy:\n", validation_jobs)
+        self.assertNotIn("omnicio-production-ssh", validation_jobs)
 
-        tests, deploy = workflow.split("\n  tests:\n", 1)[1].split("\n  deploy:\n", 1)
-        self.assertNotIn("omnicio-production-ssh", tests, "Validation cannot occupy the SSH lock")
-        self.assertEqual(
-            deploy.split("    concurrency:\n", 1)[1].split("    if:", 1)[0],
-            "      group: omnicio-production-ssh\n"
-            "      cancel-in-progress: false\n"
-            "      queue: max\n",
+        release_header, release_jobs = release.split("\njobs:\n", 1)
+        self.assertIn("  workflow_dispatch:\n", release_header)
+        self.assertNotIn("  pull_request:\n", release_header)
+        self.assertNotIn("  push:\n", release_header)
+        self.assertIn("\n  deploy:\n", "\n" + release_jobs)
+        self.assertNotIn("\n  tests:\n", release_jobs)
+        self.assertIn("group: omnicio-production-ssh", release_jobs)
+        self.assertIn("queue: max", release_jobs)
+        self.assertNotIn("\n    if:", release_jobs.split("\n    steps:\n", 1)[0])
+        self.assertNotIn("needs: tests", release_jobs)
+        self.assertLess(
+            release_jobs.index("name: Verify current main release checks"),
+            release_jobs.index("name: Validate Timeweb secret"),
         )
-        self.assertIn("    needs: tests\n", deploy)
-        self.assertLess(deploy.index("name: Verify current main release checks"),
-                        deploy.index("name: Validate Timeweb secret"))
 
     def test_product_environment_is_backed_up_for_rollback(self) -> None:
         old = dict(os.environ)
@@ -1761,39 +1736,47 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
     def test_production_app_deploy_requires_explicit_main_dispatch(self) -> None:
-        root = SCRIPT_DIR.parent.parent
-        app_workflow = (
-            root / ".github" / "workflows" / "auth-app-deploy.yml"
-        ).read_text(encoding="utf-8")
-        postgres_workflow = (
-            root / ".github" / "workflows" / "auth-postgres.yml"
-        ).read_text(encoding="utf-8")
+        root = SCRIPT_DIR.parent.parent / ".github" / "workflows"
+        app_validation = (root / "auth-app-deploy.yml").read_text(encoding="utf-8")
+        app_release = (root / "auth-app-release.yml").read_text(encoding="utf-8")
+        postgres_validation = (root / "auth-postgres.yml").read_text(encoding="utf-8")
+        postgres_reconcile = (root / "auth-postgres-reconcile.yml").read_text(encoding="utf-8")
 
-        self.assertNotIn("workflow_run", app_workflow)
-        trigger = app_workflow.split("\npermissions:\n", 1)[0]
-        for event in ("  pull_request:\n", "  push:\n", "  workflow_dispatch:\n"):
-            self.assertIn(event, trigger)
-        deploy_if = app_workflow.split("  deploy:", 1)[1].split(
-            "    needs: tests",
-            1,
-        )[0]
-        self.assertNotIn("github.event_name == 'push'", deploy_if)
-        self.assertIn("github.event_name == 'workflow_dispatch'", deploy_if)
-        self.assertIn("github.ref == 'refs/heads/main'", deploy_if)
-        self.assertNotIn("Detect schema-first release", app_workflow)
+        validation_trigger = app_validation.split("\npermissions:\n", 1)[0]
+        self.assertIn("  pull_request:\n", validation_trigger)
+        self.assertIn("  push:\n", validation_trigger)
+        self.assertNotIn("workflow_dispatch:", validation_trigger)
+        self.assertNotIn("\n  deploy:\n", app_validation)
 
-        for workflow in (app_workflow, postgres_workflow):
-            push_trigger = workflow.split("\n  push:\n", 1)[1].split(
-                "\n  workflow_dispatch:", 1,
-            )[0]
-            self.assertEqual(push_trigger.strip(), "branches:\n      - main")
-        postgres_pr_trigger = postgres_workflow.split("\n  pull_request:\n", 1)[1].split(
+        release_trigger = app_release.split("\npermissions:\n", 1)[0]
+        self.assertIn("  workflow_dispatch:\n", release_trigger)
+        self.assertNotIn("  pull_request:\n", release_trigger)
+        self.assertNotIn("  push:\n", release_trigger)
+        self.assertIn("\n  deploy:\n", app_release)
+        self.assertNotIn("\n  tests:\n", app_release)
+        self.assertNotIn("Detect schema-first release", app_release)
+
+        postgres_trigger = postgres_validation.split("\npermissions:\n", 1)[0]
+        self.assertIn("  pull_request:\n", postgres_trigger)
+        self.assertIn("  push:\n", postgres_trigger)
+        self.assertNotIn("workflow_dispatch:", postgres_trigger)
+        self.assertNotIn("schedule:", postgres_trigger)
+
+        reconcile_trigger = postgres_reconcile.split("\npermissions:\n", 1)[0]
+        self.assertNotIn("pull_request:", reconcile_trigger)
+        for event in ("  push:\n", "  workflow_dispatch:\n", "  schedule:\n"):
+            self.assertIn(event, reconcile_trigger)
+
+        postgres_pr_trigger = postgres_validation.split("\n  pull_request:\n", 1)[1].split(
             "\n  push:\n", 1,
         )[0]
         for release_path in (
             '"uv.lock"',
             '"requirements-runtime.txt"',
             '".github/workflows/auth-app-deploy.yml"',
+            '".github/workflows/auth-app-release.yml"',
+            '".github/workflows/auth-postgres-reconcile.yml"',
+            '".github/workflows/auth-postgres-restore.yml"',
             '".github/scripts/timeweb_auth_app.py"',
             '".github/scripts/test_timeweb_auth_app.py"',
             '"src/omnicio/**"',
@@ -1804,16 +1787,16 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(release_path, postgres_pr_trigger)
 
     def test_workflow_events_preserve_validation_and_only_manual_main_deploys(self) -> None:
-        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
-            encoding="utf-8",
-        )
-        tests, deploy = workflow.split("\n  tests:\n", 1)[1].split("\n  deploy:\n", 1)
-        expressions = []
-        for job in (tests, deploy):
-            match = re.search(r"^    if: >-\n((?:      .+\n)+)", job, flags=re.M)
-            self.assertIsNotNone(match)
-            expressions.append(match[1].strip())
+        workflow_dir = SCRIPT_DIR.parent / "workflows"
+        validation = (workflow_dir / "auth-app-deploy.yml").read_text(encoding="utf-8")
+        release = (workflow_dir / "auth-app-release.yml").read_text(encoding="utf-8")
+        tests = validation.split("\n  tests:\n", 1)[1]
+        match = re.search(r"^    if: >-\n((?:      .+\n)+)", tests, flags=re.M)
+        self.assertIsNotNone(match)
+        expression = match[1].strip()
+        self.assertNotIn("workflow_dispatch", expression)
         self.assertNotIn("Require successful PostgreSQL release prerequisite", tests)
+
         diagnostic_conditions = {
             "Preserve browser evidence on the self-hosted runner": (
                 "always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success'"
@@ -1828,8 +1811,7 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn("        if: " + condition + "\n", step)
 
         baseline = {
-            "event_name": "workflow_dispatch", "repository": "test/omnicio", "sha": "a" * 40,
-            "ref": "refs/heads/main",
+            "event_name": "push", "repository": "test/omnicio",
             "event": {
                 "pull_request": {
                     "author_association": "OWNER",
@@ -1838,19 +1820,18 @@ class AuthAppDeployTests(unittest.TestCase):
             },
         }
         scenarios = (
-            ("manual main release", {}, [True, True]),
-            ("upstream completion", {"event_name": "workflow_run"}, [False, False]),
-            ("scheduled workflow", {"event_name": "schedule"}, [False, False]),
-            ("push validation", {"event_name": "push"}, [True, False]),
-            ("owner PR validation", {"event_name": "pull_request"}, [True, False]),
-            ("fork PR", {"event_name": "pull_request",
-                         "event.pull_request.head.repo.full_name": "fork/omnicio"},
-             [False, False]),
-            ("nonowner PR", {"event_name": "pull_request",
-                             "event.pull_request.author_association": "CONTRIBUTOR"},
-             [False, False]),
-            ("manual branch validation", {"event_name": "workflow_dispatch",
-                                          "ref": "refs/heads/feature"}, [True, False]),
+            ("push validation", {}, True),
+            ("owner PR validation", {"event_name": "pull_request"}, True),
+            ("fork PR", {
+                "event_name": "pull_request",
+                "event.pull_request.head.repo.full_name": "fork/omnicio",
+            }, False),
+            ("nonowner PR", {
+                "event_name": "pull_request",
+                "event.pull_request.author_association": "CONTRIBUTOR",
+            }, False),
+            ("manual event", {"event_name": "workflow_dispatch"}, False),
+            ("scheduled event", {"event_name": "schedule"}, False),
         )
         contexts = []
         for _, changes, _ in scenarios:
@@ -1862,17 +1843,12 @@ class AuthAppDeployTests(unittest.TestCase):
                     parent = parent[key]
                 parent[last] = value
             contexts.append(context)
-        # These conditions use only string equality and boolean operators shared
-        # by GitHub expressions and JavaScript. Execute the workflow expressions
-        # themselves using Node, already required by this job's browser checks.
+
         node = shutil.which("node")
         self.assertIsNotNone(node, "Node is required by the application workflow")
         source = (
             "const contexts = " + json.dumps(contexts) + ";\n"
-            "const results = contexts.map(github => {\n"
-            f"  const tests = Boolean({expressions[0]});\n"
-            f"  const deploy = tests && Boolean({expressions[1]});\n"
-            "  return [tests, deploy];\n});\n"
+            "const results = contexts.map(github => Boolean(" + expression + "));\n"
             "process.stdout.write(JSON.stringify(results));\n"
         )
         result = subprocess.run([node, "-"], input=source, text=True,
@@ -1881,8 +1857,12 @@ class AuthAppDeployTests(unittest.TestCase):
             with self.subTest(event=name):
                 self.assertEqual(actual, expected)
 
+        release_job = release.split("\n  deploy:\n", 1)[1]
+        self.assertNotIn("\n    if:", release_job.split("\n    steps:\n", 1)[0])
+        self.assertIn("name: Verify current main release checks", release_job)
+
     def test_deploy_completion_requires_confirmed_app_ready(self) -> None:
-        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
+        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-release.yml").read_text(
             encoding="utf-8",
         )
         step = workflow.split("      - name: Confirm application readiness\n", 1)[1]
