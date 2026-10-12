@@ -101,10 +101,10 @@ jobs:
             const repo = context.repo.repo;
             const sha = context.sha;
             const tag = `android-debug-${sha}`;
-            const assetName = `OMNICIO-debug-${sha.slice(0, 7)}.apk`;
+            const assetName = `Analyst-AI-debug-${sha.slice(0, 7)}.apk`;
             const apkPath = 'app/build/outputs/apk/debug/app-debug.apk';
-            const title = `OMNICIO debug ${sha.slice(0, 7)}`;
-            const body = 'Installable debug APK for device testing. Minimum Android version: Android 13 (API 33).';
+            const title = `Analyst AI debug ${sha.slice(0, 7)}`;
+            const body = 'Installable Analyst AI debug APK for device testing. Minimum Android version: Android 13 (API 33).';
 
             const releases = await github.paginate(github.rest.repos.listReleases, {
               owner,
