@@ -9,7 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from datetime import datetime
+from typing import Any, Mapping
 
 try:
     from .ai_policy import (
@@ -113,11 +114,13 @@ def analyze_if_needed(
             usage=None,
         )
 
+    parsed_context = json.loads(canonical_context)
+    allowed_source_ids = _allowed_source_ids(parsed_context)
     gateway = client or TimewebAIClient()
     request_payload = {
         "analysis_reason": decision.reason.value,
         "notify_user": decision.notify_user,
-        "context": json.loads(canonical_context),
+        "context": parsed_context,
     }
     result = gateway.complete_json(
         tier=decision.tier,
@@ -135,7 +138,10 @@ def analyze_if_needed(
             },
         ),
     )
-    report = _validate_report(result.data)
+    report = _validate_report(
+        result.data,
+        allowed_source_ids=allowed_source_ids,
+    )
     if decision.reason is AnalysisReason.RISK_EVENT and report.severity not in {
         "warning",
         "critical",
@@ -175,7 +181,30 @@ def _canonical_context(context: Mapping[str, Any]) -> str:
     return serialized
 
 
-def _validate_report(payload: Mapping[str, Any]) -> AnalysisReport:
+def _allowed_source_ids(context: Mapping[str, Any]) -> frozenset[str]:
+    sources = context.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise AnalysisValidationError("analysis_sources_missing")
+
+    result: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            raise AnalysisValidationError("analysis_invalid_source")
+        source_id = source.get("id")
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise AnalysisValidationError("analysis_invalid_source_id")
+        normalized = source_id.strip()
+        if len(normalized) > 160:
+            raise AnalysisValidationError("analysis_source_id_too_long")
+        result.add(normalized)
+    return frozenset(result)
+
+
+def _validate_report(
+    payload: Mapping[str, Any],
+    *,
+    allowed_source_ids: frozenset[str],
+) -> AnalysisReport:
     severity = _required_text(payload, "severity", max_chars=16).lower()
     if severity not in ALLOWED_SEVERITIES:
         raise AnalysisValidationError("analysis_invalid_severity")
@@ -194,15 +223,18 @@ def _validate_report(payload: Mapping[str, Any]) -> AnalysisReport:
         max_items=MAX_UNCERTAINTIES,
         max_chars=500,
     )
-    evidence = _evidence_list(payload.get("evidence"))
+    evidence = _evidence_list(
+        payload.get("evidence"),
+        allowed_source_ids=allowed_source_ids,
+    )
 
     valid_until_raw = payload.get("valid_until")
     if valid_until_raw is None:
         valid_until = None
     elif isinstance(valid_until_raw, str):
         valid_until = valid_until_raw.strip() or None
-        if valid_until is not None and len(valid_until) > 64:
-            raise AnalysisValidationError("analysis_valid_until_too_long")
+        if valid_until is not None:
+            _require_iso_datetime(valid_until, field="valid_until")
     else:
         raise AnalysisValidationError("analysis_invalid_valid_until")
 
@@ -254,20 +286,39 @@ def _string_list(
     return tuple(normalized)
 
 
-def _evidence_list(value: Any) -> tuple[AnalysisEvidence, ...]:
-    if not isinstance(value, list):
-        raise AnalysisValidationError("analysis_invalid_evidence")
+def _evidence_list(
+    value: Any,
+    *,
+    allowed_source_ids: frozenset[str],
+) -> tuple[AnalysisEvidence, ...]:
+    if not isinstance(value, list) or not value:
+        raise AnalysisValidationError("analysis_evidence_missing")
     if len(value) > MAX_EVIDENCE:
         raise AnalysisValidationError("analysis_too_many_evidence_items")
     items: list[AnalysisEvidence] = []
     for raw in value:
         if not isinstance(raw, dict):
             raise AnalysisValidationError("analysis_invalid_evidence_item")
+        source_id = _required_text(raw, "source_id", max_chars=160)
+        if source_id not in allowed_source_ids:
+            raise AnalysisValidationError("analysis_unknown_evidence_source")
+        as_of = _required_text(raw, "as_of", max_chars=64)
+        _require_iso_datetime(as_of, field="evidence_as_of")
         items.append(
             AnalysisEvidence(
                 fact=_required_text(raw, "fact", max_chars=500),
-                source_id=_required_text(raw, "source_id", max_chars=160),
-                as_of=_required_text(raw, "as_of", max_chars=64),
+                source_id=source_id,
+                as_of=as_of,
             )
         )
     return tuple(items)
+
+
+def _require_iso_datetime(value: str, *, field: str) -> None:
+    candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        raise AnalysisValidationError(f"analysis_invalid_{field}") from None
+    if parsed.tzinfo is None:
+        raise AnalysisValidationError(f"analysis_{field}_timezone_missing")
