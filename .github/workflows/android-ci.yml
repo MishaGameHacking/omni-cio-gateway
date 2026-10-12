@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    name: Android debug build
+    name: Android debug and release build
     permissions:
       contents: read
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -84,8 +84,8 @@ jobs:
           call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
           if errorlevel 1 exit /b 1
 
-      - name: Lint and build debug APK
+      - name: Lint and build Android variants
         shell: cmd
         run: |
-          call gradlew.bat :app:lintDebug :app:assembleDebug --stacktrace
+          call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
           if errorlevel 1 exit /b 1
