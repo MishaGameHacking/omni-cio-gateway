@@ -40,8 +40,9 @@ class ArtifactChecks(unittest.TestCase):
         self.assertEqual(check_dex(dex(b"040")), "040")
 
     def test_experimental_container_rejected(self):
+        data = dex(b"041")
         with self.assertRaises(InvalidAPK):
-            check_dex(dex(b"041"))
+            check_dex(data)
 
     def test_corrupt_dex_rejected(self):
         data = bytearray(dex())
@@ -57,8 +58,9 @@ class ArtifactChecks(unittest.TestCase):
         check_elf64(elf())
 
     def test_elf_4k_rejected(self):
+        data = elf(4096)
         with self.assertRaises(InvalidAPK):
-            check_elf64(elf(4096))
+            check_elf64(data)
 
     def test_manifest_boolean(self):
         self.assertTrue(manifest_flag("A: android:testOnly(0x01010272)=(type 0x12)0xffffffff", "testOnly"))
@@ -77,8 +79,9 @@ class ArtifactChecks(unittest.TestCase):
             check_manifest(BADGING, "A: android:debuggable(0x0101000f)=(type 0x12)0xffffffff", 20, True)
 
     def test_wrong_package_rejected(self):
+        badging = BADGING.replace("ru.omnicio.app.debug", "other")
         with self.assertRaises(InvalidAPK):
-            check_manifest(BADGING.replace("ru.omnicio.app.debug", "other"), "", 20, True)
+            check_manifest(badging, "", 20, True)
 
 
 if __name__ == "__main__":
