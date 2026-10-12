@@ -1,0 +1,25 @@
+name: Source review snapshot
+on:
+  push:
+    branches: [diagnostics/source-v05]
+    paths: [.github/workflows/source-review.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 020a18c1b57b2614ed1867f40cb33b0d736ccabe
+      - name: Archive tracked source only
+        shell: cmd
+        run: git archive --format=zip -o source-review.zip HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: analyst-source-review
+          path: source-review.zip
+          retention-days: 1
+          if-no-files-found: error
