@@ -1,0 +1,57 @@
+name: Apply Timeweb deployment resilience
+
+on:
+  push:
+    branches:
+      - fix/timeweb-deploy-resilience
+    paths:
+      - ".github/scripts/apply_timeweb_deploy_resilience.py"
+      - ".github/workflows/apply-timeweb-deploy-resilience.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    name: Apply and verify deployment retries
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: fix/timeweb-deploy-resilience
+          fetch-depth: 0
+          clean: true
+
+      - name: Apply deployment transformation
+        shell: cmd
+        run: |
+          py -3 .github\scripts\apply_timeweb_deploy_resilience.py
+          if errorlevel 1 exit /b 1
+
+      - name: Validate generated shell script
+        shell: cmd
+        run: |
+          git diff --check
+          if errorlevel 1 exit /b 1
+          "C:\Program Files\Git\bin\bash.exe" -n ".github/scripts/deploy_timeweb_backend.sh"
+          if errorlevel 1 exit /b 1
+
+      - name: Commit generated deployment fix
+        shell: cmd
+        run: |
+          git config user.name "Analyst AI automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github\scripts\deploy_timeweb_backend.sh
+          git diff --cached --quiet
+          if not errorlevel 1 (
+            echo No generated source changes to commit
+            exit /b 0
+          )
+          git commit -m "fix: retry Timeweb API, SSH and deployment uploads"
+          if errorlevel 1 exit /b 1
+          git push origin HEAD:fix/timeweb-deploy-resilience
+          if errorlevel 1 exit /b 1
