@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,16 +26,23 @@ import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.backend.BackendResult
+import ru.omnicio.app.data.portfolio.PortfolioCurrency
+import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
+import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.LocalAnalystTabNavigator
+import ru.omnicio.app.ui.PlaceholderTabScreen
 import ru.omnicio.app.ui.auth.TelegramLoginScreen
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
-import ru.omnicio.app.ui.portfolio.PortfolioUiState
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.profile.TApiScreen
 
 private enum class AppScreen {
     Portfolio,
+    Ideas,
+    Pulse,
+    Chat,
     Profile,
     TApi,
 }
@@ -191,6 +199,14 @@ private fun AnalystAiApp(
         runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Portfolio)
     }
     var tApiConfigured by remember { mutableStateOf(false) }
+    var portfolioState by remember { mutableStateOf<PortfolioUiState>(PortfolioUiState.NotConnected) }
+    var portfolioCurrencyName by rememberSaveable {
+        mutableStateOf(PortfolioCurrency.RUB.name)
+    }
+    val portfolioCurrency = remember(portfolioCurrencyName) {
+        runCatching { PortfolioCurrency.valueOf(portfolioCurrencyName) }
+            .getOrDefault(PortfolioCurrency.RUB)
+    }
     var screenshotsBlocked by rememberSaveable {
         mutableStateOf(initialScreenshotsBlocked)
     }
@@ -300,6 +316,25 @@ private fun AnalystAiApp(
         tApiConfigured = connected
     }
 
+    LaunchedEffect(signedIn?.accessToken, tApiConfigured, portfolioCurrency) {
+        val session = signedIn
+        if (session == null || !tApiConfigured) {
+            portfolioState = PortfolioUiState.NotConnected
+            return@LaunchedEffect
+        }
+
+        portfolioState = PortfolioUiState.Loading
+        portfolioState = when (val result = withContext(Dispatchers.IO) {
+            backend.fetchPortfolio(
+                accessToken = session.accessToken,
+                currency = portfolioCurrency,
+            )
+        }) {
+            is BackendResult.Success -> PortfolioUiState.Ready(result.value)
+            is BackendResult.Failure -> PortfolioUiState.Error(result.message)
+        }
+    }
+
     MaterialTheme {
         when (val current = authState) {
             AuthUiState.Loading -> {
@@ -319,55 +354,95 @@ private fun AnalystAiApp(
             }
 
             is AuthUiState.SignedIn -> {
-                when (screen) {
-                    AppScreen.Portfolio -> {
-                        PortfolioScreen(
-                            state = if (tApiConfigured) {
-                                PortfolioUiState.ApiConnected
-                            } else {
-                                PortfolioUiState.NotConnected
-                            },
-                            onProfileClick = {
-                                screenName = AppScreen.Profile.name
-                            },
-                        )
-                    }
+                val navigateToTab: (AnalystTab) -> Unit = { tab ->
+                    screenName = when (tab) {
+                        AnalystTab.Portfolio -> AppScreen.Portfolio
+                        AnalystTab.Ideas -> AppScreen.Ideas
+                        AnalystTab.Pulse -> AppScreen.Pulse
+                        AnalystTab.Chat -> AppScreen.Chat
+                        AnalystTab.Profile -> AppScreen.Profile
+                    }.name
+                }
 
-                    AppScreen.Profile -> {
-                        ProfileScreen(
-                            user = current.user,
-                            tApiConfigured = tApiConfigured,
-                            screenshotsBlocked = screenshotsBlocked,
-                            onScreenshotsBlockedChange = { blocked ->
-                                screenshotsBlocked = blocked
-                                onScreenshotsBlockedChange(blocked)
-                            },
-                            onPortfolioClick = {
-                                screenName = AppScreen.Portfolio.name
-                            },
-                            onOpenTApi = {
-                                screenName = AppScreen.TApi.name
-                            },
-                            onLogout = {
-                                sessionStore.clear()
-                                screenName = AppScreen.Portfolio.name
-                                tApiConfigured = false
-                                authState = AuthUiState.SignedOut()
-                            },
-                        )
-                    }
+                CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab) {
+                    when (screen) {
+                        AppScreen.Portfolio -> {
+                            PortfolioScreen(
+                                state = portfolioState,
+                                selectedCurrency = portfolioCurrency,
+                                onCurrencyClick = {
+                                    portfolioCurrencyName = portfolioCurrency.next().name
+                                },
+                                onProfileClick = {
+                                    screenName = AppScreen.Profile.name
+                                },
+                            )
+                        }
 
-                    AppScreen.TApi -> {
-                        TApiScreen(
-                            accessToken = current.accessToken,
-                            tApiConfigured = tApiConfigured,
-                            onBack = {
-                                screenName = AppScreen.Profile.name
-                            },
-                            onConnectionChanged = { configured ->
-                                tApiConfigured = configured
-                            },
-                        )
+                        AppScreen.Ideas -> {
+                            PlaceholderTabScreen(
+                                selected = AnalystTab.Ideas,
+                                title = "Что купить",
+                                description = "Здесь появятся персональные подборки активов после согласования правил риска, горизонта и допустимых рынков.",
+                            )
+                        }
+
+                        AppScreen.Pulse -> {
+                            PlaceholderTabScreen(
+                                selected = AnalystTab.Pulse,
+                                title = "Пульс",
+                                description = "Раздел подготовлен для важных событий рынка и компаний из портфеля без лишнего информационного шума.",
+                            )
+                        }
+
+                        AppScreen.Chat -> {
+                            PlaceholderTabScreen(
+                                selected = AnalystTab.Chat,
+                                title = "Чат",
+                                description = "Здесь будет лента важных сообщений Analyst AI. Пользователь не задаёт модели произвольные вопросы — система сообщает только полезные выводы.",
+                            )
+                        }
+
+                        AppScreen.Profile -> {
+                            ProfileScreen(
+                                user = current.user,
+                                tApiConfigured = tApiConfigured,
+                                screenshotsBlocked = screenshotsBlocked,
+                                onScreenshotsBlockedChange = { blocked ->
+                                    screenshotsBlocked = blocked
+                                    onScreenshotsBlockedChange(blocked)
+                                },
+                                onPortfolioClick = {
+                                    screenName = AppScreen.Portfolio.name
+                                },
+                                onOpenTApi = {
+                                    screenName = AppScreen.TApi.name
+                                },
+                                onLogout = {
+                                    sessionStore.clear()
+                                    screenName = AppScreen.Portfolio.name
+                                    tApiConfigured = false
+                                    portfolioState = PortfolioUiState.NotConnected
+                                    authState = AuthUiState.SignedOut()
+                                },
+                            )
+                        }
+
+                        AppScreen.TApi -> {
+                            TApiScreen(
+                                accessToken = current.accessToken,
+                                tApiConfigured = tApiConfigured,
+                                onBack = {
+                                    screenName = AppScreen.Profile.name
+                                },
+                                onConnectionChanged = { configured ->
+                                    tApiConfigured = configured
+                                    if (!configured) {
+                                        portfolioState = PortfolioUiState.NotConnected
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -3,7 +3,15 @@ package ru.omnicio.app.data.backend
 import java.net.HttpURLConnection
 import java.net.URI
 import javax.net.ssl.HttpsURLConnection
+import org.json.JSONArray
 import org.json.JSONObject
+import ru.omnicio.app.data.portfolio.ApiDecimal
+import ru.omnicio.app.data.portfolio.MoneyAmount
+import ru.omnicio.app.data.portfolio.PortfolioAccount
+import ru.omnicio.app.data.portfolio.PortfolioAllocation
+import ru.omnicio.app.data.portfolio.PortfolioCurrency
+import ru.omnicio.app.data.portfolio.PortfolioPosition
+import ru.omnicio.app.data.portfolio.PortfolioSnapshot
 
 class AnalystBackendClient(
     private val baseUrl: String = BackendConfig.BASE_URL,
@@ -67,6 +75,31 @@ class AnalystBackendClient(
                     BackendResult.Failure(
                         "Не удалось прочитать состояние T‑API.",
                         retryable = false,
+                    )
+                },
+            )
+            is BackendResult.Failure -> response
+        }
+    }
+
+    fun fetchPortfolio(
+        accessToken: String,
+        currency: PortfolioCurrency,
+    ): BackendResult<PortfolioSnapshot> {
+        val response = request(
+            method = "GET",
+            path = "/tinvest/portfolio?currency=${currency.name}",
+            bearer = accessToken,
+        )
+        return when (response) {
+            is BackendResult.Success -> runCatching {
+                parsePortfolio(JSONObject(response.value))
+            }.fold(
+                onSuccess = { BackendResult.Success(it) },
+                onFailure = {
+                    BackendResult.Failure(
+                        "T-Invest вернул некорректные данные портфеля.",
+                        retryable = true,
                     )
                 },
             )
@@ -155,7 +188,7 @@ class AnalystBackendClient(
                         retryable = false,
                     )
                 }
-                path == "/tinvest/token" -> tinvestFailure(detail, status)
+                path.startsWith("/tinvest/") -> tinvestFailure(detail, status)
                 status == 429 || status >= 500 -> {
                     BackendResult.Failure(
                         "Сервис временно недоступен. Попробуйте ещё раз.",
@@ -198,6 +231,12 @@ class AnalystBackendClient(
                 "T-Invest вернул неожиданный ответ. Не удалось подтвердить токен."
             "empty_tinvest_token" ->
                 "Вставьте токен доступа T-Invest."
+            "tinvest_not_connected" ->
+                "Подключите T-API в профиле, чтобы загрузить портфель."
+            "unsupported_portfolio_currency" ->
+                "Эта валюта отображения не поддерживается."
+            "tinvest_token_unreadable" ->
+                "Сохранённый токен T-Invest повреждён. Подключите T-API заново."
             else -> when (status) {
                 502 -> "Ошибка ответа T-Invest. Подключение не завершено."
                 503, 504 -> "Связь с T-Invest временно недоступна. Попробуйте позже."
@@ -208,6 +247,84 @@ class AnalystBackendClient(
             message = message,
             retryable = status == 429 || status >= 500,
         )
+    }
+
+    private fun parsePortfolio(json: JSONObject): PortfolioSnapshot {
+        val accountsJson = json.optJSONArray("accounts") ?: JSONArray()
+        val accounts = buildList {
+            for (index in 0 until accountsJson.length()) {
+                val account = accountsJson.getJSONObject(index)
+                val positionsJson = account.optJSONArray("positions") ?: JSONArray()
+                val positions = buildList {
+                    for (positionIndex in 0 until positionsJson.length()) {
+                        val position = positionsJson.getJSONObject(positionIndex)
+                        add(
+                            PortfolioPosition(
+                                id = position.getString("id"),
+                                title = position.getString("title"),
+                                ticker = position.optNullableString("ticker"),
+                                quantity = position.optNullableObject("quantity")?.let(::parseDecimal),
+                                currentValue = position.optNullableObject("currentValue")?.let(::parseMoney),
+                                expectedYieldPercent = position
+                                    .optNullableObject("expectedYieldPercent")
+                                    ?.let(::parseDecimal),
+                            ),
+                        )
+                    }
+                }
+                add(
+                    PortfolioAccount(
+                        id = account.getString("id"),
+                        name = account.getString("name"),
+                        totalValue = parseMoney(account.getJSONObject("totalValue")),
+                        expectedYieldPercent = account
+                            .optNullableObject("expectedYieldPercent")
+                            ?.let(::parseDecimal),
+                        positions = positions,
+                    ),
+                )
+            }
+        }
+
+        val allocationsJson = json.optJSONArray("allocations") ?: JSONArray()
+        val allocations = buildList {
+            for (index in 0 until allocationsJson.length()) {
+                val allocation = allocationsJson.getJSONObject(index)
+                add(
+                    PortfolioAllocation(
+                        title = allocation.getString("title"),
+                        sharePercent = parseDecimal(allocation.getJSONObject("sharePercent")),
+                    ),
+                )
+            }
+        }
+
+        return PortfolioSnapshot(
+            totalValue = parseMoney(json.getJSONObject("totalValue")),
+            expectedYieldAmount = json.optNullableObject("expectedYieldAmount")?.let(::parseMoney),
+            expectedYieldPercent = json
+                .optNullableObject("expectedYieldPercent")
+                ?.let(::parseDecimal),
+            accounts = accounts,
+            allocations = allocations,
+        )
+    }
+
+    private fun parseMoney(json: JSONObject): MoneyAmount = MoneyAmount(
+        value = parseDecimal(json.getJSONObject("value")),
+        currency = json.getString("currency"),
+    )
+
+    private fun parseDecimal(json: JSONObject): ApiDecimal = ApiDecimal(
+        units = json.get("units").toString().toLong(),
+        nano = json.optInt("nano"),
+    )
+
+    private fun JSONObject.optNullableObject(key: String): JSONObject? {
+        if (!has(key) || isNull(key)) {
+            return null
+        }
+        return getJSONObject(key)
     }
 
     private fun parseSession(json: JSONObject): AnalystSession {

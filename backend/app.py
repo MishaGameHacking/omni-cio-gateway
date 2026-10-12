@@ -559,3 +559,10 @@ def delete_tinvest_token(user: sqlite3.Row = Depends(current_user)) -> dict[str,
         )
         db.commit()
     return {"connected": False}
+
+try:
+    from .tinvest_portfolio import router as tinvest_portfolio_router
+except ImportError:
+    from tinvest_portfolio import router as tinvest_portfolio_router
+
+app.include_router(tinvest_portfolio_router)

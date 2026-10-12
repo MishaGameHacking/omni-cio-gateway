@@ -70,3 +70,7 @@
 не означает, что стоимость портфеля и список позиций уже реализованы.
 
 Текущая цель — создавать Analyst AI почти с чистого листа.
+
+## Analyst AI 0.3.0
+
+This iteration adds a five-tab Android shell, real read-only T-Invest portfolio loading, RUB/USD/EUR portfolio display selected by tapping the total, and a deterministic AI decision gate that prevents empty token-consuming analyses. The chosen autonomous-analysis architecture is documented in `docs/AI_ORCHESTRATION.md`.

@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,59 +40,16 @@ import androidx.compose.ui.unit.sp
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
+import ru.omnicio.app.data.portfolio.ApiDecimal
+import ru.omnicio.app.data.portfolio.MoneyAmount
+import ru.omnicio.app.data.portfolio.PortfolioAccount
+import ru.omnicio.app.data.portfolio.PortfolioAllocation
+import ru.omnicio.app.data.portfolio.PortfolioCurrency
+import ru.omnicio.app.data.portfolio.PortfolioPosition
+import ru.omnicio.app.data.portfolio.PortfolioSnapshot
+import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
-
-data class ApiDecimal(
-    val units: Long,
-    val nano: Int,
-) {
-    fun toBigDecimal(): BigDecimal =
-        BigDecimal.valueOf(units).add(BigDecimal.valueOf(nano.toLong(), 9))
-}
-
-data class MoneyAmount(
-    val value: ApiDecimal,
-    val currency: String,
-)
-
-data class PortfolioPosition(
-    val id: String,
-    val title: String,
-    val ticker: String?,
-    val quantity: ApiDecimal?,
-    val currentValue: MoneyAmount?,
-    val expectedYieldPercent: ApiDecimal?,
-)
-
-data class PortfolioAccount(
-    val id: String,
-    val name: String,
-    val totalValue: MoneyAmount,
-    val expectedYieldPercent: ApiDecimal?,
-    val positions: List<PortfolioPosition>,
-)
-
-data class PortfolioAllocation(
-    val title: String,
-    val sharePercent: ApiDecimal,
-)
-
-data class PortfolioSnapshot(
-    val totalValue: MoneyAmount,
-    val expectedYieldAmount: MoneyAmount?,
-    val expectedYieldPercent: ApiDecimal?,
-    val accounts: List<PortfolioAccount>,
-    val allocations: List<PortfolioAllocation>,
-)
-
-sealed interface PortfolioUiState {
-    data object NotConnected : PortfolioUiState
-    data object ApiConnected : PortfolioUiState
-    data object Loading : PortfolioUiState
-    data class Ready(val snapshot: PortfolioSnapshot) : PortfolioUiState
-    data class Error(val message: String) : PortfolioUiState
-}
 
 private val ScreenBackground = Color(0xFFF5F6F8)
 private val CardBackground = Color(0xFFFFFFFF)
@@ -105,6 +63,8 @@ private val Divider = Color(0xFFE8EAED)
 fun PortfolioScreen(
     state: PortfolioUiState,
     onProfileClick: () -> Unit,
+    selectedCurrency: PortfolioCurrency = PortfolioCurrency.RUB,
+    onCurrencyClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -176,7 +136,11 @@ fun PortfolioScreen(
 
                 is PortfolioUiState.Ready -> {
                     item {
-                        PortfolioSummaryCard(snapshot = state.snapshot)
+                        PortfolioSummaryCard(
+                            snapshot = state.snapshot,
+                            selectedCurrency = selectedCurrency,
+                            onCurrencyClick = onCurrencyClick,
+                        )
                     }
 
                     item {
@@ -378,7 +342,11 @@ private fun ErrorCard(message: String) {
 }
 
 @Composable
-private fun PortfolioSummaryCard(snapshot: PortfolioSnapshot) {
+private fun PortfolioSummaryCard(
+    snapshot: PortfolioSnapshot,
+    selectedCurrency: PortfolioCurrency,
+    onCurrencyClick: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -395,9 +363,15 @@ private fun PortfolioSummaryCard(snapshot: PortfolioSnapshot) {
             )
             Text(
                 text = snapshot.totalValue.formatted(),
+                modifier = Modifier.clickable(onClick = onCurrencyClick),
                 fontSize = 36.sp,
                 lineHeight = 42.sp,
                 fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "Нажмите на сумму: ${selectedCurrency.name} → ${selectedCurrency.next().name}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MutedText,
             )
 
             YieldRow(
