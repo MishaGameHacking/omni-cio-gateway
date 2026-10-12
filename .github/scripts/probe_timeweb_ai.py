@@ -7,6 +7,9 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 TOKEN = os.environ.get("TIMEWEB_CLOUD_TOKEN", "").strip()
 if not TOKEN:
     raise SystemExit("TIMEWEB_CLOUD_TOKEN is missing")
@@ -75,7 +78,7 @@ def probe_gateway_token() -> None:
                 if isinstance(item, dict) and isinstance(item.get("id"), str):
                     ids.append(item["id"])
             print("AI_GATEWAY_CLOUD_TOKEN_STATUS=authorized")
-            print("AI_GATEWAY_MODELS_SAMPLE=" + json.dumps(ids[:20], ensure_ascii=False))
+            print("AI_GATEWAY_MODELS_SAMPLE=" + json.dumps(ids[:20], ensure_ascii=True))
     except urllib.error.HTTPError as exc:
         print(f"AI_GATEWAY_CLOUD_TOKEN_STATUS=http_{exc.code}")
     except Exception as exc:
@@ -130,6 +133,15 @@ def mcp_tools(endpoint: str) -> list[dict[str, Any]]:
     raise RuntimeError(last_error or "MCP initialization failed")
 
 
+def is_ai_related_tool_name(name: str) -> bool:
+    normalized = name.lower().replace("-", "_")
+    tokens = tuple(part for part in normalized.split("_") if part)
+    return any(
+        token in {"ai", "agent", "agents", "gateway", "model", "models", "llm", "token", "tokens"}
+        for token in tokens
+    )
+
+
 def main() -> None:
     probe_gateway_token()
     errors = []
@@ -146,34 +158,34 @@ def main() -> None:
         except Exception as exc:
             errors.append(f"{endpoint}: {type(exc).__name__}: {exc}")
     if tools is None:
-        print("MCP_PROBE_ERRORS=" + json.dumps(errors, ensure_ascii=False))
+        print("MCP_PROBE_ERRORS=" + json.dumps(errors, ensure_ascii=True))
         raise SystemExit(2)
 
-    keywords = (
-        "ai", "agent", "gateway", "model", "token", "key", "llm",
-        "ии", "агент", "модел", "токен", "ключ",
-    )
     filtered = []
     all_names = []
     for tool in tools:
         name = str(tool.get("name") or "")
-        description = str(tool.get("description") or "")
         all_names.append(name)
-        haystack = f"{name} {description}".lower()
-        if any(keyword in haystack for keyword in keywords):
+        if is_ai_related_tool_name(name):
             filtered.append(
                 {
                     "name": name,
-                    "description": description[:500],
+                    "description": str(tool.get("description") or "")[:800],
                     "inputSchema": tool.get("inputSchema") or tool.get("input_schema"),
                 }
             )
 
     print("MCP_ENDPOINT=" + str(endpoint_used))
     print("MCP_TOOL_COUNT=" + str(len(tools)))
-    print("MCP_AI_TOOLS=" + json.dumps(filtered, ensure_ascii=False, separators=(",", ":")))
+    print("MCP_AI_TOOL_COUNT=" + str(len(filtered)))
+    print("MCP_AI_TOOL_NAMES=" + json.dumps([item["name"] for item in filtered], ensure_ascii=True))
+    for index, item in enumerate(filtered[:80], start=1):
+        print(
+            f"MCP_AI_TOOL_{index}="
+            + json.dumps(item, ensure_ascii=True, separators=(",", ":"))
+        )
     if not filtered:
-        print("MCP_TOOL_NAMES=" + json.dumps(all_names, ensure_ascii=False))
+        print("MCP_TOOL_NAMES=" + json.dumps(all_names, ensure_ascii=True))
 
 
 if __name__ == "__main__":
