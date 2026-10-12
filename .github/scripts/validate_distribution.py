@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from pathlib import Path
+import tempfile
 
 from verify_apk import fixed_file, output_directory, require
 
@@ -23,6 +26,29 @@ def checked_installation(api: int) -> dict:
     return {"android_api": api, "abi": "x86_64", "results": results}
 
 
+def save_report(report: dict) -> None:
+    # The destination is a literal checkout path, never an input field or CLI option.
+    root = Path(__file__).resolve().parents[2]
+    directory = root / "app" / "build" / "outputs" / "apk" / "preview"
+    if directory.is_symlink() or not directory.resolve(strict=True).is_relative_to(root):
+        raise ValueError("Report directory escapes the checkout")
+    destination = directory / "apk-verification.json"
+    if destination.is_symlink():
+        raise ValueError("Report destination must not be a symlink")
+    # Exclusive temporary creation and atomic replacement avoid partial reports and
+    # do not follow a destination symlink substituted between checking and writing.
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory,
+                                     prefix="validated-", suffix=".json", delete=False) as handle:
+        json.dump(report, handle, indent=2)
+        handle.write("\n")
+        temporary = handle.name
+    try:
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def main() -> None:
     directory = output_directory()
     report_path = fixed_file(directory, "apk-verification.json")
@@ -32,7 +58,7 @@ def main() -> None:
             "APK changed after static verification")
     report["installation_tests"] = [checked_installation(33), checked_installation(36)]
     report["device_install_test"] = "passed_on_emulators_not_a_physical_phone"
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    save_report(report)
     print("DISTRIBUTION_VALIDATION=" + json.dumps(report, sort_keys=True), flush=True)
 
 
