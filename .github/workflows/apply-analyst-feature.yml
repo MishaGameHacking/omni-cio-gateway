@@ -1,18 +1,17 @@
-name: Apply Analyst AI feature transformation
+name: Verify Analyst AI feature branch
 
 on:
   push:
     branches:
       - feat/portfolio-currency-five-tabs-ai-policy
     paths:
-      - ".github/scripts/apply_analyst_feature.py"
       - ".github/workflows/apply-analyst-feature.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-and-verify:
+  verify:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 45
 
@@ -24,40 +23,28 @@ jobs:
           fetch-depth: 0
           clean: true
 
-      - name: Apply source transformation
-        shell: cmd
-        run: |
-          py -3 .github\scripts\apply_analyst_feature.py
-          if errorlevel 1 exit /b 1
-
       - name: Create isolated Python environment
         shell: cmd
         run: |
-          set "VENV=%RUNNER_TEMP%\analyst-ai-feature-ci"
+          set "VENV=%RUNNER_TEMP%\analyst-ai-feature-verify"
           if exist "%VENV%" rmdir /s /q "%VENV%"
           py -3 -m venv "%VENV%"
           if errorlevel 1 exit /b 1
           "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --no-cache-dir -r backend\requirements.txt
           if errorlevel 1 exit /b 1
-          echo FEATURE_CI_VENV=%VENV%>>"%GITHUB_ENV%"
+          echo FEATURE_VERIFY_VENV=%VENV%>>"%GITHUB_ENV%"
 
-      - name: Check generated diff and compile backend
+      - name: Compile and test backend
         shell: cmd
         run: |
-          git diff --check
+          "%FEATURE_VERIFY_VENV%\Scripts\python.exe" -m compileall -q backend
           if errorlevel 1 exit /b 1
-          "%FEATURE_CI_VENV%\Scripts\python.exe" -m compileall -q backend
-          if errorlevel 1 exit /b 1
-
-      - name: Run backend tests
-        shell: cmd
-        run: |
           set "TELEGRAM_CLIENT_ID=123456"
           set "TELEGRAM_CLIENT_SECRET=test-only"
           set "BACKEND_PUBLIC_URL=https://example.invalid"
           set "DATABASE_PATH=%RUNNER_TEMP%\analyst-ai-feature-tests.sqlite3"
           set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-          "%FEATURE_CI_VENV%\Scripts\python.exe" -m unittest discover -s backend\tests -p "test_*.py" -v
+          "%FEATURE_VERIFY_VENV%\Scripts\python.exe" -m unittest discover -s backend\tests -p "test_*.py" -v
           if errorlevel 1 exit /b 1
 
       - name: Set up JDK 17
@@ -116,20 +103,4 @@ jobs:
         shell: cmd
         run: |
           call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
-          if errorlevel 1 exit /b 1
-
-      - name: Commit transformed source
-        shell: cmd
-        run: |
-          git config user.name "Analyst AI automation"
-          git config user.email "actions@users.noreply.github.com"
-          git add AGENTS.md README.md app backend
-          git diff --cached --quiet
-          if not errorlevel 1 (
-            echo No generated changes to commit
-            exit /b 0
-          )
-          git commit -m "feat: add real portfolio currencies, five tabs and AI spend gate"
-          if errorlevel 1 exit /b 1
-          git push origin HEAD:feat/portfolio-currency-five-tabs-ai-policy
           if errorlevel 1 exit /b 1
