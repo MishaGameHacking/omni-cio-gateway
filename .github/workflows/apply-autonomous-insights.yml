@@ -96,8 +96,12 @@ jobs:
       - name: Lint and build Android variants
         shell: cmd
         run: |
-          call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
-          if errorlevel 1 exit /b 1
+          call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --console=plain > "%RUNNER_TEMP%\analyst-android-build.log" 2>&1
+          if errorlevel 1 (
+            echo ==== Android compiler errors ====
+            findstr /I /C:"e: file" /C:"error:" /C:"FAILURE:" "%RUNNER_TEMP%\analyst-android-build.log"
+            exit /b 1
+          )
 
       - name: Commit generated implementation
         shell: cmd
