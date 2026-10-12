@@ -43,6 +43,36 @@ replace_once(
     'MOSCOW = timezone(timedelta(hours=3), name="Europe/Moscow")',
 )
 
+# A material critical event bypasses cooldown, but an unchanged warning must not
+# be repeated by every five-minute scheduler cycle.
+replace_once(
+    "backend/autonomous_ai.py",
+    """    last = _last_analysis(user_id)
+    minutes_since = None
+    if last is not None:
+        minutes_since = max(0, int((now.timestamp() - int(last["created_at"])) / 60))
+    return (
+""",
+    """    last = _last_analysis(user_id)
+    minutes_since = None
+    if last is not None:
+        minutes_since = max(0, int((now.timestamp() - int(last["created_at"])) / 60))
+    recent_same_risk = (
+        last is not None
+        and last["reason"] == AnalysisReason.RISK_EVENT.value
+        and minutes_since is not None
+        and minutes_since < 360
+        and not material_changed
+    )
+    return (
+""",
+)
+replace_once(
+    "backend/autonomous_ai.py",
+    '            critical_risk=critical and bool(profile["notify_critical"]),',
+    '            critical_risk=(critical and bool(profile["notify_critical"]) and not recent_same_risk),',
+)
+
 # Start/stop the autonomous scheduler with the FastAPI process.
 replace_once(
     "backend/app.py",
