@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -20,7 +20,9 @@ from backend import app as backend  # noqa: E402
 from backend import autonomous_ai as ai  # noqa: E402
 
 
-def sample_snapshot(*, cash_share: float = 20.0, stock_share: float = 50.0) -> dict:
+def sample_snapshot(*, cash_share: float = 20.0, stock_share: float = 35.0) -> dict:
+    fund_share = 0.0 if stock_share + cash_share > 85.0 else 15.0
+    bond_share = max(0.0, 100.0 - stock_share - cash_share - fund_share)
     return {
         "currency": "RUB",
         "totalValue": {
@@ -74,7 +76,11 @@ def sample_snapshot(*, cash_share: float = 20.0, stock_share: float = 50.0) -> d
             },
             {
                 "title": "Облигации",
-                "sharePercent": {"units": int(100 - stock_share - cash_share), "nano": 0},
+                "sharePercent": {"units": int(bond_share), "nano": 0},
+            },
+            {
+                "title": "Фонды",
+                "sharePercent": {"units": int(fund_share), "nano": 0},
             },
             {
                 "title": "Валюта и деньги",
@@ -86,11 +92,11 @@ def sample_snapshot(*, cash_share: float = 20.0, stock_share: float = 50.0) -> d
 
 class AutonomousAITests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         backend.DATABASE_PATH = Path(self.temp_dir.name) / "backend.sqlite3"
         backend.init_db()
         ai.init_autonomous_db()
-        with backend.connect() as db:
+        with closing(backend.connect()) as db:
             cursor = db.execute(
                 """
                 INSERT INTO users(
@@ -107,7 +113,7 @@ class AutonomousAITests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def user_row(self):
-        with backend.connect() as db:
+        with closing(backend.connect()) as db:
             return db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
 
     def test_force_refresh_creates_deterministic_card_without_ai_key(self) -> None:
@@ -173,6 +179,22 @@ class AutonomousAITests(unittest.TestCase):
             )
         self.assertEqual(result["tier"], "premium")
         self.assertEqual(result["reason"], "risk_event")
+
+    def test_unchanged_critical_risk_is_not_repeated_within_six_hours(self) -> None:
+        snapshot = sample_snapshot(cash_share=5, stock_share=90)
+        with patch.object(ai, "get_tinvest_portfolio", return_value=snapshot):
+            first = ai.run_user_analysis(
+                self.user_id,
+                force=False,
+                now=datetime(2026, 10, 12, 12, 0, tzinfo=UTC),
+            )
+            second = ai.run_user_analysis(
+                self.user_id,
+                force=False,
+                now=datetime(2026, 10, 12, 13, 0, tzinfo=UTC),
+            )
+        self.assertEqual(first["reason"], "risk_event")
+        self.assertEqual(second["state"], "skipped")
 
 
 if __name__ == "__main__":
