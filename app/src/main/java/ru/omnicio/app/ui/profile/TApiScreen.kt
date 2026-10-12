@@ -28,7 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,8 +73,8 @@ fun TApiScreen(
     val backend = remember { AnalystBackendClient() }
     val scope = rememberCoroutineScope()
 
-    var tokenInput by rememberSaveable { mutableStateOf("") }
-    var showToken by rememberSaveable { mutableStateOf(false) }
+    var tokenInput by remember { mutableStateOf("") }
+    var showToken by remember { mutableStateOf(false) }
     var status by remember(tApiConfigured) {
         mutableStateOf<TokenUiStatus>(
             if (tApiConfigured) TokenUiStatus.Connected else TokenUiStatus.Missing,
@@ -98,13 +97,7 @@ fun TApiScreen(
                         onConnectionChanged(true)
                     }
                     is BackendResult.Failure -> {
-                        status = TokenUiStatus.Error(
-                            when {
-                                result.message == "invalid_tinvest_token" ->
-                                    "T‑Invest API не принял токен. Проверьте, что это актуальный read-only токен."
-                                else -> result.message
-                            },
-                        )
+                        status = TokenUiStatus.Error(result.message)
                     }
                 }
             }
