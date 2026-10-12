@@ -20,6 +20,11 @@ jobs:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
       TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+      TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
+      TIMEWEB_AI_BASE_URL: ${{ vars.TIMEWEB_AI_BASE_URL }}
+      AI_MODEL_FAST: ${{ vars.AI_MODEL_FAST }}
+      AI_MODEL_STANDARD: ${{ vars.AI_MODEL_STANDARD }}
+      AI_MODEL_PREMIUM: ${{ vars.AI_MODEL_PREMIUM }}
 
     steps:
       - name: Checkout source
