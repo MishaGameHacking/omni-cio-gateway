@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   checks: read
+  pull-requests: read
 jobs:
   read:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -16,7 +17,12 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
-            const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:114979475639, per_page:100});
+            const pr = (await github.rest.pulls.get({...context.repo,pull_number:826})).data;
+            const checks = (await github.rest.checks.listForRef({...context.repo,ref:pr.head.sha,check_name:'SonarCloud Code Analysis'})).data.check_runs;
+            if (!checks.length) throw new Error('No Sonar check on current PR head');
+            const check = checks[0];
+            core.info('SHA=' + pr.head.sha + ' conclusion=' + check.conclusion);
+            const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:check.id, per_page:100});
             for (const annotation of annotations) {
               core.info(JSON.stringify({path:annotation.path, line:annotation.start_line, title:annotation.title, message:annotation.message, level:annotation.annotation_level}));
             }
