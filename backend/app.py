@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import logging
+import ssl
 import os
 import secrets
 import sqlite3
@@ -13,9 +14,12 @@ from html import escape
 from pathlib import Path
 from urllib.parse import urlencode
 
+import certifi
 import httpx
 import jwt
+from cryptography import x509
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jwt import PyJWKClient
@@ -41,6 +45,10 @@ TINVEST_ACCOUNTS_URL = (
     "https://invest-public-api.tbank.ru/rest/"
     "tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts"
 )
+# Public Ministry root is pinned by its X.509 DER fingerprint. It is used ONLY
+# for T-Invest requests, never for the general HTTPS trust store.
+TINVEST_ROOT_CA_PATH = Path(__file__).resolve().parent / "certs" / "russian_trusted_root_ca.pem"
+TINVEST_ROOT_CA_SHA256 = "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31"
 
 LOGIN_TX_TTL = 10 * 60
 LOGIN_CODE_TTL = 5 * 60
@@ -438,12 +446,29 @@ def tinvest_status(user: sqlite3.Row = Depends(current_user)) -> dict[str, bool]
     return {"connected": user["tinvest_token_encrypted"] is not None}
 
 
+def tinvest_ssl_context() -> ssl.SSLContext:
+    """Trust the fingerprint-verified Ministry CA only for T-Invest HTTPS."""
+    try:
+        certificate_bytes = TINVEST_ROOT_CA_PATH.read_bytes()
+        certificate = x509.load_pem_x509_certificate(certificate_bytes)
+        if certificate.fingerprint(hashes.SHA256()).hex() != TINVEST_ROOT_CA_SHA256:
+            raise ValueError("T-Invest certificate fingerprint mismatch")
+        context = ssl.create_default_context(cafile=certifi.where())
+        context.load_verify_locations(cadata=certificate_bytes.decode("ascii"))
+        return context
+    except (OSError, ValueError, ssl.SSLError, UnicodeDecodeError) as exc:
+        raise RuntimeError("T-Invest trusted certificate configuration is invalid") from exc
+
+
 @app.post(
     "/tinvest/token",
     responses={
         400: {"description": "The T-Invest token is empty."},
-        401: {"description": "Session is invalid or T-Invest rejected the token."},
-        503: {"description": "T-Invest API is temporarily unavailable."},
+        401: {"description": "Analyst AI session is invalid or expired."},
+        422: {"description": "T-Invest rejected the access token."},
+        502: {"description": "Unexpected response from T-Invest."},
+        503: {"description": "T-Invest is unavailable or its TLS connection failed."},
+        504: {"description": "T-Invest connection timed out."},
     },
 )
 def save_tinvest_token(
@@ -454,21 +479,61 @@ def save_tinvest_token(
     if not token:
         raise HTTPException(status_code=400, detail="empty_tinvest_token")
 
-    with httpx.Client(timeout=15.0) as client:
-        response = client.post(
-            TINVEST_ACCOUNTS_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            json={},
-        )
-    if response.status_code in (401, 403):
-        raise HTTPException(status_code=401, detail="invalid_tinvest_token")
-    if response.status_code != 200:
-        raise HTTPException(status_code=503, detail="tinvest_unavailable")
+    try:
+        with httpx.Client(
+            timeout=httpx.Timeout(15.0, connect=7.0),
+            verify=tinvest_ssl_context(),
+            follow_redirects=False,
+        ) as client:
+            response = client.post(
+                TINVEST_ACCOUNTS_URL,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                json={},
+            )
+    except httpx.TimeoutException:
+        logger.warning("T-Invest GetAccounts timed out")
+        raise HTTPException(status_code=504, detail="tinvest_timeout") from None
+    except httpx.TransportError as exc:
+        # Never log the supplied access token or the upstream response body.
+        transport_details = str(exc).lower()
+        is_tls_error = any(word in transport_details for word in (
+            "certificate", "ssl", "tls", "handshake",
+        ))
+        detail = "tinvest_tls_error" if is_tls_error else "tinvest_connection_failed"
+        logger.warning("T-Invest GetAccounts transport failed (%s)", detail)
+        raise HTTPException(status_code=503, detail=detail) from None
+    except (RuntimeError, ssl.SSLError):
+        logger.exception("Unable to initialize verified T-Invest TLS")
+        raise HTTPException(status_code=503, detail="tinvest_tls_error") from None
 
+    if response.status_code in (401, 403):
+        # Do not confuse T-Invest API token rejection with an invalid
+        # Analyst AI session (which is already handled by current_user).
+        raise HTTPException(status_code=422, detail="invalid_tinvest_token")
+    if response.status_code == 429:
+        raise HTTPException(status_code=503, detail="tinvest_rate_limited")
+    if response.status_code in (408, 504):
+        raise HTTPException(status_code=504, detail="tinvest_timeout")
+    if response.status_code >= 500:
+        logger.warning("T-Invest GetAccounts returned upstream HTTP %d", response.status_code)
+        raise HTTPException(status_code=503, detail="tinvest_upstream_unavailable")
+    if response.status_code != 200:
+        logger.warning("T-Invest GetAccounts returned unexpected HTTP %d", response.status_code)
+        raise HTTPException(status_code=502, detail="tinvest_unexpected_status")
+
+    try:
+        accounts = response.json()["accounts"]
+        if not isinstance(accounts, list):
+            raise ValueError("accounts is not a list")
+    except (ValueError, TypeError, KeyError):
+        logger.warning("T-Invest GetAccounts returned an unexpected response schema")
+        raise HTTPException(status_code=502, detail="tinvest_invalid_response") from None
+
+    # Save only a successfully validated token, never the raw upstream payload.
     encrypted = FERNET.encrypt(token.encode())
     with closing(connect()) as db:
         db.execute(
