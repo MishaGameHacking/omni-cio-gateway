@@ -3,17 +3,25 @@ name: APK installation audit
 on:
   push:
     branches: [fix/apk-install-042]
-    paths: [".github/workflows/apk-install-audit.yml"]
+    paths: [".github/workflows/apk-install-audit.yml", ".github/scripts/test_apk_installation.py"]
   workflow_dispatch:
 
 permissions:
   contents: read
+concurrency:
+  group: analyst-apk-install-emulator
+  cancel-in-progress: false
 
 jobs:
   inspect:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
+      - name: Checkout test script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
       - name: Set up JDK 17
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
@@ -41,45 +49,28 @@ jobs:
               fs.writeFileSync(path.join(dir, label + '.apk'), bytes);
               core.info(`${label}: bytes=${bytes.length} sha256=${digest}`);
             }
-      - name: Verify APK archives, signing, manifest and native alignment
+      - name: Prepare isolated Android emulator dependencies
         shell: py -3 {0}
         run: |
-          import hashlib, json, os, struct, subprocess, sys, zipfile
+          import os, subprocess, sys
           from pathlib import Path
           sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
           roots=[os.getenv('ANDROID_SDK_ROOT'),os.getenv('ANDROID_HOME'),str(Path(os.environ['LOCALAPPDATA'])/'Android'/'Sdk'),str(Path(os.environ['RUNNER_TOOL_CACHE'])/'AndroidSdk'/'sdk')]
           sdk=next((Path(p) for p in roots if p and (Path(p)/'build-tools'/'36.0.0'/'aapt.exe').exists()),None)
           if sdk is None: raise SystemExit('Android build tools 36.0.0 unavailable')
-          tools=sdk/'build-tools'/'36.0.0'
-          java=str(Path(os.environ['JAVA_HOME'])/'bin'/'java.exe')
-          def command(label, args):
-              result=subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=90)
-              print(label+' EXIT='+str(result.returncode))
-              print(result.stdout)
-              print(result.stderr)
-              return result.returncode
-          failures=0
-          for name in ['previous','reported']:
-              apk=Path(os.environ['APK_AUDIT_DIR'])/(name+'.apk')
-              print('==== '+name.upper()+' ====')
-              with zipfile.ZipFile(apk) as archive:
-                  bad=archive.testzip()
-                  print('ZIP_CRC_ERROR='+str(bad))
-                  if bad: failures+=1
-                  infos=archive.infolist()
-                  print('DUPLICATE_NAMES='+str(len(infos)-len({i.filename for i in infos})))
-                  with apk.open('rb') as raw:
-                      for entry in infos:
-                          if entry.filename.endswith('.so') or entry.filename=='resources.arsc':
-                              raw.seek(entry.header_offset+26)
-                              n,e=struct.unpack('<HH',raw.read(4))
-                              offset=entry.header_offset+30+n+e
-                              print('ENTRY='+json.dumps({'name':entry.filename,'compression':entry.compress_type,'size':entry.file_size,'offset':offset,'mod4':offset%4,'mod4096':offset%4096,'mod16384':offset%16384}))
-              failures+=bool(command('SIGNATURE', [java,'-jar',str(tools/'lib'/'apksigner.jar'),'verify','--verbose','--print-certs',str(apk)]))
-              failures+=bool(command('ALIGNMENT', [str(tools/'zipalign.exe'),'-c','-P','16','4',str(apk)]))
-              failures+=bool(command('BADGING', [str(tools/'aapt.exe'),'dump','badging',str(apk)]))
-              failures+=bool(command('MANIFEST', [str(tools/'aapt.exe'),'dump','xmltree',str(apk),'AndroidManifest.xml']))
-          print('EMULATOR_INSTALLED='+str((sdk/'emulator'/'emulator.exe').exists()))
-          print('SYSTEM_IMAGES='+json.dumps([str(p.relative_to(sdk)) for p in (sdk/'system-images').glob('*/*/*/package.xml')]))
-          print('AUDIT_FAILURE_COUNT='+str(failures))
-          if failures: raise SystemExit(1)
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as env:
+              env.write('ANDROID_SDK_ROOT='+str(sdk)+'\n')
+              env.write('ANDROID_HOME='+str(sdk)+'\n')
+          manager=sdk/'cmdline-tools'/'latest'/'bin'/'sdkmanager.bat'
+          result=subprocess.run([str(manager),'--sdk_root='+str(sdk),'--channel=0','emulator','platform-tools','system-images;android-33;google_apis;x86_64'], input='y\n'*200,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=600)
+          print(result.stdout[-4000:])
+          print(result.stderr[-4000:])
+          if result.returncode: raise SystemExit(result.returncode)
+      - name: Clean install, upgrade and launch without test-only bypass
+        shell: cmd
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: '1'
+        run: |
+          py -3 .github\scripts\test_apk_installation.py --sdk "%ANDROID_SDK_ROOT%" --apk "%APK_AUDIT_DIR%\reported.apk" --previous "%APK_AUDIT_DIR%\previous.apk" --work-dir "%APK_AUDIT_DIR%\emulator-test" --api 33
+          if errorlevel 1 exit /b 1
