@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.compose.compiler) apply false
 }
 
+// Commit Gradle lock state so Android dependency resolution stays reproducible.
 allprojects {
     dependencyLocking {
         lockAllConfigurations()
