@@ -53,10 +53,12 @@ class MainActivity : ComponentActivity() {
     private val pendingAuthCode = mutableStateOf<String?>(null)
     private val pendingAuthError = mutableStateOf<String?>(null)
     private var redirectReceivedForCurrentLogin = false
+    private var lastHandledRedirect: String? = null
 
     private val authTabLauncher = AuthTabIntent.registerActivityResultLauncher(this) { result ->
-        if (result.resultCode == AuthTabIntent.RESULT_OK && result.resultUri != null) {
-            if (!captureTelegramCallback(result.resultUri!!) && !redirectReceivedForCurrentLogin) {
+        val resultUri = result.resultUri
+        if (result.resultCode == AuthTabIntent.RESULT_OK && resultUri != null) {
+            if (!captureTelegramCallback(resultUri) && !redirectReceivedForCurrentLogin) {
                 pendingAuthError.value = "Telegram вернул неизвестную ссылку. Попробуйте ещё раз."
             }
         } else if (!redirectReceivedForCurrentLogin) {
@@ -102,8 +104,13 @@ class MainActivity : ComponentActivity() {
         captureTelegramCallback(intent)
     }
 
-    private fun captureTelegramCallback(intent: Intent?) {
-        intent?.data?.let(::captureTelegramCallback)
+    private fun captureTelegramCallback(incoming: Intent?) {
+        val data = incoming?.data ?: return
+        if (captureTelegramCallback(data)) {
+            // Prevent an Activity restart from consuming the same one-time code again.
+            incoming.data = null
+            setIntent(incoming)
+        }
     }
 
     private fun captureTelegramCallback(data: Uri): Boolean {
@@ -112,6 +119,10 @@ class MainActivity : ComponentActivity() {
         }
 
         redirectReceivedForCurrentLogin = true
+        if (data.toString() == lastHandledRedirect) {
+            return true
+        }
+        lastHandledRedirect = data.toString()
         val code = data.getQueryParameter("code")?.takeIf { it.isNotBlank() }
         val error = data.getQueryParameter("error")
         pendingAuthCode.value = if (error == null) code else null
@@ -131,6 +142,7 @@ class MainActivity : ComponentActivity() {
 
     private fun launchTelegramLogin() {
         redirectReceivedForCurrentLogin = false
+        lastHandledRedirect = null
         pendingAuthError.value = null
         runCatching {
             val authTab = AuthTabIntent.Builder().build()
