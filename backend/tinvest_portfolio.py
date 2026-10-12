@@ -94,6 +94,25 @@ def _money_decimal(value: Any) -> tuple[Decimal, str]:
     return _decimal(value), str(value.get("currency") or "").upper()
 
 
+def _all_time_profit(
+    current_value: Decimal,
+    yield_percent: Decimal,
+) -> Decimal | None:
+    """Recover absolute all-time profit from current value and relative yield.
+
+    T-Invest exposes the all-time relative result as ``expectedYield`` but only
+    exposes the absolute ``dailyYield`` for the current day. For the same
+    presentation as the T-Invest app, use the identity:
+
+        current = cost_basis * (1 + percent / 100)
+        profit = current * percent / (100 + percent)
+    """
+    denominator = Decimal(100) + yield_percent
+    if denominator == 0:
+        return None
+    return current_value * yield_percent / denominator
+
+
 def _raise_upstream_status(response: Any) -> None:
     status = int(response.status_code)
     if status in (401, 403):
@@ -202,8 +221,7 @@ def _portfolio_positions(
                 "ticker": ticker,
                 "quantity": _decimal_payload(quantity),
                 "currentValue": current_value,
-                # T-Invest's expectedYield field is not consistently a percentage
-                # across instrument kinds. Do not label it as a percentage here.
+                # Position expectedYield is an absolute result, not a percentage.
                 "expectedYieldPercent": None,
             }
         )
@@ -231,24 +249,6 @@ def _portfolio_positions(
         seen.add(identifier)
 
     return result
-
-
-def _weighted_percent(
-    entries: list[tuple[Decimal, Decimal | None]],
-) -> Decimal | None:
-    weighted = Decimal(0)
-    weight_sum = Decimal(0)
-    for total, percent in entries:
-        if percent is None:
-            continue
-        weight = abs(total)
-        if weight == 0:
-            continue
-        weighted += percent * weight
-        weight_sum += weight
-    if weight_sum == 0:
-        return None
-    return weighted / weight_sum
 
 
 @router.get(
@@ -299,9 +299,9 @@ def get_tinvest_portfolio(
 
             account_results: list[dict[str, Any]] = []
             total_value = Decimal(0)
-            yield_amount = Decimal(0)
-            has_yield_amount = False
-            percent_entries: list[tuple[Decimal, Decimal | None]] = []
+            total_profit = Decimal(0)
+            total_cost_basis = Decimal(0)
+            all_yields_known = True
             allocation_totals = {field: Decimal(0) for _, field in ALLOCATION_FIELDS}
 
             for account in raw_accounts:
@@ -327,20 +327,21 @@ def get_tinvest_portfolio(
                 account_total, _ = _money_decimal(portfolio.get("totalAmountPortfolio"))
                 total_value += account_total
 
-                daily_yield, daily_currency = _money_decimal(portfolio.get("dailyYield"))
-                if daily_currency:
-                    yield_amount += daily_yield
-                    has_yield_amount = True
-
-                relative_source = portfolio.get("dailyYieldRelative")
-                if not isinstance(relative_source, dict):
-                    relative_source = portfolio.get("expectedYield")
+                expected_yield = portfolio.get("expectedYield")
                 account_percent = (
-                    _decimal(relative_source)
-                    if isinstance(relative_source, dict)
+                    _decimal(expected_yield)
+                    if isinstance(expected_yield, dict)
                     else None
                 )
-                percent_entries.append((account_total, account_percent))
+                if account_percent is None:
+                    all_yields_known = False
+                else:
+                    account_profit = _all_time_profit(account_total, account_percent)
+                    if account_profit is None:
+                        all_yields_known = False
+                    else:
+                        total_profit += account_profit
+                        total_cost_basis += account_total - account_profit
 
                 for _, field in ALLOCATION_FIELDS:
                     allocation_value, _ = _money_decimal(portfolio.get(field))
@@ -363,7 +364,16 @@ def get_tinvest_portfolio(
         backend.logger.exception("Unable to initialize verified T-Invest TLS")
         raise HTTPException(status_code=503, detail="tinvest_tls_error") from None
 
-    total_percent = _weighted_percent(percent_entries)
+    total_percent: Decimal | None = None
+    total_profit_payload: dict[str, Any] | None = None
+    if account_results and all_yields_known:
+        total_profit_payload = _money_payload(total_profit, selected_currency)
+        total_percent = (
+            (total_profit / total_cost_basis) * Decimal(100)
+            if total_cost_basis != 0
+            else Decimal(0)
+        )
+
     allocations = []
     if total_value != 0:
         for title, field in ALLOCATION_FIELDS:
@@ -382,11 +392,7 @@ def get_tinvest_portfolio(
     return {
         "currency": selected_currency,
         "totalValue": _money_payload(total_value, selected_currency),
-        "expectedYieldAmount": (
-            _money_payload(yield_amount, selected_currency)
-            if has_yield_amount
-            else None
-        ),
+        "expectedYieldAmount": total_profit_payload,
         "expectedYieldPercent": (
             _decimal_payload(total_percent) if total_percent is not None else None
         ),
