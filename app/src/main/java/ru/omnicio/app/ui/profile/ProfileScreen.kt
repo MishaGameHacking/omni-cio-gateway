@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.omnicio.app.BuildConfig
+import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 
@@ -49,11 +51,13 @@ private val ProfileBlue = Color(0xFF4D8FEA)
 
 @Composable
 fun ProfileScreen(
+    user: AnalystUser,
     tApiConfigured: Boolean,
     screenshotsBlocked: Boolean,
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onPortfolioClick: () -> Unit,
     onOpenTApi: () -> Unit,
+    onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var sectionName by rememberSaveable { mutableStateOf(ProfileSection.Settings.name) }
@@ -85,7 +89,7 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                ProfileHeader()
+                ProfileHeader(user = user)
             }
             item {
                 ProfileTabs(
@@ -149,9 +153,17 @@ fun ProfileScreen(
                     }
                     item {
                         ProfileCard(
-                            title = "Аккаунт Analyst AI",
-                            subtitle = "Один пользовательский профиль",
-                            symbol = "AI",
+                            title = user.name?.takeIf { it.isNotBlank() } ?: "Telegram",
+                            subtitle = buildTelegramSubtitle(user),
+                            symbol = "TG",
+                        )
+                    }
+                    item {
+                        ProfileCard(
+                            title = "Выйти",
+                            subtitle = "Завершить сеанс Analyst AI на этом устройстве",
+                            symbol = "↪",
+                            onClick = onLogout,
                         )
                     }
                 }
@@ -160,7 +172,7 @@ fun ProfileScreen(
                     item {
                         ProfileCard(
                             title = "О приложении",
-                            subtitle = "Analyst AI · версия 0.1.0",
+                            subtitle = "Analyst AI · версия ${BuildConfig.VERSION_NAME}",
                             symbol = "i",
                         )
                     }
@@ -179,12 +191,13 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileHeader() {
+private fun ProfileHeader(user: AnalystUser) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
-            text = "Analyst AI",
-            color = ProfileMuted,
-            style = MaterialTheme.typography.labelLarge,
+            text = user.name?.takeIf { it.isNotBlank() } ?: "Analyst AI",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
         )
         Text(
             text = "Профиль",
@@ -377,4 +390,10 @@ private fun ProfileCardContent(
             }
         }
     }
+}
+
+private fun buildTelegramSubtitle(user: AnalystUser): String {
+    val username = user.username?.takeIf { it.isNotBlank() }?.let { "@$it" }
+    return listOfNotNull(username, "Telegram ID ${user.telegramId}")
+        .joinToString(" · ")
 }

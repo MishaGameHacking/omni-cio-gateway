@@ -1,0 +1,65 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+      - ".github/scripts/deploy_timeweb_backend.sh"
+      - ".github/workflows/timeweb-backend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+      - ".github/scripts/deploy_timeweb_backend.sh"
+      - ".github/workflows/timeweb-backend.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Backend smoke test
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Create isolated Python environment
+        shell: cmd
+        run: |
+          set "VENV=%RUNNER_TEMP%\analyst-ai-backend-ci"
+          if exist "%VENV%" rmdir /s /q "%VENV%"
+          py -3 -m venv "%VENV%"
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --no-cache-dir -r backend\requirements.txt
+          if errorlevel 1 exit /b 1
+          echo BACKEND_CI_VENV=%VENV%>>"%GITHUB_ENV%"
+
+      - name: Compile backend
+        shell: cmd
+        run: |
+          "%BACKEND_CI_VENV%\Scripts\python.exe" -m compileall -q backend
+          if errorlevel 1 exit /b 1
+
+      - name: Verify health endpoint and OpenAPI
+        shell: cmd
+        run: |
+          set "TELEGRAM_CLIENT_ID=123456"
+          set "TELEGRAM_CLIENT_SECRET=test-only"
+          set "BACKEND_PUBLIC_URL=https://example.invalid"
+          set "DATABASE_PATH=%RUNNER_TEMP%\analyst-ai-backend-ci.sqlite3"
+          set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "%BACKEND_CI_VENV%\Scripts\python.exe" -c "from fastapi.testclient import TestClient; from backend.app import app; c=TestClient(app); c.__enter__(); r=c.get('/health'); assert r.status_code == 200 and r.json() == {'status':'ok'}; spec=c.get('/openapi.json'); assert spec.status_code == 200; c.__exit__(None,None,None)"
+          if errorlevel 1 exit /b 1
