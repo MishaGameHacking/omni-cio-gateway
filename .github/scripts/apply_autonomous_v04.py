@@ -28,6 +28,21 @@ def append_once(path: str, marker: str, block: str) -> None:
     write(path, content.rstrip() + "\n\n" + block.strip() + "\n")
 
 
+# Keep the scheduler portable on Windows CI images that do not bundle IANA tzdata.
+replace_once(
+    "backend/autonomous_ai.py",
+    """from datetime import UTC, datetime
+from typing import Any, Mapping
+from zoneinfo import ZoneInfo""",
+    """from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, Mapping""",
+)
+replace_once(
+    "backend/autonomous_ai.py",
+    'MOSCOW = ZoneInfo("Europe/Moscow")',
+    'MOSCOW = timezone(timedelta(hours=3), name="Europe/Moscow")',
+)
+
 # Start/stop the autonomous scheduler with the FastAPI process.
 replace_once(
     "backend/app.py",
