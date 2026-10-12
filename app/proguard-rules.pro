@@ -1,1 +1,1 @@
-# UI-01 has no reflection-based application code. Add keep rules only for a real consumer.
+# Add project-specific R8/ProGuard rules here when needed.
