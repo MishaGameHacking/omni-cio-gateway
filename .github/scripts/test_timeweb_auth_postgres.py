@@ -59,6 +59,46 @@ class InstalledReleaseTests(unittest.TestCase):
                     MODULE.verified_installed_release(ssh, release_sha="a" * 40)
         ssh.run.assert_called_with("readlink -f /opt/omnicio/current")
 
+    def test_installed_release_retries_only_read_only_ssh_transport_loss(self) -> None:
+        source = MODULE.load_plan()["source_release"]
+        command = "readlink -f /opt/omnicio/current"
+        transient = MODULE.SshTransportError(
+            "Remote command failed (stage=remote_command, exit_code=255)"
+        )
+        ssh = Mock()
+        ssh.run.side_effect = [transient, f"/opt/omnicio/releases/{source}\n"]
+        with patch.object(MODULE.time, "sleep") as sleep:
+            self.assertEqual(MODULE.verified_installed_release(ssh, release_sha="a" * 40),
+                             source)
+        self.assertEqual(ssh.run.call_count, 2)
+        ssh.run.assert_called_with(command)
+        sleep.assert_called_once_with(MODULE.SSH_READY_DELAY_SECONDS)
+
+        ssh = Mock()
+        ssh.run.side_effect = MODULE.InfraError("non-transport read failure")
+        with (
+            patch.object(MODULE.time, "sleep") as sleep,
+            self.assertRaisesRegex(MODULE.InfraError, "non-transport"),
+        ):
+            MODULE.verified_installed_release(ssh, release_sha="a" * 40)
+        ssh.run.assert_called_once_with(command)
+        sleep.assert_not_called()
+
+        ssh = Mock()
+        ssh.run.side_effect = [
+            MODULE.SshTransportError(
+                "Remote command failed (stage=remote_command, exit_code=255)"
+            )
+            for _ in range(MODULE.SSH_READ_ATTEMPTS)
+        ]
+        with (
+            patch.object(MODULE.time, "sleep") as sleep,
+            self.assertRaises(MODULE.SshTransportError),
+        ):
+            MODULE.verified_installed_release(ssh, release_sha="a" * 40)
+        self.assertEqual(ssh.run.call_count, MODULE.SSH_READ_ATTEMPTS)
+        self.assertEqual(sleep.call_count, MODULE.SSH_READ_ATTEMPTS - 1)
+
     def test_installed_release_rejects_unmanaged_path_and_missing_evidence_token(self) -> None:
         ssh = Mock()
         with patch.dict(MODULE.os.environ, {}, clear=True):
@@ -1732,7 +1772,7 @@ class RemoteDiagnosticsTests(unittest.TestCase):
         completed = subprocess.CompletedProcess([], 255, b"stdout-canary", b"ERROR:  42501")
         with (
             patch.object(MODULE.subprocess, "run", return_value=completed) as process,
-            self.assertRaises(MODULE.InfraError) as error,
+            self.assertRaises(MODULE.SshTransportError) as error,
         ):
             self.session.run("command-canary")
         self.assertEqual(str(error.exception),
