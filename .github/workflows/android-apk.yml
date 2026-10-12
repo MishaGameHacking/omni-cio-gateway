@@ -15,6 +15,7 @@ on:
       - ".github/scripts/test_apk_installation.py"
       - ".github/scripts/validate_distribution.py"
       - ".github/scripts/tests/**"
+      - ".github/actions/check-apk/**"
       - ".github/apk-signing-certificate.sha256"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
@@ -92,13 +93,7 @@ jobs:
           if errorlevel 1 exit /b 1
 
       - name: Verify artifact and actual installation before publication
-        shell: cmd
-        env:
-          PYTHONIOENCODING: utf-8
-          PYTHONUNBUFFERED: '1'
-        run: |
-          py -3 .github\scripts\validate_distribution.py --sdk "%ANDROID_SDK_ROOT%" --api 33 36
-          if errorlevel 1 exit /b 1
+        uses: ./.github/actions/check-apk
 
       - name: Publish verified APK to GitHub Releases
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
