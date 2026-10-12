@@ -1,0 +1,115 @@
+name: Apply autonomous Analyst AI insights
+
+on:
+  push:
+    branches:
+      - feat/autonomous-insights-v040
+    paths:
+      - ".github/scripts/apply_autonomous_insights.py"
+      - ".github/workflows/apply-autonomous-insights.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: feat/autonomous-insights-v040
+          fetch-depth: 0
+          clean: true
+
+      - name: Apply autonomous insights sources
+        shell: cmd
+        run: |
+          py -3 .github\scripts\apply_autonomous_insights.py
+          if errorlevel 1 exit /b 1
+          git diff --check
+          if errorlevel 1 exit /b 1
+
+      - name: Create isolated Python environment
+        shell: cmd
+        run: |
+          set "VENV=%RUNNER_TEMP%\analyst-ai-autonomous-insights"
+          if exist "%VENV%" rmdir /s /q "%VENV%"
+          py -3 -m venv "%VENV%"
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --no-cache-dir -r backend\requirements.txt
+          if errorlevel 1 exit /b 1
+          echo INSIGHTS_VENV=%VENV%>>"%GITHUB_ENV%"
+
+      - name: Compile and test backend
+        shell: cmd
+        run: |
+          set "TELEGRAM_CLIENT_ID=123456"
+          set "TELEGRAM_CLIENT_SECRET=test-only"
+          set "BACKEND_PUBLIC_URL=https://example.invalid"
+          set "DATABASE_PATH=%RUNNER_TEMP%\analyst-ai-autonomous.sqlite3"
+          set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          set "ANALYST_RUNTIME_ENABLED=0"
+          "%INSIGHTS_VENV%\Scripts\python.exe" -m compileall -q backend
+          if errorlevel 1 exit /b 1
+          "%INSIGHTS_VENV%\Scripts\python.exe" -m unittest discover -s backend\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Choose Android SDK root
+        shell: cmd
+        run: |
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
+          echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
+          echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
+
+      - name: Ensure Android SDK 36 is installed
+        shell: cmd
+        run: |
+          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
+          echo ::error::Android command-line tools are missing on the self-hosted runner.
+          exit /b 1
+          :tools_ready
+          set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
+          set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
+          (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
+          if errorlevel 1 exit /b 1
+          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
+          if errorlevel 1 exit /b 1
+
+      - name: Lint and build Android variants
+        shell: cmd
+        run: |
+          call gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease --stacktrace
+          if errorlevel 1 exit /b 1
+
+      - name: Commit generated implementation
+        shell: cmd
+        run: |
+          git config user.name "Analyst AI automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend app gradle\libs.versions.toml docs .github\scripts\deploy_timeweb_backend.sh
+          git diff --cached --quiet
+          if not errorlevel 1 (
+            echo No generated changes to commit
+            exit /b 0
+          )
+          git commit -m "feat: autonomous portfolio intelligence and insight feeds"
+          if errorlevel 1 exit /b 1
+          git push origin HEAD:feat/autonomous-insights-v040
+          if errorlevel 1 exit /b 1
