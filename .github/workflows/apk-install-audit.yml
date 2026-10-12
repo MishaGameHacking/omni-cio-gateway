@@ -1,0 +1,85 @@
+name: APK installation audit
+
+on:
+  push:
+    branches: [fix/apk-install-042]
+    paths: [".github/workflows/apk-install-audit.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download exact published APKs for comparison
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const dir = path.join(process.env.RUNNER_TEMP, `apk-install-audit-${context.runId}`);
+            fs.mkdirSync(dir, { recursive: true });
+            core.exportVariable('APK_AUDIT_DIR', dir);
+            for (const [label, sha] of [['previous','d88c04b8777962cb4f60a4f5f02be7769137cf11'],['reported','0cbb7ee3668c4093007831d310780fa47afe9dda']]) {
+              const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:`android-debug-${sha}`})).data;
+              const asset = release.assets.find(a => a.name.endsWith('.apk'));
+              if (!asset) throw new Error('APK missing for ' + label);
+              const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
+              const bytes = Buffer.from(response.data);
+              const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+              if (bytes.length !== asset.size || (asset.digest && asset.digest !== 'sha256:' + digest)) throw new Error('Downloaded APK integrity mismatch');
+              fs.writeFileSync(path.join(dir, label + '.apk'), bytes);
+              core.info(`${label}: bytes=${bytes.length} sha256=${digest}`);
+            }
+      - name: Verify APK archives, signing, manifest and native alignment
+        shell: py -3 {0}
+        run: |
+          import hashlib, json, os, struct, subprocess, sys, zipfile
+          from pathlib import Path
+          sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+          roots=[os.getenv('ANDROID_SDK_ROOT'),os.getenv('ANDROID_HOME'),str(Path(os.environ['LOCALAPPDATA'])/'Android'/'Sdk'),str(Path(os.environ['RUNNER_TOOL_CACHE'])/'AndroidSdk'/'sdk')]
+          sdk=next((Path(p) for p in roots if p and (Path(p)/'build-tools'/'36.0.0'/'aapt.exe').exists()),None)
+          if sdk is None: raise SystemExit('Android build tools 36.0.0 unavailable')
+          tools=sdk/'build-tools'/'36.0.0'
+          java=str(Path(os.environ['JAVA_HOME'])/'bin'/'java.exe')
+          def command(label, args):
+              result=subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=90)
+              print(label+' EXIT='+str(result.returncode))
+              print(result.stdout)
+              print(result.stderr)
+              return result.returncode
+          failures=0
+          for name in ['previous','reported']:
+              apk=Path(os.environ['APK_AUDIT_DIR'])/(name+'.apk')
+              print('==== '+name.upper()+' ====')
+              with zipfile.ZipFile(apk) as archive:
+                  bad=archive.testzip()
+                  print('ZIP_CRC_ERROR='+str(bad))
+                  if bad: failures+=1
+                  infos=archive.infolist()
+                  print('DUPLICATE_NAMES='+str(len(infos)-len({i.filename for i in infos})))
+                  with apk.open('rb') as raw:
+                      for entry in infos:
+                          if entry.filename.endswith('.so') or entry.filename=='resources.arsc':
+                              raw.seek(entry.header_offset+26)
+                              n,e=struct.unpack('<HH',raw.read(4))
+                              offset=entry.header_offset+30+n+e
+                              print('ENTRY='+json.dumps({'name':entry.filename,'compression':entry.compress_type,'size':entry.file_size,'offset':offset,'mod4':offset%4,'mod4096':offset%4096,'mod16384':offset%16384}))
+              failures+=bool(command('SIGNATURE', [java,'-jar',str(tools/'lib'/'apksigner.jar'),'verify','--verbose','--print-certs',str(apk)]))
+              failures+=bool(command('ALIGNMENT', [str(tools/'zipalign.exe'),'-c','-P','16','4',str(apk)]))
+              failures+=bool(command('BADGING', [str(tools/'aapt.exe'),'dump','badging',str(apk)]))
+              failures+=bool(command('MANIFEST', [str(tools/'aapt.exe'),'dump','xmltree',str(apk),'AndroidManifest.xml']))
+          print('EMULATOR_INSTALLED='+str((sdk/'emulator'/'emulator.exe').exists()))
+          print('SYSTEM_IMAGES='+json.dumps([str(p.relative_to(sdk)) for p in (sdk/'system-images').glob('*/*/*/package.xml')]))
+          print('AUDIT_FAILURE_COUNT='+str(failures))
+          if failures: raise SystemExit(1)
