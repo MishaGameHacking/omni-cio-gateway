@@ -13,9 +13,6 @@ on:
       - "gradlew.bat"
       - ".github/workflows/android-ci.yml"
       - ".github/workflows/android-apk.yml"
-permissions:
-  contents: read
-
 concurrency:
   group: android-ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -23,6 +20,8 @@ concurrency:
 jobs:
   build:
     name: Android debug build
+    permissions:
+      contents: read
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
 
