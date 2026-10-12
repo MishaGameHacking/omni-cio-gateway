@@ -10,6 +10,9 @@ from backend.analysis_engine import (
 from backend.timeweb_ai import TimewebAIResult, TimewebAIUsage
 
 
+SOURCE_ID = "portfolio:snapshot:42"
+
+
 class FakeGateway:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
@@ -24,6 +27,19 @@ class FakeGateway:
         )
 
 
+def source_context(**values) -> dict:
+    return {
+        **values,
+        "sources": [
+            {
+                "id": SOURCE_ID,
+                "kind": "portfolio_snapshot",
+                "as_of": "2026-10-12T09:00:00+03:00",
+            }
+        ],
+    }
+
+
 def valid_report(*, severity: str = "info") -> dict:
     return {
         "severity": severity,
@@ -33,7 +49,7 @@ def valid_report(*, severity: str = "info") -> dict:
         "evidence": [
             {
                 "fact": "Доля крупнейшей позиции — 18%",
-                "source_id": "portfolio:snapshot:42",
+                "source_id": SOURCE_ID,
                 "as_of": "2026-10-12T09:00:00+03:00",
             }
         ],
@@ -60,10 +76,9 @@ class AnalysisEngineTests(unittest.TestCase):
         result = analyze_if_needed(
             signals=AnalysisSignals(morning_due=True, digest_changed=True),
             budget=AnalysisBudget(5, 2, 1),
-            context={
-                "portfolio": {"total": 1000, "currency": "RUB"},
-                "sources": [{"id": "portfolio:snapshot:42", "fresh": True}],
-            },
+            context=source_context(
+                portfolio={"total": 1000, "currency": "RUB"},
+            ),
             client=gateway,  # type: ignore[arg-type]
         )
         self.assertEqual(result.decision.tier, AnalysisTier.STANDARD)
@@ -80,14 +95,29 @@ class AnalysisEngineTests(unittest.TestCase):
         result = analyze_if_needed(
             signals=AnalysisSignals(critical_risk=True, digest_changed=True),
             budget=AnalysisBudget(5, 2, 1),
-            context={"risk": {"margin_call_distance_percent": 2.0}},
+            context=source_context(
+                risk={"margin_call_distance_percent": 2.0},
+            ),
             client=gateway,  # type: ignore[arg-type]
         )
         self.assertEqual(result.decision.tier, AnalysisTier.PREMIUM)
         self.assertEqual(result.report.severity, "critical")
         self.assertTrue(result.decision.notify_user)
 
-    def test_invalid_unverifiable_evidence_is_rejected(self) -> None:
+    def test_unknown_evidence_source_is_rejected(self) -> None:
+        payload = valid_report()
+        payload["evidence"][0]["source_id"] = "invented:source"
+        gateway = FakeGateway(payload)
+        with self.assertRaises(AnalysisValidationError) as raised:
+            analyze_if_needed(
+                signals=AnalysisSignals(portfolio_changed=True, digest_changed=True),
+                budget=AnalysisBudget(5, 2, 1),
+                context=source_context(portfolio={"changed": True}),
+                client=gateway,  # type: ignore[arg-type]
+            )
+        self.assertEqual(str(raised.exception), "analysis_unknown_evidence_source")
+
+    def test_missing_evidence_fields_are_rejected(self) -> None:
         payload = valid_report()
         payload["evidence"] = [{"fact": "Цена упала"}]
         gateway = FakeGateway(payload)
@@ -95,9 +125,25 @@ class AnalysisEngineTests(unittest.TestCase):
             analyze_if_needed(
                 signals=AnalysisSignals(portfolio_changed=True, digest_changed=True),
                 budget=AnalysisBudget(5, 2, 1),
-                context={"portfolio": {"changed": True}},
+                context=source_context(portfolio={"changed": True}),
                 client=gateway,  # type: ignore[arg-type]
             )
+
+    def test_naive_evidence_timestamp_is_rejected(self) -> None:
+        payload = valid_report()
+        payload["evidence"][0]["as_of"] = "2026-10-12T09:00:00"
+        gateway = FakeGateway(payload)
+        with self.assertRaises(AnalysisValidationError) as raised:
+            analyze_if_needed(
+                signals=AnalysisSignals(cash_changed=True, digest_changed=True),
+                budget=AnalysisBudget(5, 2, 1),
+                context=source_context(cash={"changed": True}),
+                client=gateway,  # type: ignore[arg-type]
+            )
+        self.assertEqual(
+            str(raised.exception),
+            "analysis_evidence_as_of_timezone_missing",
+        )
 
     def test_context_size_is_bounded_before_gateway_call(self) -> None:
         gateway = FakeGateway(valid_report())
