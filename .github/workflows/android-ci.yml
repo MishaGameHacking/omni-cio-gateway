@@ -11,11 +11,10 @@ on:
       - "gradle/**"
       - "gradlew"
       - "gradlew.bat"
-      - ".github/scripts/**"
-      - ".github/actions/check-apk/**"
-      - ".github/apk-signing-certificate.sha256"
       - ".github/workflows/android-ci.yml"
       - ".github/workflows/android-apk.yml"
+      - ".github/scripts/**"
+      - ".github/actions/check-apk/**"
 concurrency:
   group: android-ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -30,20 +29,17 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           clean: true
-
       - name: Set up JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6
       - name: Choose Android SDK root
         shell: cmd
         run: |
@@ -53,7 +49,6 @@ jobs:
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
           echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
           echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
-
       - name: Ensure Android SDK 36 is installed
         shell: cmd
         run: |
@@ -79,36 +74,34 @@ jobs:
           if errorlevel 1 exit /b 1
           call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
           if errorlevel 1 exit /b 1
-
       - name: Test APK verification rules
         shell: cmd
         run: |
           py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
           if errorlevel 1 exit /b 1
-
       - name: Lint and build all Android variants
         shell: cmd
         run: |
           call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
-
       - name: Download previous published APK for update compatibility test
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
           script: |
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-debug-0cbb7ee3668c4093007831d310780fa47afe9dda'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-debug-0cbb7ee.apk');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-020a18c1b57b2614ed1867f40cb33b0d736ccabe'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.4.2-preview-020a18c.apk');
             if (!asset) throw new Error('Reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
-            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '9c45e7600edb8c9044b933ada9ba896595eff5c44fdf93382684456c99b4c009') throw new Error('Reference APK checksum mismatch');
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '5d9bf30bb617092d2091384e5925f7a9f4e5b6195407070162a7d43dfcb8ef75') throw new Error('Reference APK checksum mismatch');
             const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);
-
-      - name: Validate preview installation and update compatibility
+      - name: Validate preview installation, upgrade and profile UI
         uses: ./.github/actions/check-apk
+        env:
+          RUN_PROFILE_UI_TESTS: "1"
