@@ -1,0 +1,160 @@
+name: Auth PostgreSQL reconcile
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Inspect live prerequisites, send one authorized control email, or apply the reviewed schema transition"
+        type: choice
+        required: true
+        default: preflight
+        options:
+          - preflight
+          - email_probe
+          - apply
+      smtp_probe_recipient:
+        description: "Explicitly authorized control-email recipient (email_probe only)"
+        type: string
+        required: false
+        default: ""
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      checks: read
+    name: Reconcile private PostgreSQL
+    concurrency:
+      group: omnicio-production-ssh
+      cancel-in-progress: false
+      queue: max
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 30
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
+      SERVER_NAME: omni-cio-white-site
+      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+      VPC_NAME: omni-cio-private
+      DB_CLUSTER_NAME: omnicio-auth-postgres
+      DB_INSTANCE_NAME: omnicio
+      DB_ADMIN_LOGIN: omnicio_app
+      POSTGRES_VERSION: "18"
+      TARGET_LOCATION: ru-3
+      TARGET_ZONE: msk-1
+      BACKUP_ONLY: ${{ github.event_name == 'schedule' && '--backup-only' || '' }}
+      OMNICIO_POSTGRES_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'preflight' }}
+      OMNICIO_SMTP_PROBE_RECIPIENT: ${{ github.event_name == 'workflow_dispatch' && inputs.smtp_probe_recipient || '' }}
+      # Read-only cutover preflight uses the same future integration settings
+      # as application deployment, before stopping the accepted source runtime.
+      OPERATOR_USER_ID: ${{ vars.OPERATOR_USER_ID }}
+      TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+      TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
+      VKID_APP_ID: ${{ vars.VKID_APP_ID }}
+      AUTH_SMTP_HOST: ${{ vars.AUTH_SMTP_HOST }}
+      AUTH_SMTP_PORT: ${{ vars.AUTH_SMTP_PORT }}
+      AUTH_SMTP_USERNAME: ${{ secrets.AUTH_SMTP_USERNAME }}
+      AUTH_SMTP_PASSWORD: ${{ secrets.AUTH_SMTP_PASSWORD }}
+      AUTH_SMTP_SENDER: ${{ vars.AUTH_SMTP_SENDER }}
+      AUTH_SMTP_MODE: ${{ vars.AUTH_SMTP_MODE }}
+      MARKET_DATA_TOKEN: ${{ secrets.MARKET_DATA_TOKEN }}
+      MARKET_DATA_DISTRIBUTION_APPROVED: ${{ vars.MARKET_DATA_DISTRIBUTION_APPROVED }}
+      ASSISTANT_BASE_URL: ${{ vars.ASSISTANT_BASE_URL }}
+      ASSISTANT_MODEL: ${{ vars.ASSISTANT_MODEL }}
+      ASSISTANT_API_KEY: ${{ secrets.ASSISTANT_API_KEY }}
+      ASSISTANT_ENABLED: "false"
+      ASSISTANT_ALLOWED_ENDPOINTS: ${{ vars.ASSISTANT_ALLOWED_ENDPOINTS }}
+      ASSISTANT_DAILY_REQUEST_LIMIT: ${{ vars.ASSISTANT_DAILY_REQUEST_LIMIT }}
+      NOTIFICATIONS_ENABLED: "true"
+      NOTIFICATION_EMAIL_ENABLED: "false"
+      NOTIFICATION_CRYPTO_KEY: ${{ secrets.NOTIFICATION_CRYPTO_KEY }}
+      NOTIFICATION_VAPID_PRIVATE_KEY: ${{ secrets.NOTIFICATION_VAPID_PRIVATE_KEY }}
+      NOTIFICATION_VAPID_SUBJECT: "https://omnicio.ru"
+      NOTIFICATION_SMTP_HOST: ${{ vars.NOTIFICATION_SMTP_HOST }}
+      NOTIFICATION_SMTP_PORT: ${{ vars.NOTIFICATION_SMTP_PORT }}
+      NOTIFICATION_SMTP_USERNAME: ${{ secrets.NOTIFICATION_SMTP_USERNAME }}
+      NOTIFICATION_SMTP_PASSWORD: ${{ secrets.NOTIFICATION_SMTP_PASSWORD }}
+      NOTIFICATION_SMTP_SENDER: ${{ vars.NOTIFICATION_SMTP_SENDER }}
+      NOTIFICATION_SMTP_MODE: ${{ vars.NOTIFICATION_SMTP_MODE }}
+      BILLING_ENABLED: ${{ vars.BILLING_ENABLED }}
+      BILLING_TERMINAL_KEY: ${{ secrets.BILLING_TERMINAL_KEY }}
+      BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
+      BILLING_AMOUNT_KOPECKS: ${{ vars.BILLING_AMOUNT_KOPECKS }}
+      BILLING_PERIOD_DAYS: ${{ vars.BILLING_PERIOD_DAYS }}
+      BILLING_OFFER_VERSION: ${{ vars.BILLING_OFFER_VERSION }}
+      BILLING_DESCRIPTION: ${{ vars.BILLING_DESCRIPTION }}
+      BILLING_TAXATION: ${{ vars.BILLING_TAXATION }}
+      BILLING_TAX: ${{ vars.BILLING_TAX }}
+      LEGAL_OPERATOR_NAME: "КЛИМАЧЕВ МИХАИЛ КОНСТАНТИНОВИЧ"
+      LEGAL_OPERATOR_EMAIL: "omnicioinfo@gmail.com"
+      LEGAL_PRIVACY_VERSION: "2026-10-11-v1.5.0"
+      LEGAL_CONSENT_VERSION: "2026-10-11-v1.5.0"
+      LEGAL_TERMS_VERSION: "2026-10-11-v1.5.0"
+      SESSION_TTL_SECONDS: "34560000"
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+
+      - name: Verify current main release checks
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
+
+      - name: Validate verified SSH server key
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_ssh_trust.py'
+
+      - name: Validate Timeweb secret
+        shell: cmd
+        run: |
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::TIMEWEB_CLOUD_TOKEN is missing
+            exit /b 1
+          )
+
+      - name: Reconcile PostgreSQL and schema
+        id: postgres
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_postgres.py ^
+            %BACKUP_ONLY% ^
+            --server-name "%SERVER_NAME%" ^
+            --server-comment "%SERVER_COMMENT%" ^
+            --vpc-name "%VPC_NAME%" ^
+            --cluster-name "%DB_CLUSTER_NAME%" ^
+            --instance-name "%DB_INSTANCE_NAME%" ^
+            --admin-login "%DB_ADMIN_LOGIN%" ^
+            --postgres-version "%POSTGRES_VERSION%" ^
+            --location "%TARGET_LOCATION%" ^
+            --availability-zone "%TARGET_ZONE%" ^
+            --migration migrations/0029_email_auth.sql ^
+            --migration migrations/0030_portfolio_read_only.sql ^
+            --migration migrations/0031_social_auth.sql
+
+      - name: Confirm database readiness
+        if: steps.postgres.outputs.status == 'database_ready'
+        shell: cmd
+        run: echo Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed.
