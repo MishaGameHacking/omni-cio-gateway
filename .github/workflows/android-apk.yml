@@ -14,9 +14,6 @@ on:
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 concurrency:
   group: android-apk-${{ github.ref }}
   cancel-in-progress: false
@@ -24,6 +21,8 @@ concurrency:
 jobs:
   build:
     name: Build downloadable debug APK
+    permissions:
+      contents: write
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
 
