@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import importlib.util
 import io
@@ -314,7 +313,9 @@ class PostgresTests(unittest.TestCase):
 
     def test_workflow_passes_only_reviewed_upgrade_migrations_in_order(self) -> None:
         root = MODULE_PATH.parents[2]
-        workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
+        workflow = (root / ".github/workflows/auth-postgres-reconcile.yml").read_text(
+            encoding="utf-8",
+        )
         migrations = list(REVIEWED_MIGRATIONS)
         self.assertEqual(len(migrations), 3)
         self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0029", "0030", "0031"])
@@ -340,14 +341,14 @@ class PostgresTests(unittest.TestCase):
             block = text.split("\n    env:\n", 1)[1].split("\n    steps:\n", 1)[0]
             return dict(re.findall(r"^      ([A-Z][A-Z0-9_]*): ([^\n]*)$", block, re.M))
 
-        app = environment("auth-app-deploy.yml", "deploy")
-        postgres = environment("auth-postgres.yml", "reconcile")
+        app = environment("auth-app-release.yml", "deploy")
+        postgres = environment("auth-postgres-reconcile.yml", "reconcile")
         self.assertEqual({name: postgres.get(name) for name in app}, app)
 
     def test_workflow_defaults_to_inspection_and_keeps_recipient_out_of_commands(self) -> None:
-        workflow = (MODULE_PATH.parents[2] / ".github/workflows/auth-postgres.yml").read_text(
-            encoding="utf-8",
-        )
+        workflow = (
+            MODULE_PATH.parents[2] / ".github/workflows/auth-postgres-reconcile.yml"
+        ).read_text(encoding="utf-8")
         operation_input = workflow.split("      operation:\n", 1)[1].split(
             "      smtp_probe_recipient:\n", 1,
         )[0]
@@ -367,59 +368,54 @@ class PostgresTests(unittest.TestCase):
         self.assertNotIn("inputs.smtp_probe_recipient", commands)
         self.assertNotIn("--operation apply", commands)
 
-    def test_push_validation_queue_cannot_be_replaced_by_scheduled_or_manual_runs(self) -> None:
-        workflow = (MODULE_PATH.parents[2] / ".github/workflows/auth-postgres.yml").read_text(
-            encoding="utf-8",
+    def test_validation_and_production_jobs_are_separate_workflows(self) -> None:
+        workflow_dir = MODULE_PATH.parents[2] / ".github/workflows"
+        validation = (workflow_dir / "auth-postgres.yml").read_text(encoding="utf-8")
+        reconcile = (workflow_dir / "auth-postgres-reconcile.yml").read_text(encoding="utf-8")
+        restore = (workflow_dir / "auth-postgres-restore.yml").read_text(encoding="utf-8")
+
+        validation_header, validation_jobs = validation.split("\njobs:\n", 1)
+        self.assertIn("  pull_request:\n", validation_header)
+        self.assertIn("  push:\n", validation_header)
+        self.assertNotIn("workflow_dispatch:", validation_header)
+        self.assertNotIn("schedule:", validation_header)
+        self.assertNotIn("\n  reconcile:\n", validation_jobs)
+        self.assertNotIn("\n  isolated-restore:\n", validation_jobs)
+        self.assertNotIn("omnicio-production-ssh", validation_jobs)
+        self.assertIn(
+            "group: auth-postgres-${{ github.event.pull_request.number || github.run_id }}",
+            validation_header,
         )
-        header, jobs = workflow.split("\njobs:\n", 1)
-        concurrency = header.split("\nconcurrency:\n", 1)[1]
-        group = re.search(r"^  group: (.*?)\$\{\{\s*(.*?)\s*\}\}(.*?)$", concurrency, re.M)
-        self.assertIsNotNone(group)
-        self.assertIn("  cancel-in-progress: false\n", concurrency)
-        terms = [term.strip() for term in group[2].split("||")]
-        self.assertEqual(len(terms), 2)
 
-        def queue(pr_number: int | None, run_id: int) -> str:
-            # Evaluate only this workflow's nonzero-id/null fallback expression.
-            # The previous 'production' literal is intentionally evaluable, so
-            # the regression fails on its collision, without requiring Node here.
-            context = {"github.event.pull_request.number": pr_number, "github.run_id": run_id}
-            values = [context[term] if term in context else ast.literal_eval(term)
-                      for term in terms]
-            return group[1] + str(next(value for value in values if value)) + group[3]
-
-        scenarios = (
-            ("first PR", 765, 1001), ("same PR again", 765, 1002),
-            ("other PR", 766, 1003),
-            ("main push", None, 2001), ("scheduled maintenance", None, 2002),
-            ("manual reconcile", None, 2003), ("later main push", None, 2004),
-            ("later schedule", None, 2005), ("manual restore request", None, 2006),
+        reconcile_header, reconcile_jobs = reconcile.split("\njobs:\n", 1)
+        self.assertNotIn("pull_request:", reconcile_header)
+        for trigger in ("  push:\n", "  workflow_dispatch:\n", "  schedule:\n"):
+            self.assertIn(trigger, reconcile_header)
+        self.assertIn("\n  reconcile:\n", "\n" + reconcile_jobs)
+        self.assertNotIn("\n  isolated-restore:\n", reconcile_jobs)
+        self.assertIn("group: omnicio-production-ssh", reconcile_jobs)
+        self.assertIn("queue: max", reconcile_jobs)
+        self.assertNotIn("\n    if:", reconcile_jobs.split("\n    steps:\n", 1)[0])
+        self.assertNotIn("needs: tests", reconcile_jobs)
+        self.assertLess(
+            reconcile_jobs.index("name: Verify current main release checks"),
+            reconcile_jobs.index("name: Validate Timeweb secret"),
         )
-        groups = [queue(pr, run_id) for _, pr, run_id in scenarios]
-        self.assertEqual(groups[0], groups[1], "The same PR retains one validation queue")
-        self.assertEqual(len(set(groups)), len(scenarios) - 1,
-                         "Each non-PR run needs a separate pending slot; false does not queue them")
 
-        tests, mutations = jobs.split("\n  reconcile:\n", 1)
-        self.assertNotIn("omnicio-production-ssh", tests)
-        reconcile, restore = mutations.split("\n  isolated-restore:\n", 1)
-        for name, block in (("reconcile", reconcile), ("restore", restore)):
-            with self.subTest(job=name):
-                lock = re.search(r"^    concurrency:\n((?:      [^\n]*\n)+)", block, re.M)
-                self.assertIsNotNone(lock)
-                self.assertEqual(lock[1], "      group: omnicio-production-ssh\n"
-                                 "      cancel-in-progress: false\n      queue: max\n")
-                self.assertIn("    needs: tests\n", block)
-                self.assertIn("github.ref == 'refs/heads/main'", block)
-        self.assertLess(reconcile.index("name: Verify current main release checks"),
-                        reconcile.index("name: Validate Timeweb secret"))
-        self.assertIn("github.event_name == 'workflow_dispatch'", restore)
-        self.assertIn("&& inputs.restore_drill", restore)
-        self.assertIn('OMNICIO_RESTORE_DRILL_ALLOWED: "true"', restore)
-        self.assertIn("run_recovery_drill.py --on-host", restore)
-        self.assertNotIn("OMNICIO_RESTORE_SOURCE_DSN", restore)
-        self.assertNotIn("OMNICIO_RESTORE_ARCHIVE_KEY", restore)
-        self.assertNotIn("OMNICIO_RESTORE_RECEIPT_KEY", restore)
+        restore_header, restore_jobs = restore.split("\njobs:\n", 1)
+        self.assertIn("  workflow_dispatch:\n", restore_header)
+        for trigger in ("  pull_request:\n", "  push:\n", "  schedule:\n"):
+            self.assertNotIn(trigger, restore_header)
+        self.assertIn("\n  isolated-restore:\n", "\n" + restore_jobs)
+        self.assertIn("group: omnicio-production-ssh", restore_jobs)
+        self.assertIn("queue: max", restore_jobs)
+        self.assertNotIn("\n    if:", restore_jobs.split("\n    steps:\n", 1)[0])
+        self.assertNotIn("needs: tests", restore_jobs)
+        self.assertIn('OMNICIO_RESTORE_DRILL_ALLOWED: "true"', restore_jobs)
+        self.assertIn("run_recovery_drill.py --on-host", restore_jobs)
+        self.assertNotIn("OMNICIO_RESTORE_SOURCE_DSN", restore_jobs)
+        self.assertNotIn("OMNICIO_RESTORE_ARCHIVE_KEY", restore_jobs)
+        self.assertNotIn("OMNICIO_RESTORE_RECEIPT_KEY", restore_jobs)
 
     def test_parser_accepts_multiple_migrations(self) -> None:
         old = sys.argv
