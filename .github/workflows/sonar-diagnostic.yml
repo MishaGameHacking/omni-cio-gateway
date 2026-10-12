@@ -16,21 +16,21 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Query current main Sonar metrics and issues
+      - name: Query current main Sonar issues
         shell: cmd
         run: |
-          echo === MEASURES ===
-          curl.exe -fSs "https://sonarcloud.io/api/measures/component?component=MishaGameHacking_omni-cio-gateway&branch=main&metricKeys=new_security_rating,new_vulnerabilities,security_rating,vulnerabilities,new_security_hotspots,new_security_hotspots_reviewed"
-          if errorlevel 1 exit /b 1
-          echo.
-          echo === OPEN_OR_CONFIRMED_NEW ===
-          curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true&ps=100"
-          if errorlevel 1 exit /b 1
-          echo.
           echo === ALL_ISSUES ===
           curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&ps=100"
           if errorlevel 1 exit /b 1
           echo.
-          echo === VULNERABILITIES ===
-          curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&types=VULNERABILITY&ps=100"
+          echo === ACCEPTED ===
+          curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=ACCEPTED&ps=100"
+          if errorlevel 1 exit /b 1
+          echo.
+          echo === OPEN_CONFIRMED_ACCEPTED ===
+          curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=OPEN,CONFIRMED,ACCEPTED&ps=100"
+          if errorlevel 1 exit /b 1
+          echo.
+          echo === NEW_OPEN_CONFIRMED ===
+          curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true&ps=100"
           if errorlevel 1 exit /b 1
