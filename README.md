@@ -5,9 +5,23 @@ Kotlin / Jetpack Compose; Android 13+ (API 33), compileSdk/targetSdk 36.
 
 ## Совместимость
 
-Release package: `ru.omnicio.app`. Тестовый APK: `ru.omnicio.app.debug`.
+Release package: `ru.omnicio.app`. Тестовая линия: `ru.omnicio.app.debug`.
 Для обновления без удаления данных должны совпадать package и сертификат подписи.
-Версия 0.4.1 — исправления надёжности; versionCode 19.
+Версия 0.4.2 / versionCode 20: компактный `preview` без отладчика и debug-only tooling,
+подписанный прежним тестовым ключом. Это не производственная подпись для магазина.
+Пакет, минимальная версия Android и серверные данные не меняются.
+
+## Установка APK
+
+Перед публикацией проверяются подпись, закреплённый сертификат, DEX, ZIP/ELF,
+отсутствие testOnly и debug-флага, установка с нуля и запуск на Android 13/16.
+В PR также проверяется обновление с опубликованной 0.4.1. После загрузки в GitHub
+APK скачивается обратно для сверки SHA-256. Отчёт: `apk-verification.json` в релизе.
+
+Исходная 0.4.1 уже успешно установлена и запущена на чистом эмуляторе Android 13.
+Это не воспроизводит отказ на конкретном Samsung. Не выдавать неподтверждённую
+причину за найденную: для отказа на телефоне нужны модель, Android/One UI и код
+INSTALL_FAILED. Подробности проверки: `docs/APK_INSTALLATION.md`.
 
 ## Что реализовано
 
@@ -25,7 +39,7 @@ Release package: `ru.omnicio.app`. Тестовый APK: `ru.omnicio.app.debug`.
 - Без ключа модели работают только алгоритмические проверки, не LLM.
   Нет свободного пользовательского чата с моделью и нет автоматических сделок.
 
-## Исправления 0.4.1
+## Исправления 0.4.1, сохранённые в 0.4.2
 
 - Остановка планировщика не скрывает отмену вызывающей задачи и ошибки фоновой задачи.
 - Ручное обновление не изображает сделку и не обходит фильтр существенных изменений.
@@ -78,7 +92,13 @@ HTTPS-проверка T-Invest включена; дополнительный �
 
 `py -3 -m unittest discover -s backend/tests -p "test_*.py" -v`
 
-`gradlew.bat :app:lintDebug :app:assembleDebug :app:assembleRelease`
+`py -3 -m unittest discover -s .github/scripts/tests -p "test_*.py" -v`
+
+`gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview`
+
+Полная проверка установки выполняется фиксированными командами `.github/actions/check-apk`
+в Android CI и Android APK. `verify_apk.py` и `validate_distribution.py` только проверяют
+конкретные файлы сборки и отчёты; они не принимают произвольные пути и не запускают команды.
 
 Все применимые проверки последнего SHA, включая SonarCloud, должны быть успешны
 до слияния. Настройки качества нельзя ослаблять ради зелёного статуса.

@@ -11,8 +11,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.4.1"
+        versionCode = 20
+        versionName = "0.4.2"
     }
 
     buildTypes {
@@ -26,6 +26,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        create("preview") {
+            initWith(getByName("release"))
+            // Preserve identity of the installed test line without shipping debugger/tooling code.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-preview"
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += "release"
         }
     }
 

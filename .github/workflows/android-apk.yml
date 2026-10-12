@@ -11,6 +11,12 @@ on:
       - "gradle/**"
       - "gradlew"
       - "gradlew.bat"
+      - ".github/scripts/verify_apk.py"
+      - ".github/scripts/test_apk_installation.py"
+      - ".github/scripts/validate_distribution.py"
+      - ".github/scripts/tests/**"
+      - ".github/actions/check-apk/**"
+      - ".github/apk-signing-certificate.sha256"
       - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
@@ -20,11 +26,11 @@ concurrency:
 
 jobs:
   build:
-    name: Build downloadable debug APK
+    name: Build and verify downloadable APK
     permissions:
       contents: write
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout source
@@ -56,26 +62,19 @@ jobs:
         shell: cmd
         run: |
           if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
-
           set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
           curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
           if errorlevel 1 exit /b 1
-
           certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
           if errorlevel 1 exit /b 1
           findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
-          if errorlevel 1 (
-            echo ::error::Android command-line tools checksum mismatch.
-            exit /b 1
-          )
-
+          if errorlevel 1 exit /b 1
           if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
           tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
           if errorlevel 1 exit /b 1
           if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
           move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
           if errorlevel 1 exit /b 1
-
           :tools_ready
           set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
           set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
@@ -85,89 +84,68 @@ jobs:
           call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
           if errorlevel 1 exit /b 1
 
-      - name: Lint and build debug APK
+      - name: Lint and build compact signed preview APK
         shell: cmd
         run: |
-          call gradlew.bat :app:lintDebug :app:assembleDebug --stacktrace
+          py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+          call gradlew.bat :app:lintPreview :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
 
-      - name: Publish APK to GitHub Releases
+      - name: Verify artifact and actual installation before publication
+        uses: ./.github/actions/check-apk
+
+      - name: Publish verified APK to GitHub Releases
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
           script: |
             const fs = require('fs');
+            const crypto = require('crypto');
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const sha = context.sha;
-            const tag = `android-debug-${sha}`;
-            const assetName = `Analyst-AI-debug-${sha.slice(0, 7)}.apk`;
-            const apkPath = 'app/build/outputs/apk/debug/app-debug.apk';
-            const title = `Analyst AI debug ${sha.slice(0, 7)}`;
-            const body = 'Installable Analyst AI debug APK for device testing. Minimum Android version: Android 13 (API 33).';
-
-            const releases = await github.paginate(github.rest.repos.listReleases, {
-              owner,
-              repo,
-              per_page: 100,
-            });
-            let release = releases.find(({tag_name}) => tag_name === tag);
-
-            if (!release) {
-              release = (await github.rest.repos.createRelease({
-                owner,
-                repo,
-                tag_name: tag,
-                target_commitish: sha,
-                name: title,
-                body,
-                draft: true,
-                prerelease: true,
-                make_latest: 'false',
-              })).data;
+            const reportPath = 'app/build/outputs/apk/preview/apk-verification.json';
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            const data = fs.readFileSync('app/build/outputs/apk/preview/app-preview.apk');
+            const hash = crypto.createHash('sha256').update(data).digest('hex');
+            if (hash !== report.sha256 || report.device_install_test !== 'passed_on_emulators_not_a_physical_phone') {
+              throw new Error('APK was not fully validated or changed after validation');
             }
-
+            const version = report.version_name;
+            const tag = `android-preview-${sha}`;
+            const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
+            const title = `Analyst AI ${version}`;
+            const body = [
+              'Signed, non-debuggable preview APK. Android 13+; application ID ru.omnicio.app.debug.',
+              'Uses the existing test signing key, not a production-store signing key.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation and launch on Android 13/16 x86_64 emulators verified.',
+              'A physical Samsung installation failure is not claimed to be reproduced or fixed by emulator tests.',
+              `SHA-256: ${hash}`,
+              `Signing certificate SHA-256: ${report.certificate_sha256}`,
+            ].join('\n\n');
+            const releases = await github.paginate(github.rest.repos.listReleases, {owner, repo, per_page:100});
+            let release = releases.find(r => r.tag_name === tag);
+            if (!release) {
+              release = (await github.rest.repos.createRelease({owner, repo, tag_name:tag, target_commitish:sha, name:title, body, draft:true, prerelease:true, make_latest:'false'})).data;
+            }
             if (!release.draft) {
-              const asset = release.assets.find(({name}) => name === assetName);
-              if (!asset) {
-                throw new Error('Published immutable release is missing its APK asset.');
-              }
+              if (!release.assets.some(a => a.name === assetName)) throw new Error('Immutable release missing APK');
               core.notice(`APK already published: ${release.html_url}`);
               return;
             }
-
-            for (const asset of release.assets.filter(({name}) => name === assetName)) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner,
-                repo,
-                asset_id: asset.id,
-              });
+            const files = [[assetName, data, 'application/vnd.android.package-archive'], ['apk-verification.json', fs.readFileSync(reportPath), 'application/json']];
+            for (const [name, bytes, type] of files) {
+              for (const asset of release.assets.filter(a => a.name === name)) {
+                await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id:asset.id});
+              }
+              const asset = (await github.rest.repos.uploadReleaseAsset({owner, repo, release_id:release.id, name, data:bytes, headers:{'content-type':type,'content-length':bytes.length}})).data;
+              const downloaded = await github.rest.repos.getReleaseAsset({owner, repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
+              const received = Buffer.from(downloaded.data);
+              if (received.length !== bytes.length || !crypto.createHash('sha256').update(received).digest().equals(crypto.createHash('sha256').update(bytes).digest())) {
+                throw new Error('Release upload read-back integrity mismatch');
+              }
             }
-
-            const data = fs.readFileSync(apkPath);
-            await github.rest.repos.uploadReleaseAsset({
-              owner,
-              repo,
-              release_id: release.id,
-              name: assetName,
-              data,
-              headers: {
-                'content-type': 'application/vnd.android.package-archive',
-                'content-length': data.length,
-              },
-            });
-
-            release = (await github.rest.repos.updateRelease({
-              owner,
-              repo,
-              release_id: release.id,
-              tag_name: tag,
-              target_commitish: sha,
-              name: title,
-              body,
-              draft: false,
-              prerelease: true,
-              make_latest: 'false',
-            })).data;
-
-            core.notice(`APK published: ${release.html_url}`);
+            release = (await github.rest.repos.updateRelease({owner, repo, release_id:release.id, name:title, body, draft:false, prerelease:true, make_latest:'false'})).data;
+            core.notice(`APK published and verified: ${release.html_url}`);
+            await core.summary.addHeading(title).addRaw(`APK SHA-256: ${hash}\n\n${body}`).write();
