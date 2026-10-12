@@ -18,6 +18,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +50,8 @@ private val ProfileBlue = Color(0xFF4D8FEA)
 @Composable
 fun ProfileScreen(
     tApiConfigured: Boolean,
+    screenshotsBlocked: Boolean,
+    onScreenshotsBlockedChange: (Boolean) -> Unit,
     onPortfolioClick: () -> Unit,
     onOpenTApi: () -> Unit,
     modifier: Modifier = Modifier,
@@ -100,6 +103,18 @@ fun ProfileScreen(
                             title = "Оформление",
                             subtitle = "Как в системе",
                             symbol = "◐",
+                        )
+                    }
+                    item {
+                        ProfileSwitchCard(
+                            title = "Запретить снимки экрана",
+                            subtitle = if (screenshotsBlocked) {
+                                "Скриншоты и запись экрана заблокированы"
+                            } else {
+                                "Выключено · скриншоты разрешены"
+                            },
+                            checked = screenshotsBlocked,
+                            onCheckedChange = onScreenshotsBlockedChange,
                         )
                     }
                     item {
@@ -229,6 +244,48 @@ private fun ProfileTab(
                 shape = CircleShape,
                 color = if (selected) ProfileBlue else Color.Transparent,
             ) {}
+        }
+    }
+}
+
+@Composable
+private fun ProfileSwitchCard(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = ProfileCard),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp, vertical = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 20.sp,
+                    lineHeight = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = subtitle,
+                    color = ProfileMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+            )
         }
     }
 }
