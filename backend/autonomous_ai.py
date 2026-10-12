@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
@@ -34,8 +35,8 @@ try:
         AnalysisTier,
         decide_analysis,
     )
-    from .analysis_engine import AnalysisReport, analyze_if_needed
-    from .timeweb_ai import TimewebAIError
+    from .analysis_engine import AnalysisEvidence, AnalysisReport, analyze_if_needed
+    from .timeweb_ai import TimewebAIConfig, TimewebAIConfigurationError, TimewebAIError
     from .tinvest_portfolio import get_tinvest_portfolio
 except ImportError:  # pragma: no cover - uvicorn top-level import compatibility
     import app as backend  # type: ignore[no-redef]
@@ -47,8 +48,8 @@ except ImportError:  # pragma: no cover - uvicorn top-level import compatibility
         AnalysisTier,
         decide_analysis,
     )
-    from analysis_engine import AnalysisReport, analyze_if_needed  # type: ignore[no-redef]
-    from timeweb_ai import TimewebAIError  # type: ignore[no-redef]
+    from analysis_engine import AnalysisEvidence, AnalysisReport, analyze_if_needed  # type: ignore[no-redef]
+    from timeweb_ai import TimewebAIConfig, TimewebAIConfigurationError, TimewebAIError  # type: ignore[no-redef]
     from tinvest_portfolio import get_tinvest_portfolio  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
@@ -363,28 +364,32 @@ def _budget(user_id: int, now: datetime) -> AnalysisBudget:
     )
 
 
-def _consume_budget(user_id: int, now: datetime, tier: AnalysisTier) -> None:
-    if tier is AnalysisTier.NONE:
-        return
-    column = {
-        AnalysisTier.FAST: "fast_calls",
-        AnalysisTier.STANDARD: "standard_calls",
-        AnalysisTier.PREMIUM: "premium_calls",
-    }[tier]
+def _reserve_budget(user_id: int, now: datetime, tier: AnalysisTier) -> bool:
+    """Reserve an attempt atomically before the network call, even if it later fails."""
+    limits = {
+        AnalysisTier.FAST: ("fast_calls", FAST_DAILY_LIMIT),
+        AnalysisTier.STANDARD: ("standard_calls", STANDARD_DAILY_LIMIT),
+        AnalysisTier.PREMIUM: ("premium_calls", PREMIUM_DAILY_LIMIT),
+    }
+    if tier not in limits:
+        return False
+    column, limit = limits[tier]
     day_key = _analysis_day(now)
     with closing(backend.connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
         db.execute(
-            """
-            INSERT OR IGNORE INTO analysis_budget_usage(user_id, day_key)
-            VALUES (?, ?)
-            """,
+            "INSERT OR IGNORE INTO analysis_budget_usage(user_id, day_key) VALUES (?, ?)",
             (user_id, day_key),
         )
-        db.execute(
-            f"UPDATE analysis_budget_usage SET {column} = {column} + 1 WHERE user_id = ? AND day_key = ?",
-            (user_id, day_key),
+        # column comes only from the fixed whitelist above, never from a request.
+        cursor = db.execute(
+            f"UPDATE analysis_budget_usage SET {column} = {column} + 1 "
+            f"WHERE user_id = ? AND day_key = ? AND {column} < ?",
+            (user_id, day_key, limit),
         )
+        reserved = cursor.rowcount == 1
         db.commit()
+    return reserved
 
 
 def _last_analysis(user_id: int) -> sqlite3.Row | None:
@@ -435,15 +440,35 @@ def _allocation_map(snapshot: Mapping[str, Any]) -> dict[str, float]:
 
 
 def _critical_risk(snapshot: Mapping[str, Any], profile: Mapping[str, Any]) -> tuple[bool, str | None]:
-    allocations = _allocation_map(snapshot)
-    if allocations:
-        title, share = max(allocations.items(), key=lambda item: item[1])
+    total_money = snapshot.get("totalValue") or {}
+    total = _money_value(total_money)
+    currency = str(total_money.get("currency") or "").upper()
+    values: dict[str, float] = {}
+    titles: dict[str, str] = {}
+    for account in snapshot.get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        for position in account.get("positions") or []:
+            if not isinstance(position, dict):
+                continue
+            identifier = str(position.get("id") or "")
+            money = position.get("currentValue") or {}
+            if not identifier or identifier.startswith("cash:") or not isinstance(money, dict):
+                continue
+            # Never add unlike currencies or treat a whole asset class as one issuer.
+            if str(money.get("currency") or "").upper() != currency:
+                continue
+            values[identifier] = values.get(identifier, 0.0) + abs(_money_value(money))
+            titles[identifier] = str(position.get("title") or position.get("ticker") or identifier)
+    if total > 0 and values:
+        identifier, value = max(values.items(), key=lambda item: item[1])
+        share = value / total * 100.0
         threshold = min(80.0, float(profile["max_position_percent"]) + 15.0)
         if share >= threshold:
-            return True, f"Высокая концентрация: {title} — {share:.1f}%"
+            return True, f"Высокая концентрация позиции: {titles[identifier]} — {share:.1f}%"
     yield_percent = _decimal_value(snapshot.get("expectedYieldPercent"))
     if yield_percent <= -25.0:
-        return True, f"Просадка портфеля за всё время: {yield_percent:.1f}%"
+        return True, f"Отрицательный результат портфеля по данным API: {yield_percent:.1f}%"
     return False, None
 
 
@@ -460,13 +485,12 @@ def _signals(
 ) -> tuple[AnalysisSignals, str | None]:
     morning, evening = _schedule_flags(user_id, now, bool(profile["notify_briefs"]))
     previous_material = str(previous_row["material_digest"]) if previous_row else None
-    material_changed = force or (
-        previous_material is not None and previous_material != material_digest
-    )
+    # A refresh requests fresh data, never fabricates a portfolio transaction.
+    material_changed = previous_material is not None and previous_material != material_digest
 
     current_features = _snapshot_features(snapshot)
     previous_features = _snapshot_features(previous) if previous else None
-    portfolio_changed = force or bool(
+    portfolio_changed = bool(
         previous_features
         and previous_features.get("positions") != current_features.get("positions")
     )
@@ -549,7 +573,7 @@ def _fallback_report(
         summary = risk_message or "Алгоритмический контроль обнаружил превышение порога риска."
         severity = "critical"
         actions = (
-            "Проверьте долю крупнейшего класса активов и допустимый риск в профиле.",
+            "Проверьте долю крупнейшей позиции и допустимый риск в профиле.",
             "Не принимайте решение только по одному предупреждению — проверьте актуальность данных.",
         )
     elif decision.reason is AnalysisReason.PORTFOLIO_CHANGED:
@@ -580,7 +604,11 @@ def _fallback_report(
         headline=title,
         summary=summary,
         actions=actions,
-        evidence=(),
+        evidence=(AnalysisEvidence(
+            fact=evidence_fact,
+            source_id=f"tinvest:portfolio:{int(now.timestamp())}",
+            as_of=as_of,
+        ),),
         uncertainties=(
             "Расширенный модельный комментарий недоступен; показан детерминированный вывод алгоритмов.",
         ),
@@ -722,7 +750,10 @@ def run_user_analysis(
     )
     budget = _budget(user_id, current_time)
     decision = decide_analysis(signals, budget)
-    if decision.tier is AnalysisTier.NONE:
+    if decision.tier is AnalysisTier.NONE and signals.critical_risk:
+        # Safety messages do not depend on a paid-model quota.
+        decision = AnalysisDecision(AnalysisTier.NONE, AnalysisReason.RISK_EVENT, True, 0)
+    elif decision.tier is AnalysisTier.NONE:
         return {
             "state": "skipped",
             "reason": decision.reason.value,
@@ -738,6 +769,13 @@ def run_user_analysis(
     state = "fallback"
     error_code = None
     try:
+        if decision.tier is AnalysisTier.NONE:
+            raise TimewebAIConfigurationError("analysis_budget_exhausted")
+        # Missing credentials are free; uncertain network failures are not retried
+        # for free. Reservation is never rolled back after a model attempt.
+        TimewebAIConfig.from_env().model_for(decision.tier)
+        if not _reserve_budget(user_id, current_time, decision.tier):
+            raise TimewebAIConfigurationError("analysis_budget_exhausted")
         result = analyze_if_needed(
             signals=signals,
             budget=budget,
@@ -748,8 +786,6 @@ def run_user_analysis(
         model = result.model
         usage = result.usage
         state = "completed"
-        if result.report is not None:
-            _consume_budget(user_id, current_time, decision.tier)
     except TimewebAIError as exc:
         error_code = exc.code
         report = _fallback_report(decision, snapshot, profile, current_time, risk_message)
@@ -862,11 +898,14 @@ async def stop_scheduler(task: asyncio.Task[None] | None = None) -> None:
         return
     target.cancel()
     try:
-        await target
-    except asyncio.CancelledError:
-        pass
-    if target is _scheduler_task:
-        _scheduler_task = None
+        # wait() observes the child's cancellation without swallowing cancellation
+        # of the caller (for example, a server shutdown deadline).
+        await asyncio.wait({target})
+        if not target.cancelled():
+            target.result()
+    finally:
+        if target is _scheduler_task and target.done():
+            _scheduler_task = None
 
 
 def _card_payload(row: sqlite3.Row) -> dict[str, Any]:
@@ -991,8 +1030,9 @@ def mark_card_read(
             "UPDATE insight_cards SET is_read = 1 WHERE id = ? AND user_id = ?",
             (card_id, int(user["id"])),
         )
+        changed = cursor.rowcount
         db.commit()
-    if cursor.rowcount == 0:
+    if changed == 0:
         raise HTTPException(status_code=404, detail="analysis_card_not_found")
     return {"read": True}
 
@@ -1002,7 +1042,7 @@ def refresh(
     _: RefreshRequest,
     user: sqlite3.Row = Depends(backend.current_user),
 ) -> dict[str, Any]:
-    return run_user_analysis(int(user["id"]), force=True)
+    return run_user_analysis(int(user["id"]), force=False)
 
 
 @router.get("/status")
@@ -1088,6 +1128,17 @@ def ideas(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
                 }
             )
     gaps.sort(key=lambda item: item["gap_percent"], reverse=True)
+    remaining = math.floor(investable * 10.0) / 10.0
+    bounded_gaps = []
+    for idea in gaps[:4]:
+        suggested = min(float(idea["gap_percent"]), remaining)
+        suggested = math.floor(suggested * 10.0) / 10.0
+        if suggested <= 0:
+            continue
+        idea["suggested_max_percent"] = suggested
+        bounded_gaps.append(idea)
+        remaining = max(0.0, remaining - suggested)
+    gaps = bounded_gaps
     return {
         "state": "ready" if gaps else "balanced",
         "message": "Показаны классы активов, а не торговые команды и не обещание доходности.",
