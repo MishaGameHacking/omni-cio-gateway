@@ -284,13 +284,35 @@ done
 tar -czf "$TMP_DIR/backend.tgz" backend
 scp -i "$KEY_PATH"   -o StrictHostKeyChecking=accept-new   "$TMP_DIR/backend.tgz" root@"$SERVER_IP":/tmp/backend.tgz
 
-cat > "$UPLOAD_ENV" <<EOF
-TELEGRAM_CLIENT_ID=$TELEGRAM_CLIENT_ID
-TELEGRAM_CLIENT_SECRET=$TELEGRAM_CLIENT_SECRET
-BACKEND_PUBLIC_URL=https://$BACKEND_HOST
-APP_DEEP_LINK=analystai://auth
-DATABASE_PATH=/var/lib/analyst-ai/backend.db
-EOF
+for value in \
+  "$TELEGRAM_CLIENT_ID" \
+  "$TELEGRAM_CLIENT_SECRET" \
+  "${TIMEWEB_AI_TOKEN:-}" \
+  "${TIMEWEB_AI_BASE_URL:-}" \
+  "${AI_MODEL_FAST:-}" \
+  "${AI_MODEL_STANDARD:-}" \
+  "${AI_MODEL_PREMIUM:-}"; do
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    echo "::error::Deployment environment values must not contain newlines." >&2
+    exit 1
+  fi
+done
+
+{
+  printf 'TELEGRAM_CLIENT_ID=%s\n' "$TELEGRAM_CLIENT_ID"
+  printf 'TELEGRAM_CLIENT_SECRET=%s\n' "$TELEGRAM_CLIENT_SECRET"
+  printf 'BACKEND_PUBLIC_URL=https://%s\n' "$BACKEND_HOST"
+  printf 'APP_DEEP_LINK=analystai://auth\n'
+  printf 'DATABASE_PATH=/var/lib/analyst-ai/backend.db\n'
+
+  if [[ -n "${TIMEWEB_AI_TOKEN:-}" ]]; then
+    printf 'TIMEWEB_AI_TOKEN=%s\n' "$TIMEWEB_AI_TOKEN"
+    printf 'TIMEWEB_AI_BASE_URL=%s\n' "${TIMEWEB_AI_BASE_URL:-https://api.timeweb.ai/v1}"
+    printf 'AI_MODEL_FAST=%s\n' "${AI_MODEL_FAST:-}"
+    printf 'AI_MODEL_STANDARD=%s\n' "${AI_MODEL_STANDARD:-}"
+    printf 'AI_MODEL_PREMIUM=%s\n' "${AI_MODEL_PREMIUM:-}"
+  fi
+} > "$UPLOAD_ENV"
 chmod 600 "$UPLOAD_ENV"
 
 scp -i "$KEY_PATH"   -o StrictHostKeyChecking=accept-new   "$UPLOAD_ENV" root@"$SERVER_IP":/tmp/backend.env.upload
@@ -394,6 +416,11 @@ echo "Telegram login start endpoint is ready."
   echo ""
   printf '%s\n' "- Backend: $BACKEND_URL"
   printf '%s\n' "- Telegram callback to allow in BotFather: $CALLBACK_URL"
+  if [[ -n "${TIMEWEB_AI_TOKEN:-}" ]]; then
+    printf '%s\n' "- Timeweb AI Gateway: configuration delivered to backend"
+  else
+    printf '%s\n' "- Timeweb AI Gateway: disabled (TIMEWEB_AI_TOKEN is not configured)"
+  fi
 } >> "$GITHUB_STEP_SUMMARY"
 
 echo "BACKEND_URL=$BACKEND_URL"
