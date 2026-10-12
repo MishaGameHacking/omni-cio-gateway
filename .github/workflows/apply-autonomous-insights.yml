@@ -6,6 +6,7 @@ on:
       - feat/autonomous-insights-v040
     paths:
       - ".github/scripts/apply_autonomous_insights.py"
+      - ".github/scripts/autonomous_bundle/**"
       - ".github/workflows/apply-autonomous-insights.yml"
   workflow_dispatch:
 
