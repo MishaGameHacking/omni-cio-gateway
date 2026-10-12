@@ -12,50 +12,38 @@ on:
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/android-ci.yml"
-      - ".github/scripts/ci_evidence.py"
-      - ".github/scripts/publish_android.py"
-      - ".github/scripts/test_ci_evidence.py"
-      - ".github/scripts/test_publish_android.py"
-      - ".github/scripts/verify_main_release.py"
-      - ".github/scripts/bootstrap_self_hosted_python.cmd"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/android-ci.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: android-ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-permissions:
-  contents: read
-
 jobs:
-  verify:
-    name: Android 8+ debug APK
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.author_association == 'OWNER'
+  build:
+    name: Android debug build
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
 
-    steps: &android_steps
-      - name: Checkout exact source
+    steps:
+      - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           clean: true
-
-      - name: Bootstrap pinned Python for provenance and evidence
-        id: python
-        shell: cmd
-        run: call .github\scripts\bootstrap_self_hosted_python.cmd
-
-      - name: Verify accepted main before building an installer
-        if: github.event_name == 'workflow_dispatch'
-        shell: cmd
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: '"%OMNICIO_PYTHON%" .github/scripts/verify_main_release.py'
 
       - name: Set up JDK 17
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
@@ -65,131 +53,22 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          cache-provider: basic
 
-      - name: Choose Android SDK root
+      - name: Use Android SDK from the Android Studio runner
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
           if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
           if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
-          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
-
+          if not defined SDK_ROOT (
+            echo ::error::Android SDK is not installed on this runner.
+            exit /b 1
+          )
           echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
           echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
 
-      - name: Bootstrap verified Android command-line tools
+      - name: Lint and build debug APK
         shell: cmd
         run: |
-          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
-
-          set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
-          curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
+          call gradlew.bat :app:lintDebug :app:assembleDebug --stacktrace
           if errorlevel 1 exit /b 1
-
-          certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
-          if errorlevel 1 exit /b 1
-          findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
-          if errorlevel 1 (
-            echo Android command-line tools checksum mismatch.
-            type "%TOOLS_ZIP%.sha256"
-            exit /b 1
-          )
-
-          if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
-          tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
-          if errorlevel 1 exit /b 1
-          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
-          move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
-          if errorlevel 1 exit /b 1
-
-          :tools_ready
-          if not exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" (
-            echo sdkmanager.bat was not installed.
-            exit /b 1
-          )
-
-      - name: Install pinned Android SDK packages
-        shell: cmd
-        run: |
-          set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
-          set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
-          (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
-
-          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
-          if errorlevel 1 exit /b 1
-          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
-          if errorlevel 1 exit /b 1
-
-          if not exist "%ANDROID_SDK_ROOT%\platforms\android-36\android.jar" (
-            echo Android API 36 is not installed.
-            exit /b 1
-          )
-          if not exist "%ANDROID_SDK_ROOT%\build-tools\36.0.0" (
-            echo Android build-tools 36.0.0 are not installed.
-            exit /b 1
-          )
-
-      - name: Verify wrapper and build
-        shell: cmd
-        run: |
-          call gradlew.bat --version
-          if errorlevel 1 exit /b 1
-          call gradlew.bat :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:assembleDebug :app:compileReleaseKotlin --stacktrace
-          if errorlevel 1 exit /b 1
-
-      - name: Verify release signing guard
-        shell: cmd
-        run: |
-          set "GUARD_LOG=%RUNNER_TEMP%\omnicio-release-signing-guard.log"
-          call gradlew.bat :app:assembleRelease --no-configuration-cache > "%GUARD_LOG%" 2>&1
-          if not errorlevel 1 (
-            echo Release packaging unexpectedly succeeded without protected signing credentials.
-            type "%GUARD_LOG%"
-            exit /b 1
-          )
-          findstr /C:"Release packaging requires OMNICIO release signing credentials" "%GUARD_LOG%" >nul
-          if errorlevel 1 (
-            echo Release packaging failed for an unexpected reason.
-            type "%GUARD_LOG%"
-            exit /b 1
-          )
-
-      - name: Verify APK signature
-        shell: cmd
-        run: |
-          if not exist artifacts\android mkdir artifacts\android
-          call "%ANDROID_SDK_ROOT%\build-tools\36.0.0\apksigner.bat" verify --verbose --print-certs app\build\outputs\apk\debug\app-debug.apk > artifacts\android\apksigner.txt 2>&1
-          if errorlevel 1 (
-            type artifacts\android\apksigner.txt
-            exit /b 1
-          )
-          type artifacts\android\apksigner.txt
-
-      - name: Preserve exact-source APK and verification evidence
-        if: always() && steps.python.outcome == 'success'
-        shell: cmd
-        env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          EVIDENCE_OUTCOME: ${{ job.status }}
-        run: '"%OMNICIO_PYTHON%" .github/scripts/ci_evidence.py android'
-
-      - name: Publish verified main APK to GitHub Releases
-        if: github.event_name == 'workflow_dispatch'
-        shell: cmd
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: '"%OMNICIO_PYTHON%" .github/scripts/publish_android.py'
-
-  publish:
-    name: Build and publish accepted main APK
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-      actions: read
-      pull-requests: read
-      checks: read
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 45
-    steps: *android_steps

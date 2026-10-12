@@ -1,15 +1,8 @@
 <resources>
     <style name="Theme.OMNICIO" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-    </style>
-
-    <style name="Theme.OMNICIO.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#0F1012</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/omnicio_logo</item>
-        <item name="postSplashScreenTheme">@style/Theme.OMNICIO</item>
     </style>
 </resources>

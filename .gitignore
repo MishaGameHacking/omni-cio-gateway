@@ -1,14 +1,3 @@
-.venv/
-pytest-of-root/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
-artifacts/
-node_modules/
-.env
 .gradle/
 .idea/
 local.properties
@@ -17,3 +6,5 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.iml
+*.jks
+*.keystore
