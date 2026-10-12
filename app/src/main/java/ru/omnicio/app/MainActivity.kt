@@ -51,7 +51,7 @@ private fun AnalystAiApp() {
             AppScreen.Portfolio -> {
                 PortfolioScreen(
                     state = if (tApiConfigured) {
-                        PortfolioUiState.Loading
+                        PortfolioUiState.ApiConnected
                     } else {
                         PortfolioUiState.NotConnected
                     },
