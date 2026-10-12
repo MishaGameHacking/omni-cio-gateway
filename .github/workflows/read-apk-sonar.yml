@@ -1,0 +1,22 @@
+name: Read APK PR quality findings
+on:
+  push:
+    branches: [diagnostics/apk-sonar-826]
+    paths: [.github/workflows/read-apk-sonar.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  read:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read existing Sonar annotations only
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:114979475639, per_page:100});
+            for (const annotation of annotations) {
+              core.info(JSON.stringify({path:annotation.path, line:annotation.start_line, title:annotation.title, message:annotation.message, level:annotation.annotation_level}));
+            }
