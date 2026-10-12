@@ -96,7 +96,9 @@ HTTPS-проверка T-Invest включена; дополнительный �
 
 `gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview`
 
-`py -3 .github/scripts/validate_distribution.py --sdk <SDK_PATH> --api 33 36`
+Полная проверка установки выполняется фиксированными командами `.github/actions/check-apk`
+в Android CI и Android APK. `verify_apk.py` и `validate_distribution.py` только проверяют
+конкретные файлы сборки и отчёты; они не принимают произвольные пути и не запускают команды.
 
 Все применимые проверки последнего SHA, включая SonarCloud, должны быть успешны
 до слияния. Настройки качества нельзя ослаблять ради зелёного статуса.
