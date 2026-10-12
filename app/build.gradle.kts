@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "ru.omnicio.app"
-        minSdk = 26
+        minSdk = 33
         targetSdk = 36
         versionCode = 12
         versionName = "0.1.0"
