@@ -66,7 +66,7 @@ class TimewebAIConfig:
             fast_model=os.getenv("AI_MODEL_FAST", "").strip(),
             standard_model=os.getenv("AI_MODEL_STANDARD", "").strip(),
             premium_model=os.getenv("AI_MODEL_PREMIUM", "").strip(),
-            base_url=os.getenv("TIMEWEB_AI_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
+            base_url=(os.getenv("TIMEWEB_AI_BASE_URL", "").strip() or DEFAULT_BASE_URL).rstrip("/"),
             timeout_seconds=_positive_float(
                 os.getenv("TIMEWEB_AI_TIMEOUT_SECONDS"),
                 default=45.0,

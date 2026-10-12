@@ -50,7 +50,7 @@ def sample_snapshot(*, cash_share: float = 20.0, stock_share: float = 35.0) -> d
                         "ticker": "TEST",
                         "quantity": {"units": 10, "nano": 0},
                         "currentValue": {
-                            "value": {"units": 50_000, "nano": 0},
+                            "value": {"units": int(stock_share * 1000), "nano": 0},
                             "currency": "RUB",
                         },
                         "expectedYieldPercent": None,
@@ -116,21 +116,18 @@ class AutonomousAITests(unittest.TestCase):
         with closing(backend.connect()) as db:
             return db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
 
-    def test_force_refresh_creates_deterministic_card_without_ai_key(self) -> None:
+    def test_force_refresh_does_not_invent_a_transaction(self) -> None:
         with patch.object(ai, "get_tinvest_portfolio", return_value=sample_snapshot()):
             result = ai.run_user_analysis(
                 self.user_id,
                 force=True,
                 now=datetime(2026, 10, 12, 9, 0, tzinfo=UTC),
             )
-        self.assertEqual(result["state"], "fallback")
-        self.assertEqual(result["reason"], "portfolio_changed")
-        self.assertIsNotNone(result["card_id"])
-
+        self.assertEqual(result["state"], "skipped")
+        self.assertIsNone(result["card_id"])
         payload = ai.feed(limit=10, user=self.user_row())
-        self.assertEqual(payload["unread_count"], 1)
-        self.assertEqual(len(payload["cards"]), 1)
-        self.assertIn("портфел", payload["cards"][0]["title"].lower())
+        self.assertEqual(payload["unread_count"], 0)
+        self.assertEqual(payload["cards"], [])
 
     def test_same_material_snapshot_is_skipped_outside_schedule(self) -> None:
         snapshot = sample_snapshot()
