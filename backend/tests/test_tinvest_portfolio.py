@@ -4,6 +4,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from contextlib import closing
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -52,6 +53,12 @@ class TInvestPortfolioTests(unittest.TestCase):
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.session_token}"}
 
+    @staticmethod
+    def decimal_value(payload: dict[str, int]) -> Decimal:
+        return Decimal(payload["units"]) + (
+            Decimal(payload["nano"]) / Decimal(1_000_000_000)
+        )
+
     def test_selected_currency_is_requested_and_returned_for_all_accounts(self) -> None:
         calls: list[tuple[str, dict]] = []
 
@@ -89,12 +96,14 @@ class TInvestPortfolioTests(unittest.TestCase):
                                 "units": "52",
                                 "nano": 650_000_000,
                             },
+                            # These daily values intentionally differ from the
+                            # all-time values and must not be shown as "за всё время".
                             "dailyYield": {
                                 "currency": "eur",
                                 "units": "0",
                                 "nano": -370_000_000,
                             },
-                            "dailyYieldRelative": {"units": "0", "nano": -680_000_000},
+                            "dailyYieldRelative": {"units": "0", "nano": -100_000_000},
                             "expectedYield": {"units": "0", "nano": -680_000_000},
                             "totalAmountShares": {
                                 "currency": "eur",
@@ -122,7 +131,8 @@ class TInvestPortfolioTests(unittest.TestCase):
                             "units": "0",
                             "nano": -590_000_000,
                         },
-                        "dailyYieldRelative": {"units": "5", "nano": 280_000_000},
+                        "dailyYieldRelative": {"units": "0", "nano": -500_000_000},
+                        "expectedYield": {"units": "5", "nano": 280_000_000},
                         "totalAmountShares": {
                             "currency": "eur",
                             "units": "3",
@@ -184,11 +194,24 @@ class TInvestPortfolioTests(unittest.TestCase):
         self.assertEqual(payload["totalValue"]["value"], {"units": 63, "nano": 220_000_000})
         self.assertEqual(len(payload["accounts"]), 2)
         self.assertEqual(payload["accounts"][0]["name"], "VIP Client")
+        self.assertEqual(
+            self.decimal_value(payload["accounts"][1]["expectedYieldPercent"]),
+            Decimal("5.28"),
+        )
         self.assertEqual(payload["accounts"][1]["positions"][0]["ticker"], "SBER")
         self.assertEqual(
             payload["accounts"][1]["positions"][0]["currentValue"]["currency"],
             "RUB",
         )
+
+        # Absolute result is recovered from current value + all-time percentage;
+        # it must not equal the sum of dailyYield values (-0.96 EUR).
+        absolute_result = self.decimal_value(payload["expectedYieldAmount"]["value"])
+        relative_result = self.decimal_value(payload["expectedYieldPercent"])
+        self.assertAlmostEqual(float(absolute_result), 0.169635178, places=8)
+        self.assertAlmostEqual(float(relative_result), 0.269047101, places=8)
+        self.assertNotAlmostEqual(float(absolute_result), -0.96, places=2)
+
         portfolio_calls = [
             body for url, body in calls if url == tinvest_portfolio.TINVEST_PORTFOLIO_URL
         ]
