@@ -1,7 +1,7 @@
 package ru.omnicio.app.data.tinvest
 
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import javax.net.ssl.HttpsURLConnection
 
 sealed interface TInvestTokenCheck {
@@ -18,7 +18,7 @@ class TInvestApiClient {
         }
 
         val connection = runCatching {
-            (URL(GET_ACCOUNTS_URL).openConnection() as HttpsURLConnection).apply {
+            (URI.create(GET_ACCOUNTS_URL).toURL().openConnection() as HttpsURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
