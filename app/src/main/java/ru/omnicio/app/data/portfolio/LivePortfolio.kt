@@ -1,6 +1,7 @@
 package ru.omnicio.app.data.portfolio
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -21,8 +22,8 @@ data class LivePortfolio(
 
 @Composable
 fun rememberLivePortfolio(token: String?, connected: Boolean, currency: PortfolioCurrency): LivePortfolio {
-    val context = LocalContext.current
-    val lifecycle = (context as? ComponentActivity)?.lifecycle
+    val activity = LocalActivity.current
+    val lifecycle = (activity as? ComponentActivity)?.lifecycle
     var foreground by remember(lifecycle) {
         mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true)
     }

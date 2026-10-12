@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,7 +27,7 @@ internal data class AccountData(val json: JSONObject?, val error: String?, val l
 @Composable
 internal fun rememberAccountData(token: String, accountId: String, section: String,
                                  parameters: Map<String, String> = emptyMap(), interval: Long = 30_000): AccountData {
-    val lifecycle = (LocalContext.current as? ComponentActivity)?.lifecycle
+    val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true) }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, _ -> active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true }

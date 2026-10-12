@@ -22,6 +22,17 @@ except ImportError:
     import app as backend
     import tinvest_portfolio as portfolio
 
+READ_ERRORS = {
+    400: {"description": "Invalid date range"},
+    401: {"description": "Session required or expired"},
+    404: {"description": "Account unavailable to this user"},
+    409: {"description": "T-Invest token not connected"},
+    422: {"description": "Invalid request or broker access"},
+    500: {"description": "Stored token unreadable"},
+    502: {"description": "Invalid broker response"},
+    503: {"description": "Broker temporarily unavailable"},
+    504: {"description": "Broker timeout"},
+}
 router = APIRouter()
 MOSCOW = ZoneInfo("Europe/Moscow")
 BASE = "https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1."
@@ -296,7 +307,8 @@ def record_history(user_id: int, accounts: list[dict], observed: str) -> None:
             for resolution, seconds in (("intraday", 300), ("hour", 3600), ("day", 86400)):
                 db.execute("""INSERT INTO portfolio_value_history VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id,account_id,currency,resolution,bucket)
-                    DO UPDATE SET observed_at=excluded.observed_at,value=excluded.value""",
+                    DO UPDATE SET observed_at=excluded.observed_at,value=excluded.value
+                    WHERE excluded.observed_at >= portfolio_value_history.observed_at""",
                     (user_id, account["id"], account["totalValue"]["currency"], resolution,
                      stamp // seconds * seconds, observed, value))
         db.execute("DELETE FROM portfolio_value_history WHERE user_id=? AND resolution='intraday' AND bucket<?", (user_id, stamp - 7 * 86400))
@@ -327,7 +339,7 @@ def load_dashboard(user: Any, currency: str) -> dict:
                             for key, value in buckets.items()] if total > 0 else []}
 
 
-@router.get("/tinvest/dashboard")
+@router.get("/tinvest/dashboard", responses=READ_ERRORS)
 def dashboard(currency: str = Query("RUB", pattern="^(RUB|USD|EUR)$"), user: Any = Depends(backend.current_user)) -> dict:
     return cached(("dashboard", *identity(user), currency), 10, lambda: load_dashboard(user, currency))
 
@@ -377,7 +389,7 @@ def normalize_operation(raw: dict) -> dict:
             "ticker": raw.get("ticker"), "yield": money(raw.get("yield"))}
 
 
-@router.get("/tinvest/accounts/{account_id}/operations")
+@router.get("/tinvest/accounts/{account_id}/operations", responses=READ_ERRORS)
 def operations(account_id: str, start: date | None = None, end: date | None = None,
                cursor: str = Query("", max_length=2048), user: Any = Depends(backend.current_user)) -> dict:
     with BrokerReader(user) as reader:
@@ -389,7 +401,7 @@ def operations(account_id: str, start: date | None = None, end: date | None = No
             "hasNext": bool(raw.get("hasNext")), "nextCursor": raw.get("nextCursor", ""), "asOf": iso_now()}
 
 
-@router.get("/tinvest/accounts/{account_id}/orders")
+@router.get("/tinvest/accounts/{account_id}/orders", responses=READ_ERRORS)
 def orders(account_id: str, user: Any = Depends(backend.current_user)) -> dict:
     with BrokerReader(user) as reader:
         reader.account(account_id)
@@ -440,7 +452,11 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
                 break
             cursor = next_cursor
     span = datetime.fromisoformat(finish) - datetime.fromisoformat(begin)
-    resolution = "intraday" if span <= timedelta(days=2) else "hour" if span <= timedelta(days=32) else "day"
+    resolution = "day"
+    if span <= timedelta(days=2):
+        resolution = "intraday"
+    elif span <= timedelta(days=32):
+        resolution = "hour"
     with closing(backend.connect()) as db:
         ensure_history(db)
         rows = db.execute("""SELECT observed_at,value FROM portfolio_value_history
@@ -454,7 +470,7 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
             "note": "История стоимости начинается с фактического сбора данных. Денежные потоки не равны инвестиционной прибыли. Суммы операций показаны в исходных валютах."}
 
 
-@router.get("/tinvest/accounts/{account_id}/analytics")
+@router.get("/tinvest/accounts/{account_id}/analytics", responses=READ_ERRORS)
 def analytics(account_id: str, start: date | None = None, end: date | None = None,
               currency: str = Query("RUB", pattern="^(RUB|USD|EUR)$"), user: Any = Depends(backend.current_user)) -> dict:
     return cached(("analytics", *identity(user), account_id, start, end, currency), 60,
@@ -464,24 +480,36 @@ def analytics(account_id: str, start: date | None = None, end: date | None = Non
 def payment_rows(raw: dict, position: dict, kind: str, now: datetime) -> list[dict]:
     result = []
     for event in raw.get("events" if kind == "bond" else "dividends", []):
-        if str(event.get("dividendType", "")).lower() == "cancelled":
-            continue
-        per_unit = money(event.get("payOneBond" if kind == "bond" else "dividendNet"))
-        payment_date = event.get("couponDate" if kind == "bond" else "paymentDate")
-        record_date = event.get("fixDate" if kind == "bond" else "recordDate")
-        display_date = payment_date or record_date
-        if not display_date or display_date[:10] < now.date().isoformat():
-            continue
-        quantity = number(position.get("quantity"))
-        eligibility_unknown = not record_date or record_date[:10] <= now.date().isoformat()
-        estimate = None
-        if per_unit and quantity is not None and quantity > 0 and not eligibility_unknown and payment_date:
-            estimate = portfolio._money_payload(number(per_unit["value"]) * quantity, per_unit["currency"])
-        result.append({"instrumentUid": position.get("instrumentUid"), "title": position.get("ticker") or position.get("figi"),
-                       "kind": "coupon" if kind == "bond" else "dividend", "date": display_date,
-                       "recordDate": record_date, "perUnit": per_unit, "estimate": estimate,
-                       "dateUnknown": not bool(payment_date), "eligibilityUnknown": eligibility_unknown})
+        row = payment_row(event, position, kind, now)
+        if row is not None:
+            result.append(row)
     return result
+
+
+def payment_estimate(per_unit: dict | None, quantity: Decimal | None, unknown: bool, payment_date: str | None) -> dict | None:
+    if per_unit is None or quantity is None or quantity <= 0 or unknown or not payment_date:
+        return None
+    return portfolio._money_payload(number(per_unit["value"]) * quantity, per_unit["currency"])
+
+
+def payment_row(event: dict, position: dict, kind: str, now: datetime) -> dict | None:
+    if str(event.get("dividendType", "")).lower() == "cancelled":
+        return None
+    amount_field, date_field, record_field = "dividendNet", "paymentDate", "recordDate"
+    if kind == "bond":
+        amount_field, date_field, record_field = "payOneBond", "couponDate", "fixDate"
+    per_unit = money(event.get(amount_field))
+    payment_date = event.get(date_field)
+    record_date = event.get(record_field)
+    display_date = payment_date or record_date
+    if not display_date or display_date[:10] < now.date().isoformat():
+        return None
+    eligibility_unknown = not record_date or record_date[:10] <= now.date().isoformat()
+    estimate = payment_estimate(per_unit, number(position.get("quantity")), eligibility_unknown, payment_date)
+    return {"instrumentUid": position.get("instrumentUid"), "title": position.get("ticker") or position.get("figi"),
+            "kind": "coupon" if kind == "bond" else "dividend", "date": display_date,
+            "recordDate": record_date, "perUnit": per_unit, "estimate": estimate,
+            "dateUnknown": not bool(payment_date), "eligibilityUnknown": eligibility_unknown}
 
 
 def load_payments(user: Any, account_id: str) -> dict:
@@ -514,6 +542,6 @@ def load_payments(user: Any, account_id: str) -> dict:
             "asOf": iso_now(), "note": "Календарь опубликованных событий по текущим позициям. Оценка по количеству бумаг не гарантирует выплату. Право зависит от реестра, расчетов и будущих сделок. Сумма налога не прогнозируется."}
 
 
-@router.get("/tinvest/accounts/{account_id}/payments")
+@router.get("/tinvest/accounts/{account_id}/payments", responses=READ_ERRORS)
 def payments(account_id: str, user: Any = Depends(backend.current_user)) -> dict:
     return cached(("payments", *identity(user), account_id), 60, lambda: load_payments(user, account_id))

@@ -2,6 +2,7 @@ package ru.omnicio.app.ui.theme
 
 import android.graphics.Color as AndroidColor
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -53,6 +54,7 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun AnalystTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
+    val activity = LocalActivity.current
     val preferences = remember(context) {
         context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
@@ -67,7 +69,8 @@ fun AnalystTheme(content: @Composable () -> Unit) {
         ThemeMode.DARK -> true
     }
     SideEffect {
-        (context as? ComponentActivity)?.enableEdgeToEdge(
+        (activity as? ComponentActivity)?.window?.isNavigationBarContrastEnforced = false
+        (activity as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark },
             navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark },
         )

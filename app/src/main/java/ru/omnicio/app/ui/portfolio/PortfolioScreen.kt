@@ -18,6 +18,10 @@ import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 
+private const val OperationsTitle = "Операции"
+private const val AnalyticsTitle = "Аналитика"
+private const val CashTitle = "Денежные средства"
+
 @Composable
 fun PortfolioScreen(
     state: PortfolioUiState,
@@ -44,7 +48,7 @@ fun PortfolioScreen(
     ) { insets ->
         if (account != null) {
             AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
-                { accountId = null; section = 0 }, snapshot?.asOf, refreshError,
+                { accountId = null; section = 0 }, snapshot.asOf, refreshError,
                 Modifier.padding(insets))
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(insets), state = listState,
@@ -58,48 +62,14 @@ fun PortfolioScreen(
                     }
                 }
                 if (snapshot == null) {
-                    item(key = "initial-state") {
-                        CompactCard {
-                            when (state) {
-                                PortfolioUiState.Loading -> {
-                                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                                    Text("Получаем ваш портфель…")
-                                }
-                                is PortfolioUiState.Error -> {
-                                    Text(state.message)
-                                    Notice("Повторная проверка выполняется автоматически, пока приложение открыто.")
-                                }
-                                else -> {
-                                    SectionHeading("Подключите T‑API")
-                                    Notice("Счета и позиции появятся после подключения вашего read-only токена. Демонстрационных сумм здесь нет.")
-                                    TextButton(onClick = onProfileClick) { Text("Открыть профиль") }
-                                }
-                            }
-                        }
-                    }
+                    item(key = "initial-state") { InitialPortfolioState(state, onProfileClick) }
                 } else {
                     item(key = "total") {
-                        CompactCard {
-                            Text(snapshot.totalValue.moneyText(), Modifier.clickable(onClick = onCurrencyClick),
-                                fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                            snapshot.expectedYieldPercent?.let {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    NoticeInline("Текущая доходность API")
-                                    SignedAmount(null, it)
-                                }
-                            }
-                            Notice(if (refreshing && snapshot.totalValue.currency != selectedCurrency.name)
-                                "Получаем оценку в ${selectedCurrency.name}…" else "Нажмите на сумму: ₽ → $ → €")
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("Операции" to 1, "Аналитика" to 3).forEach { (title, target) ->
-                                    FilledTonalButton(modifier = Modifier.weight(1f), onClick = {
-                                        if (snapshot.accounts.size == 1) {
-                                            accountId = snapshot.accounts.first().id; section = target
-                                        } else selectForSection = target
-                                    }, enabled = snapshot.accounts.isNotEmpty(), contentPadding = PaddingValues(8.dp)) { Text(title) }
-                                }
-                            }
-                            Notice(refreshError ?: "Получено ${dateText(snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() })} · автообновление")
+                        PortfolioSummary(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick) { target ->
+                            if (snapshot.accounts.size == 1) {
+                                accountId = snapshot.accounts.first().id
+                                section = target
+                            } else selectForSection = target
                         }
                     }
                     if (snapshot.accounts.isEmpty()) {
@@ -121,8 +91,8 @@ fun PortfolioScreen(
                             }
                             if (item.positions.isEmpty()) Notice("Позиции отсутствуют")
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                TextButton(onClick = { accountId = item.id; section = 1 }) { Text("Операции") }
-                                TextButton(onClick = { accountId = item.id; section = 3 }) { Text("Аналитика") }
+                                TextButton(onClick = { accountId = item.id; section = 1 }) { Text(OperationsTitle) }
+                                TextButton(onClick = { accountId = item.id; section = 3 }) { Text(AnalyticsTitle) }
                             }
                         }
                     }
@@ -161,7 +131,7 @@ private fun AccountScreen(
             TextButton(onClick = onBack) { Text("‹ Назад") }
             Text(account.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
         }
-        Box(Modifier.padding(horizontal = 16.dp)) { ChoiceRow(listOf("Обзор", "Операции", "Заявки", "Аналитика", "Выплаты"), section, onSection) }
+        Box(Modifier.padding(horizontal = 16.dp)) { ChoiceRow(listOf("Обзор", OperationsTitle, "Заявки", AnalyticsTitle, "Выплаты"), section, onSection) }
         when (section) {
             1 -> AccountOperations(token, account)
             2 -> AccountOrders(token, account)
@@ -187,8 +157,8 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
                 Notice(error ?: "Получено ${dateText(asOf)} · автообновление")
                 if (account.limitsLoading) Notice("Брокер ещё обновляет лимиты. Данные могут измениться.")
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = { onSection(1) }) { Text("Операции") }
-                    TextButton(onClick = { onSection(3) }) { Text("Аналитика") }
+                    TextButton(onClick = { onSection(1) }) { Text(OperationsTitle) }
+                    TextButton(onClick = { onSection(3) }) { Text(AnalyticsTitle) }
                     TextButton(onClick = { onSection(4) }) { Text("Выплаты") }
                 }
             }
@@ -251,8 +221,8 @@ internal fun AccountStructure(account: PortfolioAccount) {
     if (currencies.size != 1 || positions.any { it.currentValue == null || it.currentValue.value.toBigDecimal().signum() < 0 }) {
         Notice("Для общей диаграммы не хватает сопоставимой оценки всех позиций в одной валюте. Несопоставимые суммы не складываются.")
         positions.groupBy { when (mode) {
-            1 -> if (it.instrumentType == "cash") "Денежные средства" else it.company ?: it.title
-            2 -> if (it.instrumentType == "cash") "Денежные средства" else it.sector ?: "Отрасль не указана"
+            1 -> if (it.instrumentType == "cash") CashTitle else it.company ?: it.title
+            2 -> if (it.instrumentType == "cash") CashTitle else it.sector ?: "Отрасль не указана"
             else -> it.currentValue?.currency ?: "Валюта не определена"
         } }.forEach { (title, rows) ->
             Text(title, fontWeight = FontWeight.SemiBold)
@@ -261,8 +231,8 @@ internal fun AccountStructure(account: PortfolioAccount) {
         return
     }
     val groups = positions.groupBy { when (mode) {
-        1 -> if (it.instrumentType == "cash") "Денежные средства" else it.company ?: it.title
-        2 -> if (it.instrumentType == "cash") "Денежные средства" else it.sector ?: "Отрасль не указана"
+        1 -> if (it.instrumentType == "cash") CashTitle else it.company ?: it.title
+        2 -> if (it.instrumentType == "cash") CashTitle else it.sector ?: "Отрасль не указана"
         else -> it.currentValue?.currency ?: "Не определена"
     } }
     val totals = groups.mapValues { (_, rows) -> rows.sumOf { it.currentValue!!.value.toBigDecimal() } }
@@ -270,4 +240,52 @@ internal fun AccountStructure(account: PortfolioAccount) {
     StructureChart(totals.map { ChartSlice(it.key, it.value.toFloat()) }, decimalText(total) + " " + currencySymbol(currencies.first()),
         if (mode == 3) "Валюта оценки позиций" else "По доступным данным позиций")
     if (mode == 1) Notice("Группировка по названиям инструментов/компаний API; единая структура эмитентов для всех типов активов ещё уточняется.")
+}
+
+
+@Composable
+private fun InitialPortfolioState(state: PortfolioUiState, onProfile: () -> Unit) {
+    CompactCard {
+        when (state) {
+            PortfolioUiState.Loading -> {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                Text("Получаем ваш портфель…")
+            }
+            is PortfolioUiState.Error -> {
+                Text(state.message)
+                Notice("Повторная проверка выполняется автоматически, пока приложение открыто.")
+            }
+            else -> {
+                SectionHeading("Подключите T‑API")
+                Notice("Счета и позиции появятся после подключения вашего read-only токена. Демонстрационных сумм здесь нет.")
+                TextButton(onClick = onProfile) { Text("Открыть профиль") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PortfolioSummary(
+    snapshot: PortfolioSnapshot, selectedCurrency: PortfolioCurrency, refreshing: Boolean,
+    error: String?, lastUpdatedMillis: Long?, onCurrency: () -> Unit, openSection: (Int) -> Unit,
+) {
+    CompactCard {
+        Text(snapshot.totalValue.moneyText(), Modifier.clickable(onClick = onCurrency), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        snapshot.expectedYieldPercent?.let {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                NoticeInline("Текущая доходность API")
+                SignedAmount(null, it)
+            }
+        }
+        val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
+        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Нажмите на сумму: ₽ → $ → €")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(OperationsTitle to 1, AnalyticsTitle to 3).forEach { (title, target) ->
+                FilledTonalButton(modifier = Modifier.weight(1f), onClick = { openSection(target) },
+                    enabled = snapshot.accounts.isNotEmpty(), contentPadding = PaddingValues(8.dp)) { Text(title) }
+            }
+        }
+        val observed = snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() }
+        Notice(error ?: "Получено ${dateText(observed)} · автообновление")
+    }
 }

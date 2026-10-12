@@ -98,13 +98,13 @@ fun TelegramLoginScreen(
                         enabled = !loading,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF229ED9),
-                            contentColor = Color.White,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
                         onClick = onLoginClick,
                     ) {
                         if (loading) {
                             CircularProgressIndicator(
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp,
                             )
                         } else {

@@ -119,6 +119,12 @@ def main() -> None:
                 raise RuntimeError("App process did not remain running")
             results.append({"test": "activity_launch", "success": True})
             print("ACTIVITY_LAUNCH=success", flush=True)
+            if args.api == 33 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+                from profile_ui_probe import exercise
+                debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
+                install("debug_ui_fixture_install", debug_apk, update=True)
+                exercise(device)
+                results.append({"test": "profile_ui", "success": True})
         finally:
             log.flush()
             if any(not item["success"] for item in results):

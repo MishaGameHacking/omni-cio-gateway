@@ -736,6 +736,12 @@ def run_user_analysis(
         logger.exception("Autonomous portfolio collection failed for user %s", user_id)
         raise HTTPException(status_code=503, detail="analysis_portfolio_unavailable") from None
 
+    # Archive the already fetched RUB valuation even when no LLM analysis is needed.
+    try:
+        from .portfolio_details import record_history
+    except ImportError:
+        from portfolio_details import record_history
+    record_history(user_id, snapshot.get("accounts", []), current_time.astimezone(UTC).isoformat())
     digest, material_digest = _save_snapshot(user_id, snapshot)
     profile = get_profile(user_id)
     signals, risk_message = _signals(

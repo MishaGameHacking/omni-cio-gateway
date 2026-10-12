@@ -298,12 +298,12 @@ private fun TokenInputCard(
                 enabled = !checking && tokenInput.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF111318),
-                    contentColor = Color.White,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             ) {
                 if (checking) {
                     CircularProgressIndicator(
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         strokeWidth = 2.dp,
                     )
                 } else {

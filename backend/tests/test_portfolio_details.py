@@ -79,10 +79,12 @@ class ValueTests(unittest.TestCase):
         self.assertEqual(details.operation_group("OPERATION_TYPE_TAX_DIVIDEND"), "tax")
 
     def test_future_dates_and_reverse_period_rejected(self):
+        first, last = date(2024, 2, 2), date(2024, 2, 1)
         with self.assertRaises(HTTPException):
-            details.period_bounds(date(2024, 2, 2), date(2024, 2, 1), {})
+            details.period_bounds(first, last, {})
+        first, last = date(2035, 1, 1), date(2035, 1, 2)
         with self.assertRaises(HTTPException):
-            details.period_bounds(date(2035, 1, 1), date(2035, 1, 2), {})
+            details.period_bounds(first, last, {})
 
     def test_moscow_calendar_converted_to_utc(self):
         start, end = details.period_bounds(date(2024, 1, 1), date(2024, 1, 1), {})
