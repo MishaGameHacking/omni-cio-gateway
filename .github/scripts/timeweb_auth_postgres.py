@@ -76,6 +76,7 @@ TIMEWEB_DB_PASSWORD_SAFE = frozenset(
 DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
 SSH_READY_ATTEMPTS = 36
 SSH_READY_DELAY_SECONDS = 10
+SSH_READ_ATTEMPTS = 3
 STAGE_SCHEMA_MIGRATION = "schema_migration"
 INSPECTION_TIMEOUT_SECONDS = 180
 REMOTE_STAGES = frozenset({
@@ -93,6 +94,10 @@ UNCONFIRMED_UPGRADE = "In-place upgrade result was not confirmed"
 
 class InfraError(RuntimeError):
     """Deterministic auth infrastructure failure."""
+
+
+class SshTransportError(InfraError):
+    """SSH transport failed before a trustworthy remote result was available."""
 
 
 class AmbiguousProviderError(RuntimeError):
@@ -645,7 +650,8 @@ class EphemeralSsh:
                 reason = UPGRADE_DIAGNOSTIC.search(completed.stderr[:MAX_DIAGNOSTIC_BYTES])
                 if reason is not None:
                     detail += ", reason=" + reason[1].decode("ascii")
-            raise InfraError(f"Remote command failed ({detail})")
+            error = SshTransportError if completed.returncode == 255 else InfraError
+            raise error(f"Remote command failed ({detail})")
         try:
             return completed.stdout.decode("utf-8")
         except UnicodeDecodeError:
@@ -988,9 +994,21 @@ def _read_upgrade_result(
     return result
 
 
+def _read_installed_release_path(ssh: EphemeralSsh) -> str:
+    """Retry only the read-only release lookup after an SSH transport failure."""
+    for attempt in range(SSH_READ_ATTEMPTS):
+        try:
+            return ssh.run("readlink -f /opt/omnicio/current").strip()
+        except SshTransportError:
+            if attempt + 1 == SSH_READ_ATTEMPTS:
+                raise
+            time.sleep(SSH_READY_DELAY_SECONDS)
+    raise AssertionError("unreachable")
+
+
 def verified_installed_release(ssh: EphemeralSsh, *, release_sha: str) -> str:
     """Bind the installed application to accepted GitHub evidence, not an old SQL receipt."""
-    current = ssh.run("readlink -f /opt/omnicio/current").strip()
+    current = _read_installed_release_path(ssh)
     match = re.fullmatch(r"/opt/omnicio/releases/([0-9a-f]{40})", current)
     if match is None:
         raise InfraError("Installed release path is not a managed exact commit")
