@@ -14,48 +14,10 @@ jobs:
       github.event.pull_request.author_association == 'OWNER'
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
       - name: Query current main Sonar issues
-        shell: powershell
+        shell: cmd
         run: |
-          $headers = @{}
-          if ($env:SONAR_TOKEN) {
-            $headers["Authorization"] = "Bearer $env:SONAR_TOKEN"
-          }
-
-          $base = "https://sonarcloud.io/api/issues/search"
-          $queries = @(
-            "?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true&ps=100",
-            "?components=MishaGameHacking_omni-cio-gateway&branch=main&statuses=OPEN,CONFIRMED&ps=100"
-          )
-
-          $response = $null
-          foreach ($query in $queries) {
-            try {
-              $response = Invoke-RestMethod -Uri ($base + $query) -Headers $headers -Method Get
-              break
-            } catch {
-              Write-Host "Sonar query variant failed with HTTP/API error; trying next variant."
-            }
-          }
-          if ($null -eq $response) {
-            throw "Unable to query Sonar issue metadata."
-          }
-
-          $rows = @($response.issues | ForEach-Object {
-            [PSCustomObject]@{
-              key = $_.key
-              rule = $_.rule
-              component = $_.component
-              line = $_.line
-              message = $_.message
-              status = $_.status
-              type = $_.type
-              severity = $_.severity
-              impacts = $_.impacts
-            }
-          })
-          Write-Host ("SONAR_ISSUES=" + ($rows | ConvertTo-Json -Depth 6 -Compress))
+          curl.exe -fSs "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=OPEN,CONFIRMED&sinceLeakPeriod=true&ps=100"
+          if errorlevel 1 exit /b 1
