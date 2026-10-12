@@ -8,7 +8,7 @@ permissions:
   checks: read
 jobs:
   read:
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Read failed Android check annotations
