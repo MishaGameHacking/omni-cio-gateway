@@ -29,8 +29,6 @@ jobs:
         run: |
           py -3 .github\scripts\apply_analyst_feature.py
           if errorlevel 1 exit /b 1
-          py -3 -c "from pathlib import Path; p=Path(r'app\src\main\java\ru\omnicio\app\ui\AnalystBottomBar.kt'); s=p.read_text(encoding='utf-8'); old='import androidx.compose.foundation.layout.size\n'; new=old+'import androidx.compose.foundation.layout.weight\n'; assert old in s; p.write_text(s.replace(old,new,1),encoding='utf-8')"
-          if errorlevel 1 exit /b 1
 
       - name: Create isolated Python environment
         shell: cmd
