@@ -43,7 +43,7 @@ TINVEST_ACCOUNTS_URL = (
 )
 
 LOGIN_TX_TTL = 10 * 60
-LOGIN_CODE_TTL = 2 * 60
+LOGIN_CODE_TTL = 5 * 60
 SESSION_TTL = 30 * 24 * 60 * 60
 
 @asynccontextmanager
@@ -307,6 +307,9 @@ def telegram_callback(
     except (KeyError, ValueError, jwt.PyJWTError, TypeError):
         logger.exception("Telegram ID token is invalid")
         return mobile_login_result(error="telegram_invalid_token", status_code=401)
+    except Exception:
+        logger.exception("Telegram signing keys are temporarily unavailable")
+        return mobile_login_result(error="telegram_unavailable", status_code=503)
     telegram_id = str(claims.get("id") or sub)
     now = int(time.time())
 
