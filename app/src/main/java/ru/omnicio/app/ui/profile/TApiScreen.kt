@@ -33,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -44,22 +43,15 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import ru.omnicio.app.data.tinvest.TInvestApiClient
-import ru.omnicio.app.data.tinvest.TInvestTokenCheck
-import ru.omnicio.app.data.tinvest.TInvestTokenStore
+import ru.omnicio.app.data.backend.AnalystBackendClient
+import ru.omnicio.app.data.backend.BackendResult
 
 private sealed interface TokenUiStatus {
     data object Missing : TokenUiStatus
-    data object Saved : TokenUiStatus
-    data object Checking : TokenUiStatus
     data object Connected : TokenUiStatus
+    data object Checking : TokenUiStatus
     data class Error(val message: String) : TokenUiStatus
 }
-
-private data class TokenVerificationOutcome(
-    val status: TokenUiStatus,
-    val connected: Boolean,
-)
 
 private val TApiBackground = Color(0xFFF5F6F8)
 private val TApiCard = Color.White
@@ -70,40 +62,50 @@ private val TApiRed = Color(0xFFB42318)
 
 @Composable
 fun TApiScreen(
+    accessToken: String,
+    tApiConfigured: Boolean,
     onBack: () -> Unit,
     onConnectionChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onBack)
 
-    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    val tokenStore = remember(context) { TInvestTokenStore(context) }
-    val apiClient = remember { TInvestApiClient() }
+    val backend = remember { AnalystBackendClient() }
     val scope = rememberCoroutineScope()
 
     var tokenInput by rememberSaveable { mutableStateOf("") }
     var showToken by rememberSaveable { mutableStateOf(false) }
-    var storedTokenExists by remember { mutableStateOf(tokenStore.hasToken()) }
-    var status by remember {
-        mutableStateOf<TokenUiStatus>(initialTokenStatus(storedTokenExists))
+    var status by remember(tApiConfigured) {
+        mutableStateOf<TokenUiStatus>(
+            if (tApiConfigured) TokenUiStatus.Connected else TokenUiStatus.Missing,
+        )
     }
 
-
     val verify = {
-        if (status != TokenUiStatus.Checking) {
+        if (status != TokenUiStatus.Checking && tokenInput.isNotBlank()) {
             status = TokenUiStatus.Checking
             scope.launch {
-                val outcome = verifyAndPersistToken(
-                    tokenInput = tokenInput,
-                    tokenStore = tokenStore,
-                    apiClient = apiClient,
-                )
-                status = outcome.status
-                if (outcome.connected) {
-                    tokenInput = ""
-                    storedTokenExists = true
-                    onConnectionChanged(true)
+                when (val result = withContext(Dispatchers.IO) {
+                    backend.saveTInvestToken(
+                        accessToken = accessToken,
+                        token = tokenInput,
+                    )
+                }) {
+                    is BackendResult.Success -> {
+                        tokenInput = ""
+                        status = TokenUiStatus.Connected
+                        onConnectionChanged(true)
+                    }
+                    is BackendResult.Failure -> {
+                        status = TokenUiStatus.Error(
+                            when {
+                                result.message == "invalid_tinvest_token" ->
+                                    "T‑Invest API не принял токен. Проверьте, что это актуальный read-only токен."
+                                else -> result.message
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -114,12 +116,16 @@ fun TApiScreen(
         status = status,
         tokenInput = tokenInput,
         showToken = showToken,
-        storedTokenExists = storedTokenExists,
+        tApiConfigured = tApiConfigured || status == TokenUiStatus.Connected,
         onBack = onBack,
         onTokenInputChange = { value ->
             tokenInput = value
-            if (status != TokenUiStatus.Checking) {
-                status = initialTokenStatus(storedTokenExists)
+            if (status !is TokenUiStatus.Checking) {
+                status = if (tApiConfigured) {
+                    TokenUiStatus.Connected
+                } else {
+                    TokenUiStatus.Missing
+                }
             }
         },
         onToggleTokenVisibility = {
@@ -127,11 +133,23 @@ fun TApiScreen(
         },
         onVerify = verify,
         onRemove = {
-            tokenStore.clear()
-            tokenInput = ""
-            storedTokenExists = false
-            status = TokenUiStatus.Missing
-            onConnectionChanged(false)
+            if (status != TokenUiStatus.Checking) {
+                status = TokenUiStatus.Checking
+                scope.launch {
+                    when (val result = withContext(Dispatchers.IO) {
+                        backend.deleteTInvestToken(accessToken)
+                    }) {
+                        is BackendResult.Success -> {
+                            tokenInput = ""
+                            status = TokenUiStatus.Missing
+                            onConnectionChanged(false)
+                        }
+                        is BackendResult.Failure -> {
+                            status = TokenUiStatus.Error(result.message)
+                        }
+                    }
+                }
+            }
         },
         onOpenDocs = {
             uriHandler.openUri(TOKEN_DOCS_URL)
@@ -139,71 +157,12 @@ fun TApiScreen(
     )
 }
 
-private suspend fun verifyAndPersistToken(
-    tokenInput: String,
-    tokenStore: TInvestTokenStore,
-    apiClient: TInvestApiClient,
-): TokenVerificationOutcome {
-    val candidate = withContext(Dispatchers.IO) {
-        tokenInput.trim().ifEmpty { tokenStore.load().orEmpty() }
-    }
-
-    if (candidate.isEmpty()) {
-        return TokenVerificationOutcome(
-            status = TokenUiStatus.Error("Вставьте read-only токен T‑Invest API."),
-            connected = false,
-        )
-    }
-
-    val check = withContext(Dispatchers.IO) {
-        apiClient.checkReadAccess(candidate)
-    }
-    return when (check) {
-        TInvestTokenCheck.Valid -> persistValidatedToken(candidate, tokenStore)
-        TInvestTokenCheck.Invalid -> TokenVerificationOutcome(
-            status = TokenUiStatus.Error(
-                "T‑Invest API не принял токен. Проверьте, что токен актуален и относится к биржевому контуру.",
-            ),
-            connected = false,
-        )
-        is TInvestTokenCheck.Unavailable -> TokenVerificationOutcome(
-            status = TokenUiStatus.Error(check.message),
-            connected = false,
-        )
-    }
-}
-
-private suspend fun persistValidatedToken(
-    token: String,
-    tokenStore: TInvestTokenStore,
-): TokenVerificationOutcome {
-    val saved = withContext(Dispatchers.IO) {
-        runCatching { tokenStore.save(token) }.isSuccess
-    }
-    return if (saved) {
-        TokenVerificationOutcome(
-            status = TokenUiStatus.Connected,
-            connected = true,
-        )
-    } else {
-        TokenVerificationOutcome(
-            status = TokenUiStatus.Error(
-                "Токен подтверждён, но не удалось сохранить его в защищённом хранилище.",
-            ),
-            connected = false,
-        )
-    }
-}
-
-private fun initialTokenStatus(storedTokenExists: Boolean): TokenUiStatus =
-    if (storedTokenExists) TokenUiStatus.Saved else TokenUiStatus.Missing
-
 @Composable
 private fun TApiContent(
     status: TokenUiStatus,
     tokenInput: String,
     showToken: Boolean,
-    storedTokenExists: Boolean,
+    tApiConfigured: Boolean,
     onBack: () -> Unit,
     onTokenInputChange: (String) -> Unit,
     onToggleTokenVisibility: () -> Unit,
@@ -235,7 +194,7 @@ private fun TApiContent(
                     status = status,
                     tokenInput = tokenInput,
                     showToken = showToken,
-                    storedTokenExists = storedTokenExists,
+                    tApiConfigured = tApiConfigured,
                     onTokenInputChange = onTokenInputChange,
                     onToggleTokenVisibility = onToggleTokenVisibility,
                     onVerify = onVerify,
@@ -283,7 +242,7 @@ private fun TokenInputCard(
     status: TokenUiStatus,
     tokenInput: String,
     showToken: Boolean,
-    storedTokenExists: Boolean,
+    tApiConfigured: Boolean,
     onTokenInputChange: (String) -> Unit,
     onToggleTokenVisibility: () -> Unit,
     onVerify: () -> Unit,
@@ -300,117 +259,68 @@ private fun TokenInputCard(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = "Токен доступа",
+                text = if (tApiConfigured) "Заменить токен" else "Токен доступа",
                 fontSize = 22.sp,
                 lineHeight = 28.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Используйте read-only токен. Он подходит для чтения счетов и портфеля и не даёт Analyst AI права выставлять торговые поручения.",
+                text = "Используйте read-only токен. После проверки он привязывается к вашему Telegram ID и хранится зашифрованно на сервере Analyst AI.",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            TokenField(
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
                 value = tokenInput,
-                showToken = showToken,
-                storedTokenExists = storedTokenExists,
-                enabled = !checking,
                 onValueChange = onTokenInputChange,
-                onToggleVisibility = onToggleTokenVisibility,
-                onDone = onVerify,
+                enabled = !checking,
+                singleLine = true,
+                label = {
+                    Text(if (tApiConfigured) "Новый токен" else "Вставьте токен")
+                },
+                visualTransformation = if (showToken) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    TextButton(
+                        onClick = onToggleTokenVisibility,
+                        enabled = tokenInput.isNotEmpty(),
+                    ) {
+                        Text(if (showToken) "Скрыть" else "Показать")
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onVerify() }),
             )
-            VerifyButton(
-                checking = checking,
-                storedTokenExists = storedTokenExists,
-                tokenInput = tokenInput,
-                onVerify = onVerify,
-            )
-            if (storedTokenExists) {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onVerify,
+                enabled = !checking && tokenInput.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF111318),
+                    contentColor = Color.White,
+                ),
+            ) {
+                if (checking) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(if (tApiConfigured) "Проверить и заменить" else "Проверить и подключить")
+                }
+            }
+            if (tApiConfigured) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onRemove,
                     enabled = !checking,
                 ) {
-                    Text("Удалить токен с устройства")
+                    Text("Отключить T‑API")
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TokenField(
-    value: String,
-    showToken: Boolean,
-    storedTokenExists: Boolean,
-    enabled: Boolean,
-    onValueChange: (String) -> Unit,
-    onToggleVisibility: () -> Unit,
-    onDone: () -> Unit,
-) {
-    OutlinedTextField(
-        modifier = Modifier.fillMaxWidth(),
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = true,
-        label = {
-            Text(
-                if (storedTokenExists && value.isEmpty()) {
-                    "Новый токен или проверка сохранённого"
-                } else {
-                    "Вставьте токен"
-                },
-            )
-        },
-        visualTransformation = if (showToken) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        trailingIcon = {
-            TextButton(
-                onClick = onToggleVisibility,
-                enabled = value.isNotEmpty(),
-            ) {
-                Text(if (showToken) "Скрыть" else "Показать")
-            }
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onDone() }),
-    )
-}
-
-@Composable
-private fun VerifyButton(
-    checking: Boolean,
-    storedTokenExists: Boolean,
-    tokenInput: String,
-    onVerify: () -> Unit,
-) {
-    Button(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onVerify,
-        enabled = !checking && (tokenInput.isNotBlank() || storedTokenExists),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF111318),
-            contentColor = Color.White,
-        ),
-    ) {
-        if (checking) {
-            CircularProgressIndicator(
-                modifier = Modifier.padding(2.dp),
-                color = Color.White,
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Text(
-                if (storedTokenExists && tokenInput.isBlank()) {
-                    "Проверить сохранённый токен"
-                } else {
-                    "Проверить и сохранить"
-                },
-            )
         }
     }
 }
@@ -432,7 +342,7 @@ private fun TokenDocsCard(onOpenDocs: () -> Unit) {
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Выпустите read-only токен в настройках T‑Инвестиций. Токен показывается для сохранения только один раз, поэтому скопируйте его сразу и вставьте выше.",
+                text = "Выпустите read-only токен в настройках T‑Инвестиций. Токен показывается только один раз — скопируйте его и вставьте выше.",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -463,12 +373,12 @@ private fun TokenSecurityCard() {
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "После успешной проверки токен хранится только на этом устройстве в зашифрованном виде с ключом Android Keystore. Токен не записывается в GitHub, APK или логи.",
+                text = "Токен передаётся по HTTPS на backend Analyst AI, проверяется read-only запросом T‑Invest и хранится на Timeweb в зашифрованном виде, привязанном к вашему Telegram ID.",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "Запрет скриншотов управляется пользователем в «Профиль → Настройки» и по умолчанию выключен. Сам токен остаётся скрытым в поле ввода.",
+                text = "Скриншоты разрешены по умолчанию. При необходимости включите запрет в «Профиль → Настройки».",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -478,7 +388,29 @@ private fun TokenSecurityCard() {
 
 @Composable
 private fun StatusCard(status: TokenUiStatus) {
-    val (title, subtitle, color) = statusPresentation(status)
+    val (title, subtitle, color) = when (status) {
+        TokenUiStatus.Missing -> Triple(
+            "T‑API не подключён",
+            "Вставьте read-only токен пользователя.",
+            TApiMuted,
+        )
+        TokenUiStatus.Connected -> Triple(
+            "T‑API подключён",
+            "Токен хранится на сервере Analyst AI и привязан к аккаунту.",
+            TApiGreen,
+        )
+        TokenUiStatus.Checking -> Triple(
+            "Проверяем подключение",
+            "Analyst AI проверяет токен через сервер.",
+            TApiBlue,
+        )
+        is TokenUiStatus.Error -> Triple(
+            "Подключение не завершено",
+            status.message,
+            TApiRed,
+        )
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -502,35 +434,6 @@ private fun StatusCard(status: TokenUiStatus) {
         }
     }
 }
-
-private fun statusPresentation(status: TokenUiStatus): Triple<String, String, Color> =
-    when (status) {
-        TokenUiStatus.Missing -> Triple(
-            "T‑API не подключён",
-            "Вставьте read-only токен пользователя.",
-            TApiMuted,
-        )
-        TokenUiStatus.Saved -> Triple(
-            "Токен сохранён",
-            "Можно проверить текущий токен или заменить его новым.",
-            TApiBlue,
-        )
-        TokenUiStatus.Checking -> Triple(
-            "Проверяем токен",
-            "Analyst AI выполняет read-only запрос GetAccounts.",
-            TApiBlue,
-        )
-        TokenUiStatus.Connected -> Triple(
-            "T‑API подключён",
-            "Read-only доступ к счетам подтверждён.",
-            TApiGreen,
-        )
-        is TokenUiStatus.Error -> Triple(
-            "Подключение не завершено",
-            status.message,
-            TApiRed,
-        )
-    }
 
 private const val TOKEN_DOCS_URL =
     "https://developer.tbank.ru/invest/intro/intro/token"
