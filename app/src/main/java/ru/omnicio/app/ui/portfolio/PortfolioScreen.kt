@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
+import ru.omnicio.app.ui.AnalystBottomBar
+import ru.omnicio.app.ui.AnalystTab
 
 data class ApiDecimal(
     val units: Long,
@@ -102,12 +103,19 @@ private val Divider = Color(0xFFE8EAED)
 @Composable
 fun PortfolioScreen(
     state: PortfolioUiState,
+    onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = ScreenBackground,
-        bottomBar = { PortfolioBottomBar() },
+        bottomBar = {
+            AnalystBottomBar(
+                selected = AnalystTab.Portfolio,
+                onPortfolioClick = {},
+                onProfileClick = onProfileClick,
+            )
+        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -645,46 +653,6 @@ private fun AllocationRow(allocation: PortfolioAllocation) {
     }
 }
 
-@Composable
-private fun PortfolioBottomBar() {
-    Surface(
-        modifier = Modifier.navigationBarsPadding(),
-        color = Color.White,
-        shadowElevation = 10.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Surface(
-                    modifier = Modifier.size(34.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFF22262D),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "▰",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                        )
-                    }
-                }
-                Text(
-                    text = "Портфель",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-    }
-}
-
 private fun MoneyAmount.formatted(withSign: Boolean = false): String {
     val decimal = value.toBigDecimal()
     val number = decimal.formattedNumber(
@@ -728,6 +696,9 @@ private fun currencySymbol(currency: String): String =
 @Composable
 private fun PortfolioScreenPreview() {
     MaterialTheme {
-        PortfolioScreen(state = PortfolioUiState.NotConnected)
+        PortfolioScreen(
+            state = PortfolioUiState.NotConnected,
+            onProfileClick = {},
+        )
     }
 }
