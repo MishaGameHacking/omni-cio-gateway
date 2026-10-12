@@ -87,6 +87,7 @@ data class PortfolioSnapshot(
 
 sealed interface PortfolioUiState {
     data object NotConnected : PortfolioUiState
+    data object ApiConnected : PortfolioUiState
     data object Loading : PortfolioUiState
     data class Ready(val snapshot: PortfolioSnapshot) : PortfolioUiState
     data class Error(val message: String) : PortfolioUiState
@@ -144,6 +145,20 @@ fun PortfolioScreen(
                     }
                     item {
                         EmptyAccountsCard()
+                    }
+                }
+
+                PortfolioUiState.ApiConnected -> {
+                    item {
+                        ApiConnectedCard()
+                    }
+                    item {
+                        SectionTitle("Счета")
+                    }
+                    item {
+                        EmptyAccountsCard(
+                            message = "T‑API подключён. Реальные счета появятся после загрузки данных портфеля.",
+                        )
                     }
                 }
 
@@ -273,6 +288,34 @@ private fun ApiSourceBadge() {
             color = Color(0xFF356EC9),
             style = MaterialTheme.typography.labelLarge,
         )
+    }
+}
+
+@Composable
+private fun ApiConnectedCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "T‑API подключён",
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = PositiveGreen,
+            )
+            Text(
+                text = "Read-only токен подтверждён. Analyst AI не показывает выдуманные суммы и будет использовать только фактические данные T‑Invest API.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MutedText,
+            )
+            ApiSourceBadge()
+        }
     }
 }
 
@@ -417,14 +460,16 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun EmptyAccountsCard() {
+private fun EmptyAccountsCard(
+    message: String = "Счета появятся после получения реальных данных T‑Invest API.",
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
     ) {
         Text(
-            text = "Счета появятся после получения реальных данных T‑Invest API.",
+            text = message,
             modifier = Modifier.padding(22.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = MutedText,
