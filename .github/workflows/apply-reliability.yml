@@ -1,0 +1,51 @@
+name: Verify reliability corrections
+on:
+  push:
+    branches: [fix/reliability-release-041]
+    paths: [.github/workflows/apply-reliability.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/reliability-release-041
+          persist-credentials: true
+      - name: Apply reviewed edits
+        shell: cmd
+        run: |
+          py -3 .github\scripts\apply_reliability_041.py
+          if errorlevel 1 exit /b 1
+          git diff --check
+          if errorlevel 1 exit /b 1
+      - name: Test backend in isolated environment
+        shell: cmd
+        env:
+          ANALYSIS_SCHEDULER_ENABLED: 'false'
+          TELEGRAM_CLIENT_ID: '123456'
+          TELEGRAM_CLIENT_SECRET: test-only
+          BACKEND_PUBLIC_URL: https://example.invalid
+          FERNET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          set "VENV=%RUNNER_TEMP%\reliability-041-%GITHUB_RUN_ID%"
+          py -3 -m venv "%VENV%"
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check -r backend\requirements.txt
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m compileall -q backend
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m unittest discover -s backend\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+      - name: Commit tested source changes only
+        shell: cmd
+        run: |
+          git config user.name "Analyst AI automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend/autonomous_ai.py backend/timeweb_ai.py backend/tests/test_autonomous_ai.py app/build.gradle.kts
+          git commit -m "fix: reliable cancellation, truthful refresh and bounded AI attempts"
+          if errorlevel 1 exit /b 1
+          git push origin HEAD:fix/reliability-release-041
+          if errorlevel 1 exit /b 1
