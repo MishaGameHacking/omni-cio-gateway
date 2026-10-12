@@ -10,21 +10,21 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 3
     steps:
-      - name: Read public Sonar issue metadata without credentials
+      - name: Read public Sonar quality metadata without credentials
         shell: py -3 {0}
         run: |
           import json
           import sys
           import urllib.request
-          import urllib.error
           sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
-          url='https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&resolved=false&types=BUG&ps=100'
-          try:
+          project='MishaGameHacking_omni-cio-gateway'
+          urls=[('issues','https://sonarcloud.io/api/issues/search?componentKeys='+project+'&branch=main&resolved=false&ps=100'),('gate','https://sonarcloud.io/api/qualitygates/project_status?projectKey='+project+'&branch=main')]
+          for kind,url in urls:
               with urllib.request.urlopen(url, timeout=30) as response:
                   payload=json.load(response)
+              if kind=='gate':
+                  print('PUBLIC_GATE='+json.dumps(payload,ensure_ascii=True))
+                  continue
               print('PUBLIC_SONAR_TOTAL='+str(payload.get('total')))
               for issue in payload.get('issues',[]):
-                  print(json.dumps({k:issue.get(k) for k in ['key','rule','severity','component','line','message','flows']},ensure_ascii=True))
-          except urllib.error.HTTPError as error:
-              print('PUBLIC_SONAR_UNAVAILABLE_HTTP='+str(error.code))
-              raise SystemExit(1)
+                  print(json.dumps({k:issue.get(k) for k in ['key','rule','severity','impacts','component','line','message']},ensure_ascii=True))
