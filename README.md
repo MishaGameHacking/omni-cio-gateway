@@ -74,3 +74,11 @@
 ## Analyst AI 0.3.0
 
 This iteration adds a five-tab Android shell, real read-only T-Invest portfolio loading, RUB/USD/EUR portfolio display selected by tapping the total, and a deterministic AI decision gate that prevents empty token-consuming analyses. The chosen autonomous-analysis architecture is documented in `docs/AI_ORCHESTRATION.md`.
+
+## Analyst AI 0.4.0
+
+- autonomous portfolio snapshots and morning/evening checks;
+- deterministic material-change and critical-risk gates before any paid AI call;
+- per-user daily AI budgets, cooldown and digest deduplication;
+- persistent insight feed, Pulse, risk-profile settings and class-level diversification ideas;
+- fail-closed operation: algorithmic safety cards remain available when no AI runtime key is configured.
