@@ -21,19 +21,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ru.omnicio.app.data.backend.BackendConfig
 
 @Composable
 fun TelegramLoginScreen(
     loading: Boolean,
     errorMessage: String?,
+    onLoginClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val uriHandler = LocalUriHandler.current
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -102,11 +100,7 @@ fun TelegramLoginScreen(
                             containerColor = Color(0xFF229ED9),
                             contentColor = Color.White,
                         ),
-                        onClick = {
-                            uriHandler.openUri(
-                                "${BackendConfig.BASE_URL}/auth/telegram/start",
-                            )
-                        },
+                        onClick = onLoginClick,
                     ) {
                         if (loading) {
                             CircularProgressIndicator(

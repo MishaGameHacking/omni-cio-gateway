@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.browser.auth.AuthTabIntent
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.backend.AnalystBackendClient
+import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.backend.BackendResult
@@ -49,6 +51,17 @@ private sealed interface AuthUiState {
 class MainActivity : ComponentActivity() {
     private lateinit var settingsStore: AppSettingsStore
     private val pendingAuthCode = mutableStateOf<String?>(null)
+    private val pendingAuthError = mutableStateOf<String?>(null)
+
+    private val authTabLauncher = AuthTabIntent.registerActivityResultLauncher(this) { result ->
+        val resultUri = result.resultUri
+        if (result.resultCode == AuthTabIntent.RESULT_OK && resultUri != null) {
+            captureTelegramCallback(resultUri)
+            pendingAuthError.value = null
+        } else if (result.resultCode != AuthTabIntent.RESULT_OK) {
+            pendingAuthError.value = "Вход через Telegram не завершён."
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +75,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             AnalystAiApp(
                 authCode = pendingAuthCode.value,
+                authError = pendingAuthError.value,
+                onStartTelegramLogin = ::launchTelegramLogin,
                 onAuthCodeConsumed = {
                     pendingAuthCode.value = null
                 },
@@ -81,10 +96,24 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun captureTelegramCallback(intent: Intent?) {
-        val data = intent?.data ?: return
+        captureTelegramCallback(intent?.data ?: return)
+    }
+
+    private fun captureTelegramCallback(data: Uri) {
         if (data.scheme == AUTH_SCHEME && data.host == AUTH_HOST) {
             pendingAuthCode.value = data.getQueryParameter("code")
+            pendingAuthError.value = null
         }
+    }
+
+    private fun launchTelegramLogin() {
+        pendingAuthError.value = null
+        val authTab = AuthTabIntent.Builder().build()
+        authTab.launch(
+            authTabLauncher,
+            Uri.parse("${BackendConfig.BASE_URL}/auth/telegram/start"),
+            AUTH_SCHEME,
+        )
     }
 
     private fun applyScreenshotPolicy(blocked: Boolean) {
@@ -104,6 +133,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AnalystAiApp(
     authCode: String?,
+    authError: String?,
+    onStartTelegramLogin: () -> Unit,
     onAuthCodeConsumed: () -> Unit,
     initialScreenshotsBlocked: Boolean,
     onScreenshotsBlockedChange: (Boolean) -> Unit,
@@ -140,10 +171,26 @@ private fun AnalystAiApp(
                     )
                 }
                 is BackendResult.Failure -> {
-                    withContext(Dispatchers.IO) {
-                        sessionStore.clear()
+                    if (result.retryable) {
+                        val cachedUser = withContext(Dispatchers.IO) {
+                            sessionStore.loadCachedUser()
+                        }
+                        if (cachedUser != null) {
+                            authState = AuthUiState.SignedIn(
+                                accessToken = storedToken,
+                                user = cachedUser,
+                            )
+                        } else {
+                            authState = AuthUiState.SignedOut(
+                                errorMessage = result.message,
+                            )
+                        }
+                    } else {
+                        withContext(Dispatchers.IO) {
+                            sessionStore.clear()
+                        }
+                        authState = AuthUiState.SignedOut()
                     }
-                    authState = AuthUiState.SignedOut()
                 }
             }
         }
@@ -208,14 +255,16 @@ private fun AnalystAiApp(
             AuthUiState.Loading -> {
                 TelegramLoginScreen(
                     loading = true,
-                    errorMessage = null,
+                    errorMessage = authError,
+                    onLoginClick = onStartTelegramLogin,
                 )
             }
 
             is AuthUiState.SignedOut -> {
                 TelegramLoginScreen(
                     loading = false,
-                    errorMessage = current.errorMessage,
+                    errorMessage = current.errorMessage ?: authError,
+                    onLoginClick = onStartTelegramLogin,
                 )
             }
 

@@ -19,14 +19,15 @@ class AuthSessionStore(context: Context) {
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val encrypted = cipher.doFinal(session.accessToken.toByteArray(Charsets.UTF_8))
 
-        preferences.edit()
+        val committed = preferences.edit()
             .putString(KEY_CIPHERTEXT, Base64.encodeToString(encrypted, Base64.NO_WRAP))
             .putString(KEY_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString(KEY_TELEGRAM_ID, session.user.telegramId)
             .putString(KEY_NAME, session.user.name)
             .putString(KEY_USERNAME, session.user.username)
             .putString(KEY_PICTURE, session.user.pictureUrl)
-            .apply()
+            .commit()
+        check(committed) { "Unable to persist Analyst AI session." }
     }
 
     fun loadAccessToken(): String? {
@@ -56,7 +57,7 @@ class AuthSessionStore(context: Context) {
     }
 
     fun clear() {
-        preferences.edit().clear().apply()
+        preferences.edit().clear().commit()
     }
 
     private fun getOrCreateKey(): SecretKey {
