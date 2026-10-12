@@ -57,7 +57,7 @@ fun AnalystTheme(content: @Composable () -> Unit) {
         context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
     var modeName by rememberSaveable {
-        mutableStateOf(preferences.getString("theme_mode", ThemeMode.SYSTEM.name)!!)
+        mutableStateOf(preferences.getString("theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
     }
     val mode = ThemeMode.entries.firstOrNull { it.name == modeName } ?: ThemeMode.SYSTEM
     val systemDark = isSystemInDarkTheme()

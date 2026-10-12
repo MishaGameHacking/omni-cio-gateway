@@ -51,10 +51,14 @@ import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 
-private val AnalysisBackground = Color(0xFFF4F5F7)
-private val AnalysisCard = Color.White
-private val Muted = Color(0xFF858B95)
-private val Blue = Color(0xFF4E8EE8)
+private val AnalysisBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+private val AnalysisCard: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
+private val Muted: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val Blue: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
 private val Positive = Color(0xFF179447)
 private val Warning = Color(0xFFD17A00)
 private val Critical = Color(0xFFC93636)

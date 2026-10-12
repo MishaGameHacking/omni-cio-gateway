@@ -38,15 +38,16 @@ METHODS = {
     "dividends": "InstrumentsService/GetDividends",
 }
 _cache: OrderedDict = OrderedDict()
+_public_cache: OrderedDict = OrderedDict()
 _cache_lock = RLock()
 _request_locks = [RLock() for _ in range(32)]
 
 
 def number(value: Any) -> Decimal | None:
-    if not isinstance(value, dict) or "units" not in value:
+    if not isinstance(value, dict):
         return None
     try:
-        result = Decimal(str(value["units"])) + Decimal(str(value.get("nano", 0))) / Decimal(10**9)
+        result = Decimal(str(value.get("units", 0))) + Decimal(str(value.get("nano", 0))) / Decimal(10**9)
         return result if result.is_finite() else None
     except (InvalidOperation, ValueError, TypeError):
         return None
@@ -114,7 +115,13 @@ class BrokerReader:
         self.token = ""
 
     def read(self, method: str, body: dict) -> dict:
-        return portfolio._post_tinvest(self.client, BASE + METHODS[method], self.token, body)
+        previous_timeout = self.client.timeout
+        if method in {"instrument", "coupons", "dividends"}:
+            self.client.timeout = backend.httpx.Timeout(3, connect=2)
+        try:
+            return portfolio._post_tinvest(self.client, BASE + METHODS[method], self.token, body)
+        finally:
+            self.client.timeout = previous_timeout
 
     def accounts(self) -> list[dict]:
         result = self.read("accounts", {}).get("accounts")
@@ -129,16 +136,41 @@ class BrokerReader:
             raise HTTPException(404, "account_not_available")
         return account
 
-    def metadata(self, raw: dict) -> dict:
+    def metadata(self, raw: dict, budget: list[int] | None = None) -> dict:
         identifier = raw.get("instrumentUid") or raw.get("figi")
         if not identifier:
             return {}
         kind = "INSTRUMENT_ID_TYPE_UID" if raw.get("instrumentUid") else "INSTRUMENT_ID_TYPE_FIGI"
+        key = ("instrument", str(identifier))
+        existing = public_lookup(key)
+        if existing is not None:
+            return existing
+        if budget is not None:
+            if budget[0] <= 0:
+                return {}
+            budget[0] -= 1
         try:
-            return cached(("instrument", str(identifier)), 86400,
-                          lambda: self.read("instrument", {"idType": kind, "id": identifier}).get("instrument", {}))
+            value = self.read("instrument", {"idType": kind, "id": identifier}).get("instrument", {})
         except HTTPException:
             return {}
+        public_store(key, value, 86400)
+        return value
+
+
+def public_lookup(key: tuple) -> dict | None:
+    # Never acquire another single-flight stripe while serving a dashboard stripe.
+    with _cache_lock:
+        row = _public_cache.get(key)
+        return copy.deepcopy(row[1]) if row and row[0] > time.monotonic() else None
+
+
+def public_store(key: tuple, value: dict, ttl: int) -> None:
+    with _cache_lock:
+        _public_cache[key] = time.monotonic() + ttl, copy.deepcopy(value)
+        _public_cache.move_to_end(key)
+        while len(_public_cache) > 2048:
+            _public_cache.popitem(last=False)
+
 
 
 def position_value(raw: dict) -> dict | None:
@@ -204,6 +236,26 @@ def allocations(raw: dict) -> list[dict]:
     return rows
 
 
+
+def supplement_positions(reader: BrokerReader, rows: list[dict], balances: dict, budget: list[int]) -> list[dict]:
+    """Do not drop exchange-blocked securities that GetPortfolio cannot value."""
+    seen = {row["id"] for row in rows}
+    extra = []
+    for field, fallback_kind in (("securities", "security"), ("futures", "futures"), ("options", "option")):
+        for item in balances.get(field, []):
+            identifier = str(item.get("instrumentUid") or item.get("positionUid") or item.get("figi") or "")
+            if not identifier or identifier in seen:
+                continue
+            seen.add(identifier)
+            blocked = Decimal(str(item.get("blocked", 0)))
+            quantity = Decimal(str(item.get("balance", 0))) + blocked
+            raw = {**item, "instrumentType": item.get("instrumentType", fallback_kind),
+                   "quantity": portfolio._decimal_payload(quantity),
+                   "blocked": bool(item.get("exchangeBlocked")), "blockedLots": portfolio._decimal_payload(blocked)}
+            extra.append(normalize_position(raw, reader.metadata(raw, budget)))
+    return extra
+
+
 def read_account(reader: BrokerReader, account: dict, currency: str, meta_budget: list[int]) -> dict:
     account_id = str(account["id"])
     raw = reader.read("portfolio", {"accountId": account_id, "currency": currency})
@@ -216,9 +268,9 @@ def read_account(reader: BrokerReader, account: dict, currency: str, meta_budget
         # GetPositions.money is authoritative for cash; do not show it twice.
         if item.get("instrumentType") == "currency" and "money" in balances:
             continue
-        metadata = reader.metadata(item) if meta_budget[0] > 0 else {}
-        meta_budget[0] -= 1
+        metadata = reader.metadata(item, meta_budget)
         rows.append(normalize_position(item, metadata))
+    rows.extend(supplement_positions(reader, rows, balances, meta_budget))
     rows.extend(cash_positions(balances))
     return {"id": account_id, "name": portfolio._account_name(account), "totalValue": total,
             "expectedYieldPercent": quote(raw.get("expectedYield")), "positions": rows,
@@ -254,7 +306,7 @@ def record_history(user_id: int, accounts: list[dict], observed: str) -> None:
 
 def load_dashboard(user: Any, currency: str) -> dict:
     with BrokerReader(user) as reader:
-        metadata_budget = [40]
+        metadata_budget = [4]
         accounts = [read_account(reader, a, currency, metadata_budget) for a in reader.accounts()]
     total = sum((number(a["totalValue"]["value"]) for a in accounts), Decimal(0))
     buckets = defaultdict(Decimal)
@@ -265,7 +317,7 @@ def load_dashboard(user: Any, currency: str) -> dict:
     as_of = iso_now()
     record_history(int(user["id"]), accounts, as_of)
     warnings = []
-    if metadata_budget[0] < 0:
+    if any(not p.get("company") and p.get("instrumentType") != "cash" for a in accounts for p in a["positions"]):
         warnings.append("Часть названий инструментов ещё не уточнена; все полученные позиции показаны.")
     return {"currency": currency, "totalValue": portfolio._money_payload(total, currency),
             "expectedYieldAmount": None,
@@ -393,10 +445,10 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
         ensure_history(db)
         rows = db.execute("""SELECT observed_at,value FROM portfolio_value_history
             WHERE user_id=? AND account_id=? AND currency=? AND resolution=?
-            AND observed_at>=? AND observed_at<=? ORDER BY observed_at LIMIT 2000""",
+            AND observed_at>=? AND observed_at<=? ORDER BY observed_at LIMIT 2001""",
             (int(user["id"]), account_id, currency, resolution, begin, finish)).fetchall()
     return {"summary": summarize_operations(items), "complete": complete, "operationCount": len(items),
-            "history": [{"date": row["observed_at"], "value": row["value"]} for row in rows],
+            "history": [{"date": row["observed_at"], "value": row["value"]} for row in rows[:2000]], "historyTruncated": len(rows) > 2000,
             "currency": currency, "historySource": "Analyst AI: сохранённые снимки T‑Invest",
             "totalIncome": None, "asOf": iso_now(),
             "note": "История стоимости начинается с фактического сбора данных. Денежные потоки не равны инвестиционной прибыли. Суммы операций показаны в исходных валютах."}
@@ -412,43 +464,56 @@ def analytics(account_id: str, start: date | None = None, end: date | None = Non
 def payment_rows(raw: dict, position: dict, kind: str, now: datetime) -> list[dict]:
     result = []
     for event in raw.get("events" if kind == "bond" else "dividends", []):
+        if str(event.get("dividendType", "")).lower() == "cancelled":
+            continue
         per_unit = money(event.get("payOneBond" if kind == "bond" else "dividendNet"))
-        expected_date = event.get("couponDate" if kind == "bond" else "paymentDate")
-        record_date = event.get("recordDate")
-        if not expected_date or expected_date[:10] < now.date().isoformat():
+        payment_date = event.get("couponDate" if kind == "bond" else "paymentDate")
+        record_date = event.get("fixDate" if kind == "bond" else "recordDate")
+        display_date = payment_date or record_date
+        if not display_date or display_date[:10] < now.date().isoformat():
             continue
         quantity = number(position.get("quantity"))
-        eligibility_unknown = bool(record_date and record_date[:10] <= now.date().isoformat())
+        eligibility_unknown = not record_date or record_date[:10] <= now.date().isoformat()
         estimate = None
-        if per_unit and quantity is not None and quantity > 0 and not eligibility_unknown:
+        if per_unit and quantity is not None and quantity > 0 and not eligibility_unknown and payment_date:
             estimate = portfolio._money_payload(number(per_unit["value"]) * quantity, per_unit["currency"])
         result.append({"instrumentUid": position.get("instrumentUid"), "title": position.get("ticker") or position.get("figi"),
-                       "kind": "coupon" if kind == "bond" else "dividend", "date": expected_date,
+                       "kind": "coupon" if kind == "bond" else "dividend", "date": display_date,
                        "recordDate": record_date, "perUnit": per_unit, "estimate": estimate,
-                       "eligibilityUnknown": eligibility_unknown})
+                       "dateUnknown": not bool(payment_date), "eligibilityUnknown": eligibility_unknown})
     return result
 
 
 def load_payments(user: Any, account_id: str) -> dict:
     now = datetime.now(timezone.utc)
-    items, unavailable = [], 0
+    items, missing = [], 0
+    budget = 4
     with BrokerReader(user) as reader:
         reader.account(account_id)
         raw = reader.read("portfolio", {"accountId": account_id, "currency": "RUB"})
         holdings = [p for p in raw.get("positions", []) if p.get("instrumentType") in {"share", "bond"}]
-        for position in holdings[:30]:
+        for position in holdings:
             kind = position["instrumentType"]
-            body = {"instrumentId": position.get("instrumentUid") or position.get("figi"),
-                    "from": (now - timedelta(days=45)).isoformat(), "to": (now + timedelta(days=365)).isoformat()}
-            try:
-                response = reader.read("coupons" if kind == "bond" else "dividends", body)
+            identifier = position.get("instrumentUid") or position.get("figi")
+            key = ("payments", kind, identifier, now.date().isoformat())
+            response = public_lookup(key)
+            if response is None and budget > 0:
+                budget -= 1
+                body = {"instrumentId": identifier, "from": (now - timedelta(days=45)).isoformat(),
+                        "to": (now + timedelta(days=365)).isoformat()}
+                try:
+                    response = reader.read("coupons" if kind == "bond" else "dividends", body)
+                    public_store(key, response, 3600)
+                except HTTPException:
+                    response = None
+            if response is None:
+                missing += 1
+            else:
                 items.extend(payment_rows(response, position, kind, now))
-            except HTTPException:
-                unavailable += 1
-    return {"items": sorted(items, key=lambda item: item["date"]), "complete": unavailable == 0 and len(holdings) <= 30,
-            "asOf": iso_now(), "note": "Оценка по текущему количеству бумаг, не гарантия выплаты. Право зависит от реестра и расчетов; налоги и будущие сделки могут изменить сумму. Если дата выплаты неизвестна API, событие здесь не показано."}
+    return {"items": sorted(items, key=lambda item: item["date"]), "complete": missing == 0,
+            "asOf": iso_now(), "note": "Календарь опубликованных событий по текущим позициям. Оценка по количеству бумаг не гарантирует выплату. Право зависит от реестра, расчетов и будущих сделок. Сумма налога не прогнозируется."}
 
 
 @router.get("/tinvest/accounts/{account_id}/payments")
 def payments(account_id: str, user: Any = Depends(backend.current_user)) -> dict:
-    return cached(("payments", *identity(user), account_id), 3600, lambda: load_payments(user, account_id))
+    return cached(("payments", *identity(user), account_id), 60, lambda: load_payments(user, account_id))

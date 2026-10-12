@@ -44,7 +44,7 @@ fun PortfolioScreen(
     ) { insets ->
         if (account != null) {
             AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
-                { accountId = null; section = 0 }, snapshot.asOf, refreshError,
+                { accountId = null; section = 0 }, snapshot?.asOf, refreshError,
                 Modifier.padding(insets))
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(insets), state = listState,

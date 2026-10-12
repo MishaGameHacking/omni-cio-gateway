@@ -1,6 +1,8 @@
 package ru.omnicio.app.ui.profile
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -157,17 +159,6 @@ private fun ProfileAction(title: String, subtitle: String, symbol: String, onCli
 @Composable
 private fun InformationDialog(title: String, text: String, close: () -> Unit) {
     AlertDialog(onDismissRequest = close, title = { Text(title) },
-        text = { androidx.compose.foundation.rememberScrollState().let { scroll ->
-            // Long explanations must remain accessible at large font sizes.
-            androidx.compose.foundation.layout.Column(
-                modifier = Modifier.then(Modifier.verticalScrollCompat(scroll)),
-            ) { Text(text) }
-        } },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(text) } },
         confirmButton = { TextButton(onClick = close) { Text("Понятно") } })
 }
-
-private fun Modifier.verticalScrollCompat(state: androidx.compose.foundation.ScrollState): Modifier =
-    this.then(androidx.compose.ui.Modifier).run {
-        // Extension kept outside the dialog to keep the content layout simple.
-        androidx.compose.foundation.verticalScroll(state)
-    }

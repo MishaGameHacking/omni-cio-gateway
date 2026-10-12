@@ -35,7 +35,7 @@ fun TelegramLoginScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = Color(0xFFF5F6F8),
+        containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -62,7 +62,7 @@ fun TelegramLoginScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
                 Column(
                     modifier = Modifier.padding(
@@ -81,7 +81,7 @@ fun TelegramLoginScreen(
                     )
                     Text(
                         text = "Telegram подтверждает ваш уникальный Telegram ID. Пароли Telegram Analyst AI не получает.",
-                        color = Color(0xFF858C96),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
 

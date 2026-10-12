@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -136,7 +137,7 @@ internal fun PositionLine(position: PortfolioPosition, onClick: () -> Unit) {
 internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit) {
     AlertDialog(onDismissRequest = close, title = { Text(position.title) },
         text = {
-            Column(Modifier.verticalScrollSafe(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 DataRow("Тикер", position.ticker ?: "—")
                 DataRow("Количество, шт.", position.quantity.quantityText())
                 DataRow("Стоимость позиции", position.currentValue.moneyText())
@@ -155,11 +156,6 @@ internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit) {
             }
         }, confirmButton = { TextButton(onClick = close) { Text("Закрыть") } })
 }
-
-@Composable
-private fun Modifier.verticalScrollSafe(): Modifier = this.then(
-    Modifier.run { androidx.compose.foundation.verticalScroll(rememberScrollState()) }
-)
 
 internal data class ChartSlice(val title: String, val weight: Float)
 

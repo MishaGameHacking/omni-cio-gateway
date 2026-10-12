@@ -37,6 +37,8 @@ import ru.omnicio.app.ui.analysis.IdeasScreen
 import ru.omnicio.app.ui.analysis.InsightFeedScreen
 import ru.omnicio.app.ui.analysis.PulseScreen
 import ru.omnicio.app.ui.auth.TelegramLoginScreen
+import ru.omnicio.app.ui.theme.AnalystTheme
+import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.profile.TApiScreen
@@ -203,7 +205,6 @@ private fun AnalystAiApp(
         runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Portfolio)
     }
     var tApiConfigured by remember { mutableStateOf(false) }
-    var portfolioState by remember { mutableStateOf<PortfolioUiState>(PortfolioUiState.NotConnected) }
     var portfolioCurrencyName by rememberSaveable {
         mutableStateOf(PortfolioCurrency.RUB.name)
     }
@@ -320,26 +321,10 @@ private fun AnalystAiApp(
         tApiConfigured = connected
     }
 
-    LaunchedEffect(signedIn?.accessToken, tApiConfigured, portfolioCurrency) {
-        val session = signedIn
-        if (session == null || !tApiConfigured) {
-            portfolioState = PortfolioUiState.NotConnected
-            return@LaunchedEffect
-        }
+    val livePortfolio = rememberLivePortfolio(signedIn?.accessToken, tApiConfigured, portfolioCurrency)
+    val portfolioState = livePortfolio.state
 
-        portfolioState = PortfolioUiState.Loading
-        portfolioState = when (val result = withContext(Dispatchers.IO) {
-            backend.fetchPortfolio(
-                accessToken = session.accessToken,
-                currency = portfolioCurrency,
-            )
-        }) {
-            is BackendResult.Success -> PortfolioUiState.Ready(result.value)
-            is BackendResult.Failure -> PortfolioUiState.Error(result.message)
-        }
-    }
-
-    MaterialTheme {
+    AnalystTheme {
         when (val current = authState) {
             AuthUiState.Loading -> {
                 TelegramLoginScreen(
@@ -373,6 +358,10 @@ private fun AnalystAiApp(
                         AppScreen.Portfolio -> {
                             PortfolioScreen(
                                 state = portfolioState,
+                                accessToken = current.accessToken,
+                                refreshing = livePortfolio.refreshing,
+                                refreshError = livePortfolio.error,
+                                lastUpdatedMillis = livePortfolio.lastSuccessMillis,
                                 selectedCurrency = portfolioCurrency,
                                 onCurrencyClick = {
                                     portfolioCurrencyName = portfolioCurrency.next().name
@@ -444,7 +433,6 @@ private fun AnalystAiApp(
                                     sessionStore.clear()
                                     screenName = AppScreen.Portfolio.name
                                     tApiConfigured = false
-                                    portfolioState = PortfolioUiState.NotConnected
                                     authState = AuthUiState.SignedOut()
                                 },
                             )
@@ -474,9 +462,6 @@ private fun AnalystAiApp(
                                 },
                                 onConnectionChanged = { configured ->
                                     tApiConfigured = configured
-                                    if (!configured) {
-                                        portfolioState = PortfolioUiState.NotConnected
-                                    }
                                 },
                             )
                         }
@@ -490,7 +475,7 @@ private fun AnalystAiApp(
 @Preview(showBackground = true)
 @Composable
 private fun AnalystAiAppPreview() {
-    MaterialTheme {
+    AnalystTheme {
         PortfolioScreen(
             state = PortfolioUiState.NotConnected,
             onProfileClick = {},

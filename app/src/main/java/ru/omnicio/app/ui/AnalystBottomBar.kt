@@ -49,13 +49,14 @@ fun AnalystBottomBar(
 ) {
     val navigate = LocalAnalystTabNavigator.current
     Surface(
-        modifier = modifier.navigationBarsPadding(),
-        color = Color.White,
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
         shadowElevation = 10.dp,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 2.dp, vertical = 5.dp),
         ) {
             AnalystTab.entries.forEach { tab ->
@@ -84,7 +85,7 @@ private fun BottomBarItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val contentColor = if (selected) Color(0xFF16191F) else Color(0xFF9298A2)
+    val contentColor = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
     TextButton(
         modifier = modifier.heightIn(min = 58.dp),
         onClick = onClick,

@@ -52,12 +52,17 @@ private sealed interface TokenUiStatus {
     data class Error(val message: String) : TokenUiStatus
 }
 
-private val TApiBackground = Color(0xFFF5F6F8)
-private val TApiCard = Color.White
-private val TApiMuted = Color(0xFF858C96)
-private val TApiBlue = Color(0xFF4D8FEA)
+private val TApiBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+private val TApiCard: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
+private val TApiMuted: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val TApiBlue: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
 private val TApiGreen = Color(0xFF178B4D)
-private val TApiRed = Color(0xFFB42318)
+private val TApiRed: Color
+    @Composable get() = MaterialTheme.colorScheme.error
 
 @Composable
 fun TApiScreen(
