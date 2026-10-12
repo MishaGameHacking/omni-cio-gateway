@@ -1,25 +1,52 @@
-name: Source review snapshot
+name: Source maintenance for PR 827
 on:
   push:
     branches: [diagnostics/source-v05]
     paths: [.github/workflows/source-review.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   source:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Checkout fixed maintenance script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: 020a18c1b57b2614ed1867f40cb33b0d736ccabe
-      - name: Archive tracked source only
-        shell: bash
-        run: git archive --format=zip -o source-review.zip HEAD
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          path: maintenance
+      - name: Checkout feature branch, never main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          name: analyst-source-review
-          path: source-review.zip
-          retention-days: 1
-          if-no-files-found: error
+          persist-credentials: false
+          ref: fix/themes-live-portfolio-050
+          path: work
+      - name: Apply fixed source refinements
+        shell: cmd
+        working-directory: work
+        run: |
+          py -3 ..\maintenance\.github\scripts\refine_050.py
+          if errorlevel 1 exit /b 1
+          py -3 -m compileall -q backend .github\scripts
+          if errorlevel 1 exit /b 1
+      - name: Commit source-only changes with optimistic concurrency check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const cp = require('child_process');
+            const ref = 'heads/fix/themes-live-portfolio-050';
+            const base = cp.execFileSync('git',['rev-parse','HEAD'],{cwd:'work',encoding:'utf8'}).trim();
+            const head = (await github.rest.git.getRef({...context.repo,ref})).data.object.sha;
+            if (head !== base) throw new Error('Feature branch changed; refuse stale commit');
+            const commit = (await github.rest.git.getCommit({...context.repo,commit_sha:head})).data;
+            const paths = cp.execFileSync('git',['diff','--name-only','-z'],{cwd:'work',encoding:'utf8'}).split('\0').filter(Boolean);
+            const allowed = /^(app\/src\/|backend\/|\.github\/scripts\/)/;
+            if (!paths.length || paths.some(p => !allowed.test(p))) throw new Error('Unexpected source path');
+            const tree = paths.map(p => ({path:p,mode:'100644',type:'blob',content:fs.readFileSync(path.join('work',p),'utf8').replace(/\r\n/g,'\n')}));
+            const created = (await github.rest.git.createTree({...context.repo,base_tree:commit.tree.sha,tree})).data;
+            const next = (await github.rest.git.createCommit({...context.repo,message:'fix: calendar portability, documented API errors and verified profile UI',tree:created.sha,parents:[head]})).data;
+            await github.rest.git.updateRef({...context.repo,ref,sha:next.sha,force:false});
+            core.info('REFINED_SHA=' + next.sha);
