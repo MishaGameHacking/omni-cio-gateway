@@ -5,6 +5,7 @@
 - Открывайте корень репозитория в Android Studio.
 - Основной модуль: `app`.
 - Package/applicationId: `ru.omnicio.app`.
+- Минимальная версия устройства: Android 13 (API 33).
 - Сборка выполняется через Gradle Wrapper: `gradlew` / `gradlew.bat`.
 - Launcher icon сохранён.
 - Старый backend, PostgreSQL, web-сайт и инфраструктурная автоматика удалены.
