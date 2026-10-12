@@ -1,9 +1,5 @@
 package ru.omnicio.app.ui.profile
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,7 +24,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,7 +78,6 @@ fun TApiScreen(
 
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    val activity = remember(context) { context.findActivity() }
     val tokenStore = remember(context) { TInvestTokenStore(context) }
     val apiClient = remember { TInvestApiClient() }
     val scope = rememberCoroutineScope()
@@ -95,7 +89,6 @@ fun TApiScreen(
         mutableStateOf<TokenUiStatus>(initialTokenStatus(storedTokenExists))
     }
 
-    ProtectSensitiveScreen(activity)
 
     val verify = {
         if (status != TokenUiStatus.Checking) {
@@ -144,16 +137,6 @@ fun TApiScreen(
             uriHandler.openUri(TOKEN_DOCS_URL)
         },
     )
-}
-
-@Composable
-private fun ProtectSensitiveScreen(activity: Activity?) {
-    DisposableEffect(activity) {
-        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose {
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        }
-    }
 }
 
 private suspend fun verifyAndPersistToken(
@@ -485,7 +468,7 @@ private fun TokenSecurityCard() {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "Привязку токена к серверному аккаунту Analyst AI добавим вместе с серверной авторизацией пользователя, чтобы секрет не оказался в неподготовленном серверном контуре.",
+                text = "Запрет скриншотов управляется пользователем в «Профиль → Настройки» и по умолчанию выключен. Сам токен остаётся скрытым в поле ввода.",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -547,13 +530,6 @@ private fun statusPresentation(status: TokenUiStatus): Triple<String, String, Co
             status.message,
             TApiRed,
         )
-    }
-
-private tailrec fun Context.findActivity(): Activity? =
-    when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
     }
 
 private const val TOKEN_DOCS_URL =
