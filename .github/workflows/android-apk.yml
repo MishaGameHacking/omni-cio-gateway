@@ -104,27 +104,37 @@ jobs:
             const tag = `android-debug-${sha}`;
             const assetName = `OMNICIO-debug-${sha.slice(0, 7)}.apk`;
             const apkPath = 'app/build/outputs/apk/debug/app-debug.apk';
+            const title = `OMNICIO debug ${sha.slice(0, 7)}`;
+            const body = 'Installable debug APK for device testing. Minimum Android version: Android 13 (API 33).';
 
-            let release;
-            try {
-              release = (await github.rest.repos.getReleaseByTag({
-                owner,
-                repo,
-                tag,
-              })).data;
-            } catch (error) {
-              if (error.status !== 404) throw error;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+            let release = releases.find(({tag_name}) => tag_name === tag);
+
+            if (!release) {
               release = (await github.rest.repos.createRelease({
                 owner,
                 repo,
                 tag_name: tag,
                 target_commitish: sha,
-                name: `OMNICIO debug ${sha.slice(0, 7)}`,
-                body: 'Installable debug APK for device testing. Minimum Android version: Android 13 (API 33).',
-                draft: false,
+                name: title,
+                body,
+                draft: true,
                 prerelease: true,
                 make_latest: 'false',
               })).data;
+            }
+
+            if (!release.draft) {
+              const asset = release.assets.find(({name}) => name === assetName);
+              if (!asset) {
+                throw new Error('Published immutable release is missing its APK asset.');
+              }
+              core.notice(`APK already published: ${release.html_url}`);
+              return;
             }
 
             for (const asset of release.assets.filter(({name}) => name === assetName)) {
@@ -147,5 +157,18 @@ jobs:
                 'content-length': data.length,
               },
             });
+
+            release = (await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: release.id,
+              tag_name: tag,
+              target_commitish: sha,
+              name: title,
+              body,
+              draft: false,
+              prerelease: true,
+              make_latest: 'false',
+            })).data;
 
             core.notice(`APK published: ${release.html_url}`);
