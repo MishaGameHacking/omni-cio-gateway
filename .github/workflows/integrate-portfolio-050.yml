@@ -1,0 +1,43 @@
+name: Integrate portfolio 0.5.0
+on:
+  push:
+    branches: [fix/themes-live-portfolio-050]
+    paths: [.github/workflows/integrate-portfolio-050.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Apply fixed source integration
+        shell: cmd
+        run: |
+          py -3 .github\scripts\integrate_portfolio_050.py
+          if errorlevel 1 exit /b 1
+          py -3 -m compileall -q backend
+          if errorlevel 1 exit /b 1
+      - name: Commit reviewed integration to the same feature branch
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const cp = require('child_process');
+            const ref = 'heads/fix/themes-live-portfolio-050';
+            const head = (await github.rest.git.getRef({...context.repo,ref})).data.object.sha;
+            if (head !== context.sha) throw new Error('Feature branch changed; refusing stale patch commit');
+            const commit = (await github.rest.git.getCommit({...context.repo,commit_sha:head})).data;
+            const paths = cp.execFileSync('git',['diff','--name-only','-z'],{encoding:'utf8'}).split('\0').filter(Boolean);
+            const allowed = /^(app\/src\/main\/java\/ru\/omnicio\/app\/|backend\/|app\/build\.gradle\.kts$|\.github\/workflows\/android-ci\.yml$)/;
+            if (!paths.length || paths.some(p => !allowed.test(p))) throw new Error('Unexpected integration file');
+            const tree = paths.map(p => ({path:p,mode:'100644',type:'blob',content:fs.readFileSync(p,'utf8')}));
+            for (const p of ['.github/scripts/integrate_portfolio_050.py','.github/workflows/integrate-portfolio-050.yml']) tree.push({path:p,mode:'100644',type:'blob',sha:null});
+            const created = (await github.rest.git.createTree({...context.repo,base_tree:commit.tree.sha,tree})).data;
+            const next = (await github.rest.git.createCommit({...context.repo,message:'feat: wire persistent theme and live read-only portfolio dashboard',tree:created.sha,parents:[head]})).data;
+            await github.rest.git.updateRef({...context.repo,ref,sha:next.sha,force:false});
+            core.info('INTEGRATED_SHA=' + next.sha);
