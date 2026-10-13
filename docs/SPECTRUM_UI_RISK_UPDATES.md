@@ -1,13 +1,23 @@
-# Analyst AI / Spectrum — staged components, not a release
+# Analyst AI / Spectrum — staged integration, not a release
 
 Date: 2026-10-13. Baseline: e99007a24f015617d904248aac3e5eddf4efa4d1.
 
 ## Exact status
 
-This branch adds reusable Kotlin components and pure Python risk/release-policy libraries.
-They are NOT wired into the app root, paid inference, portfolio recommendations or production
-API. Do not enable a mandatory-version gate or advertise a new APK from this branch yet.
-The existing working Android package, signing, authentication, UI and deployment are unchanged.
+This draft branch now contains both reusable components and the first native integration:
+
+- primary bottom navigation uses original Spectrum vector icons and finite selection motion;
+- theme persists a user-controlled “Живые RGB-эффекты” setting and provides the canonical palette;
+- Profile uses Spectrum icons and opens a native beginner Education screen;
+- Education contains original Russian lessons on market mechanics, assets, diversification,
+  credit ratings, financial statements, news transmission and fraud, with official source links;
+- canonical design rules are recorded in AGENTS.md and `docs/SPECTRUM_DESIGN_CANON.md`.
+
+The portfolio, ideas and pulse bodies have NOT all been visually converted. Mandatory update,
+broker-card actions and quantitative risk preview are still components/libraries rather than a
+complete production path. No deployment, release APK, paid inference, cloud purchase or trade
+was performed by this branch. Keep it draft until exact-head Android/backend/quality checks and
+installation/update tests complete.
 
 An accompanying conversation artifact contains a self-contained interactive HTML prototype,
 20 original GIFs (10 symbols in light/dark), 20 SVGs, 20 PNGs, source generators and test logs.
@@ -23,26 +33,47 @@ Use 2D charts with labels, common scales and an accessible table alternative. De
 in decorative icons/cards, not distorted 3D chart sectors. Do not invent missing history.
 
 Dark base: #111111; card #1E1E1E; text #F4F4F5; supporting text #A4A7AE.
-Dark RGB accents: cyan #57DDE6, blue #76A9FA, violet #AF99FF, rose #F190C5.
+Spectrum immersive background: #020A16 → #07192B; card #071A2A / #0B2940.
+RGB accents: cyan #36E0FF, blue #4C8DFF, violet #8A5CFF, rose #FF4FA3,
+emerald #19E6A2 and amber #FFC857.
 Light base: #F5F6F8; card #FFFFFF; text #191A1D; supporting text #626974.
-Light accents: #006C78 / #326FC8 / #6E4EAD / #A6367A.
 RGB means brand/action decoration, NOT gains, investment safety or model confidence.
-Loss/warning/gain always have explicit text in addition to semantic color.
+Loss/warning/gain always have explicit text and a numeric value in addition to semantic color.
 
 4dp grid; page padding 20dp; cards radius 24dp; icons 24/40/64dp;
-interactive targets at least 48dp; body text 16sp; navigation labels 12sp.
+interactive targets at least 48dp; body text 16sp; navigation labels remain compact.
 Show understandable conclusion first, details/math/sources on expansion.
 
-SpectrumIcon: finite 180+420ms selection movement; static by default until a persisted
-motion setting is connected. Lifecycle and platform disabled-animation settings are respected.
-GIF assets: 128x128, 48 frames, one 3.61-second pass, then static; no infinite loop.
-SVG and transparent PNG alternatives are supplied. GIF backgrounds are theme-specific.
-Do not run dozens of animated GIF decoders in a scrolling portfolio list.
-Battery-saver behavior and the root motion preference still require integration.
+SpectrumIcon performs one 180ms rise plus 420ms settle when selected. The saved Profile switch,
+Activity lifecycle and platform-disabled animation state gate decorative motion. GIF assets are
+128x128, 48 frames and one 3.61-second pass, then static. Do not run dozens of decoders in a
+scrolling portfolio list. Static vector/PNG alternatives remain required.
+
+## Education research and product corrections
+
+The owner-provided share.google redirects were not readable in the earlier session, so their
+article text was not copied or silently replaced. The native curriculum is original and links to
+official material from Moscow Exchange School, Bank of Russia / Financial Culture and
+Investor.gov.
+
+Implemented learning sequence:
+
+1. goal, horizon and emergency reserve before buying;
+2. broker/exchange/depository mechanics and costs;
+3. stocks, bonds, funds and cash instruments;
+4. issuer-group/sector/class/currency diversification and rebalancing with new cash;
+5. credit-rating agency, scale, object, date, outlook and limitations;
+6. news as a change in expectations transmitted through profit, rates, FX, commodities and risk;
+7. statements: revenue, margins, debt, cash flow and one-off effects;
+8. hype, fraud, license/source/date checks.
+
+The screen is deliberately education, not a trade recommendation. It does not fetch user data,
+call models or claim that reading a lesson removes investment risk. Official links open through
+the platform URI handler.
 
 ## Quantitative risk library
 
-risk_preview.py implements equal-probability empirical VaR and expected shortfall with
+`risk_preview.py` implements equal-probability empirical VaR and expected shortfall with
 fractional tail-boundary mass, explicitly aligned joint scenarios, supplied PD*LGD*EAD,
 and exposure aggregation across accounts by economic issuer group, sector, class, quoted
 currency and separate agency/scale/grade rating buckets. Inputs require freshness, sources,
@@ -76,7 +107,7 @@ ticker/ISIN/UID and a verified instrument-card link. No risk-free/bankruptcy-pro
 
 ## Opening T-Investments
 
-BrokerInstrumentLink validates a trusted canonical HTTPS instrument-card URL and tries a
+`BrokerInstrumentLink` validates a trusted canonical HTTPS instrument-card URL and tries a
 non-browser Android handler. It does NOT guess private deep-link schemes or package IDs,
 request broad package visibility, pre-fill trades or execute an order. The caller must show
 an explicit browser option plus copy ticker/ISIN if no app handles the URL. An installed app
@@ -85,64 +116,47 @@ Canonical-link retrieval and production button wiring are unfinished.
 
 ## Mandatory APK update
 
-release_contract.py validates immutable same-host HTTPS release metadata, expected package,
+`release_contract.py` validates immutable same-host HTTPS release metadata, expected package,
 certificate, SHA256, version bounds, size and publication date. It only makes pure decisions.
-UpdateFlow models progress/verification/installer/confirmation/recheck; installer completion
-never unlocks an obsolete code by itself. RequiredUpdateScreen is a component, not an active
+`UpdateFlow` models progress/verification/installer/confirmation/recheck; installer completion
+never unlocks an obsolete code by itself. `RequiredUpdateScreen` is a component, not an active
 root gate. No downloader, PackageInstaller session, authenticated device registry, serving
 route or production policy was enabled.
 
-Order for implementation:
-1. Publish tested same-certificate APK under /releases/{code}/{sha256}.apk on Moscow HTTPS.
-2. Verify a download, size/hash/package/minSdk/signature and installation/update tests.
-3. Atomically activate release metadata. For owner's mandatory policy minimum=latest.
-4. Check on launch/resume, report per-install/session version, show full-screen gate;
-   keep download/manifest/help/sign-out accessible, preserve tokens and local data.
-5. Download boundedly to app-private temporary storage; reject redirects/hash/package/
-   signer/version mismatch; hand verified APK to the platform installer.
-6. Handle STATUS_PENDING_USER_ACTION, cancellation, failed installation and application
-   process replacement. Re-read actual installed version after successful installation.
-7. Pause only affected personal jobs after an authenticated server compatibility decision;
-   preserve shared public-data collection; resume after a confirmed compatible session.
+Implementation order remains:
 
-Version headers are client claims, not tamper-resistant attestation. Per-user/per-device
-semantics and stale-heartbeat ordering must be designed before enforcement. Connectivity
-errors must not be reported as proven obsolete versions. A missing APK must never leave
-all users without an upgrade path. Self-update without extra confirmation requires Android
-conditions; never promise silent installation/automatic reopening on every phone or bypass
-Play Protect/unknown-source controls.
+1. publish a tested same-certificate APK under immutable Moscow HTTPS;
+2. verify size/hash/package/minSdk/signature and installation/update tests;
+3. atomically activate release metadata;
+4. bootstrap one updater-capable version before enforcing minimum versions;
+5. download boundedly to app-private storage and reject redirects/mismatches;
+6. hand the verified file to the Android installer and handle user confirmation/failure;
+7. re-read the actual installed version before unlocking;
+8. pause only affected personal jobs, not shared public-data collection.
 
-Legacy 0.5.1 and earlier contain no updater. A server cannot add local UI/code to already
-installed binaries. One bootstrap installation of an updater-capable build is required;
-«any APK upgrades itself» is only attainable for compatible builds from that point onward.
+Android does not guarantee silent installation and automatic reopening for this distribution
+model. Do not bypass Play Protect, unknown-source controls or installer confirmation.
 
 ## Verification and remaining integration
 
-Locally: 31 Python regressions, 20 pure Kotlin update-state checks, 8 groups of Chromium
-prototype tests including 20 tab/width combinations (320/360/390/430), all 20 GIFs decoded
-(48 frames/3610ms/no loop), 24 selected text palette contrast pairs >=4.5:1.
-These are NOT an Android install test, full accessibility audit, broker-link verification,
-live investment recommendation or proof of deployed services. Native compilation and all
-applicable exact-head CI must pass. Keep this PR draft until product wiring and relevant
-integration/installation tests are complete. No main merge/deploy/APK release from a mockup.
+Earlier local component verification: 31 Python risk/release regressions, 20 pure Kotlin update
+checks, Chromium prototype groups, decoded finite GIFs and selected contrast checks. These are
+not a full Android accessibility audit, live broker-link verification or a production investment
+recommendation.
 
-## Source scope
+After the owner approved the visual direction, native integration added theme motion preference,
+Spectrum navigation, Spectrum Profile actions and Education. Exact final SHA Android/backend CI,
+Sonar, installation/update and real-device visual checks remain mandatory before merge/release.
 
-The two owner-provided share.google links could not be resolved in this session:
-https://share.google/RLfZSVS59yHsiTBsP
-https://share.google/CgouC96rAVvH8YKgc
-Their article text was NOT read, summarized or replaced by similar search-result titles.
-Prototype educational copy is original, not excerpts from those articles.
+Remaining major work:
 
-Primary external references checked:
-- https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams
-- https://developer.android.com/training/package-visibility/use-cases
-- https://developer.android.com/reference/kotlin/androidx/compose/ui/MotionDurationScale
-- https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html
-- https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html
-- https://www.w3.org/WAI/WCAG22/Techniques/general/G152.html
-- https://doi.org/10.1007/978-1-4419-1153-7_1232
+- convert Portfolio, Ideas, Pulse and Chat bodies to the canonical components screen by screen;
+- connect verified live rating/statement/news collectors and calibration;
+- implement constrained recommendation optimization and broker-card source retrieval;
+- complete the updater service/pipeline and safe legacy bootstrap;
+- add tests for education navigation, large fonts, reduced motion and narrow screens;
+- ship media assets only when their size, decoding and lifecycle behaviour are acceptable.
 
-No external reference above establishes any real instrument rating or financial figure in
-the prototype. Data acquisition/licensing, model validation and the applicable legal regime
-for personal investment recommendations require separate verification.
+No external reference or design example establishes a real instrument rating, return, price or
+portfolio fact. Data acquisition/licensing, model validation and the applicable legal regime for
+personal recommendations require separate verification.
