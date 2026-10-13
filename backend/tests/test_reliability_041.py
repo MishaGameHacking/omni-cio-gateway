@@ -117,9 +117,11 @@ class AnalysisReliabilityTests(unittest.TestCase):
         self.assertTrue(ai._critical_risk(snapshot, ai.get_profile(self.user_id))[0])
 
     def test_refresh_does_not_force_model_invocation(self):
-        with patch.object(ai, 'run_user_analysis', return_value={'state': 'skipped'}) as run:
-            ai.refresh(ai.RefreshRequest(), user=self.user)
-        run.assert_called_once_with(self.user_id, force=False)
+        with patch.object(ai, 'SCHEDULER_ENABLED', True), patch.object(ai, 'run_user_analysis') as run:
+            result = ai.refresh(ai.RefreshRequest(), user=self.user)
+        run.assert_not_called()
+        self.assertEqual(result['state'], 'queued')
+        self.assertEqual(result['tier'], 'none')
         with patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot()), patch.object(ai, 'analyze_if_needed') as analyze:
             ai.run_user_analysis(self.user_id, force=True, now=self.now)
             result = ai.run_user_analysis(self.user_id, force=True, now=self.now)
@@ -134,7 +136,7 @@ class AnalysisReliabilityTests(unittest.TestCase):
 
     def test_failed_paid_attempt_still_consumes_budget(self):
         environment = {'TIMEWEB_AI_TOKEN':'synthetic-test-only', 'AI_MODEL_PREMIUM':'test/model'}
-        with patch.dict(os.environ, environment), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90, cash_share=5)), patch.object(ai, 'analyze_if_needed', side_effect=TimewebAIUpstreamError('timeweb_ai_timeout', retryable=True)):
+        with patch.dict(os.environ, environment), patch.object(ai.GuardedAIClient, 'check_ready'), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90, cash_share=5)), patch.object(ai, 'analyze_if_needed', side_effect=TimewebAIUpstreamError('timeweb_ai_timeout', retryable=True)):
             result = ai.run_user_analysis(self.user_id, now=self.now)
         self.assertEqual(result['state'], 'fallback')
         self.assertEqual(ai._budget(self.user_id, self.now).premium_calls_left, max(0, ai.PREMIUM_DAILY_LIMIT - 1))

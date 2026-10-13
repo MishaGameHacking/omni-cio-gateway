@@ -52,6 +52,15 @@ except ImportError:  # pragma: no cover - uvicorn top-level import compatibility
     from timeweb_ai import TimewebAIConfig, TimewebAIConfigurationError, TimewebAIError  # type: ignore[no-redef]
     from tinvest_portfolio import get_tinvest_portfolio  # type: ignore[no-redef]
 
+try:
+    from .ai_budget import MoneyLedger, BudgetDenied
+    from .ai_jobs import AnalysisQueue, CURRENT_JOB, drain, assert_current_owner_in
+    from .ai_guarded_client import GuardedAIClient, GuardError
+except ImportError:  # uvicorn top-level import compatibility
+    from ai_budget import MoneyLedger, BudgetDenied
+    from ai_jobs import AnalysisQueue, CURRENT_JOB, drain, assert_current_owner_in
+    from ai_guarded_client import GuardedAIClient, GuardError
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 MOSCOW = timezone(timedelta(hours=3), name="Europe/Moscow")
@@ -203,6 +212,8 @@ def init_autonomous_db() -> None:
             """
         )
         db.commit()
+    AnalysisQueue(backend.connect).initialize()
+    MoneyLedger(backend.connect).initialize()
 
 
 def _profile_from_row(row: sqlite3.Row | None) -> dict[str, Any]:
@@ -324,6 +335,8 @@ def _save_snapshot(user_id: int, snapshot: Mapping[str, Any]) -> tuple[str, str]
         _canonical(_snapshot_features(snapshot)).encode("utf-8")
     ).hexdigest()
     with closing(backend.connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        assert_current_owner_in(db)
         db.execute(
             """
             INSERT INTO portfolio_snapshots(
@@ -629,6 +642,8 @@ def _record_run(
 ) -> str:
     run_id = str(uuid.uuid4())
     with closing(backend.connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        assert_current_owner_in(db)
         db.execute(
             """
             INSERT INTO analysis_runs(
@@ -677,6 +692,8 @@ def _insert_card(
             }
         ]
     with closing(backend.connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        assert_current_owner_in(db)
         db.execute(
             """
             INSERT INTO insight_cards(
@@ -736,6 +753,9 @@ def run_user_analysis(
         logger.exception("Autonomous portfolio collection failed for user %s", user_id)
         raise HTTPException(status_code=503, detail="analysis_portfolio_unavailable") from None
 
+    current_job = CURRENT_JOB.get()
+    if current_job:
+        AnalysisQueue(backend.connect).assert_owner(*current_job)
     # Archive the already fetched RUB valuation even when no LLM analysis is needed.
     try:
         from .portfolio_details import record_history
@@ -779,27 +799,31 @@ def run_user_analysis(
             raise TimewebAIConfigurationError("analysis_budget_exhausted")
         # Missing credentials are free; uncertain network failures are not retried
         # for free. Reservation is never rolled back after a model attempt.
-        TimewebAIConfig.from_env().model_for(decision.tier)
+        guarded_client = GuardedAIClient(user_id, backend.connect)
+        guarded_client.check_ready(decision.tier)
         if not _reserve_budget(user_id, current_time, decision.tier):
             raise TimewebAIConfigurationError("analysis_budget_exhausted")
         result = analyze_if_needed(
             signals=signals,
             budget=budget,
             context=context,
+            client=guarded_client,
         )
         decision = result.decision
         report = result.report
         model = result.model
         usage = result.usage
         state = "completed"
-    except TimewebAIError as exc:
-        error_code = exc.code
+    except (TimewebAIError, GuardError, BudgetDenied) as exc:
+        error_code = getattr(exc, "code", str(exc))
         report = _fallback_report(decision, snapshot, profile, current_time, risk_message)
     except Exception as exc:
         logger.exception("AI analysis failed safely for user %s", user_id)
         error_code = type(exc).__name__
         report = _fallback_report(decision, snapshot, profile, current_time, risk_message)
 
+    if current_job:
+        AnalysisQueue(backend.connect).assert_owner(*current_job)
     _record_run(
         user_id=user_id,
         decision=decision,
@@ -854,25 +878,12 @@ def _acquire_lease(name: str, ttl_seconds: int) -> bool:
 
 def run_scheduler_cycle() -> dict[str, int]:
     init_autonomous_db()
-    if not _acquire_lease("analysis-cycle", min(SCHEDULER_INTERVAL_SECONDS, 240)):
-        return {"processed": 0, "failed": 0}
+    queue = AnalysisQueue(backend.connect)
     with closing(backend.connect()) as db:
-        rows = db.execute(
-            "SELECT id FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id"
-        ).fetchall()
-    processed = 0
-    failed = 0
-    for row in rows:
-        try:
-            run_user_analysis(int(row["id"]))
-            processed += 1
-        except HTTPException as exc:
-            failed += 1
-            logger.warning("Scheduled analysis skipped for user %s: %s", row["id"], exc.detail)
-        except Exception:
-            failed += 1
-            logger.exception("Scheduled analysis crashed for user %s", row["id"])
-    return {"processed": processed, "failed": failed}
+        users = db.execute("SELECT id FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
+    for user in users:
+        queue.enqueue(int(user['id']))
+    return drain(queue, run_user_analysis)
 
 
 async def _scheduler_loop() -> None:
@@ -1043,12 +1054,19 @@ def mark_card_read(
     return {"read": True}
 
 
-@router.post("/refresh")
+@router.post("/refresh", status_code=202)
 def refresh(
     _: RefreshRequest,
     user: sqlite3.Row = Depends(backend.current_user),
 ) -> dict[str, Any]:
-    return run_user_analysis(int(user["id"]), force=False)
+    if not SCHEDULER_ENABLED:
+        raise HTTPException(status_code=503, detail="analysis_scheduler_disabled")
+    if user['tinvest_token_encrypted'] is None:
+        raise HTTPException(status_code=409, detail="tinvest_not_connected")
+    queue = AnalysisQueue(backend.connect)
+    queue.initialize()
+    return {**queue.enqueue(int(user['id'])), 'reason': 'queued_recheck',
+            'tier': 'none', 'card_id': None, 'model': None, 'error_code': None}
 
 
 @router.get("/status")
@@ -1063,15 +1081,23 @@ def status(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
             "SELECT COUNT(*) AS count FROM insight_cards WHERE user_id = ? AND is_read = 0",
             (user_id,),
         ).fetchone()
-    ai_configured = bool(
-        (os.getenv("TIMEWEB_AI_TOKEN") or os.getenv("TIMEWEB_CLOUD_API_KEY"))
-        and os.getenv("AI_MODEL_FAST")
-        and os.getenv("AI_MODEL_STANDARD")
-        and os.getenv("AI_MODEL_PREMIUM")
-    )
+    init_autonomous_db()
+    readiness = []
+    guarded = GuardedAIClient(user_id, backend.connect)
+    for tier in (AnalysisTier.FAST, AnalysisTier.STANDARD, AnalysisTier.PREMIUM):
+        try:
+            guarded.check_ready(tier)
+            readiness.append({'tier': tier.value, 'ready': True, 'reason': None})
+        except (GuardError, BudgetDenied) as error:
+            readiness.append({'tier': tier.value, 'ready': False, 'reason': str(error)})
+    ai_configured = all(item['ready'] for item in readiness)
     return {
         "scheduler_enabled": SCHEDULER_ENABLED,
         "ai_configured": ai_configured,
+        "route_readiness": readiness,
+        "queue": AnalysisQueue(backend.connect).user_status(user_id),
+        "spending": MoneyLedger(backend.connect).user_summary(user_id),
+        "configuration_is_not_live_inference_proof": True,
         "deterministic_monitoring": True,
         "unread_count": int(unread["count"] if unread else 0),
         "profile_configured": bool(get_profile(user_id)["configured"]),
