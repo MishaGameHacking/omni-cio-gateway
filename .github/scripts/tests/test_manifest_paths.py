@@ -117,7 +117,10 @@ class ManifestPathTests(unittest.TestCase):
 
     def test_linked_parent_is_rejected_before_write(self):
         original = Path.is_symlink
-        linked = self.root / "app" / "build"
+        # Match the canonical path used by the production traversal. On Windows
+        # the runner's temporary directory may use an 8.3 alias; resolve it before
+        # mocking is_symlink, not inside the mock (which would recurse).
+        linked = (self.root / "app" / "build").resolve(strict=True)
         with patch.object(Path, "is_symlink", lambda p: p == linked or original(p)):
             with self.assertRaises(module.ManifestError):
                 module.write_preview_manifest(self.root, notes="")
