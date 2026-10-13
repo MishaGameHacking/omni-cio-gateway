@@ -1,63 +1,26 @@
 package ru.omnicio.app.ui.portfolio
 
-import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.math.BigDecimal
-import java.text.NumberFormat
-import java.util.Locale
-import ru.omnicio.app.data.portfolio.ApiDecimal
-import ru.omnicio.app.data.portfolio.MoneyAmount
-import ru.omnicio.app.data.portfolio.PortfolioAccount
-import ru.omnicio.app.data.portfolio.PortfolioAllocation
-import ru.omnicio.app.data.portfolio.PortfolioCurrency
-import ru.omnicio.app.data.portfolio.PortfolioPosition
-import ru.omnicio.app.data.portfolio.PortfolioSnapshot
-import ru.omnicio.app.data.portfolio.PortfolioUiState
+import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 
-private val ScreenBackground = Color(0xFFF5F6F8)
-private val CardBackground = Color(0xFFFFFFFF)
-private val AccentBlue = Color(0xFF6EA5F8)
-private val PositiveGreen = Color(0xFF16A34A)
-private val NegativeRed = Color(0xFFDC2626)
-private val MutedText = Color(0xFF8A9099)
-private val Divider = Color(0xFFE8EAED)
+private const val OperationsTitle = "Операции"
+private const val AnalyticsTitle = "Аналитика"
+private const val CashTitle = "Денежные средства"
 
 @Composable
 fun PortfolioScreen(
@@ -66,658 +29,263 @@ fun PortfolioScreen(
     selectedCurrency: PortfolioCurrency = PortfolioCurrency.RUB,
     onCurrencyClick: () -> Unit = {},
     modifier: Modifier = Modifier,
+    accessToken: String = "",
+    refreshing: Boolean = false,
+    refreshError: String? = null,
+    lastUpdatedMillis: Long? = null,
 ) {
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = ScreenBackground,
-        bottomBar = {
-            AnalystBottomBar(
-                selected = AnalystTab.Portfolio,
-                onPortfolioClick = {},
-                onProfileClick = onProfileClick,
-            )
-        },
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(ScreenBackground)
-                .padding(innerPadding),
-            contentPadding = PaddingValues(
-                start = 20.dp,
-                top = 12.dp,
-                end = 20.dp,
-                bottom = 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                PortfolioHeader()
-            }
+    var accountId by rememberSaveable { mutableStateOf<String?>(null) }
+    var section by rememberSaveable { mutableIntStateOf(0) }
+    var selectForSection by remember { mutableStateOf<Int?>(null) }
+    var positionDetails by remember { mutableStateOf<PortfolioPosition?>(null) }
+    val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
+    val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
+    val listState = rememberLazyListState()
+    BackHandler(accountId != null) { accountId = null; section = 0 }
 
-            when (state) {
-                PortfolioUiState.NotConnected -> {
-                    item {
-                        NotConnectedCard()
-                    }
-                    item {
-                        SectionTitle("Счета")
-                    }
-                    item {
-                        EmptyAccountsCard()
-                    }
-                }
-
-                PortfolioUiState.ApiConnected -> {
-                    item {
-                        ApiConnectedCard()
-                    }
-                    item {
-                        SectionTitle("Счета")
-                    }
-                    item {
-                        EmptyAccountsCard(
-                            message = "T‑API подключён. Реальные счета появятся после загрузки данных портфеля.",
-                        )
-                    }
-                }
-
-                PortfolioUiState.Loading -> {
-                    item {
-                        LoadingCard()
-                    }
-                }
-
-                is PortfolioUiState.Error -> {
-                    item {
-                        ErrorCard(message = state.message)
-                    }
-                }
-
-                is PortfolioUiState.Ready -> {
-                    item {
-                        PortfolioSummaryCard(
-                            snapshot = state.snapshot,
-                            selectedCurrency = selectedCurrency,
-                            onCurrencyClick = onCurrencyClick,
-                        )
-                    }
-
-                    item {
-                        SectionTitle("Счета")
-                    }
-
-                    if (state.snapshot.accounts.isEmpty()) {
-                        item {
-                            EmptyAccountsCard()
-                        }
-                    } else {
-                        items(
-                            items = state.snapshot.accounts,
-                            key = { it.id },
-                        ) { account ->
-                            AccountCard(account = account)
-                        }
-                    }
-
-                    if (state.snapshot.allocations.isNotEmpty()) {
-                        item {
-                            PortfolioStructureCard(
-                                totalValue = state.snapshot.totalValue,
-                                allocations = state.snapshot.allocations,
-                            )
+    Scaffold(modifier.fillMaxSize(), containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
+    ) { insets ->
+        if (account != null) {
+            AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
+                { accountId = null; section = 0 }, snapshot.asOf, refreshError,
+                Modifier.padding(insets))
+        } else {
+            LazyColumn(Modifier.fillMaxSize().padding(insets), state = listState,
+                contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                item(key = "header") {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column {
+                            Notice("Analyst AI")
+                            Text("Портфель", fontSize = 32.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
+                if (snapshot == null) {
+                    item(key = "initial-state") { InitialPortfolioState(state, onProfileClick) }
+                } else {
+                    item(key = "total") {
+                        PortfolioSummary(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick) { target ->
+                            if (snapshot.accounts.size == 1) {
+                                accountId = snapshot.accounts.first().id
+                                section = target
+                            } else selectForSection = target
+                        }
+                    }
+                    if (snapshot.accounts.isEmpty()) {
+                        item(key = "no-accounts") { CompactCard { Text("Доступных счетов не найдено") } }
+                    }
+                    items(snapshot.accounts, key = { "account:${it.id}" }) { item ->
+                        CompactCard {
+                            Row(Modifier.fillMaxWidth().clickable { accountId = item.id; section = 0 },
+                                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.totalValue.moneyText(), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                                    Text(item.name + " ›", style = MaterialTheme.typography.bodyLarge)
+                                }
+                                item.expectedYieldPercent?.let { SignedAmount(null, it) }
+                            }
+                            item.positions.take(5).forEach { position -> PositionLine(position) { positionDetails = position } }
+                            if (item.positions.size > 5 || item.virtualPositions.isNotEmpty()) {
+                                TextButton(onClick = { accountId = item.id; section = 0 }) { Text("Все позиции (${item.positions.size})") }
+                            }
+                            if (item.positions.isEmpty()) Notice("Позиции отсутствуют")
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                TextButton(onClick = { accountId = item.id; section = 1 }) { Text(OperationsTitle) }
+                                TextButton(onClick = { accountId = item.id; section = 3 }) { Text(AnalyticsTitle) }
+                            }
+                        }
+                    }
+                    item(key = "structure") {
+                        CompactCard {
+                            SectionHeading("Структура портфеля")
+                            AssetStructure(snapshot.allocations, snapshot.totalValue)
+                        }
+                    }
+                    if (snapshot.warnings.isNotEmpty()) {
+                        item(key = "warnings") { Notice(snapshot.warnings.joinToString("\n")) }
+                    }
+                }
             }
         }
     }
-}
-
-@Composable
-private fun PortfolioHeader() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column {
-            Text(
-                text = "Analyst AI",
-                style = MaterialTheme.typography.labelLarge,
-                color = MutedText,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Портфель",
-                fontSize = 34.sp,
-                lineHeight = 40.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-
-        Surface(
-            modifier = Modifier.size(44.dp),
-            shape = CircleShape,
-            color = Color(0xFF111318),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = "AI",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
+    positionDetails?.let { PositionDetails(it) { positionDetails = null } }
+    if (selectForSection != null && snapshot != null) {
+        AlertDialog(onDismissRequest = { selectForSection = null }, title = { Text("Выберите счёт") },
+            text = { Column { snapshot.accounts.forEach { item ->
+                TextButton(onClick = { accountId = item.id; section = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
+            } } }, confirmButton = { TextButton(onClick = { selectForSection = null }) { Text("Отмена") } })
     }
 }
 
 @Composable
-private fun NotConnectedCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = "Данные портфеля ещё не подключены",
-                fontSize = 24.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "Analyst AI не подставляет демонстрационные суммы. После подключения T‑Invest API здесь появятся только фактические данные пользователя.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MutedText,
-            )
-            ApiSourceBadge()
-        }
-    }
-}
+private fun NoticeInline(text: String) { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
 
 @Composable
-private fun ApiSourceBadge() {
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = Color(0xFFEAF2FF),
-    ) {
-        Text(
-            text = "Источник данных · T‑Invest API",
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            color = Color(0xFF356EC9),
-            style = MaterialTheme.typography.labelLarge,
-        )
-    }
-}
-
-@Composable
-private fun ApiConnectedCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = "T‑API подключён",
-                fontSize = 24.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.Bold,
-                color = PositiveGreen,
-            )
-            Text(
-                text = "Read-only токен подтверждён. Analyst AI не показывает выдуманные суммы и будет использовать только фактические данные T‑Invest API.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MutedText,
-            )
-            ApiSourceBadge()
-        }
-    }
-}
-
-@Composable
-private fun LoadingCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Row(
-            modifier = Modifier.padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(26.dp),
-                color = AccentBlue,
-                strokeWidth = 3.dp,
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Column {
-                Text(
-                    text = "Получаем портфель",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 18.sp,
-                )
-                Text(
-                    text = "Загружаются фактические данные пользователя",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MutedText,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ErrorCard(message: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "Не удалось получить портфель",
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyLarge,
-                color = NegativeRed,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PortfolioSummaryCard(
-    snapshot: PortfolioSnapshot,
-    selectedCurrency: PortfolioCurrency,
-    onCurrencyClick: () -> Unit,
+private fun AccountScreen(
+    account: PortfolioAccount, token: String, section: Int, onSection: (Int) -> Unit,
+    onCurrency: () -> Unit, onBack: () -> Unit, asOf: String?, error: String?, modifier: Modifier,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = "Общая стоимость",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MutedText,
-            )
-            Text(
-                text = snapshot.totalValue.formatted(),
-                modifier = Modifier.clickable(onClick = onCurrencyClick),
-                fontSize = 36.sp,
-                lineHeight = 42.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "Нажмите на сумму: ${selectedCurrency.name} → ${selectedCurrency.next().name}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MutedText,
-            )
-
-            YieldRow(
-                amount = snapshot.expectedYieldAmount,
-                percent = snapshot.expectedYieldPercent,
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-            ApiSourceBadge()
+    Column(modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ Назад") }
+            Text(account.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+        }
+        Box(Modifier.padding(horizontal = 16.dp)) { ChoiceRow(listOf("Обзор", OperationsTitle, "Заявки", AnalyticsTitle, "Выплаты"), section, onSection) }
+        when (section) {
+            1 -> AccountOperations(token, account)
+            2 -> AccountOrders(token, account)
+            3 -> AccountAnalytics(token, account, onCurrency)
+            4 -> AccountPayments(token, account)
+            else -> AccountOverview(account, onCurrency, onSection, asOf, error)
         }
     }
 }
 
 @Composable
-private fun YieldRow(
-    amount: MoneyAmount?,
-    percent: ApiDecimal?,
-) {
-    if (amount == null && percent == null) {
+private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, onSection: (Int) -> Unit, asOf: String?, error: String?) {
+    var selected by remember { mutableStateOf<PortfolioPosition?>(null) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item(key = "value") {
+            CompactCard {
+                Text(account.totalValue.moneyText(), Modifier.clickable(onClick = onCurrency), fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                DataRow("Текущая доходность API", account.expectedYieldPercent.percentText())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("За день", style = MaterialTheme.typography.bodyMedium)
+                    SignedAmount(account.dailyYieldAmount, account.dailyYieldPercent)
+                }
+                Notice(error ?: "Получено ${dateText(asOf)} · автообновление")
+                if (account.limitsLoading) Notice("Брокер ещё обновляет лимиты. Данные могут измениться.")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = { onSection(1) }) { Text(OperationsTitle) }
+                    TextButton(onClick = { onSection(3) }) { Text(AnalyticsTitle) }
+                    TextButton(onClick = { onSection(4) }) { Text("Выплаты") }
+                }
+            }
+        }
+        item { SectionHeading("Активы и деньги") }
+        items(account.positions, key = { "position:${it.id}" }) { position ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Box(Modifier.padding(horizontal = 12.dp)) { PositionLine(position) { selected = position } }
+            }
+        }
+        if (account.positions.isEmpty()) item { Notice("Позиции отсутствуют") }
+        if (account.virtualPositions.isNotEmpty()) {
+            item { SectionHeading("Виртуальные позиции") }
+            items(account.virtualPositions, key = { "virtual:${it.id}" }) { position -> PositionLine(position) { selected = position } }
+        }
+        item {
+            CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) }
+        }
+        item {
+            CompactCard {
+                SectionHeading("Сведения о счёте")
+                DataRow("Название", account.name)
+                DataRow("Идентификатор", account.id)
+                DataRow("Открыт", dateText(account.openedAt, "dd.MM.yyyy"))
+                DataRow("Тип", when (account.accountType) {
+                    "ACCOUNT_TYPE_TINKOFF_IIS" -> "ИИС"
+                    "ACCOUNT_TYPE_INVEST_BOX" -> "Инвесткопилка"
+                    else -> "Брокерский счёт"
+                })
+                Notice("Доступ только для чтения. Пополнение, вывод и торговые поручения выполняются в приложении брокера.")
+            }
+        }
+    }
+    selected?.let { PositionDetails(it) { selected = null } }
+}
+
+@Composable
+internal fun AssetStructure(allocations: List<PortfolioAllocation>, total: MoneyAmount) {
+    if (total.value.toBigDecimal().signum() <= 0 || allocations.any { it.sharePercent.toBigDecimal().signum() < 0 }) {
+        allocations.forEach { DataRow(it.title, it.sharePercent.percentText()) }
+        Notice("Круговая диаграмма не используется для нулевой стоимости или отрицательных долей.")
         return
     }
+    val slices = allocations.map { ChartSlice(it.title, it.sharePercent.toBigDecimal().toFloat()) }.toMutableList()
+    val missing = 100f - slices.sumOf { it.weight.toDouble() }.toFloat()
+    if (missing > 0.1f) slices += ChartSlice("Прочее / не распределено API", missing)
+    if (missing < -0.1f) {
+        allocations.forEach { DataRow(it.title, it.sharePercent.percentText()) }
+        Notice("Сумма долей превышает 100%; показаны значения API без нормализации.")
+    } else StructureChart(slices, total.moneyText(), "По классам активов")
+}
 
-    val sign = percent?.toBigDecimal()?.signum()
-        ?: amount?.value?.toBigDecimal()?.signum()
-        ?: 0
-
-    val color = when {
-        sign > 0 -> PositiveGreen
-        sign < 0 -> NegativeRed
-        else -> MutedText
+@Composable
+internal fun AccountStructure(account: PortfolioAccount) {
+    var mode by rememberSaveable(account.id) { mutableIntStateOf(0) }
+    ChoiceRow(listOf("Активы", "Компании", "Отрасли", "Валюта"), mode) { mode = it }
+    if (mode == 0) { AssetStructure(account.allocations, account.totalValue); return }
+    val positions = account.positions
+    val currencies = positions.mapNotNull { it.currentValue?.currency }.distinct()
+    if (currencies.size != 1 || positions.any { it.currentValue == null || it.currentValue.value.toBigDecimal().signum() < 0 }) {
+        Notice("Для общей диаграммы не хватает сопоставимой оценки всех позиций в одной валюте. Несопоставимые суммы не складываются.")
+        positions.groupBy { when (mode) {
+            1 -> if (it.instrumentType == "cash") CashTitle else it.company ?: it.title
+            2 -> if (it.instrumentType == "cash") CashTitle else it.sector ?: "Отрасль не указана"
+            else -> it.currentValue?.currency ?: "Валюта не определена"
+        } }.forEach { (title, rows) ->
+            Text(title, fontWeight = FontWeight.SemiBold)
+            rows.forEach { DataRow(it.ticker ?: it.title, it.currentValue.moneyText()) }
+        }
+        return
     }
+    val groups = positions.groupBy { when (mode) {
+        1 -> if (it.instrumentType == "cash") CashTitle else it.company ?: it.title
+        2 -> if (it.instrumentType == "cash") CashTitle else it.sector ?: "Отрасль не указана"
+        else -> it.currentValue?.currency ?: "Не определена"
+    } }
+    val totals = groups.mapValues { (_, rows) -> rows.sumOf { it.currentValue!!.value.toBigDecimal() } }
+    val total = totals.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
+    StructureChart(totals.map { ChartSlice(it.key, it.value.toFloat()) }, decimalText(total) + " " + currencySymbol(currencies.first()),
+        if (mode == 3) "Валюта оценки позиций" else "По доступным данным позиций")
+    if (mode == 1) Notice("Группировка по названиям инструментов/компаний API; единая структура эмитентов для всех типов активов ещё уточняется.")
+}
 
-    val parts = buildList {
-        amount?.let { add(it.formatted(withSign = true)) }
-        percent?.let { add(it.formattedPercent(withSign = true)) }
-    }
 
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = color.copy(alpha = 0.10f),
-    ) {
-        Text(
-            text = parts.joinToString(" · "),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            color = color,
-            fontWeight = FontWeight.SemiBold,
-        )
+@Composable
+private fun InitialPortfolioState(state: PortfolioUiState, onProfile: () -> Unit) {
+    CompactCard {
+        when (state) {
+            PortfolioUiState.Loading -> {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                Text("Получаем ваш портфель…")
+            }
+            is PortfolioUiState.Error -> {
+                Text(state.message)
+                Notice("Повторная проверка выполняется автоматически, пока приложение открыто.")
+            }
+            else -> {
+                SectionHeading("Подключите T‑API")
+                Notice("Счета и позиции появятся после подключения вашего read-only токена. Демонстрационных сумм здесь нет.")
+                TextButton(onClick = onProfile) { Text("Открыть профиль") }
+            }
+        }
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        fontSize = 25.sp,
-        lineHeight = 30.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-}
-
-@Composable
-private fun EmptyAccountsCard(
-    message: String = "Счета появятся после получения реальных данных T‑Invest API.",
+private fun PortfolioSummary(
+    snapshot: PortfolioSnapshot, selectedCurrency: PortfolioCurrency, refreshing: Boolean,
+    error: String?, lastUpdatedMillis: Long?, onCurrency: () -> Unit, openSection: (Int) -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Text(
-            text = message,
-            modifier = Modifier.padding(22.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MutedText,
-        )
-    }
-}
-
-@Composable
-private fun AccountCard(account: PortfolioAccount) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Column(modifier = Modifier.padding(22.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = account.totalValue.formatted(),
-                        fontSize = 24.sp,
-                        lineHeight = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = account.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                account.expectedYieldPercent?.let { value ->
-                    Spacer(modifier = Modifier.width(10.dp))
-                    YieldPercentChip(value = value)
-                }
-            }
-
-            if (account.positions.isEmpty()) {
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = "Позиции отсутствуют",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MutedText,
-                )
-            } else {
-                Spacer(modifier = Modifier.height(18.dp))
-                HorizontalDivider(color = Divider)
-                account.positions.forEachIndexed { index, position ->
-                    PositionRow(position = position)
-                    if (index != account.positions.lastIndex) {
-                        HorizontalDivider(color = Divider)
-                    }
-                }
+    CompactCard {
+        Text(snapshot.totalValue.moneyText(), Modifier.clickable(onClick = onCurrency), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        snapshot.expectedYieldPercent?.let {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                NoticeInline("Текущая доходность API")
+                SignedAmount(null, it)
             }
         }
-    }
-}
-
-@Composable
-private fun YieldPercentChip(value: ApiDecimal) {
-    val sign = value.toBigDecimal().signum()
-    val color = when {
-        sign > 0 -> PositiveGreen
-        sign < 0 -> NegativeRed
-        else -> MutedText
-    }
-
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = color.copy(alpha = 0.10f),
-    ) {
-        Text(
-            text = value.formattedPercent(withSign = true),
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-            color = color,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-@Composable
-private fun PositionRow(position: PortfolioPosition) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = CircleShape,
-            color = Color(0xFFF0F2F4),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = position.ticker
-                        ?.take(2)
-                        ?.uppercase(Locale.ROOT)
-                        ?: "•",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF4B515A),
-                )
+        val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
+        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Нажмите на сумму: ₽ → $ → €")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(OperationsTitle to 1, AnalyticsTitle to 3).forEach { (title, target) ->
+                FilledTonalButton(modifier = Modifier.weight(1f), onClick = { openSection(target) },
+                    enabled = snapshot.accounts.isNotEmpty(), contentPadding = PaddingValues(8.dp)) { Text(title) }
             }
         }
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = position.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            position.quantity?.let { quantity ->
-                Text(
-                    text = "Количество: ${quantity.formattedQuantity()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MutedText,
-                )
-            }
-        }
-
-        position.currentValue?.let { currentValue ->
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = currentValue.formatted(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                )
-                position.expectedYieldPercent?.let { yield ->
-                    Text(
-                        text = yield.formattedPercent(withSign = true),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = when {
-                            yield.toBigDecimal().signum() > 0 -> PositiveGreen
-                            yield.toBigDecimal().signum() < 0 -> NegativeRed
-                            else -> MutedText
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PortfolioStructureCard(
-    totalValue: MoneyAmount,
-    allocations: List<PortfolioAllocation>,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-    ) {
-        Column(
-            modifier = Modifier.padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Text(
-                text = "Структура портфеля",
-                fontSize = 24.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = totalValue.formatted(),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-
-            allocations.forEach { allocation ->
-                AllocationRow(allocation = allocation)
-            }
-        }
-    }
-}
-
-@Composable
-private fun AllocationRow(allocation: PortfolioAllocation) {
-    val decimalPercent = allocation.sharePercent.toBigDecimal()
-    val fraction = decimalPercent
-        .divide(BigDecimal("100"))
-        .toFloat()
-        .coerceIn(0f, 1f)
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = allocation.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MutedText,
-            )
-            Text(
-                text = allocation.sharePercent.formattedPercent(),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(CircleShape)
-                .background(Color(0xFFE8EEF7)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(fraction)
-                    .fillMaxHeight()
-                    .background(AccentBlue),
-            )
-        }
-    }
-}
-
-private fun MoneyAmount.formatted(withSign: Boolean = false): String {
-    val decimal = value.toBigDecimal()
-    val number = decimal.formattedNumber(
-        minFractionDigits = 2,
-        maxFractionDigits = 2,
-        withSign = withSign,
-    )
-    return "$number ${currencySymbol(currency)}"
-}
-
-private fun ApiDecimal.formattedPercent(withSign: Boolean = false): String =
-    "${toBigDecimal().formattedNumber(0, 2, withSign)}%"
-
-private fun ApiDecimal.formattedQuantity(): String =
-    toBigDecimal().formattedNumber(0, 8, withSign = false)
-
-private fun BigDecimal.formattedNumber(
-    minFractionDigits: Int,
-    maxFractionDigits: Int,
-    withSign: Boolean,
-): String {
-    val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("ru-RU")).apply {
-        minimumFractionDigits = minFractionDigits
-        maximumFractionDigits = maxFractionDigits
-        isGroupingUsed = true
-    }
-
-    val formatted = formatter.format(this)
-    return if (withSign && signum() > 0) "+$formatted" else formatted
-}
-
-private fun currencySymbol(currency: String): String =
-    when (currency.uppercase(Locale.ROOT)) {
-        "RUB" -> "₽"
-        "USD" -> "$"
-        "EUR" -> "€"
-        else -> currency.uppercase(Locale.ROOT)
-    }
-
-@Preview(showBackground = true, backgroundColor = 0xFFF5F6F8)
-@Composable
-private fun PortfolioScreenPreview() {
-    MaterialTheme {
-        PortfolioScreen(
-            state = PortfolioUiState.NotConnected,
-            onProfileClick = {},
-        )
+        val observed = snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() }
+        Notice(error ?: "Получено ${dateText(observed)} · автообновление")
     }
 }

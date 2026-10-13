@@ -27,6 +27,34 @@ def free_emulator_port() -> int:
     raise RuntimeError("No unused emulator port")
 
 
+def record_profile_check(device, results, exercise) -> None:
+    """A timeout/exception must leave an explicit failed result, not disappear."""
+    result = {"test": "profile_ui", "success": False}
+    results.append(result)
+    try:
+        exercise(device)
+    except Exception as exc:
+        result["error_type"] = type(exc).__name__
+        raise
+    else:
+        result["success"] = True
+
+
+def collect_failure_diagnostics(device) -> None:
+    """Bounded, best-effort reads of this disposable emulator only."""
+    commands = (
+        ("logcat", "-d", "-t", "200"),
+        ("shell", "dumpsys", "SurfaceFlinger"),
+    )
+    for command in commands:
+        try:
+            diagnostic = device(*command, timeout=10)
+            print("EMULATOR_DIAGNOSTIC=" + command[-1] + "\n" + diagnostic.stdout[-18000:], flush=True)
+        except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
+            # Preserve the original failed test; collecting evidence cannot fix it.
+            print("EMULATOR_DIAGNOSTIC_UNAVAILABLE=" + type(exc).__name__, flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apk", required=True, type=Path)
@@ -62,6 +90,7 @@ def main() -> None:
     serial = f"emulator-{port}"
     log_path = work / "emulator.log"
     results: list[dict[str, object]] = []
+    failed = True
 
     def device(*command: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
         # The target is explicitly the emulator we started, never an implicit device.
@@ -80,10 +109,12 @@ def main() -> None:
             raise RuntimeError("APK installation failed: " + label)
 
     with log_path.open("w", encoding="utf-8") as log:
+        # This Compose app does not require Vulkan. Keep actual GLES rendering,
+        # using Android's documented compatibility option on this disposable AVD.
         process = subprocess.Popen(
             [emulator, "-avd", name, "-port", str(port), "-no-window", "-no-audio",
-             "-no-snapshot", "-no-boot-anim", "-gpu", "swiftshader", "-memory", "2048",
-             "-cores", "2", "-accel", "on" if acceleration.returncode == 0 else "off"],
+             "-no-snapshot", "-no-boot-anim", "-gpu", "swiftshader", "-feature", "-Vulkan",
+             "-memory", "2048", "-cores", "2", "-accel", "on" if acceleration.returncode == 0 else "off"],
             stdout=log, stderr=subprocess.STDOUT,
         )
         try:
@@ -119,16 +150,23 @@ def main() -> None:
                 raise RuntimeError("App process did not remain running")
             results.append({"test": "activity_launch", "success": True})
             print("ACTIVITY_LAUNCH=success", flush=True)
+            if args.api == 33 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+                from profile_ui_probe import exercise
+                debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
+                install("debug_ui_fixture_install", debug_apk, update=True)
+                record_profile_check(device, results, exercise)
+            failed = False
         finally:
             log.flush()
-            if any(not item["success"] for item in results):
-                diagnostic = device("logcat", "-d", "-t", "200", timeout=30)
-                print(diagnostic.stdout[-18000:], flush=True)
+            # Persist even incomplete results before any diagnostic call can fail.
+            (work / "install-results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+            if failed:
+                collect_failure_diagnostics(device)
             try:
                 identity = device("emu", "avd", "name", timeout=10)
                 if name in identity.stdout:
                     device("emu", "kill", timeout=10)
-            except subprocess.TimeoutExpired:
+            except (subprocess.TimeoutExpired, OSError):
                 pass
             try:
                 process.wait(timeout=15)
@@ -138,7 +176,7 @@ def main() -> None:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     process.kill()
-            (work / "install-results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+                    process.wait(timeout=10)
             print("EMULATOR_LOG_TAIL=" + log_path.read_text(encoding="utf-8", errors="replace")[-5000:], flush=True)
 
 

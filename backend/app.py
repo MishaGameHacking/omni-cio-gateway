@@ -583,3 +583,10 @@ except ImportError:
     from autonomous_ai import router as autonomous_ai_router
 
 app.include_router(autonomous_ai_router)
+
+
+try:
+    from .portfolio_details import router as portfolio_details_router
+except ImportError:
+    from portfolio_details import router as portfolio_details_router
+app.include_router(portfolio_details_router)

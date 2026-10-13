@@ -27,7 +27,7 @@ fun PlaceholderTabScreen(
     description: String,
     modifier: Modifier = Modifier,
 ) {
-    val background = Color(0xFFF5F6F8)
+    val background = MaterialTheme.colorScheme.background
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = background,
@@ -51,7 +51,7 @@ fun PlaceholderTabScreen(
                     Text(
                         text = "Analyst AI",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFF8A9099),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = title,
@@ -65,7 +65,7 @@ fun PlaceholderTabScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 ) {
                     Column(
                         modifier = Modifier.padding(24.dp),
@@ -79,7 +79,7 @@ fun PlaceholderTabScreen(
                         Text(
                             text = description,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Color(0xFF8A9099),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
