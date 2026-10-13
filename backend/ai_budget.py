@@ -1,0 +1,182 @@
+"""Atomic RUB estimates and durable reservations; never a provider billing receipt.
+
+Money is integer micro-RUB. Uncertain calls retain their full reservation across
+midnight. Missing prices/zero caps disable paid calls. No network under a DB lock.
+"""
+from __future__ import annotations
+
+from contextlib import closing, contextmanager
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
+import sqlite3
+import time
+from typing import Callable, Iterator
+
+Connect = Callable[[], sqlite3.Connection]
+MOSCOW = timezone(timedelta(hours=3))
+SCALE = 1_000_000
+MAX_MONEY = 10**12
+
+
+class BudgetDenied(RuntimeError):
+    pass
+
+
+def micro_rub(value: str) -> int:
+    try:
+        amount = Decimal(value)
+        if not amount.is_finite() or amount < 0 or amount > MAX_MONEY // SCALE:
+            raise ValueError
+        return int((amount * SCALE).to_integral_value(rounding=ROUND_CEILING))
+    except (InvalidOperation, ValueError, TypeError):
+        raise BudgetDenied('ai_budget_invalid_money') from None
+
+
+def token_cost(input_tokens: int, output_tokens: int, input_rate: int, output_rate: int) -> int:
+    """Rates are micro-RUB per million tokens; round the total upwards once."""
+    values = (input_tokens, output_tokens, input_rate, output_rate)
+    if any(type(v) is not int or v < 0 or v > MAX_MONEY for v in values):
+        raise BudgetDenied('ai_budget_invalid_usage')
+    numerator = input_tokens * input_rate + output_tokens * output_rate
+    result = (numerator + SCALE - 1) // SCALE
+    if result > MAX_MONEY:
+        raise BudgetDenied('ai_budget_cost_too_large')
+    return result
+
+
+def day_key(at: int) -> str:
+    return datetime.fromtimestamp(at, MOSCOW).date().isoformat()
+
+
+@contextmanager
+def transaction(connect: Connect) -> Iterator[sqlite3.Connection]:
+    with closing(connect()) as db:
+        try:
+            db.execute('BEGIN IMMEDIATE')
+            yield db
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+
+
+class MoneyLedger:
+    def __init__(self, connect: Connect):
+        self.connect = connect
+
+    def initialize(self) -> None:
+        with closing(self.connect()) as db:
+            db.executescript('''
+                CREATE TABLE IF NOT EXISTS ai_money_reservations (
+                    request_key TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    day_key TEXT NOT NULL,
+                    route_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    ceiling INTEGER NOT NULL CHECK (ceiling >= 0),
+                    charge INTEGER NOT NULL CHECK (charge >= 0),
+                    state TEXT NOT NULL CHECK (state IN ('reserved','settled','uncertain')),
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ai_money_user_day
+                    ON ai_money_reservations(user_id, day_key);
+                CREATE INDEX IF NOT EXISTS ai_money_unresolved
+                    ON ai_money_reservations(state, day_key);
+                CREATE TABLE IF NOT EXISTS ai_route_cooldown (route_id TEXT PRIMARY KEY, until_at INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS ai_money_control (
+                    name TEXT PRIMARY KEY,
+                    reason TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+            ''')
+            db.commit()
+
+    @staticmethod
+    def _spent(db: sqlite3.Connection, day: str, user_id: int | None) -> int:
+        clause = '' if user_id is None else ' AND user_id = ?'
+        params = (day,) if user_id is None else (day, user_id)
+        row = db.execute(
+            "SELECT COALESCE(SUM(charge),0) FROM ai_money_reservations "
+            "WHERE (day_key = ? OR state IN ('reserved','uncertain'))" + clause, params,
+        ).fetchone()
+        return int(row[0])
+
+    def reserve(self, *, user_id: int, key: str, route: str, model: str,
+                ceiling: int, user_cap: int, project_cap: int, at: int | None = None) -> None:
+        values = (ceiling, user_cap, project_cap)
+        if any(type(v) is not int or not 0 < v <= MAX_MONEY for v in values):
+            raise BudgetDenied('ai_budget_disabled_or_invalid')
+        if type(user_id) is not int or user_id <= 0 or not key or len(key) > 180:
+            raise BudgetDenied('ai_budget_invalid_identity')
+        if not route or not model or len(route) > 200 or len(model) > 200:
+            raise BudgetDenied('ai_budget_invalid_route')
+        now = int(time.time()) if at is None else at
+        day = day_key(now)
+        with transaction(self.connect) as db:
+            if db.execute("SELECT 1 FROM ai_money_control WHERE name='paused'").fetchone():
+                raise BudgetDenied('ai_budget_reconciliation_required')
+            if db.execute('SELECT 1 FROM ai_route_cooldown WHERE route_id=? AND until_at>?', (route, now)).fetchone():
+                raise BudgetDenied('ai_route_cooling_down')
+            if db.execute("SELECT 1 FROM ai_money_reservations WHERE route_id=? AND state='reserved' AND created_at>? LIMIT 1", (route, now - 120)).fetchone():
+                raise BudgetDenied('ai_route_in_flight')
+            if db.execute('SELECT 1 FROM ai_money_reservations WHERE request_key=?', (key,)).fetchone():
+                raise BudgetDenied('ai_budget_duplicate_attempt')
+            if self._spent(db, day, user_id) + ceiling > user_cap:
+                raise BudgetDenied('ai_user_budget_exhausted')
+            if self._spent(db, day, None) + ceiling > project_cap:
+                raise BudgetDenied('ai_project_budget_exhausted')
+            db.execute('''INSERT INTO ai_money_reservations
+                (request_key,user_id,day_key,route_id,model,ceiling,charge,state,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,'reserved',?,?)''',
+                (key, user_id, day, route, model, ceiling, ceiling, now, now))
+
+    def uncertain(self, key: str, *, pause_reason: str | None = None) -> None:
+        now = int(time.time())
+        with transaction(self.connect) as db:
+            db.execute("UPDATE ai_money_reservations SET state='uncertain',updated_at=? "
+                       "WHERE request_key=? AND state='reserved'", (now, key))
+            if pause_reason:
+                # Fixed codes only; do not save provider messages or secrets.
+                if pause_reason not in {'model_mismatch', 'usage_over_ceiling', 'unexpected_usage'}:
+                    raise BudgetDenied('ai_budget_invalid_pause')
+                db.execute("INSERT OR IGNORE INTO ai_money_control VALUES ('paused',?,?)", (pause_reason, now))
+
+    def settle(self, key: str, *, model: str, cost: int, input_tokens: int,
+               output_tokens: int) -> bool:
+        if any(type(v) is not int or v < 0 or v > MAX_MONEY for v in (cost, input_tokens, output_tokens)):
+            self.uncertain(key, pause_reason='unexpected_usage')
+            return False
+        now = int(time.time())
+        with transaction(self.connect) as db:
+            row = db.execute('SELECT model,ceiling,state FROM ai_money_reservations WHERE request_key=?', (key,)).fetchone()
+            if row is None:
+                raise BudgetDenied('ai_budget_reservation_missing')
+            if row[2] != 'reserved':
+                return False
+            if model != row[0] or cost > row[1]:
+                reason = 'model_mismatch' if model != row[0] else 'usage_over_ceiling'
+                # If the server reports a greater cost, never conceal the overrun.
+                db.execute("UPDATE ai_money_reservations SET state='uncertain',charge=?,updated_at=? WHERE request_key=?",
+                           (max(cost, row[1]), now, key))
+                db.execute("INSERT OR IGNORE INTO ai_money_control VALUES ('paused',?,?)", (reason, now))
+                return False
+            db.execute("UPDATE ai_money_reservations SET state='settled',charge=?,input_tokens=?,output_tokens=?,updated_at=? WHERE request_key=?",
+                       (cost, input_tokens, output_tokens, now, key))
+        return True
+
+    def cool_down(self, route: str, *, at: int | None = None) -> None:
+        now = int(time.time()) if at is None else at
+        with transaction(self.connect) as db:
+            db.execute("INSERT INTO ai_route_cooldown VALUES (?,?) ON CONFLICT(route_id) DO UPDATE SET until_at=MAX(until_at,excluded.until_at)", (route, now + 300))
+
+    def user_summary(self, user_id: int, *, at: int | None = None) -> dict:
+        day = day_key(int(time.time()) if at is None else at)
+        with closing(self.connect()) as db:
+            spent = self._spent(db, day, user_id)
+            unresolved = db.execute("SELECT COUNT(*) FROM ai_money_reservations WHERE user_id=? AND state IN ('reserved','uncertain')", (user_id,)).fetchone()[0]
+            paused = bool(db.execute("SELECT 1 FROM ai_money_control WHERE name='paused'").fetchone())
+        return {'day': day, 'timezone': 'Europe/Moscow', 'estimated_and_reserved_rub': str(Decimal(spent) / SCALE),
+                'unresolved_attempts': unresolved, 'paid_calls_paused': paused, 'provider_invoice_reconciled': False}
