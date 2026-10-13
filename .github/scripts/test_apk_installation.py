@@ -56,6 +56,8 @@ def collect_failure_diagnostics(device) -> None:
 
 
 def main() -> None:
+    from emulator_lease import collect_runtime_failure, verify_emulator_identity
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--previous", type=Path)
@@ -132,6 +134,7 @@ def main() -> None:
             else:
                 raise TimeoutError("Emulator boot deadline exceeded")
             print("ANDROID_API=" + device("shell", "getprop", "ro.build.version.sdk").stdout.strip(), flush=True)
+            verify_emulator_identity(device, name, args.api)
             package = "ru.omnicio.app.debug"
             if previous:
                 install("previous_clean_install", previous)
@@ -163,10 +166,11 @@ def main() -> None:
             # Persist even incomplete results before any diagnostic call can fail.
             (work / "install-results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
             if failed:
+                collect_runtime_failure(device)
                 collect_failure_diagnostics(device)
             try:
                 identity = device("emu", "avd", "name", timeout=10)
-                if name in identity.stdout:
+                if name in identity.stdout.splitlines():
                     device("emu", "kill", timeout=10)
             except (subprocess.TimeoutExpired, OSError):
                 pass
@@ -183,4 +187,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from emulator_lease import exclusive_emulator
+    with exclusive_emulator():
+        main()
