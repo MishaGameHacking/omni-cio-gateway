@@ -27,14 +27,21 @@ class ProfileUiProbeActivity : ComponentActivity() {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
-                Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed"
-                }) {
+                Box(
+                    Modifier.fillMaxSize().semantics {
+                        contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed"
+                    },
+                ) {
                     ProfileScreen(
                         user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
-                        tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
+                        tApiConfigured = false,
+                        screenshotsBlocked = screenshotsBlocked,
                         onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                        onPortfolioClick = {}, onOpenTApi = {}, onOpenAnalysisSettings = {}, onLogout = {},
+                        onPortfolioClick = {},
+                        onOpenTApi = {},
+                        onOpenAnalysisSettings = {},
+                        onOpenEducation = {},
+                        onLogout = {},
                     )
                 }
             }
