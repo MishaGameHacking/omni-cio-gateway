@@ -45,6 +45,8 @@ fun RequiredUpdateScreen(
                 val message = when (stage) {
                     UpdateStage.Checking -> "Проверяем версию приложения."
                     UpdateStage.Required -> "Файл будет получен с нашего российского сервера."
+                    is UpdateStage.UnsupportedVersion ->
+                        "На устройстве установлена более новая неизвестная версия (${stage.installedCode}). Автоматическое понижение версии запрещено."
                     is UpdateStage.Downloading -> "Скачиваем обновление."
                     UpdateStage.Verifying -> "Проверяем подпись и целостность APK."
                     UpdateStage.AwaitingInstaller, UpdateStage.AwaitingUser -> "Продолжите в системном установщике Android."
