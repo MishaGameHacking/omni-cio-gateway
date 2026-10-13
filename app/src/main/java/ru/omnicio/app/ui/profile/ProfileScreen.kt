@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -27,6 +28,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,10 @@ fun ProfileScreen(
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     val theme = LocalThemePreference.current
     val motion = LocalSpectrumMotionPreference.current
+    val contentState = rememberLazyListState()
+    // A section is a different list. Do not carry a scrolled Settings offset
+    // into Info and hide its first actions. Ordinary recomposition keeps position.
+    LaunchedEffect(section) { contentState.scrollToItem(0) }
     Scaffold(modifier = modifier.fillMaxSize(), containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { AnalystBottomBar(AnalystTab.Profile, onPortfolioClick, {}) }) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).padding(horizontal = 20.dp)
@@ -77,9 +83,9 @@ fun ProfileScreen(
                 Text(user.name?.takeIf(String::isNotBlank) ?: "Analyst AI", fontWeight = FontWeight.SemiBold)
                 Text("Профиль", fontSize = 32.sp, fontWeight = FontWeight.Bold)
             }
-            // Tabs stay reachable even after scrolling a long settings section.
             ProfileSectionTabs(section) { section = it }
             LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f).testTag("profile-content"),
+                state = contentState,
                 contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (section) {
