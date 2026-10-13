@@ -24,6 +24,18 @@ jobs:
           if errorlevel 1 exit /b 1
           py -3 -m compileall -q backend
           if errorlevel 1 exit /b 1
+      - name: Correct actual unclosed SQLite handle in isolated test fixture
+        shell: py -3 {0}
+        run: |
+          from pathlib import Path
+          path = Path('backend/tests/test_ai_controls.py')
+          text = path.read_text(encoding='utf-8')
+          old = '        with self.connect() as db:'
+          if text.count(old) != 1:
+              raise RuntimeError('Unexpected fixture baseline')
+          text = text.replace('from concurrent.futures import ThreadPoolExecutor', 'from concurrent.futures import ThreadPoolExecutor\nfrom contextlib import closing', 1)
+          text = text.replace(old, '        with closing(self.connect()) as db:', 1)
+          path.write_text(text, encoding='utf-8', newline='\n')
       - name: Isolated full backend regression suite
         shell: cmd
         env:
@@ -54,7 +66,7 @@ jobs:
             const current = (await github.rest.git.getRef({owner, repo, ref:`heads/${branch}`})).data;
             if (current.object.sha !== context.sha) throw new Error('Branch advanced; do not overwrite');
             const parent = (await github.rest.git.getCommit({owner, repo, commit_sha:context.sha})).data;
-            const allowed = ['backend/autonomous_ai.py', 'backend/analysis_engine.py', 'backend/tests/test_reliability_041.py', 'README.md', 'backend/ai_budget.py', 'backend/ai_jobs.py', 'backend/ai_guarded_client.py'];
+            const allowed = ['backend/autonomous_ai.py', 'backend/analysis_engine.py', 'backend/tests/test_reliability_041.py', 'backend/tests/test_ai_controls.py', 'README.md', 'backend/ai_budget.py', 'backend/ai_jobs.py', 'backend/ai_guarded_client.py'];
             const tree = (await github.rest.git.createTree({owner, repo, base_tree:parent.tree.sha,
               tree:allowed.map(path => ({path, mode:'100644', type:'blob', content:fs.readFileSync(path,'utf8')}))})).data;
             const commit = (await github.rest.git.createCommit({owner, repo, message:'AI: integrate persistent work queue and guarded budgeted model path after full backend tests', tree:tree.sha, parents:[context.sha]})).data;
