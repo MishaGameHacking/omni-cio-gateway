@@ -125,7 +125,7 @@ jobs:
               if (!fs.existsSync(file)) continue;
               if (fs.lstatSync(file).isSymbolicLink() || !fs.realpathSync(file).startsWith(root + path.sep)) throw new Error('Evidence outside checkout');
               const bytes = fs.readFileSync(file);
-              if (bytes.length > 524288) throw new Error('Evidence file unexpectedly large');
+              if (bytes.length > 2097152) throw new Error('Evidence file unexpectedly large');
               const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
               if (name.endsWith('.json')) {
                 core.info(`VERIFICATION_REPORT ${name} ${JSON.stringify(JSON.parse(bytes.toString('utf8')))}`);
