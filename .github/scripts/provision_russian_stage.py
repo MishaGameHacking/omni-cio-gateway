@@ -1,8 +1,4 @@
-"""Provision at most one staging VM in a verified Russian preset.
-
-Does not stop, delete or write to the source. Does not copy application data.
-Never retries an uncertain POST or falls back outside Russia.
-"""
+"""Provision at most one owner-authorized Russian staging VM; preserve source."""
 from __future__ import annotations
 import json
 import os
@@ -17,6 +13,7 @@ SOURCE_NAME = 'analyst-ai-backend'
 TARGET_NAME = 'analyst-ai-ru-stage-9326369'
 TARGET_COMMENT = 'Owner-authorized RU migration 2026-10-13; source 9326369; staging only'
 PRESETS = ((4799, 'ru-3'), (2451, 'ru-1'), (4241, 'ru-2'))
+ZONES = {'ru-3': 'msk-1', 'ru-1': 'spb-3', 'ru-2': 'nsk-1'}
 BASE = 'https://api.timeweb.cloud/api/v1'
 MAX_PRICE = 2600
 
@@ -96,8 +93,9 @@ def target_from(rows):
     if (type(result.get('id')) is not int or result['id'] <= 0 or result['id'] == SOURCE_ID
         or result.get('comment') != TARGET_COMMENT
         or approved.get(result.get('preset_id')) != result.get('location')
-        or result.get('cpu') != 2 or result.get('ram') != 2048):
-        raise RuntimeError('Unexpected staging VM identity/resources')
+        or result.get('cpu') != 2 or result.get('ram') != 2048
+        or ZONES.get(result.get('location')) != result.get('availability_zone')):
+        raise RuntimeError('Unexpected staging VM identity/resources/zone')
     return result
 
 def report(target, state):
@@ -116,12 +114,14 @@ def main():
         for preset in presets:
             try:
                 payload = call('POST', '/servers', {'name': TARGET_NAME, 'comment': TARGET_COMMENT,
-                    'os_id': 99, 'preset_id': preset['id'], 'bandwidth': 1000,
-                    'is_ddos_guard': False, 'is_local_network': False, 'ssh_keys_ids': []})
+                    'os_id': 99, 'preset_id': preset['id'], 'availability_zone': ZONES[preset['location']],
+                    'bandwidth': 1000, 'is_ddos_guard': False, 'is_local_network': False, 'ssh_keys_ids': []})
             except CloudError as exc:
                 print('CAPACITY_ATTEMPT=' + json.dumps({'preset_id': preset['id'], 'location': preset['location'],
-                    'http_status': exc.status, 'error_code': exc.code}), flush=True)
-                if exc.status in (400, 409, 422) and exc.code in ('no_free_node', 'location_not_available'):
+                    'zone': ZONES[preset['location']], 'http_status': exc.status, 'error_code': exc.code}), flush=True)
+                rejected = ((exc.status in (400, 409, 422) and exc.code in ('no_free_node', 'location_not_available'))
+                            or (exc.status == 404 and exc.code == 'preset_not_found'))
+                if rejected:
                     if target_from(inventory()) is not None:
                         raise RuntimeError('Resource appeared despite rejection; stop')
                     continue
@@ -136,8 +136,8 @@ def main():
             report(target, 'created_not_yet_ready')
             break
     if target is None:
-        print('RUSSIA_CAPACITY=unavailable_in_all_three_verified_presets; no preorders', flush=True)
-        raise RuntimeError('No Russian capacity; source remains unchanged')
+        print('RUSSIA_CAPACITY=none_created_in_three_verified_presets; no preorders', flush=True)
+        raise RuntimeError('Russian provisioning rejected; source remains unchanged')
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
         current = call('GET', f"/servers/{target['id']}").get('server', {})
