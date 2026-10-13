@@ -19,13 +19,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Read source server and provider catalog without cloud changes
-        shell: powershell
+        shell: py -3 {0}
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONIOENCODING: utf-8
         run: |
-          $ErrorActionPreference = 'Stop'
-          $script = @'
           import json
           import os
           import urllib.error
@@ -82,6 +80,3 @@ jobs:
           if isinstance(locations, list):
               report['locations'] = [project(item) for item in locations]
           print('RUSSIA_PREFLIGHT=' + json.dumps(report, ensure_ascii=True, sort_keys=True))
-          '@
-          $script | py -3 -
-          if ($LASTEXITCODE -ne 0) { throw 'Read-only Timeweb preflight failed' }
