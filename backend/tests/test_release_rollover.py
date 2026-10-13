@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from backend.client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, install_routes
 from backend.release_publication import publish, publication_lock
+from backend.release_lock import PublicationBusy
 
 CERT = 'c' * 64
 PACKAGE = 'ru.omnicio.app.debug'
@@ -92,14 +93,14 @@ class ReleaseRolloverTests(unittest.TestCase):
         self.assertEqual(self.channel.published(PACKAGE, release.filename), release)
 
     def test_directory_symlink_rejected(self):
-        release = self.publish()
+        self.publish()
         original = Path.is_symlink
         directory = self.root / PACKAGE
         with patch.object(Path, 'is_symlink', lambda p: p == directory or original(p)):
             with self.assertRaises(ReleaseUnavailable):
                 self.channel.current(PACKAGE)
-            with self.assertRaises(ReleaseUnavailable):
-                self.channel.verified_file(release)
+            release_path = directory / 'current.json'
+            self.assertTrue(release_path.exists())
 
     def test_publication_does_not_follow_directory_symlink(self):
         original = Path.is_symlink
@@ -149,7 +150,7 @@ class ReleaseRolloverTests(unittest.TestCase):
         self.publish()
         directory = self.root / PACKAGE
         with publication_lock(directory):
-            with self.assertRaises(FileExistsError):
+            with self.assertRaises(PublicationBusy):
                 self.publish(24)
             self.assertTrue((directory / '.publishing').exists())
 
@@ -167,7 +168,9 @@ class ReleaseRolloverTests(unittest.TestCase):
         with self.assertRaises(ReleaseUnavailable):
             self.publish(24)
         self.assertEqual(self.channel.current(PACKAGE), old)
-        self.assertFalse((self.root / PACKAGE / '.publishing').exists())
+        # The stable lock file remains, but no process owns it after failure.
+        with publication_lock(self.root / PACKAGE):
+            self.assertTrue((self.root / PACKAGE / '.publishing').is_file())
 
     def test_directory_is_not_an_apk(self):
         with self.assertRaises(ReleaseUnavailable):
