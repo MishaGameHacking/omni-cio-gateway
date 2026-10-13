@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +43,7 @@ fun MandatoryUpdateHost(
     val activity = LocalActivity.current as? ComponentActivity
     val active = rememberForeground(activity?.lifecycle)
     val client = remember { UpdateClient() }
+    val contentState = rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
     var release by remember { mutableStateOf<ReleaseDescriptor?>(null) }
     var current by remember { mutableStateOf(false) }
@@ -114,7 +116,7 @@ fun MandatoryUpdateHost(
     }
 
     if (current && !serverBlocked) {
-        content()
+        contentState.SaveableStateProvider("verified-client-content") { content() }
         return
     }
     val close: () -> Unit = { activity?.moveTaskToBack(true); Unit }
