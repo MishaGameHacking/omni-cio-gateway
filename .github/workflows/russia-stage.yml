@@ -23,7 +23,7 @@ jobs:
         with:
           persist-credentials: false
           clean: true
-      - name: Provision at most one Russian VM; do not stop or delete source
+      - name: Verify inventory then request explicit Russian zone; preserve source
         shell: cmd
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
