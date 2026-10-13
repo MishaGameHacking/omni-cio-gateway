@@ -1,7 +1,6 @@
-"""Deterministic risk mathematics. Inputs must be dated, adjusted return scenarios.
+"""Deterministic risk mathematics; estimates are conditional on supplied data.
 
-These are conditional sample/model estimates, never a default/ruin guarantee.
-No model calls, prices, probability calibration or missing-value imputation here.
+No model calls, missing-value imputation, rating-to-PD lookup or guarantees.
 """
 from __future__ import annotations
 
@@ -18,14 +17,22 @@ class RiskDataError(ValueError):
 def finite(value: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise RiskDataError('numeric_value_required')
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError:
+        raise RiskDataError('numeric_overflow') from None
     if not isfinite(result):
         raise RiskDataError('nonfinite_value')
     return result
 
 
 def tail_loss(losses: Sequence[float], confidence: float = .95) -> dict:
-    """Empirical VaR and ES: fractional boundary mass, not mean(loss >= VaR)."""
+    """Empirical VaR/ES with fractional boundary mass, including very thin tails.
+
+    Normalize before summing to avoid overflow. A positive tail fraction must
+    never be discarded by an absolute tolerance: that could report zero ES for
+    a sample containing only losses when confidence approaches one.
+    """
     level = finite(confidence)
     if not 0 < level < 1 or not losses:
         raise RiskDataError('invalid_tail_sample')
@@ -34,25 +41,31 @@ def tail_loss(losses: Sequence[float], confidence: float = .95) -> dict:
     whole = floor(mass)
     fraction = mass - whole
     descending = ordered[::-1]
-    numerator = fsum(descending[:whole])
-    if fraction > 1e-12:
-        numerator += fraction * descending[whole]
+    scale = max(abs(ordered[0]), abs(ordered[-1]))
+    expected_shortfall = 0.0
+    if scale:
+        parts = [value / scale for value in descending[:whole]]
+        if fraction > 0:
+            parts.append(fraction * (descending[whole] / scale))
+        expected_shortfall = finite((fsum(parts) / mass) * scale)
     return {'confidence': level, 'var': ordered[max(ceil(len(ordered) * level) - 1, 0)],
-            'expected_shortfall': numerator / mass, 'observations': len(ordered),
+            'expected_shortfall': expected_shortfall, 'observations': len(ordered),
             'tail_observations': mass, 'thin_tail': mass < 10}
 
 
 def aligned_returns(series: Mapping[str, Mapping[str, float]], *, minimum: int = 120) -> tuple:
-    """Reject unequal trading dates instead of filling holidays/missing prices with zero."""
+    """Reject unequal dates; never fill holidays/missing prices with zero."""
     if not series or type(minimum) is not int or not 2 <= minimum <= 10000 or len(series) > 100:
         raise RiskDataError('invalid_return_universe')
     names = tuple(sorted(series))
     days = tuple(sorted(series[names[0]]))
     if not minimum <= len(days) <= 10000:
         raise RiskDataError('insufficient_history')
-    for day in days:
-        if date.fromisoformat(day).isoformat() != day:
+    try:
+        if any(date.fromisoformat(day).isoformat() != day for day in days):
             raise RiskDataError('invalid_return_date')
+    except (ValueError, TypeError):
+        raise RiskDataError('invalid_return_date') from None
     if any(tuple(sorted(series[name])) != days for name in names):
         raise RiskDataError('unaligned_history')
     rows = tuple(tuple(finite(series[name][day]) for name in names) for day in days)
@@ -70,10 +83,14 @@ def covariance(rows: Sequence[Sequence[float]], shrinkage: float = .2) -> list[l
     if any(len(row) != width for row in rows):
         raise RiskDataError('ragged_return_panel')
     values = [[finite(value) for value in row] for row in rows]
-    means = [fsum(row[i] for row in values) / len(rows) for i in range(width)]
-    return [[fsum((row[i] - means[i]) * (row[j] - means[j]) for row in values)
-             / (len(rows) - 1) * (1 if i == j else 1 - alpha)
-             for j in range(width)] for i in range(width)]
+    try:
+        means = [fsum(row[i] / len(rows) for row in values) for i in range(width)]
+        matrix = [[finite(fsum((row[i] - means[i]) * (row[j] - means[j]) for row in values)
+                          / (len(rows) - 1) * (1 if i == j else 1 - alpha))
+                   for j in range(width)] for i in range(width)]
+    except (OverflowError, ValueError):
+        raise RiskDataError('covariance_overflow') from None
+    return matrix
 
 
 def long_only_weights(weights: Sequence[float], width: int) -> tuple[float, ...]:
@@ -86,17 +103,22 @@ def long_only_weights(weights: Sequence[float], width: int) -> tuple[float, ...]
 def portfolio_variance(rows: Sequence[Sequence[float]], weights: Sequence[float], shrinkage: float = .2) -> float:
     matrix = covariance(rows, shrinkage)
     w = long_only_weights(weights, len(matrix))
-    result = fsum(w[i] * matrix[i][j] * w[j] for i in range(len(w)) for j in range(len(w)))
+    try:
+        result = finite(fsum(w[i] * matrix[i][j] * w[j] for i in range(len(w)) for j in range(len(w))))
+    except (OverflowError, ValueError):
+        raise RiskDataError('portfolio_variance_overflow') from None
     return max(0.0, result)
 
 
 def effective_positions(weights: Sequence[float]) -> float:
-    """Inverse HHI among the supplied exposures; does not imply independence."""
+    """Inverse HHI among supplied exposures, not a measure of independence."""
     values = [finite(x) for x in weights]
-    if any(x < 0 for x in values) or fsum(values) <= 0:
+    if not values or any(x < 0 for x in values) or max(values) <= 0:
         raise RiskDataError('invalid_exposures')
-    total = fsum(values)
-    return 1 / fsum((x / total) ** 2 for x in values)
+    scale = max(values)
+    normalized = [x / scale for x in values]
+    total = fsum(normalized)
+    return 1 / fsum((x / total) ** 2 for x in normalized)
 
 
 def drawdown(wealth: Sequence[float]) -> float:
@@ -127,12 +149,7 @@ def wilson_interval(hits: int, trials: int) -> tuple[float, float]:
 def bootstrap_floor_risk(rows: Sequence[Sequence[float]], weights: Sequence[float], *,
                          horizon: int = 20, block: int = 5, paths: int = 500,
                          floor_fraction: float = .8, seed: int = 0) -> dict:
-    """Joint moving-block bootstrap with buy-and-hold weights and flat cash.
-
-    Same sampled days for every asset retain cross-asset co-movement. Within a
-    path weights drift with prices (no imaginary daily rebalancing). No fees,
-    future withdrawals, new defaults or scenarios absent from history are added.
-    """
+    """Joint moving-block buy-and-hold bootstrap; flat cash, no unseen crises."""
     if any(type(x) is not int for x in (horizon, block, paths, seed)) or not 1 <= horizon <= 252 or not 1 <= block <= 60 or not 100 <= paths <= 5000:
         raise RiskDataError('invalid_simulation_size')
     if len(rows) < max(120, block) or not rows[0]:
@@ -143,7 +160,7 @@ def bootstrap_floor_risk(rows: Sequence[Sequence[float]], weights: Sequence[floa
     values = [tuple(finite(x) for x in row) for row in rows]
     if any(len(row) != len(w) or any(x < -1 for x in row) for row in values):
         raise RiskDataError('invalid_return_panel')
-    rng = Random(seed)  # Reproducible statistical simulation, not a security token.
+    rng = Random(seed)  # Statistical reproducibility; never used for a security token.
     losses, breaches = [], 0
     for _ in range(paths):
         relative = [1.0] * len(w)
@@ -168,26 +185,26 @@ def bootstrap_floor_risk(rows: Sequence[Sequence[float]], weights: Sequence[floa
 
 
 def credit_loss(exposures: Sequence[Mapping], horizon_days: int) -> dict:
-    """EAD * PD * LGD from supplied, calibrated PD only. No rating-to-PD lookup.
-
-    Union bounds need no independence assumption; repeated issuer exposures
-    share one default event. Expected losses add even when defaults correlate.
-    """
+    """EAD*PD*LGD from calibrated PD; repeated issuers share one default event."""
     if type(horizon_days) is not int or horizon_days <= 0:
         raise RiskDataError('invalid_credit_horizon')
-    issuers, expected = {}, 0.0
+    issuers, contributions = {}, []
     for item in exposures:
-        if item.get('horizon_days') != horizon_days or not item.get('calibration_source'):
+        if type(item.get('horizon_days')) is not int or item['horizon_days'] != horizon_days or not item.get('calibration_source'):
             raise RiskDataError('uncalibrated_default_probability')
         ead, pd, lgd = (finite(item[key]) for key in ('exposure', 'pd', 'lgd'))
         issuer = item.get('issuer_id')
-        if not issuer or ead < 0 or not 0 <= pd <= 1 or not 0 <= lgd <= 1:
+        if not isinstance(issuer, str) or not issuer.strip() or ead < 0 or not 0 <= pd <= 1 or not 0 <= lgd <= 1:
             raise RiskDataError('invalid_credit_exposure')
         if issuer in issuers and issuers[issuer] != pd:
             raise RiskDataError('conflicting_issuer_pd')
         if ead > 0:
             issuers[issuer] = pd
-            expected += ead * pd * lgd
+            contributions.append(ead * pd * lgd)
+    try:
+        expected = finite(fsum(contributions))
+    except (OverflowError, ValueError):
+        raise RiskDataError('credit_loss_overflow') from None
     return {'expected_loss': expected, 'horizon_days': horizon_days,
             'any_default_probability_bounds': [max(issuers.values(), default=0), min(1, fsum(issuers.values()))],
             'independence_assumed': False, 'guarantee': False}
