@@ -1,5 +1,6 @@
 package ru.omnicio.app.ui.education
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ fun EducationScreen(
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    BackHandler(onBack = onBack)
     var category by rememberSaveable { mutableStateOf<EducationCategory?>(null) }
     var expandedLessonId by rememberSaveable { mutableStateOf<String?>("news-impact") }
     val lessons = remember(category) {
