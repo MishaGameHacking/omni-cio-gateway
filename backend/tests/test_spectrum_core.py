@@ -112,6 +112,19 @@ class RiskTests(unittest.TestCase):
             with self.subTest(rating=rating):
                 self.assertEqual(exposure_report([position(rating=rating)])['status'],'needs_data')
 
+    def test_missing_class_or_quote_currency_needs_data(self):
+        for item in [position(asset_class=''), position(quote_currency='')]:
+            with self.subTest(item=item):
+                report = exposure_report([item])
+                self.assertEqual(report['status'], 'needs_data')
+                self.assertEqual(report['unverified_instruments'], ['synthetic-one'])
+
+    def test_invalid_base_currency_rejected(self):
+        for currency in ['', 'rub', 'RUBLE', None]:
+            with self.subTest(currency=currency), self.assertRaises(RiskInputError):
+                assess_exposures([position()], base_currency=currency, now=NOW,
+                    max_age=AGE, limits={})
+
     def test_mixed_currency_not_added(self):
         with self.assertRaises(RiskInputError): exposure_report([position(valuation_currency='USD')])
 
