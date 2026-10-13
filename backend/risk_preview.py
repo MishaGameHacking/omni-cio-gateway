@@ -15,6 +15,7 @@ import re
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
+_LIMIT_PREFIXES = ('issuer:', 'sector:', 'class:', 'currency:', 'rating:')
 
 
 class RiskInputError(ValueError):
@@ -43,6 +44,17 @@ def fraction(value: Decimal | int | str) -> Decimal:
     if not ZERO <= result <= ONE:
         raise RiskInputError('fraction_out_of_range')
     return result
+
+
+def limit_key(value: object) -> str:
+    if value == 'cash:minimum':
+        return value
+    if not isinstance(value, str):
+        raise RiskInputError('invalid_limit_dimension')
+    prefix = next((candidate for candidate in _LIMIT_PREFIXES if value.startswith(candidate)), None)
+    if prefix is None or not value[len(prefix):].strip():
+        raise RiskInputError('invalid_limit_dimension')
+    return value
 
 
 @dataclass(frozen=True)
@@ -139,6 +151,10 @@ def scenario_losses(weights: Mapping[str, Decimal],
     """Use whole aligned vectors, preserving joint movements; no independent shuffle."""
     if not weights:
         raise RiskInputError('empty_portfolio')
+    if not scenarios:
+        raise RiskInputError('empty_scenarios')
+    if any(not isinstance(key, str) or not key.strip() for key in weights):
+        raise RiskInputError('invalid_asset_id')
     cleaned = {key: fraction(value) for key, value in weights.items()}
     if sum(cleaned.values(), ZERO) != ONE:
         raise RiskInputError('weights_must_sum_to_one_including_cash')
@@ -179,7 +195,7 @@ def assess_exposures(exposures: Sequence[Exposure], *, base_currency: str,
         raise RiskInputError('invalid_base_currency')
     if not exposures or max_age.total_seconds() <= 0:
         raise RiskInputError('exposures_and_freshness_policy_required')
-    caps = {key: fraction(value) for key, value in limits.items()}
+    caps = {limit_key(key): fraction(value) for key, value in limits.items()}
     buckets: dict[str, Decimal] = {}
     total, cash = ZERO, ZERO
     unknown = []
@@ -194,6 +210,8 @@ def assess_exposures(exposures: Sequence[Exposure], *, base_currency: str,
             raise RiskInputError('valuation_stale_or_future')
         if not item.instrument_id or not item.source:
             raise RiskInputError('valuation_source_required')
+        if item.quote_currency and not re.fullmatch(r'[A-Z]{3}', item.quote_currency):
+            raise RiskInputError('invalid_quote_currency')
         total += amount
         if item.is_cash:
             cash += amount
