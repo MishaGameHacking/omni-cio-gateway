@@ -297,7 +297,7 @@ private fun TokenInputCard(
                 onClick = onVerify,
                 enabled = !checking && tokenInput.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF111318),
+                    containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             ) {
