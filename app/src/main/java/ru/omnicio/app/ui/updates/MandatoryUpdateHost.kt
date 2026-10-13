@@ -32,18 +32,15 @@ import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.updates.*
 import ru.omnicio.app.ui.theme.AnalystTheme
 
-/** Content is not composed when blocked: no portfolio polling or AI screen tasks. */
+/** A single gate owns both plain and Spectrum rendering. Blocked content is not composed. */
 @Composable
-fun MandatoryUpdateHost(content: @Composable () -> Unit) {
+fun MandatoryUpdateHost(
+    blockedContent: @Composable (UpdateGateUi, UpdateGateActions) -> Unit = { state, actions -> DefaultUpdateScreen(state, actions) },
+    content: @Composable () -> Unit,
+) {
     val context = LocalContext.current
     val activity = LocalActivity.current as? ComponentActivity
-    val lifecycle = activity?.lifecycle
-    var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false) }
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, _ -> active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false }
-        lifecycle?.addObserver(observer)
-        onDispose { lifecycle?.removeObserver(observer) }
-    }
+    val active = rememberForeground(activity?.lifecycle)
     val client = remember { UpdateClient() }
     val scope = rememberCoroutineScope()
     var release by remember { mutableStateOf<ReleaseDescriptor?>(null) }
@@ -86,6 +83,7 @@ fun MandatoryUpdateHost(content: @Composable () -> Unit) {
     fun startUpdate(chosen: ReleaseDescriptor) {
         if (busy) return
         busy = true
+        progressFlow.value = 0
         error = null
         UpdateInstaller.statusText.value = null
         scope.launch {
@@ -117,48 +115,66 @@ fun MandatoryUpdateHost(content: @Composable () -> Unit) {
 
     if (current && !serverBlocked) {
         content()
-    } else {
-        BackHandler { activity?.moveTaskToBack(true) }
-        AnalystTheme {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Analyst AI", style = MaterialTheme.typography.headlineLarge)
-                    Spacer(Modifier.height(20.dp))
-                    val chosen = release
-                    val decision = chosen?.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT)
-                    Text(if (decision == ReleaseDecision.UPDATE_REQUIRED) "Требуется обновление" else "Проверка версии",
-                        style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(12.dp))
-                    Text("Установлено: ${BuildConfig.VERSION_NAME}")
-                    if (chosen != null) Text("На сервере: ${chosen.versionName}")
-                    Spacer(Modifier.height(12.dp))
-                    Text(when (decision) {
-                        ReleaseDecision.UNSUPPORTED_ANDROID -> "Для этой версии нужен более новый Android. Старую версию нельзя использовать."
-                        ReleaseDecision.SERVER_NOT_READY -> "Сервер ещё не подтвердил эту сборку. Устанавливать более старый APK не нужно."
-                        ReleaseDecision.WRONG_CHANNEL -> "Сервер вернул другую линию приложения. Установка остановлена."
-                        else -> "Для работы нужна актуальная версия. Ваши данные сохранены. APK скачивается с сервера Analyst AI; Android может попросить разрешение и подтверждение установки."
-                    })
-                    if (!chosen?.notes.isNullOrBlank()) { Spacer(Modifier.height(12.dp)); Text(chosen!!.notes) }
-                    if (checking && !busy) { Spacer(Modifier.height(16.dp)); CircularProgressIndicator() }
-                    if (busy) { Spacer(Modifier.height(16.dp)); Text("Скачивание и проверка: $progress%"); LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth()) }
-                    error?.let { Spacer(Modifier.height(12.dp)); Text(it, color = MaterialTheme.colorScheme.error) }
-                    installationStatus?.let { Spacer(Modifier.height(12.dp)); Text(it) }
-                    Spacer(Modifier.height(20.dp))
-                    if (chosen != null && decision == ReleaseDecision.UPDATE_REQUIRED) {
-                        Button(enabled = !busy && !checking, onClick = {
-                            if (context.packageManager.canRequestPackageInstalls()) startUpdate(chosen)
-                            else {
-                                awaitingPermission = chosen
-                                try { permissionLauncher.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))) }
-                                catch (_: Exception) { awaitingPermission = null; error = "Android не открыл разрешение установки. Проверьте настройки Analyst AI." }
-                            }
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Обновить приложение") }
-                    }
-                    TextButton(enabled = !busy && !checking, onClick = { retry++ }) { Text("Повторить проверку") }
-                    TextButton(onClick = { activity?.moveTaskToBack(true) }) { Text("Закрыть") }
+        return
+    }
+    val close: () -> Unit = { activity?.moveTaskToBack(true); Unit }
+    BackHandler(onBack = close)
+    val chosen = release
+    val decision = chosen?.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT)
+    val actions = UpdateGateActions(
+        update = {
+            if (chosen != null && decision == ReleaseDecision.UPDATE_REQUIRED && !busy && !checking) {
+                if (context.packageManager.canRequestPackageInstalls()) startUpdate(chosen)
+                else {
+                    awaitingPermission = chosen
+                    try { permissionLauncher.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))) }
+                    catch (_: Exception) { awaitingPermission = null; error = "Android не открыл разрешение установки. Проверьте настройки Analyst AI." }
                 }
             }
+        },
+        retry = { if (!busy && !checking) retry++ },
+        close = close,
+    )
+    AnalystTheme {
+        blockedContent(UpdateGateUi(chosen, decision, BuildConfig.VERSION_NAME, checking, busy, progress, error, installationStatus), actions)
+    }
+}
+
+@Composable
+private fun rememberForeground(lifecycle: Lifecycle?): Boolean {
+    var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false) }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ -> active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+    return active
+}
+
+@Composable
+private fun DefaultUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Analyst AI", style = MaterialTheme.typography.headlineLarge)
+            Text(state.title, style = MaterialTheme.typography.headlineSmall)
+            Text("Установлено: ${state.installedVersion}")
+            state.release?.let { Text("На сервере: ${it.versionName}") }
+            Text(state.explanation)
+            state.release?.notes?.takeIf(String::isNotBlank)?.let { Text(it) }
+            if (state.checking && !state.busy) CircularProgressIndicator()
+            if (state.busy) {
+                Text("Скачивание и проверка: ${state.progressPercent}%")
+                LinearProgressIndicator(progress = { state.progressPercent / 100f }, modifier = Modifier.fillMaxWidth())
+            }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            state.installationStatus?.let { Text(it) }
+            if (state.decision == ReleaseDecision.UPDATE_REQUIRED) {
+                Button(enabled = state.canUpdate, onClick = actions.update, modifier = Modifier.fillMaxWidth()) { Text("Обновить приложение") }
+            }
+            TextButton(enabled = state.canRetry, onClick = actions.retry) { Text("Повторить проверку") }
+            TextButton(onClick = actions.close) { Text("Закрыть") }
         }
     }
 }
