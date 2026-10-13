@@ -14,6 +14,7 @@ REMOTE_TOOLS="/root/analyst-migration-tools-$RUN"
 REMOTE_STAGE="/root/analyst-migration-$RUN"
 SOURCE_IP=''
 TARGET_IP=''
+SSH_OPTIONS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN")
 cleanup() {
     local original=$?
     trap - EXIT
@@ -33,18 +34,17 @@ ssh-keygen -t ed25519 -N '' -f "$KEY" -C "analyst-migrate-$RUN" >/dev/null
 chmod 600 "$KEY"
 py.exe -3 .github/scripts/migration_access.py prepare
 py.exe -3 - <<'PY' > "$PRIVATE/pair.env"
-import ipaddress, json, os
+import ipaddress, json, os, sys
 from pathlib import Path
 state = json.loads(Path(os.environ['MIGRATION_STATE_WINDOWS']).read_text())
 for name in ('source_ip', 'target_ip'):
     value = ipaddress.ip_address(state[name])
     if value.version != 4 or not value.is_global:
         raise RuntimeError('Unexpected transfer address')
-    print(name.upper() + '=' + str(value))
+    sys.stdout.buffer.write((name.upper() + '=' + str(value) + '\n').encode('ascii'))
 PY
 source "$PRIVATE/pair.env"
 HOST="$TARGET_IP.sslip.io"
-SSH_OPTIONS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$KNOWN")
 for ip in "$SOURCE_IP" "$TARGET_IP"; do
     ready=0
     for attempt in $(seq 1 30); do
@@ -53,15 +53,15 @@ for ip in "$SOURCE_IP" "$TARGET_IP"; do
     done
     [[ "$ready" = 1 ]] || { echo 'SSH readiness failed; no source stop/delete'; exit 1; }
 done
-ssh "${SSH_OPTIONS[@]}" root@"$SOURCE_IP" "umask 077; mkdir '$REMOTE_TOOLS'; cat > '$REMOTE_TOOLS/snapshot.py'" < .github/scripts/migration_snapshot.py
+ssh "${SSH_OPTIONS[@]}" root@"$SOURCE_IP" "umask 077; mkdir '$REMOTE_TOOLS' && cat > '$REMOTE_TOOLS/snapshot.py'" < .github/scripts/migration_snapshot.py
 ssh "${SSH_OPTIONS[@]}" root@"$SOURCE_IP" "/opt/analyst-ai/venv/bin/python '$REMOTE_TOOLS/snapshot.py' '$RUN'" > "$PRIVATE/snapshot.json"
 ARCHIVE_SHA="$(SNAPSHOT_WINDOWS="$(cygpath -w "$PRIVATE/snapshot.json")" py.exe -3 - <<'PY'
-import json, os, re
+import json, os, re, sys
 from pathlib import Path
 record = json.loads(Path(os.environ['SNAPSHOT_WINDOWS']).read_text())
 value = record['archive_sha256']
 if not re.fullmatch(r'[0-9a-f]{64}', value): raise RuntimeError('Invalid snapshot checksum')
-print(value)
+sys.stdout.buffer.write(value.encode('ascii'))
 PY
 )"
 [[ "$ARCHIVE_SHA" =~ ^[0-9a-f]{64}$ ]] || exit 1
