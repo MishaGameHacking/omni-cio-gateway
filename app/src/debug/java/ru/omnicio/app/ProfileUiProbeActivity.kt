@@ -23,12 +23,13 @@ class ProfileUiProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val checksPassed = runRefreshStateRegressionChecks()
+        val updateChecksPassed = runUpdatePolicyChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed"
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-update-tests:$updateChecksPassed"
                 }) {
                     ProfileScreen(
                         user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
