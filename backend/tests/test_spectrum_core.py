@@ -76,6 +76,13 @@ class RiskTests(unittest.TestCase):
         with self.assertRaises(RiskInputError):
             scenario_losses({'a':D('.5'),'b':D('.5')},[{'a':D(0)}])
 
+    def test_empty_scenarios_and_invalid_asset_ids_rejected(self):
+        with self.assertRaises(RiskInputError):
+            scenario_losses({'a':D(1)}, [])
+        for weights, scenarios in [({'':D(1)},[{'':D(0)}]), ({None:D(1)},[{None:D(0)}])]:
+            with self.subTest(weights=weights), self.assertRaises(RiskInputError):
+                scenario_losses(weights, scenarios)
+
     def test_weights_and_returns_checked(self):
         for weights, scenarios in [({'a':D('.5')},[{'a':D(0)}]),
             ({'a':D(1)},[{'a':D(-2)}]), ({'a':D(-1)},[{'a':D(0)}])]:
@@ -103,6 +110,11 @@ class RiskTests(unittest.TestCase):
         r = exposure_report([position()],{'cash:minimum':D('.1')})
         self.assertEqual(r['status'],'outside_limits')
 
+    def test_invalid_limit_dimension_rejected(self):
+        for key in ['', 'cash:maximum', 'issuerr:issuer-one', 'issuer:', None]:
+            with self.subTest(key=key), self.assertRaises(RiskInputError):
+                exposure_report([position()], {key:D('.5')})
+
     def test_rating_agency_and_scale_not_merged(self):
         r = exposure_report([position(), position(rating=rate(scale='GLOBAL-test'))])
         self.assertEqual(len([k for k in r['shares'] if k.startswith('rating:')]),2)
@@ -119,11 +131,14 @@ class RiskTests(unittest.TestCase):
                 self.assertEqual(report['status'], 'needs_data')
                 self.assertEqual(report['unverified_instruments'], ['synthetic-one'])
 
-    def test_invalid_base_currency_rejected(self):
+    def test_invalid_base_or_quote_currency_rejected(self):
         for currency in ['', 'rub', 'RUBLE', None]:
-            with self.subTest(currency=currency), self.assertRaises(RiskInputError):
+            with self.subTest(base=currency), self.assertRaises(RiskInputError):
                 assess_exposures([position()], base_currency=currency, now=NOW,
                     max_age=AGE, limits={})
+        for currency in ['rub', 'RUBLE', '12R']:
+            with self.subTest(quote=currency), self.assertRaises(RiskInputError):
+                exposure_report([position(quote_currency=currency)])
 
     def test_mixed_currency_not_added(self):
         with self.assertRaises(RiskInputError): exposure_report([position(valuation_currency='USD')])
