@@ -48,7 +48,6 @@ class ProfileProbe:
         return ET.fromstring(xml[xml.index("<?xml"):])
 
     def capture(self, name: str):
-        # Only the synthetic debug profile on our explicitly addressed emulator.
         if re.fullmatch(r"[a-z-]+", name) is None:
             raise ValueError("Invalid screenshot label")
         root = Path(__file__).resolve().parents[2]
@@ -59,9 +58,6 @@ class ProfileProbe:
         destination = directory / (name + ".png")
         if destination.is_symlink():
             raise ValueError("Screenshot destination is a symlink")
-        # Capture the emulator's displayed frame rather than the guest screencap
-        # readback path, which hangs in this headless Windows graphics stack.
-        # https://developer.android.com/studio/run/emulator-take-screenshots
         with tempfile.TemporaryDirectory(prefix="capture-", dir=directory) as stage:
             output = self.command("emu", "screenrecord", "screenshot", stage)
             pictures = list(Path(stage).glob("*.png"))
@@ -79,7 +75,6 @@ class ProfileProbe:
         while time.monotonic() < deadline:
             try:
                 value = read()
-                # A leaf Element is falsey; do not mistake it for a missing label.
                 if value is not None:
                     return value
             except (RuntimeError, ET.ParseError, ValueError) as error:
@@ -113,6 +108,7 @@ class ProfileProbe:
         if "Status: ok" not in output:
             raise AssertionError("Profile fixture did not launch")
         self.marker("probe-refresh-tests:15")
+        self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
         self.tap("Инфо")
@@ -188,7 +184,7 @@ def exercise(device) -> None:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,large-font,refresh-state-15", flush=True)
+        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,large-font,refresh-state-15,education-catalog-10", flush=True)
     finally:
         try:
             probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
