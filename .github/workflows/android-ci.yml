@@ -22,8 +22,9 @@ concurrency:
 jobs:
   build:
     name: Android debug and release build
+    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
-      contents: read
+      contents: write
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
 
@@ -105,14 +106,33 @@ jobs:
         uses: ./.github/actions/check-apk
         env:
           RUN_PROFILE_UI_TESTS: "1"
-      - name: Save synthetic UI screenshots and verification reports
+      - name: Record synthetic UI evidence and reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          name: android-verification-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            app/build/outputs/apk/preview/ui-screens/*.png
-            app/build/outputs/apk/preview/apk-verification.json
-            app/build/outputs/apk/preview/install-api-*/install-results.json
-          if-no-files-found: ignore
-          retention-days: 7
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
+            const base = path.join(root, 'app/build/outputs/apk/preview');
+            const shots = ['light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'large-font'];
+            const names = ['apk-verification.json', 'install-api-33/install-results.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
+            const records = [];
+            for (const name of names) {
+              const file = path.join(base, name);
+              if (!fs.existsSync(file)) continue;
+              if (fs.lstatSync(file).isSymbolicLink() || !fs.realpathSync(file).startsWith(root + path.sep)) throw new Error('Evidence outside checkout');
+              const bytes = fs.readFileSync(file);
+              if (bytes.length > 524288) throw new Error('Evidence file unexpectedly large');
+              const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+              if (name.endsWith('.json')) {
+                core.info(`VERIFICATION_REPORT ${name} ${JSON.stringify(JSON.parse(bytes.toString('utf8')))}`);
+              }
+              // Content-addressed review evidence only. No branch, tag, secret or release is changed.
+              const blob = (await github.rest.git.createBlob({...context.repo, encoding:'base64', content:bytes.toString('base64')})).data;
+              records.push({name, blob_sha:blob.sha, sha256, bytes:bytes.length});
+            }
+            core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request.head.sha, run:context.runId, records}));
+            await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
