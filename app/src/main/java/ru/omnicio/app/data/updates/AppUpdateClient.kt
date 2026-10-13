@@ -56,36 +56,9 @@ internal class AppUpdateClient(
             if (declared > 0L && declared != release.sizeBytes) {
                 throw IOException("Размер APK не совпадает с описанием обновления.")
             }
-            destination.parentFile?.mkdirs()
-            val temporary = File(destination.parentFile, destination.name + ".part")
-            if (temporary.exists() && !temporary.delete()) {
-                throw IOException("Не удалось очистить временный APK.")
-            }
+            val temporary = prepareTemporary(destination)
             try {
-                connection.inputStream.use { input ->
-                    temporary.outputStream().buffered().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        var received = 0L
-                        var reported = -1L
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            received += count
-                            if (received > release.sizeBytes || received > MAX_APK_BYTES) {
-                                throw IOException("APK превышает разрешённый размер.")
-                            }
-                            output.write(buffer, 0, count)
-                            if (received - reported >= 256 * 1024 || received == release.sizeBytes) {
-                                reported = received
-                                onProgress(received, release.sizeBytes)
-                            }
-                        }
-                        output.flush()
-                        if (received != release.sizeBytes) {
-                            throw IOException("APK загружен не полностью.")
-                        }
-                    }
-                }
+                copyApk(connection, temporary, release, onProgress)
                 if (destination.exists() && !destination.delete()) {
                     throw IOException("Не удалось заменить старый APK обновления.")
                 }
@@ -93,16 +66,64 @@ internal class AppUpdateClient(
                     throw IOException("Не удалось подготовить APK к проверке.")
                 }
             } finally {
-                if (temporary.exists()) temporary.delete()
+                if (temporary.exists() && !temporary.delete()) {
+                    // Keep the original transfer/validation error. A leftover
+                    // partial file is never eligible for installation.
+                    android.util.Log.w("AnalystUpdater", "Temporary APK cleanup failed")
+                }
             }
         } finally {
             connection.disconnect()
         }
     }
 
+    private fun prepareTemporary(destination: File): File {
+        val directory = destination.parentFile ?: throw IOException("Нет каталога обновления.")
+        if (!directory.isDirectory && !directory.mkdirs()) {
+            throw IOException("Не удалось создать каталог обновления.")
+        }
+        return File(directory, destination.name + ".part").also { temporary ->
+            if (temporary.exists() && !temporary.delete()) {
+                throw IOException("Не удалось очистить временный APK.")
+            }
+        }
+    }
+
+    private fun copyApk(
+        connection: HttpsURLConnection,
+        temporary: File,
+        release: AppRelease,
+        onProgress: (Long, Long) -> Unit,
+    ) {
+        connection.inputStream.use { input ->
+            temporary.outputStream().buffered().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var received = 0L
+                var reported = -1L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    received += count
+                    if (received > release.sizeBytes || received > MAX_APK_BYTES) {
+                        throw IOException("APK превышает разрешённый размер.")
+                    }
+                    output.write(buffer, 0, count)
+                    if (received - reported >= 256 * 1024 || received == release.sizeBytes) {
+                        reported = received
+                        onProgress(received, release.sizeBytes)
+                    }
+                }
+                output.flush()
+                if (received != release.sizeBytes) {
+                    throw IOException("APK загружен не полностью.")
+                }
+            }
+        }
+    }
+
     private fun open(url: String, accept: String): HttpsURLConnection {
         val uri = URI(url)
-        if (uri.scheme != "https" || uri.host != UPDATE_HOST || uri.port != -1) {
+        if (uri.scheme != "https" || uri.rawAuthority != UPDATE_HOST || uri.port != -1) {
             throw IOException("Запрещённый адрес сервера обновлений.")
         }
         return (uri.toURL().openConnection() as HttpsURLConnection).apply {
