@@ -95,7 +95,13 @@ def covariance(rows: Sequence[Sequence[float]], shrinkage: float = .2) -> list[l
 
 def long_only_weights(weights: Sequence[float], width: int) -> tuple[float, ...]:
     result = tuple(finite(x) for x in weights)
-    if len(result) != width or any(x < 0 for x in result) or fsum(result) > 1 + 1e-12:
+    if len(result) != width or any(x < 0 for x in result):
+        raise RiskDataError('invalid_long_only_weights')
+    try:
+        total = fsum(result)
+    except OverflowError:
+        raise RiskDataError('invalid_long_only_weights') from None
+    if total > 1 + 1e-12:
         raise RiskDataError('invalid_long_only_weights')
     return result
 
@@ -146,36 +152,71 @@ def wilson_interval(hits: int, trials: int) -> tuple[float, float]:
     return max(0, centre - radius), min(1, centre + radius)
 
 
-def bootstrap_floor_risk(rows: Sequence[Sequence[float]], weights: Sequence[float], *,
-                         horizon: int = 20, block: int = 5, paths: int = 500,
-                         floor_fraction: float = .8, seed: int = 0) -> dict:
-    """Joint moving-block buy-and-hold bootstrap; flat cash, no unseen crises."""
-    if any(type(x) is not int for x in (horizon, block, paths, seed)) or not 1 <= horizon <= 252 or not 1 <= block <= 60 or not 100 <= paths <= 5000:
+# Hard work bounds protect request workers; they never truncate a scenario.
+MAX_HISTORY_ROWS = 10_000
+MAX_SIMULATION_ASSETS = 100
+MAX_SIMULATION_UPDATES = 10_000_000
+
+
+def _simulation_inputs(rows, weights, horizon, block, paths, floor_fraction, seed):
+    if any(type(x) is not int for x in (horizon, block, paths, seed)):
+        raise RiskDataError('invalid_simulation_size')
+    if not 1 <= horizon <= 252 or not 1 <= block <= 60 or not 100 <= paths <= 5000:
         raise RiskDataError('invalid_simulation_size')
     if len(rows) < max(120, block) or not rows[0]:
         raise RiskDataError('insufficient_history')
-    w = long_only_weights(weights, len(rows[0]))
+    width = len(rows[0])
+    if len(rows) > MAX_HISTORY_ROWS or width > MAX_SIMULATION_ASSETS:
+        raise RiskDataError('simulation_work_limit')
+    if horizon * paths * width > MAX_SIMULATION_UPDATES:
+        raise RiskDataError('simulation_work_limit')
+    w = long_only_weights(weights, width)
     if not 0 < finite(floor_fraction) < 1:
         raise RiskDataError('invalid_capital_floor')
-    values = [tuple(finite(x) for x in row) for row in rows]
-    if any(len(row) != len(w) or any(x < -1 for x in row) for row in values):
+    if any(len(row) != width for row in rows):
         raise RiskDataError('invalid_return_panel')
+    values = [tuple(finite(x) for x in row) for row in rows]
+    if any(x < -1 for row in values for x in row):
+        raise RiskDataError('invalid_return_panel')
+    return values, w
+
+
+def _scenario_wealth(relative, weights, cash):
+    try:
+        return finite(cash + fsum(weight * value for weight, value in zip(weights, relative)))
+    except (ValueError, OverflowError):
+        raise RiskDataError('simulation_overflow') from None
+
+
+def _bootstrap_path(values, weights, cash, horizon, block, rng):
+    relative = [1.0] * len(weights)
+    lowest, elapsed, wealth = 1.0, 0, 1.0
+    while elapsed < horizon:
+        start = rng.randrange(len(values) - block + 1)
+        for row in values[start:start + min(block, horizon - elapsed)]:
+            relative = [value * (1 + change) for value, change in zip(relative, row)]
+            wealth = _scenario_wealth(relative, weights, cash)
+            lowest = min(lowest, wealth)
+            elapsed += 1
+    return 1 - wealth, lowest
+
+
+def bootstrap_floor_risk(rows: Sequence[Sequence[float]], weights: Sequence[float], *,
+                         horizon: int = 20, block: int = 5, paths: int = 500,
+                         floor_fraction: float = .8, seed: int = 0) -> dict:
+    """Joint moving-block buy-and-hold bootstrap; flat cash, no unseen crises.
+
+    Bounds reject excessive work rather than returning a silently smaller sample.
+    The seeded PRNG samples history, never identifiers, credentials or keys.
+    """
+    values, w = _simulation_inputs(rows, weights, horizon, block, paths, floor_fraction, seed)
     rng = Random(seed)  # Statistical reproducibility; never used for a security token.
+    cash = 1 - fsum(w)
     losses, breaches = [], 0
     for _ in range(paths):
-        relative = [1.0] * len(w)
-        lowest, elapsed = 1.0, 0
-        while elapsed < horizon:
-            start = rng.randrange(len(values) - block + 1)
-            for row in values[start:start + min(block, horizon - elapsed)]:
-                relative = [value * (1 + change) for value, change in zip(relative, row)]
-                wealth = 1 - fsum(w) + fsum(weight * value for weight, value in zip(w, relative))
-                if not isfinite(wealth):
-                    raise RiskDataError('simulation_overflow')
-                lowest = min(lowest, wealth)
-                elapsed += 1
+        loss, lowest = _bootstrap_path(values, w, cash, horizon, block, rng)
         breaches += int(lowest < floor_fraction)
-        losses.append(1 - wealth)
+        losses.append(loss)
     return {**tail_loss(losses), 'horizon_sessions': horizon, 'block_sessions': block,
             'paths': paths, 'seed': seed, 'capital_floor': floor_fraction,
             'conditional_breach_frequency': breaches / paths,
