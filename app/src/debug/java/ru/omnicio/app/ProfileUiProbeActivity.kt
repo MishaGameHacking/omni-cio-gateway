@@ -28,12 +28,13 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val protocolChecksPassed = runUpdateProtocolChecks()
         val downloadChecksPassed = runUpdateDownloadChecks()
         val gateChecksPassed = runUpdateGateUiChecks()
+        val feedbackChecksPassed = runUpdateFeedbackChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-update-tests:$updateChecksPassed;probe-install-stream-tests:$installChecksPassed;probe-protocol-tests:$protocolChecksPassed;probe-download-tests:$downloadChecksPassed;probe-gate-tests:$gateChecksPassed"
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-update-tests:$updateChecksPassed;probe-install-stream-tests:$installChecksPassed;probe-protocol-tests:$protocolChecksPassed;probe-download-tests:$downloadChecksPassed;probe-gate-tests:$gateChecksPassed;probe-feedback-tests:$feedbackChecksPassed"
                 }) {
                     ProfileScreen(
                         user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
