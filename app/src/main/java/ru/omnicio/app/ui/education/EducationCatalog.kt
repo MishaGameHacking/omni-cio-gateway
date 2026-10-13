@@ -33,6 +33,11 @@ data class EducationLesson(
  * Lessons explain mechanics and risks; they never promise returns or issue a trade order.
  */
 object EducationCatalog {
+    private val moexBeginner = EducationSource(
+        organization = "Школа Московской биржи",
+        title = "Курсы для начинающих инвесторов",
+        url = "https://school.moex.com/courses/level/beginner",
+    )
     private val moexStart = EducationSource(
         organization = "Школа Московской биржи",
         title = "С чего начать инвестиции — пошаговая инструкция",
@@ -177,6 +182,23 @@ object EducationCatalog {
                 "Не применяйте одинаковые коэффициенты к промышленной компании, банку и страховщику.",
             ),
             sources = listOf(moexShares),
+        ),
+        EducationLesson(
+            id = "behavior",
+            category = EducationCategory.SAFETY,
+            title = "Психология инвестора и пауза перед решением",
+            subtitle = "Страх, FOMO, подтверждение своего мнения и эффект недавнего",
+            minutes = 8,
+            symbol = SpectrumSymbol.Messages,
+            explanation = "Даже правильные данные не защищают от импульсивного решения. Страх пропустить рост, желание срочно вернуть убыток, поиск только удобных аргументов и перенос недавнего движения в будущее могут нарушить заранее выбранный план.",
+            checkpoints = listOf(
+                "Запишите причину действия до открытия карточки покупки или продажи.",
+                "Сравните решение с целью, сроком и допустимой долей позиции.",
+                "Найдите факт, который противоречит вашему текущему мнению.",
+                "Для несрочного решения используйте паузу и повторную проверку источников.",
+                "Не увеличивайте риск только ради попытки быстро отыграть прошлый убыток.",
+            ),
+            sources = listOf(moexBeginner, financialCulture),
         ),
         EducationLesson(
             id = "fraud-and-hype",
