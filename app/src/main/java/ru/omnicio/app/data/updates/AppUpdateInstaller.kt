@@ -53,7 +53,11 @@ internal class AppUpdateInstaller(private val context: Context) {
             UpdateCheckStore(context).markInstallFinished(error.message ?: "Не удалось запустить установку.")
             throw error
         } finally {
-            apk.delete()
+            if (apk.exists() && !apk.delete()) {
+                // The installer owns its copied bytes. Cleanup must neither
+                // fabricate install success nor hide a real installation error.
+                android.util.Log.w("AnalystUpdater", "Verified APK cache cleanup failed")
+            }
         }
         return sessionId
     }
