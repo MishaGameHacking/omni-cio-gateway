@@ -61,9 +61,12 @@ for url in (
         print(f"warning: cleanup failed for {url}: {exc}")
 PY
   fi
+  rm -f "$STATE_PATH"
 }
 trap cleanup EXIT
 
+# A stale retry must never remove another run's temporary key.
+rm -f "$STATE_PATH"
 ssh-keygen -t ed25519 -N "" -f "$KEY_PATH" -C "analyst-ai-ci-${GITHUB_RUN_ID}" >/dev/null
 chmod 600 "$KEY_PATH"
 
@@ -135,6 +138,29 @@ def first_numeric_id(payload):
             return int(value)
     raise RuntimeError(f"Unable to find id in response: {payload}")
 
+def select_existing_backend(payload, name):
+    """Software deployment never creates a replacement server or changes a tariff."""
+    servers = payload.get("servers") if isinstance(payload, dict) else None
+    if not isinstance(servers, list) or any(not isinstance(item, dict) for item in servers):
+        raise RuntimeError("Invalid server inventory; deployment stopped")
+    meta = payload.get("meta")
+    total = meta.get("total") if isinstance(meta, dict) else None
+    if type(total) is not int or total != len(servers):
+        raise RuntimeError("Incomplete server inventory; deployment stopped")
+    matches = [item for item in servers if item.get("name") == name]
+    if len(matches) != 1:
+        raise RuntimeError("Exactly one existing backend is required; no server will be ordered")
+    server_id = matches[0].get("id")
+    if type(server_id) is not int or server_id <= 0:
+        raise RuntimeError("Invalid backend ID; deployment stopped")
+    return server_id
+
+# The old fallback could silently order a foreign-region VM. Fail closed instead.
+# Existing-service maintenance is not the Russia migration/cutover operation.
+server_id = select_existing_backend(request("GET", "/servers"), SERVER_NAME)
+with open(os.environ["STATE_PATH"], "w", encoding="utf-8") as out:
+    out.write(f"SERVER_ID={server_id}\n")
+
 with open(os.environ["SSH_PUBLIC_KEY_PATH"], "r", encoding="utf-8") as handle:
     public_key = handle.read().strip()
 
@@ -148,79 +174,9 @@ key_response = request(
     },
 )
 key_id = first_numeric_id(key_response)
-with open(os.environ["STATE_PATH"], "w", encoding="utf-8") as out:
-    out.write(f"SSH_KEY_ID={key_id}\n")
-
-servers_response = request("GET", "/servers")
-server = None
-for item in walk(servers_response):
-    if item.get("name") == SERVER_NAME and isinstance(item.get("id"), (int, float)):
-        server = item
-        break
-
-if server is None:
-    create_response = None
-    last_error = None
-    for preset_id in (2573, 2447, 4237, 4795, 5943, 2575, 2449, 4239, 4797, 2613, 3795):
-        try:
-            create_response = request(
-                "POST",
-                "/servers",
-                {
-                    "name": SERVER_NAME,
-                    "comment": "Analyst AI backend",
-                    "os_id": 99,
-                    "preset_id": preset_id,
-                    "bandwidth": 1000,
-                    "is_ddos_guard": False,
-                    "is_local_network": False,
-                    "ssh_keys_ids": [key_id],
-                },
-            )
-            print(f"Created backend with preset_id={preset_id}")
-            break
-        except RuntimeError as exc:
-            last_error = exc
-            message = str(exc)
-            if "no_free_node" not in message and "location_not_available" not in message:
-                raise
-            print(f"preset_id={preset_id} is unavailable; trying next minimal preset")
-
-    if create_response is None:
-        presets_payload = request("GET", "/presets/servers")
-        presets = []
-        seen = set()
-        for item in walk(presets_payload):
-            preset_id = item.get("id")
-            if not isinstance(preset_id, (int, float)):
-                continue
-            preset_id = int(preset_id)
-            if preset_id in seen:
-                continue
-            seen.add(preset_id)
-            summary = {
-                key: item.get(key)
-                for key in (
-                    "id", "description", "description_short", "cpu", "cpu_frequency",
-                    "ram", "disk", "disk_type", "price", "location", "type",
-                )
-                if key in item
-            }
-            if len(summary) > 1:
-                presets.append(summary)
-        print("TIMEWEB_PRESET_DIAGNOSTIC=" + json.dumps(presets[:40], ensure_ascii=False))
-        raise last_error or RuntimeError("No suitable Timeweb preset is available")
-    server_id = first_numeric_id(create_response)
-else:
-    server_id = int(server["id"])
-    request(
-        "POST",
-        f"/servers/{server_id}/ssh-keys",
-        {"ssh_key_ids": [key_id]},
-    )
-
 with open(os.environ["STATE_PATH"], "a", encoding="utf-8") as out:
-    out.write(f"SERVER_ID={server_id}\n")
+    out.write(f"SSH_KEY_ID={key_id}\n")
+request("POST", f"/servers/{server_id}/ssh-keys", {"ssh_key_ids": [key_id]})
 
 status = None
 for _ in range(60):
@@ -253,28 +209,8 @@ def find_ipv4(*payloads):
 detail = request("GET", f"/servers/{server_id}")
 ips_payload = request("GET", f"/servers/{server_id}/ips")
 ip = find_ipv4(detail, ips_payload)
-
 if not ip:
-    print("Server has no public IPv4; ordering one IPv4 address")
-    request(
-        "POST",
-        f"/servers/{server_id}/ips",
-        {"type": "ipv4"},
-    )
-
-last_ips_payload = ips_payload
-for _ in range(36):
-    detail = request("GET", f"/servers/{server_id}")
-    ips_payload = request("GET", f"/servers/{server_id}/ips")
-    last_ips_payload = ips_payload
-    ip = find_ipv4(detail, ips_payload)
-    if ip:
-        break
-    time.sleep(5)
-
-if not ip:
-    print("TIMEWEB_IP_DIAGNOSTIC=" + json.dumps(last_ips_payload, ensure_ascii=False))
-    raise RuntimeError("No public IPv4 address found after ordering IPv4")
+    raise RuntimeError("Existing backend has no IPv4; no address will be ordered")
 
 host = f"{ip}.sslip.io"
 with open(os.environ["STATE_PATH"], "w", encoding="utf-8") as out:
@@ -285,7 +221,7 @@ with open(os.environ["STATE_PATH"], "w", encoding="utf-8") as out:
     out.write(f"BACKEND_URL=https://{host}\n")
     out.write(f"CALLBACK_URL=https://{host}/auth/telegram/callback\n")
 
-print(f"Timeweb server ready: id={server_id}, host={host}")
+print(f"Existing Timeweb server ready: id={server_id}, host={host}; no resources ordered")
 PY
 
 source "$STATE_PATH"
@@ -473,6 +409,7 @@ echo "Telegram login start endpoint is ready."
   echo ""
   printf '%s\n' "- Backend: $BACKEND_URL"
   printf '%s\n' "- Telegram callback to allow in BotFather: $CALLBACK_URL"
+  printf '%s\n' "- Existing-service update only: no server, disk, tariff or IP ordered"
   if [[ -n "${TIMEWEB_AI_TOKEN:-}" ]]; then
     printf '%s\n' "- Timeweb AI Gateway: configuration delivered to backend"
   else
