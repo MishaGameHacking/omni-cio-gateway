@@ -89,7 +89,15 @@ class ProfileProbe:
         return node_bounds(self.find(text))
 
     def tap(self, text):
-        left, top, right, bottom = self.bounds(text)
+        from profile_scroll import reveal_in_profile
+
+        def swipe(x1, y1, x2, y2):
+            self.command("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "350")
+
+        target = reveal_in_profile(self.tree, swipe, text)
+        if target is None:
+            target = self.find(text)
+        left, top, right, bottom = node_bounds(target)
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
     def marker(self, expected):
@@ -160,6 +168,17 @@ class ProfileProbe:
         self.capture("about")
         self.tap(CONFIRM_LABEL)
 
+    def section_scroll_reset(self):
+        self.tap("Настройки")
+        self.tap("Безопасность")
+        self.find(CONFIRM_LABEL)
+        self.tap(CONFIRM_LABEL)
+        self.tap("Инфо")
+        # Plain find does not scroll: first content must be visible on selection.
+        self.find("Обучение инвестициям")
+        self.tap("Настройки")
+        self.find(THEME_LABEL)
+
     def education(self):
         self.tap("Инфо")
         self.tap("Обучение инвестициям")
@@ -192,6 +211,7 @@ def exercise(device) -> None:
         stages = (
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
+            ("section-scroll-reset", probe.section_scroll_reset),
             ("education", probe.education),
             ("large-font-200", probe.large_font),
         )
@@ -199,7 +219,7 @@ def exercise(device) -> None:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,education,font-200,refresh-state-15,education-catalog-10", flush=True)
+        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,refresh-state-15,education-catalog-10", flush=True)
     finally:
         try:
             probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
