@@ -175,6 +175,8 @@ def assess_exposures(exposures: Sequence[Exposure], *, base_currency: str,
     All proportions are fractions of total same-base marked value.
     """
     aware(now)
+    if not isinstance(base_currency, str) or not re.fullmatch(r'[A-Z]{3}', base_currency):
+        raise RiskInputError('invalid_base_currency')
     if not exposures or max_age.total_seconds() <= 0:
         raise RiskInputError('exposures_and_freshness_policy_required')
     caps = {key: fraction(value) for key, value in limits.items()}
@@ -197,6 +199,8 @@ def assess_exposures(exposures: Sequence[Exposure], *, base_currency: str,
             cash += amount
         groups = [f'class:{item.asset_class or "UNVERIFIED"}',
                   f'currency:{item.quote_currency or "UNVERIFIED"}']
+        if not item.asset_class or not item.quote_currency:
+            unknown.append(item.instrument_id)
         if not item.is_cash:
             groups += [f'issuer:{item.issuer_group or "UNVERIFIED"}',
                        f'sector:{item.sector or "UNVERIFIED"}']
