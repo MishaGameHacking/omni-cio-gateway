@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import ru.omnicio.app.data.backend.AnalystUser
+import ru.omnicio.app.ui.education.EducationScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
 
@@ -28,6 +29,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
+                var educationOpen by remember { mutableStateOf(false) }
                 Box(
                     Modifier.fillMaxSize().semantics {
                         contentDescription = buildString {
@@ -40,17 +42,25 @@ class ProfileUiProbeActivity : ComponentActivity() {
                         }
                     },
                 ) {
-                    ProfileScreen(
-                        user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
-                        tApiConfigured = false,
-                        screenshotsBlocked = screenshotsBlocked,
-                        onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                        onPortfolioClick = {},
-                        onOpenTApi = {},
-                        onOpenAnalysisSettings = {},
-                        onOpenEducation = {},
-                        onLogout = {},
-                    )
+                    if (educationOpen) {
+                        EducationScreen(
+                            onBack = { educationOpen = false },
+                            onPortfolioClick = {},
+                            onProfileClick = { educationOpen = false },
+                        )
+                    } else {
+                        ProfileScreen(
+                            user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
+                            tApiConfigured = false,
+                            screenshotsBlocked = screenshotsBlocked,
+                            onScreenshotsBlockedChange = { screenshotsBlocked = it },
+                            onPortfolioClick = {},
+                            onOpenTApi = {},
+                            onOpenAnalysisSettings = {},
+                            onOpenEducation = { educationOpen = true },
+                            onLogout = {},
+                        )
+                    }
                 }
             }
         }
