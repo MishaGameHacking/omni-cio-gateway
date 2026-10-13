@@ -7,7 +7,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -21,8 +20,14 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.portfolio.PortfolioDataClient
+import ru.omnicio.app.data.portfolio.RefreshBackoff
+import ru.omnicio.app.data.portfolio.RefreshSnapshot
 
-internal data class AccountData(val json: JSONObject?, val error: String?, val loading: Boolean)
+internal data class AccountData(
+    val json: JSONObject?, val error: String?, val loading: Boolean,
+    val showingPreviousQuery: Boolean = false,
+    val displayedParameters: Map<String, String> = emptyMap(),
+)
 
 @Composable
 internal fun rememberAccountData(token: String, accountId: String, section: String,
@@ -34,33 +39,49 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    var json by remember(token, accountId, section, parameters) { mutableStateOf<JSONObject?>(null) }
-    var error by remember(token, accountId, section, parameters) { mutableStateOf<String?>(null) }
-    var loading by remember(token, accountId, section, parameters) { mutableStateOf(false) }
+    val query = parameters.toMap()
+    // Keep analytics visible while changing currency/date. Operation pages must NOT
+    // cross query boundaries: their caller appends pages to a query-specific list.
+    val dataScope = if (section == "analytics") emptyMap() else query
+    var request by remember(token, accountId, section, dataScope) {
+        mutableStateOf(RefreshSnapshot<Map<String, String>, JSONObject>())
+    }
     val client = remember { PortfolioDataClient() }
-    LaunchedEffect(token, accountId, section, parameters, active) {
+    LaunchedEffect(token, accountId, section, query, active, interval) {
         if (!active || token.isBlank()) return@LaunchedEffect
-        var wait = interval
+        val backoff = RefreshBackoff(interval)
         while (isActive) {
-            loading = true
+            request = request.start(query)
+            val id = request.requestId
+            val waitMillis: Long
             try {
-                when (val result = withContext(Dispatchers.IO) { client.details(token, accountId, section, parameters) }) {
-                    is BackendResult.Success -> { json = result.value; error = null; wait = interval }
+                when (val result = withContext(Dispatchers.IO) { client.details(token, accountId, section, query) }) {
+                    is BackendResult.Success -> {
+                        request = request.succeed(id, result.value, System.currentTimeMillis())
+                        waitMillis = backoff.success()
+                    }
                     is BackendResult.Failure -> {
-                        error = result.message
+                        request = request.fail(id, result.message)
                         if (!result.retryable) return@LaunchedEffect
-                        wait = (wait * 2).coerceAtMost(120_000)
+                        waitMillis = backoff.failure()
                     }
                 }
-            } finally { loading = false }
-            delay(wait)
+            } finally { request = request.cancel(id) }
+            delay(waitMillis)
         }
     }
-    return AccountData(json, error, loading)
+    return AccountData(request.value, request.error, request.loading && active,
+        request.value != null && request.displayedQuery != query, request.displayedQuery ?: emptyMap())
 }
 
 @Composable
 internal fun AccountDataNotice(data: AccountData) {
+    if (data.showingPreviousQuery) {
+        val previous = data.displayedParameters
+        val currency = previous["currency"] ?: "исходная валюта"
+        val range = "${previous["start"] ?: "начало истории"} — ${previous["end"] ?: "последние полученные данные"}"
+        Notice("Показана предыдущая выборка: $currency · $range. Новая выборка пока не получена.")
+    }
     when {
         data.error != null -> Notice(data.error)
         data.json == null -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
