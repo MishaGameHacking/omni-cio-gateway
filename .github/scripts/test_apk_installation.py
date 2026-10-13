@@ -80,10 +80,12 @@ def main() -> None:
             raise RuntimeError("APK installation failed: " + label)
 
     with log_path.open("w", encoding="utf-8") as log:
+        # This Compose app does not require Vulkan. Keep actual GLES rendering,
+        # using Android's documented compatibility option on this disposable AVD.
         process = subprocess.Popen(
             [emulator, "-avd", name, "-port", str(port), "-no-window", "-no-audio",
-             "-no-snapshot", "-no-boot-anim", "-gpu", "software", "-memory", "2048",
-             "-cores", "2", "-accel", "on" if acceleration.returncode == 0 else "off"],
+             "-no-snapshot", "-no-boot-anim", "-gpu", "swiftshader", "-feature", "-Vulkan",
+             "-memory", "2048", "-cores", "2", "-accel", "on" if acceleration.returncode == 0 else "off"],
             stdout=log, stderr=subprocess.STDOUT,
         )
         try:
