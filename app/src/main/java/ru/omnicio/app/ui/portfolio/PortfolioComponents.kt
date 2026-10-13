@@ -152,6 +152,7 @@ internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit) {
                 DataRow("Биржа", position.exchange ?: "—")
                 DataRow("Отрасль", position.sector ?: "Не указана API")
                 DataRow("Идентификатор", position.id)
+                ru.omnicio.app.ui.instruments.BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
                 Notice("«—» означает, что значение не получено или не может быть корректно рассчитано. Цены и результаты показаны в валютах, возвращённых API. Количество не переводится в лоты.")
             }
         }, confirmButton = { TextButton(onClick = close) { Text("Закрыть") } })

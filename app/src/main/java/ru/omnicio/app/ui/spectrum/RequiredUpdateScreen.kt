@@ -1,122 +1,68 @@
 package ru.omnicio.app.ui.spectrum
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import ru.omnicio.app.data.updates.UpdateFlow
-import ru.omnicio.app.data.updates.UpdateStage
+import ru.omnicio.app.data.updates.ReleaseDecision
+import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
+import ru.omnicio.app.ui.updates.UpdateGateActions
+import ru.omnicio.app.ui.updates.UpdateGateUi
 
+/** Spectrum renders the shared gate; it cannot download, install, or unblock content. */
 @Composable
-fun RequiredUpdateScreen(
-    state: UpdateFlow,
-    versionLabel: String,
-    onUpdate: () -> Unit,
-    onHelp: () -> Unit,
-    onSignOut: () -> Unit,
-) {
-    val stage = state.stage
+fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
+    val motion = LocalSpectrumMotionPreference.current
     SpectrumBackground(Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 36.dp),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item {
-                SpectrumIcon(
-                    symbol = SpectrumSymbol.Update,
-                    modifier = Modifier.size(112.dp),
-                    selected = true,
-                    tile = true,
-                    motionAllowed = true,
-                )
+                SpectrumIcon(SpectrumSymbol.Update, Modifier.size(112.dp), selected = true,
+                    tile = true, motionAllowed = motion.enabled)
             }
-            item {
-                Text(
-                    text = "Требуется обновление",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            item { Text(state.title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
             item {
                 SpectrumCard(emphasized = true) {
-                    Text(
-                        text = "Для продолжения нужна версия $versionLabel. Портфель, вход и настройки сохранятся.",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Column(
-                        modifier = Modifier.padding(top = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(stageMessage(stage))
-                        if (stage is UpdateStage.Downloading && stage.total > 0L) {
-                            LinearProgressIndicator(
-                                progress = { stage.received.toFloat() / stage.total.toFloat() },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Text(
-                                text = "${stage.received / 1_048_576} из ${stage.total / 1_048_576} МБ",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+                    Text(state.explanation, style = MaterialTheme.typography.bodyLarge)
+                    Text("Установлено: ${state.installedVersion}", style = MaterialTheme.typography.bodyLarge)
+                    state.release?.let { Text("Новая версия: ${it.versionName}", style = MaterialTheme.typography.bodyLarge) }
+                    state.release?.notes?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                    if (state.checking && !state.busy) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Text("Проверяем доступность актуальной версии.")
                     }
+                    if (state.busy) {
+                        Text("Скачивание и проверка: ${state.progressPercent}%")
+                        LinearProgressIndicator(progress = { state.progressPercent / 100f }, modifier = Modifier.fillMaxWidth())
+                    }
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+                    state.installationStatus?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                }
+            }
+            if (state.decision == ReleaseDecision.UPDATE_REQUIRED) {
+                item {
+                    Button(onClick = actions.update, enabled = state.canUpdate,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить приложение") }
                 }
             }
             item {
-                Button(
-                    onClick = onUpdate,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = stage == UpdateStage.Required || stage is UpdateStage.Failed,
-                ) {
-                    Text(if (stage is UpdateStage.Failed) "Повторить обновление" else "Обновить приложение")
-                }
+                Text("APK загружается с московского сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
+                    style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             item {
-                Text(
-                    text = "APK загружается только с московского сервера Analyst AI. Перед установкой проверяются размер, SHA‑256, package, versionCode и сертификат подписи.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Text("Android может попросить разрешение на установку и открыть системное подтверждение. После установки при необходимости нажмите «Открыть».",
+                    style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            item {
-                Text(
-                    text = "Android может открыть системное окно подтверждения. Это штатная защита устройства — приложение не пытается её обходить.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            item { TextButton(onClick = onHelp) { Text("Помощь с обновлением") } }
-            item { TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") } }
+            item { TextButton(onClick = actions.retry, enabled = state.canRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("Повторить проверку") } }
+            item { TextButton(onClick = actions.close, modifier = Modifier.heightIn(min = 48.dp)) { Text("Закрыть") } }
         }
     }
-}
-
-private fun stageMessage(stage: UpdateStage): String = when (stage) {
-    UpdateStage.Checking -> "Проверяем версию приложения."
-    UpdateStage.Required -> "Новая версия готова к безопасной загрузке."
-    is UpdateStage.UnsupportedVersion ->
-        "На устройстве установлена более новая неизвестная версия (${stage.installedCode}). Понижение версии запрещено."
-    is UpdateStage.Downloading -> "Скачиваем APK с сервера Analyst AI."
-    UpdateStage.Verifying -> "Проверяем подпись и целостность APK."
-    UpdateStage.AwaitingInstaller -> "Передаём проверенный APK системному установщику Android."
-    UpdateStage.AwaitingUser -> "Подтвердите установку в системном окне Android."
-    UpdateStage.VerifyInstalledVersion -> "Проверяем установленную версию."
-    UpdateStage.Current -> "Приложение обновлено."
-    is UpdateStage.Failed -> stage.message
 }

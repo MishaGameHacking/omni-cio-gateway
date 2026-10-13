@@ -42,6 +42,8 @@ import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.profile.TApiScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
+import ru.omnicio.app.ui.updates.MandatoryUpdateHost
+import ru.omnicio.app.ui.spectrum.RequiredUpdateScreen
 
 private enum class AppScreen {
     Portfolio,
@@ -97,19 +99,21 @@ class MainActivity : ComponentActivity() {
         captureTelegramCallback(intent)
 
         setContent {
-            AnalystAiApp(
-                authCode = pendingAuthCode.value,
-                authError = pendingAuthError.value,
-                onStartTelegramLogin = ::launchTelegramLogin,
-                onAuthCodeConsumed = {
-                    pendingAuthCode.value = null
-                },
-                initialScreenshotsBlocked = initialScreenshotsBlocked,
-                onScreenshotsBlockedChange = { blocked ->
-                    settingsStore.setScreenshotsBlocked(blocked)
-                    applyScreenshotPolicy(blocked)
-                },
-            )
+            MandatoryUpdateHost(blockedContent = { state, actions -> RequiredUpdateScreen(state, actions) }) {
+                AnalystAiApp(
+                    authCode = pendingAuthCode.value,
+                    authError = pendingAuthError.value,
+                    onStartTelegramLogin = ::launchTelegramLogin,
+                    onAuthCodeConsumed = {
+                        pendingAuthCode.value = null
+                    },
+                    initialScreenshotsBlocked = initialScreenshotsBlocked,
+                    onScreenshotsBlockedChange = { blocked ->
+                        settingsStore.setScreenshotsBlocked(blocked)
+                        applyScreenshotPolicy(blocked)
+                    },
+                )
+            }
         }
     }
 

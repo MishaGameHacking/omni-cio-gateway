@@ -25,40 +25,28 @@ class ProfileUiProbeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val refreshChecks = runRefreshStateRegressionChecks()
         val educationChecks = runEducationCatalogChecks()
+        val updateChecks = runUpdatePolicyChecks()
+        val installChecks = runInstallStreamChecks()
+        val protocolChecks = runUpdateProtocolChecks()
+        val downloadChecks = runUpdateDownloadChecks()
+        val gateChecks = runUpdateGateUiChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 var educationOpen by remember { mutableStateOf(false) }
-                Box(
-                    Modifier.fillMaxSize().semantics {
-                        contentDescription = buildString {
-                            append("probe-background:")
-                            append(background)
-                            append(";probe-refresh-tests:")
-                            append(refreshChecks)
-                            append(";probe-education-tests:")
-                            append(educationChecks)
-                        }
-                    },
-                ) {
+                Box(Modifier.fillMaxSize().semantics {
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks"
+                }) {
                     if (educationOpen) {
-                        EducationScreen(
-                            onBack = { educationOpen = false },
-                            onPortfolioClick = {},
-                            onProfileClick = { educationOpen = false },
-                        )
+                        EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
                     } else {
                         ProfileScreen(
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
-                            tApiConfigured = false,
-                            screenshotsBlocked = screenshotsBlocked,
+                            tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
                             onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                            onPortfolioClick = {},
-                            onOpenTApi = {},
-                            onOpenAnalysisSettings = {},
-                            onOpenEducation = { educationOpen = true },
-                            onLogout = {},
+                            onPortfolioClick = {}, onOpenTApi = {}, onOpenAnalysisSettings = {},
+                            onOpenEducation = { educationOpen = true }, onLogout = {},
                         )
                     }
                 }

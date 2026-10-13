@@ -299,6 +299,7 @@ def ensure_history(db) -> None:
 
 
 def record_history(user_id: int, accounts: list[dict], observed: str) -> None:
+    backend.client_updates.assert_user_can_run(backend.connect, user_id)
     stamp = int(datetime.fromisoformat(observed).timestamp())
     with closing(backend.connect()) as db:
         ensure_history(db)
