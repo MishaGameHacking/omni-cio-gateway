@@ -11,8 +11,8 @@ object ClientVersion {
 
     fun attach(connection: HttpURLConnection) {
         connection.instanceFollowRedirects = false
-        connection.setRequestProperty("X-Analyst-Package", BuildConfig.APPLICATION_ID)
-        connection.setRequestProperty("X-Analyst-Version-Code", BuildConfig.VERSION_CODE.toString())
+        connection.setRequestProperty(UpdateProtocol.PACKAGE_HEADER, BuildConfig.APPLICATION_ID)
+        connection.setRequestProperty(UpdateProtocol.CODE_HEADER, BuildConfig.VERSION_CODE.toString())
     }
 
     fun observeStatus(status: Int) {

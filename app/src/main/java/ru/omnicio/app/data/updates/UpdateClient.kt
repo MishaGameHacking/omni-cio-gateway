@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import java.io.File
-import java.net.URI
+import java.io.OutputStream
 import java.security.MessageDigest
+import java.time.Instant
 import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -19,37 +21,26 @@ import ru.omnicio.app.data.backend.BackendConfig
 
 class UpdateClient {
     private companion object { val downloadLock = Mutex() }
-    private fun connect(path: String): HttpsURLConnection {
-        require(path.startsWith("/client/") && !path.contains(".."))
-        val base = URI(BackendConfig.BASE_URL)
-        require(base.scheme == "https" && base.userInfo == null && base.query == null && base.fragment == null)
-        return (URI(BackendConfig.BASE_URL + path).toURL().openConnection() as HttpsURLConnection).apply {
+
+    private fun connect(path: String): HttpsURLConnection =
+        (UpdateProtocol.requestUri(BackendConfig.BASE_URL, path).toURL().openConnection() as HttpsURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
             readTimeout = 30_000
             useCaches = false
+            setRequestProperty("Cache-Control", "no-cache")
             ClientVersion.attach(this)
         }
-    }
 
     suspend fun current(): ReleaseDescriptor = withContext(Dispatchers.IO) {
-        val connection = connect("/client/update-policy?package_name=${BuildConfig.APPLICATION_ID}")
+        val connection = connect(UpdateProtocol.policyPath(BuildConfig.APPLICATION_ID))
         try {
             check(connection.responseCode == 200) { "Сервер обновлений пока недоступен. Повторите проверку." }
-            val bytes = connection.inputStream.use { it.readNBytes(16_385) }
-            check(bytes.size <= 16_384) { "Некорректное описание обновления." }
+            val bytes = connection.inputStream.use { it.readNBytes(UpdateProtocol.MAX_MANIFEST_BYTES + 1) }
+            check(bytes.size <= UpdateProtocol.MAX_MANIFEST_BYTES) { "Некорректное описание обновления." }
             val json = JSONObject(String(bytes, Charsets.UTF_8))
-            fun integer(name: String): Long = json.get(name).toString().toLongOrNull()
-                ?: error("Некорректная версия обновления.")
-            check(integer("schema_version") == 1L)
-            val release = ReleaseDescriptor(
-                json.getString("package_name"), integer("version_code"), json.getString("version_name"),
-                json.getString("apk_sha256"), integer("apk_bytes"), json.getString("certificate_sha256"),
-                integer("min_sdk").also { check(it in 33..100) }.toInt(), json.optString("notes"),
-            )
-            check(integer("minimum_version_code") == release.versionCode)
-            check(json.getString("apk_path") == "/client/apk/${release.filename}")
-            release
+            val fields = json.keys().asSequence().associateWith { json.get(it) }
+            UpdateProtocol.parse(fields, Instant.now().epochSecond)
         } finally { connection.disconnect() }
     }
 
@@ -60,7 +51,7 @@ class UpdateClient {
             connection.setRequestProperty("Authorization", "Bearer $token")
             when (val status = connection.responseCode) {
                 200 -> Unit
-                401 -> Unit // Login can be restored/repeated by the normal auth layer.
+                401 -> Unit // The existing authentication flow handles an expired session.
                 426 -> { ClientVersion.observeStatus(status); error("Версия уже изменилась. Проверяем обновление.") }
                 else -> error("Не удалось подтвердить версию на сервере.")
             }
@@ -72,7 +63,8 @@ class UpdateClient {
 
     private suspend fun downloadLocked(context: Context, release: ReleaseDescriptor, progress: (Int) -> Unit): File = withContext(Dispatchers.IO) {
         check(release.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT) == ReleaseDecision.UPDATE_REQUIRED)
-        val directory = File(context.filesDir, "updates").apply { mkdirs() }
+        val directory = File(context.filesDir, "updates")
+        check((directory.isDirectory || directory.mkdirs()) && directory.isDirectory) { "Не удалось подготовить место для обновления." }
         val complete = File(directory, release.filename)
         if (complete.isFile && runCatching { verifyArchive(context, complete, release) }.isSuccess) return@withContext complete
         val partial = File(directory, "download.part")
@@ -82,59 +74,57 @@ class UpdateClient {
             check(connection.responseCode == 200) { "Не удалось скачать APK с сервера Analyst AI." }
             val advertised = connection.contentLengthLong
             check(advertised == -1L || advertised == release.bytes) { "Размер файла не совпадает с описанием." }
-            var received = 0L
             val deadline = System.nanoTime() + 10L * 60 * 1_000_000_000
             connection.inputStream.use { input ->
                 partial.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var previousProgress = -1
-                    while (true) {
+                    copyUpdateDownload(input, output, release.bytes, release.sha256, progress) {
                         ensureActive()
                         check(System.nanoTime() < deadline) { "Время скачивания истекло. Повторите попытку." }
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        received += count
-                        check(received <= release.bytes) { "Размер обновления превышает ожидаемый." }
-                        output.write(buffer, 0, count)
-                        val percent = (100 * received / release.bytes).toInt()
-                        if (percent != previousProgress) { progress(percent); previousProgress = percent }
                     }
                     output.fd.sync()
                 }
             }
-            check(received == release.bytes) { "Файл скачан не полностью. Повторите попытку." }
             verifyArchive(context, partial, release)
+            check(!complete.exists() || complete.delete()) { "Не удалось заменить повреждённый APK." }
             check(partial.renameTo(complete)) { "Не удалось сохранить обновление." }
-            // Remove only obsolete APKs from this dedicated private directory.
-            directory.listFiles()?.filter { it != complete && it.name.endsWith(".apk") }?.forEach { it.delete() }
+            directory.listFiles()?.filter { it != complete && it.name.endsWith(".apk") }?.forEach(::deleteTemporary)
             complete
-        } finally { connection.disconnect(); partial.delete() }
+        } finally {
+            connection.disconnect()
+            deleteTemporary(partial)
+        }
     }
 
     fun verifyArchive(context: Context, file: File, release: ReleaseDescriptor) {
         check(file.length() == release.bytes) { "Повреждённый файл обновления." }
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+        // Bound hashing if a file is unexpectedly replaced/grows after the stat.
+        val sink = object : OutputStream() {
+            override fun write(value: Int) = Unit
+            override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit
         }
-        check(hex(digest.digest()) == release.sha256) { "Проверка целостности обновления не пройдена." }
+        file.inputStream().use { input -> copyVerifiedInstallStream(input, sink, release.bytes, release.sha256) {} }
         val flags = PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
         val installed = context.packageManager.getPackageInfo(context.packageName, flags)
         val candidate = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
             ?: error("Android не распознал APK.")
         check(candidate.packageName == context.packageName && candidate.packageName == release.packageName)
         check(candidate.longVersionCode == release.versionCode && candidate.longVersionCode > installed.longVersionCode)
+        check(candidate.versionName == release.versionName) { "Название версии APK не совпадает с описанием." }
         val application = candidate.applicationInfo ?: error("APK не содержит метаданных приложения.")
         check(application.minSdkVersion == release.minSdk && application.minSdkVersion <= Build.VERSION.SDK_INT)
-        check(application.flags and ApplicationInfo.FLAG_TEST_ONLY == 0)
-        fun certificates(info: android.content.pm.PackageInfo): Set<String> = info.signingInfo?.apkContentsSigners
-            ?.map { hex(MessageDigest.getInstance("SHA-256").digest(it.toByteArray())) }?.toSet() ?: emptySet()
+        check(application.flags and (ApplicationInfo.FLAG_TEST_ONLY or ApplicationInfo.FLAG_DEBUGGABLE) == 0)
         val expected = setOf(release.certificateSha256)
         check(certificates(installed) == expected && certificates(candidate) == expected) {
             "Подпись APK отличается. Установка остановлена; удалять приложение не нужно."
         }
     }
 
+    private fun certificates(info: android.content.pm.PackageInfo): Set<String> = info.signingInfo?.apkContentsSigners
+        ?.map { hex(MessageDigest.getInstance("SHA-256").digest(it.toByteArray())) }?.toSet() ?: emptySet()
+
     private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+
+    private fun deleteTemporary(file: File) {
+        if (file.exists() && !file.delete()) Log.w("AnalystUpdate", "Не удалось удалить временный APK; исходный результат сохранён.")
+    }
 }
