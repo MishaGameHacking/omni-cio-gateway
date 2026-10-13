@@ -2,7 +2,7 @@ name: Integrate reviewed portfolio research
 on:
   push:
     branches: [feature/evidence-risk-rebalancing]
-    paths: [.github/workflows/integrate-research-source.yml]
+    paths: [.github/workflows/integrate-research-source.yml, .github/scripts/integrate_research_source.py]
 permissions:
   contents: write
 concurrency:
