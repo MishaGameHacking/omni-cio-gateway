@@ -30,6 +30,7 @@ except ImportError:
 router = APIRouter(prefix='/analysis', tags=['portfolio-research'])
 ZERO = Decimal(0)
 EXTRA_METHODS = {'fundamentals': 'GetAssetFundamentals', 'news': 'News'}
+EVIDENCE_FAILURE = 'Проверенные сведения не прошли контроль полноты или целостности. Рейтинг и отчётность этой бумаги не используются до исправления источника.'
 
 
 def optional_broker_read(reader, method: str, payload: dict) -> tuple[dict, str | None]:
@@ -49,13 +50,18 @@ def position_amount(position: dict, currency: str) -> Decimal | None:
 
 
 def _broker_metric(raw: dict, key: str) -> float | None:
-    value = raw.get(key)
+    value = raw.get(key) if isinstance(raw, dict) else None
     if type(value) not in (int, float):
         return None
-    return float(value) if isfinite(value) else None
+    try:
+        numeric = float(value)
+    except (ValueError, OverflowError):
+        return None
+    return numeric if isfinite(numeric) else None
 
 
 def broker_company_summary(raw: dict, sector: str) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
     metrics = {key: _broker_metric(raw, key) for key in
                ('revenueTtm', 'netIncomeTtm', 'freeCashFlowTtm', 'netDebtToEbitda', 'currentRatioMrq')}
     messages = []
@@ -75,6 +81,8 @@ def relevant_news(items: list, uid: str, at: datetime) -> list[dict]:
         if not isinstance(raw, dict):
             continue
         instruments = raw.get('instrumentId', [])
+        if not isinstance(instruments, list):
+            continue
         matches = any(isinstance(item, dict) and isinstance(item.get('instrument'), dict) and item['instrument'].get('instrumentUid') == uid for item in instruments)
         if not matches:
             continue
@@ -91,20 +99,31 @@ def relevant_news(items: list, uid: str, at: datetime) -> list[dict]:
     return sorted(result, key=lambda item: stamp(item['published_at']), reverse=True)[:3]
 
 
+def _reviewed_evidence(uid: str, bond: bool, at: datetime):
+    try:
+        identity = research_store.latest_verified(backend.connect, 'issuer_identity', uid, at)
+        issuer = identity['issuer_id'] if identity else None
+        raw = research_store.records(backend.connect, 'rating', uid, at=at)
+        if issuer:
+            raw += research_store.records(backend.connect, 'rating', issuer, at=at)
+        ratings = [Rating(**{**item, 'source': Source(**item['source'])}) for item in raw]
+        credit = credit_assessment(ratings, issuer_id=issuer, instrument_id=uid, at=at, bond=bond)
+        fact = research_store.latest_verified(backend.connect, 'statement', issuer, at) if issuer else None
+        statement = Statement(**{**fact, 'source': Source(**fact['source'])}) if fact else None
+        company = statement_analysis(statement, issuer_id=issuer or '', at=at)
+        return issuer, credit, company, None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        # A failed read cannot turn into an old favorable rating or break the
+        # entire portfolio. Show an explicit unavailable evidence section.
+        credit = credit_assessment([], issuer_id=None, instrument_id=uid, at=at, bond=bond)
+        company = statement_analysis(None, issuer_id='', at=at)
+        return None, credit, company, EVIDENCE_FAILURE
+
+
 def instrument_research(position: dict, profile: dict, total: Decimal, currency: str,
                         fundamentals: dict, news: list, at: datetime) -> dict:
     uid = str(position.get('id', ''))
-    identity = research_store.latest_verified(backend.connect, 'issuer_identity', uid, at)
-    issuer = identity['issuer_id'] if identity else None
-    raw_ratings = research_store.records(backend.connect, 'rating', uid)
-    if issuer:
-        raw_ratings += research_store.records(backend.connect, 'rating', issuer)
-    ratings = [Rating(**{**item, 'source': Source(**item['source'])}) for item in raw_ratings]
-    credit = credit_assessment(ratings, issuer_id=issuer, instrument_id=uid, at=at,
-                               bond=position.get('instrumentType') == 'bond')
-    raw_statement = research_store.latest_verified(backend.connect, 'statement', issuer, at) if issuer else None
-    statement = Statement(**{**raw_statement, 'source': Source(**raw_statement['source'])}) if raw_statement else None
-    company = statement_analysis(statement, issuer_id=issuer or '', at=at)
+    issuer, credit, company, evidence_error = _reviewed_evidence(uid, position.get('instrumentType') == 'bond', at)
     value = position_amount(position, currency)
     share = value / total * 100 if value is not None and value >= 0 and total > 0 else None
     limit = Decimal(str(profile['max_position_percent']))
@@ -124,6 +143,7 @@ def instrument_research(position: dict, profile: dict, total: Decimal, currency:
             'class_code': position.get('classCode'), 'instrument_type': position.get('instrumentType'),
             'issuer_id': issuer, 'sector': position.get('sector'), 'share_percent': str(share) if share is not None else None,
             'action': action, 'explanation': explanation, 'credit': credit, 'statement': company,
+            'evidence_error': evidence_error,
             'broker_fundamentals': broker_company_summary(fundamentals.get(position.get('assetUid'), {}), str(position.get('sector') or '')),
             'news': relevant_news(news, uid, at),
             'instrument_url': instrument_link(position.get('instrumentType'), position.get('ticker'), position.get('isin')),
@@ -131,16 +151,24 @@ def instrument_research(position: dict, profile: dict, total: Decimal, currency:
             'order_created': False, 'target_percent': None}
 
 
-def _history_risk(cards, values, total, currency, at):
+def _history_series(cards, values, total, currency, at):
     series, weights = {}, {}
     for card in cards:
         uid = card['instrument_uid']
         record = research_store.latest_verified(backend.connect, 'total_returns', uid, at)
         if record is None or record.get('currency') != currency:
+            return None
+        series[uid], weights[uid] = record['values'], float(values[uid] / total)
+    return series, weights
+
+
+def _history_risk(cards, values, total, currency, at):
+    try:
+        history = _history_series(cards, values, total, currency, at)
+        if history is None:
             return {'state': 'insufficient_verified_history', 'default_probability': None,
                     'explanation': 'Нет полной сопоставимой истории с учётом выплат и изменений бумаг. Процент вероятности потери капитала не придумываем.'}
-        series[uid], weights[uid] = record['values'], float(values[uid] / total)
-    try:
+        series, weights = history
         names, days, rows = aligned_returns(series)
         if days[-1] > at.date().isoformat() or (at.date() - datetime.fromisoformat(days[-1]).date()).days > 7:
             raise RiskDataError('history_not_current')
@@ -149,9 +177,9 @@ def _history_risk(cards, values, total, currency, at):
                 'sample_start': days[0], 'sample_end': days[-1],
                 'scenarios': bootstrap_floor_risk(rows, w),
                 'explanation': 'Это проверка сценариев из прошлых данных, а не обещание будущего результата. Новые кризисы могут оказаться хуже.'}
-    except (RiskDataError, ValueError):
+    except (ValueError, TypeError, KeyError):
         return {'state': 'history_quality_failed', 'default_probability': None,
-                'explanation': 'История не прошла проверку полноты и сопоставимости.'}
+                'explanation': 'История не прошла проверку полноты, целостности и сопоставимости.'}
 
 
 def collect_research(user: Any) -> dict:
@@ -213,9 +241,12 @@ def collect_research(user: Any) -> dict:
     risk = _history_risk(cards, values, total, 'RUB', at) if all_valued and cards else {
         'state': 'incomplete_valuation', 'default_probability': None,
         'explanation': 'Не все позиции оценены в одной валюте. Полную оценку риска не показываем.'}
+    errors = [e for e in (fundamental_error, news_error) if e]
+    if any(card['evidence_error'] for card in cards):
+        errors.append(EVIDENCE_FAILURE)
     return {'state': 'research', 'as_of': at.isoformat(), 'currency': 'RUB', 'cards': cards,
             'profile_configured': bool(profile.get('configured')), 'risk': risk,
-            'source_errors': [e for e in (fundamental_error, news_error) if e],
+            'source_errors': errors,
             'examined_positions': len(cards), 'total_positions': len(positions),
             'issuer_coverage_count': sum(bool(c['issuer_id']) for c in cards),
             'analysis_is_complete': False, 'autotrading': False, 'paid_model_calls': 0,
