@@ -18,15 +18,18 @@ import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
 
-/** A synthetic UI fixture in src/debug only. No network calls or authentication bypass in preview. */
+/** Debug-only UI fixture. No network calls or authentication bypass in preview. */
 class ProfileUiProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val checksPassed = runRefreshStateRegressionChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
-                Box(Modifier.fillMaxSize().semantics { contentDescription = "probe-background:$background" }) {
+                Box(Modifier.fillMaxSize().semantics {
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed"
+                }) {
                     ProfileScreen(
                         user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
                         tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
