@@ -128,7 +128,7 @@ fun TelegramLoginScreen(
                         enabled = !loading,
                         contentPadding = PaddingValues(vertical = 14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF229ED9),
+                            containerColor = Color(0xFF0077A8),
                             contentColor = Color.White,
                         ),
                         onClick = onLoginClick,
