@@ -8,9 +8,11 @@ import json
 try:
     from .credit_evidence import EvidenceError, Rating, Source, Statement, stamp
     from .risk_math import aligned_returns
+    from .evidence_order import latest_unambiguous
 except ImportError:
     from credit_evidence import EvidenceError, Rating, Source, Statement, stamp
     from risk_math import aligned_returns
+    from evidence_order import latest_unambiguous
 
 KINDS = {'rating', 'statement', 'issuer_identity', 'total_returns'}
 
@@ -80,7 +82,8 @@ def records(connect, kind: str, subject: str) -> list[dict]:
 
 
 def latest_verified(connect, kind: str, subject: str, at: datetime) -> dict | None:
-    candidates = [raw for raw in records(connect, kind, subject)
-                  if stamp(raw['source']['published_at']) <= at and stamp(raw['source']['checked_at']) <= at]
-    latest = max(candidates, key=lambda item: (stamp(item['source']['published_at']), stamp(item['source']['checked_at'])), default=None)
-    return latest if latest and Source(**latest['source']).valid(at) else None
+    # Equal-time changes to issuer identity, statements or return histories must
+    # not make the answer depend on SQLite/import ordering. Missing means that
+    # research remains incomplete; it is never a favorable substitute.
+    return latest_unambiguous(records(connect, kind, subject), at=at,
+                              valid_source=lambda source: Source(**source).valid(at))
