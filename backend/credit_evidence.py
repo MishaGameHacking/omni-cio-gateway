@@ -1,8 +1,4 @@
-"""Dated credit/statement evidence. Rating opinions are never invented probabilities.
-
-Only an operator-reviewed provider import may write these records. Client APIs
-and LLM outputs must not be accepted as authoritative rating/statement evidence.
-"""
+"""Dated credit/statement evidence; conflicting facts must never imply safety."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -48,15 +44,19 @@ class Source:
     review_id: str
 
     def valid(self, at: datetime) -> bool:
+        if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+            return False
+        if any(not isinstance(value, str) or not value.strip() for value in (self.id, self.review_id, self.url)):
+            return False
         try:
             parsed = urlsplit(self.url)
-            if not self.id or not self.review_id or parsed.scheme != 'https' or not parsed.hostname:
+            if parsed.scheme != 'https' or not parsed.hostname:
                 return False
             if parsed.username or parsed.password or parsed.fragment or parsed.port not in (None, 443):
                 return False
             published, checked, expires = (stamp(x) for x in (self.published_at, self.checked_at, self.expires_at))
-            return at.tzinfo is not None and published <= checked <= at < expires
-        except (ValueError, TypeError):
+            return published <= checked <= at < expires
+        except (ValueError, TypeError, AttributeError):
             return False
 
 
@@ -77,10 +77,14 @@ class Rating:
     source: Source
 
     def level(self) -> int | None:
-        # No international/national-scale conversion or implicit symbol repair.
-        if self.scale != 'RU_NATIONAL_LONG_TERM' or self.agency not in AGENCIES:
+        if (self.scale != 'RU_NATIONAL_LONG_TERM' or not isinstance(self.agency, str)
+                or self.agency not in AGENCIES or not isinstance(self.grade, str)
+                or not isinstance(self.source, Source) or not isinstance(self.source.url, str)):
             return None
-        host = urlsplit(self.source.url).hostname
+        try:
+            host = urlsplit(self.source.url).hostname
+        except ValueError:
+            return None
         root = AGENCIES[self.agency]
         if host != root and host != 'www.' + root:
             return None
@@ -94,31 +98,72 @@ class Rating:
         return ':'.join((self.agency, self.scale, self.grade))
 
 
+def _rating_identity(rating: Rating) -> tuple:
+    # Distinct import IDs are allowed for duplicate observations of the SAME fact.
+    return (rating.grade, rating.status, rating.outlook, rating.source.url,
+            rating.source.expires_at)
+
+
 def credit_assessment(ratings: Iterable[Rating], *, issuer_id: str | None,
                       instrument_id: str, at: datetime, bond: bool) -> dict:
-    """Latest action per agency/scale/subject wins, including a withdrawal.
+    """Latest action wins; conflicting simultaneous actions are quarantined.
 
-    Issuer rating may describe the company but does not become its bond rating.
-    ACRA vs Expert RA results remain separate; no numeric average is computed.
+    An expired/withdrawn latest rating cannot resurrect a favorable older rating.
+    A tie must not depend on database ordering. Agencies/scales remain separate.
     """
-    latest: dict[tuple, Rating] = {}
+    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+        raise EvidenceError('assessment_timezone_required')
+    latest: dict[tuple, tuple[tuple, list[Rating]]] = {}
+    warnings = []
     for rating in ratings:
+        if not isinstance(rating, Rating) or not isinstance(rating.source, Source):
+            warnings.append('Некорректная запись рейтинга исключена из оценки.')
+            continue
         subject_match = ((rating.subject_kind == 'issue' and rating.subject_id == instrument_id)
                          or (rating.subject_kind == 'issuer' and issuer_id and rating.subject_id == issuer_id))
-        if not subject_match or stamp(rating.source.published_at) > at or stamp(rating.source.checked_at) > at:
+        if not subject_match:
+            continue
+        if any(not isinstance(value, str) for value in (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)):
+            warnings.append('Некорректная запись рейтинга исключена из оценки.')
+            continue
+        try:
+            published, checked = stamp(rating.source.published_at), stamp(rating.source.checked_at)
+        except EvidenceError:
+            # No trustworthy ordering is possible. Do not fall back to older data.
+            warnings.append('Нельзя определить дату действия рейтинга; проверка кредитного качества приостановлена.')
+            return _credit_result([], warnings, bond)
+        if published > at or checked > at:
             continue
         key = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)
+        moment = (published, checked)
         previous = latest.get(key)
-        if previous is None or (stamp(rating.source.published_at), stamp(rating.source.checked_at)) > (
-                stamp(previous.source.published_at), stamp(previous.source.checked_at)):
-            latest[key] = rating
-    current, warnings = [], []
-    for rating in latest.values():
-        level = rating.level()
-        if rating.status != 'active' or not rating.source.valid(at) or level is None:
+        if previous is None or moment > previous[0]:
+            latest[key] = (moment, [rating])
+        elif moment == previous[0]:
+            previous[1].append(rating)
+    current = []
+    for _, simultaneous in latest.values():
+        first = simultaneous[0]
+        if any(_rating_identity(item) != _rating_identity(first) for item in simultaneous[1:]):
+            warnings.append('Получены противоречивые рейтинги с одинаковой датой. Они не используются до проверки источника.')
+            continue
+        # All duplicate observations must be valid; never prefer a valid duplicate
+        # while hiding the matching invalid record.
+        if first.status != 'active' or not all(item.source.valid(at) for item in simultaneous):
             warnings.append('Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.')
             continue
-        current.append({**asdict(rating), 'level_within_agency': level, 'bucket': rating.bucket()})
+        level = first.level()
+        if level is None:
+            warnings.append('Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.')
+            continue
+        # Stable result even when identical facts arrived in a different order.
+        chosen = min(simultaneous, key=lambda item: (item.source.id, item.source.review_id))
+        current.append({**asdict(chosen), 'level_within_agency': level, 'bucket': chosen.bucket()})
+    current.sort(key=lambda item: (item['agency'], item['scale'], item['subject_kind'], item['subject_id']))
+    return _credit_result(current, warnings, bond)
+
+
+def _credit_result(current: list[dict], warnings: list[str], bond: bool) -> dict:
     relevant = [r for r in current if r['subject_kind'] == ('issue' if bond else 'issuer')]
     if not relevant:
         warnings.append('Нет проверенного рейтинга этого выпуска.' if bond else 'Нет проверенного рейтинга компании.')
@@ -145,6 +190,8 @@ class Statement:
 def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datetime) -> dict:
     if statement is None or statement.issuer_id != issuer_id or not statement.source.valid(at):
         return {'state': 'missing', 'ratios': {}, 'messages': ['Нет проверенной актуальной отчётности компании.']}
+    if type(statement.audited) is not bool:
+        raise EvidenceError('audited_boolean_required')
     start, end = stamp(statement.period_start), stamp(statement.period_end)
     if start >= end or end > stamp(statement.source.published_at) or (at - end).days > 550:
         return {'state': 'stale', 'ratios': {}, 'messages': ['Отчётный период не подходит для текущей оценки.']}
