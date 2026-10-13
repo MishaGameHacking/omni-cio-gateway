@@ -59,7 +59,7 @@ fun EducationScreen(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             AnalystBottomBar(
-                selected = AnalystTab.Chat,
+                selected = AnalystTab.Profile,
                 onPortfolioClick = onPortfolioClick,
                 onProfileClick = onProfileClick,
             )
