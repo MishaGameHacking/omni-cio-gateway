@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -77,7 +76,7 @@ fun EducationScreen(
                 }
                 item(key = "hero") { EducationHero() }
                 item(key = "categories") {
-                    CategoryRow(selected = category, onSelected = { category = it })
+                    CategoryRows(selected = category, onSelected = { category = it })
                 }
                 items(lessons, key = EducationLesson::id) { lesson ->
                     LessonCard(
@@ -158,43 +157,41 @@ private fun EducationHero() {
 }
 
 @Composable
-private fun CategoryRow(
+private fun CategoryRows(
     selected: EducationCategory?,
     onSelected: (EducationCategory?) -> Unit,
 ) {
-    LazyColumn(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(0.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = selected == null,
+                onClick = { onSelected(null) },
+                label = { Text("Все") },
+            )
+            EducationCategory.entries.take(3).forEach { item ->
                 FilterChip(
-                    selected = selected == null,
-                    onClick = { onSelected(null) },
-                    label = { Text("Все") },
+                    selected = selected == item,
+                    onClick = { onSelected(item) },
+                    label = { Text(item.title) },
                 )
-                EducationCategory.entries.take(3).forEach { item ->
-                    FilterChip(
-                        selected = selected == item,
-                        onClick = { onSelected(item) },
-                        label = { Text(item.title) },
-                    )
-                }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                EducationCategory.entries.drop(3).forEach { item ->
-                    FilterChip(
-                        selected = selected == item,
-                        onClick = { onSelected(item) },
-                        label = { Text(item.title) },
-                    )
-                }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            EducationCategory.entries.drop(3).forEach { item ->
+                FilterChip(
+                    selected = selected == item,
+                    onClick = { onSelected(item) },
+                    label = { Text(item.title) },
+                )
             }
         }
     }
