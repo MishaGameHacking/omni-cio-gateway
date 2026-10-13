@@ -5,8 +5,7 @@ Android independently verifies the package and signing certificate.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 import json
 import os
@@ -17,19 +16,10 @@ import time
 
 try:
     from .client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, MAX_APK_BYTES
+    from .release_lock import publication_lock
 except ImportError:
     from client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, MAX_APK_BYTES
-
-
-@contextmanager
-def publication_lock(directory: Path):
-    lock = directory / '.publishing'
-    fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    os.close(fd)
-    try:
-        yield
-    finally:
-        lock.unlink()
+    from release_lock import publication_lock
 
 
 def _evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None:
@@ -89,6 +79,20 @@ def _retain(directory: Path, release: AndroidRelease) -> None:
     _manifest(directory, directory / (release.filename[:-4] + '.json'), release, immutable=True)
 
 
+def _resume_prepared(channel: ReleaseChannel, directory: Path, candidate: AndroidRelease) -> AndroidRelease:
+    retained_path = directory / (candidate.filename[:-4] + '.json')
+    if not retained_path.exists() and not retained_path.is_symlink():
+        return candidate
+    # A crash may leave checked immutable bytes/metadata, but not current.json.
+    # Recover the original timestamp; a retry must not rewrite immutable history.
+    retained = channel.published(candidate.package_name, candidate.filename)
+    if retained.certificate_sha256 != candidate.certificate_sha256:
+        raise ReleaseUnavailable('release_certificate_changed')
+    if replace(candidate, published_at=retained.published_at) != retained:
+        raise ReleaseUnavailable('release_identity_changed')
+    return retained
+
+
 def publish(root: Path, apk: Path, report: dict, *, expected_certificate: str,
             notes: str = '', now: int | None = None) -> AndroidRelease:
     if apk.is_symlink() or not apk.is_file():
@@ -117,14 +121,14 @@ def publish(root: Path, apk: Path, report: dict, *, expected_certificate: str,
             if candidate.certificate_sha256 != current.certificate_sha256:
                 raise ReleaseUnavailable('release_certificate_changed')
             if current.apk_sha256 == candidate.apk_sha256 and current.version_code == candidate.version_code:
-                if candidate.min_sdk != current.min_sdk or candidate.version_name != current.version_name:
+                if replace(candidate, published_at=current.published_at) != current:
                     raise ReleaseUnavailable('release_identity_changed')
                 _retain(directory, current)
                 return current
             if candidate.version_code <= current.version_code:
                 raise ReleaseUnavailable('release_downgrade_or_version_reuse')
-            # Backfill metadata for the previous publication before superseding it.
             _retain(directory, current)
+        candidate = _resume_prepared(release_channel, directory, candidate)
         with tempfile.NamedTemporaryFile(dir=directory, suffix='.apk.part', delete=False) as dst:
             staged = Path(dst.name)
         try:
