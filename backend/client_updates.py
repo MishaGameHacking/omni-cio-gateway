@@ -21,7 +21,13 @@ from typing import Callable, Mapping
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
-PACKAGES = frozenset({'ru.omnicio.app.debug', 'ru.omnicio.app'})
+try:
+    from .client_compatibility import has_current_session
+except ImportError:
+    from client_compatibility import has_current_session
+
+PREVIEW_PACKAGE = 'ru.omnicio.app.debug'
+PACKAGES = frozenset({PREVIEW_PACKAGE, 'ru.omnicio.app'})
 MAX_APK_BYTES = 256 * 1024 * 1024
 CODE_HEADER = 'X-Analyst-Version-Code'
 PACKAGE_HEADER = 'X-Analyst-Package'
@@ -189,6 +195,8 @@ def initialize(connect: Callable[[], sqlite3.Connection]) -> None:
             package_name TEXT NOT NULL, version_code INTEGER NOT NULL,
             release_sha256 TEXT, observed_at INTEGER NOT NULL)''')
         db.execute('CREATE INDEX IF NOT EXISTS client_versions_user ON client_versions(user_id)')
+        db.execute('''CREATE INDEX IF NOT EXISTS client_versions_identity
+            ON client_versions(user_id,package_name,version_code,release_sha256)''')
         db.commit()
 
 
@@ -212,7 +220,7 @@ def enforce(connect: Callable[[], sqlite3.Connection], *, user_id: int,
     code = _client_code(headers.get(CODE_HEADER.lower()) or headers.get(CODE_HEADER))
     # Legacy preview clients have no header. They are denied, not allowed to
     # poison an updated session belonging to a different device.
-    target_package = package if package in PACKAGES else 'ru.omnicio.app.debug'
+    target_package = package if package in PACKAGES else PREVIEW_PACKAGE
     try:
         release = channel().current(target_package)
     except ReleaseUnavailable:
@@ -241,19 +249,17 @@ def user_can_run(connect: Callable[[], sqlite3.Connection], user_id: int) -> boo
     """
     if not enabled():
         return True
-    with closing(connect()) as db:
-        rows = db.execute('''SELECT c.package_name, c.version_code, c.release_sha256
-            FROM client_versions c JOIN sessions s ON s.token_hash=c.session_hash
-            WHERE c.user_id=? AND s.user_id=c.user_id AND s.expires_at>?''',
-            (user_id, int(time.time()))).fetchall()
-    for row in rows:
+    def verified_release(package):
         try:
-            current = channel().current(row[0])
-            if row[1] == current.version_code and row[2] == current.apk_sha256:
-                return True
+            current = channel().current(package)  # Rehash actual APK on every call.
+            return current.version_code, current.apk_sha256
         except ReleaseUnavailable:
-            continue
-    return False
+            return None
+
+    with closing(connect()) as db:
+        return has_current_session(db, user_id, packages=PACKAGES,
+                                   verified_release=verified_release, clock=time.time)
+
 
 
 def assert_user_can_run(connect: Callable[[], sqlite3.Connection], user_id: int) -> None:
@@ -263,7 +269,7 @@ def assert_user_can_run(connect: Callable[[], sqlite3.Connection], user_id: int)
 
 def install_routes(app, connect: Callable, authenticate: Callable) -> None:
     @app.get('/client/update-policy', tags=['client updates'])
-    def policy(package_name: str = Query(default='ru.omnicio.app.debug')):
+    def policy(package_name: str = Query(default=PREVIEW_PACKAGE)):
         try:
             release = channel().current(package_name)
         except ReleaseUnavailable:
@@ -277,7 +283,7 @@ def install_routes(app, connect: Callable, authenticate: Callable) -> None:
         return JSONResponse({'ready': True, 'server_enforced': enabled()}, headers=NO_CACHE)
 
     @app.get('/client/apk/{filename}', tags=['client updates'])
-    def apk(filename: str, package_name: str = Query(default='ru.omnicio.app.debug')):
+    def apk(filename: str, package_name: str = Query(default=PREVIEW_PACKAGE)):
         if not valid_apk_filename(filename):
             raise HTTPException(404, detail='release_not_found')
         try:
