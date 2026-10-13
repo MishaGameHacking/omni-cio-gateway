@@ -93,14 +93,14 @@ class ReleaseRolloverTests(unittest.TestCase):
         self.assertEqual(self.channel.published(PACKAGE, release.filename), release)
 
     def test_directory_symlink_rejected(self):
-        self.publish()
+        release = self.publish()
         original = Path.is_symlink
         directory = self.root / PACKAGE
         with patch.object(Path, 'is_symlink', lambda p: p == directory or original(p)):
             with self.assertRaises(ReleaseUnavailable):
                 self.channel.current(PACKAGE)
-            release_path = directory / 'current.json'
-            self.assertTrue(release_path.exists())
+            with self.assertRaises(ReleaseUnavailable):
+                self.channel.verified_file(release)
 
     def test_publication_does_not_follow_directory_symlink(self):
         original = Path.is_symlink
