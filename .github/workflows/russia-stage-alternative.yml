@@ -1,0 +1,87 @@
+name: Russian staging alternative (owner authorized)
+on:
+  push:
+    branches: [infra/russia-migration-preflight]
+    paths: [.github/workflows/russia-stage-alternative.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: timeweb-russian-migration
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Preserve source; try only verified affordable Russian alternatives
+        shell: py -3 {0}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: '1'
+        run: |
+          import json
+          import sys
+          import time
+          from pathlib import Path
+          sys.path.insert(0, str(Path('.github/scripts').resolve()))
+          from provision_russian_stage import call, inventory, CloudError, SOURCE_ID, SOURCE_NAME, TARGET_NAME, TARGET_COMMENT
+          source = call('GET', '/servers/' + str(SOURCE_ID))['server']
+          if (source.get('id'), source.get('name'), source.get('location'), source.get('status')) != (SOURCE_ID, SOURCE_NAME, 'kz-1', 'on'):
+              raise RuntimeError('Source identity/status changed')
+          if any(p.get('name') == TARGET_NAME for p in inventory()):
+              raise RuntimeError('Staging VM already exists; reconcile instead of another order')
+          catalog = call('GET', '/presets/servers')
+          rows = catalog.get('server_presets')
+          if not isinstance(rows, list) or catalog.get('meta', {}).get('total') != len(rows):
+              raise RuntimeError('Incomplete catalog')
+          candidates = ((2577, 'ru-1', 'spb-3', 'ssd', '2.8', 2120), (4241, 'ru-2', 'nsk-1', 'nvme', '3.3', 2600))
+          target_id = None
+          chosen = None
+          for identifier, location, zone, disk_type, frequency, ceiling in candidates:
+              matches = [p for p in rows if p.get('id') == identifier]
+              if len(matches) != 1:
+                  raise RuntimeError('Preset not uniquely present')
+              p = matches[0]
+              expected = {'cpu': 2, 'ram': 2048, 'disk': 40960, 'location': location, 'disk_type': disk_type, 'cpu_frequency': frequency, 'bandwidth': 100}
+              if any(p.get(key) != value for key, value in expected.items()) or type(p.get('price')) not in (int, float) or not 0 < p['price'] <= ceiling:
+                  raise RuntimeError('Alternative configuration or price changed')
+              try:
+                  result = call('POST', '/servers', {'name': TARGET_NAME, 'comment': TARGET_COMMENT, 'os_id': 99, 'preset_id': identifier, 'availability_zone': zone, 'bandwidth': p['bandwidth'], 'is_ddos_guard': False, 'is_local_network': False, 'ssh_keys_ids': []})
+              except CloudError as exc:
+                  print('ALTERNATIVE_ATTEMPT=' + json.dumps({'preset_id': identifier, 'location': location, 'zone': zone, 'bandwidth': p['bandwidth'], 'http_status': exc.status, 'error_code': exc.code}), flush=True)
+                  rejected = ((exc.status in (400, 409, 422) and exc.code in ('no_free_node', 'location_not_available')) or (exc.status == 404 and exc.code == 'preset_not_found'))
+                  if not rejected:
+                      raise
+                  if any(s.get('name') == TARGET_NAME for s in inventory()):
+                      raise RuntimeError('Staging resource appeared; stop')
+                  continue
+              created = result.get('server', {})
+              target_id = created.get('id')
+              if type(target_id) is not int or target_id <= 0 or target_id == SOURCE_ID:
+                  raise RuntimeError('Uncertain creation result; no retry')
+              chosen = {'preset_id': identifier, 'location': location, 'availability_zone': zone, 'cpu': 2, 'ram': 2048}
+              print('RUSSIAN_VM_CREATED=' + json.dumps({'id': target_id, 'source_untouched': True, 'data_copied': False, 'server_price_rub': p['price']}), flush=True)
+              break
+          if target_id is None:
+              print('RUSSIA_ALTERNATIVES=none_created; source remains operational', flush=True)
+              raise RuntimeError('Both Russian alternatives rejected by provider')
+          deadline = time.monotonic() + 600
+          while time.monotonic() < deadline:
+              target = call('GET', '/servers/' + str(target_id))['server']
+              identity = {'id': target_id, 'name': TARGET_NAME, 'comment': TARGET_COMMENT, **chosen}
+              if any(target.get(key) != value for key, value in identity.items()):
+                  raise RuntimeError('Created server identity mismatch; no further changes')
+              if target.get('status') == 'on':
+                  print('RUSSIAN_VM_READY=' + json.dumps({'id': target_id, **chosen, 'source_untouched': True, 'data_copied': False, 'old_server_deleted': False}), flush=True)
+                  break
+              if target.get('status') not in ('off', 'installing', 'turning_on', 'rebooting'):
+                  raise RuntimeError('Unexpected staging status; no further order')
+              time.sleep(10)
+          else:
+              raise RuntimeError('VM startup timeout; no further order')
