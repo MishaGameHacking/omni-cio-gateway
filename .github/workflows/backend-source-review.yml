@@ -1,0 +1,40 @@
+name: Backend source review snapshot
+on:
+  push:
+    branches: [feature/ai-reliability-budget-060]
+    paths: [.github/workflows/backend-source-review.yml]
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Export only committed source, tests and public certificates
+        shell: py -3 {0}
+        run: |
+          import hashlib
+          import json
+          from pathlib import Path
+          import subprocess
+          import zipfile
+          names = subprocess.check_output(['git', 'ls-files', '-z'], text=True).split('\0')
+          selected = [p for p in names if (p.startswith('backend/') and (p.endswith('.py') or p.endswith('.crt') or p.endswith('.pem') or p == 'backend/requirements.txt')) or p in ('AGENTS.md', 'README.md')]
+          manifest = {}
+          with zipfile.ZipFile('backend-source-review.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for name in selected:
+                  data = subprocess.check_output(['git', 'show', 'HEAD:' + name])
+                  archive.writestr(name, data)
+                  manifest[name] = hashlib.sha256(data).hexdigest()
+              archive.writestr('source-manifest.json', json.dumps(manifest, sort_keys=True))
+          print('Tracked files exported:', len(selected))
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-source-review
+          path: backend-source-review.zip
+          retention-days: 1
+          if-no-files-found: error
