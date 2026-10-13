@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.education
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -76,13 +78,13 @@ fun EducationScreen(
                 }
                 item(key = "hero") { EducationHero() }
                 item(key = "categories") {
-                    CategoryRows(selected = category, onSelected = { category = it })
+                    CategoryRow(selected = category, onSelected = { category = it })
                 }
                 items(lessons, key = EducationLesson::id) { lesson ->
                     LessonCard(
                         lesson = lesson,
                         expanded = expandedLessonId == lesson.id,
-                        onClick = {
+                        onExpand = {
                             expandedLessonId = if (expandedLessonId == lesson.id) null else lesson.id
                         },
                     )
@@ -157,42 +159,27 @@ private fun EducationHero() {
 }
 
 @Composable
-private fun CategoryRows(
+private fun CategoryRow(
     selected: EducationCategory?,
     onSelected: (EducationCategory?) -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelected(null) },
+            label = { Text("Все") },
+        )
+        EducationCategory.entries.forEach { item ->
             FilterChip(
-                selected = selected == null,
-                onClick = { onSelected(null) },
-                label = { Text("Все") },
+                selected = selected == item,
+                onClick = { onSelected(item) },
+                label = { Text(item.title) },
             )
-            EducationCategory.entries.take(3).forEach { item ->
-                FilterChip(
-                    selected = selected == item,
-                    onClick = { onSelected(item) },
-                    label = { Text(item.title) },
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            EducationCategory.entries.drop(3).forEach { item ->
-                FilterChip(
-                    selected = selected == item,
-                    onClick = { onSelected(item) },
-                    label = { Text(item.title) },
-                )
-            }
         }
     }
 }
@@ -201,15 +188,12 @@ private fun CategoryRows(
 private fun LessonCard(
     lesson: EducationLesson,
     expanded: Boolean,
-    onClick: () -> Unit,
+    onExpand: () -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
     val motion = LocalSpectrumMotionPreference.current
     val uriHandler = LocalUriHandler.current
-    SpectrumCard(
-        emphasized = lesson.id == "news-impact",
-        onClick = onClick,
-    ) {
+    SpectrumCard(emphasized = lesson.id == "news-impact") {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Top,
@@ -253,9 +237,15 @@ private fun LessonCard(
                 )
             }
         }
+        TextButton(
+            onClick = onExpand,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (expanded) "Свернуть урок" else "Открыть урок")
+        }
         AnimatedVisibility(visible = expanded) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
