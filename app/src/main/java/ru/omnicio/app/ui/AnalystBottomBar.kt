@@ -100,7 +100,7 @@ private fun BottomBarItem(
         ),
     )
     TextButton(
-        modifier = modifier.heightIn(min = 62.dp),
+        modifier = modifier.heightIn(min = 72.dp),
         onClick = onClick,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
     ) {
@@ -108,7 +108,13 @@ private fun BottomBarItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .background(if (selected) selectedBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                .background(
+                    if (selected) {
+                        selectedBrush
+                    } else {
+                        Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                    },
+                )
                 .padding(horizontal = 1.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -123,12 +129,12 @@ private fun BottomBarItem(
                 text = tab.label(),
                 modifier = Modifier.fillMaxWidth(),
                 color = contentColor,
-                fontSize = 10.sp,
-                lineHeight = 12.sp,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
                 textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                style = MaterialTheme.typography.labelSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             )
         }
