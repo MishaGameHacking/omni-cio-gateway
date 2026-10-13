@@ -590,3 +590,9 @@ try:
 except ImportError:
     from portfolio_details import router as portfolio_details_router
 app.include_router(portfolio_details_router)
+
+try:
+    from .portfolio_research import router as portfolio_research_router
+except ImportError:
+    from portfolio_research import router as portfolio_research_router
+app.include_router(portfolio_research_router)

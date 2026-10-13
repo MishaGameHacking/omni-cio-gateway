@@ -22,6 +22,7 @@ import ru.omnicio.app.ui.theme.AnalystTheme
 class ProfileUiProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        check(runInstrumentLinkRegressions() == 15)
         val checksPassed = runRefreshStateRegressionChecks()
         setContent {
             AnalystTheme {

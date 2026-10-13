@@ -23,7 +23,7 @@ from backend.tests.test_autonomous_ai import sample_snapshot
 
 class ResearchIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.temp=tempfile.TemporaryDirectory()
         self.path=patch.object(backend,'DATABASE_PATH',Path(self.temp.name)/'test.sqlite')
         self.path.start();backend.init_db()
         with closing(backend.connect()) as db:

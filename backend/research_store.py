@@ -80,10 +80,7 @@ def records(connect, kind: str, subject: str) -> list[dict]:
 
 
 def latest_verified(connect, kind: str, subject: str, at: datetime) -> dict | None:
-    candidates = []
-    for raw in records(connect, kind, subject):
-        source = Source(**raw['source'])
-        if source.valid(at):
-            candidates.append(raw)
-    # Publication time, not ingestion order; a late historical import is not current.
-    return max(candidates, key=lambda item: (stamp(item['source']['published_at']), stamp(item['source']['checked_at'])), default=None)
+    candidates = [raw for raw in records(connect, kind, subject)
+                  if stamp(raw['source']['published_at']) <= at and stamp(raw['source']['checked_at']) <= at]
+    latest = max(candidates, key=lambda item: (stamp(item['source']['published_at']), stamp(item['source']['checked_at'])), default=None)
+    return latest if latest and Source(**latest['source']).valid(at) else None
