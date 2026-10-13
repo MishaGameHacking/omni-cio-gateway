@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 
@@ -58,10 +59,18 @@ class ProfileProbe:
         destination = directory / (name + ".png")
         if destination.is_symlink():
             raise ValueError("Screenshot destination is a symlink")
-        self.command("shell", "screencap", "-p", "/sdcard/analyst-profile.png")
-        self.command("pull", "/sdcard/analyst-profile.png", str(destination))
-        if destination.stat().st_size < 100:
-            raise AssertionError("Empty screenshot")
+        # Capture the emulator's displayed frame rather than the guest screencap
+        # readback path, which hangs in this headless Windows graphics stack.
+        # https://developer.android.com/studio/run/emulator-take-screenshots
+        with tempfile.TemporaryDirectory(prefix="capture-", dir=directory) as stage:
+            output = self.command("emu", "screenrecord", "screenshot", stage)
+            pictures = list(Path(stage).glob("*.png"))
+            if "KO:" in output or len(pictures) != 1:
+                raise AssertionError("Emulator did not produce one screenshot")
+            image = pictures[0].read_bytes()
+            if len(image) < 100 or not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise AssertionError("Invalid emulator screenshot")
+            destination.write_bytes(image)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
 
     def wait_for(self, read, message):
