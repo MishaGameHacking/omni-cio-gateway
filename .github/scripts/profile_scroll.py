@@ -6,7 +6,8 @@ import re
 import xml.etree.ElementTree as ET
 
 PACKAGE = "ru.omnicio.app.debug"
-LIST_IDS = frozenset({"profile-content", "education-content"})
+SCROLL_AXES = {"profile-content": "vertical", "education-content": "vertical", "profile-tabs": "horizontal"}
+LIST_IDS = frozenset(SCROLL_AXES)
 
 
 def _bounds(node: ET.Element) -> tuple[int, int, int, int] | None:
@@ -36,8 +37,26 @@ def _scroll_area(tree: ET.Element, resource_id: str):
     return _bounds(candidates[0]) if len(candidates) == 1 else None
 
 
+def _gesture(bounds, axis: str, direction: str):
+    left, top, right, bottom = bounds
+    if axis == "horizontal":
+        if right - left < 8 or bottom - top < 2:
+            return None
+        inset = max(1, (right - left) // 5)
+        middle = (top + bottom) // 2
+        start, end = (right - inset, middle), (left + inset, middle)
+    else:
+        if bottom - top < 8 or right - left < 2:
+            return None
+        inset = max(1, (bottom - top) // 5)
+        middle = (left + right) // 2
+        start, end = (middle, bottom - inset), (middle, top + inset)
+    return (*start, *end) if direction == "end" else (*end, *start)
+
+
 def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
-                   *, resource_id: str, max_swipes: int = 10) -> ET.Element | None:
+                   *, resource_id: str, max_swipes: int = 10,
+                   direction: str = "end") -> ET.Element | None:
     """Return the visible exact label or fail after a bounded number of gestures.
 
     None means this particular list is not visible; no other list or system
@@ -45,6 +64,8 @@ def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
     """
     if resource_id not in LIST_IDS:
         raise ValueError("unknown_scroll_list")
+    if direction not in {"start", "end"}:
+        raise ValueError("unknown_scroll_direction")
     if type(max_swipes) is not int or not 0 <= max_swipes <= 20:
         raise ValueError("invalid_scroll_limit")
     for attempt in range(max_swipes + 1):
@@ -55,14 +76,12 @@ def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
         bounds = _scroll_area(tree, resource_id)
         if bounds is None:
             return None
-        left, top, right, bottom = bounds
-        if bottom - top < 8 or right - left < 2:
+        gesture = _gesture(bounds, SCROLL_AXES[resource_id], direction)
+        if gesture is None:
             return None
         if attempt == max_swipes:
             raise AssertionError("List target not reachable: " + text)
-        inset = max(1, (bottom - top) // 5)
-        middle = (left + right) // 2
-        swipe(middle, bottom - inset, middle, top + inset)
+        swipe(*gesture)
     raise AssertionError("List scroll did not finish")
 
 

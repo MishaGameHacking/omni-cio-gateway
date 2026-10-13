@@ -90,21 +90,26 @@ class ProfileProbe:
     def bounds(self, text):
         return node_bounds(self.find(text))
 
-    def reveal(self, text, area="profile-content"):
+    def reveal(self, text, area="profile-content", direction="end"):
         from profile_scroll import reveal_in_list
 
         def swipe(x1, y1, x2, y2):
             self.command("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "350")
 
-        target = reveal_in_list(self.tree, swipe, text, resource_id=area)
+        target = reveal_in_list(self.tree, swipe, text, resource_id=area, direction=direction)
         if target is None:
             from profile_scroll import visible_label
             target = self.wait_for(lambda: visible_label(self.tree(), text), "UI label not visible: " + text)
         return target
 
-    def tap(self, text, area="profile-content"):
-        left, top, right, bottom = node_bounds(self.reveal(text, area))
+    def tap(self, text, area="profile-content", direction="end"):
+        left, top, right, bottom = node_bounds(self.reveal(text, area, direction))
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+    def tab(self, label):
+        # The large-font rail scrolls horizontally. Scrolling the settings list
+        # cannot reveal its offscreen tabs and must not count as a UI failure.
+        self.tap(label, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
 
     def marker(self, expected):
         def read():
@@ -126,9 +131,12 @@ class ProfileProbe:
         self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
-        self.tap("Инфо")
+        # Both labels need not be visible at once at 200% font scale. Measure
+        # each in its visible rail position; still assert single-line alignment.
+        peer = self.reveal(SETTINGS_LABEL, "profile-tabs", "start")
+        _, peer_top, _, peer_bottom = node_bounds(peer)
+        self.tab("Инфо")
         _, top, _, bottom = self.bounds("Инфо")
-        _, peer_top, _, peer_bottom = self.bounds(SETTINGS_LABEL)
         tolerance = max(peer_bottom - peer_top, bottom - top) / 2
         if bottom - top > (peer_bottom - peer_top) * 1.5:
             raise AssertionError("Info label wrapped vertically")
@@ -176,18 +184,18 @@ class ProfileProbe:
         self.tap(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
-        self.tap(SETTINGS_LABEL)
+        self.tab(SETTINGS_LABEL)
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
         self.tap(CONFIRM_LABEL)
-        self.tap("Инфо")
+        self.tab("Инфо")
         self.find("Обучение инвестициям")
-        self.tap(SETTINGS_LABEL)
+        self.tab(SETTINGS_LABEL)
         self.find(THEME_LABEL)
 
     def education(self, screenshot="education"):
         area = "education-content"
-        self.tap("Инфо")
+        self.tab("Инфо")
         self.tap("Обучение инвестициям")
         self.find("Инвестиции простыми словами")
         self.reveal(FIRST_LESSON, area)
