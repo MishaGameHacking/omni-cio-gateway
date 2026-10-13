@@ -105,3 +105,14 @@ jobs:
         uses: ./.github/actions/check-apk
         env:
           RUN_PROFILE_UI_TESTS: "1"
+      - name: Save synthetic UI screenshots and verification reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            app/build/outputs/apk/preview/ui-screens/*.png
+            app/build/outputs/apk/preview/apk-verification.json
+            app/build/outputs/apk/preview/install-api-*/install-results.json
+          if-no-files-found: ignore
+          retention-days: 7
