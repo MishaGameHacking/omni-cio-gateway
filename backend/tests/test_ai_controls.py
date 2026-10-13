@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -181,7 +182,7 @@ class QueueTests(DatabaseCase):
         job = self.queue.claim(at=NOW)
         self.queue.finish(job, {'state':'completed','token':'DO-NOT-STORE'}, at=NOW+1)
         self.assertTrue(self.queue.enqueue(1, at=NOW+1)['coalesced'])
-        with self.connect() as db:
+        with closing(self.connect()) as db:
             payload = db.execute('SELECT result_json FROM ai_work_jobs').fetchone()[0]
         self.assertNotIn('DO-NOT-STORE', payload)
 

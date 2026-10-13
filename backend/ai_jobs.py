@@ -162,3 +162,15 @@ def drain(queue: AnalysisQueue, run: Callable[[int], dict], *, limit: int = 20) 
         finally:
             CURRENT_JOB.reset(token)
     return counts
+
+
+
+def assert_current_owner_in(db: sqlite3.Connection) -> None:
+    """Call under the caller's write transaction, before persisting its result."""
+    job = CURRENT_JOB.get()
+    if job is None:
+        return
+    row = db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND status='running' AND expires_at>?",
+                     (*job, int(time.time()))).fetchone()
+    if row is None:
+        raise LeaseLost('analysis_worker_lease_lost')

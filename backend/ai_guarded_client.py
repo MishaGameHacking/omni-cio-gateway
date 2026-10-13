@@ -200,7 +200,7 @@ class GuardedAIClient:
         reservation = hashlib.sha256((attempt + ':' + tier.value + ':' + route.identifier).encode()).hexdigest()
         self.ledger.reserve(user_id=self.user_id, key=reservation, route=route.identifier, model=route.model,
                             ceiling=ceiling, user_cap=micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')),
-                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')))
+                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job)
         payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
         if route.mode == 'gateway':
             payload['model'] = route.model

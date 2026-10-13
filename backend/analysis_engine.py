@@ -116,7 +116,9 @@ def analyze_if_needed(
 
     parsed_context = json.loads(canonical_context)
     allowed_source_ids = _allowed_source_ids(parsed_context)
-    gateway = client or TimewebAIClient()
+    if client is None:
+        raise AnalysisValidationError("analysis_explicit_client_required")
+    gateway = client
     request_payload = {
         "analysis_reason": decision.reason.value,
         "notify_user": decision.notify_user,
