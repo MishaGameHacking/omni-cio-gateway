@@ -206,10 +206,20 @@ class ReleaseTests(unittest.TestCase):
             dict(certificate_sha256='c'*64),dict(sha256='bad'),dict(package_name='other'),
             dict(published_at='2027-01-01T00:00:00Z'),dict(published_at='2026-10-13'),
             dict(url=f'http://{HOST}/releases/23/'+ 'a'*64 + '.apk'),
-            dict(url=f'https://{HOST}/releases/23/latest.apk'),dict(notes=123)]
+            dict(url=f'https://{HOST}/releases/23/latest.apk'),dict(notes=123),
+            dict(version_name='bad\nname'),dict(notes='bad\x00notes')]
         for change in variants:
             with self.subTest(change=change), self.assertRaises(InvalidRelease):
                 Release.parse(asdict(release(**change)),now=NOW,expected_certificate='b'*64)
+
+    def test_direct_validation_requires_aware_time(self):
+        with self.assertRaises(InvalidRelease):
+            release().validate(now=NOW.replace(tzinfo=None), expected_certificate='b'*64)
+
+    def test_distribution_verification_must_be_boolean(self):
+        with self.assertRaises(InvalidRelease):
+            decide_client(release(), installed_code=23, sdk=33,
+                package_name=PACKAGE, distribution_verified='yes')
 
     def test_bool_version_does_not_bypass_gate(self):
         with self.assertRaises(InvalidRelease):
