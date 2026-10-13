@@ -4,6 +4,7 @@ package ru.omnicio.app.data.updates
 sealed interface UpdateStage {
     data object Checking : UpdateStage
     data object Required : UpdateStage
+    data class UnsupportedVersion(val installedCode: Long) : UpdateStage
     data class Downloading(val received: Long, val total: Long) : UpdateStage
     data object Verifying : UpdateStage
     data object AwaitingInstaller : UpdateStage
@@ -23,7 +24,12 @@ data class UpdateFlow(
 
     fun withInstalledVersion(actualCode: Long): UpdateFlow {
         require(actualCode > 0)
-        return copy(stage = if (actualCode in minimumCode..latestCode) UpdateStage.Current else UpdateStage.Required)
+        val next = when {
+            actualCode < minimumCode -> UpdateStage.Required
+            actualCode <= latestCode -> UpdateStage.Current
+            else -> UpdateStage.UnsupportedVersion(actualCode)
+        }
+        return copy(stage = next)
     }
 
     fun beginDownload(): UpdateFlow {
