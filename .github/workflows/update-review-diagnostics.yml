@@ -1,0 +1,20 @@
+name: Read updater quality annotations
+on:
+  push:
+    branches: [feature/mandatory-updates-quant-research]
+    paths: [.github/workflows/update-review-diagnostics.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  diagnostics:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const check = (await github.rest.checks.get({...context.repo, check_run_id:115284119960})).data;
+            if (check.head_sha !== 'bed7aaeef8cbc9986994cf8392611c339876eef3' || check.name !== 'SonarCloud Code Analysis') throw new Error('Unexpected check identity');
+            const records = (await github.rest.checks.listAnnotations({...context.repo, check_run_id:check.id, per_page:100})).data;
+            core.info('QUALITY_ANNOTATIONS=' + JSON.stringify(records.map(a=>({path:a.path,start_line:a.start_line,end_line:a.end_line,level:a.annotation_level,title:a.title,message:a.message}))));
