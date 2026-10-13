@@ -86,7 +86,6 @@ def _reject_link(path: Path) -> None:
         metadata = path.lstat()
     except FileNotFoundError:
         return
-    # Includes Windows junctions and other reparse points, not only POSIX links.
     if getattr(metadata, "st_file_attributes", 0) & 0x400:
         raise ManifestError("artifact_path_is_reparse_point")
 
@@ -126,8 +125,6 @@ def write_preview_manifest(checkout: Path, *, notes: str) -> dict:
     report = _read_report(directory / REPORT_NAME)
     manifest = build_manifest(report, published_at=datetime.now(timezone.utc), notes=notes)
     text = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-    # A failed write leaves the previous manifest intact; the temporary file is
-    # private and lives alongside the one allowed output.
     staged = None
     try:
         with tempfile.NamedTemporaryFile(dir=directory, suffix=".manifest.part",
@@ -148,8 +145,6 @@ def write_preview_manifest(checkout: Path, *, notes: str) -> dict:
 
 def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    # Backwards-compatible spelling, but arbitrary paths, traversal, absolute
-    # paths, UNC paths, alternate streams and unexpected filenames are rejected.
     report = "/".join((*ARTIFACT_PARTS, REPORT_NAME))
     output = "/".join((*ARTIFACT_PARTS, OUTPUT_NAME))
     parser.add_argument("--report", required=True, choices=(report, report.replace("/", "\\")))
@@ -159,9 +154,14 @@ def argument_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from legacy_release_guard import require_legacy_runtime
+
     args = argument_parser().parse_args()
-    # Only validated note text crosses the CLI boundary. Filesystem paths do not.
-    manifest = write_preview_manifest(Path(__file__).resolve().parents[2], notes=args.notes)
+    checkout = Path(__file__).resolve().parents[2]
+    # Fail BEFORE GitHub release creation, SSH or any production publication.
+    # The canonical runtime must never ship with this deprecated manifest layout.
+    require_legacy_runtime(checkout)
+    manifest = write_preview_manifest(checkout, notes=args.notes)
     print("RELEASE_MANIFEST=" + json.dumps(manifest, ensure_ascii=False, sort_keys=True))
 
 
