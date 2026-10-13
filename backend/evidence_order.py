@@ -10,7 +10,7 @@ def _moment(source: Mapping, name: str) -> datetime:
     value = source[name]
     if not isinstance(value, str):
         raise ValueError("invalid_evidence_time")
-    instant = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    instant = datetime.fromisoformat(value.replace('Z', '+00:00'))
     if instant.tzinfo is None or instant.utcoffset() is None:
         raise ValueError("evidence_timezone_required")
     return instant.astimezone(timezone.utc)
@@ -25,6 +25,31 @@ def _material_record(record: Mapping) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
 
 
+def _record_time(record: Mapping) -> tuple[datetime, datetime]:
+    if not isinstance(record, Mapping) or not isinstance(record.get("source"), Mapping):
+        raise ValueError("invalid_evidence_record")
+    source = record["source"]
+    published = _moment(source, "published_at")
+    checked = _moment(source, "checked_at")
+    if published > checked:
+        raise ValueError("checked_before_publication")
+    return published, checked
+
+
+def _latest_group(records: Iterable[Mapping], at: datetime) -> list[Mapping]:
+    latest_time = None
+    latest = []
+    for record in records:
+        moment = _record_time(record)
+        if moment[0] > at or moment[1] > at:
+            continue
+        if latest_time is None or moment > latest_time:
+            latest_time, latest = moment, [record]
+        elif moment == latest_time:
+            latest.append(record)
+    return latest
+
+
 def latest_unambiguous(records: Iterable[Mapping], *, at: datetime,
                        valid_source: Callable[[Mapping], bool]) -> dict | None:
     """Do not resurrect older facts when the newest one is invalid or ambiguous.
@@ -34,22 +59,8 @@ def latest_unambiguous(records: Iterable[Mapping], *, at: datetime,
     """
     if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
         raise ValueError("assessment_timezone_required")
-    latest_time = None
-    latest = []
     try:
-        for record in records:
-            if not isinstance(record, Mapping) or not isinstance(record.get("source"), Mapping):
-                return None
-            source = record["source"]
-            moment = (_moment(source, "published_at"), _moment(source, "checked_at"))
-            if moment[0] > moment[1]:
-                return None
-            if moment[0] > at or moment[1] > at:
-                continue
-            if latest_time is None or moment > latest_time:
-                latest_time, latest = moment, [record]
-            elif moment == latest_time:
-                latest.append(record)
+        latest = _latest_group(records, at)
         if not latest or not all(valid_source(item["source"]) for item in latest):
             return None
         identities = {_material_record(item) for item in latest}
