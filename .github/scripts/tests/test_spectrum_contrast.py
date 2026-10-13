@@ -43,8 +43,15 @@ class SpectrumContrastTests(unittest.TestCase):
                     badge = _composite(accent, card, 0.14)
                     self.assertGreaterEqual(_contrast(text, badge), 4.5)
 
-    def test_telegram_button_white_text_meets_normal_text_contrast(self):
-        self.assertGreaterEqual(_contrast('FFFFFF', '0077A8'), 4.5)
+    def test_primary_actions_meet_normal_text_contrast(self):
+        pairs = (
+            ('FFFFFF', '0077A8'),
+            ('FFFFFF', '296DCE'),
+            ('001F26', '59E0FF'),
+        )
+        for text, background in pairs:
+            with self.subTest(text=text, background=background):
+                self.assertGreaterEqual(_contrast(text, background), 4.5)
 
 
 if __name__ == '__main__':
