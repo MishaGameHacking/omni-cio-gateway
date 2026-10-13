@@ -164,7 +164,7 @@ class ProfileProbe:
         self.tap("Инфо")
         self.tap("Обучение инвестициям")
         self.find("Инвестиции простыми словами")
-        self.find("Как новости двигают рынок")
+        self.find("Сначала цель, срок и резерв")
         self.capture("education")
         self.tap("‹ Назад")
         self.find("Профиль")
