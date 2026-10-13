@@ -1,0 +1,64 @@
+name: Apply reviewed AI controls source integration
+on:
+  push:
+    branches: [feature/ai-reliability-budget-060]
+    paths: [.github/workflows/integrate-ai-controls.yml]
+concurrency:
+  group: ai-controls-source-integration
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Apply reviewed source transformation; no deployment
+        shell: cmd
+        run: |
+          py -3 .github\scripts\integrate_ai_controls.py
+          if errorlevel 1 exit /b 1
+          py -3 -m compileall -q backend
+          if errorlevel 1 exit /b 1
+      - name: Isolated full backend regression suite
+        shell: cmd
+        env:
+          TELEGRAM_CLIENT_ID: '123456'
+          TELEGRAM_CLIENT_SECRET: test-only
+          BACKEND_PUBLIC_URL: https://example.invalid
+          FERNET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          ANALYSIS_SCHEDULER_ENABLED: 'false'
+          AI_EXTERNAL_PROCESSING_APPROVED: 'false'
+          PYTHONIOENCODING: utf-8
+        run: |
+          set "VENV=%RUNNER_TEMP%\analyst-controls-%GITHUB_RUN_ID%"
+          py -3 -m venv "%VENV%"
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --no-cache-dir -r backend\requirements.txt
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m unittest discover -s backend\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+      - name: Commit only reviewed tested source paths to this feature branch
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = 'feature/ai-reliability-budget-060';
+            if (context.ref !== `refs/heads/${branch}`) throw new Error('Unexpected branch');
+            const current = (await github.rest.git.getRef({owner, repo, ref:`heads/${branch}`})).data;
+            if (current.object.sha !== context.sha) throw new Error('Branch advanced; do not overwrite');
+            const parent = (await github.rest.git.getCommit({owner, repo, commit_sha:context.sha})).data;
+            const allowed = ['backend/autonomous_ai.py', 'backend/analysis_engine.py', 'backend/tests/test_reliability_041.py', 'README.md', 'backend/ai_budget.py', 'backend/ai_jobs.py', 'backend/ai_guarded_client.py'];
+            const tree = (await github.rest.git.createTree({owner, repo, base_tree:parent.tree.sha,
+              tree:allowed.map(path => ({path, mode:'100644', type:'blob', content:fs.readFileSync(path,'utf8')}))})).data;
+            const commit = (await github.rest.git.createCommit({owner, repo, message:'AI: integrate persistent work queue and guarded budgeted model path after full backend tests', tree:tree.sha, parents:[context.sha]})).data;
+            const latest = (await github.rest.git.getRef({owner, repo, ref:`heads/${branch}`})).data;
+            if (latest.object.sha !== context.sha) throw new Error('Branch advanced before commit; refusing');
+            await github.rest.git.updateRef({owner, repo, ref:`heads/${branch}`, sha:commit.sha, force:false});
+            core.notice(`TESTED_SOURCE_COMMIT=${commit.sha}`);
