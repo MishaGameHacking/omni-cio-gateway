@@ -22,14 +22,22 @@ import ru.omnicio.app.ui.theme.AnalystTheme
 class ProfileUiProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val checksPassed = runRefreshStateRegressionChecks()
+        val refreshChecks = runRefreshStateRegressionChecks()
+        val educationChecks = runEducationCatalogChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 Box(
                     Modifier.fillMaxSize().semantics {
-                        contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed"
+                        contentDescription = buildString {
+                            append("probe-background:")
+                            append(background)
+                            append(";probe-refresh-tests:")
+                            append(refreshChecks)
+                            append(";probe-education-tests:")
+                            append(educationChecks)
+                        }
                     },
                 ) {
                     ProfileScreen(
