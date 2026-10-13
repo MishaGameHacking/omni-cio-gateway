@@ -185,7 +185,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AnalystAiApp(
+private fun AnalystAiAppContent(
     authCode: String?,
     authError: String?,
     onStartTelegramLogin: () -> Unit,
@@ -482,3 +482,16 @@ private fun AnalystAiAppPreview() {
         )
     }
 }
+
+@Composable
+private fun AnalystAiApp(
+    authCode: String?, authError: String?, onStartTelegramLogin: () -> Unit,
+    onAuthCodeConsumed: () -> Unit, initialScreenshotsBlocked: Boolean,
+    onScreenshotsBlockedChange: (Boolean) -> Unit,
+) {
+    ru.omnicio.app.ui.updates.MandatoryUpdateHost {
+        AnalystAiAppContent(authCode, authError, onStartTelegramLogin, onAuthCodeConsumed,
+            initialScreenshotsBlocked, onScreenshotsBlockedChange)
+    }
+}
+

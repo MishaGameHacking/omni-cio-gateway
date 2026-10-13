@@ -61,6 +61,11 @@ except ImportError:  # uvicorn top-level import compatibility
     from ai_jobs import AnalysisQueue, CURRENT_JOB, drain, assert_current_owner_in
     from ai_guarded_client import GuardedAIClient, GuardError
 
+try:
+    from . import client_updates
+except ImportError:
+    import client_updates
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 MOSCOW = timezone(timedelta(hours=3), name="Europe/Moscow")
@@ -744,6 +749,9 @@ def run_user_analysis(
     if user["tinvest_token_encrypted"] is None:
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
 
+    if not client_updates.user_can_run(backend.connect, user_id):
+        return {'state':'paused', 'reason':'client_update_required', 'tier':'none', 'card_id':None}
+
     previous, previous_row = _latest_snapshot(user_id)
     try:
         snapshot = get_tinvest_portfolio(currency="RUB", user=user)
@@ -753,6 +761,7 @@ def run_user_analysis(
         logger.exception("Autonomous portfolio collection failed for user %s", user_id)
         raise HTTPException(status_code=503, detail="analysis_portfolio_unavailable") from None
 
+    client_updates.assert_user_can_run(backend.connect, user_id)
     current_job = CURRENT_JOB.get()
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
@@ -799,6 +808,7 @@ def run_user_analysis(
             raise TimewebAIConfigurationError("analysis_budget_exhausted")
         # Missing credentials are free; uncertain network failures are not retried
         # for free. Reservation is never rolled back after a model attempt.
+        client_updates.assert_user_can_run(backend.connect, user_id)
         guarded_client = GuardedAIClient(user_id, backend.connect)
         guarded_client.check_ready(decision.tier)
         if not _reserve_budget(user_id, current_time, decision.tier):
@@ -824,6 +834,7 @@ def run_user_analysis(
 
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
+    client_updates.assert_user_can_run(backend.connect, user_id)
     _record_run(
         user_id=user_id,
         decision=decision,
@@ -882,7 +893,8 @@ def run_scheduler_cycle() -> dict[str, int]:
     with closing(backend.connect()) as db:
         users = db.execute("SELECT id FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
     for user in users:
-        queue.enqueue(int(user['id']))
+        if client_updates.user_can_run(backend.connect, int(user['id'])):
+            queue.enqueue(int(user['id']))
     return drain(queue, run_user_analysis)
 
 

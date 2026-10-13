@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -28,5 +31,9 @@
                     android:scheme="analystai" />
             </intent-filter>
         </activity>
+        <receiver android:name=".data.updates.InstallResultReceiver" android:exported="false" />
+        <receiver android:name=".data.updates.AppReplacedReceiver" android:exported="false">
+            <intent-filter><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+        </receiver>
     </application>
 </manifest>

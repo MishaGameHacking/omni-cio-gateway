@@ -146,6 +146,7 @@ class AnalystBackendClient(
                 requestMethod = method
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
+                ru.omnicio.app.data.updates.ClientVersion.attach(this)
                 setRequestProperty("Accept", "application/json")
                 if (bearer != null) {
                     setRequestProperty("Authorization", "Bearer $bearer")
@@ -169,6 +170,7 @@ class AnalystBackendClient(
                 }
             }
             val status = connection.responseCode
+            ru.omnicio.app.data.updates.ClientVersion.observeStatus(status)
             val responseBody = if (status in 200..299) {
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             } else {
@@ -181,6 +183,7 @@ class AnalystBackendClient(
 
             when {
                 status in 200..299 -> BackendResult.Success(responseBody)
+                status == 426 -> BackendResult.Failure("Обновите Analyst AI, чтобы продолжить.", retryable = true)
                 status == HttpURLConnection.HTTP_UNAUTHORIZED ||
                     status == HttpURLConnection.HTTP_FORBIDDEN -> {
                     BackendResult.Failure(
