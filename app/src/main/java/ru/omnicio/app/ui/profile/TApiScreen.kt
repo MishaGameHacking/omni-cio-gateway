@@ -80,6 +80,7 @@ fun TApiScreen(
 
     var tokenInput by remember { mutableStateOf("") }
     var showToken by remember { mutableStateOf(false) }
+    var docsError by remember { mutableStateOf<String?>(null) }
     var status by remember(tApiConfigured) {
         mutableStateOf<TokenUiStatus>(
             if (tApiConfigured) TokenUiStatus.Connected else TokenUiStatus.Missing,
@@ -114,6 +115,7 @@ fun TApiScreen(
         status = status,
         tokenInput = tokenInput,
         showToken = showToken,
+        docsError = docsError,
         tApiConfigured = tApiConfigured || status == TokenUiStatus.Connected,
         onBack = onBack,
         onTokenInputChange = { value ->
@@ -150,7 +152,11 @@ fun TApiScreen(
             }
         },
         onOpenDocs = {
-            uriHandler.openUri(TOKEN_DOCS_URL)
+            docsError = null
+            runCatching { uriHandler.openUri(TOKEN_DOCS_URL) }
+                .onFailure {
+                    docsError = "Не удалось открыть официальную инструкцию. Проверьте браузер или подключение."
+                }
         },
     )
 }
@@ -160,6 +166,7 @@ private fun TApiContent(
     status: TokenUiStatus,
     tokenInput: String,
     showToken: Boolean,
+    docsError: String?,
     tApiConfigured: Boolean,
     onBack: () -> Unit,
     onTokenInputChange: (String) -> Unit,
@@ -200,6 +207,9 @@ private fun TApiContent(
                 )
             }
             item { TokenDocsCard(onOpenDocs = onOpenDocs) }
+            docsError?.let { message ->
+                item { DocsErrorCard(message) }
+            }
             item { TokenSecurityCard() }
         }
     }
@@ -351,6 +361,22 @@ private fun TokenDocsCard(onOpenDocs: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DocsErrorCard(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(18.dp),
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
