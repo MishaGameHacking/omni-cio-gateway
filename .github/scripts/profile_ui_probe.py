@@ -11,12 +11,31 @@ THEME_LABEL = "Оформление"
 CONFIRM_LABEL = "Понятно"
 
 
+def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
+    """Compose may merge card labels into text or content-description nodes."""
+    for node in tree.iter("node"):
+        labels = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
+        if text in [label.strip() for label in labels]:
+            return node
+    return None
+
+
+def node_bounds(node: ET.Element) -> tuple[int, int, int, int]:
+    match = re.fullmatch(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", node.get("bounds", ""))
+    if match is None:
+        raise AssertionError("Missing UI bounds")
+    left, top, right, bottom = map(int, match.groups())
+    if left < 0 or top < 0 or right <= left or bottom <= top:
+        raise AssertionError("UI target is empty or outside the visible screen")
+    return left, top, right, bottom
+
+
 class ProfileProbe:
     def __init__(self, device):
         self.device = device
 
     def command(self, *args):
-        response = self.device(*args)
+        response = self.device(*args, timeout=15)
         if response.returncode:
             raise RuntimeError("UI test command failed: " + response.stderr)
         return response.stdout
@@ -26,41 +45,56 @@ class ProfileProbe:
         xml = self.command("shell", "cat", "/sdcard/analyst-ui-test.xml")
         return ET.fromstring(xml[xml.index("<?xml"):])
 
+    def wait_for(self, read, message):
+        deadline = time.monotonic() + 12
+        last_error = None
+        while time.monotonic() < deadline:
+            try:
+                value = read()
+                # A leaf Element is falsey; do not mistake it for a missing label.
+                if value is not None:
+                    return value
+            except (RuntimeError, ET.ParseError, ValueError) as error:
+                last_error = error
+            time.sleep(0.2)
+        raise AssertionError(message) from last_error
+
     def find(self, text):
-        # Compose clickable cards merge title/subtitle into a multiline accessibility node.
-        for node in self.tree().iter("node"):
-            if text in node.get("text", "").splitlines():
-                return node
-        raise AssertionError("UI label not found: " + text)
+        return self.wait_for(lambda: matching_node(self.tree(), text), "UI label not found: " + text)
 
     def bounds(self, text):
-        values = list(map(int, re.findall(r"\d+", self.find(text).get("bounds", ""))))
-        if len(values) != 4:
-            raise AssertionError("Missing UI bounds")
-        return values
+        return node_bounds(self.find(text))
 
     def tap(self, text):
         left, top, right, bottom = self.bounds(text)
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
-        time.sleep(0.6)
+
+    def marker(self, expected):
+        def read():
+            for node in self.tree().iter("node"):
+                if expected in node.get("content-desc", "").split(";"):
+                    return node
+            return None
+        self.wait_for(read, "UI marker missing: " + expected)
 
     def palette(self, expected):
-        time.sleep(0.8)
-        descriptions = [node.get("content-desc", "") for node in self.tree().iter("node")]
-        if not any("probe-background:" + expected in value for value in descriptions):
-            raise AssertionError("Theme palette not applied: " + expected)
+        self.marker("probe-background:" + expected)
 
     def open(self):
         output = self.command("shell", "am", "start", "-W", "-n", ACTIVITY)
         if "Status: ok" not in output:
             raise AssertionError("Profile fixture did not launch")
-        time.sleep(1)
+        self.marker("probe-refresh-tests:15")
 
     def horizontal_info(self):
         self.tap("Инфо")
-        left, top, right, bottom = self.bounds("Инфо")
-        if right - left <= bottom - top:
+        _, top, _, bottom = self.bounds("Инфо")
+        _, peer_top, _, peer_bottom = self.bounds("Настройки")
+        tolerance = max(peer_bottom - peer_top, bottom - top) / 2
+        if bottom - top > (peer_bottom - peer_top) * 1.5:
             raise AssertionError("Info label wrapped vertically")
+        if abs((top + bottom - peer_top - peer_bottom) / 2) > tolerance:
+            raise AssertionError("Profile tabs are not on the same row")
 
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
@@ -78,10 +112,8 @@ class ProfileProbe:
         self.tap(THEME_LABEL)
         self.tap("Как в системе")
         self.command("shell", "cmd", "uimode", "night", "yes")
-        time.sleep(1)
         self.palette("ff111111")
         self.command("shell", "cmd", "uimode", "night", "no")
-        time.sleep(1)
         self.palette("fff5f6f8")
 
     def dialogs(self):
@@ -103,10 +135,8 @@ class ProfileProbe:
 
 
 def night_setting(output: str) -> str:
-    for choice in ("yes", "no", "auto"):
-        if choice in output:
-            return choice
-    return "auto"
+    match = re.search(r"Night mode:\s*(yes|no|auto|custom)\b", output, flags=re.IGNORECASE)
+    return match.group(1).lower() if match else "auto"
 
 
 def exercise(device) -> None:
@@ -116,10 +146,13 @@ def exercise(device) -> None:
     if re.fullmatch(r"\d(?:\.\d{1,3})?", original_scale) is None:
         original_scale = "1.0"
     try:
-        probe.themes()
-        probe.dialogs()
-        probe.large_font()
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,large-font", flush=True)
+        for name, test in (("themes", probe.themes), ("dialogs", probe.dialogs), ("large-font", probe.large_font)):
+            print("PROFILE_UI_STAGE=" + name, flush=True)
+            test()
+            print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
+        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,large-font,refresh-state-15", flush=True)
     finally:
-        probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
-        probe.command("shell", "cmd", "uimode", "night", original_night)
+        try:
+            probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
+        finally:
+            probe.command("shell", "cmd", "uimode", "night", original_night)
