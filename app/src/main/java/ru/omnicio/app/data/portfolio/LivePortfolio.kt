@@ -3,7 +3,6 @@ package ru.omnicio.app.data.portfolio
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
@@ -22,8 +21,7 @@ data class LivePortfolio(
 
 @Composable
 fun rememberLivePortfolio(token: String?, connected: Boolean, currency: PortfolioCurrency): LivePortfolio {
-    val activity = LocalActivity.current
-    val lifecycle = (activity as? ComponentActivity)?.lifecycle
+    val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     var foreground by remember(lifecycle) {
         mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true)
     }
@@ -34,42 +32,44 @@ fun rememberLivePortfolio(token: String?, connected: Boolean, currency: Portfoli
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    // A different identity must never see the previous identity's cached snapshot.
-    var state by remember(token, connected) {
-        mutableStateOf<PortfolioUiState>(if (connected) PortfolioUiState.Loading else PortfolioUiState.NotConnected)
+    // Disconnecting or changing identity clears values, errors AND their timestamps.
+    var request by remember(token, connected) {
+        mutableStateOf(RefreshSnapshot<PortfolioCurrency, PortfolioSnapshot>())
     }
-    var refreshing by remember(token) { mutableStateOf(false) }
-    var error by remember(token) { mutableStateOf<String?>(null) }
-    var successTime by remember(token) { mutableStateOf<Long?>(null) }
     val client = remember { PortfolioDataClient() }
     LaunchedEffect(token, connected, currency, foreground) {
-        if (token == null || !connected || !foreground) {
-            refreshing = false
-            return@LaunchedEffect
-        }
-        var waitMillis = 15_000L
+        if (token.isNullOrBlank() || !connected || !foreground) return@LaunchedEffect
+        val backoff = RefreshBackoff(15_000)
         while (isActive) {
-            refreshing = true
+            request = request.start(currency)
+            val id = request.requestId
+            val waitMillis: Long
             try {
                 when (val result = withContext(Dispatchers.IO) { client.portfolio(token, currency) }) {
                     is BackendResult.Success -> {
-                        state = PortfolioUiState.Ready(result.value)
-                        successTime = System.currentTimeMillis()
-                        error = null
-                        waitMillis = 15_000L
+                        request = request.succeed(id, result.value, System.currentTimeMillis())
+                        waitMillis = backoff.success()
                     }
                     is BackendResult.Failure -> {
-                        error = result.message
-                        if (state !is PortfolioUiState.Ready) state = PortfolioUiState.Error(result.message)
+                        request = request.fail(id, result.message)
                         if (!result.retryable) return@LaunchedEffect
-                        waitMillis = (waitMillis * 2).coerceAtMost(120_000L)
+                        waitMillis = backoff.failure()
                     }
                 }
             } finally {
-                refreshing = false
+                // An old effect must not turn off a newer request's loading state.
+                request = request.cancel(id)
             }
             delay(waitMillis)
         }
     }
-    return LivePortfolio(state, refreshing, error, successTime)
+    val cached = request.value
+    val failure = request.error
+    val state = when {
+        token.isNullOrBlank() || !connected -> PortfolioUiState.NotConnected
+        cached != null -> PortfolioUiState.Ready(cached)
+        failure != null -> PortfolioUiState.Error(failure)
+        else -> PortfolioUiState.Loading
+    }
+    return LivePortfolio(state, request.loading && foreground, failure, request.receivedAtMillis)
 }
