@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from contextlib import closing
 from dataclasses import dataclass, asdict
-from functools import lru_cache
 import hashlib
 import json
 import os
@@ -86,11 +85,29 @@ class AndroidRelease:
                 'version_is_not_attestation': True}
 
 
-@lru_cache(maxsize=16)
-def _file_digest(path: str, fingerprint: tuple) -> str:
-    # Stat is part of the cache key; immutable published files must never be edited.
+def _file_digest(path: str, expected_size: int) -> str:
+    """Rehash bytes, not a cached stat result; filesystem timestamps may collide.
+
+    A same-size rewrite can retain mtime/ctime on some filesystems. Treating
+    those fields as an integrity proof would let modified bytes pass the gate.
+    Bound reading even if a file grows between stat and open.
+    """
+    if type(expected_size) is not int or not 0 < expected_size <= MAX_APK_BYTES:
+        raise ReleaseUnavailable('invalid_release_size')
+    digest = hashlib.sha256()
+    received = 0
     with open(path, 'rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        while True:
+            chunk = stream.read(min(1024 * 1024, expected_size - received + 1))
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > expected_size:
+                raise ReleaseUnavailable('release_size_changed')
+            digest.update(chunk)
+    if received != expected_size:
+        raise ReleaseUnavailable('release_size_changed')
+    return digest.hexdigest()
 
 
 class ReleaseChannel:
@@ -145,8 +162,7 @@ class ReleaseChannel:
             stat = path.stat()
             if path.is_symlink() or not path.is_file() or stat.st_size != release.apk_bytes:
                 raise ReleaseUnavailable('release_file_invalid')
-            fingerprint = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-            if _file_digest(str(path.resolve()), fingerprint) != release.apk_sha256:
+            if _file_digest(str(path.resolve()), release.apk_bytes) != release.apk_sha256:
                 raise ReleaseUnavailable('release_checksum_invalid')
             return path
         except OSError as error:
