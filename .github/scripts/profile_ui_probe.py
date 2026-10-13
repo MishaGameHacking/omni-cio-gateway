@@ -1,6 +1,7 @@
 """UI checks use only the disposable emulator callback, never attached user phones."""
 from __future__ import annotations
 
+from pathlib import Path
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -44,6 +45,24 @@ class ProfileProbe:
         self.command("shell", "uiautomator", "dump", "/sdcard/analyst-ui-test.xml")
         xml = self.command("shell", "cat", "/sdcard/analyst-ui-test.xml")
         return ET.fromstring(xml[xml.index("<?xml"):])
+
+    def capture(self, name: str):
+        # Only the synthetic debug profile on our explicitly addressed emulator.
+        if re.fullmatch(r"[a-z-]+", name) is None:
+            raise ValueError("Invalid screenshot label")
+        root = Path(__file__).resolve().parents[2]
+        directory = root / "app/build/outputs/apk/preview/ui-screens"
+        if directory.is_symlink() or not directory.resolve().is_relative_to(root):
+            raise ValueError("Screenshot directory escapes checkout")
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / (name + ".png")
+        if destination.is_symlink():
+            raise ValueError("Screenshot destination is a symlink")
+        self.command("shell", "screencap", "-p", "/sdcard/analyst-profile.png")
+        self.command("pull", "/sdcard/analyst-profile.png", str(destination))
+        if destination.stat().st_size < 100:
+            raise AssertionError("Empty screenshot")
+        print("PROFILE_SCREENSHOT=" + name, flush=True)
 
     def wait_for(self, read, message):
         deadline = time.monotonic() + 12
@@ -100,31 +119,40 @@ class ProfileProbe:
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
         self.palette("fff5f6f8")
+        self.capture("light-initial")
         self.tap(THEME_LABEL)
         self.tap("Тёмная")
         self.palette("ff111111")
+        self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
         self.palette("ff111111")
+        self.capture("dark-restored")
         self.tap(THEME_LABEL)
         self.tap("Светлая")
         self.palette("fff5f6f8")
+        self.capture("light-selected")
         self.tap(THEME_LABEL)
         self.tap("Как в системе")
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette("ff111111")
+        self.capture("system-dark")
         self.command("shell", "cmd", "uimode", "night", "no")
         self.palette("fff5f6f8")
+        self.capture("system-light")
 
     def dialogs(self):
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
+        self.capture("security")
         self.tap(CONFIRM_LABEL)
         self.horizontal_info()
+        self.capture("info")
         self.tap("О приложении")
         self.find(CONFIRM_LABEL)
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
             raise AssertionError("About version text missing")
+        self.capture("about")
         self.tap(CONFIRM_LABEL)
 
     def large_font(self):
@@ -132,6 +160,7 @@ class ProfileProbe:
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
         self.horizontal_info()
+        self.capture("large-font")
 
 
 def night_setting(output: str) -> str:
