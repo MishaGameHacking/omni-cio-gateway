@@ -1,79 +1,37 @@
 name: Russia migration preflight (read only)
-
 on:
   push:
     branches: [infra/russia-migration-preflight]
     paths: [.github/workflows/russia-migration-preflight.yml]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
-  group: timeweb-russia-preflight
+  group: timeweb-russian-migration
   cancel-in-progress: false
-
 jobs:
   inventory:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read authorized inventory only; no cloud mutations
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Read preset metadata and source state; no cloud changes
         shell: py -3 {0}
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONIOENCODING: utf-8
         run: |
           import json
-          import os
-          import urllib.error
-          import urllib.request
-          from datetime import datetime, timezone
-
-          BASE = 'https://api.timeweb.cloud/api/v1'
-          SOURCE_ID = 9326369
-          ALLOWED = {'/servers/9326369', '/presets/servers'}
-          SAFE = {'id', 'name', 'location', 'availability_zone', 'region', 'country', 'country_code', 'city', 'cpu', 'cpu_frequency', 'ram', 'disk', 'disk_type', 'price', 'price_per_month', 'status', 'is_available', 'is_preorder', 'preset_id', 'os_id', 'is_system', 'size', 'used', 'type', 'version'}
-
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-
-          def project(value):
-              if not isinstance(value, dict):
-                  return {}
-              return {key: value[key] for key in SAFE if key in value and (value[key] is None or type(value[key]) in (str, int, float, bool))}
-
-          def get(path):
-              if path not in ALLOWED:
-                  raise RuntimeError('Unexpected preflight path')
-              token = os.environ.get('TIMEWEB_CLOUD_TOKEN', '').strip()
-              if not token:
-                  raise RuntimeError('TIMEWEB_CLOUD_TOKEN is not available to this job')
-              request = urllib.request.Request(BASE + path, method='GET', headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'})
-              try:
-                  with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as response:
-                      raw = response.read(4_000_001)
-                  if len(raw) > 4_000_000:
-                      raise RuntimeError('Catalog exceeds safe preflight size')
-                  return json.loads(raw)
-              except urllib.error.HTTPError as exc:
-                  raise RuntimeError('Timeweb read failed: ' + path + ', HTTP ' + str(exc.code)) from None
-
-          source = get('/servers/9326369').get('server')
-          if not isinstance(source, dict) or source.get('id') != SOURCE_ID or source.get('name') != 'analyst-ai-backend':
-              raise RuntimeError('Source identity mismatch; no migration permitted')
-          report = {'at': datetime.now(timezone.utc).isoformat(), 'mode': 'READ_ONLY_NO_RESOURCES_ORDERED', 'source': project(source), 'source_field_names': sorted(source), 'locations_catalog': 'HTTP_403_NOT_RETRIED; capacity is not verified'}
-          for key in ('configuration', 'config', 'preset', 'os'):
-              if isinstance(source.get(key), dict):
-                  report['source_' + key] = project(source[key])
-          if isinstance(source.get('disks'), list):
-              report['source_disks'] = [project(item) for item in source['disks']]
-          payload = get('/presets/servers')
-          presets = payload.get('server_presets')
-          if not isinstance(presets, list):
-              raise RuntimeError('Unexpected preset catalog')
-          report['catalog_total'] = len(presets)
-          report['catalog_meta'] = {'total': payload.get('meta', {}).get('total')}
-          report['russian_presets'] = [project(item) for item in presets if isinstance(item, dict) and item.get('location') in ('ru-1', 'ru-2', 'ru-3') and type(item.get('cpu')) is int and 1 <= item['cpu'] <= 4]
-          print('RUSSIA_PREFLIGHT=' + json.dumps(report, ensure_ascii=True, sort_keys=True))
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('.github/scripts').resolve()))
+          from provision_russian_stage import call, inventory, TARGET_NAME, SOURCE_ID
+          source = call('GET', '/servers/' + str(SOURCE_ID)).get('server', {})
+          rows = inventory()
+          presets = call('GET', '/presets/servers')['server_presets']
+          keys = ('id', 'location', 'availability_zone', 'price', 'cpu', 'cpu_frequency', 'ram', 'disk', 'disk_type', 'bandwidth', 'description', 'description_short', 'tags', 'is_available', 'is_preorder')
+          selected = [{key: p[key] for key in keys if key in p} for p in presets if p.get('id') in (2451, 2577, 4241, 4799, 3795)]
+          print('RUSSIA_RECONCILIATION=' + json.dumps({'source': {key: source.get(key) for key in ('id', 'name', 'location', 'availability_zone', 'status')}, 'staging_count': sum(p.get('name') == TARGET_NAME for p in rows), 'presets': selected}, ensure_ascii=True))
