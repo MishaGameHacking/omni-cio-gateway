@@ -2,14 +2,17 @@ package ru.omnicio.app.ui.auth
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +35,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumIcon
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TelegramLoginScreen(
     loading: Boolean,
@@ -51,6 +55,7 @@ fun TelegramLoginScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 22.dp, vertical = 28.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -76,9 +81,14 @@ fun TelegramLoginScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(
-                    modifier = Modifier.padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        space = 8.dp,
+                        alignment = Alignment.CenterHorizontally,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    maxItemsInEachRow = 3,
                 ) {
                     SpectrumBadge("Портфель", accent = palette.cyan)
                     SpectrumBadge("Риски", accent = palette.violet)
