@@ -59,7 +59,7 @@ class AndroidRelease:
         required = set(cls.__dataclass_fields__) - {'notes'}
         if not required <= raw.keys():
             raise ReleaseUnavailable('incomplete_release')
-        if raw['package_name'] not in PACKAGES:
+        if not isinstance(raw['package_name'], str) or raw['package_name'] not in PACKAGES:
             raise ReleaseUnavailable('unknown_release_package')
         for key in ('apk_sha256', 'certificate_sha256'):
             if not isinstance(raw[key], str) or not DIGEST_PATTERN.fullmatch(raw[key]):
@@ -97,24 +97,50 @@ class ReleaseChannel:
     def __init__(self, root: Path):
         self.root = root
 
-    def current(self, package: str) -> AndroidRelease:
-        if package not in PACKAGES:
+    def directory(self, package: str) -> Path:
+        if not isinstance(package, str) or package not in PACKAGES:
             raise ReleaseUnavailable('unknown_release_package')
-        manifest = self.root / package / 'current.json'
+        directory = self.root / package
+        if directory.is_symlink() or not directory.resolve().is_relative_to(self.root.resolve()):
+            raise ReleaseUnavailable('release_directory_invalid')
+        return directory
+
+    def _read_manifest(self, package: str, manifest: Path) -> AndroidRelease:
         try:
-            if manifest.stat().st_size > 16_384 or manifest.is_symlink():
+            if manifest.is_symlink() or not manifest.is_file():
                 raise ReleaseUnavailable('invalid_release_manifest')
-            raw = json.loads(manifest.read_text(encoding='utf-8'))
-            release = AndroidRelease.parse(raw)
-            if release.package_name != package:
-                raise ReleaseUnavailable('release_package_mismatch')
+            with manifest.open('rb') as stream:
+                content = stream.read(16_385)
+            if len(content) > 16_384:
+                raise ReleaseUnavailable('invalid_release_manifest')
+            release = AndroidRelease.parse(json.loads(content))
+            if release.package_name != package or release.published_at > int(time.time()):
+                raise ReleaseUnavailable('release_not_active')
             self.verified_file(release)
             return release
         except (OSError, ValueError, TypeError, KeyError) as error:
             raise ReleaseUnavailable('release_unavailable') from error
 
+    def current(self, package: str) -> AndroidRelease:
+        return self._read_manifest(package, self.directory(package) / 'current.json')
+
+    def published(self, package: str, filename: str) -> AndroidRelease:
+        """A rollout must not invalidate an APK URL a client has already received."""
+        if not valid_apk_filename(filename):
+            raise ReleaseUnavailable('invalid_release_filename')
+        directory = self.directory(package)
+        manifest = directory / (filename[:-4] + '.json')
+        if manifest.exists() or manifest.is_symlink():
+            release = self._read_manifest(package, manifest)
+        else:
+            # Compatibility with the initial channel before retained metadata.
+            release = self.current(package)
+        if release.filename != filename:
+            raise ReleaseUnavailable('release_filename_mismatch')
+        return release
+
     def verified_file(self, release: AndroidRelease) -> Path:
-        path = self.root / release.package_name / release.filename
+        path = self.directory(release.package_name) / release.filename
         try:
             stat = path.stat()
             if path.is_symlink() or not path.is_file() or stat.st_size != release.apk_bytes:
@@ -125,6 +151,11 @@ class ReleaseChannel:
             return path
         except OSError as error:
             raise ReleaseUnavailable('release_file_unavailable') from error
+
+
+def valid_apk_filename(filename: str) -> bool:
+    return isinstance(filename, str) and re.fullmatch(
+        r'Analyst-AI-[1-9][0-9]{0,9}-[a-f0-9]{64}\.apk', filename) is not None
 
 
 def channel() -> ReleaseChannel:
@@ -231,10 +262,10 @@ def install_routes(app, connect: Callable, authenticate: Callable) -> None:
 
     @app.get('/client/apk/{filename}', tags=['client updates'])
     def apk(filename: str, package_name: str = Query(default='ru.omnicio.app.debug')):
+        if not valid_apk_filename(filename):
+            raise HTTPException(404, detail='release_not_found')
         try:
-            release = channel().current(package_name)
-            if filename != release.filename:
-                raise HTTPException(404, detail='release_not_found')
+            release = channel().published(package_name, filename)
             path = channel().verified_file(release)
         except ReleaseUnavailable:
             raise _service_error() from None
