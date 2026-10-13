@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,18 +94,19 @@ fun ProfileScreen(
                     listOf("Настройки", "Профиль", "Инфо").forEachIndexed { index, title ->
                         TextButton(
                             onClick = { section = index },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 72.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         ) {
                             Column(
                                 Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(
-                                    title,
-                                    maxLines = 1,
-                                    softWrap = false,
+                                    text = title,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
                                     color = if (section == index) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
