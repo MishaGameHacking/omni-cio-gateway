@@ -18,7 +18,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read source server and provider catalog without cloud changes
+      - name: Read authorized inventory only; no cloud mutations
         shell: py -3 {0}
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
@@ -32,8 +32,8 @@ jobs:
 
           BASE = 'https://api.timeweb.cloud/api/v1'
           SOURCE_ID = 9326369
-          ALLOWED = {'/servers/9326369', '/presets/servers', '/locations'}
-          SAFE = {'id', 'name', 'location', 'availability_zone', 'region', 'country', 'country_code', 'city', 'cpu', 'cpu_frequency', 'ram', 'disk', 'disk_type', 'price', 'price_per_month', 'status', 'is_available', 'is_preorder', 'preset_id', 'os_id', 'is_system', 'size', 'type'}
+          ALLOWED = {'/servers/9326369', '/presets/servers'}
+          SAFE = {'id', 'name', 'location', 'availability_zone', 'region', 'country', 'country_code', 'city', 'cpu', 'cpu_frequency', 'ram', 'disk', 'disk_type', 'price', 'price_per_month', 'status', 'is_available', 'is_preorder', 'preset_id', 'os_id', 'is_system', 'size', 'used', 'type', 'version'}
 
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -63,7 +63,7 @@ jobs:
           source = get('/servers/9326369').get('server')
           if not isinstance(source, dict) or source.get('id') != SOURCE_ID or source.get('name') != 'analyst-ai-backend':
               raise RuntimeError('Source identity mismatch; no migration permitted')
-          report = {'at': datetime.now(timezone.utc).isoformat(), 'mode': 'READ_ONLY_NO_RESOURCES_ORDERED', 'source': project(source), 'source_field_names': sorted(source)}
+          report = {'at': datetime.now(timezone.utc).isoformat(), 'mode': 'READ_ONLY_NO_RESOURCES_ORDERED', 'source': project(source), 'source_field_names': sorted(source), 'locations_catalog': 'HTTP_403_NOT_RETRIED; capacity is not verified'}
           for key in ('configuration', 'config', 'preset', 'os'):
               if isinstance(source.get(key), dict):
                   report['source_' + key] = project(source[key])
@@ -76,7 +76,4 @@ jobs:
           report['catalog_total'] = len(presets)
           report['catalog_meta'] = {'total': payload.get('meta', {}).get('total')}
           report['russian_presets'] = [project(item) for item in presets if isinstance(item, dict) and item.get('location') in ('ru-1', 'ru-2', 'ru-3') and type(item.get('cpu')) is int and 1 <= item['cpu'] <= 4]
-          locations = get('/locations').get('locations')
-          if isinstance(locations, list):
-              report['locations'] = [project(item) for item in locations]
           print('RUSSIA_PREFLIGHT=' + json.dumps(report, ensure_ascii=True, sort_keys=True))
