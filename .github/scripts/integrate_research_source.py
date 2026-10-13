@@ -1,8 +1,9 @@
-"""One-use source integration, no cloud operations or blocked planner upload."""
+"""One-use source integration; no cloud operations or blocked planner upload."""
 from __future__ import annotations
 import ast
 import hashlib
 from pathlib import Path
+import subprocess
 
 ROOT=Path(__file__).resolve().parents[2]
 EXPECTED={
@@ -13,16 +14,18 @@ EXPECTED={
 
 
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
-def write(path,text): (ROOT/path).write_text(text,encoding='utf-8')
+def write(path,text): (ROOT/path).write_text(text,encoding='utf-8',newline='\n')
 def replace_once(path,before,after):
     text=read(path)
     if text.count(before)!=1: raise RuntimeError('Source anchor changed: '+path)
     write(path,text.replace(before,after,1))
 
 for path,expected in EXPECTED.items():
-    data=(ROOT/path).read_bytes()
+    data=subprocess.run(['git','show','HEAD:'+path],cwd=ROOT,capture_output=True,check=True,timeout=15).stdout
     actual=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data,usedforsecurity=False).hexdigest()
-    if actual!=expected: raise RuntimeError('Pinned source changed: '+path)
+    if actual!=expected: raise RuntimeError('Pinned committed source changed: '+path)
+    if read(path)!=data.decode('utf-8').replace('\r\n','\n'):
+        raise RuntimeError('Checkout differs from committed source: '+path)
 
 app=read('backend/app.py').rstrip()+'''
 
