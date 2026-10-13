@@ -5,10 +5,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.browser.auth.AuthTabIntent
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
+import androidx.browser.auth.AuthTabIntent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -22,12 +21,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.backend.AnalystBackendClient
-import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
+import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
+import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
 import ru.omnicio.app.ui.AnalystTab
@@ -37,11 +37,11 @@ import ru.omnicio.app.ui.analysis.IdeasScreen
 import ru.omnicio.app.ui.analysis.InsightFeedScreen
 import ru.omnicio.app.ui.analysis.PulseScreen
 import ru.omnicio.app.ui.auth.TelegramLoginScreen
-import ru.omnicio.app.ui.theme.AnalystTheme
-import ru.omnicio.app.data.portfolio.rememberLivePortfolio
+import ru.omnicio.app.ui.education.EducationScreen
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.profile.TApiScreen
+import ru.omnicio.app.ui.theme.AnalystTheme
 
 private enum class AppScreen {
     Portfolio,
@@ -49,6 +49,7 @@ private enum class AppScreen {
     Pulse,
     Chat,
     Profile,
+    Education,
     AnalysisSettings,
     TApi,
 }
@@ -121,7 +122,6 @@ class MainActivity : ComponentActivity() {
     private fun captureTelegramCallback(incoming: Intent?) {
         val data = incoming?.data ?: return
         if (captureTelegramCallback(data)) {
-            // Prevent an Activity restart from consuming the same one-time code again.
             incoming.data = null
             setIntent(incoming)
         }
@@ -216,9 +216,6 @@ private fun AnalystAiApp(
         mutableStateOf(initialScreenshotsBlocked)
     }
 
-    // One effect owns both startup restoration and incoming login codes.
-    // Cancelling startup restoration when a callback arrives prevents it from
-    // overwriting a freshly authenticated session with SignedOut.
     LaunchedEffect(authCode) {
         val code = authCode?.takeIf { it.isNotBlank() }
         if (code != null) {
@@ -321,7 +318,11 @@ private fun AnalystAiApp(
         tApiConfigured = connected
     }
 
-    val livePortfolio = rememberLivePortfolio(signedIn?.accessToken, tApiConfigured, portfolioCurrency)
+    val livePortfolio = rememberLivePortfolio(
+        signedIn?.accessToken,
+        tApiConfigured,
+        portfolioCurrency,
+    )
     val portfolioState = livePortfolio.state
 
     AnalystTheme {
@@ -429,11 +430,28 @@ private fun AnalystAiApp(
                                 onOpenAnalysisSettings = {
                                     screenName = AppScreen.AnalysisSettings.name
                                 },
+                                onOpenEducation = {
+                                    screenName = AppScreen.Education.name
+                                },
                                 onLogout = {
                                     sessionStore.clear()
                                     screenName = AppScreen.Portfolio.name
                                     tApiConfigured = false
                                     authState = AuthUiState.SignedOut()
+                                },
+                            )
+                        }
+
+                        AppScreen.Education -> {
+                            EducationScreen(
+                                onBack = {
+                                    screenName = AppScreen.Profile.name
+                                },
+                                onPortfolioClick = {
+                                    screenName = AppScreen.Portfolio.name
+                                },
+                                onProfileClick = {
+                                    screenName = AppScreen.Profile.name
                                 },
                             )
                         }
