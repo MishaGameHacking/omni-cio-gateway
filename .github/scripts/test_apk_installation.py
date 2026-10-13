@@ -140,16 +140,18 @@ def main() -> None:
                 if removed.returncode or "Success" not in removed.stdout:
                     raise RuntimeError("Could not reset disposable emulator package")
             install("candidate_clean_install", apk)
-            launch = device("shell", "am", "start", "-W", "-n", package + "/ru.omnicio.app.MainActivity")
+            # BootstrapActivity is now the only exported launcher/deep-link gate.
+            # MainActivity stays private so an external intent cannot bypass a mandatory update.
+            launch = device("shell", "am", "start", "-W", "-n", package + "/ru.omnicio.app.BootstrapActivity")
             print("LAUNCH_RESULT=" + launch.stdout + launch.stderr, flush=True)
             if launch.returncode or "Status: ok" not in launch.stdout:
-                raise RuntimeError("Activity launch failed")
+                raise RuntimeError("Bootstrap launch failed")
             time.sleep(8)
             alive = device("shell", "pidof", package)
             if alive.returncode or not alive.stdout.strip():
                 raise RuntimeError("App process did not remain running")
-            results.append({"test": "activity_launch", "success": True})
-            print("ACTIVITY_LAUNCH=success", flush=True)
+            results.append({"test": "bootstrap_activity_launch", "success": True})
+            print("BOOTSTRAP_ACTIVITY_LAUNCH=success", flush=True)
             if args.api == 33 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                 from profile_ui_probe import exercise
                 debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
