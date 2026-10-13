@@ -160,8 +160,17 @@ class ProfileProbe:
         self.capture("about")
         self.tap(CONFIRM_LABEL)
 
+    def education(self):
+        self.tap("Инфо")
+        self.tap("Обучение инвестициям")
+        self.find("Инвестиции простыми словами")
+        self.find("Как новости двигают рынок")
+        self.capture("education")
+        self.tap("‹ Назад")
+        self.find("Профиль")
+
     def large_font(self):
-        self.command("shell", "settings", "put", "system", "font_scale", "1.3")
+        self.command("shell", "settings", "put", "system", "font_scale", "2.0")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
         self.horizontal_info()
@@ -180,11 +189,17 @@ def exercise(device) -> None:
     if re.fullmatch(r"\d(?:\.\d{1,3})?", original_scale) is None:
         original_scale = "1.0"
     try:
-        for name, test in (("themes", probe.themes), ("dialogs", probe.dialogs), ("large-font", probe.large_font)):
+        stages = (
+            ("themes", probe.themes),
+            ("dialogs", probe.dialogs),
+            ("education", probe.education),
+            ("large-font-200", probe.large_font),
+        )
+        for name, test in stages:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,large-font,refresh-state-15,education-catalog-10", flush=True)
+        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,education,font-200,refresh-state-15,education-catalog-10", flush=True)
     finally:
         try:
             probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
