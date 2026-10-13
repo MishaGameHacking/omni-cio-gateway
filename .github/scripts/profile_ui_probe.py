@@ -11,6 +11,8 @@ PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
 CONFIRM_LABEL = "Понятно"
+SETTINGS_LABEL = "Настройки"
+FIRST_LESSON = "Сначала цель, срок и резерв"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -88,16 +90,20 @@ class ProfileProbe:
     def bounds(self, text):
         return node_bounds(self.find(text))
 
-    def tap(self, text):
-        from profile_scroll import reveal_in_profile
+    def reveal(self, text, area="profile-content"):
+        from profile_scroll import reveal_in_list
 
         def swipe(x1, y1, x2, y2):
             self.command("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "350")
 
-        target = reveal_in_profile(self.tree, swipe, text)
+        target = reveal_in_list(self.tree, swipe, text, resource_id=area)
         if target is None:
-            target = self.find(text)
-        left, top, right, bottom = node_bounds(target)
+            from profile_scroll import visible_label
+            target = self.wait_for(lambda: visible_label(self.tree(), text), "UI label not visible: " + text)
+        return target
+
+    def tap(self, text, area="profile-content"):
+        left, top, right, bottom = node_bounds(self.reveal(text, area))
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
     def marker(self, expected):
@@ -113,6 +119,7 @@ class ProfileProbe:
 
     def open(self):
         output = self.command("shell", "am", "start", "-W", "-n", ACTIVITY)
+        print("PROFILE_LAUNCH=" + output[-4000:], flush=True)
         if "Status: ok" not in output:
             raise AssertionError("Profile fixture did not launch")
         self.marker("probe-refresh-tests:15")
@@ -121,7 +128,7 @@ class ProfileProbe:
     def horizontal_info(self):
         self.tap("Инфо")
         _, top, _, bottom = self.bounds("Инфо")
-        _, peer_top, _, peer_bottom = self.bounds("Настройки")
+        _, peer_top, _, peer_bottom = self.bounds(SETTINGS_LABEL)
         tolerance = max(peer_bottom - peer_top, bottom - top) / 2
         if bottom - top > (peer_bottom - peer_top) * 1.5:
             raise AssertionError("Info label wrapped vertically")
@@ -169,23 +176,30 @@ class ProfileProbe:
         self.tap(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
-        self.tap("Настройки")
+        self.tap(SETTINGS_LABEL)
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
         self.tap(CONFIRM_LABEL)
         self.tap("Инфо")
-        # Plain find does not scroll: first content must be visible on selection.
         self.find("Обучение инвестициям")
-        self.tap("Настройки")
+        self.tap(SETTINGS_LABEL)
         self.find(THEME_LABEL)
 
-    def education(self):
+    def education(self, screenshot="education"):
+        area = "education-content"
         self.tap("Инфо")
         self.tap("Обучение инвестициям")
         self.find("Инвестиции простыми словами")
-        self.find("Сначала цель, срок и резерв")
-        self.capture("education")
-        self.tap("‹ Назад")
+        self.reveal(FIRST_LESSON, area)
+        self.capture(screenshot)
+        self.tap("Открыть урок: " + FIRST_LESSON, area)
+        self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
+        self.find("‹ Назад")  # Navigation must not need a reverse scroll.
+        self.tap("Старт", area)
+        self.find(FIRST_LESSON)  # Category change resets the lesson list.
+        self.tap("Все", area)
+        self.find("Инвестиции простыми словами")
+        self.tap("‹ Назад", area)
         self.find("Профиль")
 
     def large_font(self):
@@ -194,6 +208,7 @@ class ProfileProbe:
         self.open()
         self.horizontal_info()
         self.capture("large-font")
+        self.education("education-large-font")
 
 
 def night_setting(output: str) -> str:
@@ -219,7 +234,7 @@ def exercise(device) -> None:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,refresh-state-15,education-catalog-10", flush=True)
+        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10", flush=True)
     finally:
         try:
             probe.command("shell", "settings", "put", "system", "font_scale", original_scale)

@@ -1,9 +1,12 @@
-"""Bounded scrolling inside the tagged Profile list, never system UI."""
+"""Bounded gestures in an explicitly chosen Analyst list; never another app."""
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
+
+PACKAGE = "ru.omnicio.app.debug"
+LIST_IDS = frozenset({"profile-content", "education-content"})
 
 
 def _bounds(node: ET.Element) -> tuple[int, int, int, int] | None:
@@ -11,38 +14,58 @@ def _bounds(node: ET.Element) -> tuple[int, int, int, int] | None:
     if match is None:
         return None
     left, top, right, bottom = map(int, match.groups())
-    if right <= left or bottom <= top:
-        return None
-    return left, top, right, bottom
+    return (left, top, right, bottom) if right > left and bottom > top else None
 
 
-def reveal_in_profile(read_tree: Callable, swipe: Callable, text: str,
-                      *, max_swipes: int = 10) -> ET.Element | None:
-    """Return a visible exact label; missing nodes never become test success.
+def visible_label(tree: ET.Element, text: str) -> ET.Element | None:
+    for node in tree.iter("node"):
+        if node.get("package") != PACKAGE or node.get("visible-to-user") == "false":
+            continue
+        labels = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
+        if text in [label.strip() for label in labels] and _bounds(node) is not None:
+            return node
+    return None
 
-    None means there is no tagged Profile list; the caller may use its ordinary
-    dialog wait. A tagged list with an unreachable target is a hard failure.
+
+def _scroll_area(tree: ET.Element, resource_id: str):
+    names = {resource_id, f"{PACKAGE}:id/{resource_id}"}
+    candidates = [node for node in tree.iter("node")
+                  if node.get("package") == PACKAGE and node.get("resource-id") in names
+                  and node.get("scrollable") == "true" and node.get("visible-to-user") != "false"]
+    # Ambiguous simultaneous lists must not pick an arbitrary scroll target.
+    return _bounds(candidates[0]) if len(candidates) == 1 else None
+
+
+def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
+                   *, resource_id: str, max_swipes: int = 10) -> ET.Element | None:
+    """Return the visible exact label or fail after a bounded number of gestures.
+
+    None means this particular list is not visible; no other list or system
+    window is scrolled. Header/dialog labels may be found without any gesture.
     """
+    if resource_id not in LIST_IDS:
+        raise ValueError("unknown_scroll_list")
     if type(max_swipes) is not int or not 0 <= max_swipes <= 20:
         raise ValueError("invalid_scroll_limit")
     for attempt in range(max_swipes + 1):
         tree = read_tree()
-        for node in tree.iter("node"):
-            labels = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
-            if text in [label.strip() for label in labels] and _bounds(node) is not None:
-                return node
-        area = next((node for node in tree.iter("node")
-                     if node.get("resource-id") in {"profile-content", "ru.omnicio.app.debug:id/profile-content"}
-                     and node.get("scrollable") == "true"), None)
-        bounds = _bounds(area) if area is not None else None
+        target = visible_label(tree, text)
+        if target is not None:
+            return target
+        bounds = _scroll_area(tree, resource_id)
         if bounds is None:
             return None
         left, top, right, bottom = bounds
         if bottom - top < 8 or right - left < 2:
             return None
         if attempt == max_swipes:
-            raise AssertionError("Profile target not reachable: " + text)
+            raise AssertionError("List target not reachable: " + text)
         inset = max(1, (bottom - top) // 5)
         middle = (left + right) // 2
         swipe(middle, bottom - inset, middle, top + inset)
-    raise AssertionError("Profile scroll did not finish")
+    raise AssertionError("List scroll did not finish")
+
+
+def reveal_in_profile(read_tree: Callable, swipe: Callable, text: str,
+                      *, max_swipes: int = 10) -> ET.Element | None:
+    return reveal_in_list(read_tree, swipe, text, resource_id="profile-content", max_swipes=max_swipes)

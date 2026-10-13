@@ -26,8 +26,18 @@ jobs:
     permissions:
       contents: write
       checks: read
+    # The registered Android runners share one physical machine and ADB server.
+    # Keep development parallel, but queue heavy builds/emulators across PRs.
+    concurrency:
+      group: analyst-android-lab
+      queue: max
+      cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
 
     steps:
       - name: Checkout source
@@ -150,7 +160,7 @@ jobs:
             const crypto = require('crypto');
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
-            const shots = ['light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font'];
+            const shots = ['light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
             const names = ['apk-verification.json', 'install-api-33/install-results.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {

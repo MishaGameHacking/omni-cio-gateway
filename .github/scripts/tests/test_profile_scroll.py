@@ -13,9 +13,9 @@ SPEC.loader.exec_module(module)
 def tree(label="", bounds="[10,120][300,220]", area=True, resource="profile-content"):
     root = ET.Element("hierarchy")
     if area:
-        ET.SubElement(root, "node", attrib={"resource-id": resource, "scrollable": "true", "bounds": "[10,100][310,500]"})
+        ET.SubElement(root, "node", attrib={"package": module.PACKAGE, "resource-id": resource, "scrollable": "true", "bounds": "[10,100][310,500]"})
     if label:
-        ET.SubElement(root, "node", attrib={"text": label, "bounds": bounds})
+        ET.SubElement(root, "node", attrib={"package": module.PACKAGE, "text": label, "bounds": bounds})
     return root
 
 
@@ -66,13 +66,15 @@ class ProfileScrollTests(unittest.TestCase):
         swipe.assert_not_called()
 
     def test_substring_not_accepted(self):
+        read, swipe = lambda: tree("Информация"), Mock()
         with self.assertRaises(AssertionError):
-            module.reveal_in_profile(lambda: tree("Информация"), Mock(), "Инфо", max_swipes=0)
+            module.reveal_in_profile(read, swipe, "Инфо", max_swipes=0)
 
     def test_invalid_limit_rejected(self):
+        read, swipe = lambda: tree(), Mock()
         for value in (-1, 21, True, 1.5):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                module.reveal_in_profile(lambda: tree(), Mock(), "x", max_swipes=value)
+                module.reveal_in_profile(read, swipe, "x", max_swipes=value)
 
 
 if __name__ == "__main__":
