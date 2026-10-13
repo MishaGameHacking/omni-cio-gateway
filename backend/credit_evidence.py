@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, DecimalException, InvalidOperation, ROUND_HALF_EVEN, localcontext
 from typing import Iterable, Mapping
 from urllib.parse import urlsplit
 
@@ -13,23 +13,34 @@ class EvidenceError(ValueError):
 
 
 def stamp(value: str) -> datetime:
+    if not isinstance(value, str) or len(value) > 64:
+        raise EvidenceError('invalid_evidence_time')
     try:
         result = datetime.fromisoformat(value.replace('Z', '+00:00'))
-    except (AttributeError, TypeError, ValueError):
+    except (TypeError, ValueError):
         raise EvidenceError('invalid_evidence_time') from None
-    if result.tzinfo is None:
+    if result.tzinfo is None or result.utcoffset() is None:
         raise EvidenceError('evidence_timezone_required')
     return result.astimezone(timezone.utc)
+
+
+def _assessment_time(at: datetime) -> None:
+    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+        raise EvidenceError('assessment_timezone_required')
 
 
 def amount(value) -> Decimal:
     if isinstance(value, bool) or value is None:
         raise EvidenceError('missing_numeric_evidence')
+    text = str(value)
+    if len(text) > 256:
+        raise EvidenceError('invalid_numeric_evidence')
     try:
-        result = Decimal(str(value))
+        result = Decimal(text)
     except (InvalidOperation, ValueError):
         raise EvidenceError('invalid_numeric_evidence') from None
-    if not result.is_finite() or abs(result) > Decimal('1e24'):
+    # copy_abs does not round or overflow under a caller's Decimal context.
+    if not result.is_finite() or result.copy_abs() > Decimal('1e24'):
         raise EvidenceError('invalid_numeric_evidence')
     return result
 
@@ -44,25 +55,36 @@ class Source:
     review_id: str
 
     def valid(self, at: datetime) -> bool:
-        if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
-            return False
-        if any(not isinstance(value, str) or not value.strip() for value in (self.id, self.review_id, self.url)):
-            return False
         try:
-            parsed = urlsplit(self.url)
-            if parsed.scheme != 'https' or not parsed.hostname:
+            _assessment_time(at)
+            if not _source_identity_valid(self):
                 return False
-            if parsed.username or parsed.password or parsed.fragment or parsed.port not in (None, 443):
-                return False
-            published, checked, expires = (stamp(x) for x in (self.published_at, self.checked_at, self.expires_at))
+            published, checked, expires = (stamp(x) for x in
+                                          (self.published_at, self.checked_at, self.expires_at))
             return published <= checked <= at < expires
         except (ValueError, TypeError, AttributeError):
             return False
 
 
+def _source_identity_valid(source: Source) -> bool:
+    if any(not isinstance(value, str) or not value.strip()
+           for value in (source.id, source.review_id, source.url)):
+        return False
+    if len(source.url) > 2048 or source.url != source.url.strip():
+        return False
+    if any(ord(character) < 33 or ord(character) == 127 for character in source.url):
+        return False
+    parsed = urlsplit(source.url)
+    return (parsed.scheme == 'https' and bool(parsed.hostname)
+            and parsed.username is None and parsed.password is None
+            and not parsed.fragment and parsed.port in (None, 443))
+
+
 LEVELS = ('AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
           'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'SD', 'RD', 'D')
 AGENCIES = {'ACRA': 'acra-ratings.ru', 'EXPERT_RA': 'raexpert.ru'}
+RATING_UNAVAILABLE = 'Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.'
+INVALID_RATING = 'Некорректная запись рейтинга исключена из оценки.'
 
 
 @dataclass(frozen=True)
@@ -99,66 +121,83 @@ class Rating:
 
 
 def _rating_identity(rating: Rating) -> tuple:
-    # Distinct import IDs are allowed for duplicate observations of the SAME fact.
     return (rating.grade, rating.status, rating.outlook, rating.source.url,
             rating.source.expires_at)
 
 
-def credit_assessment(ratings: Iterable[Rating], *, issuer_id: str | None,
-                      instrument_id: str, at: datetime, bond: bool) -> dict:
-    """Latest action wins; conflicting simultaneous actions are quarantined.
+def _subject_matches(rating: Rating, issuer_id: str | None, instrument_id: str) -> bool:
+    if rating.subject_kind == 'issue':
+        return rating.subject_id == instrument_id
+    return bool(rating.subject_kind == 'issuer' and issuer_id and rating.subject_id == issuer_id)
 
-    An expired/withdrawn latest rating cannot resurrect a favorable older rating.
-    A tie must not depend on database ordering. Agencies/scales remain separate.
-    """
-    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
-        raise EvidenceError('assessment_timezone_required')
-    latest: dict[tuple, tuple[tuple, list[Rating]]] = {}
-    warnings = []
+
+def _rating_moment(rating: Rating, at: datetime) -> tuple | None:
+    published, checked = stamp(rating.source.published_at), stamp(rating.source.checked_at)
+    if published > at or checked > at:
+        return None
+    return published, checked
+
+
+def _remember_latest(latest: dict, rating: Rating, moment: tuple) -> None:
+    key = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)
+    previous = latest.get(key)
+    if previous is None or moment > previous[0]:
+        latest[key] = (moment, [rating])
+    elif moment == previous[0]:
+        previous[1].append(rating)
+
+
+def _latest_ratings(ratings: Iterable[Rating], issuer_id: str | None,
+                    instrument_id: str, at: datetime, warnings: list[str]) -> dict:
+    latest = {}
     for rating in ratings:
         if not isinstance(rating, Rating) or not isinstance(rating.source, Source):
-            warnings.append('Некорректная запись рейтинга исключена из оценки.')
+            warnings.append(INVALID_RATING)
             continue
-        subject_match = ((rating.subject_kind == 'issue' and rating.subject_id == instrument_id)
-                         or (rating.subject_kind == 'issuer' and issuer_id and rating.subject_id == issuer_id))
-        if not subject_match:
+        if not _subject_matches(rating, issuer_id, instrument_id):
             continue
-        if any(not isinstance(value, str) for value in (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)):
-            warnings.append('Некорректная запись рейтинга исключена из оценки.')
+        identity = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)
+        if any(not isinstance(value, str) for value in identity):
+            warnings.append(INVALID_RATING)
             continue
-        try:
-            published, checked = stamp(rating.source.published_at), stamp(rating.source.checked_at)
-        except EvidenceError:
-            # No trustworthy ordering is possible. Do not fall back to older data.
-            warnings.append('Нельзя определить дату действия рейтинга; проверка кредитного качества приостановлена.')
-            return _credit_result([], warnings, bond)
-        if published > at or checked > at:
-            continue
-        key = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)
-        moment = (published, checked)
-        previous = latest.get(key)
-        if previous is None or moment > previous[0]:
-            latest[key] = (moment, [rating])
-        elif moment == previous[0]:
-            previous[1].append(rating)
+        moment = _rating_moment(rating, at)
+        if moment is not None:
+            _remember_latest(latest, rating, moment)
+    return latest
+
+
+def _current_rating(simultaneous: list[Rating], at: datetime, warnings: list[str]) -> dict | None:
+    first = simultaneous[0]
+    if any(_rating_identity(item) != _rating_identity(first) for item in simultaneous[1:]):
+        warnings.append('Получены противоречивые рейтинги с одинаковой датой. Они не используются до проверки источника.')
+        return None
+    if (first.status != 'active' or not isinstance(first.outlook, str)
+            or not all(item.source.valid(at) for item in simultaneous)):
+        warnings.append(RATING_UNAVAILABLE)
+        return None
+    level = first.level()
+    if level is None:
+        warnings.append(RATING_UNAVAILABLE)
+        return None
+    chosen = min(simultaneous, key=lambda item: (item.source.id, item.source.review_id))
+    return {**asdict(chosen), 'level_within_agency': level, 'bucket': chosen.bucket()}
+
+
+def credit_assessment(ratings: Iterable[Rating], *, issuer_id: str | None,
+                      instrument_id: str, at: datetime, bond: bool) -> dict:
+    """Keep the latest action, quarantine ties, never resurrect older good news."""
+    _assessment_time(at)
+    warnings: list[str] = []
+    try:
+        latest = _latest_ratings(ratings, issuer_id, instrument_id, at, warnings)
+    except EvidenceError:
+        warnings.append('Нельзя определить дату действия рейтинга; проверка кредитного качества приостановлена.')
+        return _credit_result([], warnings, bond)
     current = []
     for _, simultaneous in latest.values():
-        first = simultaneous[0]
-        if any(_rating_identity(item) != _rating_identity(first) for item in simultaneous[1:]):
-            warnings.append('Получены противоречивые рейтинги с одинаковой датой. Они не используются до проверки источника.')
-            continue
-        # All duplicate observations must be valid; never prefer a valid duplicate
-        # while hiding the matching invalid record.
-        if first.status != 'active' or not all(item.source.valid(at) for item in simultaneous):
-            warnings.append('Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.')
-            continue
-        level = first.level()
-        if level is None:
-            warnings.append('Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.')
-            continue
-        # Stable result even when identical facts arrived in a different order.
-        chosen = min(simultaneous, key=lambda item: (item.source.id, item.source.review_id))
-        current.append({**asdict(chosen), 'level_within_agency': level, 'bucket': chosen.bucket()})
+        row = _current_rating(simultaneous, at, warnings)
+        if row is not None:
+            current.append(row)
     current.sort(key=lambda item: (item['agency'], item['scale'], item['subject_kind'], item['subject_id']))
     return _credit_result(current, warnings, bond)
 
@@ -187,39 +226,66 @@ class Statement:
     audited: bool = False
 
 
-def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datetime) -> dict:
-    if statement is None or statement.issuer_id != issuer_id or not statement.source.valid(at):
-        return {'state': 'missing', 'ratios': {}, 'messages': ['Нет проверенной актуальной отчётности компании.']}
-    if type(statement.audited) is not bool:
-        raise EvidenceError('audited_boolean_required')
-    start, end = stamp(statement.period_start), stamp(statement.period_end)
-    if start >= end or end > stamp(statement.source.published_at) or (at - end).days > 550:
-        return {'state': 'stale', 'ratios': {}, 'messages': ['Отчётный период не подходит для текущей оценки.']}
-    values = {key: amount(value) for key, value in statement.values.items()}
-    ratios, messages = {}, []
-    if statement.sector.lower() in {'financial', 'financials', 'finance', 'banks', 'insurance'}:
-        return {'state': 'sector_model_required', 'ratios': {},
-                'messages': ['Для банка или страховой компании нужна отдельная проверка капитала и резервов.'],
-                'source': asdict(statement.source)}
-    if not statement.standard or not statement.currency:
-        raise EvidenceError('statement_basis_required')
+def _ratio(numerator: Decimal, denominator: Decimal) -> str:
+    try:
+        # A server worker must not inherit the arithmetic settings of a caller.
+        with localcontext(Context(prec=34, rounding=ROUND_HALF_EVEN, Emax=999, Emin=-999)):
+            result = numerator / denominator
+    except DecimalException:
+        raise EvidenceError('statement_ratio_out_of_range') from None
+    if not result.is_finite() or (numerator != 0 and result == 0):
+        raise EvidenceError('statement_ratio_out_of_range')
+    return str(result)
+
+
+def _statement_ratios(values: Mapping[str, Decimal]) -> dict[str, str]:
     definitions = {'net_debt_to_ebitda': ('net_debt', 'ebitda'),
                    'interest_coverage': ('ebit', 'interest_expense'),
                    'cash_conversion': ('operating_cash_flow', 'net_income')}
+    ratios = {}
     for key, (numerator, denominator) in definitions.items():
         if numerator in values and denominator in values and values[denominator] > 0:
-            ratios[key] = str(values[numerator] / values[denominator])
+            ratios[key] = _ratio(values[numerator], values[denominator])
+    return ratios
+
+
+def _statement_messages(values: Mapping[str, Decimal], ratios: Mapping[str, str], audited: bool) -> list[str]:
+    messages = []
     if values.get('ebitda', Decimal(1)) <= 0:
         messages.append('Основная деятельность не даёт положительного результата до процентов и амортизации; обычное сравнение долга с прибылью здесь ненадёжно.')
     if 'interest_coverage' in ratios and Decimal(ratios['interest_coverage']) < 1:
         messages.append('Прибыли от работы компании за этот период не хватило бы на проценты по долгу.')
     if values.get('free_cash_flow', Decimal(0)) < 0:
         messages.append('После расходов и вложений компания потратила больше денег, чем получила. Нужно проверить, временно ли это.')
-    if not statement.audited:
+    if not audited:
         messages.append('Аудиторское подтверждение этих данных не отмечено.')
     if not ratios:
         messages.append('Данных недостаточно для расчёта долговой нагрузки и покрытия процентов.')
-    return {'state': 'calculated', 'ratios': ratios, 'messages': messages,
+    return messages
+
+
+def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datetime) -> dict:
+    _assessment_time(at)
+    if (not isinstance(statement, Statement) or statement.issuer_id != issuer_id
+            or not isinstance(statement.source, Source) or not statement.source.valid(at)):
+        return {'state': 'missing', 'ratios': {}, 'messages': ['Нет проверенной актуальной отчётности компании.']}
+    if type(statement.audited) is not bool:
+        raise EvidenceError('audited_boolean_required')
+    start, end = stamp(statement.period_start), stamp(statement.period_end)
+    if start >= end or end > stamp(statement.source.published_at) or (at - end).days > 550:
+        return {'state': 'stale', 'ratios': {}, 'messages': ['Отчётный период не подходит для текущей оценки.']}
+    if not isinstance(statement.values, Mapping) or not isinstance(statement.sector, str):
+        raise EvidenceError('statement_basis_required')
+    values = {key: amount(value) for key, value in statement.values.items()}
+    if statement.sector.lower() in {'financial', 'financials', 'finance', 'banks', 'insurance'}:
+        return {'state': 'sector_model_required', 'ratios': {},
+                'messages': ['Для банка или страховой компании нужна отдельная проверка капитала и резервов.'],
+                'source': asdict(statement.source)}
+    if not statement.standard or not statement.currency:
+        raise EvidenceError('statement_basis_required')
+    ratios = _statement_ratios(values)
+    return {'state': 'calculated', 'ratios': ratios,
+            'messages': _statement_messages(values, ratios, statement.audited),
             'standard': statement.standard, 'currency': statement.currency,
             'period_start': statement.period_start, 'period_end': statement.period_end,
             'source': asdict(statement.source), 'default_probability': None}
