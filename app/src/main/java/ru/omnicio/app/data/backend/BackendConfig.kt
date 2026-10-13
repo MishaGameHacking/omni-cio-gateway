@@ -1,5 +1,6 @@
 package ru.omnicio.app.data.backend
 
 object BackendConfig {
-    const val BASE_URL = "https://94.198.220.228.sslip.io"
+    // Release only after the Moscow cutover and Telegram allowed-redirect checks.
+    const val BASE_URL = "https://176.98.178.81.sslip.io"
 }
