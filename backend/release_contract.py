@@ -63,6 +63,8 @@ class Release:
         return release
 
     def validate(self, *, now: datetime, expected_certificate: str) -> None:
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise InvalidRelease('now_timezone_required')
         for name in ('version_code', 'minimum_supported', 'size_bytes', 'min_sdk'):
             positive_int(getattr(self, name), name)
         if self.minimum_supported > self.version_code or self.size_bytes > MAX_APK_BYTES:
@@ -74,9 +76,11 @@ class Release:
                 raise InvalidRelease('invalid_sha256')
         if self.certificate_sha256 != expected_certificate:
             raise InvalidRelease('certificate_changed')
-        if not isinstance(self.version_name, str) or not 1 <= len(self.version_name) <= 80:
+        if (not isinstance(self.version_name, str) or not 1 <= len(self.version_name) <= 80
+                or any(ord(character) < 32 for character in self.version_name)):
             raise InvalidRelease('invalid_version_name')
-        if not isinstance(self.notes, str) or len(self.notes) > 4000:
+        if (not isinstance(self.notes, str) or len(self.notes) > 4000
+                or '\x00' in self.notes):
             raise InvalidRelease('invalid_notes')
         if not isinstance(self.url, str):
             raise InvalidRelease('invalid_download_url')
@@ -104,6 +108,8 @@ def decide_client(release: Release, *, installed_code: int | None, sdk: int,
     A public manifest/download route and sign-out/support must remain accessible.
     Connectivity failure must never be fabricated as an obsolete-version result.
     """
+    if type(distribution_verified) is not bool:
+        raise InvalidRelease('invalid_distribution_status')
     if not distribution_verified:
         return ClientDecision('service_unavailable', False, True, 'update_distribution_not_verified')
     if package_name != release.package_name:
