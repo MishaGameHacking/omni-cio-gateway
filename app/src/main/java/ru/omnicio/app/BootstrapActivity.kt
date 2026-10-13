@@ -56,11 +56,12 @@ class BootstrapActivity : ComponentActivity() {
     private var checkRunning = false
     private var downloadRunning = false
     private var awaitingInstallPermission = false
-    private val resumeOnly by lazy { intent.getBooleanExtra(EXTRA_RESUME_CHECK, false) }
+    private var resumeOnly = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        resumeOnly = intent.getBooleanExtra(EXTRA_RESUME_CHECK, false)
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
@@ -88,6 +89,9 @@ class BootstrapActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // A Telegram callback arriving while a foreground recheck is visible must
+        // be forwarded to MainActivity after the policy check, not silently dropped.
+        resumeOnly = intent.getBooleanExtra(EXTRA_RESUME_CHECK, false)
         checkRunning = false
         checkPolicy()
     }
