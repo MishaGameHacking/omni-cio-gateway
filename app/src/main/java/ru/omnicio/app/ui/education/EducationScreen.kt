@@ -193,6 +193,7 @@ private fun LessonCard(
     val palette = LocalSpectrumPalette.current
     val motion = LocalSpectrumMotionPreference.current
     val uriHandler = LocalUriHandler.current
+    var sourceError by remember(lesson.id) { mutableStateOf<String?>(null) }
     SpectrumCard(emphasized = lesson.id == "news-impact") {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -266,11 +267,24 @@ private fun LessonCard(
                 )
                 lesson.sources.forEach { source ->
                     TextButton(
-                        onClick = { uriHandler.openUri(source.url) },
+                        onClick = {
+                            sourceError = null
+                            runCatching { uriHandler.openUri(source.url) }
+                                .onFailure {
+                                    sourceError = "Не удалось открыть ссылку. Проверьте браузер или подключение."
+                                }
+                        },
                         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
                     ) {
                         Text("${source.organization}: ${source.title}")
                     }
+                }
+                sourceError?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             }
         }
