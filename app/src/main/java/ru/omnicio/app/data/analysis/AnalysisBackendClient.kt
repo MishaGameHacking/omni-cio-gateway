@@ -104,6 +104,7 @@ class AnalysisBackendClient(
                 requestMethod = method
                 connectTimeout = 10_000
                 readTimeout = 30_000
+                ru.omnicio.app.data.updates.ClientVersion.attach(this)
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Authorization", "Bearer $bearer")
                 if (body != null) {
@@ -123,6 +124,7 @@ class AnalysisBackendClient(
                 connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             }
             val status = connection.responseCode
+            ru.omnicio.app.data.updates.ClientVersion.observeStatus(status)
             val text = if (status in 200..299) {
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             } else {
@@ -131,6 +133,7 @@ class AnalysisBackendClient(
             val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull()
             when {
                 status in 200..299 -> BackendResult.Success(text)
+                status == 426 -> BackendResult.Failure("Обновите Analyst AI, чтобы продолжить.", retryable = true)
                 status == HttpURLConnection.HTTP_UNAUTHORIZED ||
                     status == HttpURLConnection.HTTP_FORBIDDEN -> BackendResult.Failure(
                     "Сеанс Analyst AI истёк. Войдите через Telegram заново.",

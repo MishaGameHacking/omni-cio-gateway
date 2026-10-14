@@ -5,10 +5,15 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 
 from installation_report import validate_results
 from verify_apk import fixed_file, output_directory, require
+
+CHECKOUT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(CHECKOUT))
+from backend.installation_evidence import from_ci_reports
 
 
 def checked_installation(api: int) -> dict:
@@ -26,15 +31,13 @@ def checked_installation(api: int) -> dict:
 
 def save_report(report: dict) -> None:
     # The destination is a literal checkout path, never an input field or CLI option.
-    root = Path(__file__).resolve().parents[2]
+    root = CHECKOUT
     directory = root / "app" / "build" / "outputs" / "apk" / "preview"
     if directory.is_symlink() or not directory.resolve(strict=True).is_relative_to(root):
         raise ValueError("Report directory escapes the checkout")
     destination = directory / "apk-verification.json"
     if destination.is_symlink():
         raise ValueError("Report destination must not be a symlink")
-    # Exclusive temporary creation and atomic replacement avoid partial reports and
-    # do not follow a destination symlink substituted between checking and writing.
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory,
                                      prefix="validated-", suffix=".json", delete=False) as handle:
         json.dump(report, handle, indent=2)
@@ -55,6 +58,10 @@ def main() -> None:
     require(report["sha256"] == hashlib.sha256(apk.read_bytes()).hexdigest(),
             "APK changed after static verification")
     report["installation_tests"] = [checked_installation(33), checked_installation(36)]
+    # A complete build without a real upgrade, or a stale report from another
+    # artifact, cannot produce the canonical publisher evidence.
+    report["installation_evidence"] = from_ci_reports(report["installation_tests"], report["sha256"])
+    report["installation_method"] = "adb_emulator_not_in_app_self_update"
     report["device_install_test"] = "passed_on_emulators_not_a_physical_phone"
     save_report(report)
     print("DISTRIBUTION_VALIDATION=" + json.dumps(report, sort_keys=True), flush=True)

@@ -20,10 +20,15 @@ import jwt
 from cryptography import x509
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jwt import PyJWKClient
 from pydantic import BaseModel
+
+try:
+    from . import client_updates
+except ImportError:
+    import client_updates
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/var/lib/analyst-ai/backend.db"))
 TELEGRAM_CLIENT_ID = os.environ["TELEGRAM_CLIENT_ID"]
@@ -132,6 +137,8 @@ def init_db() -> None:
         )
         db.commit()
 
+    client_updates.initialize(connect)
+
 
 def hash_token(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
@@ -148,7 +155,7 @@ def purge_expired(db: sqlite3.Connection) -> None:
     db.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
 
 
-def current_user(authorization: str | None = Header(default=None)) -> sqlite3.Row:
+def session_user(authorization: str | None = Header(default=None)) -> sqlite3.Row:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing_session")
     raw = authorization[7:].strip()
@@ -170,6 +177,12 @@ def current_user(authorization: str | None = Header(default=None)) -> sqlite3.Ro
     if row is None:
         raise HTTPException(status_code=401, detail="invalid_session")
     return row
+
+
+def current_user(request: Request, authorization: str | None = Header(default=None)) -> sqlite3.Row:
+    user = session_user(authorization)
+    client_updates.enforce(connect, user_id=int(user['id']), authorization=authorization or '', headers=request.headers)
+    return user
 
 
 @app.get("/health")
@@ -590,6 +603,9 @@ try:
 except ImportError:
     from portfolio_details import router as portfolio_details_router
 app.include_router(portfolio_details_router)
+
+
+client_updates.install_routes(app, connect, session_user)
 
 try:
     from .portfolio_research import router as portfolio_research_router

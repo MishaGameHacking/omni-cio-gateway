@@ -3,9 +3,9 @@ package ru.omnicio.app.data.research
 import java.net.URI
 import javax.net.ssl.HttpsURLConnection
 import org.json.JSONObject
-import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
+import ru.omnicio.app.data.updates.ClientVersion
 
 class ResearchClient {
     /** Authenticated broker-derived data; no free prompt and no order endpoint. */
@@ -21,12 +21,12 @@ class ResearchClient {
                 readTimeout = 60_000
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Authorization", "Bearer $token")
-                // Compatibility claims, not authentication. This newly added
-                // client must not become headerless when the update gate ships.
-                setRequestProperty("X-Analyst-Version-Code", BuildConfig.VERSION_CODE.toString())
-                setRequestProperty("X-Analyst-Package", BuildConfig.APPLICATION_ID)
+                // The research screen participates in the same compatibility gate.
+                ClientVersion.attach(this)
             }
-            when (val status = connection.responseCode) {
+            val status = connection.responseCode
+            ClientVersion.observeStatus(status)
+            when (status) {
                 200 -> {
                     val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                         val buffer = CharArray(4096)
