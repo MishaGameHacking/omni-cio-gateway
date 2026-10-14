@@ -41,39 +41,53 @@ object UpdateInstaller {
     fun refreshPending(context: Context): Boolean {
         val installer = context.packageManager.packageInstaller
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        synchronized(sessionGuard) {
+        return synchronized(sessionGuard) {
             val id = prefs.getInt("session", -1)
             val nonce = prefs.getString("nonce", null)
             if (id < 0 || nonce.isNullOrBlank()) {
-                if (id >= 0) runCatching { installer.abandonSession(id) }
-                prefs.edit().remove("session").remove("nonce").apply()
-                approval.value = null
-                pending.value = false
-                return false
+                return@synchronized clearOrphanedSession(installer, prefs, id)
             }
-            val session = runCatching { installer.getSessionInfo(id) }
-            if (session.isFailure) {
-                pending.value = true
-                if (statusText.value.isNullOrBlank()) {
-                    statusText.value = "Не удалось проверить установочную сессию Android. Повторная установка не запущена."
-                }
-                return true
+            val lookup = runCatching { installer.getSessionInfo(id) }
+            if (lookup.isFailure) {
+                return@synchronized markPending(
+                    "Не удалось проверить установочную сессию Android. Повторная установка не запущена.",
+                )
             }
-            if (session.getOrNull() == null) {
-                prefs.edit().remove("session").remove("nonce").apply()
-                approval.value = null
-                pending.value = false
-                if (statusText.value.isNullOrBlank()) {
-                    statusText.value = "Предыдущая установочная сессия завершилась или была отменена. Можно повторить обновление."
-                }
-                return false
+            if (lookup.getOrNull() == null) {
+                return@synchronized clearTrackedSession(
+                    prefs,
+                    "Предыдущая установочная сессия завершилась или была отменена. Можно повторить обновление.",
+                )
             }
-            pending.value = true
-            if (statusText.value.isNullOrBlank()) {
-                statusText.value = "Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку."
-            }
-            return true
+            markPending("Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку.")
         }
+    }
+
+    private fun markPending(message: String): Boolean {
+        pending.value = true
+        setStatusIfBlank(message)
+        return true
+    }
+
+    private fun clearOrphanedSession(
+        installer: PackageInstaller,
+        prefs: SharedPreferences,
+        id: Int,
+    ): Boolean {
+        if (id >= 0) runCatching { installer.abandonSession(id) }
+        return clearTrackedSession(prefs)
+    }
+
+    private fun clearTrackedSession(prefs: SharedPreferences, message: String? = null): Boolean {
+        prefs.edit().remove("session").remove("nonce").apply()
+        approval.value = null
+        pending.value = false
+        message?.let(::setStatusIfBlank)
+        return false
+    }
+
+    private fun setStatusIfBlank(message: String) {
+        if (statusText.value.isNullOrBlank()) statusText.value = message
     }
 
     suspend fun install(context: Context, file: File, release: ReleaseDescriptor) = installationLock.withLock {
