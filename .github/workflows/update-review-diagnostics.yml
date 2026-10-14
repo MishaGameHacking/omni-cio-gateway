@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   checks: read
+  pull-requests: read
 jobs:
   diagnostics:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -60,7 +61,6 @@ jobs:
                 }
                 core.info('SONAR_READ_PAGE='+JSON.stringify({pr:number,paging:result.paging,total:result.total,issues:(result.issues||[]).length}));
               } catch (error) {
-                // Do not print a URL, headers, token or arbitrary remote body.
                 core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,reason:error.name}));
               }
             }
