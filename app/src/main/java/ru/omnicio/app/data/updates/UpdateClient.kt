@@ -23,11 +23,7 @@ class UpdateClient {
 
     private fun connect(path: String): HttpsURLConnection =
         (UpdateProtocol.requestUri(BackendConfig.BASE_URL, path).toURL().openConnection() as HttpsURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 30_000
-            useCaches = false
-            setRequestProperty("Cache-Control", "no-cache")
+            configureUpdateTransport()
             ClientVersion.attach(this)
         }
 
