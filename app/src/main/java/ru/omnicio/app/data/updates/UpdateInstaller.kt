@@ -143,14 +143,13 @@ object UpdateInstaller {
             pending.value = false
             return
         }
-        val nonce = prefs.getString("nonce", null)
         val lookup = runCatching { installer.getSessionInfo(previous) }
         if (lookup.isFailure) {
             pending.value = true
             throw IllegalStateException("Не удалось проверить текущую установку Android. Повторная установка остановлена.")
         }
         val info = lookup.getOrNull()
-        if (!nonce.isNullOrBlank() && info != null && existingInstallBlocksNewAttempt(info.isCommitted, info.isActive)) {
+        if (info != null && existingInstallBlocksNewAttempt(info.isCommitted, info.isActive)) {
             pending.value = true
             statusText.value = "Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку."
             throw IllegalStateException("Установка обновления уже выполняется.")
