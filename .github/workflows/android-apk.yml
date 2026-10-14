@@ -5,16 +5,14 @@ on:
     branches: [main]
     paths:
       - "app/**"
+      - "backend/installation_evidence.py"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradle/**"
       - "gradlew"
       - "gradlew.bat"
-      - ".github/scripts/verify_apk.py"
-      - ".github/scripts/test_apk_installation.py"
-      - ".github/scripts/validate_distribution.py"
-      - ".github/scripts/tests/**"
+      - ".github/scripts/**"
       - ".github/actions/check-apk/**"
       - ".github/apk-signing-certificate.sha256"
       - ".github/workflows/android-apk.yml"
@@ -29,6 +27,12 @@ jobs:
     name: Build and verify downloadable APK
     permissions:
       contents: write
+    # Share the physical Android lab with pull-request verification. The Python
+    # emulator lease remains a second fail-safe against accidental ADB overlap.
+    concurrency:
+      group: analyst-android-lab
+      queue: max
+      cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
 
@@ -84,24 +88,54 @@ jobs:
           call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
           if errorlevel 1 exit /b 1
 
-      - name: Lint and build compact signed preview APK
+      - name: Test APK verification rules
         shell: cmd
         run: |
           py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
           if errorlevel 1 exit /b 1
-          call gradlew.bat :app:lintPreview :app:assemblePreview --stacktrace
+
+      - name: Download installed 0.5.1 APK for exact upgrade compatibility test
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-af5713e7bd97bc8fd397d53bbf7510dfc078df5f'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.5.1-preview-af5713e.apk');
+            if (!asset) throw new Error('0.5.1 reference APK missing');
+            const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
+            const bytes = Buffer.from(response.data);
+            const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+            if (digest !== '40e1edcc31f2f2826ad7cfa6733c67bf1db0f2ab9e0c648a78045f21aa221532') {
+              throw new Error('0.5.1 reference APK checksum mismatch');
+            }
+            const destination = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
+            fs.writeFileSync(destination, bytes);
+            core.exportVariable('PREVIOUS_APK', destination);
+
+      - name: Lint and build UI fixture plus compact signed preview APK
+        shell: cmd
+        run: |
+          call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
 
-      - name: Verify artifact and actual installation before publication
+      - name: Verify upgrade, clean installs, launch, and profile UI
         uses: ./.github/actions/check-apk
+        env:
+          RUN_PROFILE_UI_TESTS: "1"
 
-      - name: Retain verified APK as workflow artifact
+      - name: Retain APK and complete verification evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Analyst-AI-${{ github.sha }}
           path: |
             app/build/outputs/apk/preview/app-preview.apk
             app/build/outputs/apk/preview/apk-verification.json
+            app/build/outputs/apk/preview/install-api-33/install-results.json
+            app/build/outputs/apk/preview/install-api-36/install-results.json
+            app/build/outputs/apk/preview/ui-screens/*.png
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -138,7 +172,7 @@ jobs:
             const body = [
               'Signed, non-debuggable preview APK. Android 13+; application ID ru.omnicio.app.debug.',
               'Uses the existing test signing key, not a production-store signing key.',
-              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation and launch on Android 13/16 x86_64 emulators verified.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade from the installed 0.5.1 preview, launch on Android 13/16 x86_64 emulators, and profile/education UI on Android 13 verified.',
               'A physical Samsung installation failure is not claimed to be reproduced or fixed by emulator tests.',
               `SHA-256: ${hash}`,
               `Signing certificate SHA-256: ${report.certificate_sha256}`,
