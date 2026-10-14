@@ -31,13 +31,15 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val downloadChecks = runUpdateDownloadChecks()
         val gateChecks = runUpdateGateUiChecks()
         val feedbackChecks = runUpdateFeedbackChecks()
+        val submissionChecks = runInstallSubmissionChecks()
+        val analysisChecks = runAnalysisPresentationChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 var educationOpen by remember { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks"
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks"
                 }) {
                     if (educationOpen) {
                         EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })

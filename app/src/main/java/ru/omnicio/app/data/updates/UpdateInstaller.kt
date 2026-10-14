@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import ru.omnicio.app.MainActivity
 
 /** Only called after an explicit Update tap and APK identity/signature validation. */
 object UpdateInstaller {
@@ -42,71 +41,93 @@ object UpdateInstaller {
             UpdateClient().verifyArchive(context, file, release)
             val installer = context.packageManager.packageInstaller
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val previous = prefs.getInt("session", -1)
-            if (previous != -1 && installer.mySessions.any { it.sessionId == previous }) {
-                installer.abandonSession(previous)
-            }
-            val parameters = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                setAppPackageName(context.packageName)
-                setSize(release.bytes)
-                // Request the official self-update path; still handle Android's
-                // mandatory confirmation rather than promise silent installation.
-                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-            }
-            val id = installer.createSession(parameters)
+            abandonPrevious(installer, prefs)
+            val id = installer.createSession(parameters(context.packageName, release.bytes))
             val nonce = UUID.randomUUID().toString()
-            var committed = false
-            try {
-                synchronized(sessionGuard) {
-                    check(prefs.edit().putInt("session", id).putString("nonce", nonce).commit())
-                    approval.value = null
-                    statusText.value = "Проверяем передачу APK системному установщику."
-                }
-                installer.openSession(id).use { session ->
-                    session.openWrite("base.apk", 0, release.bytes).use { output ->
-                        file.inputStream().use { input ->
-                            copyVerifiedInstallStream(input, output, release.bytes, release.sha256) { ensureActive() }
-                        }
-                        session.fsync(output)
-                    }
-                    val result = Intent(context, InstallResultReceiver::class.java).apply {
-                        action = ACTION
-                        putExtra("nonce", nonce)
-                        putExtra("expected_session", id)
-                    }
-                    // Mutable is required for PackageInstaller's status extras.
-                    // Explicit component + nonce + session; receiver not exported.
-                    val pending = PendingIntent.getBroadcast(context, id, result,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+            submitInstallSession(
+                open = {
+                    register(prefs, id, nonce)
+                    installer.openSession(id)
+                },
+                stage = { session -> writeArchive(session, file, release) { ensureActive() } },
+                commit = { session ->
+                    val pending = resultReceiver(context, id, nonce)
                     ensureActive()
                     synchronized(sessionGuard) {
                         check(owns(prefs, id, nonce)) { "Установочная сессия уже изменилась." }
-                        // Set BEFORE commit: a fast callback must not be overwritten
-                        // afterwards by an older 'submitted' state.
+                        // Set before commit: a fast callback must not be overwritten.
                         statusText.value = "APK передан Android. Подтвердите установку, если появится запрос."
                     }
                     session.commit(pending.intentSender)
-                    committed = true
-                }
-            } catch (error: Exception) {
-                if (committed) {
-                    // A close failure is not an installation result. Do not
-                    // abandon a committed session or erase its newer callback.
+                },
+                uncommittedFailure = { failure -> abandonFailed(installer, prefs, id, nonce, failure) },
+                committedCloseFailure = {
+                    // Submission is not an installation result. Keep newer callback state.
                     Log.w("AnalystUpdate", "Не удалось закрыть сессию после передачи Android.")
-                } else {
-                    runCatching { installer.abandonSession(id) }
-                    synchronized(sessionGuard) {
-                        if (owns(prefs, id, nonce)) {
-                            prefs.edit().remove("session").remove("nonce").apply()
-                            approval.value = null
-                            statusText.value = if (error is CancellationException) "Подготовка установки отменена. Можно повторить попытку."
-                                else "Не удалось передать обновление Android. Можно повторить попытку."
-                        }
-                    }
-                    throw error
-                }
+                },
+            )
+        }
+    }
+
+    private fun abandonPrevious(installer: PackageInstaller, prefs: SharedPreferences) {
+        val previous = prefs.getInt("session", -1)
+        if (previous != -1 && installer.mySessions.any { it.sessionId == previous }) installer.abandonSession(previous)
+    }
+
+    private fun parameters(packageName: String, bytes: Long) =
+        PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(packageName)
+            setSize(bytes)
+            // Request the official self-update path; always handle required OS consent.
+            setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
+
+    private fun register(prefs: SharedPreferences, id: Int, nonce: String) {
+        synchronized(sessionGuard) {
+            check(prefs.edit().putInt("session", id).putString("nonce", nonce).commit())
+            approval.value = null
+            statusText.value = "Проверяем передачу APK системному установщику."
+        }
+    }
+
+    private fun writeArchive(session: PackageInstaller.Session, file: File, release: ReleaseDescriptor, checkActive: () -> Unit) {
+        session.openWrite("base.apk", 0, release.bytes).use { output ->
+            file.inputStream().use { input ->
+                copyVerifiedInstallStream(input, output, release.bytes, release.sha256, checkActive)
+            }
+            session.fsync(output)
+        }
+    }
+
+    private fun resultReceiver(context: Context, id: Int, nonce: String): PendingIntent {
+        val result = Intent(context, InstallResultReceiver::class.java).apply {
+            action = ACTION
+            putExtra("nonce", nonce)
+            putExtra("expected_session", id)
+        }
+        // Mutable status extras are required by PackageInstaller. Explicit,
+        // non-exported component plus nonce/session binding prevents external callbacks.
+        return PendingIntent.getBroadcast(context, id, result,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+    }
+
+    private fun abandonFailed(installer: PackageInstaller, prefs: SharedPreferences, id: Int, nonce: String, failure: Exception) {
+        runCatching { installer.abandonSession(id) }
+        synchronized(sessionGuard) {
+            if (owns(prefs, id, nonce)) {
+                prefs.edit().remove("session").remove("nonce").apply()
+                approval.value = null
+                statusText.value = if (failure is CancellationException) "Подготовка установки отменена. Можно повторить попытку."
+                    else "Не удалось передать обновление Android. Можно повторить попытку."
             }
         }
+    }
+
+    internal fun notifyAppReady(context: Context) {
+        // Resolve the canonical launcher in the newly installed package. Spectrum
+        // must return through BootstrapActivity, not straight to private MainActivity.
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+        notify(context, "Analyst AI обновлён", launch)
     }
 
     internal fun notify(context: Context, title: String, action: Intent) {
@@ -120,8 +141,6 @@ object UpdateInstaller {
                 .setContentTitle(title).setContentText("Нажмите, чтобы продолжить")
                 .setContentIntent(pending).setAutoCancel(true).build())
         }.onFailure {
-            // The foreground UI still exposes approval/result. Notification
-            // permission or vendor errors must not erase the install outcome.
             Log.w("AnalystUpdate", "Уведомление обновления недоступно; результат сохранён на экране.")
         }
     }
@@ -155,7 +174,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                     prefs.edit().remove("session").remove("nonce").apply()
                     UpdateInstaller.approval.value = null
                     UpdateInstaller.statusText.value = "Обновление установлено. Откройте Analyst AI."
-                    UpdateInstaller.notify(context, "Analyst AI обновлён", Intent(context, MainActivity::class.java))
+                    UpdateInstaller.notifyAppReady(context)
                 }
                 else -> {
                     prefs.edit().remove("session").remove("nonce").apply()
@@ -177,6 +196,6 @@ class AppReplacedReceiver : BroadcastReceiver() {
             UpdateInstaller.approval.value = null
             UpdateInstaller.statusText.value = "Обновление установлено. Откройте Analyst AI."
         }
-        UpdateInstaller.notify(context, "Analyst AI обновлён", Intent(context, MainActivity::class.java))
+        UpdateInstaller.notifyAppReady(context)
     }
 }
