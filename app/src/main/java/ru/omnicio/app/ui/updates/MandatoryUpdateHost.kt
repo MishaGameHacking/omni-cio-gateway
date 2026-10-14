@@ -1,5 +1,6 @@
 package ru.omnicio.app.ui.updates
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -36,6 +37,26 @@ import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.updates.*
 import ru.omnicio.app.ui.theme.AnalystTheme
 
+private data class PolicyVerification(val release: ReleaseDescriptor, val current: Boolean)
+
+private suspend fun verifyPolicy(context: Context, client: UpdateClient): PolicyVerification {
+    val verification = ClientVersion.beginVerification()
+    val latest = client.current()
+    val matches = latest.decision(
+        BuildConfig.APPLICATION_ID,
+        BuildConfig.VERSION_CODE.toLong(),
+        Build.VERSION.SDK_INT,
+    ) == ReleaseDecision.CURRENT
+    if (matches) {
+        val token = withContext(Dispatchers.IO) { AuthSessionStore(context).loadAccessToken() }
+        token?.let { client.acknowledge(it) }
+        check(ClientVersion.verifiedCurrent(verification)) {
+            "Сервер сообщил о новой версии во время проверки."
+        }
+    }
+    return PolicyVerification(latest, matches)
+}
+
 /** A single gate owns both plain and Spectrum rendering. Blocked content is not composed. */
 @Composable
 fun MandatoryUpdateHost(
@@ -71,16 +92,9 @@ fun MandatoryUpdateHost(
         while (isActive) {
             checking = true
             try {
-                val verification = ClientVersion.beginVerification()
-                val latest = client.current()
-                release = latest
-                val matches = latest.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT) == ReleaseDecision.CURRENT
-                if (matches) {
-                    val token = withContext(Dispatchers.IO) { AuthSessionStore(context).loadAccessToken() }
-                    if (token != null) client.acknowledge(token)
-                    check(ClientVersion.verifiedCurrent(verification)) { "Сервер сообщил о новой версии во время проверки." }
-                }
-                current = matches
+                val verified = verifyPolicy(context, client)
+                release = verified.release
+                current = verified.current
                 feedback = feedback.policyChecked()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
