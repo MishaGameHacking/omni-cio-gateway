@@ -30,12 +30,13 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val gateChecksPassed = runUpdateGateUiChecks()
         val feedbackChecksPassed = runUpdateFeedbackChecks()
         val submissionChecksPassed = runInstallSubmissionChecks()
+        val releaseJsonChecks = runReleaseJsonChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-update-tests:$updateChecksPassed;probe-install-stream-tests:$installChecksPassed;probe-protocol-tests:$protocolChecksPassed;probe-download-tests:$downloadChecksPassed;probe-gate-tests:$gateChecksPassed;probe-feedback-tests:$feedbackChecksPassed;probe-submission-tests:$submissionChecksPassed"
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-update-tests:$updateChecksPassed;probe-install-stream-tests:$installChecksPassed;probe-protocol-tests:$protocolChecksPassed;probe-download-tests:$downloadChecksPassed;probe-gate-tests:$gateChecksPassed;probe-feedback-tests:$feedbackChecksPassed;probe-submission-tests:$submissionChecksPassed;probe-release-json-tests:$releaseJsonChecks"
                 }) {
                     ProfileScreen(
                         user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
