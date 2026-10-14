@@ -277,11 +277,16 @@ def collect_research(user: Any, *, profile: dict | None = None) -> dict:
             'candidate_selection_state': 'verified_universe_required'}
 
 
-@router.get('/research')
+@router.get('/research', responses={
+    400: {'description': 'Broker connection is required'},
+    502: {'description': 'Broker snapshot cannot support a consistent analysis'},
+    503: {'description': 'Investment profile changed; repeat research with current limits'},
+})
 def research(user: Annotated[Any, Depends(backend.current_user)]) -> dict:
+    identity = details.identity(user)
     profile = get_profile(int(user['id']))
     digest = profile_digest(profile)
-    key = (*details.identity(user), 'research-v3', digest)
+    key = (*identity, 'research-v3', digest)
     result = details.cached(key, 300, lambda: collect_research(user, profile=profile))
     # A profile edit while broker reads are in flight must not publish a result
     # labelled with the user's previous limit. Retry against the new snapshot.
