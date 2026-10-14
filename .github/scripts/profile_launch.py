@@ -18,7 +18,7 @@ def start_status(output: str) -> str:
     statuses = re.findall(r"^Status:\s*(\S+)\s*$", output, flags=re.MULTILINE)
     if len(statuses) != 1 or statuses[0] not in {"ok", "timeout"}:
         raise AssertionError("Profile launch did not return an understood status")
-    if re.search(r"^\s*(?:Error(?:\s|:)|Exception|SecurityException)", output, flags=re.MULTILINE):
+    if re.search(r"^\s*(?:Error[\s:]|Exception|SecurityException)", output, flags=re.MULTILINE):
         raise AssertionError("Profile launch reported an error")
     return statuses[0]
 
