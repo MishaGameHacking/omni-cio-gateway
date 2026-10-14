@@ -1,25 +1,40 @@
 # One update runtime: integration of #832 into Spectrum #833
 
-This change ports the canonical runtime from #832 at f963508b4767344b62a982dd5c4e7ec5a6d989b3. It is an integration checkpoint, NOT a published APK, server deployment, completed migration or claim of a successful device self-update.
+This document records the integration contract. It is **not** evidence that an APK has been published, that the backend has been deployed, or that a physical phone has completed a self-update.
 
-## Implemented
+## Canonical runtime
 
-- One `MandatoryUpdateHost` owns policy checks, permission and installer handoff. It accepts a presentation-only renderer; Spectrum does not run another updater.
-- One transport contract: `/client/update-policy`, `/client/ready`, `/client/apk/...`, `X-Analyst-Version-Code` and `X-Analyst-Package`.
-- The #832 guarded native installer, typed release metadata, bounded checksummed stream and authenticated server pause/resume are retained.
-- The former AppRelease/AppUpdateClient/AppUpdateVerifier/AppUpdateInstaller/UpdateCheckStore runtime is removed. Its pure UpdateFlow research checks are retained, not used as a second network or installer path.
-- BootstrapActivity is a routing-only exported launcher. It forwards only the documented `analystai://auth` data to private MainActivity. The one mandatory gate is inside MainActivity. Arbitrary external extras are not forwarded. The former Application lifecycle gate is removed.
-- Existing Telegram code exchange/session storage, five tabs, education entry, theme preference, package/signature and versionCode remain intact.
-- Spectrum update rendering respects safe drawing insets, 48 dp controls, scrolling and the persisted RGB motion preference. System installation consent is never bypassed or guaranteed to be silent.
-- #832 backend modules/tests are included, while Spectrum's original risk_preview/release_contract and their tests remain available. No source or risk result is fabricated.
-- Fourteen source-boundary tests verify this wiring. They do not establish that a real APK was downloaded/installed.
+- One `MandatoryUpdateHost` owns version policy, download, verification, permission handling, installer handoff and post-install version recovery. Spectrum supplies presentation only; it does not start a second updater.
+- One transport contract is used: `/client/update-policy`, `/client/ready`, `/client/apk/...`, `X-Analyst-Version-Code` and `X-Analyst-Package`.
+- The guarded native installer, typed release metadata, bounded checksummed stream and authenticated server pause/resume from #832 are retained.
+- The former `AppRelease` / `AppUpdateClient` / `AppUpdateVerifier` / `AppUpdateInstaller` / `UpdateCheckStore` runtime is removed. `UpdateFlow` remains pure state-machine research and performs no network or install work.
+- `BootstrapActivity` is a routing-only exported launcher. It forwards only the documented `analystai://auth` URI to private `MainActivity`; arbitrary external extras are not forwarded.
+- Existing Telegram code exchange and encrypted session storage, five tabs, education entry, theme preference, package identity, signing certificate and version-code continuity are preserved.
+- Spectrum update rendering respects safe drawing insets, scrolling, minimum touch targets and the persisted motion preference. Android installation consent is never bypassed or described as silent.
 
-## Still blocks merge and publication
+## Release tooling boundary
 
-1. Exact-head Android compile/lint, profile/layout checks and real old-to-new-to-next self-update on supported emulators are required. Pure JVM success is not a substitute.
-2. The legacy #833 release builder/publisher still emits `/releases/current.json`. It MUST be migrated to the canonical server ReleaseChannel and verified immutable publication protocol before any release. Do not run the existing publishing workflow for this checkpoint.
-3. Production backend has not received this integration. Do not enable `ANDROID_UPDATES_ENABLED` until the verified updater-capable bootstrap APK is accessible and the end-to-end recovery path is tested.
-4. Review remaining Sonar findings. No test, quality threshold, authorization check or source-integrity requirement is disabled.
-5. Reconcile the separate #831 evidence/rebalancing work and all remaining design/data-source scope before claiming the whole update complete.
+The canonical client and backend use the `/client` release channel. The deprecated `/releases/current.json` publisher is intentionally fail-closed: `legacy_release_guard.py` stops it before release creation, SSH access or production publication whenever the canonical runtime is present. It must not be used as an alternate release path.
 
-Version headers are compatibility claims, never authentication or cryptographic attestation. Previously installed 0.5.1 has no updater and requires one manual bootstrap upgrade. Android may require source permission, installation consent and a tap on Open.
+The main-branch APK workflow builds and verifies the compact signed preview APK. A verified APK and its verification report are retained as a GitHub Actions artifact for the repository owner. A source merge alone does not publish a GitHub Release and does not activate the mandatory-update channel.
+
+## Merge criteria
+
+Before #833 is merged, the exact head must satisfy all of the following without accepted or suppressed findings:
+
+1. Backend tests and compilation succeed.
+2. Android lint and debug, release and preview builds succeed.
+3. Clean installation, upgrade from the installed 0.5.1 preview, launcher/auth routing and profile/education UI checks succeed on the configured Android 13 and Android 16 emulators.
+4. SonarQube Cloud reports no new issue, accepted issue, security hotspot or annotation.
+5. The branch contains the real post-#832 history and no unresolved review thread.
+
+After the merge, the same main-branch backend and APK workflows must pass again before the resulting APK is presented as the build from `main`.
+
+## Operational boundaries
+
+- `ANDROID_UPDATES_ENABLED` remains disabled until an updater-capable bootstrap APK is deliberately distributed and the server release channel is staged and verified end to end.
+- The installed 0.5.1 preview has no updater and therefore needs one manual bootstrap upgrade.
+- Android may require permission for the installation source, explicit installation consent, and a tap on **Open** after replacement.
+- Emulator installation and upgrade checks do not reproduce every OEM behavior and do not prove installation on a physical Samsung or other phone.
+- Version headers are compatibility claims, not authentication or cryptographic device attestation.
+- Portfolio and risk outputs remain source-bound and read-only; no broker order, fabricated quote, rating, forecast or probability is introduced by this integration.
