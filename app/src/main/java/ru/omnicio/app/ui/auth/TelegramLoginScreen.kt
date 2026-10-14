@@ -2,17 +2,19 @@ package ru.omnicio.app.ui.auth
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -22,9 +24,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
+import ru.omnicio.app.ui.spectrum.SpectrumBackground
+import ru.omnicio.app.ui.spectrum.SpectrumBadge
+import ru.omnicio.app.ui.spectrum.SpectrumCard
+import ru.omnicio.app.ui.spectrum.SpectrumIcon
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TelegramLoginScreen(
     loading: Boolean,
@@ -32,46 +43,62 @@ fun TelegramLoginScreen(
     onLoginClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-
+    val palette = LocalSpectrumPalette.current
+    val motion = LocalSpectrumMotionPreference.current
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 22.dp, vertical = 28.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+        SpectrumBackground(
+            Modifier.fillMaxSize().padding(innerPadding),
         ) {
-            Text(
-                text = "Analyst AI",
-                fontSize = 38.sp,
-                lineHeight = 44.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Один аккаунт для портфеля и аналитики",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFF7E858E),
-            )
-            Spacer(modifier = Modifier.height(28.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 22.dp, vertical = 28.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(
-                    modifier = Modifier.padding(
-                        PaddingValues(
-                            horizontal = 22.dp,
-                            vertical = 24.dp,
-                        ),
+                SpectrumIcon(
+                    symbol = SpectrumSymbol.Analyst,
+                    modifier = Modifier.size(126.dp),
+                    selected = true,
+                    tile = true,
+                    motionAllowed = motion.enabled && loading,
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = "Analyst AI",
+                    fontSize = 42.sp,
+                    lineHeight = 46.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "Ваш личный инвестиционный аналитик",
+                    modifier = Modifier.padding(top = 6.dp),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        space = 8.dp,
+                        alignment = Alignment.CenterHorizontally,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    maxItemsInEachRow = 3,
+                ) {
+                    SpectrumBadge("Портфель", accent = palette.cyan)
+                    SpectrumBadge("Риски", accent = palette.violet)
+                    SpectrumBadge("Объяснения", accent = palette.emerald)
+                }
+                Spacer(modifier = Modifier.height(26.dp))
+
+                SpectrumCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    emphasized = true,
                 ) {
                     Text(
                         text = "Вход через Telegram",
@@ -79,6 +106,7 @@ fun TelegramLoginScreen(
                         lineHeight = 30.sp,
                         fontWeight = FontWeight.Bold,
                     )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = "Telegram подтверждает ваш уникальный Telegram ID. Пароли Telegram Analyst AI не получает.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -86,25 +114,29 @@ fun TelegramLoginScreen(
                     )
 
                     errorMessage?.let { message ->
+                        Spacer(Modifier.height(12.dp))
                         Text(
                             text = message,
-                            color = Color(0xFFB42318),
+                            color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
 
+                    Spacer(Modifier.height(16.dp))
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !loading,
+                        contentPadding = PaddingValues(vertical = 14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF229ED9),
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            containerColor = Color(0xFF0077A8),
+                            contentColor = Color.White,
                         ),
                         onClick = onLoginClick,
                     ) {
                         if (loading) {
                             CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
                                 strokeWidth = 2.dp,
                             )
                         } else {

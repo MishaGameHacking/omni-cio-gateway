@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".AnalystApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -13,7 +14,7 @@
         android:theme="@style/Theme.OMNICIO"
         android:usesCleartextTraffic="false">
         <activity
-            android:name=".MainActivity"
+            android:name=".BootstrapActivity"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"
             android:launchMode="singleTop">
@@ -21,19 +22,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="auth"
-                    android:scheme="analystai" />
+                <data android:host="auth" android:scheme="analystai" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".MainActivity"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:launchMode="singleTop" />
         <receiver android:name=".data.updates.InstallResultReceiver" android:exported="false" />
         <receiver android:name=".data.updates.AppReplacedReceiver" android:exported="false">
-            <intent-filter><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
         </receiver>
     </application>
 </manifest>

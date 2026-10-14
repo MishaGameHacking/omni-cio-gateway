@@ -1,8 +1,24 @@
 name: Check installable preview APK
-description: Verify the fixed preview artifact and install it on disposable Android 13 and 16 emulators.
+description: Verify the fixed preview artifact, upgrade path, launch, and UI on disposable Android 13 and 16 emulators.
 runs:
   using: composite
   steps:
+    - name: Require publication-grade emulator inputs
+      shell: cmd
+      run: |
+        if defined PREVIOUS_APK goto previous_defined
+        echo PREVIOUS_APK is required for the distributable APK upgrade test.
+        exit /b 1
+        :previous_defined
+        if exist "%PREVIOUS_APK%" goto previous_exists
+        echo PREVIOUS_APK does not point to an existing reference APK.
+        exit /b 1
+        :previous_exists
+        if "%RUN_PROFILE_UI_TESTS%"=="1" goto inputs_ready
+        echo RUN_PROFILE_UI_TESTS must be 1 for the distributable APK UI contract.
+        exit /b 1
+        :inputs_ready
+
     - name: Verify signature and package metadata with official Android tools
       shell: cmd
       run: |
@@ -27,37 +43,25 @@ runs:
         call "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%ANDROID_SDK_ROOT%" --channel=0 "emulator" "platform-tools" "system-images;android-33;google_apis;x86_64" "system-images;android-36;google_apis;x86_64" < "%YES_FILE%"
         if errorlevel 1 exit /b 1
 
-    - name: Test clean install and launch on Android 13
+    - name: Test upgrade, clean install, launch, and profile UI on Android 13
       shell: cmd
       env:
         PYTHONIOENCODING: utf-8
         PYTHONUNBUFFERED: '1'
       run: |
         set "APK_DIR=%GITHUB_WORKSPACE%\app\build\outputs\apk\preview"
-        if defined PREVIOUS_APK goto upgrade
-        py -3 .github\scripts\test_apk_installation.py --sdk "%ANDROID_SDK_ROOT%" --apk "%APK_DIR%\app-preview.apk" --api 33 --work-dir "%APK_DIR%\install-api-33"
-        if errorlevel 1 exit /b 1
-        goto complete
-        :upgrade
         py -3 .github\scripts\test_apk_installation.py --sdk "%ANDROID_SDK_ROOT%" --apk "%APK_DIR%\app-preview.apk" --previous "%PREVIOUS_APK%" --api 33 --work-dir "%APK_DIR%\install-api-33"
         if errorlevel 1 exit /b 1
-        :complete
 
-    - name: Test clean install and launch on Android 16
+    - name: Test upgrade, clean install, and launch on Android 16
       shell: cmd
       env:
         PYTHONIOENCODING: utf-8
         PYTHONUNBUFFERED: '1'
       run: |
         set "APK_DIR=%GITHUB_WORKSPACE%\app\build\outputs\apk\preview"
-        if defined PREVIOUS_APK goto upgrade
-        py -3 .github\scripts\test_apk_installation.py --sdk "%ANDROID_SDK_ROOT%" --apk "%APK_DIR%\app-preview.apk" --api 36 --work-dir "%APK_DIR%\install-api-36"
-        if errorlevel 1 exit /b 1
-        goto complete
-        :upgrade
         py -3 .github\scripts\test_apk_installation.py --sdk "%ANDROID_SDK_ROOT%" --apk "%APK_DIR%\app-preview.apk" --previous "%PREVIOUS_APK%" --api 36 --work-dir "%APK_DIR%\install-api-36"
         if errorlevel 1 exit /b 1
-        :complete
 
     - name: Validate actual installation results for this artifact
       shell: cmd

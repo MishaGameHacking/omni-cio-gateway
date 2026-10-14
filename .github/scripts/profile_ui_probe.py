@@ -11,6 +11,9 @@ PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
 CONFIRM_LABEL = "Понятно"
+SETTINGS_LABEL = "Настройки"
+FIRST_LESSON = "Сначала цель, срок и резерв"
+FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -48,7 +51,6 @@ class ProfileProbe:
         return ET.fromstring(xml[xml.index("<?xml"):])
 
     def capture(self, name: str):
-        # Only the synthetic debug profile on our explicitly addressed emulator.
         if re.fullmatch(r"[a-z-]+", name) is None:
             raise ValueError("Invalid screenshot label")
         root = Path(__file__).resolve().parents[2]
@@ -59,9 +61,6 @@ class ProfileProbe:
         destination = directory / (name + ".png")
         if destination.is_symlink():
             raise ValueError("Screenshot destination is a symlink")
-        # Capture the emulator's displayed frame rather than the guest screencap
-        # readback path, which hangs in this headless Windows graphics stack.
-        # https://developer.android.com/studio/run/emulator-take-screenshots
         with tempfile.TemporaryDirectory(prefix="capture-", dir=directory) as stage:
             output = self.command("emu", "screenrecord", "screenshot", stage)
             pictures = list(Path(stage).glob("*.png"))
@@ -79,7 +78,6 @@ class ProfileProbe:
         while time.monotonic() < deadline:
             try:
                 value = read()
-                # A leaf Element is falsey; do not mistake it for a missing label.
                 if value is not None:
                     return value
             except (RuntimeError, ET.ParseError, ValueError) as error:
@@ -93,9 +91,59 @@ class ProfileProbe:
     def bounds(self, text):
         return node_bounds(self.find(text))
 
-    def tap(self, text):
-        left, top, right, bottom = self.bounds(text)
+    def _swipe_callback(self):
+        def swipe(x1, y1, x2, y2):
+            self.command("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "350")
+
+        return swipe
+
+    def reveal(self, text, area="profile-content", direction="end"):
+        from profile_scroll import reveal_in_list
+
+        target = reveal_in_list(
+            self.tree,
+            self._swipe_callback(),
+            text,
+            resource_id=area,
+            direction=direction,
+        )
+        if target is None:
+            from profile_scroll import visible_label
+
+            target = self.wait_for(lambda: visible_label(self.tree(), text), "UI label not visible: " + text)
+        return target
+
+    def reveal_resource(self, resource_id, area="profile-content", direction="end"):
+        from profile_scroll import reveal_resource_in_list
+
+        target = reveal_resource_in_list(
+            self.tree,
+            self._swipe_callback(),
+            resource_id,
+            resource_id=area,
+            direction=direction,
+        )
+        if target is None:
+            from profile_scroll import visible_resource
+
+            target = self.wait_for(
+                lambda: visible_resource(self.tree(), resource_id),
+                "UI resource not visible: " + resource_id,
+            )
+        return target
+
+    def tap(self, text, area="profile-content", direction="end"):
+        left, top, right, bottom = node_bounds(self.reveal(text, area, direction))
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+    def tap_resource(self, resource_id, area="profile-content", direction="end"):
+        left, top, right, bottom = node_bounds(self.reveal_resource(resource_id, area, direction))
+        self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+    def tab(self, label):
+        # The large-font rail scrolls horizontally. Scrolling the settings list
+        # cannot reveal its offscreen tabs and must not count as a UI failure.
+        self.tap(label, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
 
     def marker(self, expected):
         def read():
@@ -103,6 +151,7 @@ class ProfileProbe:
                 if expected in node.get("content-desc", "").split(";"):
                     return node
             return None
+
         self.wait_for(read, "UI marker missing: " + expected)
 
     def palette(self, expected):
@@ -110,12 +159,17 @@ class ProfileProbe:
 
     def open(self):
         from profile_launch import launch_profile
+
         launch_profile(self.command, self.tree, self.wait_for)
+        self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
-        self.tap("Инфо")
+        # Both labels need not be visible at once at 200% font scale. Measure
+        # each in its visible rail position; still assert single-line alignment.
+        peer = self.reveal(SETTINGS_LABEL, "profile-tabs", "start")
+        _, peer_top, _, peer_bottom = node_bounds(peer)
+        self.tab("Инфо")
         _, top, _, bottom = self.bounds("Инфо")
-        _, peer_top, _, peer_bottom = self.bounds("Настройки")
         tolerance = max(peer_bottom - peer_top, bottom - top) / 2
         if bottom - top > (peer_bottom - peer_top) * 1.5:
             raise AssertionError("Info label wrapped vertically")
@@ -157,17 +211,48 @@ class ProfileProbe:
         self.capture("info")
         self.tap("О приложении")
         self.find(CONFIRM_LABEL)
+        self.capture("about")
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
             raise AssertionError("About version text missing")
-        self.capture("about")
         self.tap(CONFIRM_LABEL)
 
+    def section_scroll_reset(self):
+        self.tab(SETTINGS_LABEL)
+        self.tap("Безопасность")
+        self.find(CONFIRM_LABEL)
+        self.tap(CONFIRM_LABEL)
+        self.tab("Инфо")
+        self.find("Обучение инвестициям")
+        self.tab(SETTINGS_LABEL)
+        self.find(THEME_LABEL)
+
+    def education(self, screenshot="education"):
+        area = "education-content"
+        self.tab("Инфо")
+        self.tap("Обучение инвестициям")
+        self.find("Инвестиции простыми словами")
+        self.reveal(FIRST_LESSON, area)
+        self.capture(screenshot)
+        # UiAutomator exposes a Compose testTag as a resource id.  The exact tag
+        # is stable even when Compose merges the visible action and accessibility
+        # description into a single platform node with implementation-specific text.
+        self.tap_resource(FIRST_LESSON_TOGGLE, area)
+        self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
+        self.find("‹ Назад")  # Navigation must not need a reverse scroll.
+        self.tap("Старт", area)
+        self.find(FIRST_LESSON)  # Category change resets the lesson list.
+        self.tap("Все", area)
+        self.find("Инвестиции простыми словами")
+        self.tap("‹ Назад", area)
+        self.find("Профиль")
+
     def large_font(self):
-        self.command("shell", "settings", "put", "system", "font_scale", "1.3")
+        self.command("shell", "settings", "put", "system", "font_scale", "2.0")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
         self.horizontal_info()
         self.capture("large-font")
+        self.education("education-large-font")
 
 
 def night_setting(output: str) -> str:
@@ -182,11 +267,21 @@ def exercise(device) -> None:
     if re.fullmatch(r"\d(?:\.\d{1,3})?", original_scale) is None:
         original_scale = "1.0"
     try:
-        for name, test in (("themes", probe.themes), ("dialogs", probe.dialogs), ("large-font", probe.large_font)):
+        stages = (
+            ("themes", probe.themes),
+            ("dialogs", probe.dialogs),
+            ("section-scroll-reset", probe.section_scroll_reset),
+            ("education", probe.education),
+            ("large-font-200", probe.large_font),
+        )
+        for name, test in stages:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,large-font,refresh-state-15", flush=True)
+        print(
+            "PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
+            flush=True,
+        )
     finally:
         try:
             probe.command("shell", "settings", "put", "system", "font_scale", original_scale)

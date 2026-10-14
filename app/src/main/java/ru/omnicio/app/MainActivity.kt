@@ -5,10 +5,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.browser.auth.AuthTabIntent
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
+import androidx.browser.auth.AuthTabIntent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -22,12 +21,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.backend.AnalystBackendClient
-import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
+import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
+import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
 import ru.omnicio.app.ui.AnalystTab
@@ -37,11 +37,13 @@ import ru.omnicio.app.ui.analysis.IdeasScreen
 import ru.omnicio.app.ui.analysis.InsightFeedScreen
 import ru.omnicio.app.ui.analysis.PulseScreen
 import ru.omnicio.app.ui.auth.TelegramLoginScreen
-import ru.omnicio.app.ui.theme.AnalystTheme
-import ru.omnicio.app.data.portfolio.rememberLivePortfolio
+import ru.omnicio.app.ui.education.EducationScreen
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.profile.TApiScreen
+import ru.omnicio.app.ui.spectrum.RequiredUpdateScreen
+import ru.omnicio.app.ui.theme.AnalystTheme
+import ru.omnicio.app.ui.updates.MandatoryUpdateHost
 
 private enum class AppScreen {
     Portfolio,
@@ -49,6 +51,7 @@ private enum class AppScreen {
     Pulse,
     Chat,
     Profile,
+    Education,
     AnalysisSettings,
     TApi,
 }
@@ -96,19 +99,21 @@ class MainActivity : ComponentActivity() {
         captureTelegramCallback(intent)
 
         setContent {
-            AnalystAiApp(
-                authCode = pendingAuthCode.value,
-                authError = pendingAuthError.value,
-                onStartTelegramLogin = ::launchTelegramLogin,
-                onAuthCodeConsumed = {
-                    pendingAuthCode.value = null
-                },
-                initialScreenshotsBlocked = initialScreenshotsBlocked,
-                onScreenshotsBlockedChange = { blocked ->
-                    settingsStore.setScreenshotsBlocked(blocked)
-                    applyScreenshotPolicy(blocked)
-                },
-            )
+            MandatoryUpdateHost(blockedContent = { state, actions -> RequiredUpdateScreen(state, actions) }) {
+                AnalystAiApp(
+                    authCode = pendingAuthCode.value,
+                    authError = pendingAuthError.value,
+                    onStartTelegramLogin = ::launchTelegramLogin,
+                    onAuthCodeConsumed = {
+                        pendingAuthCode.value = null
+                    },
+                    initialScreenshotsBlocked = initialScreenshotsBlocked,
+                    onScreenshotsBlockedChange = { blocked ->
+                        settingsStore.setScreenshotsBlocked(blocked)
+                        applyScreenshotPolicy(blocked)
+                    },
+                )
+            }
         }
     }
 
@@ -121,7 +126,6 @@ class MainActivity : ComponentActivity() {
     private fun captureTelegramCallback(incoming: Intent?) {
         val data = incoming?.data ?: return
         if (captureTelegramCallback(data)) {
-            // Prevent an Activity restart from consuming the same one-time code again.
             incoming.data = null
             setIntent(incoming)
         }
@@ -185,7 +189,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AnalystAiAppContent(
+private fun AnalystAiApp(
     authCode: String?,
     authError: String?,
     onStartTelegramLogin: () -> Unit,
@@ -216,9 +220,6 @@ private fun AnalystAiAppContent(
         mutableStateOf(initialScreenshotsBlocked)
     }
 
-    // One effect owns both startup restoration and incoming login codes.
-    // Cancelling startup restoration when a callback arrives prevents it from
-    // overwriting a freshly authenticated session with SignedOut.
     LaunchedEffect(authCode) {
         val code = authCode?.takeIf { it.isNotBlank() }
         if (code != null) {
@@ -321,155 +322,227 @@ private fun AnalystAiAppContent(
         tApiConfigured = connected
     }
 
-    val livePortfolio = rememberLivePortfolio(signedIn?.accessToken, tApiConfigured, portfolioCurrency)
-    val portfolioState = livePortfolio.state
+    val livePortfolio = rememberLivePortfolio(
+        signedIn?.accessToken,
+        tApiConfigured,
+        portfolioCurrency,
+    )
 
     AnalystTheme {
-        when (val current = authState) {
-            AuthUiState.Loading -> {
-                TelegramLoginScreen(
-                    loading = true,
-                    errorMessage = authError,
-                    onLoginClick = onStartTelegramLogin,
+        AnalystAppContent(
+            authState = authState,
+            authError = authError,
+            onStartTelegramLogin = onStartTelegramLogin,
+            screen = screen,
+            portfolioState = livePortfolio.state,
+            portfolioRefreshing = livePortfolio.refreshing,
+            portfolioError = livePortfolio.error,
+            portfolioLastSuccessMillis = livePortfolio.lastSuccessMillis,
+            portfolioCurrency = portfolioCurrency,
+            tApiConfigured = tApiConfigured,
+            screenshotsBlocked = screenshotsBlocked,
+            onScreenChange = { destination ->
+                screenName = destination.name
+            },
+            onCurrencyChange = { currency ->
+                portfolioCurrencyName = currency.name
+            },
+            onTApiConfiguredChange = { configured ->
+                tApiConfigured = configured
+            },
+            onScreenshotsBlockedChange = { blocked ->
+                screenshotsBlocked = blocked
+                onScreenshotsBlockedChange(blocked)
+            },
+            onLogout = {
+                sessionStore.clear()
+                screenName = AppScreen.Portfolio.name
+                tApiConfigured = false
+                authState = AuthUiState.SignedOut()
+            },
+        )
+    }
+}
+
+@Composable
+private fun AnalystAppContent(
+    authState: AuthUiState,
+    authError: String?,
+    onStartTelegramLogin: () -> Unit,
+    screen: AppScreen,
+    portfolioState: PortfolioUiState,
+    portfolioRefreshing: Boolean,
+    portfolioError: String?,
+    portfolioLastSuccessMillis: Long?,
+    portfolioCurrency: PortfolioCurrency,
+    tApiConfigured: Boolean,
+    screenshotsBlocked: Boolean,
+    onScreenChange: (AppScreen) -> Unit,
+    onCurrencyChange: (PortfolioCurrency) -> Unit,
+    onTApiConfiguredChange: (Boolean) -> Unit,
+    onScreenshotsBlockedChange: (Boolean) -> Unit,
+    onLogout: () -> Unit,
+) {
+    when (val current = authState) {
+        AuthUiState.Loading -> {
+            TelegramLoginScreen(
+                loading = true,
+                errorMessage = authError,
+                onLoginClick = onStartTelegramLogin,
+            )
+        }
+
+        is AuthUiState.SignedOut -> {
+            TelegramLoginScreen(
+                loading = false,
+                errorMessage = current.errorMessage ?: authError,
+                onLoginClick = onStartTelegramLogin,
+            )
+        }
+
+        is AuthUiState.SignedIn -> {
+            SignedInAppContent(
+                session = current,
+                screen = screen,
+                portfolioState = portfolioState,
+                portfolioRefreshing = portfolioRefreshing,
+                portfolioError = portfolioError,
+                portfolioLastSuccessMillis = portfolioLastSuccessMillis,
+                portfolioCurrency = portfolioCurrency,
+                tApiConfigured = tApiConfigured,
+                screenshotsBlocked = screenshotsBlocked,
+                onScreenChange = onScreenChange,
+                onCurrencyChange = onCurrencyChange,
+                onTApiConfiguredChange = onTApiConfiguredChange,
+                onScreenshotsBlockedChange = onScreenshotsBlockedChange,
+                onLogout = onLogout,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SignedInAppContent(
+    session: AuthUiState.SignedIn,
+    screen: AppScreen,
+    portfolioState: PortfolioUiState,
+    portfolioRefreshing: Boolean,
+    portfolioError: String?,
+    portfolioLastSuccessMillis: Long?,
+    portfolioCurrency: PortfolioCurrency,
+    tApiConfigured: Boolean,
+    screenshotsBlocked: Boolean,
+    onScreenChange: (AppScreen) -> Unit,
+    onCurrencyChange: (PortfolioCurrency) -> Unit,
+    onTApiConfiguredChange: (Boolean) -> Unit,
+    onScreenshotsBlockedChange: (Boolean) -> Unit,
+    onLogout: () -> Unit,
+) {
+    val navigateToTab: (AnalystTab) -> Unit = { tab ->
+        onScreenChange(tab.toAppScreen())
+    }
+    val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
+    val openProfile = { onScreenChange(AppScreen.Profile) }
+
+    CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab) {
+        when (screen) {
+            AppScreen.Portfolio -> {
+                PortfolioScreen(
+                    state = portfolioState,
+                    accessToken = session.accessToken,
+                    refreshing = portfolioRefreshing,
+                    refreshError = portfolioError,
+                    lastUpdatedMillis = portfolioLastSuccessMillis,
+                    selectedCurrency = portfolioCurrency,
+                    onCurrencyClick = {
+                        onCurrencyChange(portfolioCurrency.next())
+                    },
+                    onProfileClick = openProfile,
                 )
             }
 
-            is AuthUiState.SignedOut -> {
-                TelegramLoginScreen(
-                    loading = false,
-                    errorMessage = current.errorMessage ?: authError,
-                    onLoginClick = onStartTelegramLogin,
+            AppScreen.Ideas -> {
+                IdeasScreen(
+                    accessToken = session.accessToken,
+                    onPortfolioClick = openPortfolio,
+                    onProfileClick = openProfile,
+                    onOpenProfileSettings = {
+                        onScreenChange(AppScreen.AnalysisSettings)
+                    },
                 )
             }
 
-            is AuthUiState.SignedIn -> {
-                val navigateToTab: (AnalystTab) -> Unit = { tab ->
-                    screenName = when (tab) {
-                        AnalystTab.Portfolio -> AppScreen.Portfolio
-                        AnalystTab.Ideas -> AppScreen.Ideas
-                        AnalystTab.Pulse -> AppScreen.Pulse
-                        AnalystTab.Chat -> AppScreen.Chat
-                        AnalystTab.Profile -> AppScreen.Profile
-                    }.name
-                }
+            AppScreen.Pulse -> {
+                PulseScreen(
+                    accessToken = session.accessToken,
+                    onPortfolioClick = openPortfolio,
+                    onProfileClick = openProfile,
+                )
+            }
 
-                CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab) {
-                    when (screen) {
-                        AppScreen.Portfolio -> {
-                            PortfolioScreen(
-                                state = portfolioState,
-                                accessToken = current.accessToken,
-                                refreshing = livePortfolio.refreshing,
-                                refreshError = livePortfolio.error,
-                                lastUpdatedMillis = livePortfolio.lastSuccessMillis,
-                                selectedCurrency = portfolioCurrency,
-                                onCurrencyClick = {
-                                    portfolioCurrencyName = portfolioCurrency.next().name
-                                },
-                                onProfileClick = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                            )
-                        }
+            AppScreen.Chat -> {
+                InsightFeedScreen(
+                    accessToken = session.accessToken,
+                    onPortfolioClick = openPortfolio,
+                    onProfileClick = openProfile,
+                )
+            }
 
-                        AppScreen.Ideas -> {
-                            IdeasScreen(
-                                accessToken = current.accessToken,
-                                onPortfolioClick = {
-                                    screenName = AppScreen.Portfolio.name
-                                },
-                                onProfileClick = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                                onOpenProfileSettings = {
-                                    screenName = AppScreen.AnalysisSettings.name
-                                },
-                            )
-                        }
+            AppScreen.Profile -> {
+                ProfileScreen(
+                    user = session.user,
+                    tApiConfigured = tApiConfigured,
+                    screenshotsBlocked = screenshotsBlocked,
+                    onScreenshotsBlockedChange = onScreenshotsBlockedChange,
+                    onPortfolioClick = openPortfolio,
+                    onOpenTApi = {
+                        onScreenChange(AppScreen.TApi)
+                    },
+                    onOpenAnalysisSettings = {
+                        onScreenChange(AppScreen.AnalysisSettings)
+                    },
+                    onOpenEducation = {
+                        onScreenChange(AppScreen.Education)
+                    },
+                    onLogout = onLogout,
+                )
+            }
 
-                        AppScreen.Pulse -> {
-                            PulseScreen(
-                                accessToken = current.accessToken,
-                                onPortfolioClick = {
-                                    screenName = AppScreen.Portfolio.name
-                                },
-                                onProfileClick = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                            )
-                        }
+            AppScreen.Education -> {
+                EducationScreen(
+                    onBack = openProfile,
+                    onPortfolioClick = openPortfolio,
+                    onProfileClick = openProfile,
+                )
+            }
 
-                        AppScreen.Chat -> {
-                            InsightFeedScreen(
-                                accessToken = current.accessToken,
-                                onPortfolioClick = {
-                                    screenName = AppScreen.Portfolio.name
-                                },
-                                onProfileClick = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                            )
-                        }
+            AppScreen.AnalysisSettings -> {
+                AnalysisProfileSettingsScreen(
+                    accessToken = session.accessToken,
+                    onBack = openProfile,
+                    onPortfolioClick = openPortfolio,
+                    onProfileClick = openProfile,
+                )
+            }
 
-                        AppScreen.Profile -> {
-                            ProfileScreen(
-                                user = current.user,
-                                tApiConfigured = tApiConfigured,
-                                screenshotsBlocked = screenshotsBlocked,
-                                onScreenshotsBlockedChange = { blocked ->
-                                    screenshotsBlocked = blocked
-                                    onScreenshotsBlockedChange(blocked)
-                                },
-                                onPortfolioClick = {
-                                    screenName = AppScreen.Portfolio.name
-                                },
-                                onOpenTApi = {
-                                    screenName = AppScreen.TApi.name
-                                },
-                                onOpenAnalysisSettings = {
-                                    screenName = AppScreen.AnalysisSettings.name
-                                },
-                                onLogout = {
-                                    sessionStore.clear()
-                                    screenName = AppScreen.Portfolio.name
-                                    tApiConfigured = false
-                                    authState = AuthUiState.SignedOut()
-                                },
-                            )
-                        }
-
-                        AppScreen.AnalysisSettings -> {
-                            AnalysisProfileSettingsScreen(
-                                accessToken = current.accessToken,
-                                onBack = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                                onPortfolioClick = {
-                                    screenName = AppScreen.Portfolio.name
-                                },
-                                onProfileClick = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                            )
-                        }
-
-                        AppScreen.TApi -> {
-                            TApiScreen(
-                                accessToken = current.accessToken,
-                                tApiConfigured = tApiConfigured,
-                                onBack = {
-                                    screenName = AppScreen.Profile.name
-                                },
-                                onConnectionChanged = { configured ->
-                                    tApiConfigured = configured
-                                },
-                            )
-                        }
-                    }
-                }
+            AppScreen.TApi -> {
+                TApiScreen(
+                    accessToken = session.accessToken,
+                    tApiConfigured = tApiConfigured,
+                    onBack = openProfile,
+                    onConnectionChanged = onTApiConfiguredChange,
+                )
             }
         }
     }
+}
+
+private fun AnalystTab.toAppScreen(): AppScreen = when (this) {
+    AnalystTab.Portfolio -> AppScreen.Portfolio
+    AnalystTab.Ideas -> AppScreen.Ideas
+    AnalystTab.Pulse -> AppScreen.Pulse
+    AnalystTab.Chat -> AppScreen.Chat
+    AnalystTab.Profile -> AppScreen.Profile
 }
 
 @Preview(showBackground = true)
@@ -482,16 +555,3 @@ private fun AnalystAiAppPreview() {
         )
     }
 }
-
-@Composable
-private fun AnalystAiApp(
-    authCode: String?, authError: String?, onStartTelegramLogin: () -> Unit,
-    onAuthCodeConsumed: () -> Unit, initialScreenshotsBlocked: Boolean,
-    onScreenshotsBlockedChange: (Boolean) -> Unit,
-) {
-    ru.omnicio.app.ui.updates.MandatoryUpdateHost {
-        AnalystAiAppContent(authCode, authError, onStartTelegramLogin, onAuthCodeConsumed,
-            initialScreenshotsBlocked, onScreenshotsBlockedChange)
-    }
-}
-

@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import ru.omnicio.app.data.backend.AnalystUser
+import ru.omnicio.app.ui.education.EducationScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
 
@@ -24,28 +25,39 @@ class ProfileUiProbeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         check(runInstrumentLinkRegressions() == 15)
         val researchChecks = runResearchPresentationChecks()
-        val checksPassed = runRefreshStateRegressionChecks()
-        val updateChecksPassed = runUpdatePolicyChecks()
-        val installChecksPassed = runInstallStreamChecks()
-        val protocolChecksPassed = runUpdateProtocolChecks()
-        val downloadChecksPassed = runUpdateDownloadChecks()
-        val gateChecksPassed = runUpdateGateUiChecks()
-        val feedbackChecksPassed = runUpdateFeedbackChecks()
-        val submissionChecksPassed = runInstallSubmissionChecks()
+        val refreshChecks = runRefreshStateRegressionChecks()
+        val educationChecks = runEducationCatalogChecks()
+        val updateChecks = runUpdatePolicyChecks()
+        val installChecks = runInstallStreamChecks()
+        val protocolChecks = runUpdateProtocolChecks()
+        val downloadChecks = runUpdateDownloadChecks()
+        val gateChecks = runUpdateGateUiChecks()
+        val feedbackChecks = runUpdateFeedbackChecks()
+        val submissionChecks = runInstallSubmissionChecks()
+        val analysisChecks = runAnalysisPresentationChecks()
+        check(runPortfolioGeometryChecks() == 50)
+        check(runPositionSelectionChecks() == 18)
+        check(runInstrumentDetailsChecks() == 18)
         val releaseJsonChecks = runReleaseJsonChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
+                var educationOpen by remember { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-update-tests:$updateChecksPassed;probe-install-stream-tests:$installChecksPassed;probe-protocol-tests:$protocolChecksPassed;probe-download-tests:$downloadChecksPassed;probe-gate-tests:$gateChecksPassed;probe-feedback-tests:$feedbackChecksPassed;probe-submission-tests:$submissionChecksPassed;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks"
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks"
                 }) {
-                    ProfileScreen(
-                        user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
-                        tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
-                        onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                        onPortfolioClick = {}, onOpenTApi = {}, onOpenAnalysisSettings = {}, onLogout = {},
-                    )
+                    if (educationOpen) {
+                        EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
+                    } else {
+                        ProfileScreen(
+                            user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
+                            tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
+                            onScreenshotsBlockedChange = { screenshotsBlocked = it },
+                            onPortfolioClick = {}, onOpenTApi = {}, onOpenAnalysisSettings = {},
+                            onOpenEducation = { educationOpen = true }, onLogout = {},
+                        )
+                    }
                 }
             }
         }
