@@ -109,10 +109,8 @@ class ProfileProbe:
         self.marker("probe-background:" + expected)
 
     def open(self):
-        output = self.command("shell", "am", "start", "-W", "-n", ACTIVITY)
-        if "Status: ok" not in output:
-            raise AssertionError("Profile fixture did not launch")
-        self.marker("probe-refresh-tests:15")
+        from profile_launch import launch_profile
+        launch_profile(self.command, self.tree, self.wait_for)
 
     def horizontal_info(self):
         self.tap("Инфо")
