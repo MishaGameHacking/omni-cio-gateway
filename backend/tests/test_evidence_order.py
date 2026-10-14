@@ -80,8 +80,10 @@ class EvidenceOrderTests(unittest.TestCase):
         self.assertIsNone(self.select([fact(checked_at="2026-10-11T10:00:00Z")]))
 
     def test_assessment_timezone_required(self):
+        records = [fact()]
+        naive = NOW.replace(tzinfo=None)
         with self.assertRaises(ValueError):
-            latest_unambiguous([fact()], at=NOW.replace(tzinfo=None), valid_source=valid)
+            latest_unambiguous(records, at=naive, valid_source=valid)
 
     def test_nonfinite_payload_rejected(self):
         item = fact()

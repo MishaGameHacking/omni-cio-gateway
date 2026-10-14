@@ -78,9 +78,12 @@ class ResearchClockTests(unittest.TestCase):
         self.assertEqual(self.window.deadline, NOW + timedelta(seconds=50))
 
     def test_failure_does_not_leak_context(self):
-        with self.assertRaisesRegex(RuntimeError, 'synthetic'):
-            with self.window.observing():
-                raise RuntimeError('synthetic')
+        failure = RuntimeError('synthetic')
+        observation = self.window.observing()
+        with self.assertRaisesRegex(RuntimeError, 'synthetic') as raised:
+            with observation:
+                raise failure
+        self.assertIs(raised.exception, failure)
         clock.note_time(SOON)
         self.assertEqual(self.window.deadline, NOW + timedelta(seconds=300))
 

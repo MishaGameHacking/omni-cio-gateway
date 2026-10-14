@@ -150,7 +150,9 @@ class ResearchStoreTests(unittest.TestCase):
         b=store.import_record(self.connect,kind='rating',subject='A',payload=payload,at=NOW)
         self.assertEqual(a,b);self.assertEqual(len(store.records(self.connect,'rating','A')),1)
     def test_wrong_rating_subject_rejected(self):
-        with self.assertRaises(EvidenceError):store.import_record(self.connect,kind='rating',subject='B',payload=asdict(rating()),at=NOW)
+        payload = asdict(rating())
+        with self.assertRaises(EvidenceError):
+            store.import_record(self.connect,kind='rating',subject='B',payload=payload,at=NOW)
     def test_real_instants_not_lexical_offsets(self):
         a={'issuer_id':'old','instrument_uid':'A','source':asdict(source(published_at='2026-10-12T13:00:00+03:00'))}
         b={'issuer_id':'new','instrument_uid':'A','source':asdict(source(published_at='2026-10-12T11:00:00+00:00'))}

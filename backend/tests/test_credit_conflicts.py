@@ -60,8 +60,9 @@ class CreditConflictTests(unittest.TestCase):
         self.assertFalse(replace(SRC, url=None).valid(NOW))
 
     def test_naive_assessment_is_domain_error(self):
+        naive = NOW.replace(tzinfo=None)
         with self.assertRaises(EvidenceError):
-            credit_assessment([ACTIVE], issuer_id='issuer1', instrument_id='bond1', at=NOW.replace(tzinfo=None), bond=True)
+            credit_assessment([ACTIVE], issuer_id='issuer1', instrument_id='bond1', at=naive, bond=True)
 
     def test_malformed_time_cannot_resurrect_older_rating(self):
         bad = replace(ACTIVE, source=replace(SRC, published_at='invalid'))
