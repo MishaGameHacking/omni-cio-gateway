@@ -5,13 +5,16 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from backend import portfolio_research as research, portfolio_details as details, research_store
+from backend import portfolio_research as research, portfolio_details as details, research_store, autonomous_ai
 from backend.evidence_revision import EvidenceRevision
 from backend.tests import test_portfolio_research_integration as fixtures
 
 
 class EvidenceCacheIntegrationTests(unittest.TestCase):
-    setUp = fixtures.ResearchIntegrationTests.setUp
+    def setUp(self):
+        fixtures.ResearchIntegrationTests.setUp(self)
+        autonomous_ai.init_autonomous_db()
+
     tearDown = fixtures.ResearchIntegrationTests.tearDown
 
     def import_identity(self, issuer='synthetic-company'):
