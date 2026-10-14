@@ -13,6 +13,7 @@ THEME_LABEL = "Оформление"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 FIRST_LESSON = "Сначала цель, срок и резерв"
+FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -90,20 +91,53 @@ class ProfileProbe:
     def bounds(self, text):
         return node_bounds(self.find(text))
 
-    def reveal(self, text, area="profile-content", direction="end"):
-        from profile_scroll import reveal_in_list
-
+    def _swipe_callback(self):
         def swipe(x1, y1, x2, y2):
             self.command("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "350")
 
-        target = reveal_in_list(self.tree, swipe, text, resource_id=area, direction=direction)
+        return swipe
+
+    def reveal(self, text, area="profile-content", direction="end"):
+        from profile_scroll import reveal_in_list
+
+        target = reveal_in_list(
+            self.tree,
+            self._swipe_callback(),
+            text,
+            resource_id=area,
+            direction=direction,
+        )
         if target is None:
             from profile_scroll import visible_label
+
             target = self.wait_for(lambda: visible_label(self.tree(), text), "UI label not visible: " + text)
+        return target
+
+    def reveal_resource(self, resource_id, area="profile-content", direction="end"):
+        from profile_scroll import reveal_resource_in_list
+
+        target = reveal_resource_in_list(
+            self.tree,
+            self._swipe_callback(),
+            resource_id,
+            resource_id=area,
+            direction=direction,
+        )
+        if target is None:
+            from profile_scroll import visible_resource
+
+            target = self.wait_for(
+                lambda: visible_resource(self.tree(), resource_id),
+                "UI resource not visible: " + resource_id,
+            )
         return target
 
     def tap(self, text, area="profile-content", direction="end"):
         left, top, right, bottom = node_bounds(self.reveal(text, area, direction))
+        self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+    def tap_resource(self, resource_id, area="profile-content", direction="end"):
+        left, top, right, bottom = node_bounds(self.reveal_resource(resource_id, area, direction))
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
     def tab(self, label):
@@ -117,6 +151,7 @@ class ProfileProbe:
                 if expected in node.get("content-desc", "").split(";"):
                     return node
             return None
+
         self.wait_for(read, "UI marker missing: " + expected)
 
     def palette(self, expected):
@@ -124,6 +159,7 @@ class ProfileProbe:
 
     def open(self):
         from profile_launch import launch_profile
+
         launch_profile(self.command, self.tree, self.wait_for)
         self.marker("probe-education-tests:10")
 
@@ -197,7 +233,10 @@ class ProfileProbe:
         self.find("Инвестиции простыми словами")
         self.reveal(FIRST_LESSON, area)
         self.capture(screenshot)
-        self.tap("Открыть урок: " + FIRST_LESSON, area)
+        # UiAutomator exposes a Compose testTag as a resource id.  The exact tag
+        # is stable even when Compose merges the visible action and accessibility
+        # description into a single platform node with implementation-specific text.
+        self.tap_resource(FIRST_LESSON_TOGGLE, area)
         self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
         self.find("‹ Назад")  # Navigation must not need a reverse scroll.
         self.tap("Старт", area)
@@ -239,7 +278,10 @@ def exercise(device) -> None:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
-        print("PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10", flush=True)
+        print(
+            "PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
+            flush=True,
+        )
     finally:
         try:
             probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
