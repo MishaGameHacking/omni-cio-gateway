@@ -43,23 +43,24 @@ object UpdateInstaller {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return synchronized(sessionGuard) {
             val id = prefs.getInt("session", -1)
-            val nonce = prefs.getString("nonce", null)
-            if (id < 0 || nonce.isNullOrBlank()) {
-                return@synchronized clearOrphanedSession(installer, prefs, id)
-            }
+            if (id < 0) return@synchronized clearTrackedSession(prefs)
             val lookup = runCatching { installer.getSessionInfo(id) }
             if (lookup.isFailure) {
                 return@synchronized markPending(
                     "Не удалось проверить установочную сессию Android. Повторная установка не запущена.",
                 )
             }
-            if (lookup.getOrNull() == null) {
-                return@synchronized clearTrackedSession(
+            val info = lookup.getOrNull()
+                ?: return@synchronized clearTrackedSession(
                     prefs,
                     "Предыдущая установочная сессия завершилась или была отменена. Можно повторить обновление.",
                 )
+            if (existingInstallBlocksNewAttempt(info.isCommitted, info.isActive)) {
+                return@synchronized markPending(
+                    "Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку.",
+                )
             }
-            markPending("Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку.")
+            abandonRestoredSession(installer, prefs, id)
         }
     }
 
@@ -69,13 +70,21 @@ object UpdateInstaller {
         return true
     }
 
-    private fun clearOrphanedSession(
+    private fun abandonRestoredSession(
         installer: PackageInstaller,
         prefs: SharedPreferences,
         id: Int,
     ): Boolean {
-        if (id >= 0) runCatching { installer.abandonSession(id) }
-        return clearTrackedSession(prefs)
+        val abandoned = runCatching { installer.abandonSession(id) }
+        if (abandoned.isFailure) {
+            return markPending(
+                "Не удалось завершить незавершённую установочную сессию Android. Повторная установка остановлена.",
+            )
+        }
+        return clearTrackedSession(
+            prefs,
+            "Незавершённая установочная сессия очищена. Можно повторить обновление.",
+        )
     }
 
     private fun clearTrackedSession(prefs: SharedPreferences, message: String? = null): Boolean {
