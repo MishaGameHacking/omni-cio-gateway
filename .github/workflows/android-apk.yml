@@ -95,6 +95,17 @@ jobs:
       - name: Verify artifact and actual installation before publication
         uses: ./.github/actions/check-apk
 
+      - name: Retain verified APK as workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Analyst-AI-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/preview/app-preview.apk
+            app/build/outputs/apk/preview/apk-verification.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
       # A source merge still runs every build/install check above, but does not
       # release an intermediate binary or activate the mandatory update channel.
       # Publication is a separate explicit operation from the checked main.
