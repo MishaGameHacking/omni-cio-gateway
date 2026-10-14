@@ -15,6 +15,7 @@ internal fun runUpdateGateUiChecks(): Int {
         check(state.canUpdate == (decision == ReleaseDecision.UPDATE_REQUIRED)); checks++
         check(!state.copy(busy = true).canUpdate && !state.copy(busy = true).canRetry); checks++
         check(!state.copy(checking = true).canUpdate && !state.copy(checking = true).canRetry); checks++
+        check(!state.copy(installationPending = true).canUpdate && !state.copy(installationPending = true).canRetry); checks++
         check(state.explanation.isNotBlank()); checks++
     }
     check(initial.copy(progress = -200).progressPercent == 0); checks++

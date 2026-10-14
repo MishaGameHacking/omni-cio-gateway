@@ -60,6 +60,11 @@ fun MandatoryUpdateHost(
     val serverBlocked by ClientVersion.blocked.collectAsState()
     val approval by UpdateInstaller.approval.collectAsState()
     val installationStatus by UpdateInstaller.statusText.collectAsState()
+    val installationPending by UpdateInstaller.pending.collectAsState()
+
+    LaunchedEffect(active) {
+        if (active) withContext(Dispatchers.IO) { UpdateInstaller.refreshPending(context) }
+    }
 
     LaunchedEffect(active, retry, serverBlocked) {
         if (!active) return@LaunchedEffect
@@ -87,7 +92,7 @@ fun MandatoryUpdateHost(
     }
 
     fun startUpdate(chosen: ReleaseDescriptor) {
-        if (busy) return
+        if (busy || installationPending) return
         busy = true
         progressFlow.value = 0
         feedback = feedback.operationStarted()
@@ -115,7 +120,7 @@ fun MandatoryUpdateHost(
         onFailure = { feedback = feedback.operationFailed(it) },
     )
 
-    if (current && !serverBlocked) {
+    if (current && !serverBlocked && !installationPending) {
         contentState.SaveableStateProvider("verified-client-content") { content() }
         return
     }
@@ -125,7 +130,7 @@ fun MandatoryUpdateHost(
     val decision = chosen?.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT)
     val actions = UpdateGateActions(
         update = {
-            if (chosen != null && decision == ReleaseDecision.UPDATE_REQUIRED && !busy && !checking) {
+            if (chosen != null && decision == ReleaseDecision.UPDATE_REQUIRED && !busy && !checking && !installationPending) {
                 if (context.packageManager.canRequestPackageInstalls()) startUpdate(chosen)
                 else {
                     awaitingPermission = chosen
@@ -134,11 +139,17 @@ fun MandatoryUpdateHost(
                 }
             }
         },
-        retry = { if (!busy && !checking) retry++ },
+        retry = { if (!busy && !checking && !installationPending) retry++ },
         close = close,
     )
     AnalystTheme {
-        blockedContent(UpdateGateUi(chosen, decision, BuildConfig.VERSION_NAME, checking, busy, progress, feedback.message, installationStatus), actions)
+        blockedContent(
+            UpdateGateUi(
+                chosen, decision, BuildConfig.VERSION_NAME, checking, busy, progress,
+                feedback.message, installationStatus, installationPending,
+            ),
+            actions,
+        )
     }
 }
 
