@@ -7,30 +7,10 @@ import ru.omnicio.app.data.updates.submitInstallSession
 
 /** Runs the same submission owner as the installer, with fake sessions and no APK/OS calls. */
 internal fun runInstallSubmissionChecks(): Int {
-    val stages = listOf("open", "stage", "commit", "close")
     var count = 0
-    for (where in stages) {
+    for (where in listOf("open", "stage", "commit", "close")) {
         for (cancelled in listOf(false, true)) {
-            val events = mutableListOf<String>()
-            val failure = if (cancelled) CancellationException(where) else IOException(where)
-            fun step(name: String) {
-                events.add(name)
-                if (where == name) throw failure
-            }
-            val caught = runCatching {
-                submitInstallSession(
-                    open = { step("open"); Closeable { step("close") } },
-                    stage = { step("stage") },
-                    commit = { step("commit") },
-                    uncommittedFailure = { check(it === failure); events.add("abandon") },
-                    committedCloseFailure = { check(it === failure); events.add("close-warning") },
-                )
-            }.exceptionOrNull()
-            val alreadySubmitted = where == "close"
-            check(("abandon" in events) == !alreadySubmitted)
-            check(("close-warning" in events) == (alreadySubmitted && !cancelled))
-            check(caught === if (alreadySubmitted && !cancelled) null else failure)
-            check(("close" in events) == (where != "open"))
+            checkFailureStage(where, cancelled)
             count++
         }
     }
@@ -63,6 +43,29 @@ internal fun runInstallSubmissionChecks(): Int {
     }.exceptionOrNull()
     check(sameFailure === cancellation && cancellation.suppressed.isEmpty()); count++
     return count
+}
+
+private fun checkFailureStage(where: String, cancelled: Boolean) {
+    val events = mutableListOf<String>()
+    val failure = if (cancelled) CancellationException(where) else IOException(where)
+    fun step(name: String) {
+        events.add(name)
+        if (where == name) throw failure
+    }
+    val caught = runCatching {
+        submitInstallSession(
+            open = { step("open"); Closeable { step("close") } },
+            stage = { step("stage") },
+            commit = { step("commit") },
+            uncommittedFailure = { check(it === failure); events.add("abandon") },
+            committedCloseFailure = { check(it === failure); events.add("close-warning") },
+        )
+    }.exceptionOrNull()
+    val alreadySubmitted = where == "close"
+    check(("abandon" in events) == !alreadySubmitted)
+    check(("close-warning" in events) == (alreadySubmitted && !cancelled))
+    check(caught === if (alreadySubmitted && !cancelled) null else failure)
+    check(("close" in events) == (where != "open"))
 }
 
 fun main() { println("INSTALL_SUBMISSION_CHECKS=" + runInstallSubmissionChecks()) }
