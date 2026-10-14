@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
 from math import isfinite
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -18,6 +18,7 @@ try:
     from .credit_evidence import Rating, Source, Statement, credit_assessment, statement_analysis, stamp, EvidenceError
     from .investment_links import instrument_link
     from .risk_math import aligned_returns, bootstrap_floor_risk, portfolio_variance, RiskDataError
+    from .research_snapshot import aggregate, SnapshotError
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -26,20 +27,25 @@ except ImportError:
     from credit_evidence import Rating, Source, Statement, credit_assessment, statement_analysis, stamp, EvidenceError
     from investment_links import instrument_link
     from risk_math import aligned_returns, bootstrap_floor_risk, portfolio_variance, RiskDataError
+    from research_snapshot import aggregate, SnapshotError
 
 router = APIRouter(prefix='/analysis', tags=['portfolio-research'])
 ZERO = Decimal(0)
 EXTRA_METHODS = {'fundamentals': 'GetAssetFundamentals', 'news': 'News'}
 EVIDENCE_FAILURE = 'Проверенные сведения не прошли контроль полноты или целостности. Рейтинг и отчётность этой бумаги не используются до исправления источника.'
+SOURCE_FAILURE = 'Источник временно недоступен или вернул непригодные данные; это не означает отсутствие риска.'
 
 
 def optional_broker_read(reader, method: str, payload: dict) -> tuple[dict, str | None]:
     try:
         value = details.portfolio._post_tinvest(reader.client,
             details.BASE + 'InstrumentsService/' + EXTRA_METHODS[method], reader.token, payload)
+        field = 'fundamentals' if method == 'fundamentals' else 'items'
+        if not isinstance(value, dict) or not isinstance(value.get(field, []), list):
+            return {}, SOURCE_FAILURE
         return value, None
     except HTTPException:
-        return {}, 'Источник временно недоступен; это не означает отсутствие риска.'
+        return {}, SOURCE_FAILURE
 
 
 def position_amount(position: dict, currency: str) -> Decimal | None:
@@ -182,40 +188,28 @@ def _history_risk(cards, values, total, currency, at):
                 'explanation': 'История не прошла проверку полноты, целостности и сопоставимости.'}
 
 
-def collect_research(user: Any) -> dict:
-    profile = get_profile(int(user['id']))
-    snapshot = details.load_dashboard(user, 'RUB')
-    total = details.number(snapshot.get('totalValue', {}).get('value'))
-    at = datetime.now(timezone.utc)
-    positions = {}
-    cash = ZERO
-    full_cash = True
-    complex_valuation = False
-    for account in snapshot.get('accounts', []):
-        complex_valuation = complex_valuation or bool(account.get('virtualPositions')) or bool(account.get('limitsLoading'))
-        for raw in account.get('positions', []):
-            if raw.get('instrumentType') == 'cash':
-                cash_value = position_amount(raw, 'RUB')
-                full_cash = full_cash and cash_value is not None and cash_value >= 0
-                cash += cash_value if cash_value is not None else ZERO
-                continue
-            uid = raw.get('id')
-            if uid not in positions:
-                positions[uid] = dict(raw)
-                positions[uid]['_aggregate_value'] = position_amount(raw, 'RUB')
-            else:
-                previous = positions[uid]['_aggregate_value']
-                value = position_amount(raw, 'RUB')
-                positions[uid]['_aggregate_value'] = previous + value if previous is not None and value is not None else None
-                positions[uid]['blocked'] = positions[uid].get('blocked', False) or raw.get('blocked', False)
-    if total is None or total <= 0:
-        return {'state': 'portfolio_required', 'cards': [], 'message': 'Нужен портфель с положительной стоимостью.'}
-    selected = list(positions.values())[:100]
-    assets = list({p['assetUid'] for p in selected if p.get('assetUid')})
+def _optional_inputs(user, selected):
+    assets = sorted({p['assetUid'] for p in selected if p.get('assetUid')})
     with details.BrokerReader(user) as reader:
         fundamental_data, fundamental_error = optional_broker_read(reader, 'fundamentals', {'assets': assets}) if assets else ({}, None)
         news_data, news_error = optional_broker_read(reader, 'news', {'limit': 100})
-    fundamentals = {item['assetUid']: item for item in fundamental_data.get('fundamentals', []) if isinstance(item, dict) and item.get('assetUid')}
+    fundamentals, conflicts = {}, set()
+    for item in fundamental_data.get('fundamentals', []):
+        uid = item.get('assetUid') if isinstance(item, dict) else None
+        if not isinstance(uid, str) or uid not in assets:
+            fundamental_error = SOURCE_FAILURE
+            continue
+        if uid in fundamentals and fundamentals[uid] != item:
+            conflicts.add(uid)
+        fundamentals[uid] = item
+    for uid in conflicts:
+        del fundamentals[uid]
+    if conflicts:
+        fundamental_error = SOURCE_FAILURE
+    return fundamentals, news_data.get('items', []), [e for e in (fundamental_error, news_error) if e]
+
+
+def _research_cards(selected, profile, total, fundamentals, news, at):
     cards, values = [], {}
     for position in selected:
         value = position['_aggregate_value']
@@ -224,30 +218,56 @@ def collect_research(user: Any) -> dict:
             values[position['id']] = value
         else:
             position['currentValue'] = None
-        cards.append(instrument_research(position, profile, total, 'RUB', fundamentals, news_data.get('items', []), at))
-    all_valued = (len(values) == len(cards) and len(positions) <= 100
-                  and all(v >= 0 for v in values.values()) and full_cash and not complex_valuation
-                  and abs(sum(values.values(), ZERO) + cash - total) <= Decimal('.02'))
+        cards.append(instrument_research(position, profile, total, 'RUB', fundamentals, news, at))
+    return cards, values
+
+
+def _issuer_concentration(cards, profile, *, complete):
     sums = defaultdict(Decimal)
     for card in cards:
         if card['issuer_id'] and card['share_percent'] is not None:
             sums[card['issuer_id']] += Decimal(card['share_percent'])
+    coverage = complete and all(c['issuer_id'] and c['share_percent'] is not None for c in cards)
+    if not profile.get('configured'):
+        return
+    limit = Decimal(str(profile['max_position_percent']))
     for card in cards:
-        if profile.get('configured') and card['issuer_id'] and sums[card['issuer_id']] > Decimal(str(profile['max_position_percent'])):
-            card['issuer_share_percent'] = str(sums[card['issuer_id']])
-            if card['action'] != 'restricted':
-                card['action'] = 'review_issuer_concentration'
-            card['explanation'] += f" Бумаги одной компании вместе занимают {sums[card['issuer_id']]:.1f}% портфеля."
-    risk = _history_risk(cards, values, total, 'RUB', at) if all_valued and cards else {
+        issuer = card['issuer_id']
+        if not issuer or sums[issuer] <= limit:
+            continue
+        card['issuer_share_percent'] = str(sums[issuer])
+        card['issuer_share_is_lower_bound'] = not coverage
+        if card['action'] != 'restricted':
+            card['action'] = 'review_issuer_concentration'
+        qualifier = '' if coverage else 'не менее '
+        card['explanation'] += f" Проверенные бумаги одной компании вместе занимают {qualifier}{sums[issuer]:.1f}% портфеля."
+
+
+def collect_research(user: Any) -> dict:
+    profile = get_profile(int(user['id']))
+    snapshot = details.load_dashboard(user, 'RUB')
+    total = details.number(snapshot.get('totalValue', {}).get('value'))
+    at = datetime.now(timezone.utc)
+    if total is None or total <= 0:
+        return {'state': 'portfolio_required', 'cards': [], 'message': 'Нужен портфель с положительной стоимостью.'}
+    try:
+        inventory = aggregate(snapshot, position_amount, 'RUB')
+    except SnapshotError:
+        raise HTTPException(502, detail='research_snapshot_inconsistent') from None
+    selected = list(inventory.positions.values())[:100]
+    fundamentals, news, errors = _optional_inputs(user, selected)
+    cards, values = _research_cards(selected, profile, total, fundamentals, news, at)
+    complete = inventory.fully_valued(values, total)
+    _issuer_concentration(cards, profile, complete=complete)
+    risk = _history_risk(cards, values, total, 'RUB', at) if complete and cards else {
         'state': 'incomplete_valuation', 'default_probability': None,
         'explanation': 'Не все позиции оценены в одной валюте. Полную оценку риска не показываем.'}
-    errors = [e for e in (fundamental_error, news_error) if e]
     if any(card['evidence_error'] for card in cards):
         errors.append(EVIDENCE_FAILURE)
     return {'state': 'research', 'as_of': at.isoformat(), 'currency': 'RUB', 'cards': cards,
             'profile_configured': bool(profile.get('configured')), 'risk': risk,
             'source_errors': errors,
-            'examined_positions': len(cards), 'total_positions': len(positions),
+            'examined_positions': len(cards), 'total_positions': len(inventory.positions),
             'issuer_coverage_count': sum(bool(c['issuer_id']) for c in cards),
             'analysis_is_complete': False, 'autotrading': False, 'paid_model_calls': 0,
             'message': 'Выводы по вашему портфелю. Нет обещания доходности или защиты от любого банкротства.',
@@ -255,6 +275,6 @@ def collect_research(user: Any) -> dict:
 
 
 @router.get('/research')
-def research(user: Any = Depends(backend.current_user)) -> dict:
-    key = (*details.identity(user), 'research-v1')
+def research(user: Annotated[Any, Depends(backend.current_user)]) -> dict:
+    key = (*details.identity(user), 'research-v2')
     return details.cached(key, 300, lambda: collect_research(user))
