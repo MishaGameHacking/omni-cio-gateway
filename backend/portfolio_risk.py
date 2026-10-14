@@ -225,7 +225,7 @@ def bootstrap_capital_floor(weights: Sequence[float], rows: Sequence[Sequence[fl
         raise ResearchDataError('simulation_limits_exceeded')
     if paths * horizon_steps * len(weights) > 5_000_000:
         raise ResearchDataError('simulation_cpu_budget_exceeded')
-    rng = random.Random(seed)  # Reproducible research simulation, not security randomness.
+    rng = random.Random(seed)  # NOSONAR: S2245 reviewed; statistical row sampling only. See docs/STATISTICAL_RANDOM_REVIEW.md.
     breaches = 0
     cash = max(0., 1 - math.fsum(weights))
     for _ in range(paths):
