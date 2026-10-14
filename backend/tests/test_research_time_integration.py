@@ -90,7 +90,7 @@ class ResearchTimeIntegrationTests(unittest.TestCase):
         with self.environment(), patch.object(research, '_optional_inputs', return_value=({}, [item], [])):
             before = research.research(self.user)
             self.assertEqual(len(before['cards'][0]['news']), 1)
-            self.clock = expires + timedelta(microseconds=1)
+            self.clock = expires
             after = research.research(self.user)
         self.assertEqual(after['cards'][0]['news'], [])
 

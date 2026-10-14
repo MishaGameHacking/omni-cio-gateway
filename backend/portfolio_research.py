@@ -103,7 +103,7 @@ def relevant_news(items: list, uid: str, at: datetime) -> list[dict]:
             age = (at - published).total_seconds()
         except (EvidenceError, OverflowError):
             continue
-        if not 0 <= age <= 7 * 86400:
+        if not 0 <= age < 7 * 86400:
             continue
         result.append({'id': str(raw.get('id', '')), 'title': str(raw.get('title', ''))[:220],
                        'source': str(raw.get('source', ''))[:100], 'published_at': raw['ts'],
