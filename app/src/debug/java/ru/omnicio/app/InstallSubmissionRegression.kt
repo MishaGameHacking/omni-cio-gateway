@@ -3,6 +3,7 @@ package ru.omnicio.app
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import ru.omnicio.app.data.updates.existingInstallBlocksNewAttempt
 import ru.omnicio.app.data.updates.submitInstallSession
 
 /** Runs the same submission owner as the installer, with fake sessions and no APK/OS calls. */
@@ -42,6 +43,9 @@ internal fun runInstallSubmissionChecks(): Int {
         )
     }.exceptionOrNull()
     check(sameFailure === cancellation && cancellation.suppressed.isEmpty()); count++
+    check(!existingInstallBlocksNewAttempt(committed = false, active = false)); count++
+    check(existingInstallBlocksNewAttempt(committed = true, active = false)); count++
+    check(existingInstallBlocksNewAttempt(committed = false, active = true)); count++
     return count
 }
 

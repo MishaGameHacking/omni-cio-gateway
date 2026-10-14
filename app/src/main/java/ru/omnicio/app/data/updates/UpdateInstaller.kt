@@ -22,17 +22,59 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+internal fun existingInstallBlocksNewAttempt(committed: Boolean, active: Boolean): Boolean = committed || active
+
 /** Only called after an explicit Update tap and APK identity/signature validation. */
 object UpdateInstaller {
     const val ACTION = "ru.omnicio.app.UPDATE_INSTALL_RESULT"
     const val PREFS = "analyst_update_install"
     val approval = MutableStateFlow<Intent?>(null)
     val statusText = MutableStateFlow<String?>(null)
+    val pending = MutableStateFlow(false)
     private val installationLock = Mutex()
     internal val sessionGuard = Any()
 
     internal fun owns(prefs: SharedPreferences, id: Int, nonce: String): Boolean =
         prefs.getInt("session", -1) == id && prefs.getString("nonce", null) == nonce
+
+    /** Rebuild process-local state without ever treating a missing callback as success. */
+    fun refreshPending(context: Context): Boolean {
+        val installer = context.packageManager.packageInstaller
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        synchronized(sessionGuard) {
+            val id = prefs.getInt("session", -1)
+            val nonce = prefs.getString("nonce", null)
+            if (id < 0 || nonce.isNullOrBlank()) {
+                if (id >= 0) runCatching { installer.abandonSession(id) }
+                prefs.edit().remove("session").remove("nonce").apply()
+                approval.value = null
+                pending.value = false
+                return false
+            }
+            val session = runCatching { installer.getSessionInfo(id) }
+            if (session.isFailure) {
+                pending.value = true
+                if (statusText.value.isNullOrBlank()) {
+                    statusText.value = "Не удалось проверить установочную сессию Android. Повторная установка не запущена."
+                }
+                return true
+            }
+            if (session.getOrNull() == null) {
+                prefs.edit().remove("session").remove("nonce").apply()
+                approval.value = null
+                pending.value = false
+                if (statusText.value.isNullOrBlank()) {
+                    statusText.value = "Предыдущая установочная сессия завершилась или была отменена. Можно повторить обновление."
+                }
+                return false
+            }
+            pending.value = true
+            if (statusText.value.isNullOrBlank()) {
+                statusText.value = "Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку."
+            }
+            return true
+        }
+    }
 
     suspend fun install(context: Context, file: File, release: ReleaseDescriptor) = installationLock.withLock {
         withContext(Dispatchers.IO) {
@@ -41,7 +83,7 @@ object UpdateInstaller {
             UpdateClient().verifyArchive(context, file, release)
             val installer = context.packageManager.packageInstaller
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            abandonPrevious(installer, prefs)
+            prepareForNewSession(installer, prefs)
             val id = installer.createSession(parameters(context.packageName, release.bytes))
             val nonce = UUID.randomUUID().toString()
             submitInstallSession(
@@ -52,14 +94,15 @@ object UpdateInstaller {
                 },
                 stage = { session -> writeArchive(session, file, release) { ensureActive() } },
                 commit = { session ->
-                    val pending = resultReceiver(context, id, nonce)
+                    val result = resultReceiver(context, id, nonce)
                     ensureActive()
                     synchronized(sessionGuard) {
                         check(owns(prefs, id, nonce)) { "Установочная сессия уже изменилась." }
                         // Set before commit: a fast callback must not be overwritten.
+                        pending.value = true
                         statusText.value = "APK передан Android. Подтвердите установку, если появится запрос."
                     }
-                    session.commit(pending.intentSender)
+                    session.commit(result.intentSender)
                 },
                 uncommittedFailure = { failure -> abandonFailed(installer, prefs, id, nonce, failure) },
                 committedCloseFailure = {
@@ -70,9 +113,34 @@ object UpdateInstaller {
         }
     }
 
-    private fun abandonPrevious(installer: PackageInstaller, prefs: SharedPreferences) {
+    private fun prepareForNewSession(installer: PackageInstaller, prefs: SharedPreferences) {
         val previous = prefs.getInt("session", -1)
-        if (previous != -1 && installer.mySessions.any { it.sessionId == previous }) installer.abandonSession(previous)
+        if (previous == -1) {
+            prefs.edit().remove("nonce").apply()
+            pending.value = false
+            return
+        }
+        val nonce = prefs.getString("nonce", null)
+        val lookup = runCatching { installer.getSessionInfo(previous) }
+        if (lookup.isFailure) {
+            pending.value = true
+            throw IllegalStateException("Не удалось проверить текущую установку Android. Повторная установка остановлена.")
+        }
+        val info = lookup.getOrNull()
+        if (!nonce.isNullOrBlank() && info != null && existingInstallBlocksNewAttempt(info.isCommitted, info.isActive)) {
+            pending.value = true
+            statusText.value = "Android уже обрабатывает обновление. Дождитесь результата или подтвердите установку."
+            throw IllegalStateException("Установка обновления уже выполняется.")
+        }
+        if (info != null) {
+            runCatching { installer.abandonSession(previous) }.getOrElse {
+                pending.value = true
+                throw IllegalStateException("Не удалось завершить старую установочную сессию Android.", it)
+            }
+        }
+        prefs.edit().remove("session").remove("nonce").apply()
+        approval.value = null
+        pending.value = false
     }
 
     private fun parameters(packageName: String, bytes: Long) =
@@ -87,6 +155,7 @@ object UpdateInstaller {
         synchronized(sessionGuard) {
             check(prefs.edit().putInt("session", id).putString("nonce", nonce).commit())
             approval.value = null
+            pending.value = true
             statusText.value = "Проверяем передачу APK системному установщику."
         }
     }
@@ -118,6 +187,7 @@ object UpdateInstaller {
             if (owns(prefs, id, nonce)) {
                 prefs.edit().remove("session").remove("nonce").apply()
                 approval.value = null
+                pending.value = false
                 statusText.value = if (failure is CancellationException) "Подготовка установки отменена. Можно повторить попытку."
                     else "Не удалось передать обновление Android. Можно повторить попытку."
             }
@@ -141,11 +211,11 @@ object UpdateInstaller {
         runCatching {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel("updates", "Обновления Analyst AI", NotificationManager.IMPORTANCE_DEFAULT))
-            val pending = PendingIntent.getActivity(context, 730, action, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val actionIntent = PendingIntent.getActivity(context, 730, action, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             manager.notify(730, Notification.Builder(context, "updates")
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentTitle(title).setContentText("Нажмите, чтобы продолжить")
-                .setContentIntent(pending).setAutoCancel(true).build())
+                .setContentIntent(actionIntent).setAutoCancel(true).build())
         }.onFailure {
             Log.w("AnalystUpdate", "Уведомление обновления недоступно; результат сохранён на экране.")
         }
@@ -169,10 +239,12 @@ class InstallResultReceiver : BroadcastReceiver() {
                         runCatching { context.packageManager.packageInstaller.abandonSession(session) }
                         prefs.edit().remove("session").remove("nonce").apply()
                         UpdateInstaller.approval.value = null
+                        UpdateInstaller.pending.value = false
                         UpdateInstaller.clearNotification(context)
                         UpdateInstaller.statusText.value = "Android не вернул окно подтверждения. Повторите установку обновления."
                     } else {
                         UpdateInstaller.approval.value = confirmation
+                        UpdateInstaller.pending.value = true
                         UpdateInstaller.statusText.value = "Android ожидает подтверждение установки."
                         UpdateInstaller.notify(context, "Подтвердите обновление Analyst AI", confirmation)
                     }
@@ -180,6 +252,7 @@ class InstallResultReceiver : BroadcastReceiver() {
                 PackageInstaller.STATUS_SUCCESS -> {
                     prefs.edit().remove("session").remove("nonce").apply()
                     UpdateInstaller.approval.value = null
+                    UpdateInstaller.pending.value = false
                     UpdateInstaller.statusText.value = "Обновление установлено. Откройте Analyst AI."
                     UpdateInstaller.notifyAppReady(context)
                 }
@@ -191,6 +264,7 @@ class InstallResultReceiver : BroadcastReceiver() {
     private fun terminalFailure(context: Context, prefs: SharedPreferences, status: Int) {
         prefs.edit().remove("session").remove("nonce").apply()
         UpdateInstaller.approval.value = null
+        UpdateInstaller.pending.value = false
         UpdateInstaller.clearNotification(context)
         val reason = when (status) {
             PackageInstaller.STATUS_FAILURE_ABORTED -> InstallFailureReason.ABORTED
@@ -213,6 +287,7 @@ class AppReplacedReceiver : BroadcastReceiver() {
         synchronized(UpdateInstaller.sessionGuard) {
             context.getSharedPreferences(UpdateInstaller.PREFS, Context.MODE_PRIVATE).edit().clear().apply()
             UpdateInstaller.approval.value = null
+            UpdateInstaller.pending.value = false
             UpdateInstaller.statusText.value = "Обновление установлено. Откройте Analyst AI."
         }
         UpdateInstaller.notifyAppReady(context)

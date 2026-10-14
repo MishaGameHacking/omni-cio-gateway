@@ -13,9 +13,11 @@ data class UpdateGateUi(
     val progress: Int,
     val error: String?,
     val installationStatus: String?,
+    val installationPending: Boolean = false,
 ) {
-    val canUpdate: Boolean get() = release != null && decision == ReleaseDecision.UPDATE_REQUIRED && !busy && !checking
-    val canRetry: Boolean get() = !busy && !checking
+    val canUpdate: Boolean get() = release != null && decision == ReleaseDecision.UPDATE_REQUIRED &&
+        !busy && !checking && !installationPending
+    val canRetry: Boolean get() = !busy && !checking && !installationPending
     val title: String get() = if (decision == ReleaseDecision.UPDATE_REQUIRED) "Требуется обновление" else "Проверка версии"
     val progressPercent: Int get() = progress.coerceIn(0, 100)
     val explanation: String get() = when (decision) {
