@@ -294,7 +294,7 @@ def _issuer_reductions(assets, issuer, share, total, terms: _ReductionTerms):
             continue
         price = money(asset.price_per_unit)
         available_lots = (asset.units - asset.blocked_units) // asset.lot_size
-        needed = int((remaining / (price * asset.lot_size * (1 - issuer_cap * fee_rate))).to_integral_value(rounding=ROUND_FLOOR))
+        needed = int((remaining / (price * asset.lot_size * (1 - issuer_cap * fee_rate))).to_integral_value(rounding=ROUND_CEILING))
         lots = min(available_lots, max(0, needed))
         gross = price * lots * asset.lot_size
         if lots == 0 or gross < minimum_trade_value:
