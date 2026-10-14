@@ -65,10 +65,13 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         self.assertEqual([arg.id for arg in update_calls[0].args if isinstance(arg, ast.Name)],
                          ['app', 'connect', 'session_user'])
 
-    def test_integration_does_not_restore_automatic_publishing_on_main_push(self):
+    def test_release_publication_is_explicit_even_when_artifact_storage_is_full(self):
         workflow = (ROOT / '.github/workflows/android-apk.yml').read_text(encoding='utf-8')
         publication = workflow[workflow.index('- name: Publish verified APK to GitHub Releases'):]
-        self.assertIn("if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'", publication)
+        self.assertIn("github.ref == 'refs/heads/main'", publication)
+        self.assertIn("github.event_name == 'workflow_dispatch'", publication)
+        self.assertIn("github.event_name == 'push'", publication)
+        self.assertIn("contains(github.event.head_commit.message, '[publish-apk]')", publication)
         self.assertIn('uses: ./.github/actions/check-apk', workflow)
         self.assertNotIn('publish_moscow_release.sh', workflow)
         self.assertIn('report.version_code <= 22', publication)
