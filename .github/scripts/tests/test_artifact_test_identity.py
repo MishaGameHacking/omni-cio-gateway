@@ -21,6 +21,15 @@ class ArtifactIdentityTests(unittest.TestCase):
         self.result = []
         self.device = Mock(return_value=Mock(returncode=0, stdout='Success\n', stderr=''))
 
+    def test_installation_driver_can_be_imported_by_file(self):
+        # unittest loads this script by file path without putting its parent on
+        # sys.path. Imports only needed by CLI execution belong inside main().
+        location = Path(__file__).resolve().parents[1] / 'test_apk_installation.py'
+        spec = importlib.util.spec_from_file_location('standalone_install_driver', location)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertTrue(callable(module.record_profile_check))
+
     def test_exact_digest_is_attached(self):
         identity.record_install(self.device, self.result, 'candidate_clean_install', self.apk)
         self.assertTrue(self.result[0]['success'])

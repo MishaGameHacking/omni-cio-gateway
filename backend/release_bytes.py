@@ -12,14 +12,18 @@ class ArtifactStreamError(ValueError):
     """Do not activate a partially copied or changed artifact."""
 
 
-def copy_and_hash(source: BinaryIO, expected_size: int, destination: BinaryIO | None = None,
-                  expected_sha256: str | None = None) -> str:
+def _validate_bounds(expected_size: int, expected_sha256: str | None) -> None:
     if type(expected_size) is not int or not 0 < expected_size <= MAX_BYTES:
         raise ArtifactStreamError('invalid_artifact_size')
     if expected_sha256 is not None and (
         not isinstance(expected_sha256, str) or re.fullmatch(r'[a-f0-9]{64}', expected_sha256) is None
     ):
         raise ArtifactStreamError('invalid_artifact_digest')
+
+
+def copy_and_hash(source: BinaryIO, expected_size: int, destination: BinaryIO | None = None,
+                  expected_sha256: str | None = None) -> str:
+    _validate_bounds(expected_size, expected_sha256)
     received = 0
     digest = hashlib.sha256()
     while True:
