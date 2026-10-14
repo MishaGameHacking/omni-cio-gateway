@@ -18,21 +18,48 @@ def _bounds(node: ET.Element) -> tuple[int, int, int, int] | None:
     return (left, top, right, bottom) if right > left and bottom > top else None
 
 
+def _visible_app_node(node: ET.Element) -> bool:
+    return (
+        node.get("package") == PACKAGE
+        and node.get("visible-to-user") != "false"
+        and _bounds(node) is not None
+    )
+
+
 def visible_label(tree: ET.Element, text: str) -> ET.Element | None:
     for node in tree.iter("node"):
-        if node.get("package") != PACKAGE or node.get("visible-to-user") == "false":
+        if not _visible_app_node(node):
             continue
         labels = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
-        if text in [label.strip() for label in labels] and _bounds(node) is not None:
+        if text in [label.strip() for label in labels]:
+            return node
+    return None
+
+
+def visible_resource(tree: ET.Element, resource_id: str) -> ET.Element | None:
+    """Find an exact Compose testTag exposed to UiAutomator as a resource id.
+
+    Compose commonly exposes the tag itself (for example ``lesson-toggle-x``),
+    while older dumps can contain the package-qualified Android spelling.  Both
+    exact forms are accepted; substrings and nodes from another package are not.
+    """
+    names = {resource_id, f"{PACKAGE}:id/{resource_id}"}
+    for node in tree.iter("node"):
+        if _visible_app_node(node) and node.get("resource-id") in names:
             return node
     return None
 
 
 def _scroll_area(tree: ET.Element, resource_id: str):
     names = {resource_id, f"{PACKAGE}:id/{resource_id}"}
-    candidates = [node for node in tree.iter("node")
-                  if node.get("package") == PACKAGE and node.get("resource-id") in names
-                  and node.get("scrollable") == "true" and node.get("visible-to-user") != "false"]
+    candidates = [
+        node
+        for node in tree.iter("node")
+        if node.get("package") == PACKAGE
+        and node.get("resource-id") in names
+        and node.get("scrollable") == "true"
+        and node.get("visible-to-user") != "false"
+    ]
     # Ambiguous simultaneous lists must not pick an arbitrary scroll target.
     return _bounds(candidates[0]) if len(candidates) == 1 else None
 
@@ -54,14 +81,16 @@ def _gesture(bounds, axis: str, direction: str):
     return (*start, *end) if direction == "end" else (*end, *start)
 
 
-def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
-                   *, resource_id: str, max_swipes: int = 10,
-                   direction: str = "end") -> ET.Element | None:
-    """Return the visible exact label or fail after a bounded number of gestures.
-
-    None means this particular list is not visible; no other list or system
-    window is scrolled. Header/dialog labels may be found without any gesture.
-    """
+def _reveal_target(
+    read_tree: Callable,
+    swipe: Callable,
+    find_target: Callable[[ET.Element], ET.Element | None],
+    target_description: str,
+    *,
+    resource_id: str,
+    max_swipes: int,
+    direction: str,
+) -> ET.Element | None:
     if resource_id not in LIST_IDS:
         raise ValueError("unknown_scroll_list")
     if direction not in {"start", "end"}:
@@ -70,7 +99,7 @@ def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
         raise ValueError("invalid_scroll_limit")
     for attempt in range(max_swipes + 1):
         tree = read_tree()
-        target = visible_label(tree, text)
+        target = find_target(tree)
         if target is not None:
             return target
         bounds = _scroll_area(tree, resource_id)
@@ -80,11 +109,68 @@ def reveal_in_list(read_tree: Callable, swipe: Callable, text: str,
         if gesture is None:
             return None
         if attempt == max_swipes:
-            raise AssertionError("List target not reachable: " + text)
+            raise AssertionError("List target not reachable: " + target_description)
         swipe(*gesture)
     raise AssertionError("List scroll did not finish")
 
 
-def reveal_in_profile(read_tree: Callable, swipe: Callable, text: str,
-                      *, max_swipes: int = 10) -> ET.Element | None:
-    return reveal_in_list(read_tree, swipe, text, resource_id="profile-content", max_swipes=max_swipes)
+def reveal_in_list(
+    read_tree: Callable,
+    swipe: Callable,
+    text: str,
+    *,
+    resource_id: str,
+    max_swipes: int = 10,
+    direction: str = "end",
+) -> ET.Element | None:
+    """Return the visible exact label or fail after a bounded number of gestures.
+
+    None means this particular list is not visible; no other list or system
+    window is scrolled. Header/dialog labels may be found without any gesture.
+    """
+    return _reveal_target(
+        read_tree,
+        swipe,
+        lambda tree: visible_label(tree, text),
+        text,
+        resource_id=resource_id,
+        max_swipes=max_swipes,
+        direction=direction,
+    )
+
+
+def reveal_resource_in_list(
+    read_tree: Callable,
+    swipe: Callable,
+    target_resource_id: str,
+    *,
+    resource_id: str,
+    max_swipes: int = 10,
+    direction: str = "end",
+) -> ET.Element | None:
+    """Reveal an exact Compose testTag without depending on merged label text."""
+    return _reveal_target(
+        read_tree,
+        swipe,
+        lambda tree: visible_resource(tree, target_resource_id),
+        target_resource_id,
+        resource_id=resource_id,
+        max_swipes=max_swipes,
+        direction=direction,
+    )
+
+
+def reveal_in_profile(
+    read_tree: Callable,
+    swipe: Callable,
+    text: str,
+    *,
+    max_swipes: int = 10,
+) -> ET.Element | None:
+    return reveal_in_list(
+        read_tree,
+        swipe,
+        text,
+        resource_id="profile-content",
+        max_swipes=max_swipes,
+    )
