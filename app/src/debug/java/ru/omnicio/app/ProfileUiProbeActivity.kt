@@ -24,12 +24,13 @@ class ProfileUiProbeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         check(runInstrumentLinkRegressions() == 15)
         val checksPassed = runRefreshStateRegressionChecks()
+        val researchChecks = runResearchPresentationChecks()
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 Box(Modifier.fillMaxSize().semantics {
-                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed"
+                    contentDescription = "probe-background:$background;probe-refresh-tests:$checksPassed;probe-research-presentation-tests:$researchChecks"
                 }) {
                     ProfileScreen(
                         user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
