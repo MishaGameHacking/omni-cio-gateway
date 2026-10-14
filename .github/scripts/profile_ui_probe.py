@@ -123,11 +123,8 @@ class ProfileProbe:
         self.marker("probe-background:" + expected)
 
     def open(self):
-        output = self.command("shell", "am", "start", "-W", "-n", ACTIVITY)
-        print("PROFILE_LAUNCH=" + output[-4000:], flush=True)
-        if "Status: ok" not in output:
-            raise AssertionError("Profile fixture did not launch")
-        self.marker("probe-refresh-tests:15")
+        from profile_launch import launch_profile
+        launch_profile(self.command, self.tree, self.wait_for)
         self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
@@ -178,9 +175,9 @@ class ProfileProbe:
         self.capture("info")
         self.tap("О приложении")
         self.find(CONFIRM_LABEL)
+        self.capture("about")
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
             raise AssertionError("About version text missing")
-        self.capture("about")
         self.tap(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
