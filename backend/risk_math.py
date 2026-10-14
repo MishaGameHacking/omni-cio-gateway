@@ -5,7 +5,7 @@ No model calls, missing-value imputation, rating-to-PD lookup or guarantees.
 from __future__ import annotations
 
 from datetime import date
-from math import ceil, floor, fsum, isfinite, sqrt
+from math import ceil, floor, fsum, hypot, isfinite, sqrt
 from random import Random
 from typing import Mapping, Sequence
 
@@ -106,14 +106,70 @@ def long_only_weights(weights: Sequence[float], width: int) -> tuple[float, ...]
     return result
 
 
+def _weighted_returns(rows, weights):
+    values = []
+    for row in rows:
+        weighted = []
+        for value, weight in zip(row, weights):
+            numeric = finite(value)
+            product = finite(numeric * weight)
+            if numeric != 0 and weight != 0 and product == 0:
+                raise RiskDataError('portfolio_variance_underflow')
+            weighted.append(product)
+        values.append(weighted)
+    return values
+
+
+def _weighted_residuals(values):
+    # Center columns at their own scale: a large constant holding must not erase
+    # the variation of a much smaller holding during global normalization.
+    residuals = [[0.0] * len(values[0]) for _ in values]
+    for column in range(len(values[0])):
+        scale = max(abs(row[column]) for row in values)
+        if scale == 0:
+            continue
+        normalized = [row[column] / scale for row in values]
+        mean = fsum(value / len(values) for value in normalized)
+        for index, value in enumerate(normalized):
+            residuals[index][column] = finite((value - mean) * scale)
+    return residuals
+
+
+def _variance_from_weighted(values, alpha):
+    residuals = _weighted_residuals(values)
+    denominator = sqrt(len(values) - 1)
+    joint_factor, diagonal_factor = sqrt(1 - alpha) / denominator, sqrt(alpha) / denominator
+    # hypot scales internally and avoids squaring a tiny/huge number too early.
+    # fsum preserves a small component after large opposing residuals cancel.
+    joint = hypot(*(fsum(value * joint_factor for value in row) for row in residuals)) if alpha < 1 else 0.0
+    diagonal = hypot(*(value * diagonal_factor for row in residuals for value in row)) if alpha > 0 else 0.0
+    deviation = finite(hypot(joint, diagonal))
+    result = finite(deviation * deviation)
+    if deviation > 0 and result == 0:
+        raise RiskDataError('portfolio_variance_underflow')
+    return result
+
+
 def portfolio_variance(rows: Sequence[Sequence[float]], weights: Sequence[float], shrinkage: float = .2) -> float:
-    matrix = covariance(rows, shrinkage)
-    w = long_only_weights(weights, len(matrix))
+    """Same diagonal-shrunk estimator, evaluated as sums of squares.
+
+    (1-alpha)*Var(sum(w*r)) + alpha*sum(Var(w*r)) avoids cancellation
+    between large positive and negative covariance contributions. Weight before
+    scaling; do not overflow a full covariance matrix only to multiply by tiny
+    weights, or clamp a negative numerical residual into apparent zero risk.
+    This is sample variance, not a guarantee or a calibrated default probability.
+    """
+    alpha = finite(shrinkage)
+    if len(rows) < 2 or not rows[0] or not 0 <= alpha <= 1:
+        raise RiskDataError('invalid_covariance_sample')
+    width = len(rows[0])
+    if any(len(row) != width for row in rows):
+        raise RiskDataError('ragged_return_panel')
+    w = long_only_weights(weights, width)
     try:
-        result = finite(fsum(w[i] * matrix[i][j] * w[j] for i in range(len(w)) for j in range(len(w))))
-    except (OverflowError, ValueError):
+        return _variance_from_weighted(_weighted_returns(rows, w), alpha)
+    except OverflowError:
         raise RiskDataError('portfolio_variance_overflow') from None
-    return max(0.0, result)
 
 
 def effective_positions(weights: Sequence[float]) -> float:
