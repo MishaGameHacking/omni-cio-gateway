@@ -34,13 +34,26 @@ class UpdateClient {
 
     suspend fun current(): ReleaseDescriptor = withContext(Dispatchers.IO) {
         val connection = connect(UpdateProtocol.policyPath(BuildConfig.APPLICATION_ID))
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Accept-Encoding", "identity")
         try {
-            check(connection.responseCode == 200) { "Сервер обновлений пока недоступен. Повторите проверку." }
-            val bytes = connection.inputStream.use { it.readNBytes(UpdateProtocol.MAX_MANIFEST_BYTES + 1) }
-            check(bytes.size <= UpdateProtocol.MAX_MANIFEST_BYTES) { "Некорректное описание обновления." }
-            val json = JSONObject(String(bytes, Charsets.UTF_8))
-            val fields = json.keys().asSequence().associateWith { json.get(it) }
-            UpdateProtocol.parse(fields, Instant.now().epochSecond)
+            withTimedUpdateCall(45_000, disconnect = {
+                runCatching { connection.disconnect() }.onFailure {
+                    Log.w("AnalystUpdate", "Не удалось закрыть соединение проверки обновления.")
+                }
+            }) {
+                ensureActive()
+                check(connection.responseCode == 200) { "Сервер обновлений пока недоступен. Повторите проверку." }
+                val declared = connection.contentLengthLong
+                check(declared in -1L..UpdateProtocol.MAX_MANIFEST_BYTES.toLong()) { "Некорректный размер описания обновления." }
+                val bytes = connection.inputStream.use { input ->
+                    readUpdatePolicy(input, UpdateProtocol.MAX_MANIFEST_BYTES) { ensureActive() }
+                }
+                check(declared == -1L || declared == bytes.size.toLong()) { "Описание обновления загружено не полностью." }
+                val json = JSONObject(decodeUpdatePolicy(bytes))
+                val fields = json.keys().asSequence().associateWith { json.get(it) }
+                UpdateProtocol.parse(fields, Instant.now().epochSecond)
+            }
         } finally { connection.disconnect() }
     }
 

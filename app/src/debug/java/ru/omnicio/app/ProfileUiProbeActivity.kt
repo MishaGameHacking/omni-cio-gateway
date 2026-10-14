@@ -33,6 +33,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val feedbackChecks = runUpdateFeedbackChecks()
         val submissionChecks = runInstallSubmissionChecks()
         val analysisChecks = runAnalysisPresentationChecks()
+        check(runPortfolioGeometryChecks() == 50)
         setContent {
             AnalystTheme {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)

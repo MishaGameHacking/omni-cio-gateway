@@ -2,6 +2,11 @@ package ru.omnicio.app.ui.portfolio
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,12 +16,17 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
+import ru.omnicio.app.ui.spectrum.SpectrumBackground
 
 private const val OperationsTitle = "Операции"
 private const val AnalyticsTitle = "Аналитика"
@@ -43,67 +53,63 @@ fun PortfolioScreen(
     val listState = rememberLazyListState()
     BackHandler(accountId != null) { accountId = null; section = 0 }
 
-    Scaffold(modifier.fillMaxSize(), containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
-    ) { insets ->
-        if (account != null) {
-            AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
-                { accountId = null; section = 0 }, snapshot.asOf, refreshError,
-                Modifier.padding(insets))
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(insets), state = listState,
-                contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                item(key = "header") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column {
-                            Notice("Analyst AI")
-                            Text("Портфель", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+    SpectrumBackground(modifier.fillMaxSize()) {
+        Scaffold(Modifier.fillMaxSize(), containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets.safeDrawing,
+            bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
+        ) { insets ->
+            if (account != null) {
+                AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
+                    { accountId = null; section = 0 }, snapshot.asOf, refreshError,
+                    Modifier.padding(insets))
+            } else {
+                LazyColumn(Modifier.fillMaxSize().padding(insets), state = listState,
+                    contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    item(key = "header") {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Notice("Analyst AI")
+                                Text("Портфель", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                }
-                if (snapshot == null) {
-                    item(key = "initial-state") { InitialPortfolioState(state, onProfileClick) }
-                } else {
-                    item(key = "total") {
-                        PortfolioSummary(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick) { target ->
-                            if (snapshot.accounts.size == 1) {
-                                accountId = snapshot.accounts.first().id
-                                section = target
-                            } else selectForSection = target
+                    if (snapshot == null) {
+                        item(key = "initial-state") { InitialPortfolioState(state, onProfileClick) }
+                    } else {
+                        item(key = "total") {
+                            PortfolioSummary(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick) { target ->
+                                if (snapshot.accounts.size == 1) {
+                                    accountId = snapshot.accounts.first().id
+                                    section = target
+                                } else selectForSection = target
+                            }
                         }
-                    }
-                    if (snapshot.accounts.isEmpty()) {
-                        item(key = "no-accounts") { CompactCard { Text("Доступных счетов не найдено") } }
-                    }
-                    items(snapshot.accounts, key = { "account:${it.id}" }) { item ->
-                        CompactCard {
-                            Row(Modifier.fillMaxWidth().clickable { accountId = item.id; section = 0 },
-                                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(item.totalValue.moneyText(), fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                                    Text(item.name + " ›", style = MaterialTheme.typography.bodyLarge)
+                        if (snapshot.accounts.isEmpty()) {
+                            item(key = "no-accounts") { CompactCard { Text("Доступных счетов не найдено") } }
+                        }
+                        items(snapshot.accounts, key = { "account:${it.id}" }) { item ->
+                            CompactCard {
+                                AccountSummaryHeading(item) { accountId = item.id; section = 0 }
+                                item.positions.take(5).forEach { position -> PositionLine(position) { positionDetails = position } }
+                                if (item.positions.size > 5 || item.virtualPositions.isNotEmpty()) {
+                                    TextButton(onClick = { accountId = item.id; section = 0 }) { Text("Все позиции (${item.positions.size})") }
                                 }
-                                item.expectedYieldPercent?.let { SignedAmount(null, it) }
-                            }
-                            item.positions.take(5).forEach { position -> PositionLine(position) { positionDetails = position } }
-                            if (item.positions.size > 5 || item.virtualPositions.isNotEmpty()) {
-                                TextButton(onClick = { accountId = item.id; section = 0 }) { Text("Все позиции (${item.positions.size})") }
-                            }
-                            if (item.positions.isEmpty()) Notice("Позиции отсутствуют")
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                TextButton(onClick = { accountId = item.id; section = 1 }) { Text(OperationsTitle) }
-                                TextButton(onClick = { accountId = item.id; section = 3 }) { Text(AnalyticsTitle) }
+                                if (item.positions.isEmpty()) Notice("Позиции отсутствуют")
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    TextButton(onClick = { accountId = item.id; section = 1 }) { Text(OperationsTitle) }
+                                    TextButton(onClick = { accountId = item.id; section = 3 }) { Text(AnalyticsTitle) }
+                                }
                             }
                         }
-                    }
-                    item(key = "structure") {
-                        CompactCard {
-                            SectionHeading("Структура портфеля")
-                            AssetStructure(snapshot.allocations, snapshot.totalValue)
+                        item(key = "structure") {
+                            CompactCard {
+                                SectionHeading("Структура портфеля")
+                                AssetStructure(snapshot.allocations, snapshot.totalValue)
+                            }
                         }
-                    }
-                    if (snapshot.warnings.isNotEmpty()) {
-                        item(key = "warnings") { Notice(snapshot.warnings.joinToString("\n")) }
+                        if (snapshot.warnings.isNotEmpty()) {
+                            item(key = "warnings") { Notice(snapshot.warnings.joinToString("\n")) }
+                        }
                     }
                 }
             }
@@ -112,10 +118,35 @@ fun PortfolioScreen(
     positionDetails?.let { PositionDetails(it) { positionDetails = null } }
     if (selectForSection != null && snapshot != null) {
         AlertDialog(onDismissRequest = { selectForSection = null }, title = { Text("Выберите счёт") },
-            text = { Column { snapshot.accounts.forEach { item ->
+            containerColor = LocalSpectrumPalette.current.card,
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) { snapshot.accounts.forEach { item ->
                 TextButton(onClick = { accountId = item.id; section = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
             } } }, confirmButton = { TextButton(onClick = { selectForSection = null }) { Text("Отмена") } })
     }
+}
+
+@Composable
+private fun AccountSummaryHeading(account: PortfolioAccount, open: () -> Unit) {
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = open)) {
+        if (portfolioStackedLayout(maxWidth.value, fontScale)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                AccountHeadingText(account)
+                account.expectedYieldPercent?.let { SignedAmount(null, it) }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) { AccountHeadingText(account) }
+                account.expectedYieldPercent?.let { SignedAmount(null, it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountHeadingText(account: PortfolioAccount) {
+    Text(account.totalValue.moneyText(), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+    Text(account.name + " ›", style = MaterialTheme.typography.bodyLarge)
 }
 
 @Composable
@@ -148,7 +179,7 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item(key = "value") {
             CompactCard {
-                Text(account.totalValue.moneyText(), Modifier.clickable(onClick = onCurrency), fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                Text(account.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency), fontWeight = FontWeight.Bold, fontSize = 30.sp)
                 DataRow("Текущая доходность API", account.expectedYieldPercent.percentText())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("За день", style = MaterialTheme.typography.bodyMedium)
@@ -156,7 +187,7 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
                 }
                 Notice(error ?: "Получено ${dateText(asOf)} · автообновление")
                 if (account.limitsLoading) Notice("Брокер ещё обновляет лимиты. Данные могут измениться.")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { onSection(1) }) { Text(OperationsTitle) }
                     TextButton(onClick = { onSection(3) }) { Text(AnalyticsTitle) }
                     TextButton(onClick = { onSection(4) }) { Text("Выплаты") }
@@ -165,7 +196,8 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
         }
         item { SectionHeading("Активы и деньги") }
         items(account.positions, key = { "position:${it.id}" }) { position ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Surface(color = LocalSpectrumPalette.current.card, shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, LocalSpectrumPalette.current.cyan.copy(alpha = 0.24f))) {
                 Box(Modifier.padding(horizontal = 12.dp)) { PositionLine(position) { selected = position } }
             }
         }
@@ -270,7 +302,7 @@ private fun PortfolioSummary(
     error: String?, lastUpdatedMillis: Long?, onCurrency: () -> Unit, openSection: (Int) -> Unit,
 ) {
     CompactCard {
-        Text(snapshot.totalValue.moneyText(), Modifier.clickable(onClick = onCurrency), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        Text(snapshot.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency), fontSize = 32.sp, fontWeight = FontWeight.Bold)
         snapshot.expectedYieldPercent?.let {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 NoticeInline("Текущая доходность API")
