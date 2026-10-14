@@ -98,15 +98,30 @@ private fun validSnapshot(snapshot: JSONObject): Boolean {
         val uid = card.text("instrument_uid") ?: return false
         if (!ids.add(uid)) return false
     }
-    return true
+    return snapshot.text("state") != "research" || snapshot.coverage(cards.length()) != null
 }
+
+private fun JSONObject.coverage(cards: Int) = researchCoverage(mapOf(
+    "examined_positions" to opt("examined_positions"),
+    "total_positions" to opt("total_positions"),
+    "issuer_coverage_count" to opt("issuer_coverage_count"),
+), cards)
 
 @Composable
 private fun ResearchSnapshot(snapshot: JSONObject, accessToken: String) {
     var expanded by remember(accessToken) { mutableStateOf(false) }
     var page by remember(accessToken) { mutableIntStateOf(0) }
     if (snapshot.text("state") == "research") Text("Последняя успешная проверка: ${researchTime(snapshot.text("as_of")) ?: "время не получено"}", style = MaterialTheme.typography.bodySmall)
-    snapshot.optJSONObject("risk")?.let { ResearchRisk(it) }
+    val coverage = snapshot.coverage(snapshot.optJSONArray("cards")?.length() ?: 0)
+    coverage?.let {
+        Text(it.summary, fontWeight = FontWeight.SemiBold)
+        Text(it.issuerSummary, style = MaterialTheme.typography.bodySmall)
+        it.omittedWarning?.let { warning -> Text(warning, color = MaterialTheme.colorScheme.error) }
+    }
+    snapshot.optJSONObject("risk")?.let {
+        if (it.text("state") != "sample_estimate" || coverage?.allPositionsIncluded == true) ResearchRisk(it)
+        else Text("Числовая оценка не показана: результат не охватывает все позиции.")
+    }
     snapshot.optJSONArray("source_errors").strings().forEach { Text(it, color = MaterialTheme.colorScheme.error) }
     val cards = snapshot.optJSONArray("cards") ?: JSONArray()
     val window = researchPage(cards.length(), page, expanded)
@@ -117,7 +132,7 @@ private fun ResearchSnapshot(snapshot: JSONObject, accessToken: String) {
         }
     }
     if (expanded && cards.length() > 0) {
-        Text("Позиции ${window.first + 1}–${window.endExclusive} из ${cards.length()}", style = MaterialTheme.typography.bodySmall)
+        Text("Разобранные позиции ${window.first + 1}–${window.endExclusive} из ${cards.length()}", style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { page = window.page - 1 }, enabled = window.hasPrevious,
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("Предыдущие") }
@@ -127,7 +142,7 @@ private fun ResearchSnapshot(snapshot: JSONObject, accessToken: String) {
     }
     if (cards.length() > 3) TextButton(onClick = { expanded = !expanded; page = 0 },
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-        Text(if (expanded) "Свернуть" else "Просмотреть все позиции (${cards.length()})")
+        Text(if (expanded) "Свернуть" else "Просмотреть разобранные позиции (${cards.length()})")
     }
     Text("Новые покупки не предлагаются, пока не проверены кандидаты, доступность, отчётность и риск. Отсутствие рейтинга не означает отсутствие риска.", style = MaterialTheme.typography.bodySmall)
 }

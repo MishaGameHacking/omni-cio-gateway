@@ -10,6 +10,7 @@ internal fun runResearchPresentationChecks(): Int {
     checkLoadState(::verify)
     checkPaging(::verify)
     checkScenario(::verify)
+    checkCoverage(::verify)
     return checks
 }
 
@@ -75,3 +76,25 @@ private fun checkScenario(verify: (Boolean) -> Unit) {
 }
 
 fun main() { println("RESEARCH_PRESENTATION_CHECKS=" + runResearchPresentationChecks()) }
+
+private fun checkCoverage(verify: (Boolean) -> Unit) {
+    val fields: Map<String, Any?> = mapOf("examined_positions" to 100, "total_positions" to 137,
+        "issuer_coverage_count" to 60)
+    val partial = researchCoverage(fields, 100)
+    verify(partial?.allPositionsIncluded == false)
+    verify(partial?.summary == "Разобрано 100 из 137 позиций портфеля.")
+    verify(partial?.omittedWarning?.contains("37 позиций") == true)
+    verify(partial?.issuerSummary?.contains("60 из 100") == true)
+    verify(researchCoverage(fields + ("total_positions" to 100L), 100)?.omittedWarning == null)
+    for ((key, value) in listOf("examined_positions" to 99, "examined_positions" to true,
+        "total_positions" to 99, "total_positions" to "137", "total_positions" to Long.MAX_VALUE,
+        "issuer_coverage_count" to 101, "issuer_coverage_count" to -1,
+        "issuer_coverage_count" to null, "total_positions" to 137.0)) {
+        verify(researchCoverage(fields + (key to value), 100) == null)
+    }
+    verify(researchCoverage(emptyMap(), 0) == null)
+    verify(researchCoverage(fields, 101) == null)
+    val empty = mapOf<String, Any?>("examined_positions" to 0, "total_positions" to 0,
+        "issuer_coverage_count" to 0)
+    verify(researchCoverage(empty, 0)?.summary == "Разобрано 0 из 0 позиций портфеля.")
+}

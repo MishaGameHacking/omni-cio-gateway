@@ -77,3 +77,21 @@ fun researchScenario(fields: Map<String, Any?>): ResearchScenario? {
     if (abs(frequency * paths - events) > 0.000001 || (events == 0 && upper <= 0)) return null
     return ResearchScenario(events, paths, horizon, floor, lower, upper)
 }
+
+/** Counts describe the displayed subset, not completeness of investment due diligence. */
+data class ResearchCoverage(val examined: Int, val total: Int, val issuers: Int) {
+    val allPositionsIncluded: Boolean get() = examined == total
+    val summary: String get() = "Разобрано $examined из $total позиций портфеля."
+    val issuerSummary: String get() = "Компания установлена для $issuers из $examined разобранных позиций."
+    val omittedWarning: String? get() = if (allPositionsIncluded) null else
+        "Ещё ${total - examined} позиций не вошли в этот результат. Это не проверка всего портфеля."
+}
+
+fun researchCoverage(fields: Map<String, Any?>, displayedCards: Int): ResearchCoverage? {
+    if (displayedCards !in 0..100) return null
+    val examined = count(fields["examined_positions"], 0..100) ?: return null
+    val total = count(fields["total_positions"], 0..Int.MAX_VALUE) ?: return null
+    val issuers = count(fields["issuer_coverage_count"], 0..100) ?: return null
+    if (examined != displayedCards || total < examined || issuers > examined) return null
+    return ResearchCoverage(examined, total, issuers)
+}
