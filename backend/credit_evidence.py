@@ -226,6 +226,31 @@ class Statement:
     audited: bool = False
 
 
+def _basis_label(value: object) -> str:
+    if not isinstance(value, str) or len(value) > 80:
+        raise EvidenceError('statement_basis_required')
+    text = value.strip()
+    if not text or any(ord(char) < 32 or ord(char) == 127 for char in text):
+        raise EvidenceError('statement_basis_required')
+    return text
+
+
+def _statement_basis(statement: Statement) -> tuple[str, str, str]:
+    sector = _basis_label(statement.sector).casefold()
+    standard = _basis_label(statement.standard)
+    currency = _basis_label(statement.currency).upper()
+    # Validate a currency-code shape, not the currency's value or FX rate.
+    if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+        raise EvidenceError('statement_currency_required')
+    if not isinstance(statement.values, Mapping):
+        raise EvidenceError('statement_basis_required')
+    for key in statement.values:
+        if (not isinstance(key, str) or not 1 <= len(key) <= 64
+                or key != key.strip() or any(ord(char) < 32 or ord(char) == 127 for char in key)):
+            raise EvidenceError('invalid_statement_metric')
+    return sector, standard, currency
+
+
 def _ratio(numerator: Decimal, denominator: Decimal) -> str:
     try:
         # A server worker must not inherit the arithmetic settings of a caller.
@@ -274,18 +299,18 @@ def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datet
     start, end = stamp(statement.period_start), stamp(statement.period_end)
     if start >= end or end > stamp(statement.source.published_at) or (at - end).days > 550:
         return {'state': 'stale', 'ratios': {}, 'messages': ['Отчётный период не подходит для текущей оценки.']}
-    if not isinstance(statement.values, Mapping) or not isinstance(statement.sector, str):
-        raise EvidenceError('statement_basis_required')
+    sector, standard, currency = _statement_basis(statement)
     values = {key: amount(value) for key, value in statement.values.items()}
-    if statement.sector.lower() in {'financial', 'financials', 'finance', 'banks', 'insurance'}:
+    if sector in {'financial', 'financials', 'finance', 'banks', 'insurance'}:
         return {'state': 'sector_model_required', 'ratios': {},
                 'messages': ['Для банка или страховой компании нужна отдельная проверка капитала и резервов.'],
                 'source': asdict(statement.source)}
-    if not statement.standard or not statement.currency:
-        raise EvidenceError('statement_basis_required')
     ratios = _statement_ratios(values)
+    messages = _statement_messages(values, ratios, statement.audited)
+    if 'net_debt_to_ebitda' in ratios:
+        messages.append('Долг сопоставлен с результатом за указанный отчётный период, без пересчёта к году. Показатель за полгода нельзя напрямую сравнивать с годовым.')
     return {'state': 'calculated', 'ratios': ratios,
-            'messages': _statement_messages(values, ratios, statement.audited),
-            'standard': statement.standard, 'currency': statement.currency,
+            'messages': messages, 'ratios_annualized': False,
+            'standard': standard, 'currency': currency,
             'period_start': statement.period_start, 'period_end': statement.period_end,
             'source': asdict(statement.source), 'default_probability': None}
