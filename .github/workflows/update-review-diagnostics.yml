@@ -1,8 +1,10 @@
 name: Read current updater quality findings
 on:
   push:
-    branches: [feature/mandatory-updates-quant-research]
-    paths: [.github/workflows/update-review-diagnostics.yml]
+    branches:
+      - feature/mandatory-updates-quant-research
+      - feature/spectrum-ui-risk-update
+  workflow_dispatch:
 permissions:
   contents: read
   checks: read
@@ -36,7 +38,7 @@ jobs:
               }
               core.info('EXACT_HEAD_QUALITY='+JSON.stringify({pr:number,head:pr.head.sha,check:check.id,conclusion:check.conclusion}));
               const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo,check_run_id:check.id,per_page:100});
-              for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({pr:number,path:a.path,line:a.start_line,title:a.title}));
+              for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({pr:number,path:a.path,line:a.start_line,title:a.title,message:a.message}));
               const endpoint = new URL('https://sonarcloud.io/api/issues/search');
               endpoint.search = new URLSearchParams({componentKeys:project,pullRequest:String(number),resolved:'false',ps:'100'}).toString();
               const headers = {Accept:'application/json'};
