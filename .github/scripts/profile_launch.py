@@ -25,8 +25,15 @@ def start_status(output: str) -> str:
 
 
 def profile_resumed(output: str) -> bool:
-    return any(re.search(r"\b(?:topResumedActivity|mResumedActivity)\s*[=:]", line)
-               and ACTIVITY in line.split() for line in output.splitlines())
+    # Android may close ActivityRecord immediately after the component, before
+    # its task suffix. Parse that field, not whitespace tokens or substrings.
+    pattern = (r"^\s*(?:topResumedActivity|mResumedActivity)\s*[=:]\s*"
+               r"ActivityRecord\{[^\s{}]+\s+u[0-9]+\s+([^\s{}]+)(?=[\s}])")
+    for line in output.splitlines():
+        match = re.match(pattern, line)
+        if match is not None and match.group(1) == ACTIVITY:
+            return True
+    return False
 
 
 def ready_marker(tree):
