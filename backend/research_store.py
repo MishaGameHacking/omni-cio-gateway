@@ -4,17 +4,20 @@ from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import sqlite3
 
 try:
     from .credit_evidence import EvidenceError, Rating, Source, Statement, stamp
     from .risk_math import aligned_returns
     from .evidence_order import latest_unambiguous
     from .evidence_history import HistoryUnavailable, read_history
+    from .evidence_revision import initialize_revision, read_revision, RevisionUnavailable
 except ImportError:
     from credit_evidence import EvidenceError, Rating, Source, Statement, stamp
     from risk_math import aligned_returns
     from evidence_order import latest_unambiguous
     from evidence_history import HistoryUnavailable, read_history
+    from evidence_revision import initialize_revision, read_revision, RevisionUnavailable
 
 KINDS = {'rating', 'statement', 'issuer_identity', 'total_returns'}
 
@@ -24,7 +27,17 @@ def initialize(db):
         digest TEXT PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL,
         payload TEXT NOT NULL, imported_at TEXT NOT NULL)''')
     db.execute('CREATE INDEX IF NOT EXISTS research_evidence_subject ON research_evidence_v1(kind,subject)')
+    initialize_revision(db)
     db.commit()
+
+
+def revision(connect):
+    try:
+        with closing(connect()) as db:
+            initialize(db)
+            return read_revision(db)
+    except (sqlite3.Error, RevisionUnavailable) as error:
+        raise EvidenceError('research_revision_unavailable') from error
 
 
 def _key(kind, subject):

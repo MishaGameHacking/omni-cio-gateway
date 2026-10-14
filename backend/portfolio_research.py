@@ -277,19 +277,31 @@ def collect_research(user: Any, *, profile: dict | None = None) -> dict:
             'candidate_selection_state': 'verified_universe_required'}
 
 
+def _current_evidence_revision():
+    try:
+        return research_store.revision(backend.connect)
+    except EvidenceError:
+        raise HTTPException(503, detail='research_evidence_unavailable') from None
+
+
 @router.get('/research', responses={
     400: {'description': 'Broker connection is required'},
     502: {'description': 'Broker snapshot cannot support a consistent analysis'},
-    503: {'description': 'Investment profile changed; repeat research with current limits'},
+    503: {'description': 'Profile or evidence changed/unavailable; retry a consistent research snapshot'},
 })
 def research(user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     identity = details.identity(user)
     profile = get_profile(int(user['id']))
     digest = profile_digest(profile)
-    key = (*identity, 'research-v3', digest)
+    revision = _current_evidence_revision()
+    key = (*identity, 'research-v4', revision, digest)
     result = details.cached(key, 300, lambda: collect_research(user, profile=profile))
     # A profile edit while broker reads are in flight must not publish a result
     # labelled with the user's previous limit. Retry against the new snapshot.
     if profile_digest(get_profile(int(user['id']))) != digest:
         raise HTTPException(503, detail='research_profile_changed')
+    # Even a cache hit is rechecked: an import/withdrawal during the request
+    # must not publish a mixed or previously favorable evidence snapshot.
+    if _current_evidence_revision() != revision:
+        raise HTTPException(503, detail='research_evidence_changed')
     return result
