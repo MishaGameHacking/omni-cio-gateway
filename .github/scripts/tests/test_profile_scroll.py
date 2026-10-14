@@ -10,12 +10,43 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 
-def tree(label="", bounds="[10,120][300,220]", area=True, resource="profile-content"):
+def tree(
+    label="",
+    bounds="[10,120][300,220]",
+    area=True,
+    resource="profile-content",
+    *,
+    target_resource="",
+    target_package=None,
+):
     root = ET.Element("hierarchy")
     if area:
-        ET.SubElement(root, "node", attrib={"package": module.PACKAGE, "resource-id": resource, "scrollable": "true", "bounds": "[10,100][310,500]"})
+        ET.SubElement(
+            root,
+            "node",
+            attrib={
+                "package": module.PACKAGE,
+                "resource-id": resource,
+                "scrollable": "true",
+                "bounds": "[10,100][310,500]",
+            },
+        )
     if label:
-        ET.SubElement(root, "node", attrib={"package": module.PACKAGE, "text": label, "bounds": bounds})
+        ET.SubElement(
+            root,
+            "node",
+            attrib={"package": module.PACKAGE, "text": label, "bounds": bounds},
+        )
+    if target_resource:
+        ET.SubElement(
+            root,
+            "node",
+            attrib={
+                "package": target_package or module.PACKAGE,
+                "resource-id": target_resource,
+                "bounds": bounds,
+            },
+        )
     return root
 
 
@@ -75,6 +106,58 @@ class ProfileScrollTests(unittest.TestCase):
         for value in (-1, 21, True, 1.5):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 module.reveal_in_profile(read, swipe, "x", max_swipes=value)
+
+    def test_plain_compose_test_tag_is_revealed(self):
+        read = Mock(
+            side_effect=[
+                tree(resource="education-content"),
+                tree(resource="education-content", target_resource="lesson-toggle-start-plan"),
+            ],
+        )
+        swipe = Mock()
+        result = module.reveal_resource_in_list(
+            read,
+            swipe,
+            "lesson-toggle-start-plan",
+            resource_id="education-content",
+        )
+        self.assertEqual(result.get("resource-id"), "lesson-toggle-start-plan")
+        swipe.assert_called_once_with(160, 420, 160, 180)
+
+    def test_qualified_compose_test_tag_is_supported(self):
+        swipe = Mock()
+        result = module.reveal_resource_in_list(
+            lambda: tree(
+                resource="education-content",
+                target_resource="ru.omnicio.app.debug:id/lesson-toggle-start-plan",
+            ),
+            swipe,
+            "lesson-toggle-start-plan",
+            resource_id="education-content",
+        )
+        self.assertIsNotNone(result)
+        swipe.assert_not_called()
+
+    def test_test_tag_requires_exact_id_and_package(self):
+        for target_resource, target_package in (
+            ("lesson-toggle-start-plan-extra", module.PACKAGE),
+            ("lesson-toggle-start-plan", "other.app"),
+        ):
+            with self.subTest(target_resource=target_resource, target_package=target_package):
+                swipe = Mock()
+                with self.assertRaises(AssertionError):
+                    module.reveal_resource_in_list(
+                        lambda: tree(
+                            resource="education-content",
+                            target_resource=target_resource,
+                            target_package=target_package,
+                        ),
+                        swipe,
+                        "lesson-toggle-start-plan",
+                        resource_id="education-content",
+                        max_swipes=0,
+                    )
+                swipe.assert_not_called()
 
 
 if __name__ == "__main__":
