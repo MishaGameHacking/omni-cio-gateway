@@ -172,28 +172,7 @@ private fun PositionAmounts(position: PortfolioPosition, modifier: Modifier) {
 
 @Composable
 internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit) {
-    AlertDialog(onDismissRequest = close, title = { Text(position.title) },
-        containerColor = LocalSpectrumPalette.current.card, shape = RoundedCornerShape(24.dp),
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                DataRow("Тикер", position.ticker ?: "—")
-                DataRow(if (position.instrumentType == "cash") "Количество" else "Количество, шт.", position.quantity.quantityText())
-                DataRow("Стоимость позиции", position.currentValue.moneyText())
-                DataRow("Текущая цена за единицу", position.currentPrice.moneyText())
-                DataRow("Средняя цена", position.averagePrice.moneyText())
-                DataRow("Результат позиции", position.expectedYieldAmount.moneyText(true))
-                DataRow("За день", position.dailyYieldAmount.moneyText(true))
-                DataRow("НКД на одну облигацию", position.currentNkd.moneyText())
-                DataRow("Заблокированное количество", position.blockedQuantity.quantityText())
-                DataRow("Блокировка на бирже", if (position.blocked) "Да" else "Нет")
-                DataRow("ISIN", position.isin ?: "—")
-                DataRow("Биржа", position.exchange ?: "—")
-                DataRow("Отрасль", position.sector ?: "Не указана API")
-                DataRow("Идентификатор", position.id)
-                ru.omnicio.app.ui.instruments.BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
-                Notice("«—» означает, что значение не получено или не может быть корректно рассчитано. Цены и результаты показаны в валютах, возвращённых API. Количество не переводится в лоты.")
-            }
-        }, confirmButton = { TextButton(onClick = close) { Text("Закрыть") } })
+    InstrumentDetailsScreen(position, close)
 }
 
 @Composable

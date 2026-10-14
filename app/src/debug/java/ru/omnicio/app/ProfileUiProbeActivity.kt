@@ -35,6 +35,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val analysisChecks = runAnalysisPresentationChecks()
         check(runPortfolioGeometryChecks() == 50)
         check(runPositionSelectionChecks() == 18)
+        check(runInstrumentDetailsChecks() == 18)
         val releaseJsonChecks = runReleaseJsonChecks()
         setContent {
             AnalystTheme {
