@@ -19,6 +19,7 @@ try:
     from .investment_links import instrument_link
     from .risk_math import aligned_returns, bootstrap_floor_risk, portfolio_variance, RiskDataError
     from .research_snapshot import aggregate, SnapshotError
+    from .research_profile_cache import profile_digest
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -28,6 +29,7 @@ except ImportError:
     from investment_links import instrument_link
     from risk_math import aligned_returns, bootstrap_floor_risk, portfolio_variance, RiskDataError
     from research_snapshot import aggregate, SnapshotError
+    from research_profile_cache import profile_digest
 
 router = APIRouter(prefix='/analysis', tags=['portfolio-research'])
 ZERO = Decimal(0)
@@ -243,8 +245,9 @@ def _issuer_concentration(cards, profile, *, complete):
         card['explanation'] += f" Проверенные бумаги одной компании вместе занимают {qualifier}{sums[issuer]:.1f}% портфеля."
 
 
-def collect_research(user: Any) -> dict:
-    profile = get_profile(int(user['id']))
+def collect_research(user: Any, *, profile: dict | None = None) -> dict:
+    if profile is None:
+        profile = get_profile(int(user['id']))
     snapshot = details.load_dashboard(user, 'RUB')
     total = details.number(snapshot.get('totalValue', {}).get('value'))
     at = datetime.now(timezone.utc)
@@ -276,5 +279,12 @@ def collect_research(user: Any) -> dict:
 
 @router.get('/research')
 def research(user: Annotated[Any, Depends(backend.current_user)]) -> dict:
-    key = (*details.identity(user), 'research-v2')
-    return details.cached(key, 300, lambda: collect_research(user))
+    profile = get_profile(int(user['id']))
+    digest = profile_digest(profile)
+    key = (*details.identity(user), 'research-v3', digest)
+    result = details.cached(key, 300, lambda: collect_research(user, profile=profile))
+    # A profile edit while broker reads are in flight must not publish a result
+    # labelled with the user's previous limit. Retry against the new snapshot.
+    if profile_digest(get_profile(int(user['id']))) != digest:
+        raise HTTPException(503, detail='research_profile_changed')
+    return result

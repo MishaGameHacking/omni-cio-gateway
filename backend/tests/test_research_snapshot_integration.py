@@ -4,15 +4,15 @@ from decimal import Decimal
 import unittest
 from unittest.mock import Mock, patch
 from fastapi import HTTPException
-from backend.tests.test_portfolio_research_integration import ResearchIntegrationTests
+from backend.tests import test_portfolio_research_integration as research_fixtures
 from backend import portfolio_research as research, portfolio_details as details
 
 
 class SnapshotIntegrationTests(unittest.TestCase):
-    setUp = ResearchIntegrationTests.setUp
-    tearDown = ResearchIntegrationTests.tearDown
-    snapshot = ResearchIntegrationTests.snapshot
-    collect = ResearchIntegrationTests.collect
+    setUp = research_fixtures.ResearchIntegrationTests.setUp
+    tearDown = research_fixtures.ResearchIntegrationTests.tearDown
+    snapshot = research_fixtures.ResearchIntegrationTests.snapshot
+    collect = research_fixtures.ResearchIntegrationTests.collect
 
     def test_invalid_uid_stops_before_optional_broker_reads(self):
         data = self.snapshot()
@@ -87,6 +87,38 @@ class SnapshotIntegrationTests(unittest.TestCase):
         original = deepcopy(data)
         self.collect(data)
         self.assertEqual(data, original)
+
+    def test_profile_is_bound_to_cache_and_collection(self):
+        profile = {'configured': True, 'max_position_percent': 25, 'updated_at': 1}
+        def invoke(key, ttl, load):
+            self.assertEqual(key[-1], research.profile_digest(profile))
+            return load()
+        with patch.object(research, 'get_profile', return_value=profile), \
+             patch.object(details, 'cached', side_effect=invoke), \
+             patch.object(research, 'collect_research', return_value={'state': 'synthetic'}) as collect:
+            response = research.research(self.user)
+        collect.assert_called_once_with(self.user, profile=profile)
+        self.assertEqual(response, {'state': 'synthetic'})
+
+    def test_profile_changed_during_collection_does_not_return_old_limits(self):
+        previous = {'max_position_percent': 25, 'updated_at': 1}
+        changed = {'max_position_percent': 10, 'updated_at': 1}
+        with patch.object(research, 'get_profile', side_effect=[previous, changed]), \
+             patch.object(details, 'cached', return_value={'state': 'old'}):
+            with self.assertRaises(HTTPException) as error:
+                research.research(self.user)
+        self.assertEqual(error.exception.status_code, 503)
+        self.assertEqual(error.exception.detail, 'research_profile_changed')
+
+    def test_cached_reply_is_rechecked_against_current_profile(self):
+        profile = {'configured': True, 'max_position_percent': 25}
+        with patch.object(research, 'get_profile', return_value=profile) as profile_read, \
+             patch.object(details, 'cached', return_value={'state': 'cached'}), \
+             patch.object(research, 'collect_research') as collect:
+            response = research.research(self.user)
+        self.assertEqual(profile_read.call_count, 2)
+        collect.assert_not_called()
+        self.assertEqual(response['state'], 'cached')
 
 
 if __name__ == '__main__':
