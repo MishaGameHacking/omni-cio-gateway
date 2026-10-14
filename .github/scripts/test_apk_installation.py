@@ -9,6 +9,8 @@ import socket
 import subprocess
 import time
 
+from artifact_test_identity import apk_digest, record_install
+
 
 def run(args: list[str], *, timeout: int = 120, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, input=stdin, capture_output=True, text=True,
@@ -51,7 +53,6 @@ def collect_failure_diagnostics(device) -> None:
             diagnostic = device(*command, timeout=10)
             print("EMULATOR_DIAGNOSTIC=" + command[-1] + "\n" + diagnostic.stdout[-18000:], flush=True)
         except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
-            # Preserve the original failed test; collecting evidence cannot fix it.
             print("EMULATOR_DIAGNOSTIC_UNAVAILABLE=" + type(exc).__name__, flush=True)
 
 
@@ -66,6 +67,7 @@ def main() -> None:
     parser.add_argument("--work-dir", required=True, type=Path)
     args = parser.parse_args()
     apk = args.apk.resolve(strict=True)
+    candidate_digest = apk_digest(apk)
     previous = args.previous.resolve(strict=True) if args.previous else None
     sdk = args.sdk.resolve(strict=True)
     work = args.work_dir.resolve()
@@ -95,24 +97,12 @@ def main() -> None:
     failed = True
 
     def device(*command: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-        # The target is explicitly the emulator we started, never an implicit device.
         return run([adb, "-s", serial, *command], timeout=timeout)
 
     def install(label: str, path: Path, update: bool = False) -> None:
-        command = ["install", "--no-streaming"]
-        if update:
-            command.append("-r")
-        output = device(*command, str(path), timeout=240)
-        ok = output.returncode == 0 and "Success" in output.stdout
-        result = {"test": label, "success": ok, "output": (output.stdout + output.stderr).strip()}
-        results.append(result)
-        print("INSTALL_RESULT=" + json.dumps(result, ensure_ascii=True), flush=True)
-        if not ok:
-            raise RuntimeError("APK installation failed: " + label)
+        record_install(device, results, label, path, update=update)
 
     with log_path.open("w", encoding="utf-8") as log:
-        # This Compose app does not require Vulkan. Keep actual GLES rendering,
-        # using Android's documented compatibility option on this disposable AVD.
         process = subprocess.Popen(
             [emulator, "-avd", name, "-port", str(port), "-no-window", "-no-audio",
              "-no-snapshot", "-no-boot-anim", "-gpu", "swiftshader", "-feature", "-Vulkan",
@@ -151,7 +141,9 @@ def main() -> None:
             alive = device("shell", "pidof", package)
             if alive.returncode or not alive.stdout.strip():
                 raise RuntimeError("App process did not remain running")
-            results.append({"test": "activity_launch", "success": True})
+            if apk_digest(apk) != candidate_digest:
+                raise RuntimeError("Candidate changed during emulator checks")
+            results.append({"test": "activity_launch", "success": True, "apk_sha256": candidate_digest})
             print("ACTIVITY_LAUNCH=success", flush=True)
             if args.api == 33 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                 from profile_ui_probe import exercise
@@ -161,7 +153,6 @@ def main() -> None:
             failed = False
         finally:
             log.flush()
-            # Persist even incomplete results before any diagnostic call can fail.
             (work / "install-results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
             if failed:
                 collect_runtime_failure(device)
