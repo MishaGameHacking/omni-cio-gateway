@@ -66,13 +66,14 @@ fun MandatoryUpdateHost(
         while (isActive) {
             checking = true
             try {
+                val verification = ClientVersion.beginVerification()
                 val latest = client.current()
                 release = latest
                 val matches = latest.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT) == ReleaseDecision.CURRENT
                 if (matches) {
                     val token = withContext(Dispatchers.IO) { AuthSessionStore(context).loadAccessToken() }
                     if (token != null) client.acknowledge(token)
-                    ClientVersion.verifiedCurrent()
+                    check(ClientVersion.verifiedCurrent(verification)) { "Сервер сообщил о новой версии во время проверки." }
                 }
                 current = matches
                 feedback = feedback.policyChecked()

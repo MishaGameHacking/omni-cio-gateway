@@ -8,6 +8,7 @@ private const val PREVIEW_TEST_PACKAGE = "ru.omnicio.app.debug"
 /** Offline pure contract checks. Not a PackageInstaller/device-test substitute. */
 internal fun runUpdatePolicyChecks(): Int {
     check(runPolicyReadChecks() == 18)
+    check(runCompatibilityFenceChecks() == 10)
     val release = ReleaseDescriptor(PREVIEW_TEST_PACKAGE,24,"0.6.1-preview","a".repeat(64),4000000,"b".repeat(64),33,"")
     check(release.decision(PREVIEW_TEST_PACKAGE,23,33)==ReleaseDecision.UPDATE_REQUIRED)
     check(release.decision(PREVIEW_TEST_PACKAGE,24,36)==ReleaseDecision.CURRENT)

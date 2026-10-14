@@ -8,6 +8,7 @@ import ru.omnicio.app.BuildConfig
 object ClientVersion {
     private val mutableBlocked = MutableStateFlow(false)
     val blocked: StateFlow<Boolean> = mutableBlocked
+    private val fence = CompatibilityFence { mutableBlocked.value = it }
 
     fun attach(connection: HttpURLConnection) {
         connection.instanceFollowRedirects = false
@@ -16,8 +17,10 @@ object ClientVersion {
     }
 
     fun observeStatus(status: Int) {
-        if (status == 426) mutableBlocked.value = true
+        if (status == 426) fence.reject()
     }
 
-    fun verifiedCurrent() { mutableBlocked.value = false }
+    internal fun beginVerification(): Any = fence.beginVerification()
+
+    internal fun verifiedCurrent(ticket: Any): Boolean = fence.verifiedCurrent(ticket)
 }
