@@ -205,6 +205,17 @@ def wilson_interval(events: int, trials: int) -> tuple[float, float]:
             1. if events == trials else min(1., center+radius))
 
 
+def _check_bootstrap_options(floor_fraction, rows, paths, horizon_steps, block_size, seed, weights):
+    if not 0 <= number(floor_fraction) < 1 or len(rows) < 2:
+        raise ResearchDataError('invalid_capital_floor')
+    if any(type(x) is not int for x in (paths, horizon_steps, block_size, seed)):
+        raise ResearchDataError('invalid_simulation_counts')
+    if not 1 <= block_size <= len(rows) or not 1 <= horizon_steps <= 756 or not 100 <= paths <= 10_000:
+        raise ResearchDataError('simulation_limits_exceeded')
+    if paths * horizon_steps * len(weights) > 5_000_000:
+        raise ResearchDataError('simulation_cpu_budget_exceeded')
+
+
 def bootstrap_capital_floor(weights: Sequence[float], rows: Sequence[Sequence[float]], *,
                             floor_fraction: float, horizon_steps: int, block_size: int,
                             paths: int, seed: int, evidence: Evidence, now: datetime) -> dict:
@@ -217,15 +228,9 @@ def bootstrap_capital_floor(weights: Sequence[float], rows: Sequence[Sequence[fl
     portfolio_scenarios(weights, rows)
     weights = [number(x) for x in weights]
     rows = [[number(x) for x in row] for row in rows]
-    if not 0 <= number(floor_fraction) < 1 or not 2 <= len(rows):
-        raise ResearchDataError('invalid_capital_floor')
-    if any(type(x) is not int for x in (paths, horizon_steps, block_size, seed)):
-        raise ResearchDataError('invalid_simulation_counts')
-    if not 1 <= block_size <= len(rows) or not 1 <= horizon_steps <= 756 or not 100 <= paths <= 10_000:
-        raise ResearchDataError('simulation_limits_exceeded')
-    if paths * horizon_steps * len(weights) > 5_000_000:
-        raise ResearchDataError('simulation_cpu_budget_exceeded')
-    rng = random.Random(seed)  # NOSONAR: S2245 reviewed; statistical row sampling only. See docs/STATISTICAL_RANDOM_REVIEW.md.
+    _check_bootstrap_options(floor_fraction, rows, paths, horizon_steps, block_size, seed, weights)
+    # Local deterministic sampler, never used for credentials or identity.
+    rng = random.Random(seed)
     breaches = 0
     cash = max(0., 1 - math.fsum(weights))
     for _ in range(paths):
@@ -233,7 +238,8 @@ def bootstrap_capital_floor(weights: Sequence[float], rows: Sequence[Sequence[fl
         remaining = horizon_steps
         breached = False
         while remaining > 0 and not breached:
-            start = rng.randrange(len(rows) - block_size + 1)
+            # Reviewed bounded row index only; see docs/STATISTICAL_RANDOM_REVIEW.md.
+            start = rng.randrange(len(rows) - block_size + 1)  # NOSONAR(S2245)
             for row in rows[start:start + min(block_size, remaining)]:
                 values = [v * (1 + number(r)) for v, r in zip(values, row)]
                 remaining -= 1
@@ -269,6 +275,43 @@ def statement_metrics(*, debt, cash, ebitda, ebit, interest, operating_cashflow,
             'warnings': warnings, 'source_id': evidence.source_id}
 
 
+@dataclass(frozen=True)
+class _ReductionTerms:
+    currency: str
+    issuer_cap: Decimal
+    minimum_trade_value: Decimal
+    fee_rate: Decimal
+
+
+def _issuer_reductions(assets, issuer, share, total, terms: _ReductionTerms):
+    issuer_cap = terms.issuer_cap
+    minimum_trade_value = terms.minimum_trade_value
+    fee_rate = terms.fee_rate
+    remaining = total * (share - issuer_cap)
+    actions = []
+    for asset in sorted((a for a in assets if a.issuer == issuer), key=lambda a: a.uid):
+        if not asset.sell_available:
+            continue
+        price = money(asset.price_per_unit)
+        available_lots = (asset.units - asset.blocked_units) // asset.lot_size
+        needed = int((remaining / (price * asset.lot_size * (1 - issuer_cap * fee_rate))).to_integral_value(rounding=ROUND_FLOOR))
+        lots = min(available_lots, max(0, needed))
+        gross = price * lots * asset.lot_size
+        if lots == 0 or gross < minimum_trade_value:
+            continue
+        fees = gross * fee_rate
+        remaining -= gross * (1 - issuer_cap * fee_rate)
+        actions.append({'action': 'consider_reducing', 'instrument_uid': asset.uid,
+                        'ticker': asset.ticker, 'isin': asset.isin, 'name': asset.name,
+                        'lots': lots, 'units': lots * asset.lot_size, 'estimated_gross': str(gross),
+                        'estimated_fee': str(fees), 'currency': terms.currency,
+                        'url': official_instrument_url(asset.asset_class, asset.ticker),
+                        'source_ids': [asset.evidence.source_id],
+                        'explanation': f'На компанию {issuer} приходится {share*100:.1f}% портфеля при вашем ограничении {issuer_cap*100:.1f}%. Можно рассмотреть уменьшение позиции на {lots} лот(а). Это снизит зависимость от одной компании, но продажа может зафиксировать убыток и вызвать налог.',
+                        'requires_user_confirmation_in_broker': True})
+    return actions, remaining
+
+
 def reduction_plan(assets: Sequence[Asset], cash: Decimal, *, base_currency: str,
                    issuer_cap: Decimal, minimum_trade_value: Decimal, fee_rate: Decimal,
                    now: datetime) -> dict:
@@ -284,30 +327,13 @@ def reduction_plan(assets: Sequence[Asset], cash: Decimal, *, base_currency: str
     exposures = exposure_groups(assets, money(cash), base_currency, now)
     total = exposures['total']
     actions, warnings = [], []
+    terms = _ReductionTerms(base_currency, issuer_cap, minimum_trade_value, fee_rate)
     for issuer, share in exposures['groups']['issuer'].items():
         if share <= issuer_cap:
             continue
-        remaining = total * (share - issuer_cap)
-        for asset in sorted((a for a in assets if a.issuer == issuer), key=lambda a: a.uid):
-            if not asset.sell_available:
-                continue
-            price = money(asset.price_per_unit)
-            available_lots = (asset.units - asset.blocked_units) // asset.lot_size
-            needed = int((remaining / (price * asset.lot_size * (1 - issuer_cap * fee_rate))).to_integral_value(rounding=ROUND_FLOOR))
-            lots = min(available_lots, max(0, needed))
-            gross = price * lots * asset.lot_size
-            if lots == 0 or gross < minimum_trade_value:
-                continue
-            fees = gross * fee_rate
-            remaining -= gross * (1 - issuer_cap * fee_rate)
-            actions.append({'action': 'consider_reducing', 'instrument_uid': asset.uid,
-                            'ticker': asset.ticker, 'isin': asset.isin, 'name': asset.name,
-                            'lots': lots, 'units': lots * asset.lot_size, 'estimated_gross': str(gross),
-                            'estimated_fee': str(fees), 'currency': base_currency,
-                            'url': official_instrument_url(asset.asset_class, asset.ticker),
-                            'source_ids': [asset.evidence.source_id],
-                            'explanation': f'На компанию {issuer} приходится {share*100:.1f}% портфеля при вашем ограничении {issuer_cap*100:.1f}%. Можно рассмотреть уменьшение позиции на {lots} лот(а). Это снизит зависимость от одной компании, но продажа может зафиксировать убыток и вызвать налог.',
-                            'requires_user_confirmation_in_broker': True})
+        issuer_actions, remaining = _issuer_reductions(
+            assets, issuer, share, total, terms)
+        actions.extend(issuer_actions)
         if remaining > 0:
             warnings.append(f'Лимит компании {issuer} не достигнут полностью: шаг лота, блокировка или доступность продажи мешают точному выравниванию.')
     return {'actions': actions, 'warnings': warnings, 'automatic_trading': False,
@@ -336,6 +362,51 @@ class BuyLimits:
             raise ResearchDataError('invalid_horizon')
 
 
+def _candidate_credit_reasons(candidate, limits, now):
+    reasons = []
+    if not candidate.buy_available or candidate.qualified_only or candidate.blocked_units:
+        reasons.append('Покупка недоступна либо требует дополнительных прав.')
+    if candidate.units:
+        raise ResearchDataError('new_candidate_must_have_zero_units')
+    if candidate.credit is None:
+        reasons.append('Нет проверенного кредитного рейтинга и оценки риска на ваш срок.')
+    else:
+        candidate.credit.expected_loss(Decimal(1), limits.horizon_days, now)
+        if candidate.credit.default_probability > limits.max_default_probability:
+            reasons.append('Кредитный риск выше заданного вами ограничения.')
+    return reasons
+
+
+def _buy_exposure_reasons(candidate, limits, exposure, gross, total_after):
+    reasons = []
+    for dim, key, cap in (
+        ('issuer', candidate.issuer, limits.max_issuer_fraction),
+        ('sector', candidate.sector, limits.max_sector_fraction),
+        ('asset_class', candidate.asset_class, limits.max_class_fraction.get(candidate.asset_class, Decimal(0))),
+        ('rating_bucket', candidate.rating_bucket, limits.max_rating_fraction.get(candidate.rating_bucket, Decimal(0))),
+    ):
+        previous = exposure['groups'][dim].get(key, Decimal(0)) * exposure['total']
+        if (previous + gross) / total_after > money(cap):
+            reasons.append({'issuer': 'На эту компанию уже приходится слишком большая доля.',
+                            'sector': 'Покупка усилит зависимость от одной отрасли.',
+                            'asset_class': 'Превышается лимит этого класса активов.',
+                            'rating_bucket': 'Превышается лимит бумаг с таким рейтингом.'}[dim])
+    return reasons
+
+
+def _funded_buy_reasons(candidate, limits, exposure, gross, total_after, cash_after):
+    reasons = []
+    if total_after <= 0 or cash_after < 0:
+        reasons.append('На один лот с комиссией не хватает свободных денег.')
+    else:
+        if cash_after / total_after < limits.min_cash_fraction:
+            reasons.append('Покупка затронет ваш денежный резерв.')
+        if gross / total_after > limits.max_trade_fraction:
+            reasons.append('Даже один лот слишком велик относительно вашего капитала.')
+        reasons.extend(_buy_exposure_reasons(candidate, limits, exposure, gross, total_after))
+    return reasons
+
+
 def preview_one_lot_buy(candidate: Asset, positions: Sequence[Asset], cash: Decimal, *,
                         base_currency: str, limits: BuyLimits, fee_rate: Decimal,
                         daily_traded_value: Decimal, liquidity_evidence: Evidence,
@@ -356,41 +427,13 @@ def preview_one_lot_buy(candidate: Asset, positions: Sequence[Asset], cash: Deci
     exposure = exposure_groups(positions, money(cash), base_currency, now)
     if any(p.uid == candidate.uid for p in positions):
         raise ResearchDataError('increment_existing_position_requires_separate_plan')
-    reasons = []
-    if not candidate.buy_available or candidate.qualified_only or candidate.blocked_units:
-        reasons.append('Покупка недоступна либо требует дополнительных прав.')
-    if candidate.units:
-        raise ResearchDataError('new_candidate_must_have_zero_units')
-    if candidate.credit is None:
-        reasons.append('Нет проверенного кредитного рейтинга и оценки риска на ваш срок.')
-    else:
-        candidate.credit.expected_loss(Decimal(1), limits.horizon_days, now)
-        if candidate.credit.default_probability > limits.max_default_probability:
-            reasons.append('Кредитный риск выше заданного вами ограничения.')
+    reasons = _candidate_credit_reasons(candidate, limits, now)
     cash = money(cash)
     gross = money(candidate.price_per_unit) * candidate.lot_size
     fee = gross * fee_rate
     total_after = exposure['total'] - fee
     cash_after = cash - gross - fee
-    if total_after <= 0 or cash_after < 0:
-        reasons.append('На один лот с комиссией не хватает свободных денег.')
-    else:
-        if cash_after / total_after < limits.min_cash_fraction:
-            reasons.append('Покупка затронет ваш денежный резерв.')
-        if gross / total_after > limits.max_trade_fraction:
-            reasons.append('Даже один лот слишком велик относительно вашего капитала.')
-        for dim, key, cap in (
-            ('issuer', candidate.issuer, limits.max_issuer_fraction),
-            ('sector', candidate.sector, limits.max_sector_fraction),
-            ('asset_class', candidate.asset_class, limits.max_class_fraction.get(candidate.asset_class, Decimal(0))),
-            ('rating_bucket', candidate.rating_bucket, limits.max_rating_fraction.get(candidate.rating_bucket, Decimal(0))),
-        ):
-            previous = exposure['groups'][dim].get(key, Decimal(0)) * exposure['total']
-            if (previous + gross) / total_after > money(cap):
-                reasons.append({'issuer': 'На эту компанию уже приходится слишком большая доля.',
-                                'sector': 'Покупка усилит зависимость от одной отрасли.',
-                                'asset_class': 'Превышается лимит этого класса активов.',
-                                'rating_bucket': 'Превышается лимит бумаг с таким рейтингом.'}[dim])
+    reasons.extend(_funded_buy_reasons(candidate, limits, exposure, gross, total_after, cash_after))
     if gross > daily * limits.max_daily_liquidity_fraction:
         reasons.append('Размер покупки слишком велик относительно обычного объёма торгов.')
     return {'eligible': not reasons, 'reasons': reasons, 'ticker': candidate.ticker, 'isin': candidate.isin,

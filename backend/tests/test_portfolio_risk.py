@@ -19,8 +19,10 @@ def asset(uid='a', units=100, issuer='company-a', sector='energy'):
 class PortfolioRiskTests(unittest.TestCase):
     def test_credit_loss_requires_matched_horizon_and_calibration(self):
         self.assertEqual(CREDIT.expected_loss(D(10000), 365, NOW), D('60.000'))
-        with self.assertRaises(ResearchDataError): CREDIT.expected_loss(D(1), 30, NOW)
-        with self.assertRaises(ResearchDataError): replace(CREDIT, withdrawn=True).expected_loss(D(1), 365, NOW)
+        unit = D(1)
+        withdrawn = replace(CREDIT, withdrawn=True)
+        with self.assertRaises(ResearchDataError): CREDIT.expected_loss(unit, 30, NOW)
+        with self.assertRaises(ResearchDataError): withdrawn.expected_loss(unit, 365, NOW)
 
     def test_rating_scales_never_silently_merge(self):
         self.assertNotEqual(CREDIT.bucket, replace(CREDIT, scale='global').bucket)
@@ -38,11 +40,14 @@ class PortfolioRiskTests(unittest.TestCase):
         self.assertEqual(result['groups']['issuer']['company-a'],D(2)/D(3))
 
     def test_duplicates_unknown_metadata_or_foreign_currency_fail_closed(self):
+        cash = D(1)
         for items in ([asset(),asset()], [replace(asset(),issuer='')], [replace(asset(),currency='USD')]):
-            with self.assertRaises(ResearchDataError): exposure_groups(items,D(1),'RUB',NOW)
+            with self.assertRaises(ResearchDataError): exposure_groups(items,cash,'RUB',NOW)
 
     def test_fund_lookthrough_not_assumed(self):
-        with self.assertRaises(ResearchDataError): exposure_groups([replace(asset(),asset_class='etf')], D(1), 'RUB', NOW)
+        items = [replace(asset(), asset_class='etf')]
+        cash = D(1)
+        with self.assertRaises(ResearchDataError): exposure_groups(items, cash, 'RUB', NOW)
 
     def test_fractional_tail_expected_shortfall(self):
         result=expected_shortfall([10,8,2,0],.625)

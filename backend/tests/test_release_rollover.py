@@ -78,8 +78,10 @@ class ReleaseRolloverTests(unittest.TestCase):
         self.assertEqual(self.channel.published(PACKAGE, release.filename), release)
 
     def test_future_publication_does_not_activate(self):
+        report = self.report()
+        future = int(time.time()) + 3600
         with self.assertRaises(ReleaseUnavailable):
-            publish(self.root, self.apk, self.report(), expected_certificate=CERT, now=int(time.time()) + 3600)
+            publish(self.root, self.apk, report, expected_certificate=CERT, now=future)
         self.assertFalse((self.root / PACKAGE / 'current.json').exists())
 
     def test_future_tampered_manifest_not_current(self):
@@ -111,8 +113,10 @@ class ReleaseRolloverTests(unittest.TestCase):
 
     def test_changed_certificate_not_hidden_by_idempotence(self):
         old = self.publish()
+        changed_certificate = 'd' * 64
+        report = self.report(certificate=changed_certificate)
         with self.assertRaisesRegex(ReleaseUnavailable, 'certificate_changed'):
-            publish(self.root, self.apk, self.report(certificate='d' * 64), expected_certificate='d' * 64)
+            publish(self.root, self.apk, report, expected_certificate=changed_certificate)
         self.assertEqual(self.channel.current(PACKAGE), old)
 
     def test_changed_metadata_not_hidden_by_idempotence(self):
@@ -173,8 +177,10 @@ class ReleaseRolloverTests(unittest.TestCase):
             self.assertTrue((self.root / PACKAGE / '.publishing').is_file())
 
     def test_directory_is_not_an_apk(self):
+        directory = Path(self.temp.name)
+        report = self.report()
         with self.assertRaises(ReleaseUnavailable):
-            publish(self.root, Path(self.temp.name), self.report(), expected_certificate=CERT)
+            publish(self.root, directory, report, expected_certificate=CERT)
 
 if __name__ == '__main__':
     unittest.main()
