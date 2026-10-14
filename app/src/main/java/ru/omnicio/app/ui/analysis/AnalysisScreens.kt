@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.analysis.*
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.research.PortfolioResearchPanel
 import java.time.Instant
 
 private data class AnalysisData<T>(val value: T? = null, val problem: String? = null,
@@ -159,6 +160,8 @@ private fun IdeasContent(token: String, onPortfolioClick: () -> Unit, onProfileC
                 ?: "Запрос передаётся серверу. Платная модель нужна не для каждого обновления: решение принимает серверный контроль изменений и бюджета.",
                 if (refreshing) "Отправляем…" else "Обновить", !refreshing) { refreshing = true } }
             loadStatus(state) { reload++ }
+            // Preserve the independently loaded, bounded research section from main.
+            item(key = "portfolio-research") { PortfolioResearchPanel(token) }
             state.value?.let { payload ->
                 item { StatusCard(ideasHeading(payload.state), payload.message, accent = payload.state == "ready") }
                 if (payload.state == "profile_required") item {

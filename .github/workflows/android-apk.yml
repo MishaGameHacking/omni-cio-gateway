@@ -14,9 +14,6 @@ on:
       - ".github/scripts/verify_apk.py"
       - ".github/scripts/test_apk_installation.py"
       - ".github/scripts/validate_distribution.py"
-      - ".github/scripts/build_release_manifest.py"
-      - ".github/scripts/publish_moscow_release.sh"
-      - ".github/scripts/update-help.html"
       - ".github/scripts/tests/**"
       - ".github/actions/check-apk/**"
       - ".github/apk-signing-certificate.sha256"
@@ -29,11 +26,11 @@ concurrency:
 
 jobs:
   build:
-    name: Build, verify and publish updater-capable APK
+    name: Build and verify downloadable APK
     permissions:
       contents: write
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 50
+    timeout-minutes: 40
 
     steps:
       - name: Checkout source
@@ -98,16 +95,11 @@ jobs:
       - name: Verify artifact and actual installation before publication
         uses: ./.github/actions/check-apk
 
-      - name: Build immutable update manifest
-        shell: cmd
-        run: |
-          py -3 .github\scripts\build_release_manifest.py ^
-            --report app\build\outputs\apk\preview\apk-verification.json ^
-            --output app\build\outputs\apk\preview\current.json ^
-            --notes "Updater-capable Analyst AI Spectrum bootstrap. Future versions can be downloaded and verified inside the app. Android may still require system confirmation."
-          if errorlevel 1 exit /b 1
-
+      # A source merge still runs every build/install check above, but does not
+      # release an intermediate binary or activate the mandatory update channel.
+      # Publication is a separate explicit operation from the checked main.
       - name: Publish verified APK to GitHub Releases
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
@@ -118,12 +110,14 @@ jobs:
             const repo = context.repo.repo;
             const sha = context.sha;
             const reportPath = 'app/build/outputs/apk/preview/apk-verification.json';
-            const manifestPath = 'app/build/outputs/apk/preview/current.json';
             const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            // Version 22 is the installed 0.5.1. Changed bytes must not reuse it.
+            if (!Number.isSafeInteger(report.version_code) || report.version_code <= 22) {
+              throw new Error('A new versionCode is required before publishing changed APK bytes');
+            }
             const data = fs.readFileSync('app/build/outputs/apk/preview/app-preview.apk');
             const hash = crypto.createHash('sha256').update(data).digest('hex');
-            if (hash !== report.sha256 || hash !== manifest.sha256 || report.device_install_test !== 'passed_on_emulators_not_a_physical_phone') {
+            if (hash !== report.sha256 || report.device_install_test !== 'passed_on_emulators_not_a_physical_phone') {
               throw new Error('APK was not fully validated or changed after validation');
             }
             const version = report.version_name;
@@ -131,10 +125,10 @@ jobs:
             const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
             const title = `Analyst AI ${version}`;
             const body = [
-              'Signed, non-debuggable updater-capable preview APK. Android 13+; application ID ru.omnicio.app.debug.',
-              'This is the one manual bootstrap installation required before future in-app updates can work.',
-              'Future APKs are fetched from the Moscow Analyst AI server and verified by size, SHA-256, package name, versionCode and signing certificate before Android installer handoff.',
-              'Android may require user confirmation and permission to install updates; silent installation or automatic reopening is not guaranteed.',
+              'Signed, non-debuggable preview APK. Android 13+; application ID ru.omnicio.app.debug.',
+              'Uses the existing test signing key, not a production-store signing key.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation and launch on Android 13/16 x86_64 emulators verified.',
+              'A physical Samsung installation failure is not claimed to be reproduced or fixed by emulator tests.',
               `SHA-256: ${hash}`,
               `Signing certificate SHA-256: ${report.certificate_sha256}`,
             ].join('\n\n');
@@ -148,11 +142,7 @@ jobs:
               core.notice(`APK already published: ${release.html_url}`);
               return;
             }
-            const files = [
-              [assetName, data, 'application/vnd.android.package-archive'],
-              ['apk-verification.json', fs.readFileSync(reportPath), 'application/json'],
-              ['current.json', fs.readFileSync(manifestPath), 'application/json'],
-            ];
+            const files = [[assetName, data, 'application/vnd.android.package-archive'], ['apk-verification.json', fs.readFileSync(reportPath), 'application/json']];
             for (const [name, bytes, type] of files) {
               for (const asset of release.assets.filter(a => a.name === name)) {
                 await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id:asset.id});
@@ -167,12 +157,3 @@ jobs:
             release = (await github.rest.repos.updateRelease({owner, repo, release_id:release.id, name:title, body, draft:false, prerelease:true, make_latest:'false'})).data;
             core.notice(`APK published and verified: ${release.html_url}`);
             await core.summary.addHeading(title).addRaw(`APK SHA-256: ${hash}\n\n${body}`).write();
-
-      - name: Publish APK and mandatory manifest to Moscow server
-        shell: bash
-        env:
-          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-          APK_PATH: ${{ github.workspace }}\app\build\outputs\apk\preview\app-preview.apk
-          MANIFEST_PATH: ${{ github.workspace }}\app\build\outputs\apk\preview\current.json
-          HELP_PATH: ${{ github.workspace }}\.github\scripts\update-help.html
-        run: .github/scripts/publish_moscow_release.sh

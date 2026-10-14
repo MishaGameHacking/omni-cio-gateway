@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: backend-ci-${{ github.event.pull_request.number || github.run_id }}
@@ -84,3 +85,36 @@ jobs:
           set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
           "%BACKEND_CI_VENV%\Scripts\python.exe" -c "from fastapi.testclient import TestClient; from backend.app import app; c=TestClient(app); c.__enter__(); r=c.get('/health'); assert r.status_code == 200 and r.json() == {'status':'ok'}; spec=c.get('/openapi.json'); assert spec.status_code == 200; c.__exit__(None,None,None)"
           if errorlevel 1 exit /b 1
+
+      - name: Read exact-head Sonar findings for remediation
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        timeout-minutes: 2
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const ref = context.payload.pull_request.head.sha;
+            let sonar = null;
+            for (let attempt = 0; attempt < 12; attempt++) {
+              const checks = await github.paginate(github.rest.checks.listForRef, {
+                ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
+              });
+              sonar = checks.find(check => check.head_sha === ref && check.status === 'completed');
+              if (sonar) break;
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            if (!sonar) {
+              core.warning('Exact-head Sonar result is not ready; its independent required gate remains unchanged.');
+              return;
+            }
+            core.info('SONAR_CHECK=' + JSON.stringify({head:ref,id:sonar.id,conclusion:sonar.conclusion}));
+            const annotations = await github.paginate(github.rest.checks.listAnnotations, {
+              ...context.repo, check_run_id:sonar.id, per_page:100,
+            });
+            for (const item of annotations) {
+              core.info('SONAR_ANNOTATION=' + JSON.stringify({
+                path:item.path,start_line:item.start_line,end_line:item.end_line,
+                level:item.annotation_level,title:item.title,message:item.message,
+              }));
+            }
+            core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
