@@ -68,8 +68,9 @@ class ProfileLaunchTests(unittest.TestCase):
 
     def test_command_failure_not_swallowed(self):
         command = Mock(side_effect=RuntimeError('adb disconnected'))
+        wait = Mock()
         with self.assertRaises(RuntimeError):
-            launch_profile(command, tree, Mock())
+            launch_profile(command, tree, wait)
 
     def test_unresumed_activity_does_not_reuse_old_tree(self):
         command = Mock(side_effect=['Status: ok', 'lastResumedActivity ' + ACTIVITY])
