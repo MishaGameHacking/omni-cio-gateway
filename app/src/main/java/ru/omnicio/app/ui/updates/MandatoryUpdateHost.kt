@@ -19,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.CancellationException
@@ -47,7 +50,7 @@ fun MandatoryUpdateHost(
     val scope = rememberCoroutineScope()
     var release by remember { mutableStateOf<ReleaseDescriptor?>(null) }
     var current by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var feedback by remember { mutableStateOf(UpdateGateFeedback()) }
     var checking by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
@@ -72,11 +75,11 @@ fun MandatoryUpdateHost(
                     ClientVersion.verifiedCurrent()
                 }
                 current = matches
-                error = null
+                feedback = feedback.policyChecked()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 current = false
-                error = "Не удалось проверить актуальность версии. Проверьте интернет и повторите попытку."
+                feedback = feedback.policyChecked("Не удалось проверить актуальность версии. Проверьте интернет и повторите попытку.")
             } finally { checking = false }
             delay(60_000)
         }
@@ -86,7 +89,7 @@ fun MandatoryUpdateHost(
         if (busy) return
         busy = true
         progressFlow.value = 0
-        error = null
+        feedback = feedback.operationStarted()
         UpdateInstaller.statusText.value = null
         scope.launch {
             try {
@@ -94,7 +97,7 @@ fun MandatoryUpdateHost(
                 check(client.current() == chosen) { "Вышла более новая сборка. Повторите проверку." }
                 UpdateInstaller.install(context, apk, chosen)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = failure.message ?: "Не удалось установить обновление. Повторите попытку." }
+            catch (failure: Exception) { feedback = feedback.operationFailed(failure.message ?: "Не удалось установить обновление. Повторите попытку.") }
             finally { busy = false }
         }
     }
@@ -103,7 +106,7 @@ fun MandatoryUpdateHost(
         val chosen = awaitingPermission
         awaitingPermission = null
         if (chosen != null && context.packageManager.canRequestPackageInstalls()) startUpdate(chosen)
-        else error = "Для обновления разрешите установку из Analyst AI. Доступ к старой версии пока приостановлен."
+        else feedback = feedback.operationFailed("Для обновления разрешите установку из Analyst AI. Доступ к старой версии пока приостановлен.")
     }
     val confirmationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { retry++ }
     LaunchedEffect(approval, active) {
@@ -111,7 +114,7 @@ fun MandatoryUpdateHost(
         if (confirmation != null && active) {
             UpdateInstaller.approval.value = null
             try { confirmationLauncher.launch(confirmation) }
-            catch (_: Exception) { error = "Откройте уведомление Android для подтверждения установки или повторите попытку." }
+            catch (_: Exception) { feedback = feedback.operationFailed("Откройте уведомление Android для подтверждения установки или повторите попытку.") }
         }
     }
 
@@ -130,7 +133,7 @@ fun MandatoryUpdateHost(
                 else {
                     awaitingPermission = chosen
                     try { permissionLauncher.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))) }
-                    catch (_: Exception) { awaitingPermission = null; error = "Android не открыл разрешение установки. Проверьте настройки Analyst AI." }
+                    catch (_: Exception) { awaitingPermission = null; feedback = feedback.operationFailed("Android не открыл разрешение установки. Проверьте настройки Analyst AI.") }
                 }
             }
         },
@@ -138,7 +141,7 @@ fun MandatoryUpdateHost(
         close = close,
     )
     AnalystTheme {
-        blockedContent(UpdateGateUi(chosen, decision, BuildConfig.VERSION_NAME, checking, busy, progress, error, installationStatus), actions)
+        blockedContent(UpdateGateUi(chosen, decision, BuildConfig.VERSION_NAME, checking, busy, progress, feedback.message, installationStatus), actions)
     }
 }
 
@@ -170,13 +173,14 @@ private fun DefaultUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions)
                 Text("Скачивание и проверка: ${state.progressPercent}%")
                 LinearProgressIndicator(progress = { state.progressPercent / 100f }, modifier = Modifier.fillMaxWidth())
             }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
             state.installationStatus?.let { Text(it) }
             if (state.decision == ReleaseDecision.UPDATE_REQUIRED) {
-                Button(enabled = state.canUpdate, onClick = actions.update, modifier = Modifier.fillMaxWidth()) { Text("Обновить приложение") }
+                Button(enabled = state.canUpdate, onClick = actions.update, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить приложение") }
             }
-            TextButton(enabled = state.canRetry, onClick = actions.retry) { Text("Повторить проверку") }
-            TextButton(onClick = actions.close) { Text("Закрыть") }
+            TextButton(enabled = state.canRetry, onClick = actions.retry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Повторить проверку") }
+            TextButton(onClick = actions.close, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Закрыть") }
         }
     }
 }
