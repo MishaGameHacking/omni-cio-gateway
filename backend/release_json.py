@@ -95,7 +95,7 @@ def decode_release_json(content: bytes) -> dict:
                            object_pairs_hook=_unique_object,
                            parse_constant=_nonfinite, parse_float=_finite_float, parse_int=_signed_long)
         _bounded_tree(value)
-    except (ValueError, UnicodeError, RecursionError) as error:
+    except (ValueError, RecursionError) as error:
         raise ReleaseJsonError('invalid_release_json') from error
     if not isinstance(value, dict):
         raise ReleaseJsonError('release_json_object_required')
@@ -109,7 +109,7 @@ def encode_release_json(value: dict) -> bytes:
     try:
         content = json.dumps(value, ensure_ascii=False, separators=(',', ':'),
                              allow_nan=False).encode('utf-8', errors='strict')
-    except (TypeError, ValueError, UnicodeError, RecursionError) as error:
+    except (TypeError, ValueError, RecursionError) as error:
         raise ReleaseJsonError('invalid_release_json') from error
     if not 0 < len(content) <= MAX_RELEASE_JSON_BYTES:
         raise ReleaseJsonError('invalid_release_json_size')
