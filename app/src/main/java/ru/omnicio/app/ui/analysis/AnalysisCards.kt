@@ -1,12 +1,15 @@
 package ru.omnicio.app.ui.analysis
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -177,17 +180,18 @@ internal fun SliderCard(title: String, value: Double, range: ClosedFloatingPoint
         Slider(value = if (valid) value.toFloat() else range.start,
             onValueChange = { onValueChange(selectedProfilePercent(it, range)) },
             valueRange = range, steps = profileSliderSteps(range), enabled = enabled && valid,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = title })
     }
 }
 
 @Composable
 internal fun SwitchCard(title: String, checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
     SpectrumCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
+            Switch(checked = checked, enabled = enabled, onCheckedChange = null)
         }
     }
 }

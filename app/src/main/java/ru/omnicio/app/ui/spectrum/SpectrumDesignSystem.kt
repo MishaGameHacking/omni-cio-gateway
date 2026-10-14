@@ -21,10 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -90,6 +92,8 @@ fun SpectrumBackground(
         ),
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            // A transient zero-size layout must not create an invalid radial shader.
+            if (size.minDimension <= 0f) return@Canvas
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(palette.violet.copy(alpha = if (dark) 0.18f else 0.08f), Color.Transparent),
@@ -123,7 +127,7 @@ fun SpectrumCard(
     val palette = LocalSpectrumPalette.current
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val shape = RoundedCornerShape(24.dp)
-    val interactive = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+    val interactive = if (onClick == null) Modifier else Modifier.clip(shape).clickable(role = Role.Button, onClick = onClick)
     Card(
         modifier = modifier.then(interactive),
         shape = shape,

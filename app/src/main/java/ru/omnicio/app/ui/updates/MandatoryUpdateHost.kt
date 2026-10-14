@@ -108,21 +108,17 @@ fun MandatoryUpdateHost(
         if (chosen != null && context.packageManager.canRequestPackageInstalls()) startUpdate(chosen)
         else feedback = feedback.operationFailed("Для обновления разрешите установку из Analyst AI. Доступ к старой версии пока приостановлен.")
     }
-    val confirmationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { retry++ }
-    LaunchedEffect(approval, active) {
-        val confirmation = approval
-        if (confirmation != null && active) {
-            UpdateInstaller.approval.value = null
-            try { confirmationLauncher.launch(confirmation) }
-            catch (_: Exception) { feedback = feedback.operationFailed("Откройте уведомление Android для подтверждения установки или повторите попытку.") }
-        }
-    }
+    InstallConfirmation(
+        approval = approval, active = active,
+        onResult = { retry++ },
+        onFailure = { feedback = feedback.operationFailed(it) },
+    )
 
     if (current && !serverBlocked) {
         contentState.SaveableStateProvider("verified-client-content") { content() }
         return
     }
-    val close: () -> Unit = { activity?.moveTaskToBack(true); Unit }
+    val close: () -> Unit = { activity?.moveTaskToBack(true) }
     BackHandler(onBack = close)
     val chosen = release
     val decision = chosen?.decision(BuildConfig.APPLICATION_ID, BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT)
@@ -142,6 +138,21 @@ fun MandatoryUpdateHost(
     )
     AnalystTheme {
         blockedContent(UpdateGateUi(chosen, decision, BuildConfig.VERSION_NAME, checking, busy, progress, feedback.message, installationStatus), actions)
+    }
+}
+
+/** OS consent is separate from policy and never declares the installed version current. */
+@Composable
+private fun InstallConfirmation(approval: Intent?, active: Boolean, onResult: () -> Unit, onFailure: (String) -> Unit) {
+    val finished by rememberUpdatedState(onResult)
+    val failed by rememberUpdatedState(onFailure)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { finished() }
+    LaunchedEffect(approval, active) {
+        if (approval == null || !active) return@LaunchedEffect
+        UpdateInstaller.approval.value = null
+        try { launcher.launch(approval) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { failed("Откройте уведомление Android для подтверждения установки или повторите попытку.") }
     }
 }
 
