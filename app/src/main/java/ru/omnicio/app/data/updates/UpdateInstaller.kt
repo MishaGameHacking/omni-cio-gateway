@@ -47,6 +47,7 @@ object UpdateInstaller {
             submitInstallSession(
                 open = {
                     register(prefs, id, nonce)
+                    clearNotification(context)
                     installer.openSession(id)
                 },
                 stage = { session -> writeArchive(session, file, release) { ensureActive() } },
@@ -123,6 +124,11 @@ object UpdateInstaller {
         }
     }
 
+    internal fun clearNotification(context: Context) {
+        runCatching { context.getSystemService(NotificationManager::class.java)?.cancel(730) }
+            .onFailure { Log.w("AnalystUpdate", "Не удалось убрать уведомление предыдущей установочной сессии.") }
+    }
+
     internal fun notifyAppReady(context: Context) {
         // Resolve the canonical launcher in the newly installed package. Spectrum
         // must return through BootstrapActivity, not straight to private MainActivity.
@@ -156,13 +162,14 @@ class InstallResultReceiver : BroadcastReceiver() {
             if (session < 0 || !UpdateInstaller.owns(prefs, session, nonce) ||
                 intent.getIntExtra("expected_session", -2) != session ||
                 intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -2) != session) return
-            when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+            when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                     val confirmation = runCatching { intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) }.getOrNull()
                     if (confirmation == null) {
                         runCatching { context.packageManager.packageInstaller.abandonSession(session) }
                         prefs.edit().remove("session").remove("nonce").apply()
                         UpdateInstaller.approval.value = null
+                        UpdateInstaller.clearNotification(context)
                         UpdateInstaller.statusText.value = "Android не вернул окно подтверждения. Повторите установку обновления."
                     } else {
                         UpdateInstaller.approval.value = confirmation
@@ -176,14 +183,26 @@ class InstallResultReceiver : BroadcastReceiver() {
                     UpdateInstaller.statusText.value = "Обновление установлено. Откройте Analyst AI."
                     UpdateInstaller.notifyAppReady(context)
                 }
-                else -> {
-                    prefs.edit().remove("session").remove("nonce").apply()
-                    UpdateInstaller.approval.value = null
-                    // Never display unbounded/vendor status text or installer internals.
-                    UpdateInstaller.statusText.value = "Android не установил обновление. Оно не удалило ваши данные. Можно повторить попытку."
-                }
+                else -> terminalFailure(context, prefs, status)
             }
         }
+    }
+
+    private fun terminalFailure(context: Context, prefs: SharedPreferences, status: Int) {
+        prefs.edit().remove("session").remove("nonce").apply()
+        UpdateInstaller.approval.value = null
+        UpdateInstaller.clearNotification(context)
+        val reason = when (status) {
+            PackageInstaller.STATUS_FAILURE_ABORTED -> InstallFailureReason.ABORTED
+            PackageInstaller.STATUS_FAILURE_BLOCKED -> InstallFailureReason.BLOCKED
+            PackageInstaller.STATUS_FAILURE_CONFLICT -> InstallFailureReason.CONFLICT
+            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> InstallFailureReason.INCOMPATIBLE
+            PackageInstaller.STATUS_FAILURE_INVALID -> InstallFailureReason.INVALID
+            PackageInstaller.STATUS_FAILURE_STORAGE -> InstallFailureReason.STORAGE
+            else -> InstallFailureReason.OTHER
+        }
+        // Only the validated system status selects a predefined explanation.
+        UpdateInstaller.statusText.value = installFailureMessage(reason)
     }
 }
 
