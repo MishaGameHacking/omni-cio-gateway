@@ -606,3 +606,9 @@ app.include_router(portfolio_details_router)
 
 
 client_updates.install_routes(app, connect, session_user)
+
+try:
+    from .portfolio_research import router as portfolio_research_router
+except ImportError:
+    from portfolio_research import router as portfolio_research_router
+app.include_router(portfolio_research_router)

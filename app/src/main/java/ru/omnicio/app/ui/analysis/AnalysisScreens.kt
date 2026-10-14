@@ -206,6 +206,10 @@ fun IdeasScreen(
                 )
             }
 
+            item {
+                ru.omnicio.app.ui.research.PortfolioResearchPanel(accessToken)
+            }
+
             when (val current = state) {
                 LoadingState.Loading -> item { LoadingCard() }
                 is LoadingState.Error -> item {
