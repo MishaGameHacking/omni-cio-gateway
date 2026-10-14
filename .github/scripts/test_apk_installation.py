@@ -9,8 +9,6 @@ import socket
 import subprocess
 import time
 
-from artifact_test_identity import apk_digest, record_install
-
 
 def run(args: list[str], *, timeout: int = 120, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, input=stdin, capture_output=True, text=True,
@@ -57,6 +55,7 @@ def collect_failure_diagnostics(device) -> None:
 
 
 def main() -> None:
+    from artifact_test_identity import apk_digest, record_install
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
 
     parser = argparse.ArgumentParser()

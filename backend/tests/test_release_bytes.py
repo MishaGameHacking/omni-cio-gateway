@@ -30,20 +30,23 @@ class ByteStreamTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), b'')
 
     def test_truncated_source_rejected(self):
+        source, size = BytesIO(DATA[:-1]), len(DATA)
         with self.assertRaisesRegex(ArtifactStreamError, 'size_changed'):
-            copy_and_hash(BytesIO(DATA[:-1]), len(DATA))
+            copy_and_hash(source, size)
 
     def test_changed_same_size_bytes_rejected(self):
         wrong = sha256(b'x' * len(DATA)).hexdigest()
+        source, size = BytesIO(DATA), len(DATA)
         with self.assertRaisesRegex(ArtifactStreamError, 'checksum_changed'):
-            copy_and_hash(BytesIO(DATA), len(DATA), expected_sha256=wrong)
+            copy_and_hash(source, size, expected_sha256=wrong)
 
     def test_short_writes_not_silently_successful(self):
         class ShortWriter:
             def write(self, chunk):
                 return len(chunk) - 1
+        source, size, output = BytesIO(DATA), len(DATA), ShortWriter()
         with self.assertRaisesRegex(ArtifactStreamError, 'short_write'):
-            copy_and_hash(BytesIO(DATA), len(DATA), ShortWriter())
+            copy_and_hash(source, size, output)
 
     def test_invalid_bounds_rejected_before_read(self):
         for size in (0, -1, True, 10.0, 256 * 1024 * 1024 + 1):
@@ -54,16 +57,18 @@ class ByteStreamTests(unittest.TestCase):
 
     def test_invalid_digest_rejected_before_read(self):
         source = BytesIO(DATA)
+        size = len(DATA)
         with self.assertRaises(ArtifactStreamError):
-            copy_and_hash(source, len(DATA), expected_sha256='bad')
+            copy_and_hash(source, size, expected_sha256='bad')
         self.assertEqual(source.tell(), 0)
 
     def test_io_exception_propagates(self):
         class Broken:
             def read(self, size):
                 raise OSError('synthetic failure')
+        source, size = Broken(), len(DATA)
         with self.assertRaises(OSError):
-            copy_and_hash(Broken(), len(DATA))
+            copy_and_hash(source, size)
 
     def test_caller_owns_streams(self):
         source, output = BytesIO(DATA), BytesIO()
@@ -75,8 +80,9 @@ class ByteStreamTests(unittest.TestCase):
         class NonBlocking:
             def read(self, size):
                 return None
+        source, size = NonBlocking(), len(DATA)
         with self.assertRaises(ArtifactStreamError):
-            copy_and_hash(NonBlocking(), len(DATA))
+            copy_and_hash(source, size)
 
 
 if __name__ == '__main__':
