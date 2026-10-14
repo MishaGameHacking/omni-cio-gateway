@@ -88,18 +88,10 @@ fun PortfolioScreen(
                             item(key = "no-accounts") { CompactCard { Text("Доступных счетов не найдено") } }
                         }
                         items(snapshot.accounts, key = { "account:${it.id}" }) { item ->
-                            CompactCard {
-                                AccountSummaryHeading(item) { accountId = item.id; section = 0 }
-                                item.positions.take(5).forEach { position -> PositionLine(position) { positionDetails = position } }
-                                if (item.positions.size > 5 || item.virtualPositions.isNotEmpty()) {
-                                    TextButton(onClick = { accountId = item.id; section = 0 }) { Text("Все позиции (${item.positions.size})") }
-                                }
-                                if (item.positions.isEmpty()) Notice("Позиции отсутствуют")
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    TextButton(onClick = { accountId = item.id; section = 1 }) { Text(OperationsTitle) }
-                                    TextButton(onClick = { accountId = item.id; section = 3 }) { Text(AnalyticsTitle) }
-                                }
-                            }
+                            AccountPreviewCard(item,
+                                onOpen = { accountId = item.id; section = 0 },
+                                onSection = { target -> accountId = item.id; section = target },
+                                onPosition = { positionDetails = it })
                         }
                         item(key = "structure") {
                             CompactCard {
@@ -126,6 +118,66 @@ fun PortfolioScreen(
 }
 
 @Composable
+private fun AccountPreviewCard(
+    account: PortfolioAccount, onOpen: () -> Unit,
+    onSection: (Int) -> Unit, onPosition: (PortfolioPosition) -> Unit,
+) {
+    CompactCard {
+        AccountSummaryHeading(account, onOpen)
+        account.positions.take(5).forEach { position -> PositionLine(position) { onPosition(position) } }
+        if (account.positions.size > 5 || account.virtualPositions.isNotEmpty()) {
+            TextButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Все позиции (${account.positions.size})")
+            }
+        }
+        if (account.positions.isEmpty()) Notice("Позиции отсутствуют")
+        PortfolioShortcuts(onSection = onSection)
+    }
+}
+
+@Composable
+private fun PortfolioShortcuts(onSection: (Int) -> Unit, enabled: Boolean = true) {
+    val fontScale = LocalDensity.current.fontScale
+    val choices = listOf(OperationsTitle to 1, AnalyticsTitle to 3)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (portfolioStackedLayout(maxWidth.value, fontScale)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                choices.forEach { (title, target) ->
+                    FilledTonalButton(onClick = { onSection(target) }, enabled = enabled,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(title) }
+                }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                choices.forEach { (title, target) ->
+                    FilledTonalButton(onClick = { onSection(target) }, enabled = enabled,
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(title) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReturnSummaryRow(title: String, amount: MoneyAmount?, percent: ApiDecimal?) {
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (portfolioStackedLayout(maxWidth.value, fontScale)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                SignedAmount(amount, percent)
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Text(title, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.TopEnd) { SignedAmount(amount, percent) }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AccountSummaryHeading(account: PortfolioAccount, open: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = open)) {
@@ -148,9 +200,6 @@ private fun AccountHeadingText(account: PortfolioAccount) {
     Text(account.totalValue.moneyText(), fontSize = 23.sp, fontWeight = FontWeight.Bold)
     Text(account.name + " ›", style = MaterialTheme.typography.bodyLarge)
 }
-
-@Composable
-private fun NoticeInline(text: String) { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
 
 @Composable
 private fun AccountScreen(
@@ -181,10 +230,7 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
             CompactCard {
                 Text(account.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency), fontWeight = FontWeight.Bold, fontSize = 30.sp)
                 DataRow("Текущая доходность API", account.expectedYieldPercent.percentText())
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("За день", style = MaterialTheme.typography.bodyMedium)
-                    SignedAmount(account.dailyYieldAmount, account.dailyYieldPercent)
-                }
+                ReturnSummaryRow("За день", account.dailyYieldAmount, account.dailyYieldPercent)
                 Notice(error ?: "Получено ${dateText(asOf)} · автообновление")
                 if (account.limitsLoading) Notice("Брокер ещё обновляет лимиты. Данные могут измениться.")
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -304,19 +350,11 @@ private fun PortfolioSummary(
     CompactCard {
         Text(snapshot.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency), fontSize = 32.sp, fontWeight = FontWeight.Bold)
         snapshot.expectedYieldPercent?.let {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                NoticeInline("Текущая доходность API")
-                SignedAmount(null, it)
-            }
+            ReturnSummaryRow("Текущая доходность API", null, it)
         }
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
         Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Нажмите на сумму: ₽ → $ → €")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(OperationsTitle to 1, AnalyticsTitle to 3).forEach { (title, target) ->
-                FilledTonalButton(modifier = Modifier.weight(1f), onClick = { openSection(target) },
-                    enabled = snapshot.accounts.isNotEmpty(), contentPadding = PaddingValues(8.dp)) { Text(title) }
-            }
-        }
+        PortfolioShortcuts(onSection = openSection, enabled = snapshot.accounts.isNotEmpty())
         val observed = snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() }
         Notice(error ?: "Получено ${dateText(observed)} · автообновление")
     }

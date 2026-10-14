@@ -15,7 +15,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.data.backend.BackendConfig
 
@@ -50,8 +49,7 @@ class UpdateClient {
                     readUpdatePolicy(input, UpdateProtocol.MAX_MANIFEST_BYTES) { ensureActive() }
                 }
                 check(declared == -1L || declared == bytes.size.toLong()) { "Описание обновления загружено не полностью." }
-                val json = JSONObject(decodeUpdatePolicy(bytes))
-                val fields = json.keys().asSequence().associateWith { json.get(it) }
+                val fields = parseReleaseJson(decodeUpdatePolicy(bytes))
                 UpdateProtocol.parse(fields, Instant.now().epochSecond)
             }
         } finally { connection.disconnect() }

@@ -14,11 +14,13 @@ import time
 
 try:
     from .client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, MAX_APK_BYTES
+    from .release_json import decode_release_json, ReleaseJsonError
     from .release_lock import publication_lock
     from .release_bytes import copy_and_hash, ArtifactStreamError
     from .installation_evidence import from_ci_reports, InstallationEvidenceError
 except ImportError:
     from client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, MAX_APK_BYTES
+    from release_json import decode_release_json, ReleaseJsonError
     from release_lock import publication_lock
     from release_bytes import copy_and_hash, ArtifactStreamError
     from installation_evidence import from_ci_reports, InstallationEvidenceError
@@ -65,7 +67,11 @@ def _manifest(directory: Path, destination: Path, release: AndroidRelease, *, im
     if immutable and destination.exists():
         with destination.open('rb') as stream:
             previous = stream.read(16_385)
-        if len(previous) > 16_384 or json.loads(previous) != raw:
+        try:
+            decoded = decode_release_json(previous)
+        except ReleaseJsonError as error:
+            raise ReleaseUnavailable('immutable_manifest_invalid') from error
+        if decoded != raw:
             raise ReleaseUnavailable('immutable_manifest_conflict')
         return
     with tempfile.NamedTemporaryFile(dir=directory, suffix='.json.part', delete=False, mode='w', encoding='utf-8') as dst:

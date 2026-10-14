@@ -10,21 +10,22 @@ from __future__ import annotations
 from contextlib import closing
 from dataclasses import dataclass, asdict
 import hashlib
-import json
 import os
 from pathlib import Path
 import re
 import sqlite3
 import time
-from typing import Callable, Mapping
+from typing import Callable, Mapping, cast
 
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 try:
     from .client_compatibility import has_current_session
+    from .release_json import decode_release_json
 except ImportError:
     from client_compatibility import has_current_session
+    from release_json import decode_release_json
 
 PREVIEW_PACKAGE = 'ru.omnicio.app.debug'
 PACKAGES = frozenset({PREVIEW_PACKAGE, 'ru.omnicio.app'})
@@ -40,9 +41,12 @@ class ReleaseUnavailable(ValueError):
 
 
 def _integer(value: object, minimum: int, maximum: int) -> int:
-    if type(value) is not int or not minimum <= value <= maximum:
+    if type(value) is not int:
         raise ReleaseUnavailable('invalid_release_integer')
-    return value
+    number = cast(int, value)
+    if not minimum <= number <= maximum:
+        raise ReleaseUnavailable('invalid_release_integer')
+    return number
 
 
 @dataclass(frozen=True)
@@ -136,7 +140,7 @@ class ReleaseChannel:
                 content = stream.read(16_385)
             if len(content) > 16_384:
                 raise ReleaseUnavailable('invalid_release_manifest')
-            release = AndroidRelease.parse(json.loads(content))
+            release = AndroidRelease.parse(decode_release_json(content))
             if release.package_name != package or release.published_at > int(time.time()):
                 raise ReleaseUnavailable('release_not_active')
             self.verified_file(release)
@@ -177,7 +181,7 @@ class ReleaseChannel:
 
 def valid_apk_filename(filename: str) -> bool:
     return isinstance(filename, str) and re.fullmatch(
-        r'Analyst-AI-[1-9][0-9]{0,9}-[a-f0-9]{64}\.apk', filename) is not None
+        r'Analyst-AI-[1-9]\d{0,9}-[a-f0-9]{64}\.apk', filename, flags=re.ASCII) is not None
 
 
 def channel() -> ReleaseChannel:
@@ -201,7 +205,7 @@ def initialize(connect: Callable[[], sqlite3.Connection]) -> None:
 
 
 def _client_code(value: str | None) -> int:
-    if not value or not re.fullmatch(r'[1-9][0-9]{0,9}', value):
+    if not isinstance(value, str) or not re.fullmatch(r'[1-9]\d{0,9}', value, flags=re.ASCII):
         return 0
     code = int(value)
     return code if code <= 2_100_000_000 else 0
