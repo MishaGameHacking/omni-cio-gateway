@@ -10,6 +10,7 @@ internal fun runUpdatePolicyChecks(): Int {
     check(runPolicyReadChecks() == 18)
     check(runCompatibilityFenceChecks() == 10)
     check(runInstallFailureChecks() == 20)
+    check(runUpdateTransportChecks() == 27)
     val release = ReleaseDescriptor(PREVIEW_TEST_PACKAGE,24,"0.6.1-preview","a".repeat(64),4000000,"b".repeat(64),33,"")
     check(release.decision(PREVIEW_TEST_PACKAGE,23,33)==ReleaseDecision.UPDATE_REQUIRED)
     check(release.decision(PREVIEW_TEST_PACKAGE,24,36)==ReleaseDecision.CURRENT)
