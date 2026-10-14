@@ -1,4 +1,4 @@
-"""Cheap source checks for the expensive distributable-APK workflow contract."""
+"Cheap source checks for the expensive distributable-APK workflow contract."
 from pathlib import Path
 import unittest
 
@@ -26,8 +26,43 @@ class DistributableApkWorkflowTests(unittest.TestCase):
 
     def test_verification_finishes_before_artifact_retention(self):
         verification = self.workflow.index("uses: ./.github/actions/check-apk")
+        assertion = self.workflow.index("- name: Assert verified APK and evidence are present")
         retention = self.workflow.index("uses: actions/upload-artifact@")
-        self.assertLess(verification, retention)
+        self.assertLess(verification, assertion)
+        self.assertLess(assertion, retention)
+
+    def test_optional_artifact_retention_cannot_hide_missing_evidence(self):
+        assertion = self.workflow.index("- name: Assert verified APK and evidence are present")
+        retention_start = self.workflow.index(
+            "- name: Retain APK and verification evidence when storage is available"
+        )
+        retention_end = self.workflow.index(
+            "- name: Report unavailable optional Actions retention", retention_start
+        )
+        assertion_block = self.workflow[assertion:retention_start]
+        retention_block = self.workflow[retention_start:retention_end]
+        self.assertIn('if not exist "app\\build\\outputs\\apk\\preview\\app-preview.apk" exit /b 1', assertion_block)
+        self.assertIn('if not exist "app\\build\\outputs\\apk\\preview\\apk-verification.json" exit /b 1', assertion_block)
+        self.assertIn("id: retain_apk", retention_block)
+        self.assertIn("continue-on-error: true", retention_block)
+        self.assertIn("if-no-files-found: error", retention_block)
+        self.assertIn("retention-days: 1", retention_block)
+        self.assertIn("if: steps.retain_apk.outcome == 'failure'", self.workflow)
+
+    def test_release_is_explicit_and_independent_of_optional_artifact_storage(self):
+        retention = self.workflow.index("uses: actions/upload-artifact@")
+        publication = self.workflow.index("- name: Publish verified APK to GitHub Releases")
+        self.assertLess(retention, publication)
+        release_block = self.workflow[publication:]
+        self.assertIn("github.ref == 'refs/heads/main'", release_block)
+        self.assertIn("github.event_name == 'workflow_dispatch'", release_block)
+        self.assertIn("github.event_name == 'push'", release_block)
+        self.assertIn(
+            "contains(github.event.head_commit.message, '[publish-apk]')",
+            release_block,
+        )
+        self.assertIn("report.version_code <= 22", release_block)
+        self.assertIn("hash !== report.sha256", release_block)
 
     def test_validation_source_changes_retrigger_main_apk(self):
         self.assertIn('- ".github/scripts/**"', self.workflow)

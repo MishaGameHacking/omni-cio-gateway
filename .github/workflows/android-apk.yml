@@ -126,7 +126,21 @@ jobs:
         env:
           RUN_PROFILE_UI_TESTS: "1"
 
-      - name: Retain APK and complete verification evidence
+      - name: Assert verified APK and evidence are present
+        shell: cmd
+        run: |
+          if not exist "app\build\outputs\apk\preview\app-preview.apk" exit /b 1
+          if not exist "app\build\outputs\apk\preview\apk-verification.json" exit /b 1
+          if not exist "app\build\outputs\apk\preview\install-api-33\install-results.json" exit /b 1
+          if not exist "app\build\outputs\apk\preview\install-api-36\install-results.json" exit /b 1
+          if not exist "app\build\outputs\apk\preview\ui-screens\*.png" exit /b 1
+
+      # Actions artifact storage is optional retention, not release validation.
+      # A full quota must not turn a verified application build red or prevent
+      # the separately integrity-checked GitHub Release publication below.
+      - name: Retain APK and verification evidence when storage is available
+        id: retain_apk
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Analyst-AI-${{ github.sha }}
@@ -137,14 +151,24 @@ jobs:
             app/build/outputs/apk/preview/install-api-36/install-results.json
             app/build/outputs/apk/preview/ui-screens/*.png
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
           compression-level: 0
 
-      # A source merge still runs every build/install check above, but does not
-      # release an intermediate binary or activate the mandatory update channel.
-      # Publication is a separate explicit operation from the checked main.
+      - name: Report unavailable optional Actions retention
+        if: steps.retain_apk.outcome == 'failure'
+        shell: cmd
+        run: |
+          echo ::warning::Verified APK retention in GitHub Actions storage failed, usually because the repository artifact quota is full. Build, installation, UI, and release-integrity gates remain authoritative.
+
+      # Publication remains explicit: either a manual workflow dispatch or a
+      # main-branch commit carrying the [publish-apk] release marker. This lets
+      # an approved merge publish even when optional Actions storage is full.
       - name: Publish verified APK to GitHub Releases
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        if: >-
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'push' &&
+            contains(github.event.head_commit.message, '[publish-apk]')))
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
