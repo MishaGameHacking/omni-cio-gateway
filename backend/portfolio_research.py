@@ -5,7 +5,7 @@ Broker fundamentals/news are labelled separately from reviewed agency/reports.
 """
 from __future__ import annotations
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from math import isfinite
 from typing import Annotated, Any
@@ -20,6 +20,7 @@ try:
     from .risk_math import aligned_returns, bootstrap_floor_risk, portfolio_variance, RiskDataError
     from .research_snapshot import aggregate, SnapshotError
     from .research_profile_cache import profile_digest
+    from .research_clock import window_for, note_time
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -30,6 +31,7 @@ except ImportError:
     from risk_math import aligned_returns, bootstrap_floor_risk, portfolio_variance, RiskDataError
     from research_snapshot import aggregate, SnapshotError
     from research_profile_cache import profile_digest
+    from research_clock import window_for, note_time
 
 router = APIRouter(prefix='/analysis', tags=['portfolio-research'])
 ZERO = Decimal(0)
@@ -95,8 +97,11 @@ def relevant_news(items: list, uid: str, at: datetime) -> list[dict]:
         if not matches:
             continue
         try:
-            age = (at - stamp(raw.get('ts', ''))).total_seconds()
-        except EvidenceError:
+            published = stamp(raw.get('ts', ''))
+            note_time(published)
+            note_time(published + timedelta(days=7))
+            age = (at - published).total_seconds()
+        except (EvidenceError, OverflowError):
             continue
         if not 0 <= age <= 7 * 86400:
             continue
@@ -178,6 +183,9 @@ def _history_risk(cards, values, total, currency, at):
                     'explanation': 'Нет полной сопоставимой истории с учётом выплат и изменений бумаг. Процент вероятности потери капитала не придумываем.'}
         series, weights = history
         names, days, rows = aligned_returns(series)
+        last_session = datetime.fromisoformat(days[-1]).replace(tzinfo=timezone.utc)
+        note_time(last_session)
+        note_time(last_session + timedelta(days=8))
         if days[-1] > at.date().isoformat() or (at.date() - datetime.fromisoformat(days[-1]).date()).days > 7:
             raise RiskDataError('history_not_current')
         w = [weights[name] for name in names]
@@ -185,7 +193,7 @@ def _history_risk(cards, values, total, currency, at):
                 'sample_start': days[0], 'sample_end': days[-1],
                 'scenarios': bootstrap_floor_risk(rows, w),
                 'explanation': 'Это проверка сценариев из прошлых данных, а не обещание будущего результата. Новые кризисы могут оказаться хуже.'}
-    except (ValueError, TypeError, KeyError):
+    except (ValueError, TypeError, KeyError, OverflowError):
         return {'state': 'history_quality_failed', 'default_probability': None,
                 'explanation': 'История не прошла проверку полноты, целостности и сопоставимости.'}
 
@@ -294,8 +302,12 @@ def research(user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     profile = get_profile(int(user['id']))
     digest = profile_digest(profile)
     revision = _current_evidence_revision()
-    key = (*identity, 'research-v4', revision, digest)
-    result = details.cached(key, 300, lambda: collect_research(user, profile=profile))
+    window = window_for((*identity, revision, digest))
+    key = (*identity, 'research-v5', revision, window.serial, digest)
+    def load():
+        with window.observing():
+            return collect_research(user, profile=profile)
+    result = details.cached(key, 300, load)
     # A profile edit while broker reads are in flight must not publish a result
     # labelled with the user's previous limit. Retry against the new snapshot.
     if profile_digest(get_profile(int(user['id']))) != digest:
@@ -304,4 +316,7 @@ def research(user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     # must not publish a mixed or previously favorable evidence snapshot.
     if _current_evidence_revision() != revision:
         raise HTTPException(503, detail='research_evidence_changed')
+    if not window.current():
+        raise HTTPException(503, detail='research_time_boundary_crossed',
+                            headers={'Cache-Control': 'no-store', 'Retry-After': '1'})
     return result

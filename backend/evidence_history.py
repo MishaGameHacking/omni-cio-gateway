@@ -10,6 +10,11 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
+try:
+    from .research_clock import note_source, note_time
+except ImportError:
+    from research_clock import note_source, note_time
+
 MAX_RECORD_BYTES = 600_000
 MAX_HISTORY_BYTES = 16 * 1024 * 1024
 MAX_HISTORY_ROWS = 10_000
@@ -72,6 +77,9 @@ def read_history(db, kind: str, subject: str, *, at: datetime | None = None) -> 
         if size > MAX_RECORD_BYTES or consumed > MAX_HISTORY_BYTES:
             raise HistoryUnavailable('evidence_history_byte_limit')
         available = _instant(imported)
+        note_time(available)
         if at is None or available <= at:
-            result.append(_decode(kind, subject, digest, text))
+            value = _decode(kind, subject, digest, text)
+            note_source(value['source'])
+            result.append(value)
     return result
