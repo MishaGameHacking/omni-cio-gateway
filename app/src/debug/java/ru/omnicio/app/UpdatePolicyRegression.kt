@@ -24,7 +24,16 @@ internal fun runUpdatePolicyChecks(): Int {
     check(runCatching { release.copy(certificateSha256="a") }.isFailure)
     check(runCatching { release.copy(packageName="other") }.isFailure)
     check(runCatching { release.copy(versionName="x\n") }.isFailure)
-    return 12
+    check(release.copy(versionName="😀".repeat(32)).versionName.length == 64)
+    check(runCatching { release.copy(versionName="😀".repeat(33)) }.isFailure)
+    check(release.copy(notes="😀".repeat(2000)).notes.length == 4000)
+    check(runCatching { release.copy(notes="😀".repeat(2001)) }.isFailure)
+    check(release.copy(notes="строка 1\nстрока 2\tготово\r").notes.contains('\n'))
+    check(runCatching { release.copy(notes="x" + 1.toChar()) }.isFailure)
+    check(runCatching { release.copy(versionName="   ") }.isFailure)
+    check(runCatching { release.copy(versionName=String(charArrayOf(0xD800.toChar()))) }.isFailure)
+    check(runCatching { release.copy(notes=String(charArrayOf(0xDC00.toChar()))) }.isFailure)
+    return 21
 }
 
 fun main() { println("UPDATE_POLICY_TESTS=passed:"+runUpdatePolicyChecks()) }
