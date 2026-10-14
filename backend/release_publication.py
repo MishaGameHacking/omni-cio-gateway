@@ -6,7 +6,6 @@ Android independently verifies the package and signing certificate.
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-import json
 import os
 from pathlib import Path
 import tempfile
@@ -14,13 +13,13 @@ import time
 
 try:
     from .client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, MAX_APK_BYTES
-    from .release_json import decode_release_json, ReleaseJsonError
+    from .release_json import decode_release_json, encode_release_json, ReleaseJsonError
     from .release_lock import publication_lock
     from .release_bytes import copy_and_hash, ArtifactStreamError
     from .installation_evidence import from_ci_reports, InstallationEvidenceError
 except ImportError:
     from client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable, MAX_APK_BYTES
-    from release_json import decode_release_json, ReleaseJsonError
+    from release_json import decode_release_json, encode_release_json, ReleaseJsonError
     from release_lock import publication_lock
     from release_bytes import copy_and_hash, ArtifactStreamError
     from installation_evidence import from_ci_reports, InstallationEvidenceError
@@ -62,6 +61,10 @@ def _sync_directory(directory: Path) -> None:
 
 def _manifest(directory: Path, destination: Path, release: AndroidRelease, *, immutable: bool) -> None:
     raw = {'schema_version': 1, **asdict(release)}
+    try:
+        content = encode_release_json(raw)
+    except ReleaseJsonError as error:
+        raise ReleaseUnavailable('invalid_release_manifest') from error
     if destination.is_symlink():
         raise ReleaseUnavailable('manifest_symlink')
     if immutable and destination.exists():
@@ -74,10 +77,10 @@ def _manifest(directory: Path, destination: Path, release: AndroidRelease, *, im
         if decoded != raw:
             raise ReleaseUnavailable('immutable_manifest_conflict')
         return
-    with tempfile.NamedTemporaryFile(dir=directory, suffix='.json.part', delete=False, mode='w', encoding='utf-8') as dst:
+    with tempfile.NamedTemporaryFile(dir=directory, suffix='.json.part', delete=False, mode='wb') as dst:
         staged = Path(dst.name)
         try:
-            json.dump(raw, dst, ensure_ascii=False)
+            dst.write(content)
             dst.flush()
             os.fsync(dst.fileno())
         except BaseException:

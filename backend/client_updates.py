@@ -22,10 +22,20 @@ from fastapi.responses import FileResponse, JSONResponse
 
 try:
     from .client_compatibility import has_current_session
-    from .release_json import decode_release_json
+    from .release_json import (
+        ALLOWED_RELEASE_NOTE_CONTROLS,
+        ReleaseJsonError,
+        decode_release_json,
+        validate_release_text,
+    )
 except ImportError:
     from client_compatibility import has_current_session
-    from release_json import decode_release_json
+    from release_json import (
+        ALLOWED_RELEASE_NOTE_CONTROLS,
+        ReleaseJsonError,
+        decode_release_json,
+        validate_release_text,
+    )
 
 PREVIEW_PACKAGE = 'ru.omnicio.app.debug'
 PACKAGES = frozenset({PREVIEW_PACKAGE, 'ru.omnicio.app'})
@@ -73,12 +83,14 @@ class AndroidRelease:
         for key in ('apk_sha256', 'certificate_sha256'):
             if not isinstance(raw[key], str) or not DIGEST_PATTERN.fullmatch(raw[key]):
                 raise ReleaseUnavailable('invalid_release_digest')
-        name = raw['version_name']
-        notes = raw.get('notes', '')
-        if not isinstance(name, str) or not 1 <= len(name) <= 64 or any(ord(c) < 32 for c in name):
-            raise ReleaseUnavailable('invalid_release_name')
-        if not isinstance(notes, str) or len(notes) > 4000:
-            raise ReleaseUnavailable('invalid_release_notes')
+        try:
+            name = validate_release_text(raw['version_name'], max_units=64, allow_blank=False)
+            notes = validate_release_text(
+                raw.get('notes', ''), max_units=4000, allow_blank=True,
+                allowed_controls=ALLOWED_RELEASE_NOTE_CONTROLS,
+            )
+        except ReleaseJsonError as error:
+            raise ReleaseUnavailable('invalid_release_text') from error
         return cls(raw['package_name'], _integer(raw['version_code'], 1, 2_100_000_000), name,
                    raw['apk_sha256'], _integer(raw['apk_bytes'], 1, MAX_APK_BYTES),
                    raw['certificate_sha256'], _integer(raw['min_sdk'], 33, 100),
@@ -263,7 +275,6 @@ def user_can_run(connect: Callable[[], sqlite3.Connection], user_id: int) -> boo
     with closing(connect()) as db:
         return has_current_session(db, user_id, packages=PACKAGES,
                                    verified_release=verified_release, clock=time.time)
-
 
 
 def assert_user_can_run(connect: Callable[[], sqlite3.Connection], user_id: int) -> None:
