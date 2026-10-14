@@ -47,7 +47,7 @@ fun PortfolioScreen(
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
     var section by rememberSaveable { mutableIntStateOf(0) }
     var selectForSection by remember { mutableStateOf<Int?>(null) }
-    var positionDetails by remember { mutableStateOf<PortfolioPosition?>(null) }
+    var positionDetails by remember(accessToken) { mutableStateOf<PositionSelection?>(null) }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
     val listState = rememberLazyListState()
@@ -91,7 +91,7 @@ fun PortfolioScreen(
                             AccountPreviewCard(item,
                                 onOpen = { accountId = item.id; section = 0 },
                                 onSection = { target -> accountId = item.id; section = target },
-                                onPosition = { positionDetails = it })
+                                onPosition = { positionDetails = PositionSelection(item.id, it.id) })
                         }
                         item(key = "structure") {
                             CompactCard {
@@ -107,13 +107,28 @@ fun PortfolioScreen(
             }
         }
     }
-    positionDetails?.let { PositionDetails(it) { positionDetails = null } }
+    LivePositionDetails(positionDetails, snapshot?.accounts) { positionDetails = null }
     if (selectForSection != null && snapshot != null) {
         AlertDialog(onDismissRequest = { selectForSection = null }, title = { Text("Выберите счёт") },
             containerColor = LocalSpectrumPalette.current.card,
             text = { Column(Modifier.verticalScroll(rememberScrollState())) { snapshot.accounts.forEach { item ->
                 TextButton(onClick = { accountId = item.id; section = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
             } } }, confirmButton = { TextButton(onClick = { selectForSection = null }) { Text("Отмена") } })
+    }
+}
+
+@Composable
+private fun LivePositionDetails(selection: PositionSelection?, accounts: List<PortfolioAccount>?, close: () -> Unit) {
+    if (selection == null) return
+    val position = resolveSelectedPosition(selection, accounts, PortfolioAccount::id,
+        { account, virtual -> if (virtual) account.virtualPositions else account.positions }, PortfolioPosition::id)
+    if (position != null) {
+        PositionDetails(position, close)
+    } else {
+        AlertDialog(onDismissRequest = close, containerColor = LocalSpectrumPalette.current.card,
+            title = { Text("Данные позиции изменились") },
+            text = { Text("Эта позиция больше не найдена однозначно в текущих данных счёта. Старую цену и количество не показываем. Это само по себе не подтверждает продажу бумаги.") },
+            confirmButton = { TextButton(onClick = close) { Text("Закрыть") } })
     }
 }
 
@@ -224,7 +239,7 @@ private fun AccountScreen(
 
 @Composable
 private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, onSection: (Int) -> Unit, asOf: String?, error: String?) {
-    var selected by remember { mutableStateOf<PortfolioPosition?>(null) }
+    var selected by remember(account.id) { mutableStateOf<PositionSelection?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item(key = "value") {
             CompactCard {
@@ -244,13 +259,13 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
         items(account.positions, key = { "position:${it.id}" }) { position ->
             Surface(color = LocalSpectrumPalette.current.card, shape = RoundedCornerShape(24.dp),
                 border = BorderStroke(1.dp, LocalSpectrumPalette.current.cyan.copy(alpha = 0.24f))) {
-                Box(Modifier.padding(horizontal = 12.dp)) { PositionLine(position) { selected = position } }
+                Box(Modifier.padding(horizontal = 12.dp)) { PositionLine(position) { selected = PositionSelection(account.id, position.id) } }
             }
         }
         if (account.positions.isEmpty()) item { Notice("Позиции отсутствуют") }
         if (account.virtualPositions.isNotEmpty()) {
             item { SectionHeading("Виртуальные позиции") }
-            items(account.virtualPositions, key = { "virtual:${it.id}" }) { position -> PositionLine(position) { selected = position } }
+            items(account.virtualPositions, key = { "virtual:${it.id}" }) { position -> PositionLine(position) { selected = PositionSelection(account.id, position.id, virtual = true) } }
         }
         item {
             CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) }
@@ -270,7 +285,7 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
             }
         }
     }
-    selected?.let { PositionDetails(it) { selected = null } }
+    LivePositionDetails(selected, listOf(account)) { selected = null }
 }
 
 @Composable
