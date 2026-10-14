@@ -100,10 +100,11 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(updates.user_can_run(self.connect, 1))
 
     def test_channel_read_checks_checksum_not_only_length(self):
-        path = updates.channel().verified_file(self.release)
+        channel = updates.channel()
+        path = channel.verified_file(self.release)
         path.write_bytes(b'x'*self.release.apk_bytes)
         with self.assertRaises(updates.ReleaseUnavailable):
-            updates.channel().current(self.release.package_name)
+            channel.current(self.release.package_name)
 
     def test_missing_artifact_is_not_ready(self):
         updates.channel().verified_file(self.release).unlink()
@@ -118,8 +119,9 @@ class UpdateTests(unittest.TestCase):
     def test_downgrade_and_version_reuse_rejected(self):
         self.apk.write_bytes(b'changed package')
         for version in (22, 23):
+            report = self.evidence(version)
             with self.assertRaises(updates.ReleaseUnavailable):
-                publish(self.root, self.apk, self.evidence(version), expected_certificate=CERT)
+                publish(self.root, self.apk, report, expected_certificate=CERT)
         self.assertEqual(updates.channel().current(self.release.package_name), self.release)
 
     def test_repeat_publish_idempotent(self):
@@ -142,9 +144,10 @@ class UpdateTests(unittest.TestCase):
                 updates.AndroidRelease.parse(raw)
 
     def test_symlink_apk_is_not_served(self):
+        channel = updates.channel()
         with patch.object(Path, 'is_symlink', return_value=True):
             with self.assertRaises(updates.ReleaseUnavailable):
-                updates.channel().verified_file(self.release)
+                channel.verified_file(self.release)
 
     def test_http_bootstrap_download_and_authenticated_resume(self):
         app = FastAPI()

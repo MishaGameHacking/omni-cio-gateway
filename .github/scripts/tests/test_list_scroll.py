@@ -82,14 +82,15 @@ class EducationScrollTests(unittest.TestCase):
         swipe.assert_not_called()
 
     def test_unknown_list_rejected_before_read(self):
-        read = Mock()
+        read, swipe = Mock(), Mock()
         with self.assertRaises(ValueError):
-            module.reveal_in_list(read, Mock(), "Урок", resource_id="system-content")
+            module.reveal_in_list(read, swipe, "Урок", resource_id="system-content")
         read.assert_not_called()
 
     def test_matching_is_not_substring(self):
+        swipe = Mock()
         with self.assertRaises(AssertionError):
-            self.reveal(lambda: tree(label="Уроки"), Mock(), max_swipes=0)
+            self.reveal(lambda: tree(label="Уроки"), swipe, max_swipes=0)
 
 
 if __name__ == "__main__":

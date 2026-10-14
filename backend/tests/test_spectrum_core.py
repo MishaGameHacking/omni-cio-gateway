@@ -52,19 +52,24 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(r.expected_shortfall,D('-.02'))
 
     def test_insufficient_history_not_reported_as_confidence(self):
+        losses, confidence = [D(0)] * 20, D('.99')
         with self.assertRaises(RiskInputError):
-            empirical_tail_risk([D(0)]*20, alpha=D('.99'), horizon_days=1,
+            empirical_tail_risk(losses, alpha=confidence, horizon_days=1,
                 source='synthetic', as_of=NOW, now=NOW, max_age=AGE)
 
     def test_stale_history_rejected(self):
+        losses, confidence = [D(0)] * 100, D('.95')
+        stale = NOW - timedelta(days=3)
         with self.assertRaises(RiskInputError):
-            empirical_tail_risk([D(0)]*100, alpha=D('.95'), horizon_days=1,
-                source='synthetic', as_of=NOW-timedelta(days=3), now=NOW, max_age=AGE)
+            empirical_tail_risk(losses, alpha=confidence, horizon_days=1,
+                source='synthetic', as_of=stale, now=NOW, max_age=AGE)
 
     def test_invalid_confidence_rejected(self):
-        for alpha in ['0','1','NaN','Infinity','-.1']:
+        losses = [D(0)] * 100
+        for alpha in ['0', '1', 'NaN', 'Infinity', '-.1']:
+            confidence = D(alpha)
             with self.subTest(alpha=alpha), self.assertRaises(RiskInputError):
-                empirical_tail_risk([D(0)]*100, alpha=D(alpha), horizon_days=1,
+                empirical_tail_risk(losses, alpha=confidence, horizon_days=1,
                     source='synthetic', as_of=NOW, now=NOW, max_age=AGE)
 
     def test_joint_scenarios_preserve_dependence(self):
@@ -73,12 +78,15 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(result,(D(0),D(0)))
 
     def test_missing_asset_rejected(self):
+        weights = {'a': D('.5'), 'b': D('.5')}
+        scenarios = [{'a': D(0)}]
         with self.assertRaises(RiskInputError):
-            scenario_losses({'a':D('.5'),'b':D('.5')},[{'a':D(0)}])
+            scenario_losses(weights, scenarios)
 
     def test_empty_scenarios_and_invalid_asset_ids_rejected(self):
+        valid_weights = {'a': D(1)}
         with self.assertRaises(RiskInputError):
-            scenario_losses({'a':D(1)}, [])
+            scenario_losses(valid_weights, [])
         for weights, scenarios in [({'':D(1)},[{'':D(0)}]), ({None:D(1)},[{None:D(0)}])]:
             with self.subTest(weights=weights), self.assertRaises(RiskInputError):
                 scenario_losses(weights, scenarios)
@@ -89,8 +97,10 @@ class RiskTests(unittest.TestCase):
             with self.assertRaises(RiskInputError): scenario_losses(weights,scenarios)
 
     def test_expected_loss_only_explicit_inputs(self):
-        self.assertEqual(expected_credit_loss(D(1000),D('.02'),D('.6')),D(12))
-        with self.assertRaises(RiskInputError): expected_credit_loss(D(100),D(2),D('.6'))
+        self.assertEqual(expected_credit_loss(D(1000), D('.02'), D('.6')), D(12))
+        exposure, probability, loss_fraction = D(100), D(2), D('.6')
+        with self.assertRaises(RiskInputError):
+            expected_credit_loss(exposure, probability, loss_fraction)
 
     def test_no_binary_float_or_nonfinite(self):
         for value in [1.1,True,'NaN','Infinity',None]:
@@ -111,9 +121,10 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(r['status'],'outside_limits')
 
     def test_invalid_limit_dimension_rejected(self):
+        items, cap = [position()], D('.5')
         for key in ['', 'cash:maximum', 'issuerr:issuer-one', 'issuer:', None]:
             with self.subTest(key=key), self.assertRaises(RiskInputError):
-                exposure_report([position()], {key:D('.5')})
+                exposure_report(items, {key: cap})
 
     def test_rating_agency_and_scale_not_merged(self):
         r = exposure_report([position(), position(rating=rate(scale='GLOBAL-test'))])
@@ -132,26 +143,36 @@ class RiskTests(unittest.TestCase):
                 self.assertEqual(report['unverified_instruments'], ['synthetic-one'])
 
     def test_invalid_base_or_quote_currency_rejected(self):
+        items = [position()]
         for currency in ['', 'rub', 'RUBLE', None]:
             with self.subTest(base=currency), self.assertRaises(RiskInputError):
-                assess_exposures([position()], base_currency=currency, now=NOW,
+                assess_exposures(items, base_currency=currency, now=NOW,
                     max_age=AGE, limits={})
         for currency in ['rub', 'RUBLE', '12R']:
+            items = [position(quote_currency=currency)]
             with self.subTest(quote=currency), self.assertRaises(RiskInputError):
-                exposure_report([position(quote_currency=currency)])
+                exposure_report(items)
 
     def test_mixed_currency_not_added(self):
-        with self.assertRaises(RiskInputError): exposure_report([position(valuation_currency='USD')])
+        items = [position(valuation_currency='USD')]
+        with self.assertRaises(RiskInputError):
+            exposure_report(items)
 
     def test_negative_position_rejected(self):
-        with self.assertRaises(RiskInputError): exposure_report([position(value_base=D(-1))])
+        items = [position(value_base=D(-1))]
+        with self.assertRaises(RiskInputError):
+            exposure_report(items)
 
     def test_future_or_stale_valuation_rejected(self):
-        for at in [NOW+timedelta(seconds=1),NOW-timedelta(days=10)]:
-            with self.assertRaises(RiskInputError): exposure_report([position(valuation_at=at)])
+        for at in [NOW + timedelta(seconds=1), NOW - timedelta(days=10)]:
+            items = [position(valuation_at=at)]
+            with self.assertRaises(RiskInputError):
+                exposure_report(items)
 
     def test_rating_naive_date_rejected(self):
-        with self.assertRaises(RiskInputError): rate(published_at=NOW.replace(tzinfo=None)).bucket(NOW)
+        item = rate(published_at=NOW.replace(tzinfo=None))
+        with self.assertRaises(RiskInputError):
+            item.bucket(NOW)
 
     def test_link_only_canonical_card(self):
         self.assertEqual(instrument_link('https://www.tbank.ru/invest/stocks/SBER/'),
@@ -209,21 +230,26 @@ class ReleaseTests(unittest.TestCase):
             dict(url=f'https://{HOST}/releases/23/latest.apk'),dict(notes=123),
             dict(version_name='bad\nname'),dict(notes='bad\x00notes')]
         for change in variants:
+            candidate = asdict(release(**change))
             with self.subTest(change=change), self.assertRaises(InvalidRelease):
-                Release.parse(asdict(release(**change)),now=NOW,expected_certificate='b'*64)
+                Release.parse(candidate, now=NOW, expected_certificate='b'*64)
 
     def test_direct_validation_requires_aware_time(self):
+        candidate, naive = release(), NOW.replace(tzinfo=None)
         with self.assertRaises(InvalidRelease):
-            release().validate(now=NOW.replace(tzinfo=None), expected_certificate='b'*64)
+            candidate.validate(now=naive, expected_certificate='b'*64)
 
     def test_distribution_verification_must_be_boolean(self):
+        candidate = release()
         with self.assertRaises(InvalidRelease):
-            decide_client(release(), installed_code=23, sdk=33,
+            decide_client(candidate, installed_code=23, sdk=33,
                 package_name=PACKAGE, distribution_verified='yes')
 
     def test_bool_version_does_not_bypass_gate(self):
+        candidate = release()
         with self.assertRaises(InvalidRelease):
-            decide_client(release(),installed_code=True,sdk=33,package_name=PACKAGE,distribution_verified=True)
+            decide_client(candidate, installed_code=True, sdk=33,
+                package_name=PACKAGE, distribution_verified=True)
 
 
 if __name__ == '__main__': unittest.main()

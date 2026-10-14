@@ -65,23 +65,37 @@ class Release:
     def validate(self, *, now: datetime, expected_certificate: str) -> None:
         if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
             raise InvalidRelease('now_timezone_required')
+        self._validate_bounds()
+        self._validate_signature(expected_certificate)
+        self._validate_text()
+        self._validate_download()
+        if timestamp(self.published_at) > now:
+            raise InvalidRelease('release_not_published_yet')
+
+    def _validate_bounds(self) -> None:
         for name in ('version_code', 'minimum_supported', 'size_bytes', 'min_sdk'):
             positive_int(getattr(self, name), name)
         if self.minimum_supported > self.version_code or self.size_bytes > MAX_APK_BYTES:
             raise InvalidRelease('invalid_release_bounds')
         if self.package_name != PACKAGE:
             raise InvalidRelease('package_changed')
+
+    def _validate_signature(self, expected_certificate: str) -> None:
         for digest in (self.sha256, self.certificate_sha256, expected_certificate):
             if not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest):
                 raise InvalidRelease('invalid_sha256')
         if self.certificate_sha256 != expected_certificate:
             raise InvalidRelease('certificate_changed')
+
+    def _validate_text(self) -> None:
         if (not isinstance(self.version_name, str) or not 1 <= len(self.version_name) <= 80
                 or any(ord(character) < 32 for character in self.version_name)):
             raise InvalidRelease('invalid_version_name')
         if (not isinstance(self.notes, str) or len(self.notes) > 4000
                 or '\x00' in self.notes):
             raise InvalidRelease('invalid_notes')
+
+    def _validate_download(self) -> None:
         if not isinstance(self.url, str):
             raise InvalidRelease('invalid_download_url')
         location = urlsplit(self.url)
@@ -89,8 +103,6 @@ class Release:
         if (location.scheme != 'https' or location.netloc != HOST
                 or location.path != expected_path or location.query or location.fragment):
             raise InvalidRelease('download_must_be_immutable_first_party_https')
-        if timestamp(self.published_at) > now:
-            raise InvalidRelease('release_not_published_yet')
 
 
 @dataclass(frozen=True)

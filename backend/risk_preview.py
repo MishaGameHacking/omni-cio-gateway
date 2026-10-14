@@ -181,6 +181,62 @@ def expected_credit_loss(ead: Decimal, pd: Decimal, lgd: Decimal) -> Decimal:
     return amount * fraction(pd) * fraction(lgd)
 
 
+def _exposure_amount(item: Exposure, base_currency: str, now: datetime,
+                     max_age: timedelta) -> Decimal:
+    aware(item.valuation_at)
+    amount = number(item.value_base)
+    if amount < ZERO:
+        raise RiskInputError('shorts_or_negative_equity_need_separate_model')
+    if item.valuation_currency != base_currency:
+        raise RiskInputError('mixed_valuation_currencies')
+    if not now - max_age <= item.valuation_at <= now:
+        raise RiskInputError('valuation_stale_or_future')
+    if not item.instrument_id or not item.source:
+        raise RiskInputError('valuation_source_required')
+    if item.quote_currency and not re.fullmatch(r'[A-Z]{3}', item.quote_currency):
+        raise RiskInputError('invalid_quote_currency')
+    return amount
+
+
+def _exposure_groups(item: Exposure, now: datetime) -> tuple[list[str], bool]:
+    groups = [f'class:{item.asset_class or "UNVERIFIED"}',
+              f'currency:{item.quote_currency or "UNVERIFIED"}']
+    unknown = not item.asset_class or not item.quote_currency
+    if not item.is_cash:
+        groups += [f'issuer:{item.issuer_group or "UNVERIFIED"}',
+                   f'sector:{item.sector or "UNVERIFIED"}']
+        unknown = unknown or not item.issuer_group or not item.sector
+    if item.requires_rating:
+        rating = 'UNVERIFIED'
+        if item.rating and item.rating.subject_id in {item.instrument_id, item.issuer_group}:
+            rating = item.rating.bucket(now)
+        groups.append('rating:' + rating)
+        unknown = unknown or rating == 'UNVERIFIED'
+    return groups, bool(unknown)
+
+
+def _exposure_violations(shares: Mapping[str, Decimal], cash_share: Decimal,
+                         caps: Mapping[str, Decimal]) -> list[dict]:
+    violations = []
+    for key, cap in caps.items():
+        if key == 'cash:minimum':
+            actual, failed = cash_share, cash_share < cap
+        else:
+            actual = shares.get(key, ZERO)
+            failed = actual > cap
+        if failed:
+            violations.append({'dimension': key, 'actual': actual, 'limit': cap})
+    return violations
+
+
+def _exposure_status(unknown: Sequence[str], violations: Sequence[dict]) -> str:
+    if unknown:
+        return 'needs_data'
+    if violations:
+        return 'outside_limits'
+    return 'within_supplied_limits'
+
+
 def assess_exposures(exposures: Sequence[Exposure], *, base_currency: str,
                      now: datetime, max_age: timedelta,
                      limits: Mapping[str, Decimal]) -> dict:
@@ -200,54 +256,23 @@ def assess_exposures(exposures: Sequence[Exposure], *, base_currency: str,
     total, cash = ZERO, ZERO
     unknown = []
     for item in exposures:
-        aware(item.valuation_at)
-        amount = number(item.value_base)
-        if amount < ZERO:
-            raise RiskInputError('shorts_or_negative_equity_need_separate_model')
-        if item.valuation_currency != base_currency:
-            raise RiskInputError('mixed_valuation_currencies')
-        if not now - max_age <= item.valuation_at <= now:
-            raise RiskInputError('valuation_stale_or_future')
-        if not item.instrument_id or not item.source:
-            raise RiskInputError('valuation_source_required')
-        if item.quote_currency and not re.fullmatch(r'[A-Z]{3}', item.quote_currency):
-            raise RiskInputError('invalid_quote_currency')
+        amount = _exposure_amount(item, base_currency, now, max_age)
         total += amount
         if item.is_cash:
             cash += amount
-        groups = [f'class:{item.asset_class or "UNVERIFIED"}',
-                  f'currency:{item.quote_currency or "UNVERIFIED"}']
-        if not item.asset_class or not item.quote_currency:
+        groups, unverified = _exposure_groups(item, now)
+        if unverified:
             unknown.append(item.instrument_id)
-        if not item.is_cash:
-            groups += [f'issuer:{item.issuer_group or "UNVERIFIED"}',
-                       f'sector:{item.sector or "UNVERIFIED"}']
-            if not item.issuer_group or not item.sector:
-                unknown.append(item.instrument_id)
-        if item.requires_rating:
-            rating = (item.rating.bucket(now) if item.rating and item.rating.subject_id in
-                      {item.instrument_id, item.issuer_group} else 'UNVERIFIED')
-            groups.append('rating:' + rating)
-            if rating == 'UNVERIFIED':
-                unknown.append(item.instrument_id)
         for key in groups:
             buckets[key] = buckets.get(key, ZERO) + amount
     if total <= ZERO:
         raise RiskInputError('positive_equity_required')
     shares = {key: amount / total for key, amount in buckets.items()}
-    violations = []
-    for key, cap in caps.items():
-        if key == 'cash:minimum':
-            actual, failed = cash / total, cash / total < cap
-        else:
-            actual = shares.get(key, ZERO)
-            failed = actual > cap
-        if failed:
-            violations.append({'dimension': key, 'actual': actual, 'limit': cap})
+    violations = _exposure_violations(shares, cash / total, caps)
     return {'total_base': total, 'currency': base_currency, 'shares': shares,
             'cash_share': cash / total, 'violations': violations,
             'unverified_instruments': sorted(set(unknown)),
-            'status': 'needs_data' if unknown else ('outside_limits' if violations else 'within_supplied_limits'),
+            'status': _exposure_status(unknown, violations),
             'guarantee_of_safety': False}
 
 

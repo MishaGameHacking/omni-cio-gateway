@@ -14,7 +14,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
     def test_single_runtime_updater(self):
         names = {p.name for p in (NATIVE / 'data/updates').glob('*.kt')}
-        self.assertTrue({'UpdateClient.kt', 'UpdateInstaller.kt', 'UpdateProtocol.kt'} <= names)
+        self.assertLessEqual({'UpdateClient.kt', 'UpdateInstaller.kt', 'UpdateProtocol.kt'}, names)
         self.assertTrue(names.isdisjoint({'AppRelease.kt', 'AppUpdateClient.kt', 'AppUpdateInstaller.kt', 'AppUpdateVerifier.kt', 'UpdateCheckStore.kt'}))
 
     def test_no_legacy_network_update_contract_in_app(self):

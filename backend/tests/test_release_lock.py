@@ -28,16 +28,20 @@ class ReleaseLockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw)
             with publication_lock(path):
+                blocked = publication_lock(path)
                 with self.assertRaises(PublicationBusy):
-                    with publication_lock(path):
-                        self.fail("second publisher entered")
+                    with blocked:
+                        pass
 
     def test_exception_releases_ownership(self):
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw)
-            with self.assertRaisesRegex(RuntimeError, "injected"):
-                with publication_lock(path):
-                    raise RuntimeError("injected")
+            failure = RuntimeError("injected")
+            ownership = publication_lock(path)
+            with self.assertRaisesRegex(RuntimeError, "injected") as raised:
+                with ownership:
+                    raise failure
+            self.assertIs(raised.exception, failure)
             with publication_lock(path):
                 self.assertTrue(path.exists())
 
@@ -48,9 +52,10 @@ class ReleaseLockTests(unittest.TestCase):
             target = path / "unrelated"
             target.write_text("preserve", encoding="utf-8")
             (path / ".publishing").symlink_to(target)
+            blocked = publication_lock(path)
             with self.assertRaises(PublicationBusy):
-                with publication_lock(path):
-                    self.fail("symlink used")
+                with blocked:
+                    pass
             self.assertEqual(target.read_text(encoding="utf-8"), "preserve")
 
     def test_process_exit_releases_ownership(self):

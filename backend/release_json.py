@@ -68,7 +68,7 @@ def decode_release_json(content: bytes) -> dict:
                            object_pairs_hook=_unique_object,
                            parse_constant=_nonfinite, parse_float=_finite_float, parse_int=_signed_long)
         _bounded_tree(value)
-    except (ValueError, UnicodeError, RecursionError) as error:
+    except (ValueError, RecursionError) as error:
         raise ReleaseJsonError('invalid_release_json') from error
     if not isinstance(value, dict):
         raise ReleaseJsonError('release_json_object_required')

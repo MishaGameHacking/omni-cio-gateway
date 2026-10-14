@@ -66,7 +66,7 @@ class StatisticalRandomScopeTests(unittest.TestCase):
                 simulate(paths=10000, horizon_steps=756)
             factory.assert_not_called()
 
-    def test_reviewed_constructor_is_single_local_expression(self):
+    def test_reviewed_constructor_and_annotation_have_exact_local_scope(self):
         source = inspect.getsource(risk)
         tree = ast.parse(source)
         constructors = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
@@ -77,10 +77,15 @@ class StatisticalRandomScopeTests(unittest.TestCase):
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'bootstrap_capital_floor')
         self.assertIn(constructor, list(ast.walk(function)))
         self.assertEqual(ast.unparse(constructor), 'random.Random(seed)')
-        annotated = [line for line in source.splitlines() if '# NOSONAR' in line]
-        self.assertEqual(len(annotated), 1)
-        self.assertIn('rng = random.Random(seed)', annotated[0])
-        self.assertIn('STATISTICAL_RANDOM_REVIEW.md', annotated[0])
+        lines = source.splitlines()
+        annotations = [(index, line) for index, line in enumerate(lines) if '# NOSONAR' in line]
+        self.assertEqual(len(annotations), 1)
+        index, annotated = annotations[0]
+        self.assertTrue(annotated.endswith('# NOSONAR(S2245)'))
+        self.assertIn('start = rng.randrange(len(rows) - block_size + 1)', annotated)
+        self.assertIn('STATISTICAL_RANDOM_REVIEW.md', lines[index - 1])
+        self.assertGreaterEqual(index + 1, function.lineno)
+        self.assertLessEqual(index + 1, function.end_lineno)
 
     def test_rng_reference_does_not_escape_its_local_sampling_call(self):
         function = ast.parse(inspect.getsource(risk.bootstrap_capital_floor)).body[0]

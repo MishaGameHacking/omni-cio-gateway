@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+from typing import cast
 
 HOST = "176.98.178.81.sslip.io"
 PACKAGE = "ru.omnicio.app.debug"
@@ -28,9 +29,12 @@ class ManifestError(ValueError):
 
 
 def _integer(value: object, minimum: int, maximum: int, error: str) -> int:
-    if type(value) is not int or not minimum <= value <= maximum:
+    if type(value) is not int:
         raise ManifestError(error)
-    return value
+    number = cast(int, value)
+    if not minimum <= number <= maximum:
+        raise ManifestError(error)
+    return number
 
 
 def _digest(value: object, error: str) -> str:

@@ -66,7 +66,7 @@ class AndroidRelease:
         if not isinstance(raw, dict) or type(raw.get('schema_version')) is not int or raw.get('schema_version') != 1:
             raise ReleaseUnavailable('unsupported_release_schema')
         required = set(cls.__dataclass_fields__) - {'notes'}
-        if not required <= raw.keys():
+        if not required.issubset(raw):
             raise ReleaseUnavailable('incomplete_release')
         if not isinstance(raw['package_name'], str) or raw['package_name'] not in PACKAGES:
             raise ReleaseUnavailable('unknown_release_package')

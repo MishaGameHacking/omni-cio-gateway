@@ -33,18 +33,20 @@ data class EducationLesson(
  * Lessons explain mechanics and risks; they never promise returns or issue a trade order.
  */
 object EducationCatalog {
+    private const val MOEX_SCHOOL = "Школа Московской биржи"
+
     private val moexBeginner = EducationSource(
-        organization = "Школа Московской биржи",
+        organization = MOEX_SCHOOL,
         title = "Курсы для начинающих инвесторов",
         url = "https://school.moex.com/courses/level/beginner",
     )
     private val moexStart = EducationSource(
-        organization = "Школа Московской биржи",
+        organization = MOEX_SCHOOL,
         title = "С чего начать инвестиции — пошаговая инструкция",
         url = "https://school.moex.com/articles/s-chego-nachat-investicii-poshagovaya-instrukciya",
     )
     private val moexShares = EducationSource(
-        organization = "Школа Московской биржи",
+        organization = MOEX_SCHOOL,
         title = "Инвестиции в акции: механика, расчёт и риски",
         url = "https://school.moex.com/articles/investicii-v-akcii-dlya-nachinayushchih-mekhanika-raschet-riski",
     )

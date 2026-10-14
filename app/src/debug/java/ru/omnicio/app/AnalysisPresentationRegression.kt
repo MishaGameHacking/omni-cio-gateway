@@ -4,6 +4,8 @@ import java.time.Instant
 import java.time.ZoneId
 import ru.omnicio.app.ui.analysis.*
 
+private const val UNCONFIRMED_TEXT = "не подтверждено"
+
 /** Pure display contract checks, not a live model call or screenshot inspection. */
 internal fun runAnalysisPresentationChecks(): Int {
     var checks = 0
@@ -21,12 +23,12 @@ private fun queueChecks(verify: (Boolean) -> Unit) {
         verify(!message.contains("Анализ завершён"))
     }
     verify(refreshDescription("queued", "synthetic").contains("очередь"))
-    verify(refreshDescription("completed", null).contains("не подтверждено"))
-    verify(refreshDescription("completed", " ").contains("не подтверждено"))
+    verify(refreshDescription("completed", null).contains(UNCONFIRMED_TEXT))
+    verify(refreshDescription("completed", " ").contains(UNCONFIRMED_TEXT))
     verify(refreshDescription("completed", "synthetic").contains("Модель: synthetic"))
     verify(refreshDescription("skipped", null).contains("не выполнялся"))
     verify(refreshDescription("fallback", null).contains("ограничения"))
-    verify(ideasHeading("unknown").contains("не подтверждено"))
+    verify(ideasHeading("unknown").contains(UNCONFIRMED_TEXT))
     verify(ideasHeading("profile_required").contains("профиль"))
 }
 
@@ -67,8 +69,8 @@ private fun freshnessChecks(verify: (Boolean) -> Unit) {
     verify(insightValidity(created, created, now).contains("некорректен"))
     verify(insightValidity(created, null, now).contains("не указан"))
     verify(insightValidity(created, "invalid", now).contains("не указан"))
-    verify(insightValidity("invalid", null, now).contains("не подтверждено"))
-    verify(insightValidity("2026-10-14T07:00:00Z", "2026-10-14T08:00:00Z", now).contains("не подтверждено"))
+    verify(insightValidity("invalid", null, now).contains(UNCONFIRMED_TEXT))
+    verify(insightValidity("2026-10-14T07:00:00Z", "2026-10-14T08:00:00Z", now).contains(UNCONFIRMED_TEXT))
     verify(analysisTime(created, ZoneId.of("Europe/Moscow"))?.contains("07:00") == true)
     verify(analysisTime("2026-10-14T04:00:00") == null)
 }
