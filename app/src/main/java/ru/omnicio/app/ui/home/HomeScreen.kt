@@ -126,7 +126,7 @@ private fun HomePortfolioState(state: PortfolioUiState, onProfile: () -> Unit) {
         }
         is PortfolioUiState.Error -> {
             Text(state.message, color = MaterialTheme.colorScheme.error)
-            Text("Данные не заменяются демонстрационным балансом.", style = MaterialTheme.typography.bodySmall)
+            Text("Повторная проверка выполняется автоматически.", style = MaterialTheme.typography.bodySmall)
         }
         else -> {
             Text("Ваши инвестиции — в одном месте", style = MaterialTheme.typography.headlineSmall)

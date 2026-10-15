@@ -41,3 +41,22 @@ fun SpectrumTabs(options: List<String>, selected: Int, onSelect: (Int) -> Unit, 
         }
     }
 }
+
+/** A native asset-class mark, not an invented company logo. */
+@Composable
+fun SpectrumAssetIcon(ticker: String?, instrumentType: String, modifier: Modifier = Modifier) {
+    val palette = LocalSpectrumPalette.current
+    val accent = when (instrumentType) {
+        "cash", "currency" -> palette.cyan
+        "bond" -> palette.emerald
+        "etf", "fund" -> palette.violet
+        else -> palette.blue
+    }
+    Box(modifier.clip(RoundedCornerShape(12.dp))
+        .background(Brush.linearGradient(listOf(accent.copy(alpha = .24f), palette.cardStrong)))
+        .border(1.dp, accent.copy(alpha = .46f), RoundedCornerShape(12.dp)),
+        contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Text(ticker?.take(3)?.uppercase(java.util.Locale.ROOT) ?: "•", color = accent,
+            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+    }
+}

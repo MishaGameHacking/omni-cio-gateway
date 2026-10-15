@@ -1,18 +1,13 @@
 package ru.omnicio.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -20,9 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
@@ -30,129 +25,78 @@ import ru.omnicio.app.ui.spectrum.SpectrumIcon
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
-enum class AnalystTab {
-    Portfolio,
-    Ideas,
-    Pulse,
-    Chat,
-    Profile,
+/** Secondary destinations are deliberately NOT extra items in the five-place bottom bar. */
+enum class AnalystTab { Home, Portfolio, Market, Education, Profile, Ideas, Pulse, Chat, Risks }
+val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
+internal val PrimaryAnalystTabs = listOf(AnalystTab.Home, AnalystTab.Portfolio, AnalystTab.Market, AnalystTab.Education, AnalystTab.Profile)
+
+internal fun AnalystTab.primaryTab(): AnalystTab = when (this) {
+    AnalystTab.Ideas -> AnalystTab.Market
+    AnalystTab.Pulse, AnalystTab.Chat, AnalystTab.Risks -> AnalystTab.Home
+    else -> this
 }
 
-val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
-
 @Composable
-fun AnalystBottomBar(
-    selected: AnalystTab,
-    onPortfolioClick: () -> Unit,
-    onProfileClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit, onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
     val navigate = LocalAnalystTabNavigator.current
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        shadowElevation = 12.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-        ) {
-            AnalystTab.entries.forEach { tab ->
-                BottomBarItem(
-                    modifier = Modifier.weight(1f),
-                    tab = tab,
-                    selected = selected == tab,
-                    onClick = {
+    val palette = LocalSpectrumPalette.current
+    Surface(modifier, color = MaterialTheme.colorScheme.surface.copy(alpha = .98f), contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Brush.horizontalGradient(listOf(
+                Color.Transparent, palette.cyan.copy(alpha = .26f), palette.violet.copy(alpha = .20f), Color.Transparent))))
+            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 5.dp).selectableGroup()) {
+                PrimaryAnalystTabs.forEach { tab ->
+                    BottomBarItem(tab, selected.primaryTab() == tab, Modifier.weight(1f)) {
                         when (tab) {
                             AnalystTab.Portfolio -> onPortfolioClick()
                             AnalystTab.Profile -> onProfileClick()
                             else -> Unit
                         }
                         navigate(tab)
-                    },
-                )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BottomBarItem(
-    tab: AnalystTab,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun BottomBarItem(tab: AnalystTab, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val palette = LocalSpectrumPalette.current
-    val motion = LocalSpectrumMotionPreference.current
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val selectedBrush = Brush.linearGradient(
-        colors = listOf(
-            palette.cyan.copy(alpha = 0.17f),
-            palette.violet.copy(alpha = 0.17f),
-            palette.rose.copy(alpha = 0.10f),
-        ),
-    )
-    TextButton(
-        modifier = modifier.heightIn(min = 72.dp),
-        onClick = onClick,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(
-                    if (selected) {
-                        selectedBrush
-                    } else {
-                        Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                    },
-                )
-                .padding(horizontal = 1.dp, vertical = 5.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            SpectrumIcon(
-                symbol = tab.symbol(),
-                selected = selected,
-                tile = false,
-                motionAllowed = motion.enabled,
-                modifier = Modifier.size(27.dp),
-            )
-            Text(
-                text = tab.label(),
-                modifier = Modifier.fillMaxWidth(),
-                color = contentColor,
-                fontSize = 12.sp,
-                lineHeight = 14.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            )
-        }
+    val color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier.heightIn(min = 62.dp).clip(RoundedCornerShape(12.dp))
+        .background(if (selected) palette.blue.copy(alpha = .09f) else Color.Transparent)
+        .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+        .padding(horizontal = 1.dp, vertical = 5.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        SpectrumIcon(tab.symbol(), Modifier.size(30.dp), selected = selected, tile = false,
+            motionAllowed = LocalSpectrumMotionPreference.current.enabled)
+        Text(tab.label(), color = color, fontSize = 11.sp, lineHeight = 14.sp, textAlign = TextAlign.Center,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.fillMaxWidth())
+        Box(Modifier.size(width = 14.dp, height = 2.dp).clip(RoundedCornerShape(1.dp))
+            .background(if (selected) Brush.horizontalGradient(listOf(palette.cyan, palette.violet)) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))))
     }
 }
 
 private fun AnalystTab.label(): String = when (this) {
+    AnalystTab.Home -> "Главная"
     AnalystTab.Portfolio -> "Портфель"
-    AnalystTab.Ideas -> "Что купить"
-    AnalystTab.Pulse -> "Пульс"
-    AnalystTab.Chat -> "Чат"
+    AnalystTab.Market -> "Рынок"
+    AnalystTab.Education -> "Обучение"
     AnalystTab.Profile -> "Профиль"
+    AnalystTab.Ideas -> "Рекомендации"
+    AnalystTab.Pulse -> "События"
+    AnalystTab.Chat -> "Сообщения"
+    AnalystTab.Risks -> "Риски"
 }
-
 private fun AnalystTab.symbol(): SpectrumSymbol = when (this) {
+    AnalystTab.Home -> SpectrumSymbol.Home
     AnalystTab.Portfolio -> SpectrumSymbol.Portfolio
-    AnalystTab.Ideas -> SpectrumSymbol.Ideas
-    AnalystTab.Pulse -> SpectrumSymbol.Pulse
-    AnalystTab.Chat -> SpectrumSymbol.Messages
+    AnalystTab.Market -> SpectrumSymbol.Market
+    AnalystTab.Education -> SpectrumSymbol.Education
     AnalystTab.Profile -> SpectrumSymbol.Profile
+    AnalystTab.Ideas -> SpectrumSymbol.Ideas
+    AnalystTab.Pulse -> SpectrumSymbol.Bell
+    AnalystTab.Chat -> SpectrumSymbol.Messages
+    AnalystTab.Risks -> SpectrumSymbol.Risk
 }

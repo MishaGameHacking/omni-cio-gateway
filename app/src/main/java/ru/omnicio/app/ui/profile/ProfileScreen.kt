@@ -50,6 +50,9 @@ import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.SpectrumIcon
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.SpectrumCard
+import ru.omnicio.app.ui.spectrum.SpectrumHeader
+import ru.omnicio.app.ui.spectrum.SpectrumIconButton
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import ru.omnicio.app.ui.theme.LocalThemePreference
 import ru.omnicio.app.ui.theme.ThemeMode
@@ -79,9 +82,9 @@ fun ProfileScreen(
         bottomBar = { AnalystBottomBar(AnalystTab.Profile, onPortfolioClick, {}) }) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).padding(horizontal = 20.dp)
             .semantics { testTagsAsResourceId = true }) {
-            Column(Modifier.padding(top = 16.dp, bottom = 8.dp)) {
-                Text(user.name?.takeIf(String::isNotBlank) ?: "Analyst AI", fontWeight = FontWeight.SemiBold)
-                Text("Профиль", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SpectrumHeader("Профиль", user.name?.takeIf(String::isNotBlank) ?: "Analyst AI", SpectrumSymbol.Profile, Modifier.weight(1f))
+                SpectrumIconButton(SpectrumSymbol.Settings, "Открыть настройки", { section = 0 })
             }
             ProfileSectionTabs(section) { section = it }
             LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f).testTag("profile-content"),
@@ -104,7 +107,7 @@ fun ProfileScreen(
                         item(key = "security") { ProfileAction("Безопасность", "Хранение токенов, сеанс и доступ к данным", "⌾", SpectrumSymbol.Risk) { dialog = "security" } }
                     }
                     1 -> {
-                        item(key = "tapi") { ProfileAction("T‑API", if (tApiConfigured) "Подключён · проверить или заменить токен" else "Подключить T‑Invest API", "T", SpectrumSymbol.Sources, onOpenTApi) }
+                        item(key = "tapi") { ProfileAction("Брокерский счёт", if (tApiConfigured) "Подключён · проверить или заменить токен" else "Подключить T‑Invest API", "T", SpectrumSymbol.Sources, onOpenTApi) }
                         item(key = "investment-profile") { ProfileAction("Инвестиционный профиль", "Риск, горизонт и резерв", "AI", SpectrumSymbol.Analyst, onOpenAnalysisSettings) }
                         item(key = "portfolio") { ProfileAction("Данные портфеля", "Счета и позиции из вашего T‑Invest API", "₽", SpectrumSymbol.Portfolio, onPortfolioClick) }
                         item(key = "account") { ProfileAction(user.name ?: "Telegram", listOfNotNull(user.username?.let { "@$it" }, "ID ${user.telegramId}").joinToString(" · "), "TG", SpectrumSymbol.Messages) { dialog = "account" } }
@@ -149,9 +152,8 @@ fun ProfileScreen(
 @Composable
 private fun ProfileToggle(title: String, subtitle: String, symbol: SpectrumSymbol, checked: Boolean, onChange: (Boolean) -> Unit) {
     val fontScale = LocalDensity.current.fontScale
-    Card(modifier = Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChange),
-        shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        BoxWithConstraints(Modifier.padding(20.dp)) {
+    SpectrumCard(modifier = Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChange)) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
             val stacked = maxWidth < 300.dp || fontScale > 1.3f
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -173,16 +175,15 @@ private fun ProfileToggle(title: String, subtitle: String, symbol: SpectrumSymbo
 @Composable
 private fun ProfileAction(title: String, subtitle: String, symbol: String, spectrum: SpectrumSymbol? = null, onClick: () -> Unit) {
     val motion = LocalSpectrumMotionPreference.current
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+    val icon = spectrum ?: if (symbol == "↪") SpectrumSymbol.Update else SpectrumSymbol.Profile
+    SpectrumCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SpectrumIcon(icon, Modifier.size(46.dp), motionAllowed = motion.enabled)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
-            if (spectrum != null) SpectrumIcon(spectrum, Modifier.size(46.dp), tile = true, motionAllowed = motion.enabled)
-            else Text(symbol, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            Text("›", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
         }
     }
 }

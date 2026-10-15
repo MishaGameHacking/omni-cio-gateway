@@ -5,6 +5,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import ru.omnicio.app.ui.home.HomeScreen
+import ru.omnicio.app.ui.home.MarketScreen
+import ru.omnicio.app.ui.home.RisksScreen
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.browser.auth.AuthTabIntent
@@ -46,6 +50,7 @@ import ru.omnicio.app.ui.theme.AnalystTheme
 import ru.omnicio.app.ui.updates.MandatoryUpdateHost
 
 private enum class AppScreen {
+    Home, Market, Risks,
     Portfolio,
     Ideas,
     Pulse,
@@ -204,9 +209,9 @@ private fun AnalystAiApp(
 
     var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading) }
     var initialSessionChecked by remember { mutableStateOf(false) }
-    var screenName by rememberSaveable { mutableStateOf(AppScreen.Portfolio.name) }
+    var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
     val screen = remember(screenName) {
-        runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Portfolio)
+        runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Home)
     }
     var tApiConfigured by remember { mutableStateOf(false) }
     var portfolioCurrencyName by rememberSaveable {
@@ -356,7 +361,7 @@ private fun AnalystAiApp(
             },
             onLogout = {
                 sessionStore.clear()
-                screenName = AppScreen.Portfolio.name
+                screenName = AppScreen.Home.name
                 tApiConfigured = false
                 authState = AuthUiState.SignedOut()
             },
@@ -444,8 +449,21 @@ private fun SignedInAppContent(
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
 
+    BackHandler(screen != AppScreen.Home) { onScreenChange(AppScreen.Home) }
     CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab) {
         when (screen) {
+            AppScreen.Home -> HomeScreen(
+                state = portfolioState, accessToken = session.accessToken,
+                selectedCurrency = portfolioCurrency,
+                onCurrencyClick = { onCurrencyChange(portfolioCurrency.next()) },
+                onProfileClick = openProfile,
+                onAnalysisSettings = { onScreenChange(AppScreen.AnalysisSettings) },
+                refreshing = portfolioRefreshing, refreshError = portfolioError,
+                lastUpdatedMillis = portfolioLastSuccessMillis,
+            )
+            AppScreen.Market -> MarketScreen(portfolioState, openProfile)
+            AppScreen.Risks -> RisksScreen(portfolioState, session.accessToken, openProfile,
+                { onScreenChange(AppScreen.AnalysisSettings) })
             AppScreen.Portfolio -> {
                 PortfolioScreen(
                     state = portfolioState,
@@ -510,7 +528,7 @@ private fun SignedInAppContent(
 
             AppScreen.Education -> {
                 EducationScreen(
-                    onBack = openProfile,
+                    onBack = { onScreenChange(AppScreen.Home) },
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                 )
@@ -538,6 +556,10 @@ private fun SignedInAppContent(
 }
 
 private fun AnalystTab.toAppScreen(): AppScreen = when (this) {
+    AnalystTab.Home -> AppScreen.Home
+    AnalystTab.Market -> AppScreen.Market
+    AnalystTab.Education -> AppScreen.Education
+    AnalystTab.Risks -> AppScreen.Risks
     AnalystTab.Portfolio -> AppScreen.Portfolio
     AnalystTab.Ideas -> AppScreen.Ideas
     AnalystTab.Pulse -> AppScreen.Pulse

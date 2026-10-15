@@ -144,6 +144,6 @@ private fun DrawScope.glow(color: Color, center: Offset, radius: Float) {
 }
 private fun DrawScope.artCoordinates(block: DrawScope.() -> Unit) {
     if (size.minDimension <= 0f) return
-    val scale = size.minDimension / 256f
-    withTransform({ translate((size.width - size.minDimension) / 2f, (size.height - size.minDimension) / 2f); scale(scale, scale, Offset.Zero) }, block)
+    val factor = size.minDimension / 256f
+    withTransform({ translate((size.width - size.minDimension) / 2f, (size.height - size.minDimension) / 2f); scale(factor, factor, Offset.Zero) }, block)
 }

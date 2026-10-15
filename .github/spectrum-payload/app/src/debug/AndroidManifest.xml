@@ -1,6 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:allowBackup="false" android:usesCleartextTraffic="false">
-        <activity android:name=".ProfileUiProbeActivity" android:exported="true" />
-        <activity android:name=".SpectrumUiProbeActivity" android:exported="true" />
-    </application>
-</manifest>

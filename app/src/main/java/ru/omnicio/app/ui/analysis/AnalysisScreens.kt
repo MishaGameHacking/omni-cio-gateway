@@ -22,6 +22,8 @@ import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.analysis.*
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.LocalAnalystTabNavigator
+import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.research.PortfolioResearchPanel
 import java.time.Instant
 
@@ -57,7 +59,7 @@ fun InsightFeedScreen(accessToken: String, onPortfolioClick: () -> Unit, onProfi
     modifier: Modifier = Modifier) {
     key(accessToken) {
         val client = remember { AnalysisBackendClient() }
-        InsightScreen(accessToken, AnalystTab.Chat, "Сообщения", "Важные выводы Analyst AI без свободного чата",
+        InsightScreen(accessToken, AnalystTab.Chat, "Сообщения", "Выводы и уведомления Analyst AI",
             "Важных сообщений пока нет", "Система сообщит об изменении состава портфеля, риске или завершённом обзоре.",
             onPortfolioClick, onProfileClick, modifier, client) { token ->
             when (val result = client.fetchFeed(token)) {
@@ -73,7 +75,7 @@ fun PulseScreen(accessToken: String, onPortfolioClick: () -> Unit, onProfileClic
     modifier: Modifier = Modifier) {
     key(accessToken) {
         val client = remember { AnalysisBackendClient() }
-        InsightScreen(accessToken, AnalystTab.Pulse, "Пульс", "Изменения портфеля, утренние и вечерние проверки",
+        InsightScreen(accessToken, AnalystTab.Pulse, "События", "Проверки портфеля и важные изменения",
             "Событий пока нет", "Здесь появятся существенные изменения после серверной проверки.",
             onPortfolioClick, onProfileClick, modifier, client, client::fetchPulse)
     }
@@ -152,16 +154,21 @@ private fun IdeasContent(token: String, onPortfolioClick: () -> Unit, onProfileC
     var refreshing by remember { mutableStateOf(false) }
     var refreshMessage by remember { mutableStateOf<String?>(null) }
     val state by rememberAnalysisData(token, reload, client::fetchIdeas)
-    AnalysisScaffold(AnalystTab.Ideas, "Что купить", "Направления диверсификации, а не торговые команды",
+    AnalysisScaffold(AnalystTab.Ideas, "Рекомендации", "Идеи с учётом вашего портфеля и профиля",
         onPortfolioClick, onProfileClick, modifier) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { ActionCard("Обновить портфель и анализ", refreshMessage
-                ?: "Запрос передаётся серверу. Платная модель нужна не для каждого обновления: решение принимает серверный контроль изменений и бюджета.",
+            item { ActionCard("Новые идеи для вас", refreshMessage
+                ?: "Проверим портфель, профиль риска и доступные источники. Рекомендации появятся после завершения проверки.",
                 if (refreshing) "Отправляем…" else "Обновить", !refreshing) { refreshing = true } }
             loadStatus(state) { reload++ }
             // Preserve the independently loaded, bounded research section from main.
-            item(key = "portfolio-research") { PortfolioResearchPanel(token) }
+            item(key = "portfolio-research") {
+                val navigate = LocalAnalystTabNavigator.current
+                SpectrumCard(onClick = { navigate(AnalystTab.Risks) }) {
+                    SpectrumHeader("Проверка вашего портфеля", "Сценарии риска и исследования инструментов →", SpectrumSymbol.Risk)
+                }
+            }
             state.value?.let { payload ->
                 item { StatusCard(ideasHeading(payload.state), payload.message, accent = payload.state == "ready") }
                 if (payload.state == "profile_required") item {

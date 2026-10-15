@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
+import ru.omnicio.app.ui.spectrum.SpectrumCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -169,8 +169,8 @@ private fun ResearchRisk(risk: JSONObject) {
 
 @Composable
 private fun ResearchCard(card: JSONObject) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    SpectrumCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(card.text("name") ?: "Инструмент", style = MaterialTheme.typography.titleMedium)
             Text(listOfNotNull(card.text("ticker"), card.text("isin"), card.text("class_code")).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
             Text(card.text("explanation") ?: "Данных недостаточно.")

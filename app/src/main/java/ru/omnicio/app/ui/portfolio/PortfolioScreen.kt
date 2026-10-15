@@ -26,7 +26,8 @@ import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
-import ru.omnicio.app.ui.spectrum.SpectrumBackground
+import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.LocalAnalystTabNavigator
 
 private const val OperationsTitle = "Операции"
 private const val AnalyticsTitle = "Аналитика"
@@ -34,74 +35,69 @@ private const val CashTitle = "Денежные средства"
 
 @Composable
 fun PortfolioScreen(
-    state: PortfolioUiState,
-    onProfileClick: () -> Unit,
+    state: PortfolioUiState, onProfileClick: () -> Unit,
     selectedCurrency: PortfolioCurrency = PortfolioCurrency.RUB,
-    onCurrencyClick: () -> Unit = {},
-    modifier: Modifier = Modifier,
-    accessToken: String = "",
-    refreshing: Boolean = false,
-    refreshError: String? = null,
-    lastUpdatedMillis: Long? = null,
+    onCurrencyClick: () -> Unit = {}, modifier: Modifier = Modifier,
+    accessToken: String = "", refreshing: Boolean = false,
+    refreshError: String? = null, lastUpdatedMillis: Long? = null,
 ) {
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
-    var section by rememberSaveable { mutableIntStateOf(0) }
+    var accountSection by rememberSaveable { mutableIntStateOf(0) }
+    var portfolioView by rememberSaveable { mutableIntStateOf(0) }
     var selectForSection by remember { mutableStateOf<Int?>(null) }
     var positionDetails by remember(accessToken) { mutableStateOf<PositionSelection?>(null) }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
     val listState = rememberLazyListState()
-    BackHandler(accountId != null) { accountId = null; section = 0 }
-
+    val navigate = LocalAnalystTabNavigator.current
+    BackHandler(accountId != null) { accountId = null; accountSection = 0 }
+    LaunchedEffect(portfolioView) { listState.scrollToItem(0) }
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(Modifier.fillMaxSize(), containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
         ) { insets ->
             if (account != null) {
-                AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
-                    { accountId = null; section = 0 }, snapshot.asOf, refreshError,
-                    Modifier.padding(insets))
+                AccountScreen(account, accessToken, accountSection, { accountSection = it }, onCurrencyClick,
+                    { accountId = null; accountSection = 0 }, snapshot.asOf, refreshError, Modifier.padding(insets))
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(insets), state = listState,
-                    contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    item(key = "header") {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column {
-                                Notice("Analyst AI")
-                                Text("Портфель", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                    if (snapshot == null) {
-                        item(key = "initial-state") { InitialPortfolioState(state, onProfileClick) }
-                    } else {
+                    contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    item(key = "header") { SpectrumHeader("Мой портфель", "Ваши активы и их структура", SpectrumSymbol.Portfolio) }
+                    if (snapshot == null) item(key = "initial-state") { InitialPortfolioState(state, onProfileClick) }
+                    else {
                         item(key = "total") {
                             PortfolioSummary(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick) { target ->
-                                if (snapshot.accounts.size == 1) {
-                                    accountId = snapshot.accounts.first().id
-                                    section = target
-                                } else selectForSection = target
+                                if (snapshot.accounts.size == 1) { accountId = snapshot.accounts.first().id; accountSection = target }
+                                else selectForSection = target
                             }
                         }
-                        if (snapshot.accounts.isEmpty()) {
-                            item(key = "no-accounts") { CompactCard { Text("Доступных счетов не найдено") } }
+                        item(key = "views") { ChoiceRow(listOf("Структура", "Активы", "Динамика"), portfolioView) { portfolioView = it } }
+                        if (portfolioView == 0) item(key = "structure") {
+                            SpectrumCard {
+                                AssetStructure(snapshot.allocations, snapshot.totalValue)
+                                SpectrumAction("Разобрать риски портфеля", { navigate(AnalystTab.Risks) })
+                            }
+                        }
+                        if (portfolioView == 2 && snapshot.accounts.size == 1) item(key = "history") {
+                            SpectrumCard { SpectrumSectionTitle("Динамика стоимости"); DashboardHistory(accessToken, snapshot) }
+                        }
+                        if (snapshot.accounts.isEmpty()) item(key = "no-accounts") {
+                            SpectrumMessage("Счета пока не найдены", "Проверьте подключение брокерского счёта в профиле.", SpectrumSymbol.Portfolio)
                         }
                         items(snapshot.accounts, key = { "account:${it.id}" }) { item ->
-                            AccountPreviewCard(item,
-                                onOpen = { accountId = item.id; section = 0 },
-                                onSection = { target -> accountId = item.id; section = target },
+                            if (portfolioView == 1) AccountPreviewCard(item,
+                                onOpen = { accountId = item.id; accountSection = 0 },
+                                onSection = { target -> accountId = item.id; accountSection = target },
                                 onPosition = { positionDetails = PositionSelection(item.id, it.id) })
-                        }
-                        item(key = "structure") {
-                            CompactCard {
-                                SectionHeading("Структура портфеля")
-                                AssetStructure(snapshot.allocations, snapshot.totalValue)
+                            else SpectrumCard(onClick = { accountId = item.id; accountSection = if (portfolioView == 2) 3 else 0 }) {
+                                SpectrumHeader(item.name, item.totalValue.moneyText(), SpectrumSymbol.Portfolio)
+                                Text(if (portfolioView == 2) "Открыть аналитику счёта →" else "Открыть счёт →", color = LocalSpectrumPalette.current.cyan,
+                                    style = MaterialTheme.typography.labelLarge)
                             }
                         }
-                        if (snapshot.warnings.isNotEmpty()) {
-                            item(key = "warnings") { Notice(snapshot.warnings.joinToString("\n")) }
-                        }
+                        if (snapshot.warnings.isNotEmpty()) item(key = "warnings") { Notice(snapshot.warnings.joinToString("\n")) }
                     }
                 }
             }
@@ -112,7 +108,7 @@ fun PortfolioScreen(
         AlertDialog(onDismissRequest = { selectForSection = null }, title = { Text("Выберите счёт") },
             containerColor = LocalSpectrumPalette.current.card,
             text = { Column(Modifier.verticalScroll(rememberScrollState())) { snapshot.accounts.forEach { item ->
-                TextButton(onClick = { accountId = item.id; section = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
+                TextButton(onClick = { accountId = item.id; accountSection = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
             } } }, confirmButton = { TextButton(onClick = { selectForSection = null }) { Text("Отмена") } })
     }
 }
@@ -152,24 +148,9 @@ private fun AccountPreviewCard(
 
 @Composable
 private fun PortfolioShortcuts(onSection: (Int) -> Unit, enabled: Boolean = true) {
-    val fontScale = LocalDensity.current.fontScale
-    val choices = listOf(OperationsTitle to 1, AnalyticsTitle to 3)
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (portfolioStackedLayout(maxWidth.value, fontScale)) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                choices.forEach { (title, target) ->
-                    FilledTonalButton(onClick = { onSection(target) }, enabled = enabled,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(title) }
-                }
-            }
-        } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                choices.forEach { (title, target) ->
-                    FilledTonalButton(onClick = { onSection(target) }, enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(title) }
-                }
-            }
-        }
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TextButton(onClick = { onSection(1) }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Операции →") }
+        TextButton(onClick = { onSection(3) }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Аналитика →") }
     }
 }
 
@@ -244,7 +225,7 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
         item(key = "value") {
             CompactCard {
                 Text(account.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency), fontWeight = FontWeight.Bold, fontSize = 30.sp)
-                DataRow("Текущая доходность API", account.expectedYieldPercent.percentText())
+                DataRow("Доходность портфеля", account.expectedYieldPercent.percentText())
                 ReturnSummaryRow("За день", account.dailyYieldAmount, account.dailyYieldPercent)
                 Notice(error ?: "Получено ${dateText(asOf)} · автообновление")
                 if (account.limitsLoading) Notice("Брокер ещё обновляет лимиты. Данные могут измениться.")
@@ -362,15 +343,17 @@ private fun PortfolioSummary(
     snapshot: PortfolioSnapshot, selectedCurrency: PortfolioCurrency, refreshing: Boolean,
     error: String?, lastUpdatedMillis: Long?, onCurrency: () -> Unit, openSection: (Int) -> Unit,
 ) {
-    CompactCard {
-        Text(snapshot.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency), fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        snapshot.expectedYieldPercent?.let {
-            ReturnSummaryRow("Текущая доходность API", null, it)
-        }
+    SpectrumCard(emphasized = true) {
+        Notice("Общая стоимость")
+        Text(snapshot.totalValue.moneyText(), Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency),
+            fontSize = 31.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold)
+        snapshot.expectedYieldPercent?.let { ReturnSummaryRow("Доходность портфеля", snapshot.expectedYieldAmount, it) }
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
         Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Нажмите на сумму: ₽ → $ → €")
-        PortfolioShortcuts(onSection = openSection, enabled = snapshot.accounts.isNotEmpty())
         val observed = snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() }
-        Notice(error ?: "Получено ${dateText(observed)} · автообновление")
+        Notice(error ?: "Данные на ${dateText(observed)}")
+        TextButton(onClick = { openSection(1) }, enabled = snapshot.accounts.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("История операций →")
+        }
     }
 }

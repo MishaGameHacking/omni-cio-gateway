@@ -9,14 +9,14 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import ru.omnicio.app.ui.spectrum.SpectrumButton
 
-/** Navigation only. Neither link nor clipboard creates a broker order. */
+/** Navigation only. Neither the external link nor clipboard creates a broker order. */
 @Composable
 fun BrokerInstrumentActions(assetClass: String, ticker: String?, isin: String?) {
     val context = LocalContext.current
@@ -27,13 +27,13 @@ fun BrokerInstrumentActions(assetClass: String, ticker: String?, isin: String?) 
     val uri = if (section != null && validTicker != null) Uri.parse("https://www.tbank.ru/invest/$section/$validTicker/") else null
     Column {
         if (uri != null) {
-            Button(modifier = Modifier.fillMaxWidth(), onClick = {
+            SpectrumButton(modifier = Modifier.fillMaxWidth(), emerald = true, onClick = {
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
                         .addFlags(Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER))
                 } catch (_: ActivityNotFoundException) { fallback = true }
                 catch (_: SecurityException) { fallback = true }
-            }) { Text("Открыть в Т‑Инвестициях") }
+            }) { Text("Открыть в Т‑Инвестициях  ↗") }
         }
         val searchText = listOfNotNull(validTicker, isin?.takeIf { Regex("[A-Z]{2}[A-Z0-9]{10}").matches(it) }).joinToString(" · ")
         if (searchText.isNotBlank()) {

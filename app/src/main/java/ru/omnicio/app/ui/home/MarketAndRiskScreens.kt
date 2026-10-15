@@ -121,12 +121,12 @@ private fun RiskOverview(snapshot: PortfolioSnapshot?) {
         Row(Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (cashOnly) "Денежный портфель" else "Риск портфеля", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                SpectrumBadge("Без вымышленного рейтинга", accent = LocalSpectrumPalette.current.amber)
+                SpectrumBadge("Оценка пока недоступна", accent = LocalSpectrumPalette.current.amber)
             }
             SpectrumIcon(SpectrumSymbol.Risk, Modifier.size(82.dp), selected = true)
         }
-        Text(if (cashOnly) "В загруженных данных только денежные позиции. Число на шкале риска не подставляется: сводной серверной оценки нет."
-            else "Сводный балл не подставляется из макета. Доступные сценарии, ограничения и источники показаны в проверке ниже.",
+        Text(if (cashOnly) "На счёте пока только деньги. Для проверки отдельных инструментов нет позиций. Сводная оценка риска не рассчитана."
+            else "Единой оценки риска пока нет. Ниже — доступные сценарии, источники и ограничения проверки.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (snapshot != null) {
             DataRow("Счета", snapshot.accounts.size.toString())

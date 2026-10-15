@@ -21,7 +21,8 @@ import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 import ru.omnicio.app.ui.spectrum.SpectrumBackground
 import ru.omnicio.app.ui.spectrum.SpectrumBadge
-import ru.omnicio.app.ui.spectrum.SpectrumCard
+import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.LocalAnalystTabNavigator
 import java.time.Instant
 
 @Composable
@@ -39,9 +40,14 @@ internal fun AnalysisScaffold(
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                     .padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    val symbol = when (selected) {
+                        AnalystTab.Ideas -> SpectrumSymbol.Ideas
+                        AnalystTab.Pulse, AnalystTab.Chat -> SpectrumSymbol.Bell
+                        else -> SpectrumSymbol.Risk
+                    }
+                    SpectrumHeader(title, symbol = symbol)
                     Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium)
+                        style = MaterialTheme.typography.bodySmall)
                 }
             },
             bottomBar = { AnalystBottomBar(selected = selected,
@@ -104,14 +110,19 @@ private fun EvidenceDetails(card: InsightCard) {
 
 @Composable
 internal fun IdeaCard(idea: AnalysisIdea) {
-    SpectrumCard(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpectrumBadge("Направление, не торговая команда", accent = LocalSpectrumPalette.current.violet)
-            Text(idea.assetClass, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Сейчас ${analysisPercent(idea.currentPercent)} · ориентир ${analysisPercent(idea.targetPercent)}")
-            Text("Допустимое направление: до ${analysisPercent(idea.suggestedMaxPercent)} портфеля", fontWeight = FontWeight.SemiBold)
-            Text(idea.explanation, style = MaterialTheme.typography.bodyLarge)
+    SpectrumCard(Modifier.fillMaxWidth(), emphasized = true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SpectrumIcon(SpectrumSymbol.Ideas, Modifier.size(54.dp), selected = true)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(idea.assetClass, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Сейчас ${analysisPercent(idea.currentPercent)} · ориентир ${analysisPercent(idea.targetPercent)}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
         }
+        SpectrumBadge("Идея для портфеля", accent = LocalSpectrumPalette.current.violet)
+        Text(idea.explanation, style = MaterialTheme.typography.bodyMedium)
+        Text("Допустимая доля: до ${analysisPercent(idea.suggestedMaxPercent)}", fontWeight = FontWeight.SemiBold)
+        Text("Направление диверсификации, не торговое поручение.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -121,7 +132,7 @@ internal fun ActionCard(title: String, text: String, buttonText: String, enabled
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(text, style = MaterialTheme.typography.bodyLarge)
-            Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(buttonText) }
+            SpectrumAction(buttonText, onClick, enabled = enabled)
         }
     }
 }

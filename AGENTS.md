@@ -85,3 +85,6 @@
 - Фирменные компоненты и токены размещать в `ui/spectrum`; новые экраны строить из них, а не создавать локальные несовместимые палитры.
 - Обучение объясняет механику и риск простым языком, с официальными источниками и без обещаний доходности. Источники не копировать целиком; хранить собственный текст и ссылки для углубления.
 - Рабочее приложение никогда не показывает синтетические балансы, рейтинги, доходности или «лучшие активы» без явной маркировки. Макеты и preview обязаны отличаться от реальных пользовательских данных.
+
+## Owner-approved native navigation, 15 October 2026
+This section supersedes earlier five-tab navigation wording above. The approved Analyst AI reference is implemented as a separate Home dashboard and five primary tabs: Главная / Портфель / Рынок / Обучение / Профиль. Рекомендации, Риски, События and Сообщения are secondary destinations. Do not restore Что купить / Пульс / Чат as the primary shell. Use the native Spectrum artwork, shared colour roles, buttons and headers; custom backgrounds must always provide an explicit readable content colour. Do not restore the giant brokerage-style pill-button account list as the home page. Preserve real data, package identity, signing, authentication and all release gates. See docs/analyst-native-design-0.7.md.

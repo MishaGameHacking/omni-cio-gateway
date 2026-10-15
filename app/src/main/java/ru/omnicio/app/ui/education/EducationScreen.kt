@@ -46,6 +46,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumBadge
 import ru.omnicio.app.ui.spectrum.SpectrumCard
 import ru.omnicio.app.ui.spectrum.SpectrumIcon
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.SpectrumHeader
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
 @Composable
@@ -57,19 +58,20 @@ fun EducationScreen(
 ) {
     BackHandler(onBack = onBack)
     var category by rememberSaveable { mutableStateOf<EducationCategory?>(null) }
-    var expandedLessonId by rememberSaveable { mutableStateOf<String?>("news-impact") }
+    var expandedLessonId by rememberSaveable { mutableStateOf<String?>(null) }
     val lessons = remember(category) {
         EducationCatalog.lessons.filter { category == null || it.category == category }
     }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { AnalystBottomBar(AnalystTab.Profile, onPortfolioClick, onProfileClick) },
+        bottomBar = { AnalystBottomBar(AnalystTab.Education, onPortfolioClick, onProfileClick) },
     ) { insets ->
         SpectrumBackground(Modifier.fillMaxSize().padding(insets)) {
             Column(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                 // Navigation must remain reachable while reading a long lesson.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    SpectrumHeader("Обучение", symbol = SpectrumSymbol.Education, modifier = Modifier.padding(top = 12.dp))
                     TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) {
                         Text("‹ Назад")
                     }
@@ -140,28 +142,27 @@ private fun CategoryRow(selected: EducationCategory?, onSelected: (EducationCate
 
 @Composable
 private fun LessonCard(lesson: EducationLesson, expanded: Boolean, onExpand: () -> Unit) {
-    val palette = LocalSpectrumPalette.current
     val motion = LocalSpectrumMotionPreference.current
-    SpectrumCard(emphasized = lesson.id == "news-impact") {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpectrumIcon(lesson.symbol, Modifier.size(46.dp), selected = expanded, tile = true, motionAllowed = motion.enabled)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                SpectrumBadge(lesson.category.title, accent = if (lesson.category == EducationCategory.NEWS) palette.rose else palette.blue)
-                Text("${lesson.minutes} мин", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
-            }
-        }
-        Text(lesson.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-        Text(lesson.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        val action = if (expanded) "Свернуть урок" else "Открыть урок"
+    val action = if (expanded) "Свернуть урок" else "Открыть урок"
+    SpectrumCard(emphasized = expanded) {
         TextButton(onClick = onExpand, modifier = Modifier.fillMaxWidth()
             .testTag("lesson-toggle-${lesson.id}")
-            .semantics { contentDescription = "$action: ${lesson.title}" }) { Text(action) }
-        if (motion.enabled) {
-            AnimatedVisibility(visible = expanded) { LessonBody(lesson) }
-        } else if (expanded) {
-            LessonBody(lesson)
+            .semantics { contentDescription = "$action: ${lesson.title}" },
+            contentPadding = PaddingValues(0.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SpectrumIcon(lesson.symbol, Modifier.size(52.dp), selected = expanded, motionAllowed = motion.enabled)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(lesson.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface)
+                    Text(lesson.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text("${lesson.minutes} мин · ${lesson.category.title}", color = LocalSpectrumPalette.current.cyan,
+                        style = MaterialTheme.typography.labelMedium)
+                }
+                Text(if (expanded) "−" else "›", color = LocalSpectrumPalette.current.cyan)
+            }
         }
+        if (motion.enabled) AnimatedVisibility(visible = expanded) { LessonBody(lesson) }
+        else if (expanded) LessonBody(lesson)
     }
 }
 

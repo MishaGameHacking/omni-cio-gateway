@@ -179,27 +179,31 @@ class ProfileProbe:
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
-        self.palette("fff5f6f8")
+        self.palette("ff030c17")
+        self.capture("dark-initial")
+        self.tap(THEME_LABEL)
+        self.tap("Светлая")
+        self.palette("fff3f7ff")
         self.capture("light-initial")
         self.tap(THEME_LABEL)
         self.tap("Тёмная")
-        self.palette("ff111111")
+        self.palette("ff030c17")
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
-        self.palette("ff111111")
+        self.palette("ff030c17")
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
         self.tap("Светлая")
-        self.palette("fff5f6f8")
+        self.palette("fff3f7ff")
         self.capture("light-selected")
         self.tap(THEME_LABEL)
         self.tap("Как в системе")
         self.command("shell", "cmd", "uimode", "night", "yes")
-        self.palette("ff111111")
+        self.palette("ff030c17")
         self.capture("system-dark")
         self.command("shell", "cmd", "uimode", "night", "no")
-        self.palette("fff5f6f8")
+        self.palette("fff3f7ff")
         self.capture("system-light")
 
     def dialogs(self):
@@ -278,6 +282,8 @@ def exercise(device) -> None:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
+        from spectrum_ui_probe import exercise_spectrum
+        exercise_spectrum(probe)
         print(
             "PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
             flush=True,

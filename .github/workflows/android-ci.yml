@@ -160,7 +160,7 @@ jobs:
             const crypto = require('crypto');
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
-            const shots = ['light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
+            const shots = ['light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font', 'dark-initial', 'spectrum-home', 'spectrum-portfolio', 'spectrum-market', 'spectrum-risks', 'spectrum-education', 'spectrum-profile', 'spectrum-login', 'spectrum-update', 'spectrum-chart', 'spectrum-ideas', 'spectrum-events', 'spectrum-messages', 'spectrum-home-light', 'spectrum-portfolio-light', 'spectrum-home-large', 'spectrum-portfolio-large', 'spectrum-market-large'];
             const names = ['apk-verification.json', 'install-api-33/install-results.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {

@@ -39,6 +39,8 @@ import org.json.JSONObject
 import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 import ru.omnicio.app.ui.spectrum.SpectrumCard
+import ru.omnicio.app.ui.spectrum.SpectrumTabs
+import ru.omnicio.app.ui.spectrum.SpectrumAssetIcon
 
 internal val Moscow: ZoneId = ZoneId.of("Europe/Moscow")
 internal val Russian: Locale = Locale.forLanguageTag("ru-RU")
@@ -117,12 +119,7 @@ internal fun SectionHeading(text: String) {
 
 @Composable
 internal fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEachIndexed { index, text ->
-            FilterChip(selected = index == selected, onClick = { onSelect(index) },
-                label = { Text(text, maxLines = 1, softWrap = false) })
-        }
-    }
+    SpectrumTabs(options, selected, onSelect)
 }
 
 @Composable
@@ -135,12 +132,7 @@ internal fun PositionLine(position: PortfolioPosition, onClick: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Surface(shape = CircleShape, color = LocalSpectrumPalette.current.cardStrong, modifier = Modifier.size(38.dp)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(position.ticker?.take(2) ?: "•", fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
-                                color = LocalSpectrumPalette.current.cyan)
-                        }
-                    }
+                    SpectrumAssetIcon(position.ticker, position.instrumentType, Modifier.size(46.dp))
                     PositionIdentity(position, Modifier.weight(1f), stacked)
                     if (!stacked) PositionAmounts(position, Modifier.widthIn(max = 132.dp))
                 }
@@ -187,10 +179,10 @@ internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: S
     val remainder = MaterialTheme.colorScheme.surfaceVariant
     val largeText = LocalDensity.current.fontScale >= 1.5f
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val diameter = minOf(maxWidth, 214.dp)
+        val diameter = minOf(maxWidth, 224.dp)
         Box(Modifier.fillMaxWidth().height(diameter + 16.dp), contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(diameter).semantics { contentDescription = "Структура: $caption. Все доли перечислены ниже." }) {
-                val stroke = 11.dp.toPx()
+                val stroke = 24.dp.toPx()
                 val radius = size.minDimension - stroke
                 if (radius <= 0f) return@Canvas
                 val origin = Offset((size.width - radius) / 2, (size.height - radius) / 2)
@@ -217,56 +209,5 @@ private fun StructureCaption(center: String, caption: String, modifier: Modifier
         Text(center, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center)
-    }
-}
-
-@Composable
-internal fun HistoryChart(points: List<HistoryPoint>, currency: String) {
-    if (points.size < 2) {
-        Notice(if (points.isEmpty()) "За этот период пока нет сохранённых снимков стоимости." else "Получен первый снимок. График появится после следующего измерения.")
-        return
-    }
-    val geometry = remember(points) { portfolioHistory(points) }
-    if (geometry == null) {
-        Notice("Историю нельзя корректно отобразить: проверьте даты, повторные наблюдения и числовые данные. Пропуски не заменены нулями.")
-        return
-    }
-    val data = geometry.coordinates
-    val accent = LocalSpectrumPalette.current.blue
-    val outline = MaterialTheme.colorScheme.outlineVariant
-    Text(decimalText(data.last().point.value) + " " + currencySymbol(currency), fontWeight = FontWeight.Bold)
-    Canvas(Modifier.fillMaxWidth().height(170.dp).semantics {
-        contentDescription = "Стоимость портфеля: ${data.size} сохранённых снимков T-Invest. Значения доступны под графиком."
-    }) {
-        if (size.width < 1f || size.height < 1f) return@Canvas
-        val zero = geometry.zero * size.height
-        drawLine(outline, Offset(0f, zero), Offset(size.width, zero), 1.dp.toPx())
-        val width = minOf(size.width, (size.width / (data.size * 1.5f)).coerceIn(1f, 22.dp.toPx()))
-        data.forEach { coordinate ->
-            val x = coordinate.x * (size.width - width)
-            val y = coordinate.y * size.height
-            drawRect(accent, Offset(x, minOf(y, zero)), Size(width, kotlin.math.abs(zero - y)))
-        }
-    }
-    DataRow(dateText(data.first().point.date, "dd.MM.yy HH:mm"), dateText(data.last().point.date, "dd.MM.yy HH:mm"))
-    Notice("Это фактически сохранённые снимки, не восстановленная история до подключения. Пополнения и выводы также изменяют стоимость портфеля.")
-    HistoryValues(data, currency)
-}
-
-@Composable
-private fun HistoryValues(data: List<HistoryCoordinate>, currency: String) {
-    var expanded by remember(currency) { mutableStateOf(false) }
-    var page by remember(currency) { mutableIntStateOf(0) }
-    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Скрыть значения графика" else "Значения графика") }
-    if (!expanded) return
-    val window = historyWindow(data.size, page)
-    for (index in window.first until window.end) {
-        val point = data[index].point
-        DataRow(dateText(point.date), decimalText(point.value) + " " + currencySymbol(currency))
-    }
-    Notice("Показаны ${window.first + 1}–${window.end} из ${data.size} снимков.")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = { page = window.page - 1 }, enabled = window.page > 0, modifier = Modifier.weight(1f)) { Text("Предыдущие") }
-        TextButton(onClick = { page = window.page + 1 }, enabled = window.page + 1 < window.pages, modifier = Modifier.weight(1f)) { Text("Следующие") }
     }
 }

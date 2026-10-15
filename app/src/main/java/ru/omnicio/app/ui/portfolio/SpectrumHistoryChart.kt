@@ -75,13 +75,14 @@ internal fun HistoryChart(points: List<HistoryPoint>, currency: String, compact:
         Notice(if (points.isEmpty()) "В этом периоде ещё нет сохранённых снимков стоимости." else "Первый снимок получен. Линия появится после следующего измерения.")
         return
     }
-    val geometry = remember(points) { portfolioHistory(points) }
+    val geometry = remember(points) { portfolioLineHistory(points) }
     if (geometry == null) {
         Notice("Историю нельзя корректно отобразить: проверьте даты и значения. Пропуски не заменяются нулями.")
         return
     }
     val data = geometry.coordinates
     if (!compact) Text(decimalText(data.last().point.value) + " " + currencySymbol(currency), fontWeight = FontWeight.Bold)
+    Notice("Диапазон: ${decimalText(geometry.low)} — ${decimalText(geometry.high)} ${currencySymbol(currency)}")
     HistoryLine(data, currency, compact)
     DataRow(dateText(data.first().point.date, "dd.MM.yy"), dateText(data.last().point.date, "dd.MM.yy"))
     Notice(if (compact) "Стоимость счёта, не график доходности." else "Сохранённые снимки стоимости. Пополнения и выводы также меняют баланс; история до подключения не восстанавливается.")
