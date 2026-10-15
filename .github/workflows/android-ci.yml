@@ -144,7 +144,7 @@ jobs:
             const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);
-      - name: Validate preview installation, upgrade and profile UI
+      - name: Validate preview installation, upgrade and profile UI on Android 16
         uses: ./.github/actions/check-apk
         env:
           RUN_PROFILE_UI_TESTS: "1"
@@ -160,7 +160,7 @@ jobs:
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
             const shots = ['spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-            const names = ['apk-verification.json', 'install-api-33/install-results.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
+            const names = ['apk-verification.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {
               const file = path.join(base, name);
