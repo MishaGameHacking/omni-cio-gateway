@@ -1,7 +1,8 @@
-"""Source merge invariants; these are NOT visual or in-app installation tests.
+"""Source wiring invariants, not visual or installation tests.
 
-Behavioral research/update integration tests remain in backend/tests. These
-checks prevent losing their wiring while resolving the two Android branches.
+The native redesign moves the single research panel from Recommendations to
+Risks. It must remain independently reachable even when the ideas API fails.
+Behavioral research/update integration tests remain in backend/tests.
 """
 import ast
 from pathlib import Path
@@ -21,10 +22,22 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         start = source.index('private fun IdeasContent(')
         end = source.index('fun AnalysisProfileSettingsScreen(', start)
         ideas = source[start:end]
-        self.assertEqual(ideas.count('PortfolioResearchPanel(token)'), 1)
         self.assertIn('item(key = "portfolio-research")', ideas)
-        self.assertLess(ideas.index('PortfolioResearchPanel(token)'), ideas.index('state.value?.let'))
-        self.assertIn('PortfolioResearchPanel', source[:start])
+        self.assertIn('navigate(AnalystTab.Risks)', ideas)
+        self.assertLess(ideas.index('navigate(AnalystTab.Risks)'), ideas.index('state.value?.let'))
+        risks = self.source('ui/home/MarketAndRiskScreens.kt')
+        risks = risks[risks.index('fun RisksScreen('):risks.index('private fun RiskOverview(')]
+        self.assertEqual(risks.count('PortfolioResearchPanel(accessToken)'), 1)
+        self.assertIn('item(key = "risk-research")', risks)
+        self.assertNotIn('state.value', risks)
+        self.assertNotIn('IdeasState', risks)
+        all_screens = list((NATIVE / 'ui').rglob('*.kt'))
+        calls = sum(path.read_text(encoding='utf-8').count('PortfolioResearchPanel(') for path in all_screens)
+        self.assertEqual(calls, 2, 'one declaration and one independently mounted panel')
+        main = self.source('MainActivity.kt')
+        self.assertIn('AppScreen.Risks -> RisksScreen(', main)
+        self.assertIn('AnalystTab.Risks -> AppScreen.Risks', main)
+        self.assertIn('AnalystTab.Risks', self.source('ui/home/HomeScreen.kt'))
 
     def test_research_client_joins_existing_version_gate(self):
         source = self.source('data/research/ResearchClient.kt')
