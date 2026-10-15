@@ -14,6 +14,8 @@ import ru.omnicio.app.ui.theme.LightColors
 import java.math.BigDecimal
 import kotlin.math.abs
 
+private const val PrecisionFixture = "5000.08"
+
 internal fun runSpectrumContrastChecks() {
     check(PrimaryAnalystTabs == listOf(AnalystTab.Home, AnalystTab.Portfolio, AnalystTab.Market, AnalystTab.Education, AnalystTab.Profile))
     check(PrimaryAnalystTabs.distinct().size == 5)
@@ -42,10 +44,10 @@ private fun requireContrast(foreground: Color, background: Color) {
 
 internal fun runSpectrumLineChecks() {
     fun point(day: Int, value: String) = HistoryPoint("2026-10-${day.toString().padStart(2, '0')}T07:00:00Z", BigDecimal(value))
-    val flat = portfolioLineHistory(listOf(point(1, "5000.08"), point(2, "5000.08")))!!
+    val flat = portfolioLineHistory(listOf(point(1, PrecisionFixture), point(2, PrecisionFixture)))!!
     check(flat.coordinates.all { it.y == .5f })
-    check(flat.high.compareTo(BigDecimal("5000.08")) == 0)
-    val rise = portfolioLineHistory(listOf(point(2, "5000.09"), point(1, "5000.08")))!!
+    check(flat.high.compareTo(BigDecimal(PrecisionFixture)) == 0)
+    val rise = portfolioLineHistory(listOf(point(2, "5000.09"), point(1, PrecisionFixture)))!!
     check(abs(rise.coordinates.first().y - 1f) < .00001f && rise.coordinates.last().y == 0f)
     check(rise.coordinates.first().point.date.startsWith("2026-10-01"))
     val negative = portfolioLineHistory(listOf(point(1, "-4"), point(2, "-2")))!!
