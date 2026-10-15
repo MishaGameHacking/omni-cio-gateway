@@ -39,7 +39,7 @@ jobs:
       - name: Add native UI regression checks
         shell: cmd
         run: py -3 .github/spectrum-native-extra.py
-      - name: Create a candidate commit without updating any branch
+      - name: Retain reviewed native source blobs without changing any ref
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
@@ -49,7 +49,7 @@ jobs:
             const current = await github.rest.git.getRef({...context.repo, ref:'heads/' + context.payload.pull_request.head.ref});
             if (current.data.object.sha !== head) throw new Error('PR head moved; discard this candidate');
             const base = await github.rest.git.getCommit({...context.repo, commit_sha: head});
-            const entries = [];
+            const records = [];
             for (const file of manifest.files) {
               const allowed = file.path.startsWith('app/src/main/java/ru/omnicio/app/ui/') ||
                 file.path.startsWith('app/src/main/res/') || file.path.startsWith('app/src/debug/') ||
@@ -58,18 +58,13 @@ jobs:
                 file.path === '.github/scripts/profile_ui_probe.py' || file.path === '.github/scripts/spectrum_ui_probe.py' ||
                 file.path === '.github/workflows/android-ci.yml';
               if (!allowed || file.path.includes('..') || typeof file.content !== 'string') throw new Error('Unexpected candidate path');
-              entries.push({path:file.path, mode:'100644', type:'blob', content:file.content});
+              const blob = await github.rest.git.createBlob({...context.repo, content:file.content, encoding:'utf-8'});
+              const record = {path:file.path, sha:blob.data.sha};
+              records.push(record);
+              core.info('SPECTRUM_BLOB=' + JSON.stringify(record));
             }
-            for (const file of manifest.deletions) {
-              const temporary = ['.github/spectrum-native.py', '.github/spectrum-native-extra.py', '.github/spectrum-native-entry.py', '.github/workflows/spectrum-design-review.yml'];
-              if (!(file.startsWith('.github/spectrum-payload/') || temporary.includes(file))) throw new Error('Unexpected deletion');
-              entries.push({path:file, mode:'100644', type:'blob', sha:null});
-            }
-            const tree = await github.rest.git.createTree({...context.repo, base_tree:base.data.tree.sha, tree:entries});
-            const commit = await github.rest.git.createCommit({...context.repo,
-              message:'feat(android): implement the native Analyst AI reference design',
-              tree:tree.data.sha, parents:[head]});
-            core.notice('SPECTRUM_CANDIDATE=' + commit.data.sha);
             core.notice('SPECTRUM_PARENT=' + head);
-            core.notice('SPECTRUM_NATIVE_FILES=' + manifest.files.length);
-            await core.summary.addHeading('Native source candidate').addRaw('Commit: ' + commit.data.sha + '\nParent: ' + head + '\n').write();
+            core.notice('SPECTRUM_BASE_TREE=' + base.data.tree.sha);
+            core.notice('SPECTRUM_DELETIONS=' + JSON.stringify(manifest.deletions));
+            core.notice('SPECTRUM_NATIVE_FILES=' + records.length);
+            await core.summary.addHeading('Native source blobs prepared').addRaw('Parent: ' + head + '\nFiles: ' + records.length).write();
