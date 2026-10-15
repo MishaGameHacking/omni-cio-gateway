@@ -100,14 +100,16 @@ fun EducationScreen(
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        item(key = "education-header") {
-                            SpectrumPageHeader(
-                                title = "Обучение",
-                                subtitle = "Инвестиции простыми словами — от первого шага до проверки источников",
-                                symbol = SpectrumSymbol.Education,
-                            )
-                        }
+                        // Filtered categories must show their first lesson without
+                        // a large descriptive header hiding it at 200% font scale.
                         if (category == null) {
+                            item(key = "education-header") {
+                                SpectrumPageHeader(
+                                    title = "Обучение",
+                                    subtitle = "Инвестиции простыми словами — от первого шага до проверки источников",
+                                    symbol = SpectrumSymbol.Education,
+                                )
+                            }
                             item(key = "hero") { EducationHero() }
                         }
                         items(lessons, key = EducationLesson::id) { lesson ->
