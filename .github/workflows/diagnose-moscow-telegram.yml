@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/scripts/diagnose_moscow_telegram.py"
+      - ".github/scripts/run_moscow_telegram_diagnostic.py"
       - ".github/workflows/diagnose-moscow-telegram.yml"
   workflow_dispatch:
 
@@ -39,11 +40,11 @@ jobs:
       - name: Validate diagnostic before cloud access
         shell: cmd
         run: |
-          py -3 -m py_compile .github\scripts\diagnose_moscow_telegram.py
+          py -3 -m py_compile .github\scripts\diagnose_moscow_telegram.py .github\scripts\run_moscow_telegram_diagnostic.py
           if errorlevel 1 exit /b 1
 
       - name: Diagnose Telegram OIDC from verified Moscow server
         shell: cmd
         run: |
-          py -3 .github\scripts\diagnose_moscow_telegram.py
+          py -3 .github\scripts\run_moscow_telegram_diagnostic.py
           if errorlevel 1 exit /b 1
