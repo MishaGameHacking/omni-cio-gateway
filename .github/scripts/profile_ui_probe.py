@@ -12,8 +12,13 @@ ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
+INFO_LABEL = "О приложении"
+EDUCATION_LABEL = "Обучение"
+BACK_FROM_EDUCATION = "Вернуться на главную"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
+LIGHT_BACKGROUND = "fff5f8ff"
+DARK_BACKGROUND = "ff020a16"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -141,8 +146,6 @@ class ProfileProbe:
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
 
     def tab(self, label):
-        # The large-font rail scrolls horizontally. Scrolling the settings list
-        # cannot reveal its offscreen tabs and must not count as a UI failure.
         self.tap(label, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
 
     def marker(self, expected):
@@ -164,42 +167,40 @@ class ProfileProbe:
         self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
-        # Both labels need not be visible at once at 200% font scale. Measure
-        # each in its visible rail position; still assert single-line alignment.
         peer = self.reveal(SETTINGS_LABEL, "profile-tabs", "start")
         _, peer_top, _, peer_bottom = node_bounds(peer)
-        self.tab("Инфо")
-        _, top, _, bottom = self.bounds("Инфо")
+        self.tab(INFO_LABEL)
+        _, top, _, bottom = self.bounds(INFO_LABEL)
         tolerance = max(peer_bottom - peer_top, bottom - top) / 2
         if bottom - top > (peer_bottom - peer_top) * 1.5:
-            raise AssertionError("Info label wrapped vertically")
+            raise AssertionError("About label wrapped vertically")
         if abs((top + bottom - peer_top - peer_bottom) / 2) > tolerance:
             raise AssertionError("Profile tabs are not on the same row")
 
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
-        self.palette("fff5f6f8")
+        self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
         self.tap("Тёмная")
-        self.palette("ff111111")
+        self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
-        self.palette("ff111111")
+        self.palette(DARK_BACKGROUND)
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
         self.tap("Светлая")
-        self.palette("fff5f6f8")
+        self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
         self.tap("Как в системе")
         self.command("shell", "cmd", "uimode", "night", "yes")
-        self.palette("ff111111")
+        self.palette(DARK_BACKGROUND)
         self.capture("system-dark")
         self.command("shell", "cmd", "uimode", "night", "no")
-        self.palette("fff5f6f8")
+        self.palette(LIGHT_BACKGROUND)
         self.capture("system-light")
 
     def dialogs(self):
@@ -221,29 +222,26 @@ class ProfileProbe:
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
         self.tap(CONFIRM_LABEL)
-        self.tab("Инфо")
-        self.find("Обучение инвестициям")
+        self.tab(INFO_LABEL)
+        self.find(EDUCATION_LABEL)
         self.tab(SETTINGS_LABEL)
         self.find(THEME_LABEL)
 
     def education(self, screenshot="education"):
         area = "education-content"
-        self.tab("Инфо")
-        self.tap("Обучение инвестициям")
-        self.find("Инвестиции простыми словами")
+        self.tab(INFO_LABEL)
+        self.tap(EDUCATION_LABEL)
+        self.find(EDUCATION_LABEL)
         self.reveal(FIRST_LESSON, area)
         self.capture(screenshot)
-        # UiAutomator exposes a Compose testTag as a resource id.  The exact tag
-        # is stable even when Compose merges the visible action and accessibility
-        # description into a single platform node with implementation-specific text.
         self.tap_resource(FIRST_LESSON_TOGGLE, area)
         self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
-        self.find("‹ Назад")  # Navigation must not need a reverse scroll.
+        self.find(BACK_FROM_EDUCATION)
         self.tap("Старт", area)
-        self.find(FIRST_LESSON)  # Category change resets the lesson list.
-        self.tap("Все", area)
-        self.find("Инвестиции простыми словами")
-        self.tap("‹ Назад", area)
+        self.find(FIRST_LESSON)
+        self.tap("Все уроки", area)
+        self.find(EDUCATION_LABEL)
+        self.tap(BACK_FROM_EDUCATION, area)
         self.find("Профиль")
 
     def large_font(self):
@@ -279,7 +277,7 @@ def exercise(device) -> None:
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
-            "PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
+            "PROFILE_UI_TESTS=passed: spectrum-light,dark,system,persistence,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
     finally:
