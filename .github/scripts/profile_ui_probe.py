@@ -167,13 +167,14 @@ class ProfileProbe:
         self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
-        peer = self.reveal(SETTINGS_LABEL, "profile-tabs", "start")
-        _, peer_top, _, peer_bottom = node_bounds(peer)
+        settings_tab = self.reveal_resource("profile-tab-0", "profile-tabs", "start")
+        _, peer_top, _, peer_bottom = node_bounds(settings_tab)
         self.tab(INFO_LABEL)
-        _, top, _, bottom = self.bounds(INFO_LABEL)
+        info_tab = self.reveal_resource("profile-tab-2", "profile-tabs", "end")
+        _, top, _, bottom = node_bounds(info_tab)
         tolerance = max(peer_bottom - peer_top, bottom - top) / 2
         if bottom - top > (peer_bottom - peer_top) * 1.5:
-            raise AssertionError("About label wrapped vertically")
+            raise AssertionError("About tab wrapped vertically")
         if abs((top + bottom - peer_top - peer_bottom) / 2) > tolerance:
             raise AssertionError("Profile tabs are not on the same row")
 
