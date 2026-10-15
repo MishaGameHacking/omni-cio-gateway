@@ -29,6 +29,11 @@ replace_once(
     "'min_sdk':36,",
 )
 replace_once(
+    "backend/tests/test_release_metadata_contract.py",
+    "'min_sdk': 33,",
+    "'min_sdk': 36,",
+)
+replace_once(
     "backend/tests/test_release_recovery.py",
     "report['min_sdk'] = 34",
     "report['min_sdk'] = 37",
