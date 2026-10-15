@@ -255,11 +255,11 @@ grep -Fi 'cache-control:' "$HEADER_FILE" | grep -Fi 'no-store' >/dev/null
 grep -F 'https://oauth.telegram.org/js/telegram-login.js?3' "$BODY_FILE" >/dev/null
 grep -F 'Продолжить в Telegram' "$BODY_FILE" >/dev/null
 grep -F '/auth/telegram/complete' "$BODY_FILE" >/dev/null
-BODY_FILE="$BODY_FILE" "$VENV_PYTHON" - <<'PY'
+PY_BODY_FILE="$BODY_FILE" "$VENV_PYTHON" - <<'PY'
 import os
 from pathlib import Path
 
-body = Path(os.environ["BODY_FILE"]).read_text(encoding="utf-8")
+body = Path(os.environ["PY_BODY_FILE"]).read_text(encoding="utf-8")
 secret = os.environ["TELEGRAM_CLIENT_SECRET"]
 if not secret or secret in body:
     raise SystemExit("Telegram client secret exposure check failed")
