@@ -92,10 +92,7 @@ def stage_script() -> Path:
         raise RuntimeError("invalid run identifier")
     destination = runner_temp / f"analyst-ai-repair-{run_id}.sh"
     destination.write_text(patched_source(), encoding="utf-8", newline="\n")
-    try:
-        destination.chmod(0o700)
-    except OSError:
-        pass
+    destination.chmod(0o700)
     return destination
 
 
