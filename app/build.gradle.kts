@@ -11,9 +11,9 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 33
         targetSdk = 36
-        // Code 24 is reserved by the earlier parallel design draft; never reuse its identity.
-        versionCode = 25
-        versionName = "0.7.0"
+        // Code 25 belongs to the published 0.7.0 bytes; every update gets a new identity.
+        versionCode = 26
+        versionName = "0.7.1"
     }
 
     buildTypes {

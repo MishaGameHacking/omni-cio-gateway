@@ -26,11 +26,13 @@ jobs:
     permissions:
       contents: write
       checks: read
-    # Registered Android runners share one physical machine and ADB server.
-    # Only the newest exact-head lab job is useful; evict stale builds explicitly.
+    # Four registered runners share one laptop. Build/lint may use separate
+    # workspaces; test_apk_installation.py takes the host-wide OS lease before
+    # touching ADB or starting an emulator. A PR-specific group prevents one
+    # unrelated branch from cancelling another branch or an APK release.
     concurrency:
-      group: analyst-android-lab
-      cancel-in-progress: true
+      group: analyst-android-pr-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
     env:
@@ -49,8 +51,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6
+      # setup-gradle repeatedly timed out while downloading from codeload on the
+      # private Windows runner. Validate the pinned wrapper directly instead of
+      # making release availability depend on that supplementary action.
+      - name: Verify pinned Gradle wrapper
+        shell: cmd
+        run: |
+          certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\gradle-wrapper.sha256"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\gradle-wrapper.sha256" >nul
+          if errorlevel 1 exit /b 1
+          call gradlew.bat --version
+          if errorlevel 1 exit /b 1
       - name: Choose Android SDK root
         shell: cmd
         run: |
