@@ -27,7 +27,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 
-/** Equal tabs at normal size; horizontally scrollable single-line tabs at large font. */
+/** One measured row at every font size; overflow scrolls instead of wrapping. */
 @Composable
 internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
     val labels = listOf("Настройки", "Аккаунт", "О приложении")
@@ -35,26 +35,30 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
     val measurer = rememberTextMeasurer()
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
     val palette = LocalSpectrumPalette.current
-    val labelWidth = with(density) {
-        labels.maxOf { label ->
-            measurer.measure(AnnotatedString(label), style, softWrap = false, maxLines = 1).size.width
-        }.toDp()
+    val measured = labels.map { label ->
+        measurer.measure(AnnotatedString(label), style, softWrap = false, maxLines = 1).size
     }
+    val labelWidth = with(density) { measured.maxOf { it.width }.toDp() }
+    val tabHeight = with(density) { measured.maxOf { it.height }.toDp() + 20.dp }.coerceAtLeast(52.dp)
+    val gap = 6.dp
     val scroll = rememberScrollState()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val width = maxOf(maxWidth / labels.size, labelWidth + 24.dp)
-        val widthPixels = with(density) { width.roundToPx() }
-        LaunchedEffect(selected, widthPixels) {
-            scroll.scrollTo((selected * widthPixels).coerceIn(0, scroll.maxValue))
+        val equalWidth = ((maxWidth - gap * (labels.size - 1)) / labels.size).coerceAtLeast(0.dp)
+        val width = maxOf(equalWidth, labelWidth + 24.dp)
+        val stepPixels = with(density) { (width + gap).roundToPx() }
+        LaunchedEffect(selected, stepPixels, scroll.maxValue) {
+            scroll.scrollTo((selected * stepPixels).coerceIn(0, scroll.maxValue))
         }
         Row(
             Modifier
                 .fillMaxWidth()
+                .height(tabHeight)
                 .horizontalScroll(scroll)
                 .selectableGroup()
                 .semantics { testTagsAsResourceId = true }
                 .testTag("profile-tabs"),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             labels.forEachIndexed { index, label ->
                 val chosen = selected == index
@@ -72,7 +76,7 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
                 Box(
                     modifier = Modifier
                         .width(width)
-                        .heightIn(min = 52.dp)
+                        .height(tabHeight)
                         .clip(RoundedCornerShape(18.dp))
                         .background(brush)
                         .selectable(chosen, role = Role.Tab, onClick = { onSelect(index) })
@@ -82,6 +86,7 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
                 ) {
                     Text(
                         label,
+                        modifier = Modifier.testTag("profile-tab-label-$index"),
                         maxLines = 1,
                         softWrap = false,
                         style = style,

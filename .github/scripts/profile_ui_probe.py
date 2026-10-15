@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import tempfile
 import time
@@ -137,16 +138,39 @@ class ProfileProbe:
             )
         return target
 
-    def tap(self, text, area="profile-content", direction="end"):
-        left, top, right, bottom = node_bounds(self.reveal(text, area, direction))
+    def tap_node(self, node):
+        left, top, right, bottom = node_bounds(node)
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+    def tap(self, text, area="profile-content", direction="end"):
+        self.tap_node(self.reveal(text, area, direction))
 
     def tap_resource(self, resource_id, area="profile-content", direction="end"):
-        left, top, right, bottom = node_bounds(self.reveal_resource(resource_id, area, direction))
-        self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+        self.tap_node(self.reveal_resource(resource_id, area, direction))
+
+    def tap_profile_content(self, text):
+        from profile_scroll import reveal_in_list
+        from profile_tab_checks import content_tree
+
+        target = reveal_in_list(
+            lambda: content_tree(self.tree()),
+            self._swipe_callback(),
+            text,
+            resource_id="profile-content",
+        )
+        if target is None:
+            raise AssertionError("Profile content action not visible: " + text)
+        self.tap_node(target)
 
     def tab(self, label):
-        self.tap(label, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
+        from profile_tab_checks import TAB_IDS, selected_tab
+
+        resource_id = TAB_IDS[label]
+        self.tap_resource(resource_id, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
+        return self.wait_for(
+            lambda: selected_tab(self.tree(), resource_id),
+            "Profile tab selection not confirmed: " + resource_id,
+        )
 
     def marker(self, expected):
         def read():
@@ -167,22 +191,18 @@ class ProfileProbe:
         self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
-        settings_tab = self.reveal_resource("profile-tab-0", "profile-tabs", "start")
-        _, peer_top, _, peer_bottom = node_bounds(settings_tab)
-        self.tab(INFO_LABEL)
-        info_tab = self.reveal_resource("profile-tab-2", "profile-tabs", "end")
-        _, top, _, bottom = node_bounds(info_tab)
-        tolerance = max(peer_bottom - peer_top, bottom - top) / 2
-        if bottom - top > (peer_bottom - peer_top) * 1.5:
-            raise AssertionError("About tab wrapped vertically")
-        if abs((top + bottom - peer_top - peer_bottom) / 2) > tolerance:
-            raise AssertionError("Profile tabs are not on the same row")
+        from profile_tab_checks import assert_horizontal_geometry
+
+        # Sample each selected tab, not a clipped sliver left outside the rail.
+        peer = node_bounds(self.tab(SETTINGS_LABEL))
+        target = node_bounds(self.tab(INFO_LABEL))
+        print("PROFILE_TAB_GEOMETRY=" + json.dumps({"settings": peer, "about": target}), flush=True)
+        assert_horizontal_geometry(peer, target)
 
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
-        # Spectrum is deliberately dark on first installation, independent of
-        # the current system mode. Select light explicitly before its evidence.
+        # Spectrum starts dark; light/system remain explicit user choices.
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
         self.tap("Светлая")
@@ -216,7 +236,7 @@ class ProfileProbe:
         self.tap(CONFIRM_LABEL)
         self.horizontal_info()
         self.capture("info")
-        self.tap("О приложении")
+        self.tap_profile_content(INFO_LABEL)
         self.find(CONFIRM_LABEL)
         self.capture("about")
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
