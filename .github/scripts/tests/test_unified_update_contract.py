@@ -45,12 +45,28 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         for token in ('captureTelegramCallback', 'AUTH_SCHEME = "analystai"', 'AUTH_HOST = "auth"', 'exchangeTelegramCode(code)', 'sessionStore.save(result.value)'):
             self.assertIn(token, source)
 
-    def test_five_tabs_and_education_remain(self):
-        source = self.source('MainActivity.kt')
-        for tab in ('Portfolio', 'Ideas', 'Pulse', 'Chat', 'Profile'):
-            self.assertIn('AnalystTab.' + tab, source)
-        self.assertIn('AppScreen.Education', source)
-        self.assertIn('onOpenEducation', source)
+    def test_spectrum_primary_navigation_and_internal_destinations(self):
+        main = self.source('MainActivity.kt')
+        bar = self.source('ui/AnalystBottomBar.kt')
+        for tab in ('Home', 'Portfolio', 'Risk', 'Education', 'Profile'):
+            self.assertIn('AnalystTab.' + tab, main)
+            self.assertIn('AnalystTab.' + tab, bar)
+        for screen in ('Recommendations', 'Messages'):
+            self.assertIn('AppScreen.' + screen, main)
+        for label in ('Главная', 'Портфель', 'Риски', 'Обучение', 'Профиль'):
+            self.assertIn('"' + label + '"', bar)
+        self.assertNotIn('AnalystTab.Ideas', main)
+        self.assertNotIn('AnalystTab.Pulse', main)
+        self.assertNotIn('AnalystTab.Chat', main)
+
+    def test_home_is_real_data_dashboard_not_demo_fixture(self):
+        main = self.source('MainActivity.kt')
+        home = self.source('ui/home/HomeScreen.kt')
+        self.assertIn('HomeScreen(', main)
+        for token in ('PortfolioUiState', 'PortfolioSnapshot', 'snapshot.totalValue.moneyText()', 'snapshot.allocations'):
+            self.assertIn(token, home)
+        for forbidden in ('1 238 532', 'SBER', 'TBru', 'YDEX', 'demoBalance', 'fixtureBalance'):
+            self.assertNotIn(forbidden, home)
 
     def test_network_clients_send_same_version_and_handle_426(self):
         for file in ('data/backend/AnalystBackendClient.kt', 'data/analysis/AnalysisBackendClient.kt', 'data/portfolio/PortfolioDataClient.kt'):
