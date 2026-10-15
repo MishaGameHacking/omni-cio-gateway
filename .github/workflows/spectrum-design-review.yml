@@ -19,13 +19,15 @@ jobs:
   source:
     name: Exact Android source snapshot
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          clean: true
       - name: Archive tracked source only
+        shell: cmd
         run: git archive --format=zip --output=spectrum-source.zip HEAD
       - uses: actions/upload-artifact@v4
         with:
