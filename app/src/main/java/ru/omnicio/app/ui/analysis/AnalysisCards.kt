@@ -1,28 +1,8 @@
 package ru.omnicio.app.ui.analysis
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -189,66 +169,64 @@ internal fun InsightCardView(
     readEnabled: Boolean,
     onRead: () -> Unit,
 ) {
+    val palette = LocalSpectrumPalette.current
+    val accent = when (card.severity) {
+        "critical" -> MaterialTheme.colorScheme.error
+        "warning" -> palette.amber
+        "watch" -> palette.violet
+        else -> palette.cyan
+    }
+    val label = when (card.severity) {
+        "critical" -> "Критично"
+        "warning" -> "Внимание"
+        "watch" -> "Наблюдение"
+        "info" -> "Информация"
+        else -> "Категория не подтверждена"
+    }
     SpectrumCard(Modifier.fillMaxWidth(), emphasized = !card.isRead) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val palette = LocalSpectrumPalette.current
-            val accent = when (card.severity) {
-                "critical" -> MaterialTheme.colorScheme.error
-                "warning" -> palette.amber
-                "watch" -> palette.violet
-                else -> palette.cyan
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SpectrumBadge(label, accent = accent)
+            if (!card.isRead) SpectrumBadge("Новое", accent = palette.cyan)
+        }
+        Text(card.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(
+            "Проверка: ${analysisTime(card.createdAt) ?: "время неизвестно"}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            insightValidity(card.createdAt, card.validUntil, now),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(card.summary, style = MaterialTheme.typography.bodyLarge)
+        card.actions.forEach { Text("• $it", style = MaterialTheme.typography.bodyLarge) }
+        if (card.uncertainties.isNotEmpty()) {
+            Text("Ограничения вывода", fontWeight = FontWeight.SemiBold)
+            card.uncertainties.forEach {
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
-            val label = when (card.severity) {
-                "critical" -> "Критично"
-                "warning" -> "Внимание"
-                "watch" -> "Наблюдение"
-                "info" -> "Информация"
-                else -> "Категория не подтверждена"
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+        }
+        if (card.evidence.isEmpty()) {
+            Text(
+                "Источники в этом сообщении не указаны.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            EvidenceDetails(card)
+        }
+        if (!card.isRead) {
+            TextButton(
+                onClick = onRead,
+                enabled = readEnabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
-                SpectrumBadge(label, accent = accent)
-                if (!card.isRead) SpectrumBadge("Новое", accent = palette.cyan)
-            }
-            Text(card.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(
-                "Проверка: ${analysisTime(card.createdAt) ?: "время неизвестно"}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                insightValidity(card.createdAt, card.validUntil, now),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(card.summary, style = MaterialTheme.typography.bodyLarge)
-            card.actions.forEach { Text("• $it", style = MaterialTheme.typography.bodyLarge) }
-            if (card.uncertainties.isNotEmpty()) {
-                Text("Ограничения вывода", fontWeight = FontWeight.SemiBold)
-                card.uncertainties.forEach {
-                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            if (card.evidence.isEmpty()) {
-                Text(
-                    "Источники в этом сообщении не указаны.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            } else {
-                EvidenceDetails(card)
-            }
-            if (!card.isRead) {
-                TextButton(
-                    onClick = onRead,
-                    enabled = readEnabled,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text("Отметить прочитанным")
-                }
+                Text("Отметить прочитанным")
             }
         }
     }
@@ -257,10 +235,7 @@ internal fun InsightCardView(
 @Composable
 private fun EvidenceDetails(card: InsightCard) {
     var expanded by remember(card.id) { mutableStateOf(false) }
-    TextButton(
-        onClick = { expanded = !expanded },
-        modifier = Modifier.heightIn(min = 48.dp),
-    ) {
+    TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = 48.dp)) {
         Text(if (expanded) "Скрыть источники" else "Источники и факты (${card.evidence.size})")
     }
     if (expanded) {
@@ -319,17 +294,8 @@ internal fun ActionCard(
     onClick: () -> Unit,
 ) {
     SpectrumCard(Modifier.fillMaxWidth(), emphasized = true) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SpectrumIcon(
-                symbol = SpectrumSymbol.Analyst,
-                modifier = Modifier.size(58.dp),
-                selected = true,
-                tile = true,
-                motionAllowed = false,
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SpectrumIcon(SpectrumSymbol.Analyst, Modifier.size(58.dp), selected = true, tile = true)
             Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
         Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
@@ -354,10 +320,7 @@ internal fun StatusCard(title: String, text: String, accent: Boolean = false) {
 @Composable
 internal fun LoadingCard() {
     SpectrumCard(Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             CircularProgressIndicator(Modifier.size(32.dp))
             Text("Получаем актуальные данные…", modifier = Modifier.weight(1f))
         }
@@ -369,11 +332,7 @@ internal fun ErrorCard(message: String, onRetry: () -> Unit, enabled: Boolean = 
     SpectrumCard(Modifier.fillMaxWidth()) {
         SpectrumBadge("Не удалось выполнить запрос", accent = MaterialTheme.colorScheme.error)
         Text(message, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        TextButton(
-            onClick = onRetry,
-            enabled = enabled,
-            modifier = Modifier.heightIn(min = 48.dp),
-        ) {
+        TextButton(onClick = onRetry, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("Повторить")
         }
     }
@@ -409,10 +368,10 @@ internal fun SliderCard(
     enabled: Boolean,
     onValueChange: (Double) -> Unit,
 ) {
+    val valid = value.isFinite() && value >= range.start && value <= range.endInclusive
     SpectrumCard(Modifier.fillMaxWidth()) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(analysisPercent(value), fontWeight = FontWeight.SemiBold)
-        val valid = value.isFinite() && value >= range.start && value <= range.endInclusive
         if (!valid) {
             Text(
                 "Значение вне поддерживаемого диапазона. Повторно загрузите профиль.",
@@ -425,10 +384,9 @@ internal fun SliderCard(
             valueRange = range,
             steps = profileSliderSteps(range),
             enabled = enabled && valid,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .semantics { contentDescription = title },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {
+                contentDescription = title
+            },
         )
     }
 }
@@ -442,15 +400,12 @@ internal fun SwitchCard(
 ) {
     SpectrumCard(Modifier.fillMaxWidth()) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .toggleable(
-                    value = checked,
-                    enabled = enabled,
-                    role = Role.Switch,
-                    onValueChange = onCheckedChange,
-                ),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
