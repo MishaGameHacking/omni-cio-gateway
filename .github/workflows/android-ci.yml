@@ -26,12 +26,12 @@ jobs:
     permissions:
       contents: write
       checks: read
-    # The registered Android runners share one physical machine and ADB server.
-    # Keep development parallel, but queue heavy builds/emulators across PRs.
+    # Registered Android runners share one physical machine and ADB server.
+    # A newer exact-head build must evict a stale lab job instead of waiting forever.
     concurrency:
       group: analyst-android-lab
       queue: max
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
     env:
