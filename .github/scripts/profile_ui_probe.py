@@ -6,6 +6,7 @@ import json
 import re
 import tempfile
 import time
+import uuid
 import xml.etree.ElementTree as ET
 
 PACKAGE = "ru.omnicio.app.debug"
@@ -57,6 +58,12 @@ class ProfileProbe:
         return ET.fromstring(xml[xml.index("<?xml"):])
 
     def capture(self, name: str):
+        """Capture the Android compositor, not the emulator console recorder.
+
+        The callback is bound to the verified disposable device. A unique guest
+        filename and fresh host directory prevent reusing an earlier screenshot.
+        Capture/transfer errors still fail the UI gate; no placeholder is emitted.
+        """
         if re.fullmatch(r"[a-z-]+", name) is None:
             raise ValueError("Invalid screenshot label")
         root = Path(__file__).resolve().parents[2]
@@ -67,15 +74,20 @@ class ProfileProbe:
         destination = directory / (name + ".png")
         if destination.is_symlink():
             raise ValueError("Screenshot destination is a symlink")
+        remote = "/sdcard/analyst-ui-" + uuid.uuid4().hex + ".png"
         with tempfile.TemporaryDirectory(prefix="capture-", dir=directory) as stage:
-            output = self.command("emu", "screenrecord", "screenshot", stage)
-            pictures = list(Path(stage).glob("*.png"))
-            if "KO:" in output or len(pictures) != 1:
-                raise AssertionError("Emulator did not produce one screenshot")
-            image = pictures[0].read_bytes()
-            if len(image) < 100 or not image.startswith(b"\x89PNG\r\n\x1a\n"):
-                raise AssertionError("Invalid emulator screenshot")
-            destination.write_bytes(image)
+            picture = Path(stage) / "screen.png"
+            self.command("shell", "screencap", "-p", remote)
+            self.command("pull", remote, str(picture))
+            if not picture.is_file() or picture.is_symlink():
+                raise AssertionError("Android screenshot was not transferred")
+            if not 100 <= picture.stat().st_size <= 2097152:
+                raise AssertionError("Unexpected Android screenshot size")
+            image = picture.read_bytes()
+            if not image.startswith(b"\x89PNG\r\n\x1a\n") or not image.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"):
+                raise AssertionError("Invalid or incomplete Android screenshot")
+            self.command("shell", "rm", "-f", remote)
+            picture.replace(destination)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
 
     def wait_for(self, read, message):
@@ -145,6 +157,13 @@ class ProfileProbe:
     def tap(self, text, area="profile-content", direction="end"):
         self.tap_node(self.reveal(text, area, direction))
 
+    def tap_visible(self, text):
+        """Wait for a dialog action; never scroll the obscured profile behind it."""
+        from profile_scroll import visible_label
+
+        target = self.wait_for(lambda: visible_label(self.tree(), text), "Dialog action not visible: " + text)
+        self.tap_node(target)
+
     def tap_resource(self, resource_id, area="profile-content", direction="end"):
         self.tap_node(self.reveal_resource(resource_id, area, direction))
 
@@ -209,7 +228,7 @@ class ProfileProbe:
             self.command("shell", "am", "force-stop", PACKAGE)
             start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY, "--es", "spectrum_screen", screen))
             evidence = {}
-            self.wait_for(lambda: profile_frame(self.command, self.tree, evidence), "Dashboard is not resumed and ready")
+            self.wait_for(lambda evidence=evidence: profile_frame(self.command, self.tree, evidence), "Dashboard is not resumed and ready")
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
@@ -222,17 +241,24 @@ class ProfileProbe:
                 self.capture("spectrum-allocation")
         self.command("shell", "am", "force-stop", PACKAGE)
 
+    def profile_preflight(self):
+        # Exercise the previously failing production rail before system-mode
+        # changes, then repeat the same checks after those changes below.
+        self.open()
+        self.dialogs()
+        self.section_scroll_reset()
+
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
         # Spectrum starts dark; light/system remain explicit user choices.
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.tap("Светлая")
+        self.tap_visible("Светлая")
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
-        self.tap("Тёмная")
+        self.tap_visible("Тёмная")
         self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
@@ -240,11 +266,11 @@ class ProfileProbe:
         self.palette(DARK_BACKGROUND)
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap("Светлая")
+        self.tap_visible("Светлая")
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
-        self.tap("Как в системе")
+        self.tap_visible("Как в системе")
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
         self.capture("system-dark")
@@ -256,7 +282,7 @@ class ProfileProbe:
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
         self.capture("security")
-        self.tap(CONFIRM_LABEL)
+        self.tap_visible(CONFIRM_LABEL)
         self.horizontal_info()
         self.capture("info")
         self.tap_profile_content(INFO_LABEL)
@@ -264,13 +290,13 @@ class ProfileProbe:
         self.capture("about")
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
             raise AssertionError("About version text missing")
-        self.tap(CONFIRM_LABEL)
+        self.tap_visible(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
         self.tab(SETTINGS_LABEL)
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
-        self.tap(CONFIRM_LABEL)
+        self.tap_visible(CONFIRM_LABEL)
         self.tab(INFO_LABEL)
         self.find(EDUCATION_LABEL)
         self.tab(SETTINGS_LABEL)
@@ -315,6 +341,7 @@ def exercise(device) -> None:
     try:
         stages = (
             ("spectrum-dashboards", probe.dashboards),
+            ("profile-preflight", probe.profile_preflight),
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
             ("section-scroll-reset", probe.section_scroll_reset),
