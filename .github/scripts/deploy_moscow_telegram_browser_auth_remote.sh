@@ -207,14 +207,14 @@ chown -R root:www-data "$BACKEND_PATH"
 find "$BACKEND_PATH" -type d -exec chmod 0755 {} +
 find "$BACKEND_PATH" -type f -exec chmod 0644 {} +
 
-UNIT_FILE="$UNIT_FILE" OLD_EXEC="$OLD_EXEC" NEW_EXEC="$NEW_EXEC" "$VENV_PYTHON" - <<'PY'
+PY_UNIT_FILE="$UNIT_FILE" PY_OLD_EXEC="$OLD_EXEC" PY_NEW_EXEC="$NEW_EXEC" "$VENV_PYTHON" - <<'PY'
 import os
 from pathlib import Path
 import tempfile
 
-path = Path(os.environ["UNIT_FILE"])
-old = os.environ["OLD_EXEC"]
-new = os.environ["NEW_EXEC"]
+path = Path(os.environ["PY_UNIT_FILE"])
+old = os.environ["PY_OLD_EXEC"]
+new = os.environ["PY_NEW_EXEC"]
 text = path.read_text(encoding="utf-8")
 old_count = text.count(old)
 new_count = text.count(new)

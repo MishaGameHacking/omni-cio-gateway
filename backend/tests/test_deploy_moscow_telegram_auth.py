@@ -72,6 +72,16 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
         self.assertNotIn("/var/lib/analyst-ai/backend.db", source)
         self.assertNotIn("rm -rf /var/lib/analyst-ai", source)
 
+    def test_child_python_env_does_not_reassign_readonly_shell_constants(self) -> None:
+        source = REMOTE.read_text(encoding="utf-8")
+        unsafe = 'UNIT_FILE="$UNIT_FILE" OLD_EXEC="$OLD_EXEC" NEW_EXEC="$NEW_EXEC"'
+        safe = 'PY_UNIT_FILE="$UNIT_FILE" PY_OLD_EXEC="$OLD_EXEC" PY_NEW_EXEC="$NEW_EXEC"'
+        self.assertNotIn(unsafe, source)
+        self.assertIn(safe, source)
+        self.assertIn('os.environ["PY_UNIT_FILE"]', source)
+        self.assertIn('os.environ["PY_OLD_EXEC"]', source)
+        self.assertIn('os.environ["PY_NEW_EXEC"]', source)
+
     def test_remote_repair_has_valid_bash_syntax_when_bash_is_available(self) -> None:
         candidates = [shutil.which("bash"), r"C:\Program Files\Git\bin\bash.exe"]
         bash = next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
