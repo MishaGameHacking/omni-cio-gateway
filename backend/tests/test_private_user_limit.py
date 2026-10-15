@@ -83,7 +83,9 @@ class PrivateUserLimitTests(unittest.TestCase):
 
     def test_browser_login_returns_actionable_private_limit_response(self) -> None:
         self.fill_private_installation()
-        self.add_browser_transaction("sixth-state", "sixth-nonce")
+        state = "s" * 32
+        nonce = "n" * 32
+        self.add_browser_transaction(state, nonce)
 
         with patch.object(
             backend,
@@ -92,7 +94,7 @@ class PrivateUserLimitTests(unittest.TestCase):
         ):
             response = self.client.post(
                 "/auth/telegram/complete",
-                json={"state": "sixth-state", "id_token": "validated-by-test"},
+                json={"state": state, "id_token": "t" * 64},
                 headers={"Origin": backend.legacy.BACKEND_PUBLIC_URL},
             )
 
