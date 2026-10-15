@@ -33,7 +33,23 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
 /** RGB identifies an interface action, never gain/loss, rating or AI certainty. */
-enum class SpectrumSymbol { Portfolio, Ideas, Pulse, Messages, Profile, Risk, Allocation, Update, Sources, Analyst }
+enum class SpectrumSymbol {
+    Home,
+    Portfolio,
+    Ideas,
+    Pulse,
+    Messages,
+    Education,
+    Profile,
+    Risk,
+    Allocation,
+    Update,
+    Sources,
+    Analyst,
+    Notifications,
+    Market,
+    Goal,
+}
 
 /** A decorative icon. The surrounding button MUST provide a visible text label.
  * One finite animation on selection; no looping GIF decoder in a long list.
@@ -67,8 +83,11 @@ fun SpectrumIcon(
         }
     }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val colors = if (dark) listOf(Color(0xFF57DDE6), Color(0xFF76A9FA), Color(0xFFAF99FF), Color(0xFFF190C5))
-        else listOf(Color(0xFF006C78), Color(0xFF326FC8), Color(0xFF6E4EAD), Color(0xFFA6367A))
+    val colors = if (dark) {
+        listOf(Color(0xFF57DDE6), Color(0xFF76A9FA), Color(0xFFAF99FF), Color(0xFFF190C5))
+    } else {
+        listOf(Color(0xFF006C78), Color(0xFF326FC8), Color(0xFF6E4EAD), Color(0xFFA6367A))
+    }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val shape = remember(symbol) { spectrumPath(symbol) }
     Canvas(modifier) {
@@ -79,70 +98,109 @@ fun SpectrumIcon(
             translate(top = if (active && motionAllowed) -2f * motion.value else 0f)
         }) {
             if (tile) {
-                drawRoundRect(Brush.linearGradient(listOf(colors[1].copy(alpha=.13f), colors[2].copy(alpha=.03f)),
-                    start=Offset.Zero, end=Offset(128f,128f)),
-                    topLeft=Offset(12f,12f), size=Size(104f,104f), cornerRadius=CornerRadius(30f,30f))
+                drawRoundRect(
+                    Brush.linearGradient(
+                        listOf(colors[1].copy(alpha = .15f), colors[2].copy(alpha = .04f)),
+                        start = Offset.Zero,
+                        end = Offset(128f, 128f),
+                    ),
+                    topLeft = Offset(12f, 12f),
+                    size = Size(104f, 104f),
+                    cornerRadius = CornerRadius(30f, 30f),
+                )
             }
-            val brush: Brush = if (selected || tile) Brush.linearGradient(colors,
-                start=Offset(24f,24f), end=Offset(101f,106f)) else SolidColor(muted)
-            drawPath(shape, brush=brush, style=Stroke(width=6f, cap=StrokeCap.Round, join=StrokeJoin.Round))
+            val brush: Brush = if (selected || tile) {
+                Brush.linearGradient(colors, start = Offset(24f, 24f), end = Offset(101f, 106f))
+            } else {
+                SolidColor(muted)
+            }
+            drawPath(
+                shape,
+                brush = brush,
+                style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
         }
     }
 }
 
 private fun spectrumPath(symbol: SpectrumSymbol): Path = Path().apply {
     when (symbol) {
+        SpectrumSymbol.Home -> {
+            moveTo(24f, 61f); lineTo(64f, 27f); lineTo(104f, 61f)
+            moveTo(32f, 56f); lineTo(32f, 100f); lineTo(54f, 100f); lineTo(54f, 75f)
+            lineTo(74f, 75f); lineTo(74f, 100f); lineTo(96f, 100f); lineTo(96f, 56f)
+        }
         SpectrumSymbol.Portfolio -> {
-            addRoundRect(RoundRect(Rect(30f,43f,98f,92f),CornerRadius(13f,13f)))
-            moveTo(49f,43f); lineTo(49f,30f); lineTo(79f,30f); lineTo(79f,43f)
-            moveTo(31f,62f); quadraticTo(64f,80f,97f,62f)
-            moveTo(59f,65f); lineTo(59f,75f); lineTo(69f,75f); lineTo(69f,65f)
+            addRoundRect(RoundRect(Rect(30f, 43f, 98f, 92f), CornerRadius(13f, 13f)))
+            moveTo(49f, 43f); lineTo(49f, 30f); lineTo(79f, 30f); lineTo(79f, 43f)
+            moveTo(31f, 62f); quadraticTo(64f, 80f, 97f, 62f)
+            moveTo(59f, 65f); lineTo(59f, 75f); lineTo(69f, 75f); lineTo(69f, 65f)
         }
         SpectrumSymbol.Ideas -> {
-            addOval(Rect(31f,30f,83f,82f)); moveTo(77f,76f); lineTo(97f,96f)
-            moveTo(44f,56f); lineTo(70f,56f); moveTo(57f,43f); lineTo(57f,69f)
+            addOval(Rect(31f, 30f, 83f, 82f)); moveTo(77f, 76f); lineTo(97f, 96f)
+            moveTo(44f, 56f); lineTo(70f, 56f); moveTo(57f, 43f); lineTo(57f, 69f)
         }
         SpectrumSymbol.Pulse -> {
-            addOval(Rect(29f,29f,99f,99f)); moveTo(25f,67f); lineTo(47f,67f)
-            lineTo(57f,43f); lineTo(71f,88f); lineTo(80f,67f); lineTo(103f,67f)
+            addOval(Rect(29f, 29f, 99f, 99f)); moveTo(25f, 67f); lineTo(47f, 67f)
+            lineTo(57f, 43f); lineTo(71f, 88f); lineTo(80f, 67f); lineTo(103f, 67f)
         }
         SpectrumSymbol.Messages -> {
-            moveTo(38f,31f); lineTo(91f,31f); quadraticTo(101f,31f,101f,43f)
-            lineTo(101f,81f); quadraticTo(101f,92f,89f,92f); lineTo(56f,92f)
-            lineTo(35f,105f); lineTo(35f,92f); quadraticTo(25f,92f,25f,82f)
-            lineTo(25f,44f); quadraticTo(25f,31f,38f,31f); close()
-            moveTo(43f,51f); lineTo(83f,51f); moveTo(43f,65f); lineTo(74f,65f)
+            moveTo(38f, 31f); lineTo(91f, 31f); quadraticTo(101f, 31f, 101f, 43f)
+            lineTo(101f, 81f); quadraticTo(101f, 92f, 89f, 92f); lineTo(56f, 92f)
+            lineTo(35f, 105f); lineTo(35f, 92f); quadraticTo(25f, 92f, 25f, 82f)
+            lineTo(25f, 44f); quadraticTo(25f, 31f, 38f, 31f); close()
+            moveTo(43f, 51f); lineTo(83f, 51f); moveTo(43f, 65f); lineTo(74f, 65f)
+        }
+        SpectrumSymbol.Education -> {
+            moveTo(22f, 42f); lineTo(64f, 24f); lineTo(106f, 42f); lineTo(64f, 60f); close()
+            moveTo(36f, 50f); lineTo(36f, 83f); quadraticTo(64f, 101f, 92f, 83f); lineTo(92f, 50f)
+            moveTo(106f, 42f); lineTo(106f, 76f)
         }
         SpectrumSymbol.Profile -> {
-            addOval(Rect(47f,28f,81f,62f)); moveTo(32f,97f)
-            cubicTo(32f,56f,96f,56f,96f,97f); close()
+            addOval(Rect(47f, 28f, 81f, 62f)); moveTo(32f, 97f)
+            cubicTo(32f, 56f, 96f, 56f, 96f, 97f); close()
         }
         SpectrumSymbol.Risk -> {
-            moveTo(64f,24f); lineTo(96f,37f); lineTo(96f,65f)
-            quadraticTo(95f,89f,64f,105f); quadraticTo(32f,89f,32f,65f)
-            lineTo(32f,37f); close(); moveTo(47f,62f); lineTo(59f,75f); lineTo(83f,47f)
+            moveTo(64f, 24f); lineTo(96f, 37f); lineTo(96f, 65f)
+            quadraticTo(95f, 89f, 64f, 105f); quadraticTo(32f, 89f, 32f, 65f)
+            lineTo(32f, 37f); close(); moveTo(47f, 62f); lineTo(59f, 75f); lineTo(83f, 47f)
         }
         SpectrumSymbol.Allocation -> {
-            moveTo(61f,27f); arcTo(Rect(24f,27f,98f,101f),270f,-270f,false)
-            lineTo(61f,64f); close(); moveTo(73f,25f)
-            quadraticTo(99f,28f,103f,55f); lineTo(73f,55f); close()
+            moveTo(61f, 27f); arcTo(Rect(24f, 27f, 98f, 101f), 270f, -270f, false)
+            lineTo(61f, 64f); close(); moveTo(73f, 25f)
+            quadraticTo(99f, 28f, 103f, 55f); lineTo(73f, 55f); close()
         }
         SpectrumSymbol.Update -> {
-            moveTo(64f,25f); lineTo(64f,78f); moveTo(44f,58f); lineTo(64f,79f); lineTo(84f,58f)
-            moveTo(31f,79f); lineTo(31f,100f); lineTo(97f,100f); lineTo(97f,79f)
+            moveTo(64f, 25f); lineTo(64f, 78f); moveTo(44f, 58f); lineTo(64f, 79f); lineTo(84f, 58f)
+            moveTo(31f, 79f); lineTo(31f, 100f); lineTo(97f, 100f); lineTo(97f, 79f)
         }
         SpectrumSymbol.Sources -> {
-            moveTo(35f,24f); lineTo(80f,24f); lineTo(98f,42f); lineTo(98f,103f)
-            lineTo(26f,103f); lineTo(26f,24f); close(); moveTo(79f,24f); lineTo(79f,44f); lineTo(98f,44f)
-            moveTo(43f,59f); lineTo(79f,59f); moveTo(43f,73f); lineTo(72f,73f)
-            moveTo(43f,87f); lineTo(61f,87f)
+            moveTo(35f, 24f); lineTo(80f, 24f); lineTo(98f, 42f); lineTo(98f, 103f)
+            lineTo(26f, 103f); lineTo(26f, 24f); close(); moveTo(79f, 24f); lineTo(79f, 44f); lineTo(98f, 44f)
+            moveTo(43f, 59f); lineTo(79f, 59f); moveTo(43f, 73f); lineTo(72f, 73f)
+            moveTo(43f, 87f); lineTo(61f, 87f)
         }
         SpectrumSymbol.Analyst -> {
-            addOval(Rect(48f,48f,80f,80f))
-            moveTo(24f,64f); cubicTo(24f,30f,104f,30f,104f,64f)
-            cubicTo(104f,98f,24f,98f,24f,64f); close()
-            moveTo(64f,23f); cubicTo(29f,23f,29f,105f,64f,105f)
-            cubicTo(99f,105f,99f,23f,64f,23f); close()
+            addOval(Rect(48f, 48f, 80f, 80f))
+            moveTo(24f, 64f); cubicTo(24f, 30f, 104f, 30f, 104f, 64f)
+            cubicTo(104f, 98f, 24f, 98f, 24f, 64f); close()
+            moveTo(64f, 23f); cubicTo(29f, 23f, 29f, 105f, 64f, 105f)
+            cubicTo(99f, 105f, 99f, 23f, 64f, 23f); close()
+        }
+        SpectrumSymbol.Notifications -> {
+            moveTo(34f, 86f); lineTo(94f, 86f)
+            moveTo(43f, 86f); lineTo(43f, 58f); cubicTo(43f, 28f, 85f, 28f, 85f, 58f)
+            lineTo(85f, 86f); moveTo(54f, 98f); quadraticTo(64f, 108f, 74f, 98f)
+        }
+        SpectrumSymbol.Market -> {
+            moveTo(28f, 100f); lineTo(28f, 70f); lineTo(44f, 70f); lineTo(44f, 100f)
+            moveTo(56f, 100f); lineTo(56f, 48f); lineTo(72f, 48f); lineTo(72f, 100f)
+            moveTo(84f, 100f); lineTo(84f, 28f); lineTo(100f, 28f); lineTo(100f, 100f)
+        }
+        SpectrumSymbol.Goal -> {
+            addOval(Rect(27f, 27f, 101f, 101f)); addOval(Rect(43f, 43f, 85f, 85f))
+            addOval(Rect(57f, 57f, 71f, 71f)); moveTo(78f, 50f); lineTo(103f, 25f)
+            moveTo(88f, 25f); lineTo(103f, 25f); lineTo(103f, 40f)
         }
     }
 }
