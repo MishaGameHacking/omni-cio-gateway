@@ -1,0 +1,49 @@
+name: Diagnose Moscow Telegram login
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/diagnose_moscow_telegram.py"
+      - ".github/workflows/diagnose-moscow-telegram.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analyst-moscow-telegram-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Read-only Telegram OIDC diagnostics
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[diagnose-telegram-auth]'))
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Validate diagnostic before cloud access
+        shell: cmd
+        run: |
+          py -3 -m py_compile .github\scripts\diagnose_moscow_telegram.py
+          if errorlevel 1 exit /b 1
+
+      - name: Diagnose Telegram OIDC from verified Moscow server
+        shell: cmd
+        run: |
+          py -3 .github\scripts\diagnose_moscow_telegram.py
+          if errorlevel 1 exit /b 1
