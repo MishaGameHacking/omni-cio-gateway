@@ -22,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -30,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
@@ -75,25 +77,36 @@ fun EducationScreen(
                     .consumeWindowInsets(insets)
                     .semantics { testTagsAsResourceId = true },
             ) {
-                SpectrumPageHeader(
-                    title = "Обучение",
-                    subtitle = "Инвестиции простыми словами — от первого шага до проверки источников",
-                    symbol = SpectrumSymbol.Education,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-                )
+                // Navigation must stay reachable without traversing every lesson.
+                // The descriptive header scrolls with the catalog, leaving room
+                // for lesson content when the system font is enlarged.
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    Modifier.fillMaxWidth().zIndex(1f).clipToBounds()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    SpectrumSecondaryButton(
+                        text = "Вернуться на главную",
+                        onClick = onBack,
+                        modifier = Modifier.fillMaxWidth().testTag("education-back"),
+                    )
                     CategoryRow(selected = category, onSelected = { category = it })
                 }
                 key(category) {
                     LazyColumn(
                         state = rememberLazyListState(),
-                        modifier = Modifier.fillMaxWidth().weight(1f).testTag("education-content"),
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                            .clipToBounds().testTag("education-content"),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
+                        item(key = "education-header") {
+                            SpectrumPageHeader(
+                                title = "Обучение",
+                                subtitle = "Инвестиции простыми словами — от первого шага до проверки источников",
+                                symbol = SpectrumSymbol.Education,
+                            )
+                        }
                         if (category == null) {
                             item(key = "hero") { EducationHero() }
                         }
@@ -107,13 +120,6 @@ fun EducationScreen(
                             )
                         }
                         item(key = "guardrail") { EducationGuardrail() }
-                        item(key = "back-home") {
-                            SpectrumSecondaryButton(
-                                text = "Вернуться на главную",
-                                onClick = onBack,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
                     }
                 }
             }
