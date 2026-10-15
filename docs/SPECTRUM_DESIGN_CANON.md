@@ -1,19 +1,27 @@
 # Analyst AI Spectrum — canonical product design
 
-Status: owner-approved visual direction from 2026-10-13. This document turns the reference collage into repeatable implementation rules. It does not make synthetic balances, ratings, charts or recommendations valid production data.
+Status: owner-approved visual direction from 2026-10-13, clarified by the owner on 2026-10-15. This document turns the reference collage into repeatable implementation rules. It does not make synthetic balances, ratings, charts or recommendations valid production data.
 
 ## Product impression
 
-Analyst AI should feel like a calm personal analytical instrument, not a game or casino:
+Analyst AI should feel like a calm personal analytical instrument, not a game, casino or imitation of a broker application:
 
 - black/deep-navy environment with controlled cyan, blue, violet, rose and emerald light;
 - compact glass-like cards with thin spectral borders;
 - original 2D icons with a small amount of depth and glow;
 - one clear conclusion first, detail and sources after expansion;
 - movement communicates selection, progress or fresh information, never urgency to trade;
-- plain Russian text that explains the portfolio effect without unexplained jargon.
+- plain Russian text that explains the portfolio effect without unexplained jargon;
+- T‑Invest remains a verified data source, not the visual identity of the product.
 
-The current five primary destinations remain: **Портфель, Что купить, Пульс, Чат, Профиль**. Education is currently an internal destination opened from Profile/Info. A later navigation change requires an explicit product decision; visual similarity to a concept is not enough to change behavior silently.
+The five primary destinations are: **Главная, Портфель, Риски, Обучение, Профиль**.
+
+- **Главная** is the Analyst AI dashboard: real balance, core metrics, shortcuts, a deterministic explanation and portfolio structure.
+- **Портфель** contains verified accounts, positions, operations, payments and analytics.
+- **Риски** contains structured server signals, morning/evening checks and uncertainty labels.
+- **Обучение** is a first-class destination rather than a hidden profile page.
+- **Профиль** contains appearance, account, T‑API, risk profile and application information.
+- **Рекомендации** and **Сообщения** are internal destinations opened from Главная. They do not replace the five primary tabs.
 
 ## Color system
 
@@ -21,13 +29,12 @@ Dark foundation:
 
 | Token | Value | Use |
 |---|---:|---|
-| App base | `#111111` with deep-navy Spectrum background glows | regular existing screens |
-| Spectrum top | `#020A16` | immersive education/AI sections |
-| Spectrum bottom | `#07192B` | immersive education/AI sections |
-| Spectrum card | `#071A2A` | emphasized Spectrum surfaces |
+| Spectrum top | `#020A16` | application background |
+| Spectrum bottom | `#07192B` | application background |
+| Spectrum card | `#071A2A` | normal glass surfaces |
 | Spectrum strong card | `#0B2940` | hero/recommendation surfaces |
-| Text | `#F4F4F5` | primary text |
-| Supporting text | `#A4A7AE` | explanations and metadata |
+| Text | `#F4F7FF` | primary text |
+| Supporting text | `#B8C2D2` | explanations and metadata |
 | Cyan | `#36E0FF` | navigation/action accent |
 | Blue | `#4C8DFF` | charts and neutral analytics |
 | Violet | `#8A5CFF` | brand/AI accent |
@@ -35,13 +42,13 @@ Dark foundation:
 | Emerald | `#19E6A2` | positive action and verified completion |
 | Amber | `#FFC857` | warning/attention with text |
 
-Light foundation remains quiet rather than neon-white: `#F5F6F8` background, white cards, dark text, saturated but accessible accent variants.
+Light foundation remains quiet rather than neon-white: `#F5F8FF` background, white cards, dark text, saturated but accessible accent variants.
 
 Semantic financial colors are separate from RGB branding. Profit/loss/warning/rating must include words and values. A violet glow must never mean “safe”; an emerald glow must never silently mean “guaranteed profit”.
 
 ## Layout and component rules
 
-- 4dp base grid; screen horizontal padding 20dp; compact pages may use 16dp only for compatibility with existing screens.
+- 4dp base grid; screen horizontal padding 20dp.
 - Main card radius 24dp; pills fully rounded; thin 1dp spectral border on Spectrum cards.
 - Body text at least 16sp where it carries meaning; supporting metadata may use 12–14sp.
 - Minimum touch target 48dp.
@@ -49,20 +56,22 @@ Semantic financial colors are separate from RGB branding. Profit/loss/warning/ra
 - Use 2D charts with labels and accessible text/table alternatives. Decorative depth belongs behind data, not in perspective-distorted wedges or axes.
 - Preserve content while a new currency/period loads. Never blank a page just because a different view is requested.
 - Real data comes from the user’s APIs and verified server sources. Preview/demo data must be visibly labelled.
+- Every screen uses theme-aware foreground and surface colors; hard-coded black text on dark cards is not permitted.
 
 Reusable implementation lives in:
 
-- `ui/spectrum/SpectrumDesignSystem.kt` — palette, background, cards and badges;
+- `ui/spectrum/SpectrumDesignSystem.kt` — palette, backgrounds, glass cards, branded buttons, metrics, progress and the Analyst AI brand orb;
 - `ui/spectrum/SpectrumIcon.kt` — original finite-motion icons;
-- `ui/theme/AnalystTheme.kt` — system/light/dark mode and saved motion preference;
-- `ui/AnalystBottomBar.kt` — first production integration of Spectrum navigation.
+- `ui/theme/AnalystTheme.kt` — system/light/dark mode, typography and saved motion preference;
+- `ui/AnalystBottomBar.kt` — five production destinations;
+- `ui/home/HomeScreen.kt` — production dashboard based on real portfolio data.
 
 ## Motion
 
 - Selection animation: one short 180ms rise and 420ms settle; no automatic infinite loop.
 - App setting “Живые RGB-эффекты” controls decorative motion.
 - Platform animator-disabled state and Activity lifecycle are mandatory gates.
-- GIF/WebP is allowed for a small hero or onboarding scene, but not for every row in a portfolio list. Static SVG/PNG/vector alternatives are required.
+- GIF/WebP is allowed for a small hero or onboarding scene, but not for every row in a portfolio list. Static vector alternatives are required.
 - Motion must stop when the app is backgrounded. Reduced-motion mode keeps all information available.
 
 ## Education architecture
@@ -93,21 +102,22 @@ Official reading map used for curriculum design:
 
 ## Screens from the reference direction
 
-The collage establishes these future visual patterns, but does not authorize fake production data:
+The collage establishes these production patterns without authorizing fake data:
 
-- branded loading/splash scene with a spectral brain/globe and honest progress state;
-- portfolio home with balance, real chart, five compact action cards and an Analyst AI explanation card;
-- personalized ideas with source date, rationale, risk, target role, ticker/ISIN and explicit broker-card action;
-- risk screen with a score breakdown and plain-language explanation;
-- education cards with bright 2D lesson symbols;
-- instrument details with real price/history/identity fields and no order execution by Analyst AI;
-- full-screen mandatory update gate once the updater pipeline is genuinely safe.
+- branded loading/login scene with a spectral brain/orbit and honest progress state;
+- home dashboard with real balance, metrics, five compact destinations and an Analyst AI explanation card;
+- portfolio with verified accounts, structure, positions and broker-source timestamps;
+- recommendations with rationale, current/target role, risk limits and source status;
+- risk screen with signal breakdown, validity and uncertainty;
+- education cards with bright original 2D lesson symbols;
+- profile/settings hub using the same glass system;
+- full-screen mandatory update gate only after the updater pipeline is genuinely safe.
 
 ## Implementation order
 
-1. Apply Spectrum tokens and navigation without changing financial logic.
-2. Add education and source-aware explanations.
-3. Convert portfolio/ideas/pulse cards screen by screen; preserve existing tested flows.
-4. Integrate verified recommendation/risk data only after collectors and validation exist.
-5. Add updater gate only after same-signer download, verification, installation and rollback tests pass.
+1. Apply Spectrum tokens, theme-aware text and the exact product navigation.
+2. Implement the real-data Home dashboard.
+3. Convert recommendations, risks, education, profile and login to shared Spectrum components.
+4. Convert deeper portfolio/account/detail screens without changing verified financial logic.
+5. Integrate richer recommendation/risk data only after collectors and validation exist.
 6. Release a new APK only after exact-head Android CI, installation/update tests, backend tests and quality checks succeed.
