@@ -1,9 +1,11 @@
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / ".github/scripts/repair_moscow_update_channel.sh"
+RUNNER = ROOT / ".github/scripts/run_moscow_update_channel_repair.py"
 WORKFLOW = ROOT / ".github/workflows/repair-moscow-update-channel.yml"
 
 
@@ -11,6 +13,7 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.script = SCRIPT.read_text(encoding="utf-8")
+        cls.runner = RUNNER.read_text(encoding="utf-8")
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
 
     def test_exact_existing_moscow_server_is_required(self):
@@ -66,10 +69,30 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
         )
         self.assertIn("sha256sum -c -", self.script)
 
+    def test_readonly_constants_are_passed_only_to_child_processes(self):
+        spec = spec_from_file_location("repair_launcher", RUNNER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+        patched = module.patched_source()
+        expected = (
+            '    env SERVER_ID="$SERVER_ID" SSH_KEY_ID=',
+            'env APK_PATH="$APK_UNIX" REPORT_PATH=',
+            'env SSH_PUBLIC_KEY_PATH="$SSH_PUBLIC_KEY_PATH" STATE_PATH=',
+            'env POLICY_PATH="$READBACK_POLICY" PACKAGE_NAME=',
+        )
+        for prefix in expected:
+            self.assertEqual(sum(line.startswith(prefix) for line in patched.splitlines()), 1)
+        self.assertIn("--check", self.runner)
+        self.assertIn("READONLY_ENV_REPAIR_CHECK=passed", self.runner)
+
     def test_cloud_access_is_marker_gated_and_validated_first(self):
         self.assertIn("[repair-update-channel]", self.workflow)
         self.assertIn("permissions:\n  contents: read", self.workflow)
         self.assertIn("Validate repair workflow before cloud access", self.workflow)
+        self.assertIn("run_moscow_update_channel_repair.py --check", self.workflow)
+        self.assertIn("py -3 .github\\scripts\\run_moscow_update_channel_repair.py", self.workflow)
         validation = self.workflow.index("Validate repair workflow before cloud access")
         download = self.workflow.index("Download exact immutable verified release")
         repair = self.workflow.index("Repair canonical backend and update channel")
