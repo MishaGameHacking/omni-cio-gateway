@@ -122,7 +122,7 @@ class ReleaseRolloverTests(unittest.TestCase):
     def test_changed_metadata_not_hidden_by_idempotence(self):
         old = self.publish()
         report = self.report()
-        report['min_sdk'] = 34
+        report['min_sdk'] = 37
         with self.assertRaisesRegex(ReleaseUnavailable, 'identity_changed'):
             publish(self.root, self.apk, report, expected_certificate=CERT)
         self.assertEqual(self.channel.current(PACKAGE), old)

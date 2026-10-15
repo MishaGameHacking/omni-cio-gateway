@@ -53,7 +53,7 @@ class ApplicationUpdateTests(unittest.TestCase):
         sha = hashlib.sha256(apk.read_bytes()).hexdigest()
         evidence = {'sha256':sha,'bytes':apk.stat().st_size,'certificate_sha256':'c'*64,
             'signature_v2':True,'zipalign_16kb':True,'debuggable':False,'test_only':False,
-            'package':'ru.omnicio.app.debug','version_code':version,'version_name':str(version),'min_sdk':33,
+            'package':'ru.omnicio.app.debug','version_code':version,'version_name':str(version),'min_sdk':36,
             'installation_evidence':{'apk_sha256':sha,'36':{'clean_install':True,'upgrade':True,'launch':True}}}
         return publish(self.root/'releases',apk,evidence,expected_certificate='c'*64)
 

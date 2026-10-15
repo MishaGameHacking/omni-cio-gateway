@@ -69,7 +69,7 @@ class PublicationRecoveryTests(unittest.TestCase):
     def test_retry_cannot_change_prepared_minimum_android(self):
         self.interrupt_before_activation()
         report = self.report()
-        report['min_sdk'] = 34
+        report['min_sdk'] = 37
         with self.assertRaisesRegex(ReleaseUnavailable, 'identity_changed'):
             publication.publish(self.root, self.apk, report,
                                 expected_certificate=CERTIFICATE, now=200)

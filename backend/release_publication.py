@@ -40,7 +40,8 @@ def _evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None
         if not isinstance(checks, dict) or any(checks.get(k) is not True for k in
                                                ('clean_install', 'upgrade', 'launch')):
             raise ReleaseUnavailable('installation_evidence_incomplete')
-    if report.get('min_sdk') != 36:
+    minimum_sdk = report.get('min_sdk')
+    if type(minimum_sdk) is not int or minimum_sdk < 36:
         raise ReleaseUnavailable('unsupported_android_floor')
     if 'installation_tests' in report:
         try:
