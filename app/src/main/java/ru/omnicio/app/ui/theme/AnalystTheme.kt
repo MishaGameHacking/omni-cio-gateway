@@ -6,6 +6,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -214,7 +215,13 @@ fun AnalystTheme(content: @Composable () -> Unit) {
         MaterialTheme(
             colorScheme = if (dark) DarkColors else LightColors,
             typography = AnalystTypography,
-            content = content,
-        )
+        ) {
+            // Transparent scaffolds and text outside cards must not inherit the
+            // framework's default black LocalContentColor in the dark theme.
+            CompositionLocalProvider(
+                LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                content = content,
+            )
+        }
     }
 }
