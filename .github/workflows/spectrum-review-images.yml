@@ -5,82 +5,78 @@ on:
     paths: [.github/workflows/spectrum-review-images.yml]
 permissions:
   contents: read
+  actions: read
 jobs:
   images:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 3
     steps:
-      - name: Set up JDK 17
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: '17'
-      - name: Read only known synthetic screenshot blobs
+      - name: Read known synthetic PNGs and completed job diagnostics
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const fs = require('fs');
-            const path = require('path');
-            const crypto = require('crypto');
-            const folder = path.join(process.env.RUNNER_TEMP, 'spectrum-review-' + context.runId);
-            fs.mkdirSync(folder, {recursive: true});
-            const records = [
-              ['home', 'cf84bd720fe32e118c90d38c8e5c5b2108f0adf7', 'ce02a66fab7eb016a21ebcd86d0a95b860653df876493cf1f51a1f806cd0c043'],
-              ['security', '65cd23e09be919a7e235d7068be0115dafa0ccd7', '11ce6375db563d487be828d18f3da001ba58f0b383abc81b72dbd4f3545d1951'],
-            ];
-            for (const [name, sha, digest] of records) {
-              const blob = (await github.rest.git.getBlob({...context.repo, file_sha: sha})).data;
-              if (blob.encoding !== 'base64' || blob.size > 250000) throw new Error('Unexpected image');
-              const bytes = Buffer.from(blob.content, 'base64');
-              if (crypto.createHash('sha256').update(bytes).digest('hex') !== digest) throw new Error('Image digest mismatch');
-              fs.writeFileSync(path.join(folder, name + '.png'), bytes);
+            const fs = require('fs'), path = require('path'), crypto = require('crypto');
+            const job = (await github.rest.actions.getJobForWorkflowRun({...context.repo, job_id:116378085305})).data;
+            core.info('REVIEWED_JOB=' + JSON.stringify({head:job.head_sha,status:job.status,conclusion:job.conclusion}));
+            if (job.status === 'completed' && job.head_sha === '3b7c5863f51923dcfe12f84e54f455002c29f533') {
+              const response = await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:job.id});
+              const text = typeof response.data === 'string' ? response.data : Buffer.from(response.data).toString('utf8');
+              for (const line of text.split('\n').filter(s=>/PROFILE_TAB_DIAGNOSTIC=|PROFILE_TAB_GEOMETRY=|PROFILE_UI_STAGE=|AssertionError:|VERIFICATION_REPORT|VERIFICATION_EVIDENCE=/.test(s)).slice(-40)) core.info(line.slice(0,14000));
             }
-            fs.writeFileSync(path.join(folder, 'ReviewImages.java'), `
+            const folder = path.join(process.env.RUNNER_TEMP, 'spectrum-review-' + context.runId);
+            fs.mkdirSync(folder, {recursive:true});
+            core.exportVariable('SPECTRUM_REVIEW_DIRECTORY',folder);
+            for (const [name,sha,digest] of [
+              ['home','cf84bd720fe32e118c90d38c8e5c5b2108f0adf7','ce02a66fab7eb016a21ebcd86d0a95b860653df876493cf1f51a1f806cd0c043'],
+              ['security','65cd23e09be919a7e235d7068be0115dafa0ccd7','11ce6375db563d487be828d18f3da001ba58f0b383abc81b72dbd4f3545d1951']]) {
+              const b=(await github.rest.git.getBlob({...context.repo,file_sha:sha})).data;
+              if(b.encoding!=='base64'||b.size>250000)throw new Error('Unexpected image');
+              const bytes=Buffer.from(b.content,'base64');
+              if(crypto.createHash('sha256').update(bytes).digest('hex')!==digest)throw new Error('Digest mismatch');
+              fs.writeFileSync(path.join(folder,name+'.png'),bytes);
+            }
+            fs.writeFileSync(path.join(folder,'ReviewImages.java'),`
             import java.awt.image.BufferedImage;
-            import java.io.*;
-            import java.nio.file.*;
-            import java.security.MessageDigest;
-            import java.util.*;
-            import javax.imageio.*;
-            import javax.imageio.stream.*;
+            import java.io.*; import java.nio.file.*; import java.security.*;
+            import java.util.*; import javax.imageio.*; import javax.imageio.stream.*;
             class ReviewImages {
               public static void main(String[] args) throws Exception {
-                Path folder = Path.of(System.getenv("SPECTRUM_REVIEW_DIRECTORY"));
-                for (String name : List.of("home", "security")) {
-                  BufferedImage source = ImageIO.read(folder.resolve(name + ".png").toFile());
-                  if (source == null || source.getWidth() > 2000 || source.getHeight() > 3000) throw new IOException("Unexpected dimensions");
-                  BufferedImage rgb = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
-                  var g = rgb.createGraphics();
-                  try { g.drawImage(source, 0, 0, null); } finally { g.dispose(); }
-                  ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-                  ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
-                  try (ImageOutputStream output = ImageIO.createImageOutputStream(bytes)) {
-                    writer.setOutput(output);
-                    var parameters = writer.getDefaultWriteParam();
-                    parameters.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                    parameters.setCompressionQuality(0.35f);
-                    writer.write(null, new IIOImage(rgb, null, null), parameters);
-                  } finally { writer.dispose(); }
-                  byte[] data = bytes.toByteArray();
-                  if (data.length > 45000) throw new IOException("Review copy exceeds bounded limit");
-                  System.out.println("REVIEW_JPEG_" + name + "=" + Base64.getEncoder().encodeToString(data));
-                  System.out.println("REVIEW_SHA256_" + name + "=" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data)));
+                Path folder=Path.of(System.getenv("SPECTRUM_REVIEW_DIRECTORY"));
+                for(String name:List.of("home","security")) {
+                  var source=ImageIO.read(folder.resolve(name+".png").toFile());
+                  if(source==null||source.getWidth()>2000||source.getHeight()>3000)throw new IOException("Unexpected dimensions");
+                  var rgb=new BufferedImage(180,360,BufferedImage.TYPE_INT_RGB);
+                  var g=rgb.createGraphics();
+                  try{g.drawImage(source,0,0,180,360,null);}finally{g.dispose();}
+                  var bytes=new ByteArrayOutputStream();
+                  var writer=ImageIO.getImageWritersByFormatName("jpeg").next();
+                  try(var output=ImageIO.createImageOutputStream(bytes)){
+                    writer.setOutput(output); var p=writer.getDefaultWriteParam();
+                    p.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);p.setCompressionQuality(0.25f);
+                    writer.write(null,new IIOImage(rgb,null,null),p);
+                  }finally{writer.dispose();}
+                  byte[] data=bytes.toByteArray();
+                  if(data.length>18000)throw new IOException("Review limit");
+                  System.out.println("THUMBNAIL_"+name+"="+Base64.getEncoder().encodeToString(data));
+                  System.out.println("THUMBNAIL_SHA_"+name+"="+HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data)));
                 }
               }
             }`);
-            core.exportVariable('SPECTRUM_REVIEW_DIRECTORY', folder);
-      - name: Emit compact review copies of the original screenshots
+      - name: Produce bounded inspection copies
         shell: cmd
         run: |
           java "%SPECTRUM_REVIEW_DIRECTORY%\ReviewImages.java"
           if errorlevel 1 exit /b 1
-      - name: Remove temporary image copies
+      - name: Remove this job's temporary copies
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const fs = require('fs');
-            const path = require('path');
-            const expected = path.join(process.env.RUNNER_TEMP, 'spectrum-review-' + context.runId);
-            if (process.env.SPECTRUM_REVIEW_DIRECTORY && process.env.SPECTRUM_REVIEW_DIRECTORY !== expected) throw new Error('Unexpected cleanup path');
-            fs.rmSync(expected, {recursive: true, force: true});
+            const fs=require('fs'),path=require('path');
+            const expected=path.join(process.env.RUNNER_TEMP,'spectrum-review-'+context.runId);
+            if(process.env.SPECTRUM_REVIEW_DIRECTORY&&process.env.SPECTRUM_REVIEW_DIRECTORY!==expected)throw new Error('Unexpected cleanup path');
+            fs.rmSync(expected,{recursive:true,force:true});
