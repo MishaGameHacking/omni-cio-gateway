@@ -58,6 +58,7 @@ TINVEST_ROOT_CA_SHA256 = "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e97
 LOGIN_TX_TTL = 10 * 60
 LOGIN_CODE_TTL = 5 * 60
 SESSION_TTL = 30 * 24 * 60 * 60
+NO_STORE_PRIVATE = "no-store, private"
 
 # Analyst AI is a closed personal installation. Existing accounts always keep
 # access; the sixth distinct Telegram account is refused at the database
@@ -288,7 +289,7 @@ def mobile_login_result(
         content=page,
         status_code=status_code,
         headers={
-            "Cache-Control": "no-store, private",
+            "Cache-Control": NO_STORE_PRIVATE,
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'",
@@ -310,7 +311,7 @@ async def database_integrity_error(
         return JSONResponse(
             status_code=500,
             content={"detail": "database_integrity_error"},
-            headers={"Cache-Control": "no-store, private"},
+            headers={"Cache-Control": NO_STORE_PRIVATE},
         )
 
     logger.warning(
@@ -328,7 +329,7 @@ async def database_integrity_error(
                 "message": PRIVATE_USER_LIMIT_MESSAGE,
             },
             headers={
-                "Cache-Control": "no-store, private",
+                "Cache-Control": NO_STORE_PRIVATE,
                 "Referrer-Policy": "no-referrer",
                 "X-Content-Type-Options": "nosniff",
             },
