@@ -6,7 +6,6 @@ import json
 import re
 import tempfile
 import time
-import uuid
 import xml.etree.ElementTree as ET
 
 PACKAGE = "ru.omnicio.app.debug"
@@ -58,11 +57,12 @@ class ProfileProbe:
         return ET.fromstring(xml[xml.index("<?xml"):])
 
     def capture(self, name: str):
-        """Capture the Android compositor, not the emulator console recorder.
+        """Capture a real frame through the official emulator console.
 
-        The callback is bound to the verified disposable device. A unique guest
-        filename and fresh host directory prevent reusing an earlier screenshot.
-        Capture/transfer errors still fail the UI gate; no placeholder is emitted.
+        Guest screencap stalls on this headless Windows lab with Compose dialogs
+        (documented in PR #827 and reproduced by job 116433346814). Preserve the
+        established console transport; it still must produce a complete PNG.
+        A fresh directory prevents reusing a previous frame. Errors remain fatal.
         """
         if re.fullmatch(r"[a-z-]+", name) is None:
             raise ValueError("Invalid screenshot label")
@@ -74,19 +74,19 @@ class ProfileProbe:
         destination = directory / (name + ".png")
         if destination.is_symlink():
             raise ValueError("Screenshot destination is a symlink")
-        remote = "/sdcard/analyst-ui-" + uuid.uuid4().hex + ".png"
         with tempfile.TemporaryDirectory(prefix="capture-", dir=directory) as stage:
-            picture = Path(stage) / "screen.png"
-            self.command("shell", "screencap", "-p", remote)
-            self.command("pull", remote, str(picture))
+            self.command("emu", "screenrecord", "screenshot", stage)
+            pictures = list(Path(stage).glob("*.png"))
+            if len(pictures) != 1:
+                raise AssertionError("Expected exactly one fresh emulator screenshot")
+            picture = pictures[0]
             if not picture.is_file() or picture.is_symlink():
-                raise AssertionError("Android screenshot was not transferred")
+                raise AssertionError("Emulator screenshot is not a regular file")
             if not 100 <= picture.stat().st_size <= 2097152:
-                raise AssertionError("Unexpected Android screenshot size")
+                raise AssertionError("Unexpected emulator screenshot size")
             image = picture.read_bytes()
             if not image.startswith(b"\x89PNG\r\n\x1a\n") or not image.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"):
-                raise AssertionError("Invalid or incomplete Android screenshot")
-            self.command("shell", "rm", "-f", remote)
+                raise AssertionError("Invalid or incomplete emulator screenshot")
             picture.replace(destination)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
 
