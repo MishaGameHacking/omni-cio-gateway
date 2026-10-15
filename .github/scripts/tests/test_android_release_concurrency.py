@@ -1,4 +1,4 @@
-"""Regression tests for the shared physical Android lab queue."""
+"""Regression tests for the shared physical Android lab and release bootstrap."""
 from __future__ import annotations
 
 import re
@@ -7,6 +7,8 @@ from pathlib import Path
 
 
 class AndroidReleaseConcurrencyTests(unittest.TestCase):
+    WRAPPER_SHA256 = "238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5"
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.root = Path(__file__).resolve().parents[3]
@@ -21,7 +23,9 @@ class AndroidReleaseConcurrencyTests(unittest.TestCase):
     def lab_block(workflow: str) -> str:
         match = re.search(
             r"(?ms)^    concurrency:\s*\n"
+            r"(?:      [^\n]+\n)*?"
             r"      group: analyst-android-lab\s*\n"
+            r"(?:      [^\n]+\n)*?"
             r"      cancel-in-progress: (?P<value>true|false)\s*$",
             workflow,
         )
@@ -42,6 +46,13 @@ class AndroidReleaseConcurrencyTests(unittest.TestCase):
             "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
             self.ci,
         )
+
+    def test_gradle_wrapper_is_verified_without_flaky_setup_action(self) -> None:
+        for workflow in (self.ci, self.release):
+            self.assertNotIn("gradle/actions/setup-gradle@", workflow)
+            self.assertIn("Verify pinned Gradle wrapper", workflow)
+            self.assertIn(self.WRAPPER_SHA256, workflow)
+            self.assertIn("call gradlew.bat --version", workflow)
 
 
 if __name__ == "__main__":
