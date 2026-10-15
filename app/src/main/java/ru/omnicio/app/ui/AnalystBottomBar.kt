@@ -1,6 +1,8 @@
 package ru.omnicio.app.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,10 +33,10 @@ import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
 enum class AnalystTab {
+    Home,
     Portfolio,
-    Ideas,
-    Pulse,
-    Chat,
+    Risk,
+    Education,
     Profile,
 }
 
@@ -48,31 +50,48 @@ fun AnalystBottomBar(
     modifier: Modifier = Modifier,
 ) {
     val navigate = LocalAnalystTabNavigator.current
+    val palette = LocalSpectrumPalette.current
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        shadowElevation = 12.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shadowElevation = 18.dp,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-        ) {
-            AnalystTab.entries.forEach { tab ->
-                BottomBarItem(
-                    modifier = Modifier.weight(1f),
-                    tab = tab,
-                    selected = selected == tab,
-                    onClick = {
-                        when (tab) {
-                            AnalystTab.Portfolio -> onPortfolioClick()
-                            AnalystTab.Profile -> onProfileClick()
-                            else -> Unit
-                        }
-                        navigate(tab)
-                    },
+        Box {
+            Canvas(Modifier.fillMaxWidth()) {
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            palette.cyan.copy(alpha = 0.30f),
+                            palette.blue.copy(alpha = 0.16f),
+                            palette.violet.copy(alpha = 0.30f),
+                            palette.rose.copy(alpha = 0.12f),
+                        ),
+                    ),
+                    size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()),
                 )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 5.dp, vertical = 7.dp),
+            ) {
+                AnalystTab.entries.forEach { tab ->
+                    BottomBarItem(
+                        modifier = Modifier.weight(1f),
+                        tab = tab,
+                        selected = selected == tab,
+                        onClick = {
+                            when (tab) {
+                                AnalystTab.Portfolio -> onPortfolioClick()
+                                AnalystTab.Profile -> onProfileClick()
+                                else -> Unit
+                            }
+                            navigate(tab)
+                        },
+                    )
+                }
             }
         }
     }
@@ -94,8 +113,9 @@ private fun BottomBarItem(
     }
     val selectedBrush = Brush.linearGradient(
         colors = listOf(
-            palette.cyan.copy(alpha = 0.17f),
-            palette.violet.copy(alpha = 0.17f),
+            palette.cyan.copy(alpha = 0.18f),
+            palette.blue.copy(alpha = 0.12f),
+            palette.violet.copy(alpha = 0.22f),
             palette.rose.copy(alpha = 0.10f),
         ),
     )
@@ -107,7 +127,7 @@ private fun BottomBarItem(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(20.dp))
                 .background(
                     if (selected) {
                         selectedBrush
@@ -115,7 +135,7 @@ private fun BottomBarItem(
                         Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                     },
                 )
-                .padding(horizontal = 1.dp, vertical = 5.dp),
+                .padding(horizontal = 1.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SpectrumIcon(
@@ -123,18 +143,17 @@ private fun BottomBarItem(
                 selected = selected,
                 tile = false,
                 motionAllowed = motion.enabled,
-                modifier = Modifier.size(27.dp),
+                modifier = Modifier.size(if (selected) 29.dp else 27.dp),
             )
             Text(
                 text = tab.label(),
                 modifier = Modifier.fillMaxWidth(),
                 color = contentColor,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 lineHeight = 14.sp,
                 textAlign = TextAlign.Center,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             )
         }
@@ -142,17 +161,17 @@ private fun BottomBarItem(
 }
 
 private fun AnalystTab.label(): String = when (this) {
+    AnalystTab.Home -> "Главная"
     AnalystTab.Portfolio -> "Портфель"
-    AnalystTab.Ideas -> "Что купить"
-    AnalystTab.Pulse -> "Пульс"
-    AnalystTab.Chat -> "Чат"
+    AnalystTab.Risk -> "Риски"
+    AnalystTab.Education -> "Обучение"
     AnalystTab.Profile -> "Профиль"
 }
 
 private fun AnalystTab.symbol(): SpectrumSymbol = when (this) {
+    AnalystTab.Home -> SpectrumSymbol.Home
     AnalystTab.Portfolio -> SpectrumSymbol.Portfolio
-    AnalystTab.Ideas -> SpectrumSymbol.Ideas
-    AnalystTab.Pulse -> SpectrumSymbol.Pulse
-    AnalystTab.Chat -> SpectrumSymbol.Messages
+    AnalystTab.Risk -> SpectrumSymbol.Risk
+    AnalystTab.Education -> SpectrumSymbol.Education
     AnalystTab.Profile -> SpectrumSymbol.Profile
 }

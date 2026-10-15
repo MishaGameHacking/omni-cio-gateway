@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import tempfile
 import time
@@ -12,8 +13,13 @@ ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
+INFO_LABEL = "О приложении"
+EDUCATION_LABEL = "Обучение"
+BACK_FROM_EDUCATION = "Вернуться на главную"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
+LIGHT_BACKGROUND = "fff5f8ff"
+DARK_BACKGROUND = "ff020a16"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -51,6 +57,13 @@ class ProfileProbe:
         return ET.fromstring(xml[xml.index("<?xml"):])
 
     def capture(self, name: str):
+        """Capture a real frame through the official emulator console.
+
+        Guest screencap stalls on this headless Windows lab with Compose dialogs
+        (documented in PR #827 and reproduced by job 116433346814). Preserve the
+        established console transport; it still must produce a complete PNG.
+        A fresh directory prevents reusing a previous frame. Errors remain fatal.
+        """
         if re.fullmatch(r"[a-z-]+", name) is None:
             raise ValueError("Invalid screenshot label")
         root = Path(__file__).resolve().parents[2]
@@ -62,14 +75,19 @@ class ProfileProbe:
         if destination.is_symlink():
             raise ValueError("Screenshot destination is a symlink")
         with tempfile.TemporaryDirectory(prefix="capture-", dir=directory) as stage:
-            output = self.command("emu", "screenrecord", "screenshot", stage)
+            self.command("emu", "screenrecord", "screenshot", stage)
             pictures = list(Path(stage).glob("*.png"))
-            if "KO:" in output or len(pictures) != 1:
-                raise AssertionError("Emulator did not produce one screenshot")
-            image = pictures[0].read_bytes()
-            if len(image) < 100 or not image.startswith(b"\x89PNG\r\n\x1a\n"):
-                raise AssertionError("Invalid emulator screenshot")
-            destination.write_bytes(image)
+            if len(pictures) != 1:
+                raise AssertionError("Expected exactly one fresh emulator screenshot")
+            picture = pictures[0]
+            if not picture.is_file() or picture.is_symlink():
+                raise AssertionError("Emulator screenshot is not a regular file")
+            if not 100 <= picture.stat().st_size <= 2097152:
+                raise AssertionError("Unexpected emulator screenshot size")
+            image = picture.read_bytes()
+            if not image.startswith(b"\x89PNG\r\n\x1a\n") or not image.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"):
+                raise AssertionError("Invalid or incomplete emulator screenshot")
+            picture.replace(destination)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
 
     def wait_for(self, read, message):
@@ -132,18 +150,46 @@ class ProfileProbe:
             )
         return target
 
-    def tap(self, text, area="profile-content", direction="end"):
-        left, top, right, bottom = node_bounds(self.reveal(text, area, direction))
+    def tap_node(self, node):
+        left, top, right, bottom = node_bounds(node)
         self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+
+    def tap(self, text, area="profile-content", direction="end"):
+        self.tap_node(self.reveal(text, area, direction))
+
+    def tap_visible(self, text):
+        """Wait for a dialog action; never scroll the obscured profile behind it."""
+        from profile_scroll import visible_label
+
+        target = self.wait_for(lambda: visible_label(self.tree(), text), "Dialog action not visible: " + text)
+        self.tap_node(target)
 
     def tap_resource(self, resource_id, area="profile-content", direction="end"):
-        left, top, right, bottom = node_bounds(self.reveal_resource(resource_id, area, direction))
-        self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+        self.tap_node(self.reveal_resource(resource_id, area, direction))
+
+    def tap_profile_content(self, text):
+        from profile_scroll import reveal_in_list
+        from profile_tab_checks import content_tree
+
+        target = reveal_in_list(
+            lambda: content_tree(self.tree()),
+            self._swipe_callback(),
+            text,
+            resource_id="profile-content",
+        )
+        if target is None:
+            raise AssertionError("Profile content action not visible: " + text)
+        self.tap_node(target)
 
     def tab(self, label):
-        # The large-font rail scrolls horizontally. Scrolling the settings list
-        # cannot reveal its offscreen tabs and must not count as a UI failure.
-        self.tap(label, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
+        from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab
+
+        resource_id = TAB_IDS[label]
+        self.tap_node(reveal_tab(self.tree, self._swipe_callback(), resource_id, "start" if label == SETTINGS_LABEL else "end"))
+        return self.wait_for(
+            lambda: selected_tab(self.tree(), resource_id),
+            "Profile tab selection not confirmed: " + resource_id,
+        )
 
     def marker(self, expected):
         def read():
@@ -156,6 +202,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
+        self.marker("probe-foreground:" + ("fff4f7ff" if expected == DARK_BACKGROUND else "ff101722"))
 
     def open(self):
         from profile_launch import launch_profile
@@ -164,86 +211,117 @@ class ProfileProbe:
         self.marker("probe-education-tests:10")
 
     def horizontal_info(self):
-        # Both labels need not be visible at once at 200% font scale. Measure
-        # each in its visible rail position; still assert single-line alignment.
-        peer = self.reveal(SETTINGS_LABEL, "profile-tabs", "start")
-        _, peer_top, _, peer_bottom = node_bounds(peer)
-        self.tab("Инфо")
-        _, top, _, bottom = self.bounds("Инфо")
-        tolerance = max(peer_bottom - peer_top, bottom - top) / 2
-        if bottom - top > (peer_bottom - peer_top) * 1.5:
-            raise AssertionError("Info label wrapped vertically")
-        if abs((top + bottom - peer_top - peer_bottom) / 2) > tolerance:
-            raise AssertionError("Profile tabs are not on the same row")
+        from profile_tab_checks import assert_horizontal_geometry
+
+        # Sample each selected tab, not a clipped sliver left outside the rail.
+        peer = node_bounds(self.tab(SETTINGS_LABEL))
+        target = node_bounds(self.tab(INFO_LABEL))
+        print("PROFILE_TAB_GEOMETRY=" + json.dumps({"settings": peer, "about": target}), flush=True)
+        assert_horizontal_geometry(peer, target)
+
+    def dashboards(self):
+        from profile_launch import start_status, profile_frame
+
+        self.command("shell", "settings", "put", "system", "font_scale", "1.0")
+        self.command("shell", "cmd", "uimode", "night", "yes")
+        for screen in ("home", "portfolio"):
+            self.command("shell", "am", "force-stop", PACKAGE)
+            start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY, "--es", "spectrum_screen", screen))
+            evidence = {}
+            self.wait_for(lambda evidence=evidence: profile_frame(self.command, self.tree, evidence), "Dashboard is not resumed and ready")
+            self.marker("probe-screen:" + screen)
+            self.palette(DARK_BACKGROUND)
+            self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
+            for label in ("Главная", "Портфель", "Риски", "Обучение", "Профиль"):
+                self.find(label)
+            self.find("Analyst AI" if screen == "home" else "Мой портфель")
+            self.capture("spectrum-" + screen)
+            if screen == "portfolio":
+                self.reveal("Денежные средства", "portfolio-content")
+                self.capture("spectrum-allocation")
+        self.command("shell", "am", "force-stop", PACKAGE)
+
+    def profile_preflight(self):
+        # Exercise the previously failing production rail before system-mode
+        # changes, then repeat the same checks after those changes below.
+        self.open()
+        # This preflight validates real dialog actions and tab geometry. The
+        # full dialog stage below captures all three required screenshots;
+        # avoid re-capturing those frames before the primary UI assertions.
+        self.dialogs(capture_evidence=False)
+        self.section_scroll_reset()
 
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
-        self.palette("fff5f6f8")
+        # Spectrum starts dark; light/system remain explicit user choices.
+        self.palette(DARK_BACKGROUND)
+        self.tap(THEME_LABEL)
+        self.tap_visible("Светлая")
+        self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
-        self.tap("Тёмная")
-        self.palette("ff111111")
+        self.tap_visible("Тёмная")
+        self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
-        self.palette("ff111111")
+        self.palette(DARK_BACKGROUND)
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap("Светлая")
-        self.palette("fff5f6f8")
+        self.tap_visible("Светлая")
+        self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
-        self.tap("Как в системе")
+        self.tap_visible("Как в системе")
         self.command("shell", "cmd", "uimode", "night", "yes")
-        self.palette("ff111111")
+        self.palette(DARK_BACKGROUND)
         self.capture("system-dark")
         self.command("shell", "cmd", "uimode", "night", "no")
-        self.palette("fff5f6f8")
+        self.palette(LIGHT_BACKGROUND)
         self.capture("system-light")
 
-    def dialogs(self):
+    def dialogs(self, capture_evidence=True):
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
-        self.capture("security")
-        self.tap(CONFIRM_LABEL)
+        if capture_evidence:
+            self.capture("security")
+        self.tap_visible(CONFIRM_LABEL)
         self.horizontal_info()
-        self.capture("info")
-        self.tap("О приложении")
+        if capture_evidence:
+            self.capture("info")
+        self.tap_profile_content(INFO_LABEL)
         self.find(CONFIRM_LABEL)
-        self.capture("about")
+        if capture_evidence:
+            self.capture("about")
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
             raise AssertionError("About version text missing")
-        self.tap(CONFIRM_LABEL)
+        self.tap_visible(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
         self.tab(SETTINGS_LABEL)
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
-        self.tap(CONFIRM_LABEL)
-        self.tab("Инфо")
-        self.find("Обучение инвестициям")
+        self.tap_visible(CONFIRM_LABEL)
+        self.tab(INFO_LABEL)
+        self.find(EDUCATION_LABEL)
         self.tab(SETTINGS_LABEL)
         self.find(THEME_LABEL)
 
     def education(self, screenshot="education"):
         area = "education-content"
-        self.tab("Инфо")
-        self.tap("Обучение инвестициям")
-        self.find("Инвестиции простыми словами")
+        self.tab(INFO_LABEL)
+        self.tap(EDUCATION_LABEL)
+        self.find(EDUCATION_LABEL)
         self.reveal(FIRST_LESSON, area)
         self.capture(screenshot)
-        # UiAutomator exposes a Compose testTag as a resource id.  The exact tag
-        # is stable even when Compose merges the visible action and accessibility
-        # description into a single platform node with implementation-specific text.
         self.tap_resource(FIRST_LESSON_TOGGLE, area)
         self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
-        self.find("‹ Назад")  # Navigation must not need a reverse scroll.
         self.tap("Старт", area)
-        self.find(FIRST_LESSON)  # Category change resets the lesson list.
-        self.tap("Все", area)
-        self.find("Инвестиции простыми словами")
-        self.tap("‹ Назад", area)
+        self.find(FIRST_LESSON)
+        self.tap("Все уроки", area)
+        self.find(EDUCATION_LABEL)
+        self.tap(BACK_FROM_EDUCATION, area)
         self.find("Профиль")
 
     def large_font(self):
@@ -268,6 +346,8 @@ def exercise(device) -> None:
         original_scale = "1.0"
     try:
         stages = (
+            ("spectrum-dashboards", probe.dashboards),
+            ("profile-preflight", probe.profile_preflight),
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
             ("section-scroll-reset", probe.section_scroll_reset),
@@ -279,7 +359,7 @@ def exercise(device) -> None:
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
-            "PROFILE_UI_TESTS=passed: light,dark,system,persistence,info,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
+            "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,persistence,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
     finally:

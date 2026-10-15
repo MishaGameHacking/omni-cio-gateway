@@ -6,7 +6,12 @@ import re
 import xml.etree.ElementTree as ET
 
 PACKAGE = "ru.omnicio.app.debug"
-SCROLL_AXES = {"profile-content": "vertical", "education-content": "vertical", "profile-tabs": "horizontal"}
+SCROLL_AXES = {
+    "profile-content": "vertical",
+    "education-content": "vertical",
+    "portfolio-content": "vertical",
+    "profile-tabs": "horizontal",
+}
 LIST_IDS = frozenset(SCROLL_AXES)
 
 
@@ -40,7 +45,7 @@ def visible_resource(tree: ET.Element, resource_id: str) -> ET.Element | None:
     """Find an exact Compose testTag exposed to UiAutomator as a resource id.
 
     Compose commonly exposes the tag itself (for example ``lesson-toggle-x``),
-    while older dumps can contain the package-qualified Android spelling.  Both
+    while older dumps can contain the package-qualified Android spelling. Both
     exact forms are accepted; substrings and nodes from another package are not.
     """
     names = {resource_id, f"{PACKAGE}:id/{resource_id}"}

@@ -1,35 +1,63 @@
 package ru.omnicio.app.ui.analysis
 
-import androidx.activity.compose.LocalActivity
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.*
+import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import ru.omnicio.app.data.analysis.*
+import ru.omnicio.app.data.analysis.AnalysisBackendClient
+import ru.omnicio.app.data.analysis.AnalysisProfile
+import ru.omnicio.app.data.analysis.AnalysisStatus
+import ru.omnicio.app.data.analysis.InsightCard
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.research.PortfolioResearchPanel
-import java.time.Instant
+import ru.omnicio.app.ui.spectrum.SpectrumPrimaryButton
+import ru.omnicio.app.ui.spectrum.SpectrumSecondaryButton
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 
-private data class AnalysisData<T>(val value: T? = null, val problem: String? = null,
-    val loading: Boolean = true, val stale: Boolean = false)
+private data class AnalysisData<T>(
+    val value: T? = null,
+    val problem: String? = null,
+    val loading: Boolean = true,
+    val stale: Boolean = false,
+)
 
 @Composable
-private fun <T> rememberAnalysisData(token: String, reload: Int, fetch: (String) -> BackendResult<T>): State<AnalysisData<T>> {
+private fun <T> rememberAnalysisData(
+    token: String,
+    reload: Int,
+    fetch: (String) -> BackendResult<T>,
+): State<AnalysisData<T>> {
     val state = remember(token) { mutableStateOf(AnalysisData<T>()) }
     val request by rememberUpdatedState(fetch)
     LaunchedEffect(token, reload) {
@@ -38,71 +66,167 @@ private fun <T> rememberAnalysisData(token: String, reload: Int, fetch: (String)
             state.value = when (val result = withContext(Dispatchers.IO) { request(token) }) {
                 is BackendResult.Success -> AnalysisData(value = result.value, loading = false)
                 is BackendResult.Failure -> AnalysisData(
-                    value = state.value.value.takeIf { result.retryable }, problem = result.message,
-                    loading = false, stale = result.retryable && state.value.value != null)
+                    value = state.value.value.takeIf { result.retryable },
+                    problem = result.message,
+                    loading = false,
+                    stale = result.retryable && state.value.value != null,
+                )
             }
-        } finally { state.value = state.value.copy(loading = false) }
+        } finally {
+            state.value = state.value.copy(loading = false)
+        }
     }
     return state
 }
 
 private fun <T> LazyListScope.loadStatus(state: AnalysisData<T>, onRetry: () -> Unit) {
     if (state.loading) item { LoadingCard() }
-    state.problem?.let { problem -> item { ErrorCard(problem, onRetry, enabled = !state.loading) } }
-    if (state.stale) item { StatusCard("Предыдущий результат", "Новая загрузка не выполнена. Показанные сведения могли устареть.") }
-}
-
-@Composable
-fun InsightFeedScreen(accessToken: String, onPortfolioClick: () -> Unit, onProfileClick: () -> Unit,
-    modifier: Modifier = Modifier) {
-    key(accessToken) {
-        val client = remember { AnalysisBackendClient() }
-        InsightScreen(accessToken, AnalystTab.Chat, "Сообщения", "Важные выводы Analyst AI без свободного чата",
-            "Важных сообщений пока нет", "Система сообщит об изменении состава портфеля, риске или завершённом обзоре.",
-            onPortfolioClick, onProfileClick, modifier, client) { token ->
-            when (val result = client.fetchFeed(token)) {
-                is BackendResult.Success -> BackendResult.Success(result.value.cards)
-                is BackendResult.Failure -> result
-            }
+    state.problem?.let { problem ->
+        item { ErrorCard(problem, onRetry, enabled = !state.loading) }
+    }
+    if (state.stale) {
+        item {
+            StatusCard(
+                "Предыдущий результат",
+                "Новая загрузка не выполнена. Показанные сведения могли устареть.",
+            )
         }
     }
 }
 
 @Composable
-fun PulseScreen(accessToken: String, onPortfolioClick: () -> Unit, onProfileClick: () -> Unit,
-    modifier: Modifier = Modifier) {
+fun InsightFeedScreen(
+    accessToken: String,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     key(accessToken) {
         val client = remember { AnalysisBackendClient() }
-        InsightScreen(accessToken, AnalystTab.Pulse, "Пульс", "Изменения портфеля, утренние и вечерние проверки",
-            "Событий пока нет", "Здесь появятся существенные изменения после серверной проверки.",
-            onPortfolioClick, onProfileClick, modifier, client, client::fetchPulse)
+        InsightScreen(
+            token = accessToken,
+            selected = AnalystTab.Home,
+            title = "Сообщения",
+            subtitle = "Важные выводы Analyst AI без свободного чата",
+            symbol = SpectrumSymbol.Messages,
+            emptyTitle = "Важных сообщений пока нет",
+            emptyText = "Система сообщит об изменении состава портфеля, риске или завершённом обзоре.",
+            onPortfolioClick = onPortfolioClick,
+            onProfileClick = onProfileClick,
+            modifier = modifier,
+            client = client,
+            fetch = { token ->
+                when (val result = client.fetchFeed(token)) {
+                    is BackendResult.Success -> BackendResult.Success(result.value.cards)
+                    is BackendResult.Failure -> result
+                }
+            },
+        )
     }
 }
 
 @Composable
-private fun InsightScreen(token: String, selected: AnalystTab, title: String, subtitle: String,
-    emptyTitle: String, emptyText: String, onPortfolioClick: () -> Unit, onProfileClick: () -> Unit,
-    modifier: Modifier, client: AnalysisBackendClient, fetch: (String) -> BackendResult<List<InsightCard>>) {
+fun PulseScreen(
+    accessToken: String,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    key(accessToken) {
+        val client = remember { AnalysisBackendClient() }
+        InsightScreen(
+            token = accessToken,
+            selected = AnalystTab.Risk,
+            title = "Риски",
+            subtitle = "Сводка сигналов, утренние и вечерние проверки",
+            symbol = SpectrumSymbol.Risk,
+            emptyTitle = "Новых сигналов риска нет",
+            emptyText = "Это не означает отсутствие риска. Следующая проверка появится после существенного изменения данных.",
+            onPortfolioClick = onPortfolioClick,
+            onProfileClick = onProfileClick,
+            modifier = modifier,
+            client = client,
+            fetch = client::fetchPulse,
+        )
+    }
+}
+
+@Composable
+private fun InsightScreen(
+    token: String,
+    selected: AnalystTab,
+    title: String,
+    subtitle: String,
+    symbol: SpectrumSymbol,
+    emptyTitle: String,
+    emptyText: String,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    modifier: Modifier,
+    client: AnalysisBackendClient,
+    fetch: (String) -> BackendResult<List<InsightCard>>,
+) {
     var reload by remember { mutableIntStateOf(0) }
     val state by rememberAnalysisData(token, reload, fetch)
     var pendingRead by remember { mutableStateOf<InsightCard?>(null) }
     var readError by remember { mutableStateOf<String?>(null) }
     val now = rememberAnalysisClock()
-    AnalysisScaffold(selected, title, subtitle, onPortfolioClick, onProfileClick, modifier) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { TextButton(onClick = { reload++ }, enabled = !state.loading && pendingRead == null,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить ленту") } }
+    AnalysisScaffold(
+        selected = selected,
+        title = title,
+        subtitle = subtitle,
+        symbol = symbol,
+        onPortfolioClick = onPortfolioClick,
+        onProfileClick = onProfileClick,
+        modifier = modifier,
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item(key = "refresh") {
+                SpectrumSecondaryButton(
+                    text = if (state.loading) "Обновляем…" else "Обновить ленту",
+                    onClick = { reload++ },
+                    enabled = !state.loading && pendingRead == null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             loadStatus(state) { reload++ }
-            readError?.let { item { StatusCard("Отметка не сохранена", it) } }
+            readError?.let {
+                item(key = "read-error") { StatusCard("Отметка не сохранена", it) }
+            }
             val entries = state.value
             if (entries != null) {
+                item(key = "overview") {
+                    if (selected == AnalystTab.Risk) {
+                        RiskOverviewCard(entries)
+                    } else {
+                        MessageOverviewCard(entries)
+                    }
+                }
                 when {
-                    entries.isEmpty() -> item { StatusCard(emptyTitle, emptyText) }
-                    entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size ->
-                        item { ErrorCard("Идентификаторы сообщений противоречивы. Лента не подменена частичным результатом.", { reload++ }) }
+                    entries.isEmpty() -> item(key = "empty") { StatusCard(emptyTitle, emptyText) }
+                    entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size -> {
+                        item(key = "invalid") {
+                            ErrorCard(
+                                "Идентификаторы сообщений противоречивы. Лента не подменена частичным результатом.",
+                                { reload++ },
+                            )
+                        }
+                    }
                     else -> items(entries, key = { it.id }) { card ->
-                        InsightCardView(card, now, readEnabled = pendingRead == null) { pendingRead = card }
+                        InsightCardView(
+                            card = card,
+                            now = now,
+                            readEnabled = pendingRead == null,
+                        ) {
+                            pendingRead = card
+                        }
                     }
                 }
             }
@@ -116,7 +240,9 @@ private fun InsightScreen(token: String, selected: AnalystTab, title: String, su
                 is BackendResult.Success -> reload++
                 is BackendResult.Failure -> readError = result.message
             }
-        } finally { pendingRead = null }
+        } finally {
+            pendingRead = null
+        }
     }
 }
 
@@ -124,54 +250,124 @@ private fun InsightScreen(token: String, selected: AnalystTab, title: String, su
 @Composable
 private fun rememberAnalysisClock(): Instant {
     val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
-    var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false) }
+    var active by remember(lifecycle) {
+        mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false)
+    }
     var now by remember { mutableStateOf(Instant.now()) }
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, _ -> active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false }
+        val observer = LifecycleEventObserver { _, _ ->
+            active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false
+        }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
-        while (isActive) { now = Instant.now(); delay(30_000) }
+        while (isActive) {
+            now = Instant.now()
+            delay(30_000)
+        }
     }
     return now
 }
 
 @Composable
-fun IdeasScreen(accessToken: String, onPortfolioClick: () -> Unit, onProfileClick: () -> Unit,
-    onOpenProfileSettings: () -> Unit, modifier: Modifier = Modifier) {
-    key(accessToken) { IdeasContent(accessToken, onPortfolioClick, onProfileClick, onOpenProfileSettings, modifier) }
+fun IdeasScreen(
+    accessToken: String,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    onOpenProfileSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    key(accessToken) {
+        IdeasContent(
+            token = accessToken,
+            onPortfolioClick = onPortfolioClick,
+            onProfileClick = onProfileClick,
+            onOpenProfileSettings = onOpenProfileSettings,
+            modifier = modifier,
+        )
+    }
 }
 
 @Composable
-private fun IdeasContent(token: String, onPortfolioClick: () -> Unit, onProfileClick: () -> Unit,
-    onOpenProfileSettings: () -> Unit, modifier: Modifier) {
+private fun IdeasContent(
+    token: String,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    onOpenProfileSettings: () -> Unit,
+    modifier: Modifier,
+) {
     val client = remember { AnalysisBackendClient() }
     var reload by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
     var refreshMessage by remember { mutableStateOf<String?>(null) }
     val state by rememberAnalysisData(token, reload, client::fetchIdeas)
-    AnalysisScaffold(AnalystTab.Ideas, "Что купить", "Направления диверсификации, а не торговые команды",
-        onPortfolioClick, onProfileClick, modifier) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { ActionCard("Обновить портфель и анализ", refreshMessage
-                ?: "Запрос передаётся серверу. Платная модель нужна не для каждого обновления: решение принимает серверный контроль изменений и бюджета.",
-                if (refreshing) "Отправляем…" else "Обновить", !refreshing) { refreshing = true } }
+    AnalysisScaffold(
+        selected = AnalystTab.Home,
+        title = "Рекомендации",
+        subtitle = "Персональные направления диверсификации, а не торговые команды",
+        symbol = SpectrumSymbol.Ideas,
+        onPortfolioClick = onPortfolioClick,
+        onProfileClick = onProfileClick,
+        modifier = modifier,
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item(key = "refresh-analysis") {
+                ActionCard(
+                    title = "Обновить портфель и анализ",
+                    text = refreshMessage
+                        ?: "Запрос передаётся серверу. Платная модель нужна не для каждого обновления: решение принимает серверный контроль изменений и бюджета.",
+                    buttonText = if (refreshing) "Отправляем…" else "Обновить",
+                    enabled = !refreshing,
+                ) {
+                    refreshing = true
+                }
+            }
             loadStatus(state) { reload++ }
-            // Preserve the independently loaded, bounded research section from main.
             item(key = "portfolio-research") { PortfolioResearchPanel(token) }
             state.value?.let { payload ->
-                item { StatusCard(ideasHeading(payload.state), payload.message, accent = payload.state == "ready") }
-                if (payload.state == "profile_required") item {
-                    Button(onClick = onOpenProfileSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Настроить профиль риска") }
+                item(key = "state") {
+                    StatusCard(
+                        ideasHeading(payload.state),
+                        payload.message,
+                        accent = payload.state == "ready",
+                    )
+                }
+                if (payload.state == "profile_required") {
+                    item(key = "profile-required") {
+                        SpectrumPrimaryButton(
+                            text = "Настроить профиль риска",
+                            onClick = onOpenProfileSettings,
+                            modifier = Modifier.fillMaxWidth(),
+                            symbol = SpectrumSymbol.Profile,
+                        )
+                    }
                 }
                 items(payload.ideas) { idea -> IdeaCard(idea) }
-                if (payload.ideas.isEmpty()) item { StatusCard("Проверка источников",
-                    "Конкретные бумаги не показываются, пока они не прошли проверку источников, ликвидности и ограничений профиля.") }
-                item { TextButton(onClick = { reload++ }, enabled = !state.loading,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить результаты") } }
+                if (payload.ideas.isEmpty()) {
+                    item(key = "source-check") {
+                        StatusCard(
+                            "Проверка источников",
+                            "Конкретные бумаги не показываются, пока они не прошли проверку источников, ликвидности и ограничений профиля.",
+                        )
+                    }
+                }
+                item(key = "reload-results") {
+                    SpectrumSecondaryButton(
+                        text = "Обновить результаты",
+                        onClick = { reload++ },
+                        enabled = !state.loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
@@ -184,19 +380,39 @@ private fun IdeasContent(token: String, onPortfolioClick: () -> Unit, onProfileC
                 is BackendResult.Failure -> result.message
             }
             reload++
-        } finally { refreshing = false }
+        } finally {
+            refreshing = false
+        }
     }
 }
 
 @Composable
-fun AnalysisProfileSettingsScreen(accessToken: String, onBack: () -> Unit, onPortfolioClick: () -> Unit,
-    onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
-    key(accessToken) { AnalysisProfileContent(accessToken, onBack, onPortfolioClick, onProfileClick, modifier) }
+fun AnalysisProfileSettingsScreen(
+    accessToken: String,
+    onBack: () -> Unit,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    key(accessToken) {
+        AnalysisProfileContent(
+            token = accessToken,
+            onBack = onBack,
+            onPortfolioClick = onPortfolioClick,
+            onProfileClick = onProfileClick,
+            modifier = modifier,
+        )
+    }
 }
 
 @Composable
-private fun AnalysisProfileContent(token: String, onBack: () -> Unit, onPortfolioClick: () -> Unit,
-    onProfileClick: () -> Unit, modifier: Modifier) {
+private fun AnalysisProfileContent(
+    token: String,
+    onBack: () -> Unit,
+    onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    modifier: Modifier,
+) {
     val client = remember { AnalysisBackendClient() }
     var draft by remember { mutableStateOf<AnalysisProfile?>(null) }
     var status by remember { mutableStateOf<AnalysisStatus?>(null) }
@@ -207,50 +423,105 @@ private fun AnalysisProfileContent(token: String, onBack: () -> Unit, onPortfoli
     var saveFailed by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(reload) {
-        loading = true; problem = null; status = null
+        loading = true
+        problem = null
+        status = null
         try {
             when (val result = withContext(Dispatchers.IO) { client.fetchProfile(token) }) {
                 is BackendResult.Success -> draft = result.value
-                is BackendResult.Failure -> { problem = result.message; draft = null }
+                is BackendResult.Failure -> {
+                    problem = result.message
+                    draft = null
+                }
             }
             when (val result = withContext(Dispatchers.IO) { client.fetchStatus(token) }) {
                 is BackendResult.Success -> status = result.value
                 is BackendResult.Failure -> status = null
             }
-        } finally { loading = false }
+        } finally {
+            loading = false
+        }
     }
-    AnalysisScaffold(AnalystTab.Profile, "Инвестиционный профиль", "Ограничения применяются алгоритмами до обращения к ИИ.",
-        onPortfolioClick, onProfileClick, modifier) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("‹ Назад") } }
+    AnalysisScaffold(
+        selected = AnalystTab.Profile,
+        title = "Инвестиционный профиль",
+        subtitle = "Ограничения применяются алгоритмами до обращения к ИИ",
+        symbol = SpectrumSymbol.Profile,
+        onPortfolioClick = onPortfolioClick,
+        onProfileClick = onProfileClick,
+        modifier = modifier,
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item(key = "back") {
+                SpectrumSecondaryButton(
+                    text = "Назад",
+                    onClick = onBack,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (loading) item { LoadingCard() }
             problem?.let { item { ErrorCard(it, { reload++ }, enabled = !loading) } }
             val profile = draft
             if (profile != null && !loading) {
                 item { MonitoringStatus(status) }
                 profileControls(profile, enabled = pendingSave == null) { draft = it }
-                message?.let { text -> item { StatusCard(if (saveFailed) "Не удалось сохранить" else "Сохранение", text) } }
-                val valid = profileLimitsValid(profile.maxPositionPercent, profile.minCashPercent)
-                    && profile.riskLevel in setOf("conservative", "moderate", "aggressive")
-                    && profile.horizon in setOf("short", "medium", "long")
-                if (!valid) item { ErrorCard("Профиль содержит неподдерживаемые настройки. Повторите загрузку.", { reload++ }, pendingSave == null) }
-                item { Button(onClick = { pendingSave = profile }, enabled = pendingSave == null && valid,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(if (pendingSave != null) "Сохраняем…" else "Сохранить профиль")
-                } }
+                message?.let { text ->
+                    item {
+                        StatusCard(
+                            if (saveFailed) "Не удалось сохранить" else "Сохранение",
+                            text,
+                        )
+                    }
+                }
+                val valid = profileLimitsValid(profile.maxPositionPercent, profile.minCashPercent) &&
+                    profile.riskLevel in setOf("conservative", "moderate", "aggressive") &&
+                    profile.horizon in setOf("short", "medium", "long")
+                if (!valid) {
+                    item {
+                        ErrorCard(
+                            "Профиль содержит неподдерживаемые настройки. Повторите загрузку.",
+                            { reload++ },
+                            pendingSave == null,
+                        )
+                    }
+                }
+                item(key = "save") {
+                    SpectrumPrimaryButton(
+                        text = if (pendingSave != null) "Сохраняем…" else "Сохранить профиль",
+                        onClick = { pendingSave = profile },
+                        enabled = pendingSave == null && valid,
+                        modifier = Modifier.fillMaxWidth(),
+                        symbol = SpectrumSymbol.Analyst,
+                    )
+                }
             }
         }
     }
     LaunchedEffect(pendingSave) {
         val submitted = pendingSave ?: return@LaunchedEffect
-        message = null; saveFailed = false
+        message = null
+        saveFailed = false
         try {
             when (val result = withContext(Dispatchers.IO) { client.saveProfile(token, submitted) }) {
-                is BackendResult.Success -> { draft = result.value; message = "Профиль сохранён и будет применён к следующим проверкам." }
-                is BackendResult.Failure -> { saveFailed = true; message = result.message }
+                is BackendResult.Success -> {
+                    draft = result.value
+                    message = "Профиль сохранён и будет применён к следующим проверкам."
+                }
+                is BackendResult.Failure -> {
+                    saveFailed = true
+                    message = result.message
+                }
             }
-        } finally { pendingSave = null }
+        } finally {
+            pendingSave = null
+        }
     }
 }
 
@@ -262,19 +533,75 @@ private fun MonitoringStatus(status: AnalysisStatus?) {
         status.deterministicMonitoring -> "Сервер сообщает о фоновом контроле"
         else -> "Фоновый контроль не подтверждён"
     }
-    val text = if (status?.aiConfigured == true)
+    val text = if (status?.aiConfigured == true) {
         "Конфигурация модели присутствует. Это не доказательство выполненного вызова. Расходы ограничиваются сервером."
-    else "Подключение модели не подтверждено. Не считаем настройку или отсутствие сообщений доказательством безопасности портфеля."
+    } else {
+        "Подключение модели не подтверждено. Не считаем настройку или отсутствие сообщений доказательством безопасности портфеля."
+    }
     StatusCard(title, text)
 }
 
-private fun LazyListScope.profileControls(profile: AnalysisProfile, enabled: Boolean, onChange: (AnalysisProfile) -> Unit) {
-    item { ProfileChoiceCard("Уровень риска", listOf("conservative" to "Консервативный", "moderate" to "Умеренный", "aggressive" to "Агрессивный"),
-        profile.riskLevel, enabled) { onChange(profile.copy(riskLevel = it)) } }
-    item { ProfileChoiceCard("Горизонт", listOf("short" to "До года", "medium" to "1–3 года", "long" to "Более 3 лет"),
-        profile.horizon, enabled) { onChange(profile.copy(horizon = it)) } }
-    item { SliderCard("Максимальная доля позиции", profile.maxPositionPercent, 5f..60f, enabled) { onChange(profile.copy(maxPositionPercent = it)) } }
-    item { SliderCard("Минимальный денежный резерв", profile.minCashPercent, 0f..50f, enabled) { onChange(profile.copy(minCashPercent = it)) } }
-    item { SwitchCard("Критические предупреждения", profile.notifyCritical, enabled) { onChange(profile.copy(notifyCritical = it)) } }
-    item { SwitchCard("Утренний и вечерний обзор", profile.notifyBriefs, enabled) { onChange(profile.copy(notifyBriefs = it)) } }
+private fun LazyListScope.profileControls(
+    profile: AnalysisProfile,
+    enabled: Boolean,
+    onChange: (AnalysisProfile) -> Unit,
+) {
+    item {
+        ProfileChoiceCard(
+            "Уровень риска",
+            listOf(
+                "conservative" to "Консервативный",
+                "moderate" to "Умеренный",
+                "aggressive" to "Агрессивный",
+            ),
+            profile.riskLevel,
+            enabled,
+        ) {
+            onChange(profile.copy(riskLevel = it))
+        }
+    }
+    item {
+        ProfileChoiceCard(
+            "Горизонт",
+            listOf(
+                "short" to "До года",
+                "medium" to "1–3 года",
+                "long" to "Более 3 лет",
+            ),
+            profile.horizon,
+            enabled,
+        ) {
+            onChange(profile.copy(horizon = it))
+        }
+    }
+    item {
+        SliderCard(
+            "Максимальная доля позиции",
+            profile.maxPositionPercent,
+            5f..60f,
+            enabled,
+        ) {
+            onChange(profile.copy(maxPositionPercent = it))
+        }
+    }
+    item {
+        SliderCard(
+            "Минимальный денежный резерв",
+            profile.minCashPercent,
+            0f..50f,
+            enabled,
+        ) {
+            onChange(profile.copy(minCashPercent = it))
+        }
+    }
+    item {
+        SwitchCard("Критические предупреждения", profile.notifyCritical, enabled) {
+            onChange(profile.copy(notifyCritical = it))
+        }
+    }
+    item {
+        SwitchCard("Утренний и вечерний обзор", profile.notifyBriefs, enabled) {
+            onChange(profile.copy(notifyBriefs = it))
+        }
+    }
 }

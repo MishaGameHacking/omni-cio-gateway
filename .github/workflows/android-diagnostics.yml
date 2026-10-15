@@ -1,0 +1,58 @@
+name: Android verification diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/android-diagnostics.yml"]
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Summarize the last failed Android validation without changing its result
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const ref = context.payload.pull_request.head;
+            const runs = (await github.rest.actions.listWorkflowRuns({
+              ...context.repo, workflow_id: 'android-ci.yml', branch: ref.ref,
+              status: 'failure', per_page: 5,
+            })).data.workflow_runs;
+            const previous = runs[0];
+            if (!previous) throw new Error('No failed Android CI run found');
+            const jobs = (await github.rest.actions.listJobsForWorkflowRun({
+              ...context.repo, run_id: previous.id, per_page: 100,
+            })).data.jobs;
+            const failed = jobs.find(job => job.name === 'Android debug and release build' && job.conclusion === 'failure');
+            if (!failed) throw new Error('Failed Android build job not found');
+            const response = await github.rest.actions.downloadJobLogsForWorkflowRun({
+              ...context.repo, job_id: failed.id,
+            });
+            const text = typeof response.data === 'string' ? response.data : Buffer.from(response.data).toString('utf8');
+            if (Buffer.byteLength(text, 'utf8') > 8388608) throw new Error('Log exceeds diagnostic limit');
+            const lines = text.split(/\r?\n/);
+            const chosen = new Set();
+            for (let i = 0; i < lines.length; i++) {
+              if (/PROFILE_UI_STAGE|PROFILE_TAB_GEOMETRY|PROFILE_SCREENSHOT|VERIFICATION_EVIDENCE=/.test(lines[i]) && !lines[i].includes('core.info(')) chosen.add(i);
+              if (/Traceback \(most recent call last\):/.test(lines[i])) {
+                for (let j = Math.max(0, i - 2); j < Math.min(lines.length, i + 42); j++) chosen.add(j);
+              }
+              if (/AssertionError:|RuntimeError:|Error: Artifact storage quota|Error: Failed to CreateArtifact/.test(lines[i])) chosen.add(i);
+            }
+            const excerpt = [...chosen].sort((a, b) => a - b).map(index => lines[index]).join('\n').slice(0, 24000);
+            if (!excerpt.trim()) throw new Error('No diagnostic evidence matched');
+            const body = [
+              '<!-- analyst-ui-diagnostic -->',
+              '## Failed native Android verification — diagnostic evidence only',
+              `Source head: ${previous.head_sha}; run: ${previous.id}; job: ${failed.id}.`,
+              'This does not change or waive any failing gate. Screenshots use explicitly labeled debug-only synthetic data.',
+              '```text', excerpt.replace(/```/g, "'''"), '```',
+            ].join('\n');
+            await github.rest.repos.createCommitComment({...context.repo, commit_sha: ref.sha, body});
+            core.info('Bounded diagnostic evidence saved on exact diagnostic commit ' + ref.sha);

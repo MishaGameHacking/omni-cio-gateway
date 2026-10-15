@@ -26,12 +26,11 @@ jobs:
     permissions:
       contents: write
       checks: read
-    # The registered Android runners share one physical machine and ADB server.
-    # Keep development parallel, but queue heavy builds/emulators across PRs.
+    # Registered Android runners share one physical machine and ADB server.
+    # Only the newest exact-head lab job is useful; evict stale builds explicitly.
     concurrency:
       group: analyst-android-lab
-      queue: max
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
     env:
@@ -160,7 +159,7 @@ jobs:
             const crypto = require('crypto');
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
-            const shots = ['light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
+            const shots = ['spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
             const names = ['apk-verification.json', 'install-api-33/install-results.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {
@@ -178,3 +177,13 @@ jobs:
             }
             core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request.head.sha, run:context.runId, records}));
             await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
+      - name: Upload optional synthetic Spectrum screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: spectrum-ui-${{ github.event.pull_request.head.sha }}
+          path: app/build/outputs/apk/preview/ui-screens/*.png
+          if-no-files-found: warn
+          retention-days: 1
+          compression-level: 0
