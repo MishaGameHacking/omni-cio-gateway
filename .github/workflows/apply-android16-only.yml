@@ -1,0 +1,53 @@
+name: Apply Android 16-only baseline
+
+on:
+  push:
+    branches: [feature/android-16-only]
+    paths:
+      - ".github/workflows/apply-android16-only.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    name: Apply exact Android 16 migration
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: feature/android-16-only
+          persist-credentials: true
+          clean: true
+
+      - name: Apply reviewed exact replacements
+        shell: cmd
+        run: |
+          py -3 .github\scripts\apply_android16_only.py
+          if errorlevel 1 exit /b 1
+
+      - name: Validate migration sources
+        shell: cmd
+        run: |
+          py -3 -m py_compile .github\scripts\apply_android16_only.py .github\scripts\verify_apk.py .github\scripts\validate_distribution.py .github\scripts\test_apk_installation.py backend\installation_evidence.py backend\release_publication.py
+          if errorlevel 1 exit /b 1
+          py -3 -m unittest backend.tests.test_installation_evidence -v
+          if errorlevel 1 exit /b 1
+          py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
+          if errorlevel 1 exit /b 1
+          git diff --check
+          if errorlevel 1 exit /b 1
+
+      - name: Commit Android 16-only baseline
+        shell: cmd
+        run: |
+          git config user.name "Analyst AI Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit /b 1
+          git commit -m "Make Android 16 the minimum supported platform"
+          if errorlevel 1 exit /b 1
+          git push origin HEAD:feature/android-16-only
+          if errorlevel 1 exit /b 1
