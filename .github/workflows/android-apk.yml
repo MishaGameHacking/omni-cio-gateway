@@ -27,10 +27,11 @@ jobs:
     name: Build and verify downloadable APK
     permissions:
       contents: write
-    # Share the physical Android lab with pull-request verification. The Python
-    # emulator lease remains a second fail-safe against accidental ADB overlap.
+    # Release builds have their own non-preemptible queue. The host-wide Python
+    # lease in test_apk_installation.py serializes actual ADB/emulator access
+    # with PR checks running on the other registered services of this laptop.
     concurrency:
-      group: analyst-android-lab
+      group: analyst-android-release-${{ github.ref }}
       queue: max
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
