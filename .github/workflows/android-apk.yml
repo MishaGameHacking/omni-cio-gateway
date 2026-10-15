@@ -132,7 +132,7 @@ jobs:
           call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
 
-      - name: Verify upgrade, clean installs, launch, and profile UI
+      - name: Verify upgrade, clean install, launch, and profile UI on Android 16
         uses: ./.github/actions/check-apk
         env:
           RUN_PROFILE_UI_TESTS: "1"
@@ -142,7 +142,6 @@ jobs:
         run: |
           if not exist "app\build\outputs\apk\preview\app-preview.apk" exit /b 1
           if not exist "app\build\outputs\apk\preview\apk-verification.json" exit /b 1
-          if not exist "app\build\outputs\apk\preview\install-api-33\install-results.json" exit /b 1
           if not exist "app\build\outputs\apk\preview\install-api-36\install-results.json" exit /b 1
           if not exist "app\build\outputs\apk\preview\ui-screens\*.png" exit /b 1
 
@@ -158,7 +157,6 @@ jobs:
           path: |
             app/build/outputs/apk/preview/app-preview.apk
             app/build/outputs/apk/preview/apk-verification.json
-            app/build/outputs/apk/preview/install-api-33/install-results.json
             app/build/outputs/apk/preview/install-api-36/install-results.json
             app/build/outputs/apk/preview/ui-screens/*.png
           if-no-files-found: error
@@ -205,9 +203,9 @@ jobs:
             const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
             const title = `Analyst AI ${version}`;
             const body = [
-              'Signed, non-debuggable preview APK. Android 13+; application ID ru.omnicio.app.debug.',
+              'Signed, non-debuggable preview APK. Android 16+ only; application ID ru.omnicio.app.debug.',
               'Uses the existing test signing key, not a production-store signing key.',
-              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade from the installed 0.5.1 preview, launch on Android 13/16 x86_64 emulators, and profile/education UI on Android 13 verified.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade from the installed 0.5.1 preview, launch and profile/education UI on an Android 16 x86_64 emulator verified.',
               'A physical Samsung installation failure is not claimed to be reproduced or fixed by emulator tests.',
               `SHA-256: ${hash}`,
               `Signing certificate SHA-256: ${report.certificate_sha256}`,
