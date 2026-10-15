@@ -1,0 +1,99 @@
+name: Repair Moscow update channel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/scripts/repair_moscow_update_channel.sh"
+      - ".github/workflows/repair-moscow-update-channel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analyst-moscow-update-channel
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Restore live version policy and verified APK
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       contains(github.event.head_commit.message, '[repair-update-channel]'))
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      RELEASE_TAG: android-preview-ec24b402f51c9c3031c6cc9d67207a7b46c8a503
+      RELEASE_APK_NAME: Analyst-AI-0.6.0-preview-ec24b40.apk
+      RELEASE_APK_SHA256: 31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74
+      RELEASE_REPORT_NAME: apk-verification.json
+      RELEASE_REPORT_SHA256: 49d396fe3143a4497b818490cf19baf627a0878b2f74e6fb361eeb9fb806a795
+
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Validate repair workflow before cloud access
+        shell: cmd
+        run: |
+          py -3 -m unittest discover -s .github\scripts\tests -p "test_moscow_update_channel_repair.py" -v
+          if errorlevel 1 exit /b 1
+          "C:\Program Files\Git\bin\bash.exe" -n .github/scripts/repair_moscow_update_channel.sh
+          if errorlevel 1 exit /b 1
+
+      - name: Download exact immutable verified release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const release = (await github.rest.repos.getReleaseByTag({
+              ...context.repo,
+              tag: process.env.RELEASE_TAG,
+            })).data;
+            if (release.draft || release.target_commitish !== 'ec24b402f51c9c3031c6cc9d67207a7b46c8a503') {
+              throw new Error('Release identity does not match the verified main commit');
+            }
+            async function download(name, expectedSha, outputName) {
+              const asset = release.assets.find(candidate => candidate.name === name);
+              if (!asset) throw new Error(`Missing release asset: ${name}`);
+              const response = await github.rest.repos.getReleaseAsset({
+                ...context.repo,
+                asset_id: asset.id,
+                headers: {accept: 'application/octet-stream'},
+              });
+              const bytes = Buffer.from(response.data);
+              const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+              if (digest !== expectedSha) throw new Error(`Release asset checksum mismatch: ${name}`);
+              const destination = path.join(process.env.RUNNER_TEMP, outputName);
+              fs.writeFileSync(destination, bytes, {mode: 0o600});
+              return destination;
+            }
+            core.exportVariable('APK_PATH', await download(
+              process.env.RELEASE_APK_NAME,
+              process.env.RELEASE_APK_SHA256,
+              `analyst-ai-${context.runId}.apk`,
+            ));
+            core.exportVariable('REPORT_PATH', await download(
+              process.env.RELEASE_REPORT_NAME,
+              process.env.RELEASE_REPORT_SHA256,
+              `analyst-ai-${context.runId}-verification.json`,
+            ));
+
+      - name: Repair canonical backend and update channel
+        shell: cmd
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: "1"
+        run: |
+          "C:\Program Files\Git\bin\bash.exe" .github/scripts/repair_moscow_update_channel.sh
+          if errorlevel 1 exit /b 1
