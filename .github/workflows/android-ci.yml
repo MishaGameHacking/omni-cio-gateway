@@ -50,8 +50,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6
+      # setup-gradle repeatedly timed out while downloading from codeload on the
+      # private Windows runner. Validate the pinned wrapper directly instead of
+      # making release availability depend on that supplementary action.
+      - name: Verify pinned Gradle wrapper
+        shell: cmd
+        run: |
+          certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\gradle-wrapper.sha256"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\gradle-wrapper.sha256" >nul
+          if errorlevel 1 exit /b 1
+          call gradlew.bat --version
+          if errorlevel 1 exit /b 1
       - name: Choose Android SDK root
         shell: cmd
         run: |
