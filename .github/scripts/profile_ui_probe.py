@@ -163,10 +163,10 @@ class ProfileProbe:
         self.tap_node(target)
 
     def tab(self, label):
-        from profile_tab_checks import TAB_IDS, selected_tab
+        from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab
 
         resource_id = TAB_IDS[label]
-        self.tap_resource(resource_id, "profile-tabs", "start" if label == SETTINGS_LABEL else "end")
+        self.tap_node(reveal_tab(self.tree, self._swipe_callback(), resource_id, "start" if label == SETTINGS_LABEL else "end"))
         return self.wait_for(
             lambda: selected_tab(self.tree(), resource_id),
             "Profile tab selection not confirmed: " + resource_id,

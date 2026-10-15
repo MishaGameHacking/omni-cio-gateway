@@ -37,3 +37,37 @@ def assert_horizontal_geometry(peer: tuple[int, int, int, int], target: tuple[in
     tolerance = max(peer_height, height) / 2
     if abs((top + bottom - peer_top - peer_bottom) / 2) > tolerance:
         raise AssertionError("Profile tabs are not on the same row")
+
+
+def tappable_tab(tree: ET.Element, resource_id: str) -> ET.Element | None:
+    """A non-empty off-viewport semantics rectangle is not a tappable tab."""
+    from profile_scroll import _bounds
+
+    rail = visible_resource(tree, "profile-tabs")
+    tab = visible_resource(tree, resource_id)
+    if rail is None or tab is None:
+        return None
+    left, top, right, bottom = _bounds(rail)
+    x1, y1, x2, y2 = _bounds(tab)
+    if x2 - x1 < 48 or y2 - y1 < 48:
+        return None
+    return tab if left <= x1 and x2 <= right and top <= y1 and y2 <= bottom else None
+
+
+def reveal_tab(read_tree, swipe, resource_id: str, direction: str):
+    """Scroll only the exact rail until the entire tagged cell is tappable."""
+    from profile_scroll import _gesture, _scroll_area
+
+    if resource_id not in TAB_IDS.values() or direction not in {"start", "end"}:
+        raise ValueError("Unknown profile tab or direction")
+    for attempt in range(9):
+        tree = read_tree()
+        target = tappable_tab(tree, resource_id)
+        if target is not None:
+            return target
+        bounds = _scroll_area(tree, "profile-tabs")
+        gesture = _gesture(bounds, "horizontal", direction) if bounds is not None else None
+        if gesture is None or attempt == 8:
+            raise AssertionError("Complete profile tab not reachable: " + resource_id)
+        swipe(*gesture)
+    raise AssertionError("Tab scroll did not finish")

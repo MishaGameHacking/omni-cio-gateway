@@ -5,7 +5,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from profile_tab_checks import assert_horizontal_geometry, content_label, selected_tab
+from profile_tab_checks import assert_horizontal_geometry, content_label, selected_tab, tappable_tab, reveal_tab
 
 PACKAGE = "ru.omnicio.app.debug"
 
@@ -63,6 +63,36 @@ class ProfileTabChecks(unittest.TestCase):
         self.assertIsNone(selected_tab(node(package="other.app", **{"resource-id": "profile-tab-2", "selected": "true"}), "profile-tab-2"))
         tab = node(**{"resource-id": "profile-tab-2", "selected": "true"})
         self.assertIs(selected_tab(tab, "profile-tab-2"), tab)
+
+
+class TabViewportTests(unittest.TestCase):
+    def frame(self, rectangle, package=PACKAGE):
+        tree = ET.Element("hierarchy")
+        rail = node(bounds="[20,160][300,212]", scrollable="true", **{"resource-id": "profile-tabs"})
+        rail.append(node(bounds=rectangle, package=package, **{"resource-id": "profile-tab-2"}))
+        tree.append(rail)
+        return tree
+
+    def test_off_viewport_center_cannot_be_tapped(self):
+        self.assertIsNone(tappable_tab(self.frame("[288,160][416,212]"), "profile-tab-2"))
+
+    def test_clipped_sliver_cannot_be_tapped(self):
+        self.assertIsNone(tappable_tab(self.frame("[288,160][300,212]"), "profile-tab-2"))
+
+    def test_complete_cell_is_tappable(self):
+        self.assertIsNotNone(tappable_tab(self.frame("[172,160][300,212]"), "profile-tab-2"))
+
+    def test_clipped_cell_is_revealed_before_tap(self):
+        frames = iter([self.frame("[288,160][416,212]"), self.frame("[172,160][300,212]")])
+        gestures = []
+        target = reveal_tab(lambda: next(frames), lambda *args: gestures.append(args), "profile-tab-2", "end")
+        self.assertEqual(target.get("bounds"), "[172,160][300,212]")
+        self.assertEqual(len(gestures), 1)
+        self.assertTrue(20 < gestures[0][2] < gestures[0][0] < 300)
+
+    def test_foreign_and_unreachable_still_fail(self):
+        with self.assertRaises(AssertionError):
+            reveal_tab(lambda: self.frame("[172,160][300,212]", "other.app"), lambda *args: None, "profile-tab-2", "end")
 
 
 if __name__ == "__main__":
