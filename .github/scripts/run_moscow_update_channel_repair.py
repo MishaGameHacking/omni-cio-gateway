@@ -72,12 +72,15 @@ def replace_exact_once(source: str, old: str, new: str) -> str:
     return source.replace(old, new, 1)
 
 
-def patched_source() -> str:
-    """Return a syntax-preserving script for the exact 0.7.1 release."""
-    source = SOURCE.read_text(encoding="utf-8")
+def apply_release_identity(source: str) -> str:
+    """Apply each exact release identity marker once."""
     for old, new in RELEASE_REPLACEMENTS:
         source = replace_exact_once(source, old, new)
+    return source
 
+
+def apply_child_environment_prefixes(source: str) -> tuple[str, dict[str, int]]:
+    """Replace only the four audited child-process environment prefixes."""
     counts = {prefix: 0 for prefix, _ in PREFIX_REPLACEMENTS}
     output: list[str] = []
     for line in source.splitlines(keepends=True):
@@ -87,7 +90,11 @@ def patched_source() -> str:
                 line = replacement + line[len(prefix):]
                 break
         output.append(line)
+    return "".join(output), counts
 
+
+def require_expected_prefix_counts(counts: dict[str, int]) -> None:
+    """Reject missing or duplicate audited shell prefixes."""
     unexpected = {prefix: count for prefix, count in counts.items() if count != 1}
     if unexpected:
         raise RuntimeError(
@@ -95,15 +102,31 @@ def patched_source() -> str:
             + ", ".join(f"{prefix!r}={count}" for prefix, count in unexpected.items())
         )
 
-    patched = "".join(output)
+
+def validate_child_environment_prefixes(patched: str) -> None:
+    """Confirm that no readonly current-shell assignment remains."""
+    lines = patched.splitlines()
     for prefix, replacement in PREFIX_REPLACEMENTS:
         if patched.count(replacement) != 1:
             raise RuntimeError(f"staged repair prefix is not unique: {replacement!r}")
-        if any(line.startswith(prefix) for line in patched.splitlines()):
+        if any(line.startswith(prefix) for line in lines):
             raise RuntimeError(f"readonly assignment remains: {prefix!r}")
+
+
+def validate_release_identity(patched: str) -> None:
+    """Confirm that only the requested 0.7.1 identity is staged."""
     for old, new in RELEASE_REPLACEMENTS:
         if old in patched or patched.count(new) != 1:
             raise RuntimeError(f"staged release identity is inconsistent: {new!r}")
+
+
+def patched_source() -> str:
+    """Return a syntax-preserving script for the exact 0.7.1 release."""
+    source = apply_release_identity(SOURCE.read_text(encoding="utf-8"))
+    patched, counts = apply_child_environment_prefixes(source)
+    require_expected_prefix_counts(counts)
+    validate_child_environment_prefixes(patched)
+    validate_release_identity(patched)
     return patched
 
 
