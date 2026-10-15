@@ -38,6 +38,7 @@ import ru.omnicio.app.ui.analysis.InsightFeedScreen
 import ru.omnicio.app.ui.analysis.PulseScreen
 import ru.omnicio.app.ui.auth.TelegramLoginScreen
 import ru.omnicio.app.ui.education.EducationScreen
+import ru.omnicio.app.ui.home.HomeScreen
 import ru.omnicio.app.ui.portfolio.PortfolioScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.profile.TApiScreen
@@ -46,10 +47,11 @@ import ru.omnicio.app.ui.theme.AnalystTheme
 import ru.omnicio.app.ui.updates.MandatoryUpdateHost
 
 private enum class AppScreen {
+    Home,
     Portfolio,
-    Ideas,
-    Pulse,
-    Chat,
+    Recommendations,
+    Risk,
+    Messages,
     Profile,
     Education,
     AnalysisSettings,
@@ -204,9 +206,9 @@ private fun AnalystAiApp(
 
     var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading) }
     var initialSessionChecked by remember { mutableStateOf(false) }
-    var screenName by rememberSaveable { mutableStateOf(AppScreen.Portfolio.name) }
+    var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
     val screen = remember(screenName) {
-        runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Portfolio)
+        runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Home)
     }
     var tApiConfigured by remember { mutableStateOf(false) }
     var portfolioCurrencyName by rememberSaveable {
@@ -356,7 +358,7 @@ private fun AnalystAiApp(
             },
             onLogout = {
                 sessionStore.clear()
-                screenName = AppScreen.Portfolio.name
+                screenName = AppScreen.Home.name
                 tApiConfigured = false
                 authState = AuthUiState.SignedOut()
             },
@@ -441,11 +443,40 @@ private fun SignedInAppContent(
     val navigateToTab: (AnalystTab) -> Unit = { tab ->
         onScreenChange(tab.toAppScreen())
     }
+    val openHome = { onScreenChange(AppScreen.Home) }
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
 
     CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab) {
         when (screen) {
+            AppScreen.Home -> {
+                HomeScreen(
+                    user = session.user,
+                    state = portfolioState,
+                    refreshing = portfolioRefreshing,
+                    refreshError = portfolioError,
+                    lastUpdatedMillis = portfolioLastSuccessMillis,
+                    selectedCurrency = portfolioCurrency,
+                    onCurrencyClick = {
+                        onCurrencyChange(portfolioCurrency.next())
+                    },
+                    onOpenPortfolio = openPortfolio,
+                    onOpenRecommendations = {
+                        onScreenChange(AppScreen.Recommendations)
+                    },
+                    onOpenRisk = {
+                        onScreenChange(AppScreen.Risk)
+                    },
+                    onOpenMessages = {
+                        onScreenChange(AppScreen.Messages)
+                    },
+                    onOpenEducation = {
+                        onScreenChange(AppScreen.Education)
+                    },
+                    onOpenProfile = openProfile,
+                )
+            }
+
             AppScreen.Portfolio -> {
                 PortfolioScreen(
                     state = portfolioState,
@@ -461,7 +492,7 @@ private fun SignedInAppContent(
                 )
             }
 
-            AppScreen.Ideas -> {
+            AppScreen.Recommendations -> {
                 IdeasScreen(
                     accessToken = session.accessToken,
                     onPortfolioClick = openPortfolio,
@@ -472,7 +503,7 @@ private fun SignedInAppContent(
                 )
             }
 
-            AppScreen.Pulse -> {
+            AppScreen.Risk -> {
                 PulseScreen(
                     accessToken = session.accessToken,
                     onPortfolioClick = openPortfolio,
@@ -480,7 +511,7 @@ private fun SignedInAppContent(
                 )
             }
 
-            AppScreen.Chat -> {
+            AppScreen.Messages -> {
                 InsightFeedScreen(
                     accessToken = session.accessToken,
                     onPortfolioClick = openPortfolio,
@@ -510,7 +541,7 @@ private fun SignedInAppContent(
 
             AppScreen.Education -> {
                 EducationScreen(
-                    onBack = openProfile,
+                    onBack = openHome,
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                 )
@@ -538,10 +569,10 @@ private fun SignedInAppContent(
 }
 
 private fun AnalystTab.toAppScreen(): AppScreen = when (this) {
+    AnalystTab.Home -> AppScreen.Home
     AnalystTab.Portfolio -> AppScreen.Portfolio
-    AnalystTab.Ideas -> AppScreen.Ideas
-    AnalystTab.Pulse -> AppScreen.Pulse
-    AnalystTab.Chat -> AppScreen.Chat
+    AnalystTab.Risk -> AppScreen.Risk
+    AnalystTab.Education -> AppScreen.Education
     AnalystTab.Profile -> AppScreen.Profile
 }
 
