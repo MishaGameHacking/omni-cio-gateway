@@ -49,17 +49,41 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
         self.assertTrue(all(name == "backend" or name.startswith("backend/") for name in names))
         self.assertFalse(any(".." in Path(name).parts for name in names))
 
-    def test_remote_script_normalizer_removes_all_carriage_returns(self) -> None:
-        source = b"#!/usr/bin/env bash\r\nset -euo pipefail\r\necho ready\r\n"
-        expected = b"#!/usr/bin/env bash\nset -euo pipefail\necho ready\n"
-        self.assertEqual(normalizer.normalize_bytes(source), expected)
-        self.assertNotIn(b"\r", normalizer.normalize_bytes(REMOTE.read_bytes()))
+    def test_remote_script_materializer_normalizes_and_namespaces_bindings(self) -> None:
+        source = (
+            b"#!/usr/bin/env bash\r\n"
+            b"set -euo pipefail\r\n"
+            b'UNIT_FILE="$UNIT_FILE" OLD_EXEC="$OLD_EXEC" NEW_EXEC="$NEW_EXEC" '
+            b'"$VENV_PYTHON" - <<\'PY\'\r\n'
+            b'path = Path(os.environ["UNIT_FILE"])\r\n'
+            b'old = os.environ["OLD_EXEC"]\r\n'
+            b'new = os.environ["NEW_EXEC"]\r\n'
+            b"PY\r\n"
+        )
+        materialized = normalizer.normalize_bytes(source)
+        self.assertNotIn(b"\r", materialized)
+        self.assertIn(b'UNIT_FILE_PATH="$UNIT_FILE"', materialized)
+        self.assertIn(b'OLD_EXEC_VALUE="$OLD_EXEC"', materialized)
+        self.assertIn(b'NEW_EXEC_VALUE="$NEW_EXEC"', materialized)
+        self.assertIn(b'os.environ["UNIT_FILE_PATH"]', materialized)
+        self.assertNotIn(b'UNIT_FILE="$UNIT_FILE"', materialized)
+        self.assertEqual(normalizer.normalize_bytes(materialized), materialized)
 
-    def test_remote_script_normalizer_rejects_unexpected_input(self) -> None:
+    def test_checked_in_remote_script_materializes_without_readonly_assignment(self) -> None:
+        materialized = normalizer.normalize_bytes(REMOTE.read_bytes())
+        self.assertNotIn(b"\r", materialized)
+        self.assertNotIn(b'UNIT_FILE="$UNIT_FILE"', materialized)
+        self.assertNotIn(b'OLD_EXEC="$OLD_EXEC"', materialized)
+        self.assertNotIn(b'NEW_EXEC="$NEW_EXEC"', materialized)
+        self.assertIn(b'UNIT_FILE_PATH="$UNIT_FILE"', materialized)
+
+    def test_remote_script_materializer_rejects_unexpected_input(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "unexpected shebang"):
             normalizer.normalize_bytes(b"set -euo pipefail\r\n")
         with self.assertRaisesRegex(RuntimeError, "fail-closed shell options"):
             normalizer.normalize_bytes(b"#!/usr/bin/env bash\r\necho unsafe\r\n")
+        with self.assertRaisesRegex(RuntimeError, "unexpected environment binding"):
+            normalizer.normalize_bytes(b"#!/usr/bin/env bash\nset -euo pipefail\necho incomplete\n")
 
     def test_remote_repair_has_exact_entrypoint_and_rollback(self) -> None:
         source = REMOTE.read_text(encoding="utf-8")
@@ -77,9 +101,12 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
         bash = next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
         if bash is None:
             self.skipTest("Git Bash is unavailable")
-        subprocess.run([bash, "-n", str(REMOTE)], check=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            materialized = Path(temporary) / "deploy.sh"
+            materialized.write_bytes(normalizer.normalize_bytes(REMOTE.read_bytes()))
+            subprocess.run([bash, "-n", str(materialized)], check=True)
 
-    def test_workflow_is_explicitly_gated_and_normalizes_before_cloud_access(self) -> None:
+    def test_workflow_is_explicitly_gated_and_materializes_before_cloud_access(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         marker = "normalize_moscow_telegram_deploy_shell.py"
         deployment = "deploy_moscow_telegram_browser_auth.py"
