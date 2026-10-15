@@ -42,12 +42,12 @@ jobs:
           git diff --check
           if errorlevel 1 exit /b 1
 
-      - name: Commit Android 16-only baseline
+      - name: Commit Android 16-only source baseline
         shell: cmd
         run: |
           git config user.name "Analyst AI Automation"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
+          git add -A -- . ":(exclude).github/workflows/android-apk.yml" ":(exclude).github/workflows/android-ci.yml"
           git diff --cached --quiet && exit /b 1
           git commit -m "Make Android 16 the minimum supported platform"
           if errorlevel 1 exit /b 1
