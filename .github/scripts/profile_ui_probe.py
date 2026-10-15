@@ -180,6 +180,11 @@ class ProfileProbe:
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
+        # Spectrum is deliberately dark on first installation, independent of
+        # the current system mode. Select light explicitly before its evidence.
+        self.palette(DARK_BACKGROUND)
+        self.tap(THEME_LABEL)
+        self.tap("Светлая")
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
@@ -236,7 +241,6 @@ class ProfileProbe:
         self.capture(screenshot)
         self.tap_resource(FIRST_LESSON_TOGGLE, area)
         self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
-        self.find(BACK_FROM_EDUCATION)
         self.tap("Старт", area)
         self.find(FIRST_LESSON)
         self.tap("Все уроки", area)
@@ -277,7 +281,7 @@ def exercise(device) -> None:
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
-            "PROFILE_UI_TESTS=passed: spectrum-light,dark,system,persistence,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
+            "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,persistence,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
     finally:
