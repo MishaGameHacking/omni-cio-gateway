@@ -35,7 +35,7 @@ internal fun HomeQuickActions(
     val largeFont = LocalDensity.current.fontScale >= 1.4f
     val actions = listOf(
         HomeAction("Портфель", SpectrumSymbol.Portfolio, palette.blue, onPortfolio),
-        HomeAction("Рекомендации", SpectrumSymbol.Ideas, palette.violet, onRecommendations),
+        HomeAction("Идеи AI", SpectrumSymbol.Ideas, palette.violet, onRecommendations),
         HomeAction("Риски", SpectrumSymbol.Risk, palette.rose, onRisk),
         HomeAction("Сообщения", SpectrumSymbol.Messages, palette.cyan, onMessages),
     )

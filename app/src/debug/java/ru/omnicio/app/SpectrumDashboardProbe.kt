@@ -31,7 +31,9 @@ internal fun SpectrumDashboardProbe(screen: String) {
             allocations = allocation, asOf = "2026-10-15T06:00:00Z",
         ))
     }
-    Column(Modifier.fillMaxSize()) {
+    // Keep the fixture disclosure visible under the same edge-to-edge window
+    // as MainActivity. statusBarsPadding consumes the top inset for children.
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Surface(color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
             Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", Modifier.fillMaxWidth().padding(4.dp),
                 style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
