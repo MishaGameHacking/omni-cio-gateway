@@ -72,6 +72,29 @@ def validate_jwks(path: Path) -> dict:
     return rs256[0]
 
 
+def validate_remote_readonly_assignments(source: str) -> None:
+    """Reject any assignment made after a shell variable becomes readonly."""
+    readonly_names: set[str] = set()
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("readonly "):
+            declaration = stripped.removeprefix("readonly ")
+            readonly_names.update(
+                match.group(1)
+                for match in re.finditer(
+                    r"(?:^|\s)([A-Z][A-Z0-9_]*)(?==|\s|$)",
+                    declaration,
+                )
+            )
+            continue
+        for name in readonly_names:
+            if re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}=", line):
+                raise RuntimeError(
+                    f"Remote deployment reassigns readonly shell constant {name} "
+                    f"on line {line_number}"
+                )
+
+
 def validate_source() -> dict[str, str]:
     required = (
         BACKEND / "app.py",
@@ -97,6 +120,7 @@ def validate_source() -> dict[str, str]:
         if required_text not in source:
             raise RuntimeError(f"Telegram browser-login invariant is missing: {required_text}")
     remote = REMOTE_SOURCE.read_text(encoding="utf-8")
+    validate_remote_readonly_assignments(remote)
     for required_text in (
         "TELEGRAM_AUTH_DEPLOYMENT=passed",
         "TELEGRAM_AUTH_EXTERNAL_ROLLBACK=passed",
