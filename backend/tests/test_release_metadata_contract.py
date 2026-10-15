@@ -25,7 +25,7 @@ class ReleaseMetadataContractTests(unittest.TestCase):
             'apk_sha256': 'a' * 64,
             'apk_bytes': 4_000_000,
             'certificate_sha256': 'b' * 64,
-            'min_sdk': 33,
+            'min_sdk': 36,
             'published_at': 1,
             'notes': '',
         }

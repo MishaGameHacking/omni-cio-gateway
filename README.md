@@ -1,7 +1,7 @@
 # Analyst AI — Android и Timeweb backend
 
-Kotlin / Jetpack Compose. Android 13+ (`minSdk 33`), `compileSdk/targetSdk 36`.
-Текущая ветка интерфейса: **0.7.0 / versionCode 24**. Открывайте корень проекта в Android Studio.
+Kotlin / Jetpack Compose. Android 16+ (`minSdk/compileSdk/targetSdk 36`).
+Текущая ветка интерфейса: **0.7.1 / versionCode 26**. Открывайте корень проекта в Android Studio.
 
 ## Установка и совместимость
 
@@ -12,7 +12,7 @@ Kotlin / Jetpack Compose. Android 13+ (`minSdk 33`), `compileSdk/targetSdk 36`.
 
 Перед публикацией проверяются подпись, закреплённый сертификат, DEX, ZIP/ELF,
 отсутствие `testOnly`/debug-флага, установка с нуля, обновление поверх предыдущего APK
-и запуск на Android 13/16. Загруженный APK скачивается обратно для сверки SHA-256;
+и запуск на Android 16. Загруженный APK скачивается обратно для сверки SHA-256;
 отчёт сохраняется как `apk-verification.json`. Успешный эмулятор не заменяет проверку
 на физическом устройстве.
 

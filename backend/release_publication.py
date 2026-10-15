@@ -25,28 +25,56 @@ except ImportError:
     from installation_evidence import from_ci_reports, InstallationEvidenceError
 
 
-def _evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None:
-    if not isinstance(report, dict):
+def _require_apk_evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None:
+    expected = {
+        'sha256': sha256,
+        'bytes': size,
+        'certificate_sha256': certificate,
+        'signature_v2': True,
+        'zipalign_16kb': True,
+        'debuggable': False,
+        'test_only': False,
+    }
+    if any(type(report.get(key)) is not type(value) or report.get(key) != value
+           for key, value in expected.items()):
         raise ReleaseUnavailable('apk_verification_evidence_mismatch')
-    expected = {'sha256': sha256, 'bytes': size, 'certificate_sha256': certificate,
-                'signature_v2': True, 'zipalign_16kb': True, 'debuggable': False, 'test_only': False}
-    if any(type(report.get(k)) is not type(v) or report.get(k) != v for k, v in expected.items()):
-        raise ReleaseUnavailable('apk_verification_evidence_mismatch')
+
+
+def _require_android_16_installation(report: dict, *, sha256: str) -> dict:
     tested = report.get('installation_evidence')
     if not isinstance(tested, dict) or tested.get('apk_sha256') != sha256:
         raise ReleaseUnavailable('installation_evidence_missing')
-    for api in ('33', '36'):
-        checks = tested.get(api)
-        if not isinstance(checks, dict) or any(checks.get(k) is not True for k in
-                                               ('clean_install', 'upgrade', 'launch')):
-            raise ReleaseUnavailable('installation_evidence_incomplete')
-    if 'installation_tests' in report:
-        try:
-            derived = from_ci_reports(report['installation_tests'], sha256)
-        except InstallationEvidenceError as error:
-            raise ReleaseUnavailable('installation_transcript_invalid') from error
-        if tested != derived:
-            raise ReleaseUnavailable('installation_transcript_conflict')
+    checks = tested.get('36')
+    required_checks = ('clean_install', 'upgrade', 'launch')
+    if not isinstance(checks, dict) or any(checks.get(key) is not True for key in required_checks):
+        raise ReleaseUnavailable('installation_evidence_incomplete')
+    return tested
+
+
+def _require_android_floor(report: dict) -> None:
+    minimum_sdk = report.get('min_sdk')
+    if type(minimum_sdk) is not int or minimum_sdk < 36:
+        raise ReleaseUnavailable('unsupported_android_floor')
+
+
+def _require_transcript_match(report: dict, tested: dict, *, sha256: str) -> None:
+    if 'installation_tests' not in report:
+        return
+    try:
+        derived = from_ci_reports(report['installation_tests'], sha256)
+    except InstallationEvidenceError as error:
+        raise ReleaseUnavailable('installation_transcript_invalid') from error
+    if tested != derived:
+        raise ReleaseUnavailable('installation_transcript_conflict')
+
+
+def _evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None:
+    if not isinstance(report, dict):
+        raise ReleaseUnavailable('apk_verification_evidence_mismatch')
+    _require_apk_evidence(report, sha256=sha256, size=size, certificate=certificate)
+    tested = _require_android_16_installation(report, sha256=sha256)
+    _require_android_floor(report)
+    _require_transcript_match(report, tested, sha256=sha256)
 
 
 def _sync_directory(directory: Path) -> None:

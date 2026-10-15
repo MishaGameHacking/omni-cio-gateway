@@ -35,8 +35,8 @@ class ReleaseRolloverTests(unittest.TestCase):
         checks = {'clean_install': True, 'upgrade': True, 'launch': True}
         return dict(sha256=sha, bytes=self.apk.stat().st_size, certificate_sha256=certificate,
                     signature_v2=True, zipalign_16kb=True, debuggable=False, test_only=False,
-                    package=PACKAGE, version_code=version, version_name=f'test-{version}', min_sdk=33,
-                    installation_evidence={'apk_sha256': sha, '33': checks, '36': checks})
+                    package=PACKAGE, version_code=version, version_name=f'test-{version}', min_sdk=36,
+                    installation_evidence={'apk_sha256': sha, '36': checks})
 
     def publish(self, version=23):
         return publish(self.root, self.apk, self.report(version), expected_certificate=CERT)
@@ -122,7 +122,7 @@ class ReleaseRolloverTests(unittest.TestCase):
     def test_changed_metadata_not_hidden_by_idempotence(self):
         old = self.publish()
         report = self.report()
-        report['min_sdk'] = 34
+        report['min_sdk'] = 37
         with self.assertRaisesRegex(ReleaseUnavailable, 'identity_changed'):
             publish(self.root, self.apk, report, expected_certificate=CERT)
         self.assertEqual(self.channel.current(PACKAGE), old)

@@ -71,7 +71,7 @@ class DistributableApkWorkflowTests(unittest.TestCase):
     def test_composite_action_is_fail_closed_and_always_tests_upgrade(self):
         self.assertIn("PREVIOUS_APK is required", self.action)
         self.assertIn("RUN_PROFILE_UI_TESTS must be 1", self.action)
-        self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 2)
+        self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 1)
         self.assertNotIn("if defined PREVIOUS_APK goto upgrade", self.action)
 
 

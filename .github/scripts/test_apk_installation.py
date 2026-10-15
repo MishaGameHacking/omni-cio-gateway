@@ -62,7 +62,7 @@ def main() -> None:
     parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--sdk", required=True, type=Path)
-    parser.add_argument("--api", default=33, type=int)
+    parser.add_argument("--api", default=36, type=int)
     parser.add_argument("--work-dir", required=True, type=Path)
     args = parser.parse_args()
     apk = args.apk.resolve(strict=True)
@@ -190,7 +190,7 @@ def main() -> None:
                 raise RuntimeError("Candidate changed during emulator checks")
             results.append({"test": "bootstrap_activity_launch", "success": True, "apk_sha256": candidate_digest})
             print("BOOTSTRAP_ACTIVITY_LAUNCH=success", flush=True)
-            if args.api == 33 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+            if args.api == 36 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                 from profile_ui_probe import exercise
                 debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
                 install("debug_ui_fixture_install", debug_apk, update=True)
