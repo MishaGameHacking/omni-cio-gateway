@@ -21,7 +21,7 @@ from cryptography import x509
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from jwt import PyJWKClient
 from pydantic import BaseModel
 
@@ -58,6 +58,17 @@ TINVEST_ROOT_CA_SHA256 = "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e97
 LOGIN_TX_TTL = 10 * 60
 LOGIN_CODE_TTL = 5 * 60
 SESSION_TTL = 30 * 24 * 60 * 60
+
+# Analyst AI is a closed personal installation. Existing accounts always keep
+# access; the sixth distinct Telegram account is refused at the database
+# boundary so every authentication path observes the same hard limit.
+MAX_PRIVATE_USERS = 5
+PRIVATE_USER_LIMIT_ERROR = "private_user_limit_reached"
+PRIVATE_USER_LIMIT_DEEP_LINK_ERROR = "private_access_full"
+PRIVATE_USER_LIMIT_MESSAGE = (
+    "Закрытая версия Analyst AI рассчитана на пять аккаунтов. "
+    "Все места уже заняты; обратитесь к владельцу приложения."
+)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -102,7 +113,7 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     with closing(connect()) as db:
         db.executescript(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_sub TEXT NOT NULL UNIQUE,
@@ -133,6 +144,13 @@ def init_db() -> None:
                 user_id INTEGER NOT NULL,
                 expires_at INTEGER NOT NULL
             );
+
+            CREATE TRIGGER IF NOT EXISTS users_private_limit
+            BEFORE INSERT ON users
+            WHEN (SELECT COUNT(*) FROM users) >= {MAX_PRIVATE_USERS}
+            BEGIN
+                SELECT RAISE(ABORT, '{PRIVATE_USER_LIMIT_ERROR}');
+            END;
             """
         )
         db.commit()
@@ -231,11 +249,15 @@ def mobile_login_result(
     target = f"{APP_DEEP_LINK}?{urlencode(query)}"
     link_href = escape(target, quote=True)
     script_target = json.dumps(target).replace("<", "\\u003c").replace(">", "\\u003e")
-    message = (
-        "Telegram подтверждён. Возвращаем вас в Analyst AI."
-        if code else
-        "Авторизация не завершена. Вернитесь в Analyst AI, чтобы попробовать ещё раз."
-    )
+    if code:
+        message = "Telegram подтверждён. Возвращаем вас в Analyst AI."
+    elif error == PRIVATE_USER_LIMIT_DEEP_LINK_ERROR:
+        message = PRIVATE_USER_LIMIT_MESSAGE
+    else:
+        message = (
+            "Авторизация не завершена. "
+            "Вернитесь в Analyst AI, чтобы попробовать ещё раз."
+        )
     page = f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -274,12 +296,57 @@ def mobile_login_result(
     )
 
 
+@app.exception_handler(sqlite3.IntegrityError)
+async def database_integrity_error(
+    request: Request,
+    error: sqlite3.IntegrityError,
+):
+    """Return a stable private-cap response without exposing database details."""
+    if PRIVATE_USER_LIMIT_ERROR not in str(error):
+        logger.error(
+            "Unexpected database integrity error",
+            exc_info=(type(error), error, error.__traceback__),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "database_integrity_error"},
+            headers={"Cache-Control": "no-store, private"},
+        )
+
+    logger.warning(
+        "Rejected a new Telegram account because the private user limit is full"
+    )
+    if request.url.path == "/auth/telegram/complete":
+        deep_link = (
+            f"{APP_DEEP_LINK}?"
+            f"{urlencode({'error': PRIVATE_USER_LIMIT_DEEP_LINK_ERROR})}"
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "deep_link": deep_link,
+                "message": PRIVATE_USER_LIMIT_MESSAGE,
+            },
+            headers={
+                "Cache-Control": "no-store, private",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    return mobile_login_result(
+        error=PRIVATE_USER_LIMIT_DEEP_LINK_ERROR,
+        status_code=403,
+    )
+
+
 @app.get("/api/auth/social/telegram/callback", include_in_schema=False)
 @app.get(
     "/auth/telegram/callback",
     responses={
         400: {"description": "Invalid or expired Telegram login state."},
         401: {"description": "Telegram token exchange or ID token validation failed."},
+        403: {"description": "The closed five-account installation is full."},
     },
 )
 def telegram_callback(
