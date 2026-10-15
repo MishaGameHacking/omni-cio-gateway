@@ -22,7 +22,7 @@ OUTPUT = "/".join((*module.ARTIFACT_PARTS, module.OUTPUT_NAME))
 
 def report():
     return dict(version_code=23, version_name="0.6.0-preview",
-                package="ru.omnicio.app.debug", min_sdk=33, sha256="a" * 64,
+                package="ru.omnicio.app.debug", min_sdk=36, sha256="a" * 64,
                 certificate_sha256="b" * 64, bytes=4000, signature_v2=True,
                 device_install_test="passed_on_emulators_not_a_physical_phone")
 

@@ -1,5 +1,5 @@
 name: Check installable preview APK
-description: Verify the fixed preview artifact, upgrade path, launch, and UI on disposable Android 13 and 16 emulators.
+description: Verify the fixed preview artifact, upgrade path, launch, and UI on a disposable Android 16 emulator.
 runs:
   using: composite
   steps:
@@ -40,20 +40,11 @@ runs:
       run: |
         set "YES_FILE=%GITHUB_WORKSPACE%\app\build\outputs\apk\preview\sdk-licenses.txt"
         (for /l %%A in (1,1,200) do @echo y) > "%YES_FILE%"
-        call "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%ANDROID_SDK_ROOT%" --channel=0 "emulator" "platform-tools" "system-images;android-33;google_apis;x86_64" "system-images;android-36;google_apis;x86_64" < "%YES_FILE%"
+        call "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%ANDROID_SDK_ROOT%" --channel=0 "emulator" "platform-tools" "system-images;android-36;google_apis;x86_64" < "%YES_FILE%"
         if errorlevel 1 exit /b 1
 
-    - name: Test upgrade, clean install, launch, and profile UI on Android 13
-      shell: cmd
-      env:
-        PYTHONIOENCODING: utf-8
-        PYTHONUNBUFFERED: '1'
-      run: |
-        set "APK_DIR=%GITHUB_WORKSPACE%\app\build\outputs\apk\preview"
-        py -3 .github\scripts\test_apk_installation.py --sdk "%ANDROID_SDK_ROOT%" --apk "%APK_DIR%\app-preview.apk" --previous "%PREVIOUS_APK%" --api 33 --work-dir "%APK_DIR%\install-api-33"
-        if errorlevel 1 exit /b 1
 
-    - name: Test upgrade, clean install, and launch on Android 16
+    - name: Test upgrade, clean install, launch, and profile UI on Android 16
       shell: cmd
       env:
         PYTHONIOENCODING: utf-8

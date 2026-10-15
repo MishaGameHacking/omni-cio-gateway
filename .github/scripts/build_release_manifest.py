@@ -56,7 +56,7 @@ def _report_identity(report: dict) -> tuple[int, int, int, str, str, str]:
         raise ManifestError("unexpected_package")
     version = _integer(report["version_code"], 1, 2_100_000_000, "invalid_version_code")
     size = _integer(report["bytes"], 1, 250 * 1024 * 1024, "invalid_apk_size")
-    sdk = _integer(report["min_sdk"], 33, 1000, "invalid_min_sdk")
+    sdk = _integer(report["min_sdk"], 36, 1000, "invalid_min_sdk")
     digest = _digest(report["sha256"], "invalid_apk_sha256")
     certificate = _digest(report["certificate_sha256"], "invalid_certificate_sha256")
     name = report["version_name"]

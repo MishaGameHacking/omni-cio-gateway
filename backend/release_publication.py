@@ -35,11 +35,13 @@ def _evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None
     tested = report.get('installation_evidence')
     if not isinstance(tested, dict) or tested.get('apk_sha256') != sha256:
         raise ReleaseUnavailable('installation_evidence_missing')
-    for api in ('33', '36'):
+    for api in ('36',):
         checks = tested.get(api)
         if not isinstance(checks, dict) or any(checks.get(k) is not True for k in
                                                ('clean_install', 'upgrade', 'launch')):
             raise ReleaseUnavailable('installation_evidence_incomplete')
+    if report.get('min_sdk') != 36:
+        raise ReleaseUnavailable('unsupported_android_floor')
     if 'installation_tests' in report:
         try:
             derived = from_ci_reports(report['installation_tests'], sha256)

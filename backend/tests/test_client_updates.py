@@ -51,8 +51,7 @@ class UpdateTests(unittest.TestCase):
         return {'sha256': sha, 'bytes': self.apk.stat().st_size, 'certificate_sha256': CERT,
                 'signature_v2': True, 'zipalign_16kb': True, 'test_only': False, 'debuggable': False,
                 'package': 'ru.omnicio.app.debug', 'version_code': version, 'version_name': '0.6.0-preview',
-                'min_sdk': 33, 'installation_evidence': {'apk_sha256': sha,
-                '33': {'clean_install': True, 'upgrade': True, 'launch': True},
+                'min_sdk': 36, 'installation_evidence': {'apk_sha256': sha,
                 '36': {'clean_install': True, 'upgrade': True, 'launch': True}}}
 
     def enforce(self, version='23', token='test', uid=1, package='ru.omnicio.app.debug'):

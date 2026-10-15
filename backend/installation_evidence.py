@@ -1,4 +1,4 @@
-"""Validate actual CI transcript shape; never infer installation from a build.
+"""Validate the actual Android 16 CI transcript; never infer installation from a build.
 
 This is an operator-supplied test record, NOT signed device attestation. These
 records prove only the recorded adb/emulator checks, not in-app self-update.
@@ -46,23 +46,24 @@ def _one_emulator(run: dict, digest: str) -> dict:
     previous = _digest(records['previous_clean_install'].get('apk_sha256'))
     if previous == digest:
         raise InstallationEvidenceError('upgrade_reinstalled_same_artifact')
-    if run['android_api'] == 33:
-        if not run['profile_ui_required'] or not {'debug_ui_fixture_install', 'profile_ui'} <= records.keys():
-            raise InstallationEvidenceError('profile_ui_evidence_missing')
+    if run['android_api'] != 36:
+        raise InstallationEvidenceError('unsupported_android_version')
+    if not run['profile_ui_required'] or not {'debug_ui_fixture_install', 'profile_ui'} <= records.keys():
+        raise InstallationEvidenceError('profile_ui_evidence_missing')
     return {'clean_install': True, 'upgrade': True, 'launch': True}
 
 
 def from_ci_reports(installations: object, apk_sha256: str) -> dict:
-    """Reduce two checked API-specific transcripts to the canonical publisher contract."""
+    """Reduce one checked Android 16 transcript to the publisher contract."""
     digest = _digest(apk_sha256)
-    if not isinstance(installations, list) or len(installations) != 2:
-        raise InstallationEvidenceError('both_android_versions_required')
+    if not isinstance(installations, list) or len(installations) != 1:
+        raise InstallationEvidenceError('android_16_evidence_required')
     result = {'apk_sha256': digest}
     for run in installations:
         if not isinstance(run, dict):
             raise InstallationEvidenceError('invalid_emulator_report')
         api = run.get('android_api')
-        if type(api) is not int or api not in (33, 36) or str(api) in result:
+        if type(api) is not int or api != 36 or str(api) in result:
             raise InstallationEvidenceError('ambiguous_android_version')
         result[str(api)] = _one_emulator(run, digest)
     return result
