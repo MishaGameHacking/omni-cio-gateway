@@ -2,6 +2,7 @@ package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,7 +20,11 @@ import ru.omnicio.app.data.portfolio.PortfolioPosition
 import ru.omnicio.app.ui.instruments.BrokerInstrumentActions
 import ru.omnicio.app.ui.spectrum.*
 
-/** Full-screen native instrument view, always rendering the current resolved position. */
+private const val CompanyLabel = "Компания"
+private const val ExchangeLabel = "Биржа"
+private const val NoInstrumentData = "Нет данных"
+
+/** Full-screen native view. The caller resolves a current position before rendering. */
 @Composable
 internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> Unit) {
     var section by rememberSaveable(position.id) { mutableIntStateOf(0) }
@@ -43,55 +48,9 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                             SpectrumTabs(listOf("Обзор", "Моя позиция", "Сведения"), section, { section = it })
                         }
                         when (section) {
-                            0 -> {
-                                item(key = "broker-navigation") { BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin) }
-                                item(key = "instrument-overview") {
-                                    SpectrumCard {
-                                        SpectrumHeader("Об инструменте", symbol = SpectrumSymbol.Sources)
-                                        DataRow("Тип", labels.type)
-                                        DataRow("Компания", position.company ?: "Нет данных")
-                                        DataRow("Отрасль", position.sector ?: "Нет данных")
-                                        DataRow("Биржа", position.exchange ?: "—")
-                                        Notice("История котировок этого инструмента пока не подключена. Текущая цена не заменяется демонстрационным графиком.")
-                                    }
-                                }
-                                item(key = "instrument-assistant") {
-                                    SpectrumCard {
-                                        SpectrumHeader("Аналитик о вашем портфеле", "Исследования и риски — в разделе «Риски» на главной", SpectrumSymbol.Robot)
-                                        Notice("Индивидуальный прогноз по этой бумаге здесь не рассчитан. Цена и результат позиции не являются рекомендацией купить или продать.")
-                                    }
-                                }
-                            }
-                            1 -> item(key = "position-amounts") {
-                                SpectrumCard {
-                                    SpectrumHeader("Моя позиция", symbol = SpectrumSymbol.Portfolio)
-                                    DataRow("Стоимость позиции", position.currentValue.moneyText())
-                                    DataRow(labels.quantity, position.quantity.quantityText())
-                                    DataRow("Результат позиции", position.expectedYieldAmount.moneyText(true))
-                                    position.expectedYieldPercent?.let { DataRow("Доходность", it.percentText()) }
-                                    DataRow("За день", position.dailyYieldAmount.moneyText(true))
-                                    DataRow("Средняя цена", position.averagePrice.moneyText())
-                                    labels.accrued?.let { DataRow(it, position.currentNkd.moneyText()) }
-                                    DataRow("Заблокированное количество", position.blockedQuantity.quantityText())
-                                    DataRow("Блокировка", if (position.blocked) "Отмечена брокером" else "Не отмечена")
-                                    Notice("Отсутствие отметки о блокировке не подтверждает доступность торгов. Количество не переводится в лоты.")
-                                }
-                            }
-                            else -> item(key = "instrument-identifiers") {
-                                SpectrumCard {
-                                    SpectrumHeader("Сведения и идентификаторы", symbol = SpectrumSymbol.Sources)
-                                    SelectionContainer {
-                                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                            DataRow("Тикер", position.ticker ?: "—")
-                                            DataRow("ISIN", position.isin ?: "—")
-                                            DataRow("Идентификатор", position.id)
-                                            DataRow("Компания", position.company ?: "Нет данных")
-                                            DataRow("Биржа", position.exchange ?: "—")
-                                        }
-                                    }
-                                    BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
-                                }
-                            }
+                            0 -> instrumentOverview(position)
+                            1 -> item(key = "position-amounts") { InstrumentHolding(position) }
+                            else -> item(key = "instrument-identifiers") { InstrumentIdentifiers(position) }
                         }
                         item(key = "source-disclosure") {
                             Notice("Источник — подключённый брокерский счёт. «—» означает, что значение не получено. Суммы показаны в валютах источника. Переход к брокеру не создаёт заявку.")
@@ -100,6 +59,61 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                 }
             }
         }
+    }
+}
+
+private fun LazyListScope.instrumentOverview(position: PortfolioPosition) {
+    item(key = "broker-navigation") { BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin) }
+    item(key = "instrument-overview") {
+        SpectrumCard {
+            SpectrumHeader("Об инструменте", symbol = SpectrumSymbol.Sources)
+            DataRow("Тип", instrumentDetailLabels(position.instrumentType, position.currentNkd != null).type)
+            DataRow(CompanyLabel, position.company ?: NoInstrumentData)
+            DataRow("Отрасль", position.sector ?: NoInstrumentData)
+            DataRow(ExchangeLabel, position.exchange ?: "—")
+            Notice("История котировок этого инструмента пока не подключена. Текущая цена не заменяется демонстрационным графиком.")
+        }
+    }
+    item(key = "instrument-assistant") {
+        SpectrumCard {
+            SpectrumHeader("Аналитик о вашем портфеле", "Исследования и риски — в разделе «Риски» на главной", SpectrumSymbol.Robot)
+            Notice("Индивидуальный прогноз по этой бумаге здесь не рассчитан. Цена и результат позиции не являются рекомендацией купить или продать.")
+        }
+    }
+}
+
+@Composable
+private fun InstrumentHolding(position: PortfolioPosition) {
+    val labels = instrumentDetailLabels(position.instrumentType, position.currentNkd != null)
+    SpectrumCard {
+        SpectrumHeader("Моя позиция", symbol = SpectrumSymbol.Portfolio)
+        DataRow("Стоимость позиции", position.currentValue.moneyText())
+        DataRow(labels.quantity, position.quantity.quantityText())
+        DataRow("Результат позиции", position.expectedYieldAmount.moneyText(true))
+        position.expectedYieldPercent?.let { DataRow("Доходность", it.percentText()) }
+        DataRow("За день", position.dailyYieldAmount.moneyText(true))
+        DataRow("Средняя цена", position.averagePrice.moneyText())
+        labels.accrued?.let { DataRow(it, position.currentNkd.moneyText()) }
+        DataRow("Заблокированное количество", position.blockedQuantity.quantityText())
+        DataRow("Блокировка", if (position.blocked) "Отмечена брокером" else "Не отмечена")
+        Notice("Отсутствие отметки о блокировке не подтверждает доступность торгов. Количество не переводится в лоты.")
+    }
+}
+
+@Composable
+private fun InstrumentIdentifiers(position: PortfolioPosition) {
+    SpectrumCard {
+        SpectrumHeader("Сведения и идентификаторы", symbol = SpectrumSymbol.Sources)
+        SelectionContainer {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DataRow("Тикер", position.ticker ?: "—")
+                DataRow("ISIN", position.isin ?: "—")
+                DataRow("Идентификатор", position.id)
+                DataRow(CompanyLabel, position.company ?: NoInstrumentData)
+                DataRow(ExchangeLabel, position.exchange ?: "—")
+            }
+        }
+        BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
     }
 }
 
@@ -115,9 +129,7 @@ private fun InstrumentPriceHero(position: PortfolioPosition) {
         }
         Text(position.currentPrice.moneyText(), fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold)
         Notice("Текущая цена за единицу")
-        position.dailyYieldAmount?.let {
-            DataRow("Изменение стоимости вашей позиции за день", it.moneyText(true))
-        }
+        position.dailyYieldAmount?.let { DataRow("Изменение стоимости вашей позиции за день", it.moneyText(true)) }
         if (position.blocked) SpectrumBadge("Есть ограничения", accent = LocalSpectrumPalette.current.amber)
     }
 }
