@@ -3,12 +3,12 @@
 The production Moscow network can serve the application and reach ordinary HTTPS
 hosts, but it cannot establish an IPv4/IPv6 connection to oauth.telegram.org.
 Telegram's official browser Login library completes PKCE inside the user's popup
-and returns a signed ``id_token`` to this origin.  This module verifies that token
+and returns a signed ``id_token`` to this origin. This module verifies that token
 locally against a deployment-pinned JWKS snapshot, then reuses the existing
 one-time Android deep-link/session handoff from :mod:`app`.
 
 The legacy manual OIDC callback remains registered for old browser tabs, but the
-canonical ``/auth/telegram/start`` route is replaced at import time.  Uvicorn must
+canonical ``/auth/telegram/start`` route is replaced at import time. Uvicorn must
 therefore load ``telegram_browser_app:app`` rather than ``app:app``.
 """
 from __future__ import annotations
@@ -37,6 +37,7 @@ LOGGER = logging.getLogger(__name__)
 TELEGRAM_LOGIN_SCRIPT = "https://oauth.telegram.org/js/telegram-login.js?3"
 TELEGRAM_JWKS_PATH = Path(__file__).resolve().with_name("telegram_jwks.json")
 MAX_ID_TOKEN_LENGTH = 16_384
+BEGIN_IMMEDIATE = "BEGIN IMMEDIATE"
 
 
 class TelegramBrowserToken(BaseModel):
@@ -99,7 +100,7 @@ def _remove_legacy_start_route() -> None:
 
 def _login_page(state: str, nonce: str) -> HTMLResponse:
     client_id = str(legacy.TELEGRAM_CLIENT_ID)
-    if re.fullmatch(r"[1-9][0-9]{3,24}", client_id) is None:
+    if re.fullmatch(r"[1-9]\d{3,24}", client_id) is None:
         raise RuntimeError("TELEGRAM_CLIENT_ID must be a numeric BotFather client id")
 
     csp_nonce = secrets.token_urlsafe(24)
@@ -253,7 +254,7 @@ def _login_page(state: str, nonce: str) -> HTMLResponse:
 def _consume_transaction(state: str) -> str | None:
     now = int(time.time())
     with closing(legacy.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_IMMEDIATE)
         legacy.purge_expired(db)
         transaction = db.execute(
             "SELECT verifier, created_at FROM login_transactions WHERE state = ?",
@@ -295,7 +296,7 @@ def _load_pinned_key(token: str):
         return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(matches[0]))
     except TelegramKeyUnavailable:
         raise
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+    except (OSError, ValueError, TypeError) as error:
         raise TelegramKeyUnavailable("jwks_invalid") from error
 
 
@@ -327,7 +328,7 @@ def _issue_login_code(claims: dict) -> str:
     telegram_id = str(claims.get("id") or subject)
     now = int(time.time())
     with closing(legacy.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_IMMEDIATE)
         existing = db.execute(
             "SELECT id FROM users WHERE telegram_sub = ?",
             (subject,),
@@ -390,7 +391,7 @@ def telegram_browser_start() -> HTMLResponse:
     nonce = secrets.token_urlsafe(32)
     now = int(time.time())
     with closing(legacy.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_IMMEDIATE)
         legacy.purge_expired(db)
         db.execute(
             "INSERT INTO login_transactions(state, verifier, created_at) VALUES (?, ?, ?)",
