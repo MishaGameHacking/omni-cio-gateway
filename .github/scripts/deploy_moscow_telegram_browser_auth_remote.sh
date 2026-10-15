@@ -34,15 +34,17 @@ readonly ENV_FILE="/etc/analyst-ai/backend.env"
 readonly BACKEND_ROOT="/opt/analyst-ai"
 readonly BACKEND_PATH="$BACKEND_ROOT/backend"
 readonly VENV_PYTHON="$BACKEND_ROOT/venv/bin/python"
-readonly ARCHIVE="/tmp/analyst-ai-telegram-auth-$RUN_ID.tgz"
+readonly REMOTE_ROOT="/root/analyst-ai-deploy/$RUN_ID"
+readonly ARCHIVE="$REMOTE_ROOT/backend.tgz"
 readonly STAGING="$BACKEND_ROOT/backend-next-telegram-auth-$RUN_ID"
 readonly BACKUP="$BACKEND_ROOT/rollback/telegram-auth-$RUN_ID"
-readonly HEADER_FILE="/tmp/analyst-ai-telegram-auth-$RUN_ID.headers"
-readonly BODY_FILE="/tmp/analyst-ai-telegram-auth-$RUN_ID.body"
-readonly PREFLIGHT_DB="/tmp/analyst-ai-telegram-auth-$RUN_ID.sqlite3"
-readonly PUBLIC_HEADER_FILE="/tmp/analyst-ai-telegram-auth-$RUN_ID.public.headers"
-readonly PUBLIC_BODY_FILE="/tmp/analyst-ai-telegram-auth-$RUN_ID.public.body"
+readonly HEADER_FILE="$REMOTE_ROOT/local.headers"
+readonly BODY_FILE="$REMOTE_ROOT/local.body"
+readonly PREFLIGHT_DB="$REMOTE_ROOT/preflight.sqlite3"
+readonly PUBLIC_HEADER_FILE="$REMOTE_ROOT/public.headers"
+readonly PUBLIC_BODY_FILE="$REMOTE_ROOT/public.body"
 readonly PUBLIC_HOST="176.98.178.81.sslip.io"
+readonly SHA256_RECORD_FORMAT='%s  %s\n'
 readonly OLD_EXEC='ExecStart=/opt/analyst-ai/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8080 --workers 1'
 readonly NEW_EXEC='ExecStart=/opt/analyst-ai/venv/bin/uvicorn telegram_browser_app:app --host 127.0.0.1 --port 8080 --workers 1'
 ACTIVATED=0
@@ -100,8 +102,20 @@ if [[ "$MODE" == "rollback" ]]; then
   exit 0
 fi
 
+[[ -d "$REMOTE_ROOT" && ! -L "$REMOTE_ROOT" ]] || {
+  echo "Private deployment directory missing or linked" >&2
+  exit 1
+}
+[[ "$(stat -c '%u' "$REMOTE_ROOT")" == "0" ]] || {
+  echo "Private deployment directory is not owned by root" >&2
+  exit 1
+}
+[[ "$(stat -c '%a' "$REMOTE_ROOT")" == "700" ]] || {
+  echo "Private deployment directory permissions are not 0700" >&2
+  exit 1
+}
 [[ -f "$ARCHIVE" && ! -L "$ARCHIVE" ]] || { echo "Deployment archive missing" >&2; exit 1; }
-printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA" "$ARCHIVE" | sha256sum -c -
+printf "$SHA256_RECORD_FORMAT" "$EXPECTED_ARCHIVE_SHA" "$ARCHIVE" | sha256sum -c -
 [[ -d "$BACKEND_PATH" && ! -L "$BACKEND_PATH" ]] || { echo "Current backend missing" >&2; exit 1; }
 [[ -f "$UNIT_FILE" && ! -L "$UNIT_FILE" ]] || { echo "Backend unit missing" >&2; exit 1; }
 [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || { echo "Backend environment missing" >&2; exit 1; }
@@ -134,9 +148,9 @@ if find "$STAGING/backend" -type l -print -quit | grep -q .; then
   echo "Staged backend contains a symbolic link" >&2
   exit 1
 fi
-printf '%s  %s\n' "$EXPECTED_JWKS_SHA" "$STAGING/backend/telegram_jwks.json" | sha256sum -c -
-printf '%s  %s\n' "$EXPECTED_REQUIREMENTS_SHA" "$STAGING/backend/requirements.txt" | sha256sum -c -
-printf '%s  %s\n' "$EXPECTED_REQUIREMENTS_SHA" "$BACKEND_PATH/requirements.txt" | sha256sum -c -
+printf "$SHA256_RECORD_FORMAT" "$EXPECTED_JWKS_SHA" "$STAGING/backend/telegram_jwks.json" | sha256sum -c -
+printf "$SHA256_RECORD_FORMAT" "$EXPECTED_REQUIREMENTS_SHA" "$STAGING/backend/requirements.txt" | sha256sum -c -
+printf "$SHA256_RECORD_FORMAT" "$EXPECTED_REQUIREMENTS_SHA" "$BACKEND_PATH/requirements.txt" | sha256sum -c -
 
 "$VENV_PYTHON" -m compileall -q "$STAGING/backend"
 set -a
