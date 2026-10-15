@@ -1,0 +1,70 @@
+"""Fail-closed checks for the exact Moscow Telegram-auth deployment."""
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS = ROOT / ".github" / "scripts"
+DEPLOY = SCRIPTS / "deploy_moscow_telegram_browser_auth.py"
+REMOTE = SCRIPTS / "deploy_moscow_telegram_browser_auth_remote.sh"
+WORKFLOW = ROOT / ".github" / "workflows" / "deploy-moscow-telegram-auth.yml"
+
+sys.path.insert(0, str(SCRIPTS))
+spec = importlib.util.spec_from_file_location("telegram_auth_deploy", DEPLOY)
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+
+class TelegramAuthDeploymentTests(unittest.TestCase):
+    def test_checked_in_source_and_pinned_jwks_validate(self) -> None:
+        metadata = module.validate_source()
+        self.assertRegex(metadata["jwks_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(metadata["requirements_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_archive_is_bounded_to_backend_and_contains_browser_login(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            archive_path = Path(temporary) / "backend.tgz"
+            module.create_archive(archive_path)
+            with tarfile.open(archive_path, "r:gz") as archive:
+                names = archive.getnames()
+        self.assertIn("backend/telegram_browser_app.py", names)
+        self.assertIn("backend/telegram_jwks.json", names)
+        self.assertTrue(all(name == "backend" or name.startswith("backend/") for name in names))
+        self.assertFalse(any(".." in Path(name).parts for name in names))
+
+    def test_remote_repair_has_exact_entrypoint_and_rollback(self) -> None:
+        source = REMOTE.read_text(encoding="utf-8")
+        self.assertIn("uvicorn telegram_browser_app:app", source)
+        self.assertIn("--rollback-after-public-check", source)
+        self.assertIn("TELEGRAM_AUTH_ROLLBACK=healthy", source)
+        self.assertIn("/opt/analyst-ai/rollback/telegram-auth-$RUN_ID", source)
+        self.assertNotIn("/var/lib/analyst-ai/backend.db", source)
+        self.assertNotIn("rm -rf /var/lib/analyst-ai", source)
+
+    def test_remote_repair_has_valid_bash_syntax_when_bash_is_available(self) -> None:
+        candidates = [shutil.which("bash"), r"C:\Program Files\Git\bin\bash.exe"]
+        bash = next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
+        if bash is None:
+            self.skipTest("Git Bash is unavailable")
+        subprocess.run([bash, "-n", str(REMOTE)], check=True)
+
+    def test_workflow_is_explicitly_gated_and_uses_short_lived_cloud_access(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("[deploy-telegram-auth]", source)
+        self.assertIn("workflow_dispatch", source)
+        self.assertIn("TIMEWEB_CLOUD_TOKEN", source)
+        self.assertIn("deploy_moscow_telegram_browser_auth.py --check", source)
+        self.assertIn("deploy_moscow_telegram_browser_auth.py", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
