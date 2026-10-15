@@ -10,6 +10,11 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 3
     steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Read only known synthetic screenshot blobs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -30,37 +35,52 @@ jobs:
               if (crypto.createHash('sha256').update(bytes).digest('hex') !== digest) throw new Error('Image digest mismatch');
               fs.writeFileSync(path.join(folder, name + '.png'), bytes);
             }
+            fs.writeFileSync(path.join(folder, 'ReviewImages.java'), `
+            import java.awt.image.BufferedImage;
+            import java.io.*;
+            import java.nio.file.*;
+            import java.security.MessageDigest;
+            import java.util.*;
+            import javax.imageio.*;
+            import javax.imageio.stream.*;
+            class ReviewImages {
+              public static void main(String[] args) throws Exception {
+                Path folder = Path.of(System.getenv("SPECTRUM_REVIEW_DIRECTORY"));
+                for (String name : List.of("home", "security")) {
+                  BufferedImage source = ImageIO.read(folder.resolve(name + ".png").toFile());
+                  if (source == null || source.getWidth() > 2000 || source.getHeight() > 3000) throw new IOException("Unexpected dimensions");
+                  BufferedImage rgb = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
+                  var g = rgb.createGraphics();
+                  try { g.drawImage(source, 0, 0, null); } finally { g.dispose(); }
+                  ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                  ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+                  try (ImageOutputStream output = ImageIO.createImageOutputStream(bytes)) {
+                    writer.setOutput(output);
+                    var parameters = writer.getDefaultWriteParam();
+                    parameters.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                    parameters.setCompressionQuality(0.35f);
+                    writer.write(null, new IIOImage(rgb, null, null), parameters);
+                  } finally { writer.dispose(); }
+                  byte[] data = bytes.toByteArray();
+                  if (data.length > 45000) throw new IOException("Review copy exceeds bounded limit");
+                  System.out.println("REVIEW_JPEG_" + name + "=" + Base64.getEncoder().encodeToString(data));
+                  System.out.println("REVIEW_SHA256_" + name + "=" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data)));
+                }
+              }
+            }`);
             core.exportVariable('SPECTRUM_REVIEW_DIRECTORY', folder);
       - name: Emit compact review copies of the original screenshots
-        shell: powershell
+        shell: cmd
         run: |
-          Add-Type -AssemblyName System.Drawing
-          $encoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
-          foreach ($name in @('home', 'security')) {
-            $image = [System.Drawing.Image]::FromFile((Join-Path $env:SPECTRUM_REVIEW_DIRECTORY ($name + '.png')))
-            $stream = [System.IO.MemoryStream]::new()
-            $parameters = [System.Drawing.Imaging.EncoderParameters]::new(1)
-            $hasher = [Security.Cryptography.SHA256]::Create()
-            try {
-              $parameters.Param[0] = [System.Drawing.Imaging.EncoderParameter]::new([System.Drawing.Imaging.Encoder]::Quality, [long]35)
-              $image.Save($stream, $encoder, $parameters)
-              $bytes = $stream.ToArray()
-              if ($bytes.Length -gt 45000) { throw 'Review copy exceeds bounded limit' }
-              Write-Output ('REVIEW_JPEG_' + $name + '=' + [Convert]::ToBase64String($bytes))
-              Write-Output ('REVIEW_SHA256_' + $name + '=' + [BitConverter]::ToString($hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant())
-            } finally {
-              $hasher.Dispose()
-              $parameters.Dispose()
-              $stream.Dispose()
-              $image.Dispose()
-            }
-          }
+          java "%SPECTRUM_REVIEW_DIRECTORY%\ReviewImages.java"
+          if errorlevel 1 exit /b 1
       - name: Remove temporary image copies
         if: always()
-        shell: powershell
-        run: |
-          if ($env:SPECTRUM_REVIEW_DIRECTORY) {
-            $expected = Join-Path $env:RUNNER_TEMP ('spectrum-review-' + $env:GITHUB_RUN_ID)
-            if ($env:SPECTRUM_REVIEW_DIRECTORY -ne $expected) { throw 'Unexpected cleanup path' }
-            Remove-Item -LiteralPath $expected -Recurse -Force -ErrorAction SilentlyContinue
-          }
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const expected = path.join(process.env.RUNNER_TEMP, 'spectrum-review-' + context.runId);
+            if (process.env.SPECTRUM_REVIEW_DIRECTORY && process.env.SPECTRUM_REVIEW_DIRECTORY !== expected) throw new Error('Unexpected cleanup path');
+            fs.rmSync(expected, {recursive: true, force: true});
