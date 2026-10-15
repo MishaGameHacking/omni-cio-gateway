@@ -4,22 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -46,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
-/** Canonical Analyst AI Spectrum palette approved by the owner on 2026-10-13. */
 @Immutable
 data class SpectrumPalette(
     val backgroundTop: Color,
@@ -96,10 +80,11 @@ fun SpectrumBackground(
 ) {
     val palette = LocalSpectrumPalette.current
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val starColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.11f)
     Box(
         modifier = modifier.background(
             Brush.verticalGradient(
-                colors = if (dark) {
+                if (dark) {
                     listOf(
                         palette.backgroundTop,
                         Color(0xFF03111F),
@@ -117,7 +102,7 @@ fun SpectrumBackground(
             val radius = size.minDimension
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
+                    listOf(
                         palette.violet.copy(alpha = if (dark) 0.22f else 0.09f),
                         Color.Transparent,
                     ),
@@ -129,7 +114,7 @@ fun SpectrumBackground(
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
+                    listOf(
                         palette.cyan.copy(alpha = if (dark) 0.16f else 0.07f),
                         Color.Transparent,
                     ),
@@ -141,7 +126,7 @@ fun SpectrumBackground(
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
+                    listOf(
                         palette.rose.copy(alpha = if (dark) 0.08f else 0.035f),
                         Color.Transparent,
                     ),
@@ -152,12 +137,14 @@ fun SpectrumBackground(
                 center = Offset(size.width * 0.70f, size.height * 0.62f),
             )
             if (dark) {
-                val star = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.11f)
                 repeat(24) { index ->
                     val x = ((index * 73) % 101) / 100f * size.width
                     val y = ((index * 41 + 17) % 97) / 100f * size.height
-                    val dot = if (index % 5 == 0) 1.8f else 1.0f
-                    drawCircle(star, radius = dot, center = Offset(x, y))
+                    drawCircle(
+                        color = starColor,
+                        radius = if (index % 5 == 0) 1.8f else 1f,
+                        center = Offset(x, y),
+                    )
                 }
             }
         }
@@ -175,13 +162,13 @@ fun SpectrumCard(
     val palette = LocalSpectrumPalette.current
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val shape = RoundedCornerShape(24.dp)
-    val interactive = if (onClick == null) {
+    val interaction = if (onClick == null) {
         Modifier
     } else {
         Modifier.clip(shape).clickable(role = Role.Button, onClick = onClick)
     }
     Card(
-        modifier = modifier.then(interactive),
+        modifier = modifier.then(interaction),
         shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -193,9 +180,9 @@ fun SpectrumCard(
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         border = BorderStroke(
-            width = 1.dp,
-            brush = Brush.linearGradient(
-                colors = listOf(
+            1.dp,
+            Brush.linearGradient(
+                listOf(
                     palette.cyan.copy(alpha = if (emphasized) 0.72f else 0.28f),
                     palette.blue.copy(alpha = if (emphasized) 0.46f else 0.18f),
                     palette.violet.copy(alpha = if (emphasized) 0.72f else 0.28f),
@@ -207,6 +194,7 @@ fun SpectrumCard(
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
             content = content,
         )
     }
@@ -228,7 +216,6 @@ fun SpectrumBadge(
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )
@@ -262,13 +249,9 @@ fun SpectrumPageHeader(
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
+            Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text(
-                text = title,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = subtitle,
+                subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -289,10 +272,7 @@ fun SpectrumPrimaryButton(
         Brush.horizontalGradient(listOf(palette.cyan, palette.blue, palette.violet))
     } else {
         Brush.horizontalGradient(
-            listOf(
-                MaterialTheme.colorScheme.surfaceVariant,
-                MaterialTheme.colorScheme.surfaceVariant,
-            ),
+            listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.surfaceVariant),
         )
     }
     Surface(
@@ -458,7 +438,7 @@ fun SpectrumBrandOrb(
         val radius = size.minDimension * 0.34f
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(
+                listOf(
                     palette.cyan.copy(alpha = if (dark) 0.34f else 0.18f),
                     palette.violet.copy(alpha = if (dark) 0.20f else 0.10f),
                     Color.Transparent,
@@ -533,7 +513,7 @@ fun SpectrumBrandOrb(
             )
         }
         drawPath(
-            brain,
+            path = brain,
             brush = Brush.linearGradient(listOf(palette.cyan, palette.violet, palette.rose)),
             style = Stroke(
                 width = size.minDimension * if (compact) 0.038f else 0.046f,
