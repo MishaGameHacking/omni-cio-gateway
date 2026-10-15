@@ -11,7 +11,8 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 33
         targetSdk = 36
-        versionCode = 24
+        // Code 24 is reserved by the earlier parallel design draft; never reuse its identity.
+        versionCode = 25
         versionName = "0.7.0"
     }
 

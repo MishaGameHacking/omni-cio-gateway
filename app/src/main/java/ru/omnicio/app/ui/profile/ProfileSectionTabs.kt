@@ -19,6 +19,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.AnnotatedString
@@ -27,7 +32,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 
-/** One measured row at every font size; overflow scrolls instead of wrapping. */
+/** Full-size accessible cells; larger fonts scroll horizontally without wrapping. */
 @Composable
 internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
     val labels = listOf("Настройки", "Аккаунт", "О приложении")
@@ -50,43 +55,41 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
             scroll.scrollTo((selected * stepPixels).coerceIn(0, scroll.maxValue))
         }
         Row(
-            Modifier
-                .fillMaxWidth()
-                .height(tabHeight)
-                .horizontalScroll(scroll)
-                .selectableGroup()
-                .semantics { testTagsAsResourceId = true }
-                .testTag("profile-tabs"),
+            Modifier.fillMaxWidth().height(tabHeight)
+                .horizontalScroll(scroll).selectableGroup()
+                .semantics { testTagsAsResourceId = true }.testTag("profile-tabs"),
             horizontalArrangement = Arrangement.spacedBy(gap),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             labels.forEachIndexed { index, label ->
                 val chosen = selected == index
                 val brush = if (chosen) {
-                    Brush.linearGradient(
-                        listOf(
-                            palette.cyan.copy(alpha = 0.16f),
-                            palette.violet.copy(alpha = 0.22f),
-                            palette.rose.copy(alpha = 0.08f),
-                        ),
-                    )
+                    Brush.linearGradient(listOf(
+                        palette.cyan.copy(alpha = 0.16f),
+                        palette.violet.copy(alpha = 0.22f),
+                        palette.rose.copy(alpha = 0.08f),
+                    ))
                 } else {
                     Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                 }
                 Box(
-                    modifier = Modifier
-                        .width(width)
-                        .height(tabHeight)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(brush)
+                    modifier = Modifier.width(width).height(tabHeight)
+                        .clip(RoundedCornerShape(18.dp)).background(brush)
                         .selectable(chosen, role = Role.Tab, onClick = { onSelect(index) })
                         .testTag("profile-tab-$index")
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                        .clearAndSetSemantics {
+                            contentDescription = label
+                            role = Role.Tab
+                            this.selected = chosen
+                            onClick(label = "Открыть $label") { onSelect(index); true }
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
+                    // The label is visual content of ONE 52dp-or-larger tab, not
+                    // another accessibility/test target with text-height bounds.
                     Text(
                         label,
-                        modifier = Modifier.testTag("profile-tab-label-$index"),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
                         maxLines = 1,
                         softWrap = false,
                         style = style,
