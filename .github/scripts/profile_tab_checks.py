@@ -1,6 +1,8 @@
 """Geometry and exact-container checks for the disposable Spectrum UI fixture."""
 from __future__ import annotations
 
+import json
+import time
 import xml.etree.ElementTree as ET
 
 from profile_scroll import PACKAGE, visible_label, visible_resource
@@ -54,6 +56,18 @@ def tappable_tab(tree: ET.Element, resource_id: str) -> ET.Element | None:
     return tab if left <= x1 and x2 <= right and top <= y1 and y2 <= bottom else None
 
 
+def tab_diagnostic(tree: ET.Element, resource_id: str, attempt: int) -> str:
+    """Only fixture geometry; never account labels, tokens, or other apps."""
+    ids = {"profile-tabs", "profile-content", *TAB_IDS.values()}
+    qualified = ids | {f"{PACKAGE}:id/{name}" for name in ids}
+    nodes = [
+        {key: node.get(key, "") for key in ("resource-id", "bounds", "selected", "scrollable", "clickable", "visible-to-user")}
+        for node in tree.iter("node")
+        if node.get("package") == PACKAGE and node.get("resource-id") in qualified
+    ]
+    return json.dumps({"target": resource_id, "attempt": attempt, "nodes": nodes[:12]}, ensure_ascii=True)
+
+
 def reveal_tab(read_tree, swipe, resource_id: str, direction: str):
     """Scroll only the exact rail until the entire tagged cell is tappable."""
     from profile_scroll import _gesture, _scroll_area
@@ -65,9 +79,15 @@ def reveal_tab(read_tree, swipe, resource_id: str, direction: str):
         target = tappable_tab(tree, resource_id)
         if target is not None:
             return target
+        print("PROFILE_TAB_DIAGNOSTIC=" + tab_diagnostic(tree, resource_id, attempt), flush=True)
         bounds = _scroll_area(tree, "profile-tabs")
         gesture = _gesture(bounds, "horizontal", direction) if bounds is not None else None
-        if gesture is None or attempt == 8:
+        if attempt == 8:
             raise AssertionError("Complete profile tab not reachable: " + resource_id)
-        swipe(*gesture)
+        if gesture is None:
+            # UiAutomator can still expose the departing AlertDialog window.
+            # Await the exact app rail; never tap behind a dialog or skip a test.
+            time.sleep(0.2)
+        else:
+            swipe(*gesture)
     raise AssertionError("Tab scroll did not finish")
