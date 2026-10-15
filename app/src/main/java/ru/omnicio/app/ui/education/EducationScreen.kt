@@ -3,16 +3,7 @@ package ru.omnicio.app.ui.education
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -31,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -45,6 +37,8 @@ import ru.omnicio.app.ui.spectrum.SpectrumBackground
 import ru.omnicio.app.ui.spectrum.SpectrumBadge
 import ru.omnicio.app.ui.spectrum.SpectrumCard
 import ru.omnicio.app.ui.spectrum.SpectrumIcon
+import ru.omnicio.app.ui.spectrum.SpectrumPageHeader
+import ru.omnicio.app.ui.spectrum.SpectrumSecondaryButton
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
@@ -61,22 +55,38 @@ fun EducationScreen(
     val lessons = remember(category) {
         EducationCatalog.lessons.filter { category == null || it.category == category }
     }
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { AnalystBottomBar(AnalystTab.Profile, onPortfolioClick, onProfileClick) },
-    ) { insets ->
-        SpectrumBackground(Modifier.fillMaxSize().padding(insets)) {
-            Column(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-                // Navigation must remain reachable while reading a long lesson.
-                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                    TextButton(onClick = onBack, contentPadding = PaddingValues(0.dp)) {
-                        Text("‹ Назад")
-                    }
+    SpectrumBackground(modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets.safeDrawing,
+            bottomBar = {
+                AnalystBottomBar(
+                    selected = AnalystTab.Education,
+                    onPortfolioClick = onPortfolioClick,
+                    onProfileClick = onProfileClick,
+                )
+            },
+        ) { insets ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(insets)
+                    .consumeWindowInsets(insets)
+                    .semantics { testTagsAsResourceId = true },
+            ) {
+                SpectrumPageHeader(
+                    title = "Обучение",
+                    subtitle = "Инвестиции простыми словами — от первого шага до проверки источников",
+                    symbol = SpectrumSymbol.Education,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                )
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     CategoryRow(selected = category, onSelected = { category = it })
                 }
-                // A different category starts at its first lesson. Ordinary
-                // recomposition preserves position; no scroll job races the user.
                 key(category) {
                     LazyColumn(
                         state = rememberLazyListState(),
@@ -84,7 +94,9 @@ fun EducationScreen(
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        if (category == null) item(key = "hero") { EducationHero() }
+                        if (category == null) {
+                            item(key = "hero") { EducationHero() }
+                        }
                         items(lessons, key = EducationLesson::id) { lesson ->
                             LessonCard(
                                 lesson = lesson,
@@ -95,6 +107,13 @@ fun EducationScreen(
                             )
                         }
                         item(key = "guardrail") { EducationGuardrail() }
+                        item(key = "back-home") {
+                            SpectrumSecondaryButton(
+                                text = "Вернуться на главную",
+                                onClick = onBack,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }
@@ -107,56 +126,132 @@ private fun EducationHero() {
     val palette = LocalSpectrumPalette.current
     val motion = LocalSpectrumMotionPreference.current
     SpectrumCard(emphasized = true) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpectrumIcon(SpectrumSymbol.Analyst, Modifier.size(54.dp), selected = true, tile = true, motionAllowed = motion.enabled)
-            Column(Modifier.weight(1f)) { SpectrumBadge("Для начинающих", accent = palette.cyan) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SpectrumIcon(
+                SpectrumSymbol.Analyst,
+                Modifier.size(64.dp),
+                selected = true,
+                tile = true,
+                motionAllowed = motion.enabled,
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                SpectrumBadge("Для начинающих", accent = palette.cyan)
+                Text("Пошаговый маршрут", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            }
         }
-        // Text uses the full card width, including at 320dp and 200% font size.
-        Text("Инвестиции простыми словами", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("От первых шагов до понимания новостей, отчётности, кредитных рейтингов и структуры портфеля.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            "От первых шагов до понимания новостей, отчётности, кредитных рейтингов и структуры портфеля.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+        )
     }
 }
 
 @Composable
 private fun EducationGuardrail() {
     SpectrumCard {
-        SpectrumIcon(SpectrumSymbol.Risk, Modifier.size(46.dp), tile = true, motionAllowed = false)
-        Text("Обучение не заменяет проверку риска", fontWeight = FontWeight.Bold)
-        Text("Уроки объясняют механику. Доходность не гарантируется, а итоговое решение зависит от ваших целей, срока, ограничений и актуальных данных.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SpectrumIcon(
+                SpectrumSymbol.Risk,
+                Modifier.size(50.dp),
+                tile = true,
+                selected = true,
+                motionAllowed = false,
+            )
+            Text(
+                "Обучение не заменяет проверку риска",
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+        Text(
+            "Уроки объясняют механику. Доходность не гарантируется, а итоговое решение зависит от ваших целей, срока, ограничений и актуальных данных.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
 @Composable
-private fun CategoryRow(selected: EducationCategory?, onSelected: (EducationCategory?) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(selected = selected == null, onClick = { onSelected(null) }, label = { Text("Все") })
+private fun CategoryRow(
+    selected: EducationCategory?,
+    onSelected: (EducationCategory?) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelected(null) },
+            label = { Text("Все уроки") },
+        )
         EducationCategory.entries.forEach { item ->
-            FilterChip(selected = selected == item, onClick = { onSelected(item) }, label = { Text(item.title) })
+            FilterChip(
+                selected = selected == item,
+                onClick = { onSelected(item) },
+                label = { Text(item.title) },
+            )
         }
     }
 }
 
 @Composable
-private fun LessonCard(lesson: EducationLesson, expanded: Boolean, onExpand: () -> Unit) {
+private fun LessonCard(
+    lesson: EducationLesson,
+    expanded: Boolean,
+    onExpand: () -> Unit,
+) {
     val palette = LocalSpectrumPalette.current
     val motion = LocalSpectrumMotionPreference.current
     SpectrumCard(emphasized = lesson.id == "news-impact") {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpectrumIcon(lesson.symbol, Modifier.size(46.dp), selected = expanded, tile = true, motionAllowed = motion.enabled)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SpectrumIcon(
+                lesson.symbol,
+                Modifier.size(52.dp),
+                selected = expanded,
+                tile = true,
+                motionAllowed = motion.enabled,
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                SpectrumBadge(lesson.category.title, accent = if (lesson.category == EducationCategory.NEWS) palette.rose else palette.blue)
-                Text("${lesson.minutes} мин", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+                SpectrumBadge(
+                    lesson.category.title,
+                    accent = if (lesson.category == EducationCategory.NEWS) palette.rose else palette.blue,
+                )
+                Text(
+                    "${lesson.minutes} мин",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
         Text(lesson.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-        Text(lesson.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            lesson.subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
         val action = if (expanded) "Свернуть урок" else "Открыть урок"
-        TextButton(onClick = onExpand, modifier = Modifier.fillMaxWidth()
-            .testTag("lesson-toggle-${lesson.id}")
-            .semantics { contentDescription = "$action: ${lesson.title}" }) { Text(action) }
+        TextButton(
+            onClick = onExpand,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("lesson-toggle-${lesson.id}")
+                .semantics { contentDescription = "$action: ${lesson.title}" },
+        ) {
+            Text(action)
+        }
         if (motion.enabled) {
             AnimatedVisibility(visible = expanded) { LessonBody(lesson) }
         } else if (expanded) {
@@ -169,10 +264,17 @@ private fun LessonCard(lesson: EducationLesson, expanded: Boolean, onExpand: () 
 private fun LessonBody(lesson: EducationLesson) {
     val uriHandler = LocalUriHandler.current
     var sourceError by remember(lesson.id) { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Text(lesson.explanation, style = MaterialTheme.typography.bodyLarge)
         lesson.checkpoints.forEach { checkpoint ->
-            Text("• $checkpoint", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "• $checkpoint",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
         Spacer(Modifier.height(2.dp))
         Text("Официальные материалы", fontWeight = FontWeight.SemiBold)
@@ -185,8 +287,12 @@ private fun LessonBody(lesson: EducationLesson) {
                     }
                 },
                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-            ) { Text("${source.organization}: ${source.title}") }
+            ) {
+                Text("${source.organization}: ${source.title}")
+            }
         }
-        sourceError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        sourceError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
