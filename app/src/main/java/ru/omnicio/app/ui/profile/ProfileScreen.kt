@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.ui.AnalystBottomBar
@@ -92,13 +94,16 @@ fun ProfileScreen(
                     symbol = SpectrumSymbol.Profile,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
                 )
-                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                // The fixed rail is above the scrolling body in both drawing
+                // and accessibility occlusion order, including after dialogs.
+                Column(Modifier.fillMaxWidth().zIndex(1f).clipToBounds().padding(horizontal = 20.dp)) {
                     ProfileSectionTabs(section) { section = it }
                 }
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
+                        .clipToBounds()
                         .testTag("profile-content"),
                     state = contentState,
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
