@@ -1,16 +1,18 @@
-"""Execute the audited Bash repair without mutating readonly shell constants.
+"""Run the audited Bash repair without reassigning readonly shell constants.
 
-Bash treats ``NAME=value command`` as an assignment in the current shell before
-starting the command. That fails when NAME was intentionally marked readonly,
-even when the assigned value is identical. The repair script needs those values
-only in the child Python process, so stage an exact, bounded transformation that
-uses the external ``env`` command instead. All hard-coded server and artifact
-constants remain readonly in the parent script and in the remote rollback script.
+Bash applies ``NAME=value command`` assignments in the current shell before it
+starts the command. That is rejected when NAME is intentionally readonly, even
+when the value is unchanged. The repair needs those names only in child Python
+processes, so this launcher performs four exact, fail-closed line-prefix changes
+to invoke the external ``env`` command instead. The checked-in repair script and
+its hard-coded server/artifact identities remain unchanged and readonly.
 """
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,40 +21,104 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / ".github/scripts/repair_moscow_update_channel.sh"
 
-REPLACEMENTS = {
-    '    SERVER_ID="$SERVER_ID" SSH_KEY_ID="$SSH_KEY_ID" "${PYTHON_CMD[@]}" - <<\'PY\'':
-        '    env SERVER_ID="$SERVER_ID" SSH_KEY_ID="$SSH_KEY_ID" "${PYTHON_CMD[@]}" - <<\'PY\'',
-    'APK_PATH="$APK_UNIX" REPORT_PATH="$REPORT_UNIX" MANIFEST_PATH="$MANIFEST_PATH" \\\n':
-        'env APK_PATH="$APK_UNIX" REPORT_PATH="$REPORT_UNIX" MANIFEST_PATH="$MANIFEST_PATH" \\\n',
-    'SSH_PUBLIC_KEY_PATH="$SSH_PUBLIC_KEY_PATH" STATE_PATH="$STATE_PATH_FOR_PY" \\\n':
-        'env SSH_PUBLIC_KEY_PATH="$SSH_PUBLIC_KEY_PATH" STATE_PATH="$STATE_PATH_FOR_PY" \\\n',
-    'POLICY_PATH="$READBACK_POLICY" PACKAGE_NAME="$PACKAGE_NAME" RELEASE_FILENAME="$RELEASE_FILENAME" \\\n':
-        'env POLICY_PATH="$READBACK_POLICY" PACKAGE_NAME="$PACKAGE_NAME" RELEASE_FILENAME="$RELEASE_FILENAME" \\\n',
-}
+PREFIX_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (
+        '    SERVER_ID="$SERVER_ID" SSH_KEY_ID=',
+        '    env SERVER_ID="$SERVER_ID" SSH_KEY_ID=',
+    ),
+    (
+        'APK_PATH="$APK_UNIX" REPORT_PATH=',
+        'env APK_PATH="$APK_UNIX" REPORT_PATH=',
+    ),
+    (
+        'SSH_PUBLIC_KEY_PATH="$SSH_PUBLIC_KEY_PATH" STATE_PATH=',
+        'env SSH_PUBLIC_KEY_PATH="$SSH_PUBLIC_KEY_PATH" STATE_PATH=',
+    ),
+    (
+        'POLICY_PATH="$READBACK_POLICY" PACKAGE_NAME=',
+        'env POLICY_PATH="$READBACK_POLICY" PACKAGE_NAME=',
+    ),
+)
 
 
 def patched_source() -> str:
-    text = SOURCE.read_text(encoding="utf-8")
-    for original, replacement in REPLACEMENTS.items():
-        count = text.count(original)
-        if count != 1:
-            raise RuntimeError(
-                f"repair source invariant changed for {original[:48]!r}: expected 1, found {count}"
-            )
-        text = text.replace(original, replacement, 1)
-    if text.count("env ") < len(REPLACEMENTS):
-        raise RuntimeError("repair child environments were not staged")
-    return text
+    """Return a syntax-preserving repair script with four child-env prefixes."""
+    source = SOURCE.read_text(encoding="utf-8")
+    counts = {prefix: 0 for prefix, _ in PREFIX_REPLACEMENTS}
+    output: list[str] = []
+
+    for line in source.splitlines(keepends=True):
+        for prefix, replacement in PREFIX_REPLACEMENTS:
+            if line.startswith(prefix):
+                counts[prefix] += 1
+                line = replacement + line[len(prefix):]
+                break
+        output.append(line)
+
+    unexpected = {prefix: count for prefix, count in counts.items() if count != 1}
+    if unexpected:
+        raise RuntimeError(
+            "repair source invariants changed: "
+            + ", ".join(f"{prefix!r}={count}" for prefix, count in unexpected.items())
+        )
+
+    patched = "".join(output)
+    for prefix, replacement in PREFIX_REPLACEMENTS:
+        if patched.count(replacement) != 1:
+            raise RuntimeError(f"staged repair prefix is not unique: {replacement!r}")
+        if any(line.startswith(prefix) for line in patched.splitlines()):
+            raise RuntimeError(f"readonly assignment remains: {prefix!r}")
+    return patched
 
 
-def main() -> int:
+def bash_executable() -> str:
+    configured = os.environ.get("BASH_EXE")
+    candidates = (
+        configured,
+        r"C:\Program Files\Git\bin\bash.exe",
+        shutil.which("bash"),
+    )
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    raise RuntimeError("Git Bash executable was not found")
+
+
+def stage_script() -> Path:
     runner_temp = Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir()))
     runner_temp.mkdir(parents=True, exist_ok=True)
-    destination = runner_temp / f"analyst-ai-repair-{os.environ.get('GITHUB_RUN_ID', 'local')}.sh"
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    if not run_id.replace("-", "").isalnum() or len(run_id) > 80:
+        raise RuntimeError("invalid run identifier")
+    destination = runner_temp / f"analyst-ai-repair-{run_id}.sh"
     destination.write_text(patched_source(), encoding="utf-8", newline="\n")
     try:
-        subprocess.run(["bash", "-n", str(destination)], check=True)
-        completed = subprocess.run(["bash", str(destination)], check=False)
+        destination.chmod(0o700)
+    except OSError:
+        pass
+    return destination
+
+
+def argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="stage and syntax-check the exact repair script without cloud access",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = argument_parser().parse_args(argv)
+    destination = stage_script()
+    bash = bash_executable()
+    try:
+        subprocess.run([bash, "-n", str(destination)], check=True)
+        if args.check:
+            print("READONLY_ENV_REPAIR_CHECK=passed", flush=True)
+            return 0
+        completed = subprocess.run([bash, str(destination)], check=False)
         return completed.returncode
     finally:
         destination.unlink(missing_ok=True)
