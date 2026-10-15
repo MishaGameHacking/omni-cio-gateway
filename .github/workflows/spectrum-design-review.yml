@@ -27,6 +27,7 @@ jobs:
       GIT_CONFIG_COUNT: '1'
       GIT_CONFIG_KEY_0: core.longpaths
       GIT_CONFIG_VALUE_0: 'true'
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -34,10 +35,10 @@ jobs:
           clean: true
       - name: Apply exact source replacements
         shell: cmd
-        run: python .github/spectrum-native.py
+        run: py -3 .github/spectrum-native.py
       - name: Add native UI regression checks
         shell: cmd
-        run: python .github/spectrum-native-extra.py
+        run: py -3 .github/spectrum-native-extra.py
       - name: Create a candidate commit without updating any branch
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
