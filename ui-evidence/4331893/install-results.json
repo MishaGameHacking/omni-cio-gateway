@@ -1,0 +1,36 @@
+[
+  {
+    "test": "previous_clean_install",
+    "success": true,
+    "apk_sha256": "40e1edcc31f2f2826ad7cfa6733c67bf1db0f2ab9e0c648a78045f21aa221532",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner-3\\_work\\_temp\\previous-apk-38726541613.apk: 1 file pushed, 0 skipped. 46.9 MB/s (3854396 bytes in 0.078s)"
+  },
+  {
+    "test": "upgrade_to_candidate",
+    "success": true,
+    "apk_sha256": "4fb32314e831da9f58b06c89f1c39c5c6eac1b010d0889ca25f74baf24b94502",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner-3\\_work\\omni-cio-gateway\\omni-cio-gateway\\app\\build\\outputs\\apk\\preview\\app-preview.apk: 1 file pushed, 0 skipped. 62.2 MB/s (4151124 bytes in 0.064s)"
+  },
+  {
+    "test": "candidate_clean_install",
+    "success": true,
+    "apk_sha256": "4fb32314e831da9f58b06c89f1c39c5c6eac1b010d0889ca25f74baf24b94502",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner-3\\_work\\omni-cio-gateway\\omni-cio-gateway\\app\\build\\outputs\\apk\\preview\\app-preview.apk: 1 file pushed, 0 skipped. 119.9 MB/s (4151124 bytes in 0.033s)"
+  },
+  {
+    "test": "bootstrap_activity_launch",
+    "success": true,
+    "apk_sha256": "4fb32314e831da9f58b06c89f1c39c5c6eac1b010d0889ca25f74baf24b94502"
+  },
+  {
+    "test": "debug_ui_fixture_install",
+    "success": true,
+    "apk_sha256": "2b678fc9b0ad3eaf720c6c2cfd9626d4418e2f2b28fd425ad8c40515cf05b90c",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner-3\\_work\\omni-cio-gateway\\omni-cio-gateway\\app\\build\\outputs\\apk\\debug\\app-debug.apk: 1 file pushed, 0 skipped. 129.7 MB/s (33369303 bytes in 0.245s)"
+  },
+  {
+    "test": "profile_ui",
+    "success": false,
+    "error_type": "RuntimeError"
+  }
+]

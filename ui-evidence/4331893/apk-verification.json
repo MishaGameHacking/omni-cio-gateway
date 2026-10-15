@@ -1,0 +1,24 @@
+{
+  "abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86",
+    "x86_64"
+  ],
+  "dex_versions": [
+    "039"
+  ],
+  "package": "ru.omnicio.app.debug",
+  "version_code": 25,
+  "version_name": "0.7.0-preview",
+  "min_sdk": 33,
+  "target_sdk": 36,
+  "debuggable": false,
+  "test_only": false,
+  "sha256": "4fb32314e831da9f58b06c89f1c39c5c6eac1b010d0889ca25f74baf24b94502",
+  "bytes": 4151124,
+  "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+  "zipalign_16kb": true,
+  "signature_v2": true,
+  "device_install_test": "separate_required_check"
+}
