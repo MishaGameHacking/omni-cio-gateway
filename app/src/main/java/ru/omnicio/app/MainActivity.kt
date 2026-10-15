@@ -154,6 +154,8 @@ class MainActivity : ComponentActivity() {
                 "Telegram отклонил обмен кода. Проверьте настройки Login Widget."
             "telegram_invalid_token" -> "Не удалось подтвердить данные Telegram."
             "telegram_invalid_response" -> "Telegram вернул некорректный ответ."
+            "private_access_full" ->
+                "Доступ к закрытой версии Analyst AI ограничен пятью аккаунтами. Все места уже заняты."
             null -> if (code == null) "Не получен код входа от Telegram." else null
             else -> "Не удалось завершить вход через Telegram."
         }
