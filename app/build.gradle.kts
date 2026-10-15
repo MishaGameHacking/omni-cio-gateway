@@ -9,11 +9,11 @@ android {
 
     defaultConfig {
         applicationId = "ru.omnicio.app"
-        minSdk = 33
+        minSdk = 36
         targetSdk = 36
-        // Code 25 belongs to the published 0.7.0 bytes; every update gets a new identity.
-        versionCode = 26
-        versionName = "0.7.1"
+        // Code 26 belongs to the published 0.7.1 bytes; every update gets a new identity.
+        versionCode = 27
+        versionName = "0.7.2"
     }
 
     buildTypes {
