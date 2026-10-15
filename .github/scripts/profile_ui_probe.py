@@ -199,6 +199,28 @@ class ProfileProbe:
         print("PROFILE_TAB_GEOMETRY=" + json.dumps({"settings": peer, "about": target}), flush=True)
         assert_horizontal_geometry(peer, target)
 
+    def dashboards(self):
+        from profile_launch import start_status, profile_frame
+
+        self.command("shell", "settings", "put", "system", "font_scale", "1.0")
+        self.command("shell", "cmd", "uimode", "night", "yes")
+        for screen in ("home", "portfolio"):
+            self.command("shell", "am", "force-stop", PACKAGE)
+            start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY, "--es", "spectrum_screen", screen))
+            evidence = {}
+            self.wait_for(lambda: profile_frame(self.command, self.tree, evidence), "Dashboard is not resumed and ready")
+            self.marker("probe-screen:" + screen)
+            self.palette(DARK_BACKGROUND)
+            self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
+            for label in ("Главная", "Портфель", "Риски", "Обучение", "Профиль"):
+                self.find(label)
+            self.find("Analyst AI" if screen == "home" else "Мой портфель")
+            self.capture("spectrum-" + screen)
+            if screen == "portfolio":
+                self.reveal("Денежные средства", "portfolio-content")
+                self.capture("spectrum-allocation")
+        self.command("shell", "am", "force-stop", PACKAGE)
+
     def themes(self):
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
@@ -291,6 +313,7 @@ def exercise(device) -> None:
         original_scale = "1.0"
     try:
         stages = (
+            ("spectrum-dashboards", probe.dashboards),
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
             ("section-scroll-reset", probe.section_scroll_reset),
