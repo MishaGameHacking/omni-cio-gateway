@@ -95,8 +95,54 @@ def main() -> None:
     results: list[dict[str, object]] = []
     failed = True
 
+    transient_adb_errors = (
+        "device offline",
+        "device not found",
+        "no devices/emulators found",
+        "cannot connect to daemon",
+        "daemon not running",
+        "closed",
+    )
+
     def device(*command: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-        return run([adb, "-s", serial, *command], timeout=timeout)
+        """Retry only transport loss while the disposable emulator restarts.
+
+        Android may briefly restart the emulator transport while applying system UI mode.
+        ADB returning `device offline` is not an application failure, but all other command
+        failures remain visible and fail closed.
+        """
+        recovery_deadline = time.monotonic() + max(timeout, 120)
+        while True:
+            try:
+                response = run([adb, "-s", serial, *command], timeout=timeout)
+            except subprocess.TimeoutExpired:
+                if time.monotonic() >= recovery_deadline:
+                    raise
+                response = None
+            if response is not None and response.returncode == 0:
+                return response
+            combined = "" if response is None else (response.stdout + "\n" + response.stderr).lower()
+            transient = response is None or any(marker in combined for marker in transient_adb_errors)
+            if not transient or time.monotonic() >= recovery_deadline:
+                assert response is not None
+                return response
+            print("ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"), flush=True)
+            time.sleep(2)
+            try:
+                wait = run([adb, "-s", serial, "wait-for-device"], timeout=20)
+            except subprocess.TimeoutExpired:
+                continue
+            if wait.returncode:
+                continue
+            try:
+                boot = run(
+                    [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
+                    timeout=15,
+                )
+            except subprocess.TimeoutExpired:
+                continue
+            if boot.returncode == 0 and boot.stdout.strip() == "1":
+                time.sleep(2)
 
     def install(label: str, path: Path, update: bool = False) -> None:
         record_install(device, results, label, path, update=update)
