@@ -1,5 +1,6 @@
 name: Apply Android 16 backend fixture fixes
 
+# One-time retry after widening the fixture scan to release metadata contracts.
 on:
   push:
     branches: [feature/android-16-only]
@@ -27,7 +28,7 @@ jobs:
         run: |
           py -3 .github\scripts\apply_android16_backend_fixture_fixes.py
           if errorlevel 1 exit /b 1
-          py -3 -m py_compile backend\release_publication.py backend\tests\test_update_integration.py backend\tests\test_release_recovery.py backend\tests\test_release_rollover.py
+          py -3 -m py_compile backend\release_publication.py backend\tests\test_update_integration.py backend\tests\test_release_metadata_contract.py backend\tests\test_release_recovery.py backend\tests\test_release_rollover.py
           if errorlevel 1 exit /b 1
           git diff --check
           if errorlevel 1 exit /b 1
