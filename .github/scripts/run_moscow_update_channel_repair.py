@@ -1,11 +1,14 @@
-"""Run the audited Bash repair without reassigning readonly shell constants.
+"""Stage and run the audited Moscow update-channel repair.
 
-Bash applies ``NAME=value command`` assignments in the current shell before it
-starts the command. That is rejected when NAME is intentionally readonly, even
-when the value is unchanged. The repair needs those names only in child Python
-processes, so this launcher performs four exact, fail-closed line-prefix changes
-to invoke the external ``env`` command instead. The checked-in repair script and
-its hard-coded server/artifact identities remain unchanged and readonly.
+The checked-in Bash repair is a fail-closed audit template. This launcher makes
+only exact, counted substitutions before execution:
+
+* four child-process environment prefixes use ``env`` so Bash does not try to
+  reassign readonly variables in the current shell;
+* the previously audited 0.6.0 artifact identity is replaced with the exact,
+  immutable, emulator-verified 0.7.1 release identity.
+
+Any missing, duplicated, or changed source marker aborts before cloud access.
 """
 from __future__ import annotations
 
@@ -40,13 +43,46 @@ PREFIX_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+RELEASE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="26"'),
+    (
+        'readonly VERSION_NAME="0.6.0-preview"',
+        'readonly VERSION_NAME="0.7.1-preview"',
+    ),
+    (
+        'readonly APK_SHA256="31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
+        'readonly APK_SHA256="343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7"',
+    ),
+    ('readonly APK_BYTES="4100464"', 'readonly APK_BYTES="4151124"'),
+    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792095055"'),
+    (
+        '"notes": "Проверенная версия Analyst AI 0.6.0-preview. Исправлен серверный канал проверки версии.",',
+        '"notes": "Проверенная версия Analyst AI 0.7.1-preview. Закрытый доступ до пяти аккаунтов и новый интерфейс Spectrum.",',
+    ),
+)
 
-def patched_source() -> str:
-    """Return a syntax-preserving repair script with four child-env prefixes."""
-    source = SOURCE.read_text(encoding="utf-8")
+
+def replace_exact_once(source: str, old: str, new: str) -> str:
+    """Replace one audited marker and reject drift or duplicate identities."""
+    count = source.count(old)
+    if count != 1:
+        raise RuntimeError(f"repair release invariant changed: {old!r}={count}")
+    if new != old and new in source:
+        raise RuntimeError(f"new release marker already exists unexpectedly: {new!r}")
+    return source.replace(old, new, 1)
+
+
+def apply_release_identity(source: str) -> str:
+    """Apply each exact release identity marker once."""
+    for old, new in RELEASE_REPLACEMENTS:
+        source = replace_exact_once(source, old, new)
+    return source
+
+
+def apply_child_environment_prefixes(source: str) -> tuple[str, dict[str, int]]:
+    """Replace only the four audited child-process environment prefixes."""
     counts = {prefix: 0 for prefix, _ in PREFIX_REPLACEMENTS}
     output: list[str] = []
-
     for line in source.splitlines(keepends=True):
         for prefix, replacement in PREFIX_REPLACEMENTS:
             if line.startswith(prefix):
@@ -54,7 +90,11 @@ def patched_source() -> str:
                 line = replacement + line[len(prefix):]
                 break
         output.append(line)
+    return "".join(output), counts
 
+
+def require_expected_prefix_counts(counts: dict[str, int]) -> None:
+    """Reject missing or duplicate audited shell prefixes."""
     unexpected = {prefix: count for prefix, count in counts.items() if count != 1}
     if unexpected:
         raise RuntimeError(
@@ -62,12 +102,31 @@ def patched_source() -> str:
             + ", ".join(f"{prefix!r}={count}" for prefix, count in unexpected.items())
         )
 
-    patched = "".join(output)
+
+def validate_child_environment_prefixes(patched: str) -> None:
+    """Confirm that no readonly current-shell assignment remains."""
+    lines = patched.splitlines()
     for prefix, replacement in PREFIX_REPLACEMENTS:
         if patched.count(replacement) != 1:
             raise RuntimeError(f"staged repair prefix is not unique: {replacement!r}")
-        if any(line.startswith(prefix) for line in patched.splitlines()):
+        if any(line.startswith(prefix) for line in lines):
             raise RuntimeError(f"readonly assignment remains: {prefix!r}")
+
+
+def validate_release_identity(patched: str) -> None:
+    """Confirm that only the requested 0.7.1 identity is staged."""
+    for old, new in RELEASE_REPLACEMENTS:
+        if old in patched or patched.count(new) != 1:
+            raise RuntimeError(f"staged release identity is inconsistent: {new!r}")
+
+
+def patched_source() -> str:
+    """Return a syntax-preserving script for the exact 0.7.1 release."""
+    source = apply_release_identity(SOURCE.read_text(encoding="utf-8"))
+    patched, counts = apply_child_environment_prefixes(source)
+    require_expected_prefix_counts(counts)
+    validate_child_environment_prefixes(patched)
+    validate_release_identity(patched)
     return patched
 
 
