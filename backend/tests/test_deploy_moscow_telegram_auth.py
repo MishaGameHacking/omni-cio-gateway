@@ -14,15 +14,22 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / ".github" / "scripts"
 DEPLOY = SCRIPTS / "deploy_moscow_telegram_browser_auth.py"
+NORMALIZER = SCRIPTS / "normalize_moscow_telegram_deploy_shell.py"
 REMOTE = SCRIPTS / "deploy_moscow_telegram_browser_auth_remote.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy-moscow-telegram-auth.yml"
 
 sys.path.insert(0, str(SCRIPTS))
-spec = importlib.util.spec_from_file_location("telegram_auth_deploy", DEPLOY)
-assert spec is not None
-assert spec.loader is not None
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+deploy_spec = importlib.util.spec_from_file_location("telegram_auth_deploy", DEPLOY)
+assert deploy_spec is not None
+assert deploy_spec.loader is not None
+module = importlib.util.module_from_spec(deploy_spec)
+deploy_spec.loader.exec_module(module)
+
+normalizer_spec = importlib.util.spec_from_file_location("telegram_auth_normalizer", NORMALIZER)
+assert normalizer_spec is not None
+assert normalizer_spec.loader is not None
+normalizer = importlib.util.module_from_spec(normalizer_spec)
+normalizer_spec.loader.exec_module(normalizer)
 
 
 class TelegramAuthDeploymentTests(unittest.TestCase):
@@ -42,6 +49,18 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
         self.assertTrue(all(name == "backend" or name.startswith("backend/") for name in names))
         self.assertFalse(any(".." in Path(name).parts for name in names))
 
+    def test_remote_script_normalizer_removes_all_carriage_returns(self) -> None:
+        source = b"#!/usr/bin/env bash\r\nset -euo pipefail\r\necho ready\r\n"
+        expected = b"#!/usr/bin/env bash\nset -euo pipefail\necho ready\n"
+        self.assertEqual(normalizer.normalize_bytes(source), expected)
+        self.assertNotIn(b"\r", normalizer.normalize_bytes(REMOTE.read_bytes()))
+
+    def test_remote_script_normalizer_rejects_unexpected_input(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "unexpected shebang"):
+            normalizer.normalize_bytes(b"set -euo pipefail\r\n")
+        with self.assertRaisesRegex(RuntimeError, "fail-closed shell options"):
+            normalizer.normalize_bytes(b"#!/usr/bin/env bash\r\necho unsafe\r\n")
+
     def test_remote_repair_has_exact_entrypoint_and_rollback(self) -> None:
         source = REMOTE.read_text(encoding="utf-8")
         self.assertIn("uvicorn telegram_browser_app:app", source)
@@ -60,13 +79,16 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
             self.skipTest("Git Bash is unavailable")
         subprocess.run([bash, "-n", str(REMOTE)], check=True)
 
-    def test_workflow_is_explicitly_gated_and_uses_short_lived_cloud_access(self) -> None:
+    def test_workflow_is_explicitly_gated_and_normalizes_before_cloud_access(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
+        marker = "normalize_moscow_telegram_deploy_shell.py"
+        deployment = "deploy_moscow_telegram_browser_auth.py"
         self.assertIn("[deploy-telegram-auth]", source)
         self.assertIn("workflow_dispatch", source)
         self.assertIn("TIMEWEB_CLOUD_TOKEN", source)
-        self.assertIn("deploy_moscow_telegram_browser_auth.py --check", source)
-        self.assertIn("deploy_moscow_telegram_browser_auth.py", source)
+        self.assertIn(marker, source)
+        self.assertLess(source.index(marker), source.index(deployment + " --check"))
+        self.assertIn(deployment, source)
 
 
 if __name__ == "__main__":
