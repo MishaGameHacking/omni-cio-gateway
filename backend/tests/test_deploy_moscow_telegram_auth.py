@@ -76,11 +76,9 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
         source = REMOTE.read_text(encoding="utf-8")
         unsafe_unit = 'UNIT_FILE="$UNIT_FILE" OLD_EXEC="$OLD_EXEC" NEW_EXEC="$NEW_EXEC"'
         safe_unit = 'PY_UNIT_FILE="$UNIT_FILE" PY_OLD_EXEC="$OLD_EXEC" PY_NEW_EXEC="$NEW_EXEC"'
-        unsafe_body = 'BODY_FILE="$BODY_FILE" "$VENV_PYTHON"'
         safe_body = 'PY_BODY_FILE="$BODY_FILE" "$VENV_PYTHON"'
         self.assertNotIn(unsafe_unit, source)
         self.assertIn(safe_unit, source)
-        self.assertNotIn(unsafe_body, source)
         self.assertIn(safe_body, source)
         self.assertIn('os.environ["PY_UNIT_FILE"]', source)
         self.assertIn('os.environ["PY_OLD_EXEC"]', source)
