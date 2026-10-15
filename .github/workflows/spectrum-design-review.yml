@@ -35,7 +35,7 @@ jobs:
           clean: true
       - name: Apply exact source replacements
         shell: cmd
-        run: py -3 .github/spectrum-native.py
+        run: py -3 .github/spectrum-native-entry.py
       - name: Add native UI regression checks
         shell: cmd
         run: py -3 .github/spectrum-native-extra.py
@@ -61,7 +61,8 @@ jobs:
               entries.push({path:file.path, mode:'100644', type:'blob', content:file.content});
             }
             for (const file of manifest.deletions) {
-              if (!(file.startsWith('.github/spectrum-payload/') || file === '.github/spectrum-native.py' || file === '.github/spectrum-native-extra.py' || file === '.github/workflows/spectrum-design-review.yml')) throw new Error('Unexpected deletion');
+              const temporary = ['.github/spectrum-native.py', '.github/spectrum-native-extra.py', '.github/spectrum-native-entry.py', '.github/workflows/spectrum-design-review.yml'];
+              if (!(file.startsWith('.github/spectrum-payload/') || temporary.includes(file))) throw new Error('Unexpected deletion');
               entries.push({path:file, mode:'100644', type:'blob', sha:null});
             }
             const tree = await github.rest.git.createTree({...context.repo, base_tree:base.data.tree.sha, tree:entries});
