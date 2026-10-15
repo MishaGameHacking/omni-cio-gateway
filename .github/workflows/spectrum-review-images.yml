@@ -1,0 +1,64 @@
+name: Inspect native Spectrum screenshots
+on:
+  push:
+    branches: [review/spectrum-evidence-20261015]
+    paths: [.github/workflows/spectrum-review-images.yml]
+permissions:
+  contents: read
+jobs:
+  images:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 3
+    steps:
+      - name: Read only known synthetic screenshot blobs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const folder = path.join(process.env.RUNNER_TEMP, 'spectrum-review-' + context.runId);
+            fs.mkdirSync(folder, {recursive: true});
+            const records = [
+              ['home', 'cf84bd720fe32e118c90d38c8e5c5b2108f0adf7', 'ce02a66fab7eb016a21ebcd86d0a95b860653df876493cf1f51a1f806cd0c043'],
+              ['security', '65cd23e09be919a7e235d7068be0115dafa0ccd7', '11ce6375db563d487be828d18f3da001ba58f0b383abc81b72dbd4f3545d1951'],
+            ];
+            for (const [name, sha, digest] of records) {
+              const blob = (await github.rest.git.getBlob({...context.repo, file_sha: sha})).data;
+              if (blob.encoding !== 'base64' || blob.size > 250000) throw new Error('Unexpected image');
+              const bytes = Buffer.from(blob.content, 'base64');
+              if (crypto.createHash('sha256').update(bytes).digest('hex') !== digest) throw new Error('Image digest mismatch');
+              fs.writeFileSync(path.join(folder, name + '.png'), bytes);
+            }
+            core.exportVariable('SPECTRUM_REVIEW_DIRECTORY', folder);
+      - name: Emit compact review copies of the original screenshots
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $encoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+          foreach ($name in @('home', 'security')) {
+            $image = [System.Drawing.Image]::FromFile((Join-Path $env:SPECTRUM_REVIEW_DIRECTORY ($name + '.png')))
+            $stream = [System.IO.MemoryStream]::new()
+            $parameters = [System.Drawing.Imaging.EncoderParameters]::new(1)
+            try {
+              $parameters.Param[0] = [System.Drawing.Imaging.EncoderParameter]::new([System.Drawing.Imaging.Encoder]::Quality, [long]35)
+              $image.Save($stream, $encoder, $parameters)
+              $bytes = $stream.ToArray()
+              if ($bytes.Length -gt 45000) { throw 'Review copy exceeds bounded limit' }
+              Write-Output ('REVIEW_JPEG_' + $name + '=' + [Convert]::ToBase64String($bytes))
+              Write-Output ('REVIEW_SHA256_' + $name + '=' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant())
+            } finally {
+              $parameters.Dispose()
+              $stream.Dispose()
+              $image.Dispose()
+            }
+          }
+      - name: Remove temporary image copies
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SPECTRUM_REVIEW_DIRECTORY) {
+            $expected = Join-Path $env:RUNNER_TEMP ('spectrum-review-' + $env:GITHUB_RUN_ID)
+            if ($env:SPECTRUM_REVIEW_DIRECTORY -ne $expected) { throw 'Unexpected cleanup path' }
+            Remove-Item -LiteralPath $expected -Recurse -Force -ErrorAction SilentlyContinue
+          }
