@@ -70,6 +70,28 @@ class CaptureTransportTests(unittest.TestCase):
     def test_transfer_error_is_not_a_success(self):
         self.exercise_capture(png_bytes(), fail_at='pull')
 
+    def test_preflight_checks_dialogs_without_duplicate_capture(self):
+        probe = ui.ProfileProbe(Mock())
+        with patch.object(probe, 'open') as opened, patch.object(probe, 'dialogs') as dialogs, \
+                patch.object(probe, 'section_scroll_reset') as reset:
+            probe.profile_preflight()
+        opened.assert_called_once_with()
+        dialogs.assert_called_once_with(capture_evidence=False)
+        reset.assert_called_once_with()
+
+    def test_full_dialog_stage_still_requires_all_three_screenshots(self):
+        probe = ui.ProfileProbe(Mock())
+        version_tree = ET.fromstring('<hierarchy><node text="Версия 0.7.0" /></hierarchy>')
+        with patch.object(probe, 'tap'), patch.object(probe, 'find'), \
+                patch.object(probe, 'tap_visible'), patch.object(probe, 'horizontal_info'), \
+                patch.object(probe, 'tap_profile_content'), patch.object(probe, 'tree', return_value=version_tree), \
+                patch.object(probe, 'capture') as capture:
+            probe.dialogs(capture_evidence=False)
+            capture.assert_not_called()
+            probe.dialogs()
+            self.assertEqual([item.args[0] for item in capture.call_args_list],
+                             ['security', 'info', 'about'])
+
     def test_dialog_wait_does_not_scroll_underlying_profile(self):
         probe = ui.ProfileProbe(Mock())
         empty = ET.fromstring('<hierarchy><node package="ru.omnicio.app.debug" resource-id="profile-content" scrollable="true" bounds="[0,100][320,600]"/></hierarchy>')

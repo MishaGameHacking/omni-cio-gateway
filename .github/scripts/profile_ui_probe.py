@@ -245,7 +245,10 @@ class ProfileProbe:
         # Exercise the previously failing production rail before system-mode
         # changes, then repeat the same checks after those changes below.
         self.open()
-        self.dialogs()
+        # This preflight validates real dialog actions and tab geometry. The
+        # full dialog stage below captures all three required screenshots;
+        # avoid re-capturing those frames before the primary UI assertions.
+        self.dialogs(capture_evidence=False)
         self.section_scroll_reset()
 
     def themes(self):
@@ -278,16 +281,19 @@ class ProfileProbe:
         self.palette(LIGHT_BACKGROUND)
         self.capture("system-light")
 
-    def dialogs(self):
+    def dialogs(self, capture_evidence=True):
         self.tap("Безопасность")
         self.find(CONFIRM_LABEL)
-        self.capture("security")
+        if capture_evidence:
+            self.capture("security")
         self.tap_visible(CONFIRM_LABEL)
         self.horizontal_info()
-        self.capture("info")
+        if capture_evidence:
+            self.capture("info")
         self.tap_profile_content(INFO_LABEL)
         self.find(CONFIRM_LABEL)
-        self.capture("about")
+        if capture_evidence:
+            self.capture("about")
         if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
             raise AssertionError("About version text missing")
         self.tap_visible(CONFIRM_LABEL)
