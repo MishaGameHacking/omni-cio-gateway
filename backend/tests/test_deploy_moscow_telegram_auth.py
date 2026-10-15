@@ -19,7 +19,8 @@ WORKFLOW = ROOT / ".github" / "workflows" / "deploy-moscow-telegram-auth.yml"
 
 sys.path.insert(0, str(SCRIPTS))
 spec = importlib.util.spec_from_file_location("telegram_auth_deploy", DEPLOY)
-assert spec is not None and spec.loader is not None
+assert spec is not None
+assert spec.loader is not None
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
@@ -46,7 +47,9 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
         self.assertIn("uvicorn telegram_browser_app:app", source)
         self.assertIn("--rollback-after-public-check", source)
         self.assertIn("TELEGRAM_AUTH_ROLLBACK=healthy", source)
-        self.assertIn("/opt/analyst-ai/rollback/telegram-auth-$RUN_ID", source)
+        self.assertIn('$BACKEND_ROOT/rollback/telegram-auth-$RUN_ID', source)
+        self.assertIn('/root/analyst-ai-deploy/$RUN_ID', source)
+        self.assertNotIn('/tmp/analyst-ai-telegram-auth-', source)
         self.assertNotIn("/var/lib/analyst-ai/backend.db", source)
         self.assertNotIn("rm -rf /var/lib/analyst-ai", source)
 
