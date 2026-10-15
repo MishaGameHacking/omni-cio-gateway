@@ -2,19 +2,7 @@ package ru.omnicio.app.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -24,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,7 +64,7 @@ fun HomeScreen(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
-            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
+            contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 AnalystBottomBar(
                     selected = AnalystTab.Home,
@@ -87,18 +74,12 @@ fun HomeScreen(
             },
         ) { insets ->
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(insets)
-                    .consumeWindowInsets(insets),
+                modifier = Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item(key = "brand-header") {
-                    HomeHeader(
-                        user = user,
-                        onMessagesClick = onOpenMessages,
-                    )
+                    HomeHeader(user = user, onMessagesClick = onOpenMessages)
                 }
                 item(key = "portfolio-hero") {
                     PortfolioHero(
@@ -113,13 +94,13 @@ fun HomeScreen(
                         onOpenProfile = onOpenProfile,
                     )
                 }
-                item(key = "quick-title") {
+                item(key = "capabilities-title") {
                     SectionTitle(
                         title = "Возможности Analyst AI",
-                        subtitle = "Главные разделы собраны на одном экране",
+                        subtitle = "Основные задачи собраны на одном экране",
                     )
                 }
-                item(key = "quick-actions") {
+                item(key = "capabilities") {
                     QuickActions(
                         onOpenPortfolio = onOpenPortfolio,
                         onOpenRecommendations = onOpenRecommendations,
@@ -137,46 +118,17 @@ fun HomeScreen(
                 }
                 if (snapshot != null) {
                     item(key = "allocation") {
-                        AllocationOverview(
-                            snapshot = snapshot,
-                            onOpenPortfolio = onOpenPortfolio,
-                        )
+                        AllocationOverview(snapshot = snapshot, onOpenPortfolio = onOpenPortfolio)
                     }
                 }
-                item(key = "guardrail") {
-                    SpectrumCard {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            SpectrumIcon(
-                                symbol = SpectrumSymbol.Risk,
-                                modifier = Modifier.size(46.dp),
-                                selected = true,
-                                tile = true,
-                                motionAllowed = false,
-                            )
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Решение остаётся за вами", fontWeight = FontWeight.Bold)
-                                Text(
-                                    "Analyst AI объясняет данные и ограничения, но не обещает доходность и не выставляет сделки.",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    }
-                }
+                item(key = "guardrail") { DecisionGuardrail() }
             }
         }
     }
 }
 
 @Composable
-private fun HomeHeader(
-    user: AnalystUser,
-    onMessagesClick: () -> Unit,
-) {
+private fun HomeHeader(user: AnalystUser, onMessagesClick: () -> Unit) {
     val palette = LocalSpectrumPalette.current
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -185,11 +137,7 @@ private fun HomeHeader(
     ) {
         SpectrumBrandOrb(Modifier.size(54.dp), compact = true)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                "Analyst AI",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            Text("Analyst AI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
                 greeting(user),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -203,7 +151,6 @@ private fun HomeHeader(
             modifier = Modifier.size(52.dp),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
             color = palette.cardStrong.copy(alpha = 0.78f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
             border = BorderStroke(1.dp, palette.violet.copy(alpha = 0.38f)),
         ) {
             SpectrumIcon(
@@ -232,8 +179,7 @@ private fun PortfolioHero(
     val palette = LocalSpectrumPalette.current
     SpectrumCard(emphasized = true) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val compact = maxWidth < 340.dp
-            if (compact) {
+            if (maxWidth < 340.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     HeroCopy(
                         state = state,
@@ -266,7 +212,6 @@ private fun PortfolioHero(
                 }
             }
         }
-        Spacer(Modifier.size(2.dp))
         if (snapshot != null) {
             Metrics(snapshot)
             SpectrumPrimaryButton(
@@ -276,18 +221,16 @@ private fun PortfolioHero(
                 symbol = SpectrumSymbol.Portfolio,
             )
         } else {
-            val connect = state == PortfolioUiState.NotConnected
             SpectrumPrimaryButton(
-                text = if (connect) "Подключить T‑API" else "Открыть профиль",
+                text = if (state == PortfolioUiState.NotConnected) "Подключить T‑API" else "Открыть профиль",
                 onClick = onOpenProfile,
                 modifier = Modifier.fillMaxWidth(),
                 symbol = SpectrumSymbol.Profile,
             )
         }
-        if (refreshError != null) {
-            SpectrumBadge("Обновление не завершено", accent = MaterialTheme.colorScheme.error)
-        } else if (refreshing) {
-            SpectrumBadge("Обновляем реальные данные", accent = palette.cyan)
+        when {
+            refreshError != null -> SpectrumBadge("Обновление не завершено", accent = MaterialTheme.colorScheme.error)
+            refreshing -> SpectrumBadge("Обновляем реальные данные", accent = palette.cyan)
         }
     }
 }
@@ -307,7 +250,7 @@ private fun HeroCopy(
         SpectrumBadge(
             text = when {
                 refreshing -> "Обновление"
-                refreshError != null -> "Показаны последние данные"
+                refreshError != null -> "Последние сохранённые данные"
                 snapshot != null -> "Портфель подключён"
                 state == PortfolioUiState.NotConnected -> "Нужно подключение"
                 else -> "Подготовка данных"
@@ -318,11 +261,7 @@ private fun HeroCopy(
                 else -> LocalSpectrumPalette.current.cyan
             },
         )
-        Text(
-            "Главная",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-        )
+        Text("Главная", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text(
             if (snapshot == null) stateText(state) else "Общий баланс",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -330,9 +269,7 @@ private fun HeroCopy(
         )
         if (snapshot != null) {
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp)
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                     .clickable(role = Role.Button, onClick = onCurrencyClick),
                 color = Color.Transparent,
             ) {
@@ -369,14 +306,12 @@ private fun HeroCopy(
 
 @Composable
 private fun Metrics(snapshot: PortfolioSnapshot) {
-    val accounts = snapshot.accounts.size
     val positions = snapshot.accounts.sumOf { it.positions.size + it.virtualPositions.size }
     val largest = snapshot.allocations.maxByOrNull { it.sharePercent.toBigDecimal() }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val stacked = maxWidth < 330.dp
-        if (stacked) {
+        if (maxWidth < 330.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SpectrumMetricPill("Счета", accounts.toString(), Modifier.fillMaxWidth())
+                SpectrumMetricPill("Счета", snapshot.accounts.size.toString(), Modifier.fillMaxWidth())
                 SpectrumMetricPill("Позиции", positions.toString(), Modifier.fillMaxWidth(), LocalSpectrumPalette.current.violet)
                 largest?.let {
                     SpectrumMetricPill(
@@ -389,7 +324,7 @@ private fun Metrics(snapshot: PortfolioSnapshot) {
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SpectrumMetricPill("Счета", accounts.toString(), Modifier.weight(1f))
+                SpectrumMetricPill("Счета", snapshot.accounts.size.toString(), Modifier.weight(1f))
                 SpectrumMetricPill("Позиции", positions.toString(), Modifier.weight(1f), LocalSpectrumPalette.current.violet)
                 largest?.let {
                     SpectrumMetricPill(
@@ -414,8 +349,7 @@ private fun QuickActions(
 ) {
     val palette = LocalSpectrumPalette.current
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val stacked = maxWidth < 350.dp
-        if (stacked) {
+        if (maxWidth < 350.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SpectrumActionTile("Мой портфель", "Счета, позиции и структура", SpectrumSymbol.Portfolio, onOpenPortfolio, Modifier.fillMaxWidth(), palette.blue)
                 SpectrumActionTile("Рекомендации", "Проверенные направления", SpectrumSymbol.Ideas, onOpenRecommendations, Modifier.fillMaxWidth(), palette.rose)
@@ -461,17 +395,8 @@ private fun AnalystSummaryCard(
         }
     }
     SpectrumCard(emphasized = true) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SpectrumIcon(
-                symbol = SpectrumSymbol.Analyst,
-                modifier = Modifier.size(64.dp),
-                selected = true,
-                tile = true,
-                motionAllowed = false,
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SpectrumIcon(SpectrumSymbol.Analyst, Modifier.size(64.dp), selected = true, tile = true)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Ваш AI‑аналитик", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                 SpectrumBadge("Вывод по фактам", accent = palette.violet)
@@ -488,17 +413,10 @@ private fun AnalystSummaryCard(
 }
 
 @Composable
-private fun AllocationOverview(
-    snapshot: PortfolioSnapshot,
-    onOpenPortfolio: () -> Unit,
-) {
+private fun AllocationOverview(snapshot: PortfolioSnapshot, onOpenPortfolio: () -> Unit) {
     val palette = LocalSpectrumPalette.current
     SpectrumCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SpectrumIcon(SpectrumSymbol.Allocation, Modifier.size(52.dp), selected = true, tile = true)
             Column(Modifier.weight(1f)) {
                 Text("Структура портфеля", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
@@ -519,35 +437,41 @@ private fun AllocationOverview(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
+            val colors = listOf(palette.blue, palette.emerald, palette.violet, palette.amber, palette.rose)
             entries.forEachIndexed { index, allocation ->
-                AllocationBar(
-                    allocation = allocation,
-                    accent = listOf(palette.blue, palette.emerald, palette.violet, palette.amber, palette.rose)[index % 5],
-                )
+                AllocationBar(allocation, colors[index % colors.size])
             }
         }
-        SpectrumSecondaryButton(
-            text = "Подробнее о портфеле",
-            onClick = onOpenPortfolio,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        SpectrumSecondaryButton("Подробнее о портфеле", onOpenPortfolio, Modifier.fillMaxWidth())
     }
 }
 
 @Composable
-private fun AllocationBar(
-    allocation: PortfolioAllocation,
-    accent: Color,
-) {
-    val fraction = runCatching {
-        allocation.sharePercent.toBigDecimal().toFloat() / 100f
-    }.getOrDefault(0f)
+private fun AllocationBar(allocation: PortfolioAllocation, accent: Color) {
+    val fraction = runCatching { allocation.sharePercent.toBigDecimal().toFloat() / 100f }.getOrDefault(0f)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(allocation.title, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(allocation.sharePercent.percentText(), fontWeight = FontWeight.SemiBold)
         }
         SpectrumProgressBar(fraction = fraction, accent = accent)
+    }
+}
+
+@Composable
+private fun DecisionGuardrail() {
+    SpectrumCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SpectrumIcon(SpectrumSymbol.Risk, Modifier.size(46.dp), selected = true, tile = true)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Решение остаётся за вами", fontWeight = FontWeight.Bold)
+                Text(
+                    "Analyst AI объясняет данные и ограничения, но не обещает доходность и не выставляет сделки.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
     }
 }
 
@@ -573,11 +497,11 @@ private fun stateText(state: PortfolioUiState): String = when (state) {
 }
 
 private fun lastUpdatedText(snapshot: PortfolioSnapshot, lastUpdatedMillis: Long?): String {
-    val source = snapshot.asOf?.takeIf { it.isNotBlank() }
-    if (source != null) return "Данные источника: ${source.take(19).replace('T', ' ')}"
+    snapshot.asOf?.takeIf { it.isNotBlank() }?.let {
+        return "Данные источника: ${it.take(19).replace('T', ' ')}"
+    }
     val millis = lastUpdatedMillis ?: return "Время обновления не указано"
-    val formatter = SimpleDateFormat("HH:mm", Locale.forLanguageTag("ru-RU"))
-    return "Обновлено в ${formatter.format(Date(millis))}"
+    return "Обновлено в ${SimpleDateFormat("HH:mm", Locale.forLanguageTag("ru-RU")).format(Date(millis))}"
 }
 
 @Composable
@@ -586,7 +510,6 @@ private fun yieldColor(snapshot: PortfolioSnapshot): Color {
     return when {
         sign > 0 -> LocalSpectrumPalette.current.emerald
         sign < 0 -> MaterialTheme.colorScheme.error
-        MaterialTheme.colorScheme.background.luminance() < 0.5f -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
