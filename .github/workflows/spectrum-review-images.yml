@@ -9,67 +9,76 @@ permissions:
 jobs:
   images:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: '17'
-      - name: Read known synthetic PNGs and completed job diagnostics
+      - name: Read exact-head job result and synthetic screenshot
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs = require('fs'), path = require('path'), crypto = require('crypto');
-            const job = (await github.rest.actions.getJobForWorkflowRun({...context.repo, job_id:116378085305})).data;
-            core.info('REVIEWED_JOB=' + JSON.stringify({head:job.head_sha,status:job.status,conclusion:job.conclusion}));
-            if (job.status === 'completed' && job.head_sha === '3b7c5863f51923dcfe12f84e54f455002c29f533') {
-              const response = await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:job.id});
-              const text = typeof response.data === 'string' ? response.data : Buffer.from(response.data).toString('utf8');
-              for (const line of text.split('\n').filter(s=>/PROFILE_TAB_DIAGNOSTIC=|PROFILE_TAB_GEOMETRY=|PROFILE_UI_STAGE=|AssertionError:|VERIFICATION_REPORT|VERIFICATION_EVIDENCE=/.test(s)).slice(-40)) core.info(line.slice(0,14000));
+            const expectedHead = 'd71199136cebcff4cd84a3bf33f3ac83804aa668';
+            let job;
+            for (let i=0;i<20;i++) {
+              job=(await github.rest.actions.getJobForWorkflowRun({...context.repo,job_id:116387753756})).data;
+              if(job.head_sha!==expectedHead) throw new Error('Unexpected job head');
+              if(job.status==='completed') break;
+              await new Promise(resolve=>setTimeout(resolve,5000));
             }
-            const folder = path.join(process.env.RUNNER_TEMP, 'spectrum-review-' + context.runId);
-            fs.mkdirSync(folder, {recursive:true});
+            core.info('EXACT_JOB='+JSON.stringify({head:job.head_sha,status:job.status,conclusion:job.conclusion}));
+            if(job.status!=='completed'){core.notice('Native job is not complete; no verification conclusion inferred.');return;}
+            const response=await github.rest.actions.downloadJobLogsForWorkflowRun({...context.repo,job_id:job.id});
+            const text=typeof response.data==='string'?response.data:Buffer.from(response.data).toString('utf8');
+            const lines=text.split('\n');
+            for(const line of lines.filter(s=>/PROFILE_TAB_DIAGNOSTIC=|PROFILE_TAB_GEOMETRY=|PROFILE_UI_STAGE=|AssertionError:|VERIFICATION_REPORT|VERIFICATION_EVIDENCE=/.test(s)).slice(-45)) core.info(line.slice(0,16000));
+            const line=lines.find(s=>s.includes('VERIFICATION_EVIDENCE={'));
+            if(!line)return;
+            const evidence=JSON.parse(line.slice(line.indexOf('VERIFICATION_EVIDENCE=')+'VERIFICATION_EVIDENCE='.length));
+            if(evidence.head!==expectedHead)throw new Error('Evidence head mismatch');
+            const entry=evidence.records.find(e=>e.name==='ui-screens/spectrum-home.png');
+            if(!entry||entry.bytes>250000)throw new Error('Missing or oversized home screenshot');
+            const blob=(await github.rest.git.getBlob({...context.repo,file_sha:entry.blob_sha})).data;
+            if(blob.encoding!=='base64')throw new Error('Unexpected encoding');
+            const png=Buffer.from(blob.content,'base64');
+            if(crypto.createHash('sha256').update(png).digest('hex')!==entry.sha256)throw new Error('Image digest mismatch');
+            const folder=path.join(process.env.RUNNER_TEMP,'spectrum-review-'+context.runId);
+            fs.mkdirSync(folder,{recursive:true});
             core.exportVariable('SPECTRUM_REVIEW_DIRECTORY',folder);
-            for (const [name,sha,digest] of [
-              ['home','cf84bd720fe32e118c90d38c8e5c5b2108f0adf7','ce02a66fab7eb016a21ebcd86d0a95b860653df876493cf1f51a1f806cd0c043'],
-              ['security','65cd23e09be919a7e235d7068be0115dafa0ccd7','11ce6375db563d487be828d18f3da001ba58f0b383abc81b72dbd4f3545d1951']]) {
-              const b=(await github.rest.git.getBlob({...context.repo,file_sha:sha})).data;
-              if(b.encoding!=='base64'||b.size>250000)throw new Error('Unexpected image');
-              const bytes=Buffer.from(b.content,'base64');
-              if(crypto.createHash('sha256').update(bytes).digest('hex')!==digest)throw new Error('Digest mismatch');
-              fs.writeFileSync(path.join(folder,name+'.png'),bytes);
-            }
-            fs.writeFileSync(path.join(folder,'ReviewImages.java'),`
-            import java.awt.image.BufferedImage;
+            fs.writeFileSync(path.join(folder,'home.png'),png);
+            fs.writeFileSync(path.join(folder,'ReviewImage.java'),`
+            import java.awt.image.BufferedImage; import java.awt.RenderingHints;
             import java.io.*; import java.nio.file.*; import java.security.*;
             import java.util.*; import javax.imageio.*; import javax.imageio.stream.*;
-            class ReviewImages {
-              public static void main(String[] args) throws Exception {
+            class ReviewImage {
+              public static void main(String[] args)throws Exception{
                 Path folder=Path.of(System.getenv("SPECTRUM_REVIEW_DIRECTORY"));
-                for(String name:List.of("home","security")) {
-                  var source=ImageIO.read(folder.resolve(name+".png").toFile());
-                  if(source==null||source.getWidth()>2000||source.getHeight()>3000)throw new IOException("Unexpected dimensions");
-                  var rgb=new BufferedImage(180,360,BufferedImage.TYPE_INT_RGB);
-                  var g=rgb.createGraphics();
-                  try{g.drawImage(source,0,0,180,360,null);}finally{g.dispose();}
-                  var bytes=new ByteArrayOutputStream();
-                  var writer=ImageIO.getImageWritersByFormatName("jpeg").next();
-                  try(var output=ImageIO.createImageOutputStream(bytes)){
-                    writer.setOutput(output); var p=writer.getDefaultWriteParam();
-                    p.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);p.setCompressionQuality(0.25f);
-                    writer.write(null,new IIOImage(rgb,null,null),p);
-                  }finally{writer.dispose();}
-                  byte[] data=bytes.toByteArray();
-                  if(data.length>18000)throw new IOException("Review limit");
-                  System.out.println("THUMBNAIL_"+name+"="+Base64.getEncoder().encodeToString(data));
-                  System.out.println("THUMBNAIL_SHA_"+name+"="+HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data)));
-                }
+                var source=ImageIO.read(folder.resolve("home.png").toFile());
+                if(source==null||source.getWidth()>2000||source.getHeight()>3000)throw new IOException("Unexpected dimensions");
+                var rgb=new BufferedImage(120,240,BufferedImage.TYPE_INT_RGB);
+                var g=rgb.createGraphics();
+                try{g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BILINEAR);g.drawImage(source,0,0,120,240,null);}finally{g.dispose();}
+                var bytes=new ByteArrayOutputStream();
+                var writer=ImageIO.getImageWritersByFormatName("jpeg").next();
+                try(var output=ImageIO.createImageOutputStream(bytes)){
+                  writer.setOutput(output);var p=writer.getDefaultWriteParam();
+                  p.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);p.setCompressionQuality(0.24f);
+                  writer.write(null,new IIOImage(rgb,null,null),p);
+                }finally{writer.dispose();}
+                byte[] data=bytes.toByteArray();
+                if(data.length>7000)throw new IOException("Review size limit");
+                System.out.println("HOME_THUMBNAIL="+Base64.getEncoder().encodeToString(data));
+                System.out.println("HOME_THUMBNAIL_SHA256="+HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data)));
               }
             }`);
-      - name: Produce bounded inspection copies
+            core.exportVariable('REVIEW_IMAGES','true');
+      - name: Emit small unretouched native review copy
+        if: env.REVIEW_IMAGES == 'true'
         shell: cmd
         run: |
-          java "%SPECTRUM_REVIEW_DIRECTORY%\ReviewImages.java"
+          java "%SPECTRUM_REVIEW_DIRECTORY%\ReviewImage.java"
           if errorlevel 1 exit /b 1
       - name: Remove this job's temporary copies
         if: always()
