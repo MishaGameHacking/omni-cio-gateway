@@ -4,34 +4,70 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "app/**"
-      - ".github/workflows/spectrum-design-review.yml"
-      - ".github/scripts/spectrum*"
+      - '.github/spectrum-payload/**'
+      - '.github/spectrum-*.py'
+      - '.github/workflows/spectrum-design-review.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: spectrum-source-${{ github.event.pull_request.number }}
+  group: spectrum-native-candidate-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  source:
-    name: Exact Android source snapshot
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  candidate:
+    name: Assemble reviewed native UI candidate
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'design/analyst-native-spectrum-20261015'
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           clean: true
-      - name: Archive tracked source only
+      - name: Apply exact source replacements
         shell: cmd
-        run: git archive --format=zip --output=spectrum-source.zip HEAD
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        run: python .github/spectrum-native.py
+      - name: Add native UI regression checks
+        shell: cmd
+        run: python .github/spectrum-native-extra.py
+      - name: Create a candidate commit without updating any branch
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          name: spectrum-source-${{ github.event.pull_request.head.sha }}
-          path: spectrum-source.zip
-          if-no-files-found: error
-          retention-days: 7
+          script: |
+            const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('spectrum-generated.json', 'utf8'));
+            const head = context.payload.pull_request.head.sha;
+            const current = await github.rest.pulls.get({...context.repo, pull_number: context.issue.number});
+            if (current.data.head.sha !== head) throw new Error('PR head moved; discard this candidate');
+            const base = await github.rest.git.getCommit({...context.repo, commit_sha: head});
+            const entries = [];
+            for (const file of manifest.files) {
+              const allowed = file.path.startsWith('app/src/main/java/ru/omnicio/app/ui/') ||
+                file.path.startsWith('app/src/main/res/') || file.path.startsWith('app/src/debug/') ||
+                file.path.startsWith('docs/') || file.path === 'AGENTS.md' || file.path === 'app/build.gradle.kts' ||
+                file.path === 'app/src/main/java/ru/omnicio/app/MainActivity.kt' ||
+                file.path === '.github/scripts/profile_ui_probe.py' || file.path === '.github/scripts/spectrum_ui_probe.py' ||
+                file.path === '.github/workflows/android-ci.yml';
+              if (!allowed || file.path.includes('..') || typeof file.content !== 'string') throw new Error('Unexpected candidate path');
+              entries.push({path:file.path, mode:'100644', type:'blob', content:file.content});
+            }
+            for (const file of manifest.deletions) {
+              if (!(file.startsWith('.github/spectrum-payload/') || file === '.github/spectrum-native.py' || file === '.github/spectrum-native-extra.py' || file === '.github/workflows/spectrum-design-review.yml')) throw new Error('Unexpected deletion');
+              entries.push({path:file, mode:'100644', type:'blob', sha:null});
+            }
+            const tree = await github.rest.git.createTree({...context.repo, base_tree:base.data.tree.sha, tree:entries});
+            const commit = await github.rest.git.createCommit({...context.repo,
+              message:'feat(android): implement the native Analyst AI reference design',
+              tree:tree.data.sha, parents:[head]});
+            core.notice('SPECTRUM_CANDIDATE=' + commit.data.sha);
+            core.notice('SPECTRUM_PARENT=' + head);
+            core.notice('SPECTRUM_NATIVE_FILES=' + manifest.files.length);
+            await core.summary.addHeading('Native source candidate').addRaw('Commit: ' + commit.data.sha + '\nParent: ' + head + '\n').write();
