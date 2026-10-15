@@ -1,7 +1,7 @@
 # Analyst AI — Android и Timeweb backend
 
 Kotlin / Jetpack Compose. Android 16+ (`minSdk/compileSdk/targetSdk 36`).
-Текущая ветка интерфейса: **0.7.1 / versionCode 26**. Открывайте корень проекта в Android Studio.
+Текущая ветка интерфейса: **0.7.2 / versionCode 27**. Открывайте корень проекта в Android Studio.
 
 ## Установка и совместимость
 
