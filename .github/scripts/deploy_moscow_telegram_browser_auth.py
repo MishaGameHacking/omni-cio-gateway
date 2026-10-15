@@ -27,11 +27,15 @@ import diagnose_moscow_telegram as cloud
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
+TELEGRAM_JWKS_FILENAME = "telegram_jwks.json"
+TELEGRAM_JWKS = BACKEND / TELEGRAM_JWKS_FILENAME
 REMOTE_SOURCE = ROOT / ".github/scripts/deploy_moscow_telegram_browser_auth_remote.sh"
 PUBLIC_URL = "https://176.98.178.81.sslip.io"
 LOGIN_SCRIPT = "https://oauth.telegram.org/js/telegram-login.js?3"
+REMOTE_DEPLOY_ROOT = "/root/analyst-ai-deploy"
+REMOTE_ARCHIVE_FILENAME = "backend.tgz"
+REMOTE_SCRIPT_FILENAME = "deploy.sh"
 MAX_PUBLIC_RESPONSE = 256_000
-HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def sha256_file(path: Path) -> str:
@@ -72,14 +76,14 @@ def validate_source() -> dict[str, str]:
     required = (
         BACKEND / "app.py",
         BACKEND / "telegram_browser_app.py",
-        BACKEND / "telegram_jwks.json",
+        TELEGRAM_JWKS,
         BACKEND / "requirements.txt",
         REMOTE_SOURCE,
     )
     for path in required:
         if not path.is_file() or path.is_symlink():
             raise RuntimeError(f"Required deployment source is missing: {path.relative_to(ROOT)}")
-    key = validate_jwks(BACKEND / "telegram_jwks.json")
+    key = validate_jwks(TELEGRAM_JWKS)
     if key["kid"] != "oidc-1":
         raise RuntimeError("Pinned Telegram RS256 key id is not the reviewed oidc-1 key")
     source = (BACKEND / "telegram_browser_app.py").read_text(encoding="utf-8")
@@ -98,11 +102,12 @@ def validate_source() -> dict[str, str]:
         "TELEGRAM_AUTH_EXTERNAL_ROLLBACK=passed",
         "telegram_browser_app:app",
         "analyst-ai-backend.service",
+        REMOTE_DEPLOY_ROOT,
     ):
         if required_text not in remote:
             raise RuntimeError(f"Telegram deployment invariant is missing: {required_text}")
     return {
-        "jwks_sha256": sha256_file(BACKEND / "telegram_jwks.json"),
+        "jwks_sha256": sha256_file(TELEGRAM_JWKS),
         "requirements_sha256": sha256_file(BACKEND / "requirements.txt"),
     }
 
@@ -175,17 +180,40 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def deployment_identifier() -> str:
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
+    if re.fullmatch(r"[A-Za-z0-9-]{1,60}", run_id) is None:
+        raise RuntimeError("Invalid run identifier")
+    if re.fullmatch(r"[1-9]\d{0,8}", attempt) is None:
+        raise RuntimeError("Invalid run attempt")
+    return f"{run_id}-{attempt}"
+
+
+def remove_remote_directory(
+    ssh: str,
+    options: list[str],
+    host: str,
+    remote_root: str,
+) -> None:
+    subprocess.run(
+        [ssh, *options, host, "rm", "-rf", "--", remote_root],
+        check=False,
+        timeout=45,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     metadata = validate_source()
-    run_id = os.environ.get("GITHUB_RUN_ID", "local")
-    if re.fullmatch(r"[A-Za-z0-9-]{1,80}", run_id) is None:
-        raise RuntimeError("Invalid run identifier")
+    deployment_id = deployment_identifier()
 
     with tempfile.TemporaryDirectory(prefix="analyst-ai-telegram-auth-deploy-") as temporary:
         work = Path(temporary)
-        archive = work / f"analyst-ai-telegram-auth-{run_id}.tgz"
-        remote = work / f"analyst-ai-telegram-auth-{run_id}.sh"
+        archive = work / f"analyst-ai-telegram-auth-{deployment_id}.tgz"
+        remote = work / f"analyst-ai-telegram-auth-{deployment_id}.sh"
         private_key = work / "deployment-key"
         known_hosts = work / "known-hosts"
 
@@ -219,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
                 "-f",
                 str(private_key),
                 "-C",
-                f"analyst-ai-telegram-auth-{run_id}",
+                f"analyst-ai-telegram-auth-{deployment_id}",
             ],
             check=True,
             stdout=subprocess.DEVNULL,
@@ -232,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
                 "POST",
                 "/ssh-keys",
                 {
-                    "name": f"analyst-ai-telegram-auth-{run_id}",
+                    "name": f"analyst-ai-telegram-auth-{deployment_id}",
                     "body": public_key,
                     "is_default": False,
                 },
@@ -263,10 +291,11 @@ def main(argv: list[str] | None = None) -> int:
                 "-o",
                 f"UserKnownHostsFile={known_hosts}",
             ]
+            host = f"root@{cloud.EXPECTED_IP}"
             ready = False
             for _ in range(36):
                 probe = subprocess.run(
-                    [ssh, *options, f"root@{cloud.EXPECTED_IP}", "echo ready"],
+                    [ssh, *options, host, "echo ready"],
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -279,62 +308,67 @@ def main(argv: list[str] | None = None) -> int:
             if not ready:
                 raise RuntimeError("Verified Moscow server SSH did not become ready")
 
-            remote_archive = f"/tmp/analyst-ai-telegram-auth-{run_id}.tgz"
-            remote_script_path = f"/tmp/analyst-ai-telegram-auth-{run_id}.sh"
-            retry([scp, *options, str(archive), f"root@{cloud.EXPECTED_IP}:{remote_archive}"])
-            retry([scp, *options, str(remote), f"root@{cloud.EXPECTED_IP}:{remote_script_path}"])
-            deployment_args = [
-                run_id,
-                archive_sha,
-                metadata["jwks_sha256"],
-                metadata["requirements_sha256"],
-            ]
-            completed = subprocess.run(
-                [
-                    ssh,
-                    *options,
-                    f"root@{cloud.EXPECTED_IP}",
-                    "bash",
-                    remote_script_path,
-                    *deployment_args,
-                ],
-                check=False,
-                timeout=480,
-            )
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    f"Moscow Telegram-auth deployment failed with exit {completed.returncode}"
-                )
+            remote_root = f"{REMOTE_DEPLOY_ROOT}/{deployment_id}"
+            remote_archive = f"{remote_root}/{REMOTE_ARCHIVE_FILENAME}"
+            remote_script_path = f"{remote_root}/{REMOTE_SCRIPT_FILENAME}"
+            preserve_remote = False
+            retry([ssh, *options, host, "install", "-d", "-m", "0700", "--", remote_root])
             try:
-                verify_public_endpoint()
-            except Exception:
-                rollback = subprocess.run(
-                    [
-                        ssh,
-                        *options,
-                        f"root@{cloud.EXPECTED_IP}",
-                        "bash",
-                        remote_script_path,
-                        "--rollback-after-public-check",
-                        run_id,
-                    ],
-                    check=False,
-                    timeout=180,
-                )
-                if rollback.returncode != 0:
-                    raise RuntimeError(
-                        "Public verification failed and the audited rollback also failed"
+                retry([scp, *options, str(archive), f"{host}:{remote_archive}"])
+                retry([scp, *options, str(remote), f"{host}:{remote_script_path}"])
+                deployment_args = [
+                    deployment_id,
+                    archive_sha,
+                    metadata["jwks_sha256"],
+                    metadata["requirements_sha256"],
+                ]
+                try:
+                    completed = subprocess.run(
+                        [
+                            ssh,
+                            *options,
+                            host,
+                            "bash",
+                            remote_script_path,
+                            *deployment_args,
+                        ],
+                        check=False,
+                        timeout=480,
                     )
-                raise
-            subprocess.run(
-                [ssh, *options, f"root@{cloud.EXPECTED_IP}", "rm", "-f", remote_script_path],
-                check=False,
-                timeout=30,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            print("TELEGRAM_AUTH_PUBLIC_VERIFICATION=passed", flush=True)
-            return 0
+                except subprocess.TimeoutExpired as error:
+                    preserve_remote = True
+                    raise RuntimeError("Moscow Telegram-auth deployment timed out") from error
+                if completed.returncode != 0:
+                    raise RuntimeError(
+                        f"Moscow Telegram-auth deployment failed with exit {completed.returncode}"
+                    )
+                try:
+                    verify_public_endpoint()
+                except Exception:
+                    rollback = subprocess.run(
+                        [
+                            ssh,
+                            *options,
+                            host,
+                            "bash",
+                            remote_script_path,
+                            "--rollback-after-public-check",
+                            deployment_id,
+                        ],
+                        check=False,
+                        timeout=180,
+                    )
+                    if rollback.returncode != 0:
+                        preserve_remote = True
+                        raise RuntimeError(
+                            "Public verification failed and the audited rollback also failed"
+                        )
+                    raise
+                print("TELEGRAM_AUTH_PUBLIC_VERIFICATION=passed", flush=True)
+                return 0
+            finally:
+                if not preserve_remote:
+                    remove_remote_directory(ssh, options, host, remote_root)
         finally:
             cloud.cleanup_key(token, key_id)
 
