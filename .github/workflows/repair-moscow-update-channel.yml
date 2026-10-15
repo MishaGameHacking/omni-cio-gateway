@@ -6,6 +6,8 @@ on:
     paths:
       - "backend/**"
       - ".github/scripts/repair_moscow_update_channel.sh"
+      - ".github/scripts/run_moscow_update_channel_repair.py"
+      - ".github/scripts/tests/test_moscow_update_channel_repair.py"
       - ".github/workflows/repair-moscow-update-channel.yml"
   workflow_dispatch:
 
@@ -27,6 +29,7 @@ jobs:
     timeout-minutes: 35
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      BASH_EXE: C:\Program Files\Git\bin\bash.exe
       RELEASE_TAG: android-preview-ec24b402f51c9c3031c6cc9d67207a7b46c8a503
       RELEASE_APK_NAME: Analyst-AI-0.6.0-preview-ec24b40.apk
       RELEASE_APK_SHA256: 31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74
@@ -45,7 +48,9 @@ jobs:
         run: |
           py -3 -m unittest discover -s .github\scripts\tests -p "test_moscow_update_channel_repair.py" -v
           if errorlevel 1 exit /b 1
-          "C:\Program Files\Git\bin\bash.exe" -n .github/scripts/repair_moscow_update_channel.sh
+          py -3 -m py_compile .github\scripts\run_moscow_update_channel_repair.py
+          if errorlevel 1 exit /b 1
+          py -3 .github\scripts\run_moscow_update_channel_repair.py --check
           if errorlevel 1 exit /b 1
 
       - name: Download exact immutable verified release
@@ -95,5 +100,5 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
         run: |
-          "C:\Program Files\Git\bin\bash.exe" .github/scripts/repair_moscow_update_channel.sh
+          py -3 .github\scripts\run_moscow_update_channel_repair.py
           if errorlevel 1 exit /b 1
