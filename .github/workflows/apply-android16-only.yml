@@ -27,11 +27,13 @@ jobs:
         run: |
           py -3 .github\scripts\apply_android16_only.py
           if errorlevel 1 exit /b 1
+          py -3 .github\scripts\apply_android16_only_followup.py
+          if errorlevel 1 exit /b 1
 
       - name: Validate migration sources
         shell: cmd
         run: |
-          py -3 -m py_compile .github\scripts\apply_android16_only.py .github\scripts\verify_apk.py .github\scripts\validate_distribution.py .github\scripts\test_apk_installation.py backend\installation_evidence.py backend\release_publication.py
+          py -3 -m py_compile .github\scripts\apply_android16_only.py .github\scripts\apply_android16_only_followup.py .github\scripts\verify_apk.py .github\scripts\validate_distribution.py .github\scripts\test_apk_installation.py backend\installation_evidence.py backend\release_publication.py
           if errorlevel 1 exit /b 1
           py -3 -m unittest backend.tests.test_installation_evidence -v
           if errorlevel 1 exit /b 1
