@@ -93,12 +93,14 @@ class FrameReader:
             self.broken = True
             raise
 
-    def scroll_list(self, resource_id: str, direction: str) -> None:
+    def scroll_list(self, resource_id: str, direction: str) -> bool:
         """Perform one exact public scroll action on one whitelisted app list.
 
         Coordinates, arbitrary resource names and arbitrary action identifiers do
         not cross this protocol. An acknowledgement is not UI evidence: callers
         must read and validate the next fresh frame before accepting any result.
+        False means the exact list was valid but already at that semantic boundary;
+        it does not invalidate the authenticated UiAutomation stream.
         """
         code = SCROLL_LIST_CODES.get(resource_id)
         if code is None:
@@ -118,21 +120,24 @@ class FrameReader:
             received, status, size = struct.unpack(
                 ">III", read_exact(self.connection, 12, deadline=deadline)
             )
-            if (received, status, size) != (sequence, 2, 0):
+            if received != sequence or status not in (2, 3) or size != 0:
                 raise ValueError("Invalid semantic scroll acknowledgement")
             if time.monotonic() >= deadline:
                 raise TimeoutError("Semantic scroll acknowledgement exceeded deadline")
+            performed = status == 2
             print(
-                f"UI_ACCESSIBILITY_ACTION=list-{resource_id};scroll-{direction};sequence-{sequence}",
+                f"UI_ACCESSIBILITY_ACTION=list-{resource_id};scroll-{direction};"
+                f"performed-{str(performed).lower()};sequence-{sequence}",
                 flush=True,
             )
+            return performed
         except Exception:
             self.broken = True
             raise
 
-    def scroll_portfolio(self) -> None:
+    def scroll_portfolio(self) -> bool:
         """Compatibility wrapper for the original exact portfolio action."""
-        self.scroll_list("portfolio-content", "end")
+        return self.scroll_list("portfolio-content", "end")
 
     def ready_tree(self):
         # A successfully received null root can occur while a dialog closes.
