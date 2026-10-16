@@ -36,11 +36,22 @@ def _one_emulator(run: dict, digest: str) -> dict:
     if run.get('abi') != 'x86_64' or type(run.get('profile_ui_required')) is not bool:
         raise InstallationEvidenceError('unrecognized_emulator_evidence')
     records = _results(run.get('results'))
-    required = {'previous_clean_install', 'upgrade_to_candidate', 'candidate_clean_install'}
+    required = {
+        'previous_clean_install',
+        'upgrade_to_candidate',
+        'upgrade_bootstrap_launch',
+        'candidate_clean_install',
+    }
     launches = {'activity_launch', 'bootstrap_activity_launch'} & records.keys()
     if not required <= records.keys() or len(launches) != 1:
         raise InstallationEvidenceError('installation_evidence_incomplete')
-    for name in ('upgrade_to_candidate', 'candidate_clean_install', next(iter(launches))):
+    bound_candidate_checks = (
+        'upgrade_to_candidate',
+        'upgrade_bootstrap_launch',
+        'candidate_clean_install',
+        next(iter(launches)),
+    )
+    for name in bound_candidate_checks:
         if _digest(records[name].get('apk_sha256')) != digest:
             raise InstallationEvidenceError('installation_artifact_mismatch')
     previous = _digest(records['previous_clean_install'].get('apk_sha256'))
@@ -50,7 +61,12 @@ def _one_emulator(run: dict, digest: str) -> dict:
         raise InstallationEvidenceError('unsupported_android_version')
     if not run['profile_ui_required'] or not {'debug_ui_fixture_install', 'profile_ui'} <= records.keys():
         raise InstallationEvidenceError('profile_ui_evidence_missing')
-    return {'clean_install': True, 'upgrade': True, 'launch': True}
+    return {
+        'clean_install': True,
+        'upgrade': True,
+        'upgrade_launch': True,
+        'launch': True,
+    }
 
 
 def from_ci_reports(installations: object, apk_sha256: str) -> dict:
