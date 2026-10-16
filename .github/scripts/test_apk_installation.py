@@ -15,6 +15,16 @@ UIAUTOMATOR_PROCESS = "com.android.commands.uiautomator"
 UIAUTOMATOR_CONNECT_MARKERS = (
     "timeout while connecting uiautomation",
     "error while connecting uiautomation",
+    "null root node returned by uitestautomationbridge",
+)
+ADB_TRANSIENT_MARKERS = (
+    "device offline",
+    "device not found",
+    "device 'emulator-",
+    "no devices/emulators found",
+    "cannot connect to daemon",
+    "daemon not running",
+    "closed",
 )
 UIAUTOMATOR_MIN_INTERVAL_SECONDS = 0.75
 UIAUTOMATOR_RECOVERY_SECONDS = 45
@@ -50,7 +60,7 @@ def is_uiautomator_connect_timeout(
     response_text: str,
     crash_text: str = "",
 ) -> bool:
-    """Classify only Android's UiAutomation connection failure as recoverable.
+    """Classify only Android's transient UiAutomation failures as recoverable.
 
     A later successful dump is still required; this helper never converts a failed
     UI assertion into a pass. Crash-buffer evidence additionally requires the
@@ -65,6 +75,17 @@ def is_uiautomator_connect_timeout(
     return UIAUTOMATOR_PROCESS in crash and any(
         marker in crash for marker in UIAUTOMATOR_CONNECT_MARKERS
     )
+
+
+def is_transient_adb_transport_failure(response_text: str) -> bool:
+    """Recognize only bounded ADB/emulator transport failures.
+
+    The quoted-serial form matches Android platform-tools output such as
+    ``adb.exe: device 'emulator-5560' not found`` without treating an ordinary
+    shell-level ``file not found`` message as an emulator loss.
+    """
+    response = response_text.lower()
+    return any(marker in response for marker in ADB_TRANSIENT_MARKERS)
 
 
 def free_emulator_port() -> int:
@@ -209,14 +230,6 @@ def run_attempt(
     results: list[dict[str, object]] = []
     failed = True
 
-    transient_adb_errors = (
-        "device offline",
-        "device not found",
-        "no devices/emulators found",
-        "cannot connect to daemon",
-        "daemon not running",
-        "closed",
-    )
     last_uiautomator_dump_finished = 0.0
     process: subprocess.Popen[str] | None = None
     transport_lost = False
@@ -290,8 +303,8 @@ def run_attempt(
                     crash_text,
                 )
 
-            transient_transport = response is None or any(
-                marker in combined for marker in transient_adb_errors
+            transient_transport = response is None or is_transient_adb_transport_failure(
+                combined
             )
             transient = transient_transport or uiautomator_timeout
             if not transient:
