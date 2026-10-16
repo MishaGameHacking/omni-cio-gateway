@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 import ru.omnicio.app.ui.spectrum.SpectrumLiveFeature
 import ru.omnicio.app.ui.spectrum.SpectrumLiveFeatureIcon
+import ru.omnicio.app.ui.spectrum.SpectrumLiveFeatureShowcase
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
 private data class HomeAction(
@@ -35,7 +36,7 @@ private data class HomeAction(
     val open: () -> Unit,
 )
 
-/** One compact live icon strip on phones, a two-column grid with large accessibility fonts. */
+/** Primary destinations followed by the complete native live-element catalogue. */
 @Composable
 internal fun HomeQuickActions(
     onPortfolio: () -> Unit,
@@ -51,18 +52,25 @@ internal fun HomeQuickActions(
         HomeAction("Риски", SpectrumLiveFeature.RiskControl, palette.rose, onRisk),
         HomeAction("Сообщения", SpectrumLiveFeature.Notifications, palette.cyan, onMessages),
     )
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = homeActionColumns(maxWidth.value, largeFont)
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            actions.chunked(columns).forEach { row ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    row.forEach { action -> ActionCell(action, Modifier.weight(1f)) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = homeActionColumns(maxWidth.value, largeFont)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                actions.chunked(columns).forEach { row ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        row.forEach { action -> ActionCell(action, Modifier.weight(1f)) }
+                    }
                 }
             }
         }
+        SpectrumLiveFeatureShowcase(Modifier.fillMaxWidth())
     }
 }
 
