@@ -30,11 +30,11 @@ jobs:
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       BASH_EXE: C:\Program Files\Git\bin\bash.exe
-      RELEASE_TAG: android-preview-e0b82ba5f4889fbea7cc650591b2fabe7db596e0
-      RELEASE_APK_NAME: Analyst-AI-0.7.1-preview-e0b82ba.apk
-      RELEASE_APK_SHA256: 343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7
+      RELEASE_TAG: android-preview-ce5cbc190d2c875364716a6454f774bf543c2a08
+      RELEASE_APK_NAME: Analyst-AI-0.7.4-preview-ce5cbc1.apk
+      RELEASE_APK_SHA256: 1229b9ced44dfc54fbdfe40ba7203f557a41ca8c574bde1ca90caa107d7c799f
       RELEASE_REPORT_NAME: apk-verification.json
-      RELEASE_REPORT_SHA256: b7250ca0f974fe031cf9be268130b4606f75142b76cf4d6cf84d49d5bc497b95
+      RELEASE_REPORT_SHA256: e10ce914cd2535716bbcb2986f88055b03e85fd2bcec98131a18ce8c62a65170
 
     steps:
       - name: Checkout exact main source
@@ -65,7 +65,7 @@ jobs:
               ...context.repo,
               tag: process.env.RELEASE_TAG,
             })).data;
-            if (release.draft || release.target_commitish !== 'e0b82ba5f4889fbea7cc650591b2fabe7db596e0') {
+            if (release.draft || release.target_commitish !== 'ce5cbc190d2c875364716a6454f774bf543c2a08') {
               throw new Error('Release identity does not match the verified main commit');
             }
             async function download(name, expectedSha, outputName) {

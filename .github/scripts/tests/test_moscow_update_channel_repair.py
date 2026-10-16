@@ -8,11 +8,11 @@ SCRIPT = ROOT / ".github/scripts/repair_moscow_update_channel.sh"
 RUNNER = ROOT / ".github/scripts/run_moscow_update_channel_repair.py"
 WORKFLOW = ROOT / ".github/workflows/repair-moscow-update-channel.yml"
 
-RELEASE_COMMIT = "e0b82ba5f4889fbea7cc650591b2fabe7db596e0"
+RELEASE_COMMIT = "ce5cbc190d2c875364716a6454f774bf543c2a08"
 RELEASE_TAG = f"android-preview-{RELEASE_COMMIT}"
-RELEASE_APK_NAME = "Analyst-AI-0.7.1-preview-e0b82ba.apk"
-RELEASE_APK_SHA256 = "343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7"
-RELEASE_REPORT_SHA256 = "b7250ca0f974fe031cf9be268130b4606f75142b76cf4d6cf84d49d5bc497b95"
+RELEASE_APK_NAME = "Analyst-AI-0.7.4-preview-ce5cbc1.apk"
+RELEASE_APK_SHA256 = "1229b9ced44dfc54fbdfe40ba7203f557a41ca8c574bde1ca90caa107d7c799f"
+RELEASE_REPORT_SHA256 = "e10ce914cd2535716bbcb2986f88055b03e85fd2bcec98131a18ce8c62a65170"
 CERTIFICATE_SHA256 = "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
 
 
@@ -41,38 +41,49 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
         self.assertNotIn('request("POST", "/servers",', self.patched)
         self.assertNotIn("create_server", self.patched.lower())
 
-    def test_only_exact_verified_071_release_can_be_published(self):
+    def test_only_exact_verified_074_release_can_be_published(self):
         for value in (
-            'VERSION_CODE="26"',
-            'VERSION_NAME="0.7.1-preview"',
+            'VERSION_CODE="29"',
+            'VERSION_NAME="0.7.4-preview"',
             f'APK_SHA256="{RELEASE_APK_SHA256}"',
-            'APK_BYTES="4151124"',
+            'APK_BYTES="4167544"',
             f'CERTIFICATE_SHA256="{CERTIFICATE_SHA256}"',
-            'PUBLISHED_AT="1792095055"',
+            'MIN_SDK="36"',
+            'PUBLISHED_AT="1792171072"',
             'report.get("device_install_test") != "passed_on_emulators_not_a_physical_phone"',
             'report.get("signature_v2") is not True',
         ):
             self.assertIn(value, self.patched)
         for stale in (
             'VERSION_CODE="23"',
+            'VERSION_CODE="26"',
             'VERSION_NAME="0.6.0-preview"',
+            'VERSION_NAME="0.7.1-preview"',
             'APK_SHA256="31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
+            'APK_SHA256="343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7"',
             'APK_BYTES="4100464"',
+            'APK_BYTES="4151124"',
+            'MIN_SDK="33"',
             'assert payload["version_code"] == 23',
+            'assert payload["version_code"] == 26',
             'assert payload["minimum_version_code"] == 23',
+            'assert payload["minimum_version_code"] == 26',
             'assert payload["version_name"] == "0.6.0-preview"',
+            'assert payload["version_name"] == "0.7.1-preview"',
             'assert payload["apk_bytes"] == 4100464',
+            'assert payload["apk_bytes"] == 4151124',
         ):
             self.assertNotIn(stale, self.patched)
-        self.assertIn("Закрытый доступ до пяти аккаунтов", self.patched)
+        self.assertIn("Живые элементы Spectrum", self.patched)
+        self.assertIn("обновление старых preview-версий", self.patched)
 
-    def test_local_and_public_policy_readback_expect_the_same_071_identity(self):
+    def test_local_and_public_policy_readback_expect_the_same_074_identity(self):
         expected_twice = (
-            'assert payload["version_code"] == 26',
-            'assert payload["minimum_version_code"] == 26',
-            'assert payload["version_name"] == "0.7.1-preview"',
+            'assert payload["version_code"] == 29',
+            'assert payload["minimum_version_code"] == 29',
+            'assert payload["version_name"] == "0.7.4-preview"',
             f'assert payload["apk_sha256"] == "{RELEASE_APK_SHA256}"',
-            'assert payload["apk_bytes"] == 4151124',
+            'assert payload["apk_bytes"] == 4167544',
         )
         for marker in expected_twice:
             with self.subTest(marker=marker):
@@ -95,8 +106,8 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
             "Release asset checksum mismatch",
         ):
             self.assertIn(value, self.workflow)
-        self.assertNotIn("android-preview-ec24b402", self.workflow)
-        self.assertNotIn("Analyst-AI-0.6.0-preview", self.workflow)
+        self.assertNotIn("android-preview-e0b82ba5", self.workflow)
+        self.assertNotIn("Analyst-AI-0.7.1-preview", self.workflow)
 
     def test_backend_data_and_environment_are_preserved_with_rollback(self):
         self.assertIn('cp -a "$BACKEND_PATH" "$BACKUP_ROOT/backend"', self.patched)
