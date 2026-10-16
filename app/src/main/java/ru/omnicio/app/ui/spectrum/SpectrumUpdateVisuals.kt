@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.luminance
@@ -32,7 +33,9 @@ fun SpectrumUpdateBackdrop(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val colors = MaterialTheme.colorScheme
+    val dark = colors.background.luminance() < 0.5f
+    val onBackground = colors.onBackground
     val phase = rememberSpectrumLivePhase(motionAllowed, 12_000)
     val base = if (dark) {
         listOf(Color(0xFF020713), Color(0xFF071226), Color(0xFF03111F), Color(0xFF020713))
@@ -72,14 +75,18 @@ fun SpectrumUpdateBackdrop(
                 min * 0.72f,
                 second,
             )
+            val third = Offset(
+                size.width * 0.54f,
+                size.height * (0.52f + sin((angle * 0.7f).toDouble()).toFloat() * 0.06f),
+            )
             drawCircle(
                 Brush.radialGradient(
                     listOf(palette.cyan.copy(alpha = if (dark) 0.10f else 0.045f), Color.Transparent),
-                    Offset(size.width * 0.54f, size.height * (0.52f + sin((angle * 0.7f).toDouble()).toFloat() * 0.06f)),
+                    third,
                     min * 0.58f,
                 ),
                 min * 0.58f,
-                Offset(size.width * 0.54f, size.height * (0.52f + sin((angle * 0.7f).toDouble()).toFloat() * 0.06f)),
+                third,
             )
 
             if (dark) {
@@ -89,7 +96,7 @@ fun SpectrumUpdateBackdrop(
                     val y = ((baseY + t * (0.025f + (index % 4) * 0.006f)) % 1f) * size.height
                     val alpha = if (index % 6 == 0) 0.27f else 0.12f
                     drawCircle(
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = alpha),
+                        color = onBackground.copy(alpha = alpha),
                         radius = if (index % 6 == 0) 1.8f else 1f,
                         center = Offset(x, y),
                     )
@@ -121,9 +128,10 @@ fun SpectrumUpdateAlert(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalSpectrumPalette.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val colors = MaterialTheme.colorScheme
+    val dark = colors.background.luminance() < 0.5f
     val phase = rememberSpectrumLivePhase(motionAllowed, 2_600)
-    val accent = if (updateRequired) MaterialTheme.colorScheme.error else palette.cyan
+    val accent = if (updateRequired) colors.error else palette.cyan
     val description = if (updateRequired) {
         "Требуется обязательное обновление Analyst AI"
     } else {
@@ -205,7 +213,7 @@ fun SpectrumUpdateAlert(
                 drawPath(
                     path = triangle,
                     color = Color.White.copy(alpha = if (dark) 0.58f else 0.42f),
-                    style = Stroke(width = 2.2f, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+                    style = Stroke(width = 2.2f, join = StrokeJoin.Round),
                 )
                 drawLine(
                     color = Color.White,
