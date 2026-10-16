@@ -111,7 +111,7 @@ class PortfolioActionTests(unittest.TestCase):
 
     def test_helper_scopes_the_public_action_and_requeries_the_tree(self):
         root = SCRIPTS.parents[1]
-        source = (root / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text()
+        source = (root / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text(encoding="utf-8")
         for required in ('PORTFOLIO_LIST = "portfolio-content"', 'APP_PACKAGE = "ru.omnicio.app.debug"',
                          'matches.size() != 1', 'node.isVisibleToUser()', 'node.isScrollable()',
                          'getActionList().contains(action)', 'list.performAction(action.getId())',
@@ -123,11 +123,11 @@ class PortfolioActionTests(unittest.TestCase):
         self.assertNotIn('executeShellCommand', source)
 
     def test_allocation_label_and_real_screenshot_remain_required(self):
-        source = (SCRIPTS / "profile_ui_probe.py").read_text()
+        source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
         self.assertIn('self.reveal("Денежные средства", "portfolio-content")', source)
         self.assertIn('self.capture("spectrum-allocation")', source)
         self.assertIn('layout_timeout=12', source)
-        scroll = (SCRIPTS / "profile_scroll.py").read_text()
+        scroll = (SCRIPTS / "profile_scroll.py").read_text(encoding="utf-8")
         self.assertIn('range(max_swipes + 1)', scroll)
         self.assertIn('node.get("package") == PACKAGE', scroll)
 
