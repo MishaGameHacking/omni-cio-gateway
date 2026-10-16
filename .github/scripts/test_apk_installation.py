@@ -147,6 +147,35 @@ def main() -> None:
     def install(label: str, path: Path, update: bool = False) -> None:
         record_install(device, results, label, path, update=update)
 
+    def launch_candidate(label: str) -> None:
+        """Launch the exact candidate and retain an explicit pass/fail record."""
+        result: dict[str, object] = {
+            "test": label,
+            "success": False,
+            "apk_sha256": candidate_digest,
+        }
+        results.append(result)
+        try:
+            launch = device(
+                "shell", "am", "start", "-W", "-n",
+                "ru.omnicio.app.debug/ru.omnicio.app.BootstrapActivity",
+            )
+            print(label.upper() + "_RESULT=" + launch.stdout + launch.stderr, flush=True)
+            if launch.returncode or "Status: ok" not in launch.stdout:
+                raise RuntimeError(f"{label} failed")
+            time.sleep(8)
+            alive = device("shell", "pidof", "ru.omnicio.app.debug")
+            if alive.returncode or not alive.stdout.strip():
+                raise RuntimeError(f"{label} process did not remain running")
+            if apk_digest(apk) != candidate_digest:
+                raise RuntimeError("Candidate changed during emulator checks")
+        except Exception as exc:
+            result["error_type"] = type(exc).__name__
+            raise
+        else:
+            result["success"] = True
+            print(label.upper() + "=success", flush=True)
+
     with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
             [emulator, "-avd", name, "-port", str(port), "-no-window", "-no-audio",
@@ -174,22 +203,12 @@ def main() -> None:
             if previous:
                 install("previous_clean_install", previous)
                 install("upgrade_to_candidate", apk, update=True)
+                launch_candidate("upgrade_bootstrap_launch")
                 removed = device("uninstall", package)
                 if removed.returncode or "Success" not in removed.stdout:
                     raise RuntimeError("Could not reset disposable emulator package")
             install("candidate_clean_install", apk)
-            launch = device("shell", "am", "start", "-W", "-n", package + "/ru.omnicio.app.BootstrapActivity")
-            print("LAUNCH_RESULT=" + launch.stdout + launch.stderr, flush=True)
-            if launch.returncode or "Status: ok" not in launch.stdout:
-                raise RuntimeError("Bootstrap launch failed")
-            time.sleep(8)
-            alive = device("shell", "pidof", package)
-            if alive.returncode or not alive.stdout.strip():
-                raise RuntimeError("App process did not remain running")
-            if apk_digest(apk) != candidate_digest:
-                raise RuntimeError("Candidate changed during emulator checks")
-            results.append({"test": "bootstrap_activity_launch", "success": True, "apk_sha256": candidate_digest})
-            print("BOOTSTRAP_ACTIVITY_LAUNCH=success", flush=True)
+            launch_candidate("bootstrap_activity_launch")
             if args.api == 36 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                 from profile_ui_probe import exercise
                 debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
