@@ -42,10 +42,13 @@ class NativeAiAnalystTests(unittest.TestCase):
         for forbidden in ("Random(", "Math.random", "100/100", "+15%"):
             self.assertNotIn(forbidden, self.card)
 
-    def test_profile_tabs_use_each_label_width_and_center_active_tab(self):
+    def test_profile_tabs_fit_natural_widths_before_scrolling(self):
         self.assertIn("val measuredWidths", self.profile_tabs)
-        self.assertIn("val widths = measuredWidths.map", self.profile_tabs)
+        self.assertIn("val naturalWidths = measuredWidths.map", self.profile_tabs)
+        self.assertIn("val spare =", self.profile_tabs)
+        self.assertIn("val widths = naturalWidths.map", self.profile_tabs)
         self.assertIn("selectedCenterPx", self.profile_tabs)
+        self.assertIn("if (scroll.maxValue == 0)", self.profile_tabs)
         self.assertNotIn("val width = maxOf(equalWidth, labelWidth", self.profile_tabs)
 
     def test_new_bytes_have_the_next_version_identity(self):
