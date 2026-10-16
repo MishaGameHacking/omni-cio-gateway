@@ -100,11 +100,14 @@ class EmulatorFailureTests(unittest.TestCase):
 
     def test_retry_count_is_bounded(self):
         for attempts in (0, 3, True, 1.5):
-            with self.subTest(attempts=attempts), self.assertRaises(ValueError):
-                installation.run_with_transport_retry(
-                    Mock(),
-                    attempts=attempts,
-                )
+            execute = Mock()
+            with self.subTest(attempts=attempts):
+                with self.assertRaises(ValueError):
+                    installation.run_with_transport_retry(
+                        execute,
+                        attempts=attempts,
+                    )
+                execute.assert_not_called()
 
     def test_diagnostics_bound_both_calls(self):
         device = Mock(return_value=Mock(stdout="emulator data"))

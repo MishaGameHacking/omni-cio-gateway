@@ -18,6 +18,7 @@
             android:name=".BootstrapActivity"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"
+            android:intentMatchingFlags="enforceIntentFilter|allowNullAction"
             android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
