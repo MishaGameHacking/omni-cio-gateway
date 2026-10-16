@@ -33,8 +33,8 @@ class Stream:
             raise AssertionError("Unbounded command")
 
     def recv(self, size):
-        result = bytes(self.data[:min(3, size)])
-        del self.data[:len(result)]
+        result = bytes(self.data[: min(3, size)])
+        del self.data[: len(result)]
         return result
 
 
@@ -43,7 +43,11 @@ def ack(sequence=1, status=2, size=0):
 
 
 def action_request(sequence, resource_id, direction):
-    raw = frames.ACTION_FLAG | (frames.SCROLL_LIST_CODES[resource_id] << frames.ACTION_LIST_SHIFT) | sequence
+    raw = (
+        frames.ACTION_FLAG
+        | (frames.SCROLL_LIST_CODES[resource_id] << frames.ACTION_LIST_SHIFT)
+        | sequence
+    )
     if direction == "start":
         raw |= frames.ACTION_START_FLAG
     return struct.pack(">I", raw)
@@ -51,11 +55,17 @@ def action_request(sequence, resource_id, direction):
 
 class SemanticActionTests(unittest.TestCase):
     def test_action_and_following_frame_have_distinct_monotonic_requests(self):
-        xml = b'<hierarchy><node package="ru.omnicio.app.debug" text="fresh"/></hierarchy>'
+        xml = (
+            b'<hierarchy><node package="ru.omnicio.app.debug" '
+            b'text="fresh"/></hierarchy>'
+        )
         stream = Stream(ack() + struct.pack(">III", 2, 1, len(xml)) + xml)
         reader = frames.FrameReader(stream)
         self.assertIsNone(reader.scroll_list("profile-content", "end"))
-        self.assertEqual(next(reader.ready_tree().iter("node")).get("text"), "fresh")
+        self.assertEqual(
+            next(reader.ready_tree().iter("node")).get("text"),
+            "fresh",
+        )
         self.assertEqual(
             stream.sent,
             [action_request(1, "profile-content", "end"), struct.pack(">I", 2)],
@@ -68,13 +78,22 @@ class SemanticActionTests(unittest.TestCase):
                     stream = Stream(ack())
                     reader = frames.FrameReader(stream)
                     reader.scroll_list(resource_id, direction)
-                    self.assertEqual(stream.sent, [action_request(1, resource_id, direction)])
+                    self.assertEqual(
+                        stream.sent,
+                        [action_request(1, resource_id, direction)],
+                    )
 
     def test_unknown_list_or_direction_sends_nothing(self):
-        for resource_id, direction in (("other-list", "end"), ("profile-content", "sideways")):
+        for resource_id, direction in (
+            ("other-list", "end"),
+            ("profile-content", "sideways"),
+        ):
             stream = Stream(b"")
             reader = frames.FrameReader(stream)
-            with self.subTest(resource_id=resource_id, direction=direction), self.assertRaises(ValueError):
+            with self.subTest(
+                resource_id=resource_id,
+                direction=direction,
+            ), self.assertRaises(ValueError):
                 reader.scroll_list(resource_id, direction)
             self.assertEqual(stream.sent, [])
             self.assertFalse(reader.broken)
@@ -89,7 +108,9 @@ class SemanticActionTests(unittest.TestCase):
         for response in (ack(0), ack(2), ack(status=0), ack(size=1), b""):
             stream = Stream(response)
             reader = frames.FrameReader(stream)
-            with self.subTest(response=response), self.assertRaises((ValueError, ConnectionError)):
+            with self.subTest(response=response), self.assertRaises(
+                (ValueError, ConnectionError)
+            ):
                 reader.scroll_list("education-content", "end")
             self.assertTrue(reader.broken)
             sent = len(stream.sent)
@@ -120,9 +141,13 @@ class SemanticActionTests(unittest.TestCase):
         probe = profile.ProfileProbe(device)
         probe.read_tree = reader.ready_tree
         with patch.dict(sys.modules, {"persistent_ui": frames}):
-            probe._semantic_scroll_callback("profile-content", "end")(160, 500, 160, 250)
+            callback = probe._semantic_scroll_callback("profile-content", "end")
+            callback(160, 500, 160, 250)
         self.assertEqual(reader.sequence, 1)
-        self.assertEqual(reader.connection.sent, [action_request(1, "profile-content", "end")])
+        self.assertEqual(
+            reader.connection.sent,
+            [action_request(1, "profile-content", "end")],
+        )
         device.assert_not_called()
 
     def test_probe_uses_owned_reader_for_horizontal_tabs(self):
@@ -131,8 +156,12 @@ class SemanticActionTests(unittest.TestCase):
         probe = profile.ProfileProbe(device)
         probe.read_tree = reader.ready_tree
         with patch.dict(sys.modules, {"persistent_ui": frames}):
-            probe._semantic_scroll_callback("profile-tabs", "start")(80, 200, 260, 200)
-        self.assertEqual(reader.connection.sent, [action_request(1, "profile-tabs", "start")])
+            callback = probe._semantic_scroll_callback("profile-tabs", "start")
+            callback(80, 200, 260, 200)
+        self.assertEqual(
+            reader.connection.sent,
+            [action_request(1, "profile-tabs", "start")],
+        )
         device.assert_not_called()
 
     def test_missing_session_or_wrong_geometry_is_not_a_touch_fallback(self):
@@ -147,53 +176,63 @@ class SemanticActionTests(unittest.TestCase):
             reader = frames.FrameReader(Stream(ack()))
             probe = profile.ProfileProbe(device)
             probe.read_tree = reader.ready_tree
-            with patch.dict(sys.modules, {"persistent_ui": frames}), self.assertRaises(ValueError):
-                probe._semantic_scroll_callback(area, direction)(*coordinates)
+            with patch.dict(sys.modules, {"persistent_ui": frames}):
+                callback = probe._semantic_scroll_callback(area, direction)
+                with self.assertRaises(ValueError):
+                    callback(*coordinates)
             self.assertEqual(reader.sequence, 0)
             device.assert_not_called()
         probe = profile.ProfileProbe(Mock())
-        with patch.dict(sys.modules, {"persistent_ui": frames}), self.assertRaises(ValueError):
+        with patch.dict(sys.modules, {"persistent_ui": frames}), self.assertRaises(
+            ValueError
+        ):
             probe._semantic_scroll_callback("profile-content", "end")
 
     def test_helper_scopes_public_actions_and_requeries_active_root(self):
         root = SCRIPTS.parents[1]
-        source = (root / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text(encoding="utf-8")
+        source = (
+            root
+            / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java"
+        ).read_text(encoding="utf-8")
         for required in (
             'PROFILE_LIST = "profile-content"',
             'EDUCATION_LIST = "education-content"',
             'PORTFOLIO_LIST = "portfolio-content"',
             'PROFILE_TABS = "profile-tabs"',
             'APP_PACKAGE = "ru.omnicio.app.debug"',
-            'matches.size() != 1',
-            'node.isVisibleToUser()',
-            'node.isScrollable()',
-            'getActionList().contains(action)',
-            'list.performAction(action.getId())',
-            'AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD',
-            'AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD',
-            'automation.clearCache()',
-            'automation.getRootInActiveWindow()',
-            'rawRequest & REQUEST_SEQUENCE_MASK',
+            "matches.size() != 1",
+            "node.isVisibleToUser()",
+            "node.isScrollable()",
+            "getActionList().contains(action)",
+            "list.performAction(action.getId())",
+            "AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD",
+            "AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD",
+            "automation.clearCache()",
+            "automation.getRootInActiveWindow()",
+            "rawRequest & REQUEST_SEQUENCE_MASK",
         ):
             self.assertIn(required, source)
-        self.assertNotIn('ACTION_CLICK', source)
-        self.assertNotIn('executeShellCommand', source)
-        self.assertNotIn('getTargetContext()', source)
+        self.assertNotIn("ACTION_CLICK", source)
+        self.assertNotIn("executeShellCommand", source)
+        self.assertNotIn("getTargetContext()", source)
 
     def test_profile_driver_has_no_coordinate_scroll_command(self):
         source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
         self.assertNotIn('"input", "swipe"', source)
         for area in frames.SCROLL_LIST_CODES:
             self.assertIn(area, source)
-        self.assertIn('reader.scroll_list(area, direction)', source)
+        self.assertIn("reader.scroll_list(area, direction)", source)
 
     def test_allocation_label_and_real_screenshot_remain_required(self):
         source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
-        self.assertIn('self.reveal("Денежные средства", "portfolio-content")', source)
+        self.assertIn(
+            'self.reveal("Денежные средства", "portfolio-content")',
+            source,
+        )
         self.assertIn('self.capture("spectrum-allocation")', source)
-        self.assertIn('layout_timeout=12', source)
+        self.assertIn("layout_timeout=12", source)
         scroll = (SCRIPTS / "profile_scroll.py").read_text(encoding="utf-8")
-        self.assertIn('range(max_swipes + 1)', scroll)
+        self.assertIn("range(max_swipes + 1)", scroll)
         self.assertIn('node.get("package") == PACKAGE', scroll)
 
 
