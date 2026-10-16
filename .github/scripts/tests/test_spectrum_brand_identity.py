@@ -42,12 +42,14 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
 
     def test_android_16_only_candidate_has_a_unique_upgrade_code(self):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
-        version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
-        self.assertIsNotNone(version)
-        self.assertGreaterEqual(int(version.group(1)), 27)
+        version_code = re.search(r"versionCode\s*=\s*(\d+)", gradle)
+        version_name = re.search(r'versionName\s*=\s*"(0\.7\.(\d+))"', gradle)
+        self.assertIsNotNone(version_code)
+        self.assertIsNotNone(version_name)
+        self.assertGreaterEqual(int(version_code.group(1)), 27)
+        self.assertGreaterEqual(int(version_name.group(2)), 2)
         for sdk in ("compileSdk = 36", "minSdk = 36", "targetSdk = 36"):
             self.assertIn(sdk, gradle)
-        self.assertIn('versionName = "0.7.2"', gradle)
         self.assertIn('applicationId = "ru.omnicio.app"', gradle)
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
         self.assertIn('isDebuggable = false', gradle)
