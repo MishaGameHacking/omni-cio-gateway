@@ -61,7 +61,7 @@ class SemanticActionTests(unittest.TestCase):
         )
         stream = Stream(ack() + struct.pack(">III", 2, 1, len(xml)) + xml)
         reader = frames.FrameReader(stream)
-        self.assertIsNone(reader.scroll_list("profile-content", "end"))
+        self.assertTrue(reader.scroll_list("profile-content", "end"))
         self.assertEqual(
             next(reader.ready_tree().iter("node")).get("text"),
             "fresh",
@@ -71,13 +71,27 @@ class SemanticActionTests(unittest.TestCase):
             [action_request(1, "profile-content", "end"), struct.pack(">I", 2)],
         )
 
+    def test_boundary_ack_is_false_and_next_fresh_frame_remains_readable(self):
+        xml = (
+            b'<hierarchy><node package="ru.omnicio.app.debug" '
+            b'text="at boundary"/></hierarchy>'
+        )
+        stream = Stream(ack(status=3) + struct.pack(">III", 2, 1, len(xml)) + xml)
+        reader = frames.FrameReader(stream)
+        self.assertFalse(reader.scroll_list("profile-tabs", "start"))
+        self.assertFalse(reader.broken)
+        self.assertEqual(
+            next(reader.ready_tree().iter("node")).get("text"),
+            "at boundary",
+        )
+
     def test_each_whitelisted_list_and_direction_has_a_fixed_request_code(self):
         for resource_id in frames.SCROLL_LIST_CODES:
             for direction in ("start", "end"):
                 with self.subTest(resource_id=resource_id, direction=direction):
                     stream = Stream(ack())
                     reader = frames.FrameReader(stream)
-                    reader.scroll_list(resource_id, direction)
+                    self.assertTrue(reader.scroll_list(resource_id, direction))
                     self.assertEqual(
                         stream.sent,
                         [action_request(1, resource_id, direction)],
@@ -105,7 +119,7 @@ class SemanticActionTests(unittest.TestCase):
         self.assertTrue(reader.broken)
 
     def test_missing_stale_or_payload_bearing_ack_closes_the_stream(self):
-        for response in (ack(0), ack(2), ack(status=0), ack(size=1), b""):
+        for response in (ack(0), ack(2), ack(status=0), ack(status=4), ack(size=1), b""):
             stream = Stream(response)
             reader = frames.FrameReader(stream)
             with self.subTest(response=response), self.assertRaises(
@@ -205,13 +219,16 @@ class SemanticActionTests(unittest.TestCase):
             "node.isScrollable()",
             "getActionList().contains(action)",
             "list.performAction(action.getId())",
+            "performed ? 2 : 3",
             "AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD",
             "AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD",
             "automation.clearCache()",
             "automation.getRootInActiveWindow()",
             "rawRequest & REQUEST_SEQUENCE_MASK",
+            "node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE",
         ):
             self.assertIn(required, source)
+        self.assertNotIn("node.isChecked()", source)
         self.assertNotIn("ACTION_CLICK", source)
         self.assertNotIn("executeShellCommand", source)
         self.assertNotIn("getTargetContext()", source)
