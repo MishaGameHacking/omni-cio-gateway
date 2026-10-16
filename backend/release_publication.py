@@ -45,7 +45,7 @@ def _require_android_16_installation(report: dict, *, sha256: str) -> dict:
     if not isinstance(tested, dict) or tested.get('apk_sha256') != sha256:
         raise ReleaseUnavailable('installation_evidence_missing')
     checks = tested.get('36')
-    required_checks = ('clean_install', 'upgrade', 'launch')
+    required_checks = ('clean_install', 'upgrade', 'upgrade_launch', 'launch')
     if not isinstance(checks, dict) or any(checks.get(key) is not True for key in required_checks):
         raise ReleaseUnavailable('installation_evidence_incomplete')
     return tested
