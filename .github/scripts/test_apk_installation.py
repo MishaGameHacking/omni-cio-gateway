@@ -9,10 +9,45 @@ import socket
 import subprocess
 import time
 
+UIAUTOMATOR_PROCESS = "com.android.commands.uiautomator"
+UIAUTOMATOR_CONNECT_MARKERS = (
+    "timeout while connecting uiautomation",
+    "error while connecting uiautomation",
+)
+UIAUTOMATOR_MIN_INTERVAL_SECONDS = 0.75
+UIAUTOMATOR_RECOVERY_SECONDS = 45
+
 
 def run(args: list[str], *, timeout: int = 120, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, input=stdin, capture_output=True, text=True,
                           encoding="utf-8", errors="replace", timeout=timeout, check=False)
+
+
+def is_uiautomator_dump(command: tuple[str, ...]) -> bool:
+    """Match only the disposable emulator's accessibility-tree command."""
+    return len(command) >= 3 and command[:3] == ("shell", "uiautomator", "dump")
+
+
+def is_uiautomator_connect_timeout(
+    command: tuple[str, ...],
+    response_text: str,
+    crash_text: str = "",
+) -> bool:
+    """Classify only Android's UiAutomation connection failure as recoverable.
+
+    A later successful dump is still required; this helper never converts a failed
+    UI assertion into a pass. Crash-buffer evidence additionally requires the
+    system uiautomator process identity so an app crash cannot be misclassified.
+    """
+    if not is_uiautomator_dump(command):
+        return False
+    response = response_text.lower()
+    if any(marker in response for marker in UIAUTOMATOR_CONNECT_MARKERS):
+        return True
+    crash = crash_text.lower()
+    return UIAUTOMATOR_PROCESS in crash and any(
+        marker in crash for marker in UIAUTOMATOR_CONNECT_MARKERS
+    )
 
 
 def free_emulator_port() -> int:
@@ -103,29 +138,69 @@ def main() -> None:
         "daemon not running",
         "closed",
     )
+    last_uiautomator_dump_finished = 0.0
 
     def device(*command: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-        """Retry only transport loss while the disposable emulator restarts.
+        """Retry only transport loss or a confirmed UiAutomation connection race.
 
         Android may briefly restart the emulator transport while applying system UI mode.
-        ADB returning `device offline` is not an application failure, but all other command
-        failures remain visible and fail closed.
+        Android 16 can also reject rapid, short-lived ``uiautomator dump`` clients while
+        System UI is still releasing the previous UiAutomation connection. Both cases
+        are retried for a bounded period; every later UI label, foreground, palette and
+        screenshot assertion must still pass normally.
         """
-        recovery_deadline = time.monotonic() + max(timeout, 120)
+        nonlocal last_uiautomator_dump_finished
+        ui_dump = is_uiautomator_dump(command)
+        recovery_window = UIAUTOMATOR_RECOVERY_SECONDS if ui_dump else max(timeout, 120)
+        recovery_deadline = time.monotonic() + recovery_window
         while True:
+            if ui_dump:
+                remaining = UIAUTOMATOR_MIN_INTERVAL_SECONDS - (
+                    time.monotonic() - last_uiautomator_dump_finished
+                )
+                if remaining > 0:
+                    time.sleep(remaining)
             try:
                 response = run([adb, "-s", serial, *command], timeout=timeout)
             except subprocess.TimeoutExpired:
-                if time.monotonic() >= recovery_deadline:
-                    raise
                 response = None
+            finally:
+                if ui_dump:
+                    last_uiautomator_dump_finished = time.monotonic()
             if response is not None and response.returncode == 0:
                 return response
             combined = "" if response is None else (response.stdout + "\n" + response.stderr).lower()
-            transient = response is None or any(marker in combined for marker in transient_adb_errors)
+            uiautomator_timeout = ui_dump and response is None
+            if ui_dump and response is not None and not uiautomator_timeout:
+                crash_text = ""
+                if not any(marker in combined for marker in UIAUTOMATOR_CONNECT_MARKERS):
+                    try:
+                        diagnostic = run(
+                            [adb, "-s", serial, "logcat", "-d", "-b", "crash", "-t", "80"],
+                            timeout=10,
+                        )
+                    except subprocess.TimeoutExpired:
+                        diagnostic = None
+                    if diagnostic is not None and diagnostic.returncode == 0:
+                        crash_text = diagnostic.stdout + "\n" + diagnostic.stderr
+                uiautomator_timeout = is_uiautomator_connect_timeout(
+                    command,
+                    combined,
+                    crash_text,
+                )
+            transient_transport = response is None or any(
+                marker in combined for marker in transient_adb_errors
+            )
+            transient = transient_transport or uiautomator_timeout
             if not transient or time.monotonic() >= recovery_deadline:
-                assert response is not None
+                if response is None:
+                    raise subprocess.TimeoutExpired([adb, "-s", serial, *command], timeout)
                 return response
+            if uiautomator_timeout:
+                detail = combined.strip() or "confirmed crash-buffer timeout"
+                print("UIAUTOMATOR_TRANSIENT_RECOVERY=" + detail[-2000:], flush=True)
+                time.sleep(2)
+                continue
             print("ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"), flush=True)
             time.sleep(2)
             try:
