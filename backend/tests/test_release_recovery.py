@@ -24,7 +24,7 @@ class PublicationRecoveryTests(unittest.TestCase):
 
     def report(self, code=23):
         digest = hashlib.sha256(self.apk.read_bytes()).hexdigest()
-        checks = dict(clean_install=True, upgrade=True, launch=True)
+        checks = dict(clean_install=True, upgrade=True, upgrade_launch=True, launch=True)
         return dict(package=PACKAGE, version_code=code, version_name=f'test-{code}',
                     min_sdk=36, sha256=digest, bytes=self.apk.stat().st_size,
                     certificate_sha256=CERTIFICATE, signature_v2=True, zipalign_16kb=True,
