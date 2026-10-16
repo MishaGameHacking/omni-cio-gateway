@@ -127,12 +127,25 @@ class ProfileProbe:
 
         return swipe
 
+    def _portfolio_forward(self, x1, y1, x2, y2):
+        """Use the real list action, not a drag beginning over a broker action button."""
+        from persistent_ui import FrameReader
+
+        reader = getattr(self.read_tree, "__self__", None)
+        if not isinstance(reader, FrameReader) or x1 != x2 or y2 >= y1:
+            raise ValueError("A forward portfolio action needs the owned frame session")
+        reader.scroll_portfolio()
+
     def reveal(self, text, area="profile-content", direction="end"):
         from profile_scroll import reveal_in_list
 
+        # Keep all target/package/geometry checks and the original overall budget.
+        # Only this exact portfolio scenario uses its public accessibility action;
+        # profile, education, tabs and dialog controls retain their touch checks.
+        scroll = self._portfolio_forward if area == "portfolio-content" else self._swipe_callback()
         target = reveal_in_list(
             self.tree,
-            self._swipe_callback(),
+            scroll,
             text,
             resource_id=area,
             direction=direction,

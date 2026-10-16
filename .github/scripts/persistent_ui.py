@@ -1,7 +1,7 @@
-"""One authenticated, read-only UiAutomation session per disposable-emulator run.
+"""One authenticated UiAutomation session per disposable-emulator run.
 
-No shell dump fallback: a disconnected/invalid frame fails the UI check. Nothing
-in this module is included in or installed by the user's preview APK.
+Fresh frame reads and a narrowly scoped portfolio scroll action only. No shell
+fallback: disconnected/invalid frames fail. This is not part of the preview APK.
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ DRIVER_COMPONENT = DRIVER_PACKAGE + "/.FrameInstrumentation"
 MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAME_TIMEOUT = 30
 FRAME_DEADLINE_ERROR = "Fresh UI frame deadline exceeded"
+PORTFOLIO_SCROLL_BIT = 0x80000000
 
 
 def read_exact(connection, size: int, *, deadline: float) -> bytes:
@@ -73,6 +74,34 @@ class FrameReader:
             if time.monotonic() >= deadline:
                 raise TimeoutError(FRAME_DEADLINE_ERROR)
             return root
+        except Exception:
+            self.broken = True
+            raise
+
+    def scroll_portfolio(self):
+        """Request only ACTION_SCROLL_FORWARD on the exact visible portfolio list.
+
+        No coordinates, arbitrary target names or action IDs cross this protocol.
+        Acknowledging an action is not evidence that a required label is visible:
+        the existing bounded driver must read and validate the next fresh frame.
+        """
+        if self.broken:
+            raise ConnectionError("Failed UiAutomation stream cannot perform actions")
+        self.sequence += 1
+        try:
+            if not 0 < self.sequence < PORTFOLIO_SCROLL_BIT:
+                raise ValueError("UiAutomation request sequence exhausted")
+            deadline = time.monotonic() + 12
+            self.connection.settimeout(12)
+            self.connection.sendall(struct.pack(">I", self.sequence | PORTFOLIO_SCROLL_BIT))
+            received, status, size = struct.unpack(
+                ">III", read_exact(self.connection, 12, deadline=deadline)
+            )
+            if (received, status, size) != (self.sequence, 2, 0):
+                raise ValueError("Invalid portfolio scroll acknowledgement")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Portfolio scroll acknowledgement exceeded deadline")
+            print(f"PORTFOLIO_UI_ACTION=scroll-forward;sequence-{self.sequence}", flush=True)
         except Exception:
             self.broken = True
             raise
