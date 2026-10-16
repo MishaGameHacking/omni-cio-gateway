@@ -8,11 +8,11 @@ SCRIPT = ROOT / ".github/scripts/repair_moscow_update_channel.sh"
 RUNNER = ROOT / ".github/scripts/run_moscow_update_channel_repair.py"
 WORKFLOW = ROOT / ".github/workflows/repair-moscow-update-channel.yml"
 
-RELEASE_COMMIT = "ce5cbc190d2c875364716a6454f774bf543c2a08"
+RELEASE_COMMIT = "bb6638fab2188c718ccad4d8dd7b3ed76b34fdc8"
 RELEASE_TAG = f"android-preview-{RELEASE_COMMIT}"
-RELEASE_APK_NAME = "Analyst-AI-0.7.4-preview-ce5cbc1.apk"
-RELEASE_APK_SHA256 = "1229b9ced44dfc54fbdfe40ba7203f557a41ca8c574bde1ca90caa107d7c799f"
-RELEASE_REPORT_SHA256 = "e10ce914cd2535716bbcb2986f88055b03e85fd2bcec98131a18ce8c62a65170"
+RELEASE_APK_NAME = "Analyst-AI-0.7.5-preview-bb6638f.apk"
+RELEASE_APK_SHA256 = "739fb8b16865a742118ca1930bc2488a28c3cf807a23c20628df9ebb7ca75bcb"
+RELEASE_REPORT_SHA256 = "c418629e207ec62159352a44bd78bc8400a55e17052b9fcff11e94aa8ea2ffad"
 CERTIFICATE_SHA256 = "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
 
 
@@ -41,15 +41,15 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
         self.assertNotIn('request("POST", "/servers",', self.patched)
         self.assertNotIn("create_server", self.patched.lower())
 
-    def test_only_exact_verified_074_release_can_be_published(self):
+    def test_only_exact_verified_075_release_can_be_published(self):
         for value in (
-            'VERSION_CODE="29"',
-            'VERSION_NAME="0.7.4-preview"',
+            'VERSION_CODE="30"',
+            'VERSION_NAME="0.7.5-preview"',
             f'APK_SHA256="{RELEASE_APK_SHA256}"',
-            'APK_BYTES="4167544"',
+            'APK_BYTES="4167540"',
             f'CERTIFICATE_SHA256="{CERTIFICATE_SHA256}"',
             'MIN_SDK="36"',
-            'PUBLISHED_AT="1792171072"',
+            'PUBLISHED_AT="1792181989"',
             'report.get("device_install_test") != "passed_on_emulators_not_a_physical_phone"',
             'report.get("signature_v2") is not True',
         ):
@@ -74,16 +74,16 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
             'assert payload["apk_bytes"] == 4151124',
         ):
             self.assertNotIn(stale, self.patched)
-        self.assertIn("Живые элементы Spectrum", self.patched)
-        self.assertIn("обновление старых preview-версий", self.patched)
+        self.assertIn("Независимое серверное наблюдение", self.patched)
+        self.assertIn("статус свежести данных", self.patched)
 
-    def test_local_and_public_policy_readback_expect_the_same_074_identity(self):
+    def test_local_and_public_policy_readback_expect_the_same_075_identity(self):
         expected_twice = (
-            'assert payload["version_code"] == 29',
-            'assert payload["minimum_version_code"] == 29',
-            'assert payload["version_name"] == "0.7.4-preview"',
+            'assert payload["version_code"] == 30',
+            'assert payload["minimum_version_code"] == 30',
+            'assert payload["version_name"] == "0.7.5-preview"',
             f'assert payload["apk_sha256"] == "{RELEASE_APK_SHA256}"',
-            'assert payload["apk_bytes"] == 4167544',
+            'assert payload["apk_bytes"] == 4167540',
         )
         for marker in expected_twice:
             with self.subTest(marker=marker):
