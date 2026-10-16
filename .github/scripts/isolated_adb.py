@@ -97,9 +97,11 @@ def isolated_adb_server(adb: Path, work: Path):
         os.environ.pop("ANDROID_SERIAL", None)
         with log_path.open("w", encoding="utf-8") as log:
             # This server needs only the emulator transport, not USB or mDNS.
+            # ADB accepts localhost for listening, but rejects numeric hostnames.
+            # Clients use 127.0.0.1; the listener stays loopback-only (no -a).
             # Keep the USB serial filter too, and address all emulator calls -s.
             process = subprocess.Popen(
-                [str(adb), "-L", values["ADB_SERVER_SOCKET"], "--one-device",
+                [str(adb), "-L", f"tcp:localhost:{port}", "--one-device",
                  f"analyst-ci-no-usb-{os.getpid()}", "server", "nodaemon"],
                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
             )
