@@ -10,12 +10,27 @@ PREVIOUS = 'b' * 64
 def reports():
     runs = []
     for api in (36,):
-        results = [{'test': name, 'success': True, 'apk_sha256': CANDIDATE}
-                   for name in ('upgrade_to_candidate', 'candidate_clean_install', 'activity_launch')]
+        results = [
+            {'test': name, 'success': True, 'apk_sha256': CANDIDATE}
+            for name in (
+                'upgrade_to_candidate',
+                'upgrade_bootstrap_launch',
+                'candidate_clean_install',
+                'activity_launch',
+            )
+        ]
         results.insert(0, {'test': 'previous_clean_install', 'success': True, 'apk_sha256': PREVIOUS})
         if api == 36:
-            results += [{'test': 'debug_ui_fixture_install', 'success': True}, {'test': 'profile_ui', 'success': True}]
-        runs.append({'android_api': api, 'abi': 'x86_64', 'profile_ui_required': api == 36, 'results': results})
+            results += [
+                {'test': 'debug_ui_fixture_install', 'success': True},
+                {'test': 'profile_ui', 'success': True},
+            ]
+        runs.append({
+            'android_api': api,
+            'abi': 'x86_64',
+            'profile_ui_required': api == 36,
+            'results': results,
+        })
     return runs
 
 
@@ -24,10 +39,15 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(InstallationEvidenceError):
             from_ci_reports(data, CANDIDATE)
 
-    def test_both_emulators_and_exact_artifact(self):
+    def test_android_16_and_exact_artifact(self):
         result = from_ci_reports(reports(), CANDIDATE)
         self.assertEqual(set(result), {'apk_sha256', '36'})
-        self.assertEqual(result['36'], {'clean_install': True, 'upgrade': True, 'launch': True})
+        self.assertEqual(result['36'], {
+            'clean_install': True,
+            'upgrade': True,
+            'upgrade_launch': True,
+            'launch': True,
+        })
 
     def test_transcript_is_not_mutated(self):
         data = reports()
@@ -50,7 +70,14 @@ class EvidenceTests(unittest.TestCase):
             self.reject(data)
 
     def test_missing_result(self):
-        for name in ('previous_clean_install', 'upgrade_to_candidate', 'candidate_clean_install', 'activity_launch'):
+        required = (
+            'previous_clean_install',
+            'upgrade_to_candidate',
+            'upgrade_bootstrap_launch',
+            'candidate_clean_install',
+            'activity_launch',
+        )
+        for name in required:
             data = reports()
             data[0]['results'] = [r for r in data[0]['results'] if r['test'] != name]
             self.reject(data)
@@ -72,7 +99,13 @@ class EvidenceTests(unittest.TestCase):
         self.reject(data)
 
     def test_wrong_or_missing_artifact_digest(self):
-        for name in ('upgrade_to_candidate', 'candidate_clean_install', 'activity_launch'):
+        bound = (
+            'upgrade_to_candidate',
+            'upgrade_bootstrap_launch',
+            'candidate_clean_install',
+            'activity_launch',
+        )
+        for name in bound:
             data = reports()
             next(r for r in data[0]['results'] if r['test'] == name)['apk_sha256'] = PREVIOUS
             self.reject(data)
@@ -93,9 +126,13 @@ class EvidenceTests(unittest.TestCase):
             next(r for r in run['results'] if r['test'] == 'activity_launch')['test'] = 'bootstrap_activity_launch'
         self.assertIn('36', from_ci_reports(data, CANDIDATE))
 
-    def test_two_launcher_results_rejected(self):
+    def test_two_clean_launcher_results_rejected(self):
         data = reports()
-        data[0]['results'].append({'test': 'bootstrap_activity_launch', 'success': True, 'apk_sha256': CANDIDATE})
+        data[0]['results'].append({
+            'test': 'bootstrap_activity_launch',
+            'success': True,
+            'apk_sha256': CANDIDATE,
+        })
         self.reject(data)
 
     def test_profile_cannot_be_disabled_for_publication(self):
