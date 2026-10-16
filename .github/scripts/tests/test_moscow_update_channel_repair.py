@@ -25,9 +25,9 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
         spec = spec_from_file_location("repair_launcher", RUNNER)
         if spec is None or spec.loader is None:
             raise AssertionError("repair launcher cannot be imported")
-        module = module_from_spec(spec)
-        spec.loader.exec_module(module)
-        cls.patched = module.patched_source()
+        cls.module = module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+        cls.patched = cls.module.patched_source()
 
     def test_exact_existing_moscow_server_is_required(self):
         for value in (
@@ -58,9 +58,31 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
             'VERSION_NAME="0.6.0-preview"',
             'APK_SHA256="31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
             'APK_BYTES="4100464"',
+            'assert payload["version_code"] == 23',
+            'assert payload["minimum_version_code"] == 23',
+            'assert payload["version_name"] == "0.6.0-preview"',
+            'assert payload["apk_bytes"] == 4100464',
         ):
             self.assertNotIn(stale, self.patched)
         self.assertIn("Закрытый доступ до пяти аккаунтов", self.patched)
+
+    def test_local_and_public_policy_readback_expect_the_same_071_identity(self):
+        expected_twice = (
+            'assert payload["version_code"] == 26',
+            'assert payload["minimum_version_code"] == 26',
+            'assert payload["version_name"] == "0.7.1-preview"',
+            f'assert payload["apk_sha256"] == "{RELEASE_APK_SHA256}"',
+            'assert payload["apk_bytes"] == 4151124',
+        )
+        for marker in expected_twice:
+            with self.subTest(marker=marker):
+                self.assertEqual(self.patched.count(marker), 2)
+
+    def test_release_replacement_counts_fail_closed(self):
+        with self.assertRaises(RuntimeError):
+            self.module.replace_exact_count("marker marker", "marker", "new", 1)
+        with self.assertRaises(RuntimeError):
+            self.module.replace_exact_count("already new", "old", "new", 1)
 
     def test_workflow_pins_release_commit_assets_and_digests(self):
         for value in (
@@ -116,7 +138,7 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
                 1,
             )
         self.assertIn("RELEASE_REPLACEMENTS", self.runner)
-        self.assertIn("replace_exact_once", self.runner)
+        self.assertIn("replace_exact_count", self.runner)
         self.assertIn("--check", self.runner)
         self.assertIn("READONLY_ENV_REPAIR_CHECK=passed", self.runner)
 

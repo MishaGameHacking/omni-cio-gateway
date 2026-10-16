@@ -17,7 +17,7 @@ def report() -> dict:
         "version_code": 23,
         "version_name": "0.6.0-preview",
         "package": "ru.omnicio.app.debug",
-        "min_sdk": 33,
+        "min_sdk": 36,
         "sha256": "a" * 64,
         "certificate_sha256": "b" * 64,
         "bytes": 4_000_000,

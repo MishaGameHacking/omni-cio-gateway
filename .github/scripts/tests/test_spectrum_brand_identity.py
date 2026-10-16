@@ -40,14 +40,30 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
         self.assertEqual(gradient.get(ANDROID + "endColor"), "#030C17")
         self.assertFalse(background.findall(".//bitmap"))
 
-    def test_consolidated_candidate_has_a_unique_upgrade_code(self):
+    def test_android_16_only_candidate_has_a_unique_upgrade_code(self):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
         self.assertIsNotNone(version)
-        self.assertGreater(int(version.group(1)), 24)
+        self.assertEqual(int(version.group(1)), 27)
+        for sdk in ("compileSdk = 36", "minSdk = 36", "targetSdk = 36"):
+            self.assertIn(sdk, gradle)
+        self.assertIn('versionName = "0.7.2"', gradle)
+        self.assertNotIn('versionName = "0.7.1"', gradle)
         self.assertIn('applicationId = "ru.omnicio.app"', gradle)
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
         self.assertIn('isDebuggable = false', gradle)
+
+    def test_about_dialog_uses_build_identity_and_android_16_text(self):
+        profile = (
+            ROOT / "app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "Версия ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            profile,
+        )
+        self.assertIn("только для Android 16 и новее", profile)
+        self.assertNotIn("Android 13+", profile)
+        self.assertNotIn("Версия 0.7.1-preview", profile)
 
 
 if __name__ == "__main__":

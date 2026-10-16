@@ -25,6 +25,13 @@ class InstallationReportTests(unittest.TestCase):
     def test_required_upgrade_report(self):
         self.validate(report(module.BASE_TESTS, module.UPGRADE_TESTS), upgrade=True)
 
+    def test_upgrade_requires_post_install_launch(self):
+        self.assertIn("upgrade_bootstrap_launch", module.UPGRADE_TESTS)
+        rows = report(module.BASE_TESTS, module.UPGRADE_TESTS)
+        rows = [row for row in rows if row["test"] != "upgrade_bootstrap_launch"]
+        with self.assertRaises(ValueError):
+            self.validate(rows, upgrade=True)
+
     def test_required_profile_report(self):
         self.validate(report(module.BASE_TESTS, module.PROFILE_TESTS), profile=True)
 

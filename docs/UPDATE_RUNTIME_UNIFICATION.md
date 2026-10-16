@@ -24,7 +24,7 @@ Before #833 is merged, the exact head must satisfy all of the following without 
 
 1. Backend tests and compilation succeed.
 2. Android lint and debug, release and preview builds succeed.
-3. Clean installation, upgrade from the installed 0.5.1 preview, launcher/auth routing and profile/education UI checks succeed on the configured Android 13 and Android 16 emulators.
+3. Clean installation, upgrade from the installed 0.5.1 preview, launcher/auth routing and profile/education UI checks succeed on the configured Android 16 emulators.
 4. SonarQube Cloud reports no new issue, accepted issue, security hotspot or annotation.
 5. The branch contains the real post-#832 history and no unresolved review thread.
 
