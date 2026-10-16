@@ -1,0 +1,197 @@
+"""Protocol, isolation and failure-preservation tests; no Android pass is inferred."""
+import importlib.util
+from pathlib import Path
+import struct
+import sys
+from contextlib import contextmanager
+import unittest
+from unittest.mock import Mock, patch
+import xml.etree.ElementTree as ET
+
+SCRIPTS = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("persistent_ui", SCRIPTS / "persistent_ui.py")
+frames = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(frames)
+XML = b'<?xml version="1.0"?><hierarchy><node package="ru.omnicio.app.debug" text="A"/></hierarchy>'
+
+
+class Stream:
+    def __init__(self, data):
+        self.data = bytearray(data)
+        self.sent = []
+    def settimeout(self, value):
+        if value <= 0:
+            raise AssertionError("Deadline not bounded")
+    def recv(self, size):
+        size = min(size, 3, len(self.data))
+        result = bytes(self.data[:size])
+        del self.data[:size]
+        return result
+    def sendall(self, data):
+        self.sent.append(data)
+
+
+def packet(sequence=1, status=1, payload=XML):
+    return struct.pack(">III", sequence, status, len(payload)) + payload
+
+
+class FrameProtocolTests(unittest.TestCase):
+    def test_partial_reads_and_monotonic_fresh_requests(self):
+        stream = Stream(packet() + packet(2, payload=XML.replace(b'"A"', b'"B"')))
+        reader = frames.FrameReader(stream)
+        self.assertEqual(next(reader.ready_tree().iter("node")).get("text"), "A")
+        self.assertEqual(next(reader.ready_tree().iter("node")).get("text"), "B")
+        self.assertEqual(stream.sent, [struct.pack(">I", 1), struct.pack(">I", 2)])
+
+    def test_null_root_does_not_reuse_frame_or_disconnect(self):
+        reader = frames.FrameReader(Stream(packet(status=0, payload=b"") + packet(2)))
+        with self.assertRaises(RuntimeError):
+            reader.ready_tree()
+        self.assertFalse(reader.broken)
+        self.assertEqual(reader.ready_tree().tag, "hierarchy")
+
+    def test_stale_out_of_order_and_unknown_status_are_fatal(self):
+        for data in (packet(0), packet(2), packet(status=9), packet(status=0)):
+            with self.subTest(data=data[:12]):
+                reader = frames.FrameReader(Stream(data))
+                with self.assertRaises(ValueError):
+                    reader.tree()
+                with self.assertRaises(ConnectionError):
+                    reader.tree()
+
+    def test_oversized_payload_is_rejected_before_read(self):
+        stream = Stream(struct.pack(">III", 1, 1, frames.MAX_FRAME_BYTES + 1))
+        with self.assertRaises(ValueError):
+            frames.FrameReader(stream).tree()
+
+    def test_truncated_frame_and_timeout_cannot_return_success(self):
+        with self.assertRaises(ConnectionError):
+            frames.FrameReader(Stream(packet()[:-1])).tree()
+        stream = Mock()
+        stream.recv.side_effect = TimeoutError("frame timeout")
+        with self.assertRaises(TimeoutError):
+            frames.FrameReader(stream).tree()
+
+    def test_empty_malformed_or_entity_xml_is_rejected(self):
+        for xml in (b"", b"not xml", b"<hierarchy/>", b"<other><node/></other>",
+                    b'<!DOCTYPE hierarchy [<!ENTITY x "bad">]><hierarchy><node/></hierarchy>'):
+            with self.subTest(xml=xml), self.assertRaises((ValueError, ET.ParseError)):
+                frames.FrameReader(Stream(packet(payload=xml))).tree()
+
+    def test_deadline_is_global_not_reset_for_each_packet_fragment(self):
+        with patch.object(frames.time, "monotonic", return_value=2), self.assertRaises(TimeoutError):
+            frames.read_exact(Stream(b"x"), 1, deadline=1)
+
+    def test_disposable_check_refuses_physical_wrong_avd_or_api(self):
+        for values in (("other-avd\nOK",), ("analyst-install-1-1\nOK", "0"),
+                       ("analyst-install-1-1\nOK", "1", "35")):
+            device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in values])
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                frames.assert_disposable(device)
+            self.assertFalse(any("install" in call.args for call in device.call_args_list))
+
+    def test_disposable_check_accepts_only_owned_api36(self):
+        device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in ("analyst-install-123-2\nOK", "1", "36")])
+        frames.assert_disposable(device)
+        self.assertEqual(device.call_count, 3)
+
+    def test_checked_preserves_both_output_streams_and_code(self):
+        device = Mock(return_value=Mock(returncode=7, stdout="stdout error", stderr="stderr error"))
+        with self.assertRaisesRegex(RuntimeError, "7.*stdout error") as caught:
+            frames.checked(device, "shell", "test")
+        self.assertIn("stderr error", str(caught.exception))
+
+    def test_cleanup_never_kills_app_or_global_adb_and_preserves_assertion(self):
+        original = AssertionError("wrong screen")
+        connection = Mock()
+        connection.sendall.side_effect = ConnectionError("closed")
+        device = Mock(side_effect=OSError("device lost"))
+        frames.cleanup_session(device, connection, 53000, original)
+        connection.close.assert_called_once()
+        self.assertIn("CI frame cleanup failed", original.__notes__[0])
+        self.assertEqual(device.call_args_list[0].args, ("shell", "am", "force-stop", frames.DRIVER_PACKAGE))
+        self.assertEqual(device.call_args_list[1].args, ("forward", "--remove", "tcp:53000"))
+
+    def test_cleanup_failure_blocks_an_otherwise_successful_pass(self):
+        device = Mock(side_effect=OSError("stop failed"))
+        with self.assertRaises(OSError):
+            frames.cleanup_session(device, None, None, None)
+
+    def test_bad_handshake_is_not_retried_as_ready(self):
+        connection = Mock()
+        connection.recv.return_value = struct.pack(">I", 99)
+        with patch.object(frames.socket, "create_connection", return_value=connection), self.assertRaises(ValueError):
+            frames.connect_session(53000, "a" * 64)
+        connection.close.assert_called_once()
+
+
+class ProfileSessionTests(unittest.TestCase):
+    def load_profile(self):
+        spec = importlib.util.spec_from_file_location("frame_test_profile", SCRIPTS / "profile_ui_probe.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_missing_session_has_no_legacy_shell_fallback(self):
+        profile = self.load_profile()
+        device = Mock()
+        with self.assertRaises(RuntimeError):
+            profile.ProfileProbe(device).tree()
+        device.assert_not_called()
+
+    def test_existing_checks_are_wrapped_in_one_session(self):
+        profile = self.load_profile()
+        events = []
+        reader = Mock()
+        device = Mock()
+        @contextmanager
+        def session(target):
+            self.assertIs(target, device)
+            events.append("start")
+            try:
+                yield reader
+            finally:
+                events.append("end")
+        with patch.object(frames, "frame_session", session), \
+                patch.dict(sys.modules, {"persistent_ui": frames}), \
+                patch.object(profile, "exercise_checks") as checks:
+            profile.exercise(device)
+        checks.assert_called_once_with(device, reader)
+        self.assertEqual(events, ["start", "end"])
+
+    def test_frame_session_cannot_swallow_a_real_ui_assertion(self):
+        profile = self.load_profile()
+        original = AssertionError("wrong palette")
+        @contextmanager
+        def session(target):
+            yield Mock()
+        with patch.object(frames, "frame_session", session), \
+                patch.dict(sys.modules, {"persistent_ui": frames}), \
+                patch.object(profile, "exercise_checks", side_effect=original), \
+                self.assertRaises(AssertionError) as caught:
+            profile.exercise(Mock())
+        self.assertIs(caught.exception, original)
+
+
+class DriverSourceTests(unittest.TestCase):
+    def test_helper_is_separate_test_only_without_runtime_dependency(self):
+        root = SCRIPTS.parents[1]
+        manifest = (root / "ci-ui-driver/src/main/AndroidManifest.xml").read_text()
+        build = (root / "ci-ui-driver/build.gradle.kts").read_text()
+        java = (root / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text()
+        self.assertIn('android:testOnly="true"', manifest)
+        self.assertIn('android:targetPackage="ru.omnicio.ciframe"', manifest)
+        self.assertNotIn("uses-permission", manifest)
+        self.assertIn("minSdk = 36", build)
+        self.assertIn("it.enable = false", build)
+        self.assertEqual(java.count("getUiAutomation("), 1)
+        self.assertIn("automation.clearCache()", java)
+        self.assertIn("getRootInActiveWindow()", java)
+        self.assertIn("MessageDigest.isEqual", java)
+        self.assertNotIn("waitForIdle", java)
+        self.assertNotIn("executeShellCommand", java)
+        self.assertNotIn("getDeclared", java)
+
+
+if __name__ == "__main__":
+    unittest.main()

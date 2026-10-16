@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Analyst AI CI frame driver" android:testOnly="true"
+        android:allowBackup="false" android:usesCleartextTraffic="false" />
+    <instrumentation android:name=".FrameInstrumentation"
+        android:targetPackage="ru.omnicio.ciframe" android:functionalTest="true" />
+</manifest>

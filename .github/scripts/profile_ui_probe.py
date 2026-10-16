@@ -45,17 +45,19 @@ def node_bounds(node: ET.Element) -> tuple[int, int, int, int]:
 class ProfileProbe:
     def __init__(self, device):
         self.device = device
+        self.read_tree = None
 
     def command(self, *args, timeout=15):
         response = self.device(*args, timeout=timeout)
         if response.returncode:
-            raise RuntimeError("UI test command failed: " + response.stderr)
+            detail = (response.stdout + "\n" + response.stderr).strip()[-1500:]
+            raise RuntimeError(f"UI test command failed ({response.returncode}): {detail}")
         return response.stdout
 
     def tree(self):
-        from profile_snapshot import fresh_tree
-
-        return fresh_tree(self.command)
+        if self.read_tree is None:
+            raise RuntimeError("Persistent UI frame session is not connected")
+        return self.read_tree()
 
     def capture(self, name: str):
         """Capture a real frame through the official emulator console.
@@ -348,7 +350,16 @@ def night_setting(output: str) -> str:
 
 
 def exercise(device) -> None:
+    from persistent_ui import frame_session
+
+    with frame_session(device) as read_tree:
+        exercise_checks(device, read_tree)
+
+
+def exercise_checks(device, read_tree) -> None:
+    """Run the unchanged screen assertions with an explicitly scoped frame source."""
     probe = ProfileProbe(device)
+    probe.read_tree = read_tree
     original_night = night_setting(probe.command("shell", "cmd", "uimode", "night"))
     original_scale = probe.command("shell", "settings", "get", "system", "font_scale").strip()
     if re.fullmatch(r"\d(?:\.\d{1,3})?", original_scale) is None:

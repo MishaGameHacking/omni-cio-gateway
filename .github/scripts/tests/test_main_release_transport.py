@@ -195,7 +195,7 @@ class SnapshotTests(unittest.TestCase):
         with patch.object(profile, "ProfileProbe", return_value=driver), \
                 patch.dict(sys.modules, {"profile_snapshot": snapshot}):
             with self.assertRaises(AssertionError) as caught:
-                profile.exercise(device)
+                profile.exercise_checks(device, Mock())
         self.assertIs(caught.exception, original)
         driver.profile_preflight.assert_not_called()
 
