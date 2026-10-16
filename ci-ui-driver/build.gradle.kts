@@ -14,6 +14,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // Secure defaults remain in place even if the release variant is enabled
+    // deliberately in a future change; today the variant remains disabled below.
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+    }
     lint { abortOnError = true }
 }
 androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) {

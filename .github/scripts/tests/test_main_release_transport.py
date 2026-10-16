@@ -192,10 +192,11 @@ class SnapshotTests(unittest.TestCase):
         driver.command.side_effect = ["Night mode: auto", "1.0", installation.EmulatorTransportLost("offline"), None]
         driver.dashboards.side_effect = original
         device = Mock()
+        reader = Mock()
         with patch.object(profile, "ProfileProbe", return_value=driver), \
                 patch.dict(sys.modules, {"profile_snapshot": snapshot}):
             with self.assertRaises(AssertionError) as caught:
-                profile.exercise_checks(device, Mock())
+                profile.exercise_checks(device, reader)
         self.assertIs(caught.exception, original)
         driver.profile_preflight.assert_not_called()
 

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "app/**"
+      - "ci-ui-driver/**"
       - "backend/installation_evidence.py"
       - "build.gradle.kts"
       - "settings.gradle.kts"

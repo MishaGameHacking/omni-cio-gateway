@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "app/**"
+      - "ci-ui-driver/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"

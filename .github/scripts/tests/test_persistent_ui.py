@@ -61,26 +61,31 @@ class FrameProtocolTests(unittest.TestCase):
 
     def test_oversized_payload_is_rejected_before_read(self):
         stream = Stream(struct.pack(">III", 1, 1, frames.MAX_FRAME_BYTES + 1))
+        reader = frames.FrameReader(stream)
         with self.assertRaises(ValueError):
-            frames.FrameReader(stream).tree()
+            reader.tree()
 
     def test_truncated_frame_and_timeout_cannot_return_success(self):
+        reader = frames.FrameReader(Stream(packet()[:-1]))
         with self.assertRaises(ConnectionError):
-            frames.FrameReader(Stream(packet()[:-1])).tree()
+            reader.tree()
         stream = Mock()
         stream.recv.side_effect = TimeoutError("frame timeout")
+        reader = frames.FrameReader(stream)
         with self.assertRaises(TimeoutError):
-            frames.FrameReader(stream).tree()
+            reader.tree()
 
     def test_empty_malformed_or_entity_xml_is_rejected(self):
         for xml in (b"", b"not xml", b"<hierarchy/>", b"<other><node/></other>",
                     b'<!DOCTYPE hierarchy [<!ENTITY x "bad">]><hierarchy><node/></hierarchy>'):
+            reader = frames.FrameReader(Stream(packet(payload=xml)))
             with self.subTest(xml=xml), self.assertRaises((ValueError, ET.ParseError)):
-                frames.FrameReader(Stream(packet(payload=xml))).tree()
+                reader.tree()
 
     def test_deadline_is_global_not_reset_for_each_packet_fragment(self):
+        stream = Stream(b"x")
         with patch.object(frames.time, "monotonic", return_value=2), self.assertRaises(TimeoutError):
-            frames.read_exact(Stream(b"x"), 1, deadline=1)
+            frames.read_exact(stream, 1, deadline=1)
 
     def test_disposable_check_refuses_physical_wrong_avd_or_api(self):
         for values in (("other-avd\nOK",), ("analyst-install-1-1\nOK", "0"),
@@ -160,8 +165,9 @@ class ProfileSessionTests(unittest.TestCase):
     def test_missing_session_has_no_legacy_shell_fallback(self):
         profile = self.load_profile()
         device = Mock()
+        probe = profile.ProfileProbe(device)
         with self.assertRaises(RuntimeError):
-            profile.ProfileProbe(device).tree()
+            probe.tree()
         device.assert_not_called()
 
     def test_existing_checks_are_wrapped_in_one_session(self):
@@ -187,6 +193,7 @@ class ProfileSessionTests(unittest.TestCase):
     def test_frame_session_cannot_swallow_a_real_ui_assertion(self):
         profile = self.load_profile()
         original = AssertionError("wrong palette")
+        device = Mock()
         @contextmanager
         def session(target):
             yield Mock()
@@ -194,7 +201,7 @@ class ProfileSessionTests(unittest.TestCase):
                 patch.dict(sys.modules, {"persistent_ui": frames}), \
                 patch.object(profile, "exercise_checks", side_effect=original), \
                 self.assertRaises(AssertionError) as caught:
-            profile.exercise(Mock())
+            profile.exercise(device)
         self.assertIs(caught.exception, original)
 
 
@@ -209,6 +216,8 @@ class DriverSourceTests(unittest.TestCase):
         self.assertNotIn("uses-permission", manifest)
         self.assertIn("minSdk = 36", build)
         self.assertIn("it.enable = false", build)
+        self.assertIn("isMinifyEnabled = true", build)
+        self.assertIn("isShrinkResources = true", build)
         self.assertEqual(java.count("getUiAutomation("), 1)
         self.assertIn("automation.clearCache()", java)
         self.assertIn("getRootInActiveWindow()", java)
