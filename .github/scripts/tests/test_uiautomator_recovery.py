@@ -40,6 +40,19 @@ class UiAutomatorRecoveryTests(unittest.TestCase):
             )
         )
 
+    def test_android16_null_root_is_transient_only_for_tree_dump(self):
+        message = "ERROR: null root node returned by UiTestAutomationBridge."
+        dump = ("shell", "uiautomator", "dump", "/sdcard/tree.xml")
+        self.assertTrue(
+            installation.is_uiautomator_connect_timeout(dump, message)
+        )
+        self.assertFalse(
+            installation.is_uiautomator_connect_timeout(
+                ("shell", "am", "start"),
+                message,
+            )
+        )
+
     def test_empty_response_requires_exact_system_crash_evidence(self):
         command = ("shell", "uiautomator", "dump", "/sdcard/tree.xml")
         crash = (
@@ -54,6 +67,23 @@ class UiAutomatorRecoveryTests(unittest.TestCase):
                 command,
                 "",
                 "Process: ru.omnicio.app.debug\nTimeout while connecting UiAutomation",
+            )
+        )
+
+    def test_quoted_emulator_serial_not_found_is_transport_loss(self):
+        self.assertTrue(
+            installation.is_transient_adb_transport_failure(
+                "adb.exe: device 'emulator-5560' not found"
+            )
+        )
+        self.assertTrue(
+            installation.is_transient_adb_transport_failure(
+                "adb: device 'emulator-5622' not found"
+            )
+        )
+        self.assertFalse(
+            installation.is_transient_adb_transport_failure(
+                "cat: file 'emulator-5560' not found"
             )
         )
 
