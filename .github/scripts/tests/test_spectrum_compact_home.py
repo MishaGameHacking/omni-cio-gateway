@@ -20,10 +20,13 @@ class CompactHomeTests(unittest.TestCase):
     def test_four_original_actions_keep_real_navigation_callbacks(self):
         source = (HOME / "HomeQuickActions.kt").read_text(encoding="utf-8")
         for callback in ("onPortfolio", "onRecommendations", "onRisk", "onMessages"):
-            self.assertRegex(source, r'HomeAction\([^\n]+, ' + callback + r'\)')
+            self.assertIn(callback + ")", source)
+        for live_feature in ("Charts", "Recommendations", "RiskControl", "Notifications"):
+            self.assertIn("SpectrumLiveFeature." + live_feature, source)
+        self.assertIn("SpectrumLiveFeatureIcon(", source)
         self.assertIn("fontScale >= 1.4f", source)
         self.assertIn("widthDp < 260f", source)
-        self.assertIn("Modifier.size(52.dp)", source)
+        self.assertIn("Modifier.size(56.dp)", source)
 
     def test_profile_semantics_preserve_full_cell_state_and_activation(self):
         source = PROFILE.read_text(encoding="utf-8")
