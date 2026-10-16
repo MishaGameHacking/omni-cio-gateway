@@ -33,6 +33,8 @@ class PrivateAdbTests(unittest.TestCase):
         self.assertEqual(env["ADB_SERVER_SOCKET"], "tcp:127.0.0.1:56001")
         self.assertEqual(env["ANDROID_ADB_SERVER_PORT"], "56001")
         self.assertEqual(env["ADB_MDNS_AUTO_CONNECT"], "")
+        self.assertEqual(env["ADB_USB"], "0")
+        self.assertEqual(env["ADB_MDNS"], "0")
         self.assertNotIn("ANDROID_SERIAL", env)
 
     def test_default_privileged_or_invalid_ports_rejected(self):
@@ -67,11 +69,11 @@ class PrivateAdbTests(unittest.TestCase):
             executable = Path(tmp) / "adb"
             executable.touch()
             before = dict(os.environ)
+            context = adb.isolated_adb_server(executable, Path(tmp))
             with patch.object(adb, "unused_server_port", return_value=56001), \
-                    patch.object(adb.subprocess, "Popen", side_effect=OSError("start failed")), \
-                    self.assertRaises(OSError):
-                with adb.isolated_adb_server(executable, Path(tmp)):
-                    self.fail("Server did not start")
+                    patch.object(adb.subprocess, "Popen", side_effect=OSError("start failed")):
+                with self.assertRaises(OSError):
+                    context.__enter__()
             self.assertEqual(dict(os.environ), before)
 
     def test_cleanup_cannot_replace_body_assertion(self):
@@ -89,8 +91,9 @@ class PrivateAdbTests(unittest.TestCase):
             self.assertIs(raised.exception, original)
 
     def test_dead_server_is_not_a_readiness_pass(self):
+        process = Mock(poll=Mock(return_value=1))
         with self.assertRaises(RuntimeError):
-            adb.wait_for_private_server(Mock(poll=Mock(return_value=1)), 56001)
+            adb.wait_for_private_server(process, 56001)
 
     def test_smart_socket_response_can_arrive_in_parts(self):
         connection = Mock()
@@ -103,8 +106,9 @@ class PrivateAdbTests(unittest.TestCase):
         connection.sendall.assert_called_once_with(b"000chost:version")
 
     def test_readiness_deadline_is_finite(self):
+        process = Mock(poll=Mock(return_value=None))
         with self.assertRaises(TimeoutError):
-            adb.wait_for_private_server(Mock(poll=Mock(return_value=None)), 56001, seconds=0)
+            adb.wait_for_private_server(process, 56001, seconds=0)
 
     def test_stop_does_not_kill_an_exited_process(self):
         process = Mock(poll=Mock(return_value=0))
@@ -187,10 +191,11 @@ class SnapshotTests(unittest.TestCase):
         driver = Mock()
         driver.command.side_effect = ["Night mode: auto", "1.0", installation.EmulatorTransportLost("offline"), None]
         driver.dashboards.side_effect = original
+        device = Mock()
         with patch.object(profile, "ProfileProbe", return_value=driver), \
-                patch.dict(sys.modules, {"profile_snapshot": snapshot}), \
-                self.assertRaises(AssertionError) as caught:
-            profile.exercise(Mock())
+                patch.dict(sys.modules, {"profile_snapshot": snapshot}):
+            with self.assertRaises(AssertionError) as caught:
+                profile.exercise(device)
         self.assertIs(caught.exception, original)
         driver.profile_preflight.assert_not_called()
 
@@ -206,6 +211,18 @@ class SnapshotTests(unittest.TestCase):
         with patch.object(profile.time, "monotonic", side_effect=[0, 0, 13]), \
                 patch.object(profile.time, "sleep"), self.assertRaises(AssertionError):
             driver.find_all(("A", "B"))
+
+
+class SdkPrivateServerSmokeTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("ANDROID_SDK_ROOT"), "Android SDK not available in offline test environment")
+    def test_actual_sdk_server_starts_without_physical_devices(self):
+        sdk = Path(os.environ["ANDROID_SDK_ROOT"])
+        executable = sdk / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
+        # No device commands, no emulator, no global daemon, no authentication.
+        with tempfile.TemporaryDirectory(prefix="analyst-private-adb-") as work:
+            with adb.isolated_adb_server(executable, Path(work)) as port:
+                self.assertNotEqual(port, 5037)
+        print("PRIVATE_ADB_SDK_SMOKE=passed", flush=True)
 
 
 if __name__ == "__main__":
