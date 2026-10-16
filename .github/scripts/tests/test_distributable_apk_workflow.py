@@ -5,6 +5,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "android-apk.yml"
 ACTION = ROOT / ".github" / "actions" / "check-apk" / "action.yml"
+INSTALLER = ROOT / ".github" / "scripts" / "test_apk_installation.py"
 REFERENCE_DIGEST = "40e1edcc31f2f2826ad7cfa6733c67bf1db0f2ab9e0c648a78045f21aa221532"
 
 
@@ -13,6 +14,7 @@ class DistributableApkWorkflowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
         cls.action = ACTION.read_text(encoding="utf-8")
+        cls.installer = INSTALLER.read_text(encoding="utf-8")
 
     def test_workflow_builds_debug_fixture_and_preview(self):
         self.assertIn(":app:assembleDebug", self.workflow)
@@ -73,6 +75,17 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn("RUN_PROFILE_UI_TESTS must be 1", self.action)
         self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 1)
         self.assertNotIn("if defined PREVIOUS_APK goto upgrade", self.action)
+
+    def test_candidate_is_launched_before_and_after_clean_install(self):
+        upgrade = self.installer.index('install("upgrade_to_candidate", apk, update=True)')
+        upgrade_launch = self.installer.index('launch_candidate("upgrade_bootstrap_launch")')
+        uninstall = self.installer.index('removed = device("uninstall", package)')
+        clean = self.installer.index('install("candidate_clean_install", apk)')
+        clean_launch = self.installer.index('launch_candidate("bootstrap_activity_launch")')
+        self.assertLess(upgrade, upgrade_launch)
+        self.assertLess(upgrade_launch, uninstall)
+        self.assertLess(uninstall, clean)
+        self.assertLess(clean, clean_launch)
 
 
 if __name__ == "__main__":
