@@ -88,8 +88,18 @@ def is_transient_adb_transport_failure(response_text: str) -> bool:
     return any(marker in response for marker in ADB_TRANSIENT_MARKERS)
 
 
+def adb_transport_connected(adb: str, serial: str) -> bool:
+    """Independently distinguish a command timeout from an offline emulator."""
+    try:
+        state = run([adb, "-s", serial, "get-state"], timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return state.returncode == 0 and state.stdout.strip() == "device"
+
+
 def free_emulator_port() -> int:
-    for port in range(5560, 5680, 2):
+    # Outside the default 5555..5585 discovery range of unrelated ADB servers.
+    for port in range(5600, 5680, 2):
         with socket.socket() as console, socket.socket() as adb:
             try:
                 console.bind(("127.0.0.1", port))
@@ -264,78 +274,39 @@ def run_attempt(
                 if ui_dump:
                     last_uiautomator_dump_finished = time.monotonic()
 
-            if response is not None and response.returncode == 0:
-                return response
-
-            combined = (
-                ""
-                if response is None
-                else (response.stdout + "\n" + response.stderr).lower()
-            )
-            uiautomator_timeout = ui_dump and response is None
-            if ui_dump and response is not None and not uiautomator_timeout:
-                crash_text = ""
-                if not any(
-                    marker in combined for marker in UIAUTOMATOR_CONNECT_MARKERS
-                ):
-                    try:
-                        diagnostic = run(
-                            [
-                                adb,
-                                "-s",
-                                serial,
-                                "logcat",
-                                "-d",
-                                "-b",
-                                "crash",
-                                "-t",
-                                "80",
-                            ],
-                            timeout=10,
-                        )
-                    except subprocess.TimeoutExpired:
-                        diagnostic = None
-                    if diagnostic is not None and diagnostic.returncode == 0:
-                        crash_text = diagnostic.stdout + "\n" + diagnostic.stderr
-                uiautomator_timeout = is_uiautomator_connect_timeout(
-                    command,
-                    combined,
-                    crash_text,
-                )
-
-            transient_transport = response is None or is_transient_adb_transport_failure(
-                combined
-            )
-            transient = transient_transport or uiautomator_timeout
-            if not transient:
-                if response is None:
-                    raise subprocess.TimeoutExpired(
-                        [adb, "-s", serial, *command],
-                        timeout,
-                    )
+            combined = "" if response is None else response.stdout + "\n" + response.stderr
+            # Only THIS command's output is evidence of a recoverable bridge
+            # error. A historic crash-buffer entry cannot authorize a retry.
+            uiautomator_timeout = is_uiautomator_connect_timeout(command, combined)
+            if response is not None and response.returncode == 0 and not uiautomator_timeout:
                 return response
 
             process_exited = process is not None and process.poll() is not None
-            if process_exited or time.monotonic() >= recovery_deadline:
-                detail = combined.strip() or (
-                    "emulator process exited"
-                    if process_exited
-                    else "ADB command timed out"
-                )
-                transport_lost = True
-                raise EmulatorTransportLost(
-                    f"{serial} unavailable during {' '.join(command)}: "
-                    + detail[-1000:]
-                )
+            if response is None and not process_exited and adb_transport_connected(adb, serial):
+                # A timed-out UI command is not a lost device. Do not restart the
+                # whole test and accidentally hide an app/UI failure.
+                raise subprocess.TimeoutExpired([adb, "-s", serial, *command], timeout)
 
-            if uiautomator_timeout:
-                detail = combined.strip() or "confirmed crash-buffer timeout"
-                print(
-                    "UIAUTOMATOR_TRANSIENT_RECOVERY=" + detail[-2000:],
-                    flush=True,
-                )
+            transient_transport = response is None or is_transient_adb_transport_failure(combined)
+            if not transient_transport and not uiautomator_timeout:
+                return response
+
+            expired = time.monotonic() >= recovery_deadline
+            if not process_exited and uiautomator_timeout and not transient_transport:
+                if expired:
+                    raise RuntimeError("UiAutomation bridge did not recover: " + combined[-1000:])
+                print("UIAUTOMATOR_TRANSIENT_RECOVERY=" + combined.strip()[-2000:], flush=True)
                 time.sleep(2)
                 continue
+
+            if expired and not process_exited and adb_transport_connected(adb, serial):
+                raise RuntimeError("ADB command failed on a connected emulator: " + combined[-1000:])
+            if process_exited or expired:
+                detail = combined.strip() or "ADB transport did not answer get-state"
+                transport_lost = True
+                raise EmulatorTransportLost(
+                    f"{serial} unavailable during {' '.join(command)}: " + detail[-1000:]
+                )
 
             print(
                 "ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"),
@@ -579,7 +550,11 @@ def main() -> None:
         _write_report(canonical_report, results)
         return results
 
-    run_with_transport_retry(execute)
+    from isolated_adb import isolated_adb_server
+
+    adb = sdk / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
+    with isolated_adb_server(adb, work):
+        run_with_transport_retry(execute)
 
 
 if __name__ == "__main__":

@@ -35,6 +35,12 @@ runs:
         py -3 .github\scripts\verify_apk.py
         if errorlevel 1 exit /b 1
 
+    - name: Build and lint separate test-only frame instrumentation
+      shell: cmd
+      run: |
+        call gradlew.bat :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
+        if errorlevel 1 exit /b 1
+
     - name: Prepare official Android emulator images
       shell: cmd
       run: |

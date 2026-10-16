@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "OMNICIO"
 include(":app")
+// Isolated test-only APK; not a dependency of the distributed app.
+include(":ci-ui-driver")
