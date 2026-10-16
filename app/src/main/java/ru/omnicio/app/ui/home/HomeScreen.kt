@@ -13,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -167,8 +169,13 @@ private fun BalanceCard(
 }
 
 @Composable
-private fun AnalystSummaryCard(snapshot: PortfolioSnapshot?, refreshError: String?, onOpenRecommendations: () -> Unit) {
+private fun AnalystSummaryCard(
+    snapshot: PortfolioSnapshot?,
+    refreshError: String?,
+    onOpenRecommendations: () -> Unit,
+) {
     val palette = LocalSpectrumPalette.current
+    val fontScale = LocalDensity.current.fontScale
     val summary = when {
         refreshError != null -> "Обновить данные не удалось. Показываем сохранённый портфель, а не новые предположения."
         snapshot == null -> "Подключите портфель. Я помогу разобраться в его структуре и существенных изменениях."
@@ -181,11 +188,48 @@ private fun AnalystSummaryCard(snapshot: PortfolioSnapshot?, refreshError: Strin
         }
     }
     SpectrumCard(emphasized = true) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpectrumIcon(SpectrumSymbol.Analyst, Modifier.size(58.dp), selected = true, tile = true)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Привет!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                Text("Я ваш AI‑аналитик", style = MaterialTheme.typography.bodyMedium, color = palette.cyan)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val stacked = maxWidth < 310.dp || fontScale > 1.35f
+            if (stacked) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SpectrumRobot(
+                        Modifier
+                            .size(108.dp)
+                            .testTag("spectrum-ai-robot"),
+                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text("Привет!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text("Я ваш AI‑аналитик", style = MaterialTheme.typography.bodyMedium, color = palette.cyan)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    SpectrumRobot(
+                        Modifier
+                            .size(96.dp)
+                            .testTag("spectrum-ai-robot"),
+                    )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Привет!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text("Я ваш AI‑аналитик", style = MaterialTheme.typography.bodyMedium, color = palette.cyan)
+                        Text(
+                            "Анализирую только подтверждённые данные вашего портфеля.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
         Text(summary, style = MaterialTheme.typography.bodyMedium)
