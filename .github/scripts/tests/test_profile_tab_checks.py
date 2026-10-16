@@ -80,7 +80,25 @@ class TabViewportTests(unittest.TestCase):
         self.assertIsNone(tappable_tab(self.frame("[288,160][300,212]"), "profile-tab-2"))
 
     def test_complete_cell_is_tappable(self):
-        self.assertIsNotNone(tappable_tab(self.frame("[172,160][300,212]"), "profile-tab-2"))
+        target = tappable_tab(self.frame("[172,160][300,212]"), "profile-tab-2")
+        self.assertIsNotNone(target)
+        self.assertEqual(target.get("bounds"), "[172,160][300,212]")
+
+    def test_clipped_cell_with_full_visible_touch_target_is_safely_tappable(self):
+        target = tappable_tab(self.frame("[0,160][86,212]"), "profile-tab-2")
+        self.assertIsNotNone(target)
+        self.assertEqual(target.get("bounds"), "[20,160][86,212]")
+
+    def test_safe_visible_intersection_does_not_request_an_extra_boundary_scroll(self):
+        gestures = []
+        target = reveal_tab(
+            lambda: self.frame("[0,160][86,212]"),
+            lambda *args: gestures.append(args),
+            "profile-tab-2",
+            "start",
+        )
+        self.assertEqual(target.get("bounds"), "[20,160][86,212]")
+        self.assertEqual(gestures, [])
 
     def test_clipped_cell_is_revealed_before_tap(self):
         frames = iter([self.frame("[288,160][416,212]"), self.frame("[172,160][300,212]")])
