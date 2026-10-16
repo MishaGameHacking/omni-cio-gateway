@@ -13,6 +13,7 @@ import time
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 MARKER = "probe-refresh-tests:15"
+PROFILE_SCREEN_MARKER = "probe-screen:profile"
 SYSTEM_UI_ANR = "Application Not Responding: com.android.systemui"
 SYSTEM_PACKAGES = {"android", "com.android.systemui"}
 SYSTEM_UI_WAIT_IDS = {"android:id/aerr_wait", "aerr_wait"}
@@ -40,9 +41,17 @@ def profile_resumed(output: str) -> bool:
     return False
 
 
-def ready_marker(tree):
+def ready_marker(tree, expected_screen: str | None = None):
+    required = {MARKER}
+    if expected_screen is not None:
+        if expected_screen not in {"profile", "home", "portfolio"}:
+            raise ValueError("Unknown fixture screen")
+        required.add("probe-screen:" + expected_screen)
     for node in tree.iter("node"):
-        if node.get("package") != PACKAGE or MARKER not in node.get("content-desc", "").split(";"):
+        if node.get("package") != PACKAGE:
+            continue
+        components = set(node.get("content-desc", "").split(";"))
+        if not required.issubset(components):
             continue
         bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
         if bounds is not None:
@@ -134,7 +143,7 @@ def frame_observation(tree) -> dict:
             for node in nodes})[:8], "markers": markers}
 
 
-def profile_frame(command, read_tree, evidence):
+def profile_frame(command, read_tree, evidence, expected_screen: str | None = None):
     evidence["stage"] = "foreground-before-tree"
     before = command("shell", "dumpsys", "activity", "activities")
     evidence["foreground_before"] = foreground_observation(before)
@@ -143,7 +152,7 @@ def profile_frame(command, read_tree, evidence):
     evidence["stage"] = "accessibility-tree"
     tree = read_tree()
     evidence["frame"] = frame_observation(tree)
-    node = ready_marker(tree)
+    node = ready_marker(tree, expected_screen)
     if node is None:
         # A confirmed Android System UI ANR may cover the already-resumed debug
         # fixture. Dismiss only its exact system-owned Wait action, then let the
@@ -159,14 +168,32 @@ def profile_frame(command, read_tree, evidence):
 
 def launch_profile(command, read_tree, wait_for) -> None:
     started = time.monotonic()
-    evidence = {"stage": "launch"}
+    evidence = {"stage": "launch", "expected_screen": "profile"}
     try:
-        status = start_status(command("shell", "am", "start", "-W", "-n", ACTIVITY))
+        # Always create a new fixture Activity with an explicit profile intent.
+        # Reusing the previous dashboard Activity can preserve a modal window or
+        # an old screen extra and make a generic readiness marker misleading.
+        command("shell", "am", "force-stop", PACKAGE)
+        status = start_status(
+            command(
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-n",
+                ACTIVITY,
+                "--es",
+                "spectrum_screen",
+                "profile",
+            )
+        )
         evidence["start_status"] = status
         if status == "timeout":
             print("PROFILE_LAUNCH_WAIT=activity-manager-timeout;checking-visible-frame", flush=True)
+
         def read():
-            return profile_frame(command, read_tree, evidence)
+            return profile_frame(command, read_tree, evidence, expected_screen="profile")
+
         if wait_for(read, "Profile fixture is not resumed with a completed visible regression marker") is None:
             raise AssertionError("Profile readiness was not established")
     except Exception:

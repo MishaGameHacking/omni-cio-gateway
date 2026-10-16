@@ -42,7 +42,14 @@ def assert_horizontal_geometry(peer: tuple[int, int, int, int], target: tuple[in
 
 
 def tappable_tab(tree: ET.Element, resource_id: str) -> ET.Element | None:
-    """A non-empty off-viewport semantics rectangle is not a tappable tab."""
+    """Return the exact visible 48dp+ portion of a tab inside its clipped rail.
+
+    Compose accessibility nodes retain their logical child bounds even where a
+    horizontalScroll viewport clips an edge. Requiring the complete logical cell
+    caused a false second scroll at the start boundary. We accept only a real
+    48x48-or-larger intersection whose tap centre is inside the app rail, and
+    return that clipped rectangle so the test never taps outside the viewport.
+    """
     from profile_scroll import _bounds
 
     rail = visible_resource(tree, "profile-tabs")
@@ -53,7 +60,22 @@ def tappable_tab(tree: ET.Element, resource_id: str) -> ET.Element | None:
     x1, y1, x2, y2 = _bounds(tab)
     if x2 - x1 < 48 or y2 - y1 < 48:
         return None
-    return tab if left <= x1 and x2 <= right and top <= y1 and y2 <= bottom else None
+    visible_left = max(left, x1)
+    visible_top = max(top, y1)
+    visible_right = min(right, x2)
+    visible_bottom = min(bottom, y2)
+    if visible_right - visible_left < 48 or visible_bottom - visible_top < 48:
+        return None
+    tap_x = (visible_left + visible_right) // 2
+    tap_y = (visible_top + visible_bottom) // 2
+    if not (left <= tap_x < right and top <= tap_y < bottom):
+        return None
+    target = ET.Element(tab.tag, dict(tab.attrib))
+    target.set(
+        "bounds",
+        f"[{visible_left},{visible_top}][{visible_right},{visible_bottom}]",
+    )
+    return target
 
 
 def tab_diagnostic(tree: ET.Element, resource_id: str, attempt: int) -> str:
@@ -69,7 +91,7 @@ def tab_diagnostic(tree: ET.Element, resource_id: str, attempt: int) -> str:
 
 
 def reveal_tab(read_tree, swipe, resource_id: str, direction: str):
-    """Scroll only the exact rail until the entire tagged cell is tappable."""
+    """Scroll only the exact rail until a safe visible tab target is tappable."""
     from profile_scroll import _gesture, _scroll_area
 
     if resource_id not in TAB_IDS.values() or direction not in {"start", "end"}:
@@ -85,7 +107,7 @@ def reveal_tab(read_tree, swipe, resource_id: str, direction: str):
         if attempt == 8:
             raise AssertionError("Complete profile tab not reachable: " + resource_id)
         if gesture is None:
-            # UiAutomator can still expose the departing AlertDialog window.
+            # UiAutomation can still expose the departing AlertDialog window.
             # Await the exact app rail; never tap behind a dialog or skip a test.
             time.sleep(0.2)
         else:
