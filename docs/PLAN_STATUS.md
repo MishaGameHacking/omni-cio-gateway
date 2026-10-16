@@ -69,7 +69,10 @@ AI-клиента ещё не подтверждает подключение п
 
 ## Текущий подэтап F11.1 — независимое серверное наблюдение
 
-**Статус: в работе, кандидат 0.7.5-preview / versionCode 30.**
+**Статус: код проверен и APK 0.7.5-preview / versionCode 30 опубликован; доставка на Timeweb в работе.**
+[Реализация — PR #865](https://github.com/MishaGameHacking/omni-cio-gateway/pull/865) ·
+[Release](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-bb6638fab2188c718ccad4d8dd7b3ed76b34fdc8) ·
+[Проверка опубликованного APK](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/38959935233).
 F11 разделён на подэтапы; этот выпуск не закрывает весь пункт F11.
 
 Реализуется независимость сбора портфеля, истории и базовых риск-проверок от
