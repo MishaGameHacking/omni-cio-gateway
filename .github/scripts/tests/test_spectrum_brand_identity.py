@@ -53,12 +53,17 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
         self.assertIn('isDebuggable = false', gradle)
 
-    def test_about_dialog_does_not_claim_android_13_support(self):
+    def test_about_dialog_uses_build_identity_and_android_16_text(self):
         profile = (
             ROOT / "app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt"
         ).read_text(encoding="utf-8")
+        self.assertIn(
+            "Версия ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            profile,
+        )
         self.assertIn("только для Android 16 и новее", profile)
         self.assertNotIn("Android 13+", profile)
+        self.assertNotIn("Версия 0.7.1-preview", profile)
 
 
 if __name__ == "__main__":
