@@ -74,8 +74,16 @@ class ProfileLaunchTests(unittest.TestCase):
 
     def test_foreground_not_history_or_other_activity(self):
         self.assertTrue(profile_resumed(RESUMED))
-        self.assertTrue(profile_resumed(RESUMED.replace("topResumedActivity=", "mResumedActivity: ")))
-        self.assertFalse(profile_resumed(RESUMED.replace("topResumedActivity=", "lastResumedActivity=")))
+        self.assertTrue(
+            profile_resumed(
+                RESUMED.replace("topResumedActivity=", "mResumedActivity: ")
+            )
+        )
+        self.assertFalse(
+            profile_resumed(
+                RESUMED.replace("topResumedActivity=", "lastResumedActivity=")
+            )
+        )
         self.assertFalse(profile_resumed(RESUMED.replace(ACTIVITY, ACTIVITY + "Other")))
         self.assertFalse(profile_resumed(ACTIVITY))
 
@@ -84,11 +92,18 @@ class ProfileLaunchTests(unittest.TestCase):
         self.assertIsNotNone(ready_marker(tree(), "profile"))
         self.assertIsNone(ready_marker(tree(package="another.app"), "profile"))
         self.assertIsNone(ready_marker(tree(marker=MARKER + "0"), "profile"))
-        self.assertIsNone(ready_marker(tree(marker="probe-refresh-tests:0"), "profile"))
-        self.assertIsNone(ready_marker(tree(screen="probe-screen:home"), "profile"))
-        self.assertIsNotNone(ready_marker(tree(screen="probe-screen:home"), "home"))
+        self.assertIsNone(
+            ready_marker(tree(marker="probe-refresh-tests:0"), "profile")
+        )
+        self.assertIsNone(
+            ready_marker(tree(screen="probe-screen:home"), "profile")
+        )
+        self.assertIsNotNone(
+            ready_marker(tree(screen="probe-screen:home"), "home")
+        )
+        invalid_screen_tree = tree()
         with self.assertRaises(ValueError):
-            ready_marker(tree(), "unknown")
+            ready_marker(invalid_screen_tree, "unknown")
 
     def test_empty_or_invalid_bounds_fail(self):
         for bounds in ("", "[0,0][0,10]", "[-1,0][10,10]", "[0,10][10,0]"):
