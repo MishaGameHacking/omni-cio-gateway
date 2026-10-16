@@ -1,7 +1,7 @@
 """One authenticated UiAutomation session per disposable-emulator run.
 
-Fresh frame reads and a narrowly scoped portfolio scroll action only. No shell
-fallback: disconnected/invalid frames fail. This is not part of the preview APK.
+Fresh frame reads and narrowly scoped accessibility scroll actions only. No shell
+fallback: disconnected or invalid frames fail. This is not part of the preview APK.
 """
 from __future__ import annotations
 
@@ -21,7 +21,16 @@ DRIVER_COMPONENT = DRIVER_PACKAGE + "/.FrameInstrumentation"
 MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAME_TIMEOUT = 30
 FRAME_DEADLINE_ERROR = "Fresh UI frame deadline exceeded"
-PORTFOLIO_SCROLL_BIT = 0x80000000
+ACTION_FLAG = 0x80000000
+ACTION_START_FLAG = 0x10000000
+ACTION_LIST_SHIFT = 24
+REQUEST_SEQUENCE_MASK = 0x00FFFFFF
+SCROLL_LIST_CODES = {
+    "profile-content": 1,
+    "education-content": 2,
+    "portfolio-content": 3,
+    "profile-tabs": 4,
+}
 
 
 def read_exact(connection, size: int, *, deadline: float) -> bytes:
@@ -44,22 +53,28 @@ class FrameReader:
         self.sequence = 0
         self.broken = False
 
+    def _next_sequence(self) -> int:
+        self.sequence += 1
+        if not 0 < self.sequence <= REQUEST_SEQUENCE_MASK:
+            raise ValueError("UiAutomation request sequence exhausted")
+        return self.sequence
+
     def tree(self, *, deadline: float | None = None):
         if self.broken:
             raise ConnectionError("Failed UiAutomation stream cannot reuse a previous frame")
-        self.sequence += 1
-        if deadline is None:
-            deadline = time.monotonic() + FRAME_TIMEOUT
         try:
+            sequence = self._next_sequence()
+            if deadline is None:
+                deadline = time.monotonic() + FRAME_TIMEOUT
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(FRAME_DEADLINE_ERROR)
             self.connection.settimeout(remaining)
-            self.connection.sendall(struct.pack(">I", self.sequence))
+            self.connection.sendall(struct.pack(">I", sequence))
             received, status, size = struct.unpack(
                 ">III", read_exact(self.connection, 12, deadline=deadline)
             )
-            if received != self.sequence or status not in (0, 1) or size > MAX_FRAME_BYTES:
+            if received != sequence or status not in (0, 1) or size > MAX_FRAME_BYTES:
                 raise ValueError("Invalid or stale UiAutomation frame envelope")
             payload = read_exact(self.connection, size, deadline=deadline)
             if status == 0:
@@ -78,33 +93,46 @@ class FrameReader:
             self.broken = True
             raise
 
-    def scroll_portfolio(self):
-        """Request only ACTION_SCROLL_FORWARD on the exact visible portfolio list.
+    def scroll_list(self, resource_id: str, direction: str) -> None:
+        """Perform one exact public scroll action on one whitelisted app list.
 
-        No coordinates, arbitrary target names or action IDs cross this protocol.
-        Acknowledging an action is not evidence that a required label is visible:
-        the existing bounded driver must read and validate the next fresh frame.
+        Coordinates, arbitrary resource names and arbitrary action identifiers do
+        not cross this protocol. An acknowledgement is not UI evidence: callers
+        must read and validate the next fresh frame before accepting any result.
         """
+        code = SCROLL_LIST_CODES.get(resource_id)
+        if code is None:
+            raise ValueError("Unknown semantic scroll list")
+        if direction not in {"start", "end"}:
+            raise ValueError("Unknown semantic scroll direction")
         if self.broken:
             raise ConnectionError("Failed UiAutomation stream cannot perform actions")
-        self.sequence += 1
         try:
-            if not 0 < self.sequence < PORTFOLIO_SCROLL_BIT:
-                raise ValueError("UiAutomation request sequence exhausted")
+            sequence = self._next_sequence()
+            raw_request = ACTION_FLAG | (code << ACTION_LIST_SHIFT) | sequence
+            if direction == "start":
+                raw_request |= ACTION_START_FLAG
             deadline = time.monotonic() + 12
             self.connection.settimeout(12)
-            self.connection.sendall(struct.pack(">I", self.sequence | PORTFOLIO_SCROLL_BIT))
+            self.connection.sendall(struct.pack(">I", raw_request))
             received, status, size = struct.unpack(
                 ">III", read_exact(self.connection, 12, deadline=deadline)
             )
-            if (received, status, size) != (self.sequence, 2, 0):
-                raise ValueError("Invalid portfolio scroll acknowledgement")
+            if (received, status, size) != (sequence, 2, 0):
+                raise ValueError("Invalid semantic scroll acknowledgement")
             if time.monotonic() >= deadline:
-                raise TimeoutError("Portfolio scroll acknowledgement exceeded deadline")
-            print(f"PORTFOLIO_UI_ACTION=scroll-forward;sequence-{self.sequence}", flush=True)
+                raise TimeoutError("Semantic scroll acknowledgement exceeded deadline")
+            print(
+                f"UI_ACCESSIBILITY_ACTION=list-{resource_id};scroll-{direction};sequence-{sequence}",
+                flush=True,
+            )
         except Exception:
             self.broken = True
             raise
+
+    def scroll_portfolio(self) -> None:
+        """Compatibility wrapper for the original exact portfolio action."""
+        self.scroll_list("portfolio-content", "end")
 
     def ready_tree(self):
         # A successfully received null root can occur while a dialog closes.
@@ -156,7 +184,7 @@ def connect_session(port: int, token: str):
             connection.settimeout(30)
             connection.sendall(token.encode("ascii"))
             version = read_exact(connection, 4, deadline=deadline)
-            if version != struct.pack(">I", 1):
+            if version != struct.pack(">I", 2):
                 raise ValueError("Unexpected UiAutomation session protocol")
             return connection
         except OSError as error:
@@ -251,7 +279,7 @@ def frame_session(device):
             raise ValueError("Unexpected loopback forwarding port")
         port = int(value)
         connection = connect_session(port, token)
-        print("UIAUTOMATION_SESSION=connected;protocol=1", flush=True)
+        print("UIAUTOMATION_SESSION=connected;protocol=2", flush=True)
         yield FrameReader(connection).ready_tree
     except Exception as original:
         report_session_failure(device, log, token, original)
