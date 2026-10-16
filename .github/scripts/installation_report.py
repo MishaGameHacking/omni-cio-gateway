@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 BASE_TESTS = frozenset({"candidate_clean_install", "bootstrap_activity_launch"})
-UPGRADE_TESTS = frozenset({"previous_clean_install", "upgrade_to_candidate"})
+UPGRADE_TESTS = frozenset({
+    "previous_clean_install",
+    "upgrade_to_candidate",
+    "upgrade_bootstrap_launch",
+})
 PROFILE_TESTS = frozenset({"debug_ui_fixture_install", "profile_ui"})
 
 
