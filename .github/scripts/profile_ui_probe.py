@@ -121,31 +121,44 @@ class ProfileProbe:
     def bounds(self, text):
         return node_bounds(self.find(text))
 
-    def _swipe_callback(self):
-        def swipe(x1, y1, x2, y2):
-            self.command("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "350")
+    def _semantic_scroll_callback(self, area: str, direction: str):
+        """Translate bounded list geometry into one exact accessibility action.
 
-        return swipe
-
-    def _portfolio_forward(self, x1, y1, x2, y2):
-        """Use the real list action, not a drag beginning over a broker action button."""
-        from persistent_ui import FrameReader
+        The previous shell drag could begin over a clickable profile card. On a
+        busy Android 16 emulator that gesture could be interpreted as a tap,
+        open a modal dialog and remove ``profile-content`` from the active root.
+        The persistent UiAutomation session now scrolls the exact tagged list
+        through its public Compose accessibility action instead.
+        """
+        from persistent_ui import FrameReader, SCROLL_LIST_CODES
 
         reader = getattr(self.read_tree, "__self__", None)
-        if not isinstance(reader, FrameReader) or x1 != x2 or y2 >= y1:
-            raise ValueError("A forward portfolio action needs the owned frame session")
-        reader.scroll_portfolio()
+        if not isinstance(reader, FrameReader):
+            raise ValueError("Semantic scrolling needs the owned frame session")
+        if area not in SCROLL_LIST_CODES or direction not in {"start", "end"}:
+            raise ValueError("Unknown semantic scroll target")
+
+        def scroll(x1, y1, x2, y2):
+            if area == "profile-tabs":
+                if y1 != y2 or x1 == x2:
+                    raise ValueError("Horizontal semantic scroll geometry is invalid")
+                observed = "end" if x2 < x1 else "start"
+            else:
+                if x1 != x2 or y1 == y2:
+                    raise ValueError("Vertical semantic scroll geometry is invalid")
+                observed = "end" if y2 < y1 else "start"
+            if observed != direction:
+                raise ValueError("Semantic scroll direction disagrees with list geometry")
+            reader.scroll_list(area, direction)
+
+        return scroll
 
     def reveal(self, text, area="profile-content", direction="end"):
         from profile_scroll import reveal_in_list
 
-        # Keep all target/package/geometry checks and the original overall budget.
-        # Only this exact portfolio scenario uses its public accessibility action;
-        # profile, education, tabs and dialog controls retain their touch checks.
-        scroll = self._portfolio_forward if area == "portfolio-content" else self._swipe_callback()
         target = reveal_in_list(
             self.tree,
-            scroll,
+            self._semantic_scroll_callback(area, direction),
             text,
             resource_id=area,
             direction=direction,
@@ -162,7 +175,7 @@ class ProfileProbe:
 
         target = reveal_resource_in_list(
             self.tree,
-            self._swipe_callback(),
+            self._semantic_scroll_callback(area, direction),
             resource_id,
             resource_id=area,
             direction=direction,
@@ -200,9 +213,10 @@ class ProfileProbe:
 
         target = reveal_in_list(
             lambda: content_tree(self.tree()),
-            self._swipe_callback(),
+            self._semantic_scroll_callback("profile-content", "end"),
             text,
             resource_id="profile-content",
+            layout_timeout=12,
         )
         if target is None:
             raise AssertionError("Profile content action not visible: " + text)
@@ -212,7 +226,15 @@ class ProfileProbe:
         from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab
 
         resource_id = TAB_IDS[label]
-        self.tap_node(reveal_tab(self.tree, self._swipe_callback(), resource_id, "start" if label == SETTINGS_LABEL else "end"))
+        direction = "start" if label == SETTINGS_LABEL else "end"
+        self.tap_node(
+            reveal_tab(
+                self.tree,
+                self._semantic_scroll_callback("profile-tabs", direction),
+                resource_id,
+                direction,
+            )
+        )
         return self.wait_for(
             lambda: selected_tab(self.tree(), resource_id),
             "Profile tab selection not confirmed: " + resource_id,
