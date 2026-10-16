@@ -20,6 +20,7 @@ DRIVER_PACKAGE = "ru.omnicio.ciframe"
 DRIVER_COMPONENT = DRIVER_PACKAGE + "/.FrameInstrumentation"
 MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAME_TIMEOUT = 30
+FRAME_DEADLINE_ERROR = "Fresh UI frame deadline exceeded"
 
 
 def read_exact(connection, size: int, *, deadline: float) -> bytes:
@@ -27,7 +28,7 @@ def read_exact(connection, size: int, *, deadline: float) -> bytes:
     while len(data) < size:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError("Fresh UI frame deadline exceeded")
+            raise TimeoutError(FRAME_DEADLINE_ERROR)
         connection.settimeout(remaining)
         part = connection.recv(size - len(data))
         if not part:
@@ -51,7 +52,7 @@ class FrameReader:
         try:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise TimeoutError("Fresh UI frame deadline exceeded")
+                raise TimeoutError(FRAME_DEADLINE_ERROR)
             self.connection.settimeout(remaining)
             self.connection.sendall(struct.pack(">I", self.sequence))
             received, status, size = struct.unpack(
@@ -70,7 +71,7 @@ class FrameReader:
             if root.tag != "hierarchy" or next(root.iter("node"), None) is None:
                 raise ValueError("UiAutomation returned an empty hierarchy")
             if time.monotonic() >= deadline:
-                raise TimeoutError("Fresh UI frame deadline exceeded")
+                raise TimeoutError(FRAME_DEADLINE_ERROR)
             return root
         except Exception:
             self.broken = True

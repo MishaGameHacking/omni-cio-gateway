@@ -114,7 +114,7 @@ class FrameProtocolTests(unittest.TestCase):
         connection.close.assert_called_once()
         self.assertIn("CI frame cleanup failed", original.__notes__[0])
         self.assertEqual(device.call_args_list[0].args, ("shell", "am", "force-stop", frames.DRIVER_PACKAGE))
-        self.assertEqual(device.call_args_list[1].args, ("forward", "--remove", f"tcp:{53000}"))
+        self.assertEqual(device.call_args_list[1].args, ("forward", "--remove", "tcp:53000"))
 
     def test_cleanup_failure_blocks_an_otherwise_successful_pass(self):
         device = Mock(side_effect=OSError("stop failed"))
@@ -191,7 +191,7 @@ class FrameReadinessTests(unittest.TestCase):
         reader = frames.FrameReader(stream)
         with patch.object(frames.time, "monotonic", return_value=5):
             self.assertEqual(reader.tree(deadline=7).tag, "hierarchy")
-        self.assertTrue(stream.settimeout.call_count > 1)
+        self.assertGreater(stream.settimeout.call_count, 1)
         self.assertTrue(all(call.args == (2,) for call in stream.settimeout.call_args_list))
 
     def test_late_parsed_frame_cannot_pass_deadline(self):
