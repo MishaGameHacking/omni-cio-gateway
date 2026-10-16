@@ -48,11 +48,16 @@ class UpdateTests(unittest.TestCase):
 
     def evidence(self, version=23):
         sha = hashlib.sha256(self.apk.read_bytes()).hexdigest()
+        checks = {
+            'clean_install': True,
+            'upgrade': True,
+            'upgrade_launch': True,
+            'launch': True,
+        }
         return {'sha256': sha, 'bytes': self.apk.stat().st_size, 'certificate_sha256': CERT,
                 'signature_v2': True, 'zipalign_16kb': True, 'test_only': False, 'debuggable': False,
                 'package': 'ru.omnicio.app.debug', 'version_code': version, 'version_name': '0.6.0-preview',
-                'min_sdk': 36, 'installation_evidence': {'apk_sha256': sha,
-                '36': {'clean_install': True, 'upgrade': True, 'launch': True}}}
+                'min_sdk': 36, 'installation_evidence': {'apk_sha256': sha, '36': checks}}
 
     def enforce(self, version='23', token='test', uid=1, package='ru.omnicio.app.debug'):
         return updates.enforce(self.connect, user_id=uid, authorization='Bearer '+token,
@@ -127,11 +132,16 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(publish(self.root, self.apk, self.report, expected_certificate=CERT), self.release)
 
     def test_missing_failed_or_unbound_install_tests_prevent_activation(self):
-        for kind in ('missing', 'failed', 'unbound'):
+        for kind in ('missing', 'failed', 'missing_upgrade_launch', 'unbound'):
             report = self.evidence(24)
-            if kind == 'missing': del report['installation_evidence']
-            elif kind == 'failed': report['installation_evidence']['36']['launch'] = False
-            else: report['installation_evidence']['apk_sha256'] = 'f'*64
+            if kind == 'missing':
+                del report['installation_evidence']
+            elif kind == 'failed':
+                report['installation_evidence']['36']['launch'] = False
+            elif kind == 'missing_upgrade_launch':
+                del report['installation_evidence']['36']['upgrade_launch']
+            else:
+                report['installation_evidence']['apk_sha256'] = 'f'*64
             with self.assertRaises(updates.ReleaseUnavailable):
                 publish(self.root, self.apk, report, expected_certificate=CERT)
 
