@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.PortfolioSnapshot
@@ -36,6 +37,7 @@ internal fun HomeAnalystCard(
     onOpenRecommendations: () -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
+    val fontScale = LocalDensity.current.fontScale
     val mood = when {
         refreshError != null -> AnalystAvatarMood.Attention
         snapshot == null -> AnalystAvatarMood.Waiting
@@ -56,7 +58,7 @@ internal fun HomeAnalystCard(
 
     SpectrumCard(emphasized = true) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val stacked = maxWidth < 320.dp
+            val stacked = maxWidth < 320.dp || fontScale > 1.3f
             if (stacked) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
