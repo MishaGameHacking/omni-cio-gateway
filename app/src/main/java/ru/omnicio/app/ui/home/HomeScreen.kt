@@ -168,31 +168,7 @@ private fun BalanceCard(
 
 @Composable
 private fun AnalystSummaryCard(snapshot: PortfolioSnapshot?, refreshError: String?, onOpenRecommendations: () -> Unit) {
-    val palette = LocalSpectrumPalette.current
-    val summary = when {
-        refreshError != null -> "Обновить данные не удалось. Показываем сохранённый портфель, а не новые предположения."
-        snapshot == null -> "Подключите портфель. Я помогу разобраться в его структуре и существенных изменениях."
-        snapshot.warnings.isNotEmpty() -> snapshot.warnings.first()
-        snapshot.allocations.isEmpty() -> "Портфель получен. Источник ещё не вернул его структуру."
-        else -> {
-            val largest = snapshot.allocations.maxByOrNull { it.sharePercent.toBigDecimal() }
-            if (largest == null) "Портфель получен. Следующая проверка уточнит его структуру."
-            else "Крупнейшая категория — ${largest.title}: ${largest.sharePercent.percentText()}. Оцените её вместе с горизонтом и резервом."
-        }
-    }
-    SpectrumCard(emphasized = true) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpectrumIcon(SpectrumSymbol.Analyst, Modifier.size(58.dp), selected = true, tile = true)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Привет!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                Text("Я ваш AI‑аналитик", style = MaterialTheme.typography.bodyMedium, color = palette.cyan)
-            }
-        }
-        Text(summary, style = MaterialTheme.typography.bodyMedium)
-        Text("Вывод по фактам портфеля", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        SpectrumPrimaryButton("Показать рекомендации", onOpenRecommendations, Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Ideas)
-    }
+    HomeAnalystCard(snapshot, refreshError, onOpenRecommendations)
 }
 
 @Composable
