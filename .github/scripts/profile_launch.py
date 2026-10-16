@@ -13,6 +13,10 @@ import time
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 MARKER = "probe-refresh-tests:15"
+SYSTEM_UI_ANR = "Application Not Responding: com.android.systemui"
+SYSTEM_PACKAGES = {"android", "com.android.systemui"}
+SYSTEM_UI_WAIT_IDS = {"android:id/aerr_wait", "aerr_wait"}
+SYSTEM_UI_WAIT_LABELS = {"Wait", "Подождать"}
 
 
 def start_status(output: str) -> str:
@@ -48,6 +52,68 @@ def ready_marker(tree):
     return None
 
 
+def _exact_labels(node) -> set[str]:
+    values = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
+    return {value.strip() for value in values if value.strip()}
+
+
+def system_ui_wait_action(tree):
+    """Return only Android's exact ANR Wait action, never an app-owned button."""
+    for node in tree.iter("node"):
+        if node.get("package") not in SYSTEM_PACKAGES:
+            continue
+        resource_id = node.get("resource-id", "")
+        if resource_id not in SYSTEM_UI_WAIT_IDS and not (_exact_labels(node) & SYSTEM_UI_WAIT_LABELS):
+            continue
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+        if bounds is None:
+            continue
+        left, top, right, bottom = map(int, bounds.groups())
+        if right > left and bottom > top:
+            return node
+    return None
+
+
+def _system_ui_anr_visible(command) -> bool:
+    windows = command("shell", "dumpsys", "window", "windows")
+    if SYSTEM_UI_ANR in windows:
+        return True
+    # On Android 16 the ANR layer can be visible in SurfaceFlinger before the
+    # window dump exposes it. --list is bounded and avoids the full state dump.
+    layers = command("shell", "dumpsys", "SurfaceFlinger", "--list")
+    return SYSTEM_UI_ANR in layers
+
+
+def dismiss_confirmed_system_ui_anr(command, tree, evidence) -> bool:
+    """Dismiss a confirmed System UI ANR on the disposable emulator only.
+
+    The action is intentionally fail-closed: an ordinary missing app frame is
+    not retried as success. Recovery happens only when the accessibility tree
+    contains Android's exact ANR Wait action and system diagnostics independently
+    confirm the com.android.systemui ANR layer.
+    """
+    action = system_ui_wait_action(tree)
+    if action is None or not _system_ui_anr_visible(command):
+        return False
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", action.get("bounds", ""))
+    if match is None:
+        raise AssertionError("Confirmed System UI ANR Wait action has invalid bounds")
+    left, top, right, bottom = map(int, match.groups())
+    evidence["system_ui_anr_recovery"] = {
+        "action": "wait",
+        "bounds": [left, top, right, bottom],
+    }
+    print("SYSTEM_UI_ANR_RECOVERY=wait", flush=True)
+    command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if not _system_ui_anr_visible(command):
+            print("SYSTEM_UI_ANR_RECOVERY=cleared", flush=True)
+            return True
+        time.sleep(0.5)
+    raise AssertionError("Confirmed System UI ANR overlay did not clear")
+
+
 def foreground_observation(output: str) -> list[str]:
     """Only bounded activity identities from the disposable emulator, not a full dump."""
     lines = (line.strip() for line in output.splitlines()
@@ -79,6 +145,10 @@ def profile_frame(command, read_tree, evidence):
     evidence["frame"] = frame_observation(tree)
     node = ready_marker(tree)
     if node is None:
+        # A confirmed Android System UI ANR may cover the already-resumed debug
+        # fixture. Dismiss only its exact system-owned Wait action, then let the
+        # caller perform the normal foreground/marker checks again.
+        dismiss_confirmed_system_ui_anr(command, tree, evidence)
         return None
     # A crash or focus change during the UI dump must not count as ready.
     evidence["stage"] = "foreground-after-tree"
