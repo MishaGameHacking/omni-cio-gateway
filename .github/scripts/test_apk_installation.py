@@ -5,9 +5,11 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import time
+from collections.abc import Callable
 
 UIAUTOMATOR_PROCESS = "com.android.commands.uiautomator"
 UIAUTOMATOR_CONNECT_MARKERS = (
@@ -16,11 +18,26 @@ UIAUTOMATOR_CONNECT_MARKERS = (
 )
 UIAUTOMATOR_MIN_INTERVAL_SECONDS = 0.75
 UIAUTOMATOR_RECOVERY_SECONDS = 45
+EMULATOR_ATTEMPTS = 2
+
+
+class EmulatorTransportLost(OSError):
+    """The disposable emulator or its ADB transport disappeared."""
+
+    emulator_transport_lost = True
 
 
 def run(args: list[str], *, timeout: int = 120, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, input=stdin, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout, check=False)
+    return subprocess.run(
+        args,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
 
 
 def is_uiautomator_dump(command: tuple[str, ...]) -> bool:
@@ -84,28 +101,76 @@ def collect_failure_diagnostics(device) -> None:
     for command in commands:
         try:
             diagnostic = device(*command, timeout=10)
-            print("EMULATOR_DIAGNOSTIC=" + command[-1] + "\n" + diagnostic.stdout[-18000:], flush=True)
+            print(
+                "EMULATOR_DIAGNOSTIC="
+                + command[-1]
+                + "\n"
+                + diagnostic.stdout[-18000:],
+                flush=True,
+            )
         except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
-            print("EMULATOR_DIAGNOSTIC_UNAVAILABLE=" + type(exc).__name__, flush=True)
+            print(
+                "EMULATOR_DIAGNOSTIC_UNAVAILABLE=" + type(exc).__name__,
+                flush=True,
+            )
 
 
-def main() -> None:
+def run_with_transport_retry(
+    execute: Callable[[int], list[dict[str, object]]],
+    *,
+    attempts: int = EMULATOR_ATTEMPTS,
+) -> list[dict[str, object]]:
+    """Restart the whole disposable-emulator contract once after transport loss.
+
+    UI assertions, palette mismatches and app failures are deliberately not
+    retried. A retry starts a new AVD and reruns upgrade, clean install, launch,
+    and the complete UI exercise; no partial screenshot or stale tree can pass.
+    """
+    if type(attempts) is not int or not 1 <= attempts <= 2:
+        raise ValueError("Invalid emulator attempt count")
+    for attempt in range(1, attempts + 1):
+        try:
+            return execute(attempt)
+        except EmulatorTransportLost as exc:
+            print(
+                f"EMULATOR_TRANSPORT_RESTART=attempt-{attempt};"
+                + str(exc).replace("\n", " ")[-1000:],
+                flush=True,
+            )
+            if attempt == attempts:
+                raise
+    raise AssertionError("Emulator retry loop did not finish")
+
+
+def _safe_attempt_directory(root: Path, attempt: int) -> Path:
+    directory = root / f"attempt-{attempt}"
+    resolved_root = root.resolve()
+    if directory.is_symlink() or not directory.resolve().is_relative_to(resolved_root):
+        raise ValueError("Emulator attempt directory escapes work directory")
+    if directory.exists():
+        shutil.rmtree(directory)
+    directory.mkdir(parents=True)
+    return directory
+
+
+def _write_report(path: Path, results: list[dict[str, object]]) -> None:
+    path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+
+
+def run_attempt(
+    *,
+    apk: Path,
+    candidate_digest: str,
+    previous: Path | None,
+    sdk: Path,
+    api: int,
+    work: Path,
+    attempt: int,
+) -> list[dict[str, object]]:
+    """Execute the complete publication-grade contract in one fresh AVD."""
     from artifact_test_identity import apk_digest, record_install
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--apk", required=True, type=Path)
-    parser.add_argument("--previous", type=Path)
-    parser.add_argument("--sdk", required=True, type=Path)
-    parser.add_argument("--api", default=36, type=int)
-    parser.add_argument("--work-dir", required=True, type=Path)
-    args = parser.parse_args()
-    apk = args.apk.resolve(strict=True)
-    candidate_digest = apk_digest(apk)
-    previous = args.previous.resolve(strict=True) if args.previous else None
-    sdk = args.sdk.resolve(strict=True)
-    work = args.work_dir.resolve()
-    work.mkdir(parents=True, exist_ok=True)
     avd_home = work / "avd"
     avd_home.mkdir(exist_ok=True)
     os.environ["ANDROID_AVD_HOME"] = str(avd_home)
@@ -115,11 +180,25 @@ def main() -> None:
     batch = ".bat" if os.name == "nt" else ""
     adb = str(sdk / "platform-tools" / ("adb" + suffix))
     emulator = str(sdk / "emulator" / ("emulator" + suffix))
-    manager = str(sdk / "cmdline-tools" / "latest" / "bin" / ("avdmanager" + batch))
-    name = "analyst-install-" + str(os.getpid())
-    image = f"system-images;android-{args.api};google_apis;x86_64"
-    create = run([manager, "create", "avd", "--name", name, "--package", image,
-                  "--path", str(avd_home / (name + ".avd"))], stdin="no\n")
+    manager = str(
+        sdk / "cmdline-tools" / "latest" / "bin" / ("avdmanager" + batch)
+    )
+    name = f"analyst-install-{os.getpid()}-{attempt}"
+    image = f"system-images;android-{api};google_apis;x86_64"
+    create = run(
+        [
+            manager,
+            "create",
+            "avd",
+            "--name",
+            name,
+            "--package",
+            image,
+            "--path",
+            str(avd_home / (name + ".avd")),
+        ],
+        stdin="no\n",
+    )
     if create.returncode:
         raise RuntimeError("AVD creation failed: " + create.stdout + create.stderr)
     acceleration = run([emulator, "-accel-check"])
@@ -139,19 +218,23 @@ def main() -> None:
         "closed",
     )
     last_uiautomator_dump_finished = 0.0
+    process: subprocess.Popen[str] | None = None
+    transport_lost = False
 
     def device(*command: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-        """Retry only transport loss or a confirmed UiAutomation connection race.
+        """Retry bounded transport races, then report a real transport loss.
 
-        Android may briefly restart the emulator transport while applying system UI mode.
-        Android 16 can also reject rapid, short-lived ``uiautomator dump`` clients while
-        System UI is still releasing the previous UiAutomation connection. Both cases
-        are retried for a bounded period; every later UI label, foreground, palette and
-        screenshot assertion must still pass normally.
+        A confirmed transport loss is eligible only for a full fresh-AVD retry.
+        Ordinary command errors are returned to the caller and UI assertions
+        still fail immediately.
         """
-        nonlocal last_uiautomator_dump_finished
+        nonlocal last_uiautomator_dump_finished, transport_lost
         ui_dump = is_uiautomator_dump(command)
-        recovery_window = UIAUTOMATOR_RECOVERY_SECONDS if ui_dump else max(timeout, 120)
+        recovery_window = (
+            UIAUTOMATOR_RECOVERY_SECONDS
+            if ui_dump
+            else max(30, min(timeout, 120))
+        )
         recovery_deadline = time.monotonic() + recovery_window
         while True:
             if ui_dump:
@@ -167,16 +250,34 @@ def main() -> None:
             finally:
                 if ui_dump:
                     last_uiautomator_dump_finished = time.monotonic()
+
             if response is not None and response.returncode == 0:
                 return response
-            combined = "" if response is None else (response.stdout + "\n" + response.stderr).lower()
+
+            combined = (
+                ""
+                if response is None
+                else (response.stdout + "\n" + response.stderr).lower()
+            )
             uiautomator_timeout = ui_dump and response is None
             if ui_dump and response is not None and not uiautomator_timeout:
                 crash_text = ""
-                if not any(marker in combined for marker in UIAUTOMATOR_CONNECT_MARKERS):
+                if not any(
+                    marker in combined for marker in UIAUTOMATOR_CONNECT_MARKERS
+                ):
                     try:
                         diagnostic = run(
-                            [adb, "-s", serial, "logcat", "-d", "-b", "crash", "-t", "80"],
+                            [
+                                adb,
+                                "-s",
+                                serial,
+                                "logcat",
+                                "-d",
+                                "-b",
+                                "crash",
+                                "-t",
+                                "80",
+                            ],
                             timeout=10,
                         )
                     except subprocess.TimeoutExpired:
@@ -188,30 +289,65 @@ def main() -> None:
                     combined,
                     crash_text,
                 )
+
             transient_transport = response is None or any(
                 marker in combined for marker in transient_adb_errors
             )
             transient = transient_transport or uiautomator_timeout
-            if not transient or time.monotonic() >= recovery_deadline:
+            if not transient:
                 if response is None:
-                    raise subprocess.TimeoutExpired([adb, "-s", serial, *command], timeout)
+                    raise subprocess.TimeoutExpired(
+                        [adb, "-s", serial, *command],
+                        timeout,
+                    )
                 return response
+
+            process_exited = process is not None and process.poll() is not None
+            if process_exited or time.monotonic() >= recovery_deadline:
+                detail = combined.strip() or (
+                    "emulator process exited"
+                    if process_exited
+                    else "ADB command timed out"
+                )
+                transport_lost = True
+                raise EmulatorTransportLost(
+                    f"{serial} unavailable during {' '.join(command)}: "
+                    + detail[-1000:]
+                )
+
             if uiautomator_timeout:
                 detail = combined.strip() or "confirmed crash-buffer timeout"
-                print("UIAUTOMATOR_TRANSIENT_RECOVERY=" + detail[-2000:], flush=True)
+                print(
+                    "UIAUTOMATOR_TRANSIENT_RECOVERY=" + detail[-2000:],
+                    flush=True,
+                )
                 time.sleep(2)
                 continue
-            print("ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"), flush=True)
+
+            print(
+                "ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"),
+                flush=True,
+            )
             time.sleep(2)
             try:
-                wait = run([adb, "-s", serial, "wait-for-device"], timeout=20)
+                wait = run(
+                    [adb, "-s", serial, "wait-for-device"],
+                    timeout=20,
+                )
             except subprocess.TimeoutExpired:
                 continue
             if wait.returncode:
                 continue
             try:
                 boot = run(
-                    [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
+                    [
+                        adb,
+                        "-s",
+                        serial,
+                        "shell",
+                        "getprop",
+                        "sys.boot_completed",
+                    ],
                     timeout=15,
                 )
             except subprocess.TimeoutExpired:
@@ -232,10 +368,17 @@ def main() -> None:
         results.append(result)
         try:
             launch = device(
-                "shell", "am", "start", "-W", "-n",
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-n",
                 "ru.omnicio.app.debug/ru.omnicio.app.BootstrapActivity",
             )
-            print(label.upper() + "_RESULT=" + launch.stdout + launch.stderr, flush=True)
+            print(
+                label.upper() + "_RESULT=" + launch.stdout + launch.stderr,
+                flush=True,
+            )
             if launch.returncode or "Status: ok" not in launch.stdout:
                 raise RuntimeError(f"{label} failed")
             time.sleep(8)
@@ -253,27 +396,71 @@ def main() -> None:
 
     with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
-            [emulator, "-avd", name, "-port", str(port), "-no-window", "-no-audio",
-             "-no-snapshot", "-no-boot-anim", "-gpu", "swiftshader", "-feature", "-Vulkan",
-             "-memory", "2048", "-cores", "2", "-accel", "on" if acceleration.returncode == 0 else "off"],
-            stdout=log, stderr=subprocess.STDOUT,
+            [
+                emulator,
+                "-avd",
+                name,
+                "-port",
+                str(port),
+                "-no-window",
+                "-no-audio",
+                "-no-snapshot",
+                "-no-boot-anim",
+                "-gpu",
+                "swiftshader",
+                "-feature",
+                "-Vulkan",
+                "-memory",
+                "2048",
+                "-cores",
+                "2",
+                "-accel",
+                "on" if acceleration.returncode == 0 else "off",
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         try:
             deadline = time.monotonic() + 600
             while time.monotonic() < deadline:
                 if process.poll() is not None:
-                    raise RuntimeError("Emulator exited before boot")
+                    transport_lost = True
+                    raise EmulatorTransportLost("Emulator exited before boot")
                 try:
-                    boot = device("shell", "getprop", "sys.boot_completed", timeout=15)
+                    boot = run(
+                        [
+                            adb,
+                            "-s",
+                            serial,
+                            "shell",
+                            "getprop",
+                            "sys.boot_completed",
+                        ],
+                        timeout=15,
+                    )
                 except subprocess.TimeoutExpired:
-                    continue
-                if boot.returncode == 0 and boot.stdout.strip() == "1":
+                    boot = None
+                if (
+                    boot is not None
+                    and boot.returncode == 0
+                    and boot.stdout.strip() == "1"
+                ):
                     break
                 time.sleep(5)
             else:
                 raise TimeoutError("Emulator boot deadline exceeded")
-            print("ANDROID_API=" + device("shell", "getprop", "ro.build.version.sdk").stdout.strip(), flush=True)
-            verify_emulator_identity(device, name, args.api)
+
+            print(
+                "ANDROID_API="
+                + device(
+                    "shell",
+                    "getprop",
+                    "ro.build.version.sdk",
+                ).stdout.strip(),
+                flush=True,
+            )
+            verify_emulator_identity(device, name, api)
             package = "ru.omnicio.app.debug"
             if previous:
                 install("previous_clean_install", previous)
@@ -281,25 +468,44 @@ def main() -> None:
                 launch_candidate("upgrade_bootstrap_launch")
                 removed = device("uninstall", package)
                 if removed.returncode or "Success" not in removed.stdout:
-                    raise RuntimeError("Could not reset disposable emulator package")
+                    raise RuntimeError(
+                        "Could not reset disposable emulator package"
+                    )
             install("candidate_clean_install", apk)
             launch_candidate("bootstrap_activity_launch")
-            if args.api == 36 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+            if api == 36 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                 from profile_ui_probe import exercise
-                debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
+
+                debug_apk = (
+                    Path(__file__).resolve().parents[2]
+                    / "app/build/outputs/apk/debug/app-debug.apk"
+                )
                 install("debug_ui_fixture_install", debug_apk, update=True)
                 record_profile_check(device, results, exercise)
             failed = False
+            return results
         finally:
             log.flush()
-            (work / "install-results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
-            if failed:
+            _write_report(work / "install-results.json", results)
+            if failed and not transport_lost:
                 collect_runtime_failure(device)
                 collect_failure_diagnostics(device)
+            elif failed:
+                print(
+                    "EMULATOR_TRANSPORT_DIAGNOSTICS=adb-unavailable;"
+                    "full fresh-AVD attempt required",
+                    flush=True,
+                )
             try:
-                identity = device("emu", "avd", "name", timeout=10)
-                if name in identity.stdout.splitlines():
-                    device("emu", "kill", timeout=10)
+                identity = run(
+                    [adb, "-s", serial, "emu", "avd", "name"],
+                    timeout=10,
+                )
+                if (
+                    identity.returncode == 0
+                    and name in identity.stdout.splitlines()
+                ):
+                    run([adb, "-s", serial, "emu", "kill"], timeout=10)
             except (subprocess.TimeoutExpired, OSError):
                 pass
             try:
@@ -311,10 +517,60 @@ def main() -> None:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=10)
-            print("EMULATOR_LOG_TAIL=" + log_path.read_text(encoding="utf-8", errors="replace")[-5000:], flush=True)
+            print(
+                "EMULATOR_LOG_TAIL="
+                + log_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )[-5000:],
+                flush=True,
+            )
+
+
+def main() -> None:
+    from artifact_test_identity import apk_digest
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apk", required=True, type=Path)
+    parser.add_argument("--previous", type=Path)
+    parser.add_argument("--sdk", required=True, type=Path)
+    parser.add_argument("--api", default=36, type=int)
+    parser.add_argument("--work-dir", required=True, type=Path)
+    args = parser.parse_args()
+
+    apk = args.apk.resolve(strict=True)
+    candidate_digest = apk_digest(apk)
+    previous = args.previous.resolve(strict=True) if args.previous else None
+    sdk = args.sdk.resolve(strict=True)
+    work = args.work_dir.resolve()
+    work.mkdir(parents=True, exist_ok=True)
+    canonical_report = work / "install-results.json"
+
+    def execute(attempt: int) -> list[dict[str, object]]:
+        attempt_work = _safe_attempt_directory(work, attempt)
+        try:
+            results = run_attempt(
+                apk=apk,
+                candidate_digest=candidate_digest,
+                previous=previous,
+                sdk=sdk,
+                api=args.api,
+                work=attempt_work,
+                attempt=attempt,
+            )
+        except Exception:
+            report = attempt_work / "install-results.json"
+            if report.is_file():
+                shutil.copyfile(report, canonical_report)
+            raise
+        _write_report(canonical_report, results)
+        return results
+
+    run_with_transport_retry(execute)
 
 
 if __name__ == "__main__":
     from emulator_lease import exclusive_emulator
+
     with exclusive_emulator():
         main()
