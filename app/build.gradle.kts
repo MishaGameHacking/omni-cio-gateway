@@ -11,9 +11,9 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 36
         targetSdk = 36
-        // Code 26 belongs to the published 0.7.1 bytes; every update gets a new identity.
-        versionCode = 27
-        versionName = "0.7.2"
+        // Code 27 belongs to the Android 16-only 0.7.2 candidate; new bytes get a new identity.
+        versionCode = 28
+        versionName = "0.7.3"
     }
 
     buildTypes {
