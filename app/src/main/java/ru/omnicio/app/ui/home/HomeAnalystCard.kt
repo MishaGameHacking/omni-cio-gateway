@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Modifier
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.PortfolioSnapshot
@@ -62,7 +64,12 @@ internal fun HomeAnalystCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     SpectrumAnalystAvatar(mood, Modifier.size(124.dp))
-                    AnalystIdentity(status = status, accent = accent, centered = true)
+                    AnalystIdentity(
+                        status = status,
+                        accent = accent,
+                        centered = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             } else {
                 Row(
@@ -71,7 +78,12 @@ internal fun HomeAnalystCard(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     SpectrumAnalystAvatar(mood, Modifier.size(112.dp))
-                    AnalystIdentity(status = status, accent = accent, centered = false)
+                    AnalystIdentity(
+                        status = status,
+                        accent = accent,
+                        centered = false,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
@@ -92,9 +104,14 @@ internal fun HomeAnalystCard(
 }
 
 @Composable
-private fun AnalystIdentity(status: String, accent: androidx.compose.ui.graphics.Color, centered: Boolean) {
+private fun AnalystIdentity(
+    status: String,
+    accent: Color,
+    centered: Boolean,
+    modifier: Modifier,
+) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
