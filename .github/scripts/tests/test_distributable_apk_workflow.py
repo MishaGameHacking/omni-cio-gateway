@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "android-apk.yml"
 ACTION = ROOT / ".github" / "actions" / "check-apk" / "action.yml"
 INSTALLER = ROOT / ".github" / "scripts" / "test_apk_installation.py"
-REFERENCE_DIGEST = "40e1edcc31f2f2826ad7cfa6733c67bf1db0f2ab9e0c648a78045f21aa221532"
+REFERENCE_DIGEST = "343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7"
 
 
 class DistributableApkWorkflowTests(unittest.TestCase):
@@ -22,9 +22,11 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn('RUN_PROFILE_UI_TESTS: "1"', self.workflow)
 
     def test_workflow_pins_the_real_installed_reference_apk(self):
-        self.assertIn("Analyst-AI-0.5.1-preview-af5713e.apk", self.workflow)
+        self.assertIn("Analyst-AI-0.7.1-preview-e0b82ba.apk", self.workflow)
+        self.assertIn("android-preview-e0b82ba5f4889fbea7cc650591b2fabe7db596e0", self.workflow)
         self.assertIn(REFERENCE_DIGEST, self.workflow)
         self.assertIn("core.exportVariable('PREVIOUS_APK'", self.workflow)
+        self.assertNotIn("Analyst-AI-0.5.1-preview", self.workflow)
 
     def test_verification_finishes_before_artifact_retention(self):
         verification = self.workflow.index("uses: ./.github/actions/check-apk")
@@ -63,7 +65,7 @@ class DistributableApkWorkflowTests(unittest.TestCase):
             "contains(github.event.head_commit.message, '[publish-apk]')",
             release_block,
         )
-        self.assertIn("report.version_code <= 22", release_block)
+        self.assertIn("report.version_code <= 26", release_block)
         self.assertIn("hash !== report.sha256", release_block)
 
     def test_validation_source_changes_retrigger_main_apk(self):
