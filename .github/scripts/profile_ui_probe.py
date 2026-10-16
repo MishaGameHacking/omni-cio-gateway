@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import re
+import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
@@ -45,16 +46,16 @@ class ProfileProbe:
     def __init__(self, device):
         self.device = device
 
-    def command(self, *args):
-        response = self.device(*args, timeout=15)
+    def command(self, *args, timeout=15):
+        response = self.device(*args, timeout=timeout)
         if response.returncode:
             raise RuntimeError("UI test command failed: " + response.stderr)
         return response.stdout
 
     def tree(self):
-        self.command("shell", "uiautomator", "dump", "/sdcard/analyst-ui-test.xml")
-        xml = self.command("shell", "cat", "/sdcard/analyst-ui-test.xml")
-        return ET.fromstring(xml[xml.index("<?xml"):])
+        from profile_snapshot import fresh_tree
+
+        return fresh_tree(self.command)
 
     def capture(self, name: str):
         """Capture a real frame through the official emulator console.
@@ -105,6 +106,15 @@ class ProfileProbe:
 
     def find(self, text):
         return self.wait_for(lambda: matching_node(self.tree(), text), "UI label not found: " + text)
+
+    def find_all(self, labels):
+        """Check simultaneous labels in one fresh frame, not five new sessions."""
+        def read():
+            frame = self.tree()
+            nodes = [matching_node(frame, label) for label in labels]
+            return nodes if all(node is not None for node in nodes) else None
+
+        return self.wait_for(read, "UI labels not found together: " + ", ".join(labels))
 
     def bounds(self, text):
         return node_bounds(self.find(text))
@@ -232,8 +242,7 @@ class ProfileProbe:
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
-            for label in ("Главная", "Портфель", "Риски", "Обучение", "Профиль"):
-                self.find(label)
+            self.find_all(("Главная", "Портфель", "Риски", "Обучение", "Профиль"))
             self.find("Analyst AI" if screen == "home" else "Мой портфель")
             self.capture("spectrum-" + screen)
             if screen == "portfolio":
@@ -363,7 +372,8 @@ def exercise(device) -> None:
             flush=True,
         )
     finally:
-        try:
-            probe.command("shell", "settings", "put", "system", "font_scale", original_scale)
-        finally:
-            probe.command("shell", "cmd", "uimode", "night", original_night)
+        from profile_snapshot import restore_device_settings
+
+        # A cleanup disconnect must not replace a real UI assertion and thereby
+        # make the outer driver retry an application defect as transport loss.
+        restore_device_settings(probe.command, original_scale, original_night, sys.exc_info()[1])

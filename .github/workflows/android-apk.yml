@@ -36,6 +36,12 @@ jobs:
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
+    # Applies before checkout cleans generated Kotlin class paths on Windows.
+    # Keep clean checkout enabled; do not change the host's global Git config.
+    env:
+      GIT_CONFIG_COUNT: 1
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: true
 
     steps:
       - name: Checkout source
