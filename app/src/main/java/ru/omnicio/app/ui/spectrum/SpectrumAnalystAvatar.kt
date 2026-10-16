@@ -40,7 +40,9 @@ fun SpectrumAnalystAvatar(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalSpectrumPalette.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val colors = MaterialTheme.colorScheme
+    val dark = colors.background.luminance() < 0.5f
+    val onBackground = colors.onBackground
     val accent = when (mood) {
         AnalystAvatarMood.Ready -> palette.emerald
         AnalystAvatarMood.Attention -> palette.amber
@@ -103,7 +105,7 @@ fun SpectrumAnalystAvatar(
 
             // Grounding shadow keeps the character readable in both themes.
             drawOval(
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = if (dark) 0.16f else 0.09f),
+                color = onBackground.copy(alpha = if (dark) 0.16f else 0.09f),
                 topLeft = Offset(45f, 157f),
                 size = Size(90f, 12f),
             )
