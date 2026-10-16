@@ -219,6 +219,7 @@ def run_attempt(
     )
     last_uiautomator_dump_finished = 0.0
     process: subprocess.Popen[str] | None = None
+    transport_lost = False
 
     def device(*command: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
         """Retry bounded transport races, then report a real transport loss.
@@ -227,7 +228,7 @@ def run_attempt(
         Ordinary command errors are returned to the caller and UI assertions
         still fail immediately.
         """
-        nonlocal last_uiautomator_dump_finished
+        nonlocal last_uiautomator_dump_finished, transport_lost
         ui_dump = is_uiautomator_dump(command)
         recovery_window = (
             UIAUTOMATOR_RECOVERY_SECONDS
@@ -308,6 +309,7 @@ def run_attempt(
                     if process_exited
                     else "ADB command timed out"
                 )
+                transport_lost = True
                 raise EmulatorTransportLost(
                     f"{serial} unavailable during {' '.join(command)}: "
                     + detail[-1000:]
@@ -423,17 +425,27 @@ def run_attempt(
             deadline = time.monotonic() + 600
             while time.monotonic() < deadline:
                 if process.poll() is not None:
+                    transport_lost = True
                     raise EmulatorTransportLost("Emulator exited before boot")
                 try:
-                    boot = device(
-                        "shell",
-                        "getprop",
-                        "sys.boot_completed",
+                    boot = run(
+                        [
+                            adb,
+                            "-s",
+                            serial,
+                            "shell",
+                            "getprop",
+                            "sys.boot_completed",
+                        ],
                         timeout=15,
                     )
                 except subprocess.TimeoutExpired:
-                    continue
-                if boot.returncode == 0 and boot.stdout.strip() == "1":
+                    boot = None
+                if (
+                    boot is not None
+                    and boot.returncode == 0
+                    and boot.stdout.strip() == "1"
+                ):
                     break
                 time.sleep(5)
             else:
@@ -475,9 +487,15 @@ def run_attempt(
         finally:
             log.flush()
             _write_report(work / "install-results.json", results)
-            if failed:
+            if failed and not transport_lost:
                 collect_runtime_failure(device)
                 collect_failure_diagnostics(device)
+            elif failed:
+                print(
+                    "EMULATOR_TRANSPORT_DIAGNOSTICS=adb-unavailable;"
+                    "full fresh-AVD attempt required",
+                    flush=True,
+                )
             try:
                 identity = run(
                     [adb, "-s", serial, "emu", "avd", "name"],
