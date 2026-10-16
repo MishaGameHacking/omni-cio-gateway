@@ -125,6 +125,31 @@ class FrameProtocolTests(unittest.TestCase):
         connection.close.assert_called_once()
 
 
+class InstrumentationLaunchTests(unittest.TestCase):
+    def test_launch_keeps_the_public_watcher_alive_and_redirects_descriptors(self):
+        device = Mock(return_value=Mock(returncode=0, stdout=""))
+        log = frames.start_instrumentation(device, "a" * 32, "b" * 64)
+        args = device.call_args.args
+        self.assertEqual(args[0], "shell")
+        self.assertIn("am instrument -w -r", args[1])
+        self.assertIn(frames.DRIVER_COMPONENT, args[1])
+        self.assertTrue(args[1].endswith("2>&1 < /dev/null &"))
+        self.assertIn(log, args[1])
+        self.assertNotIn("kill-server", args[1])
+
+    def test_interpolated_session_values_reject_shell_syntax(self):
+        for session, token in ((";reboot", "b" * 64), ("a" * 32, "$(id)"), ("A" * 32, "b" * 64)):
+            device = Mock()
+            with self.subTest(session=session), self.assertRaises(ValueError):
+                frames.start_instrumentation(device, session, token)
+            device.assert_not_called()
+
+    def test_unavailable_diagnostics_do_not_replace_an_assertion(self):
+        original = AssertionError("bad UI")
+        frames.report_session_failure(Mock(side_effect=OSError("gone")), "/data/local/tmp/test", "a" * 64, original)
+        self.assertIn("diagnostics unavailable", original.__notes__[0])
+
+
 class ProfileSessionTests(unittest.TestCase):
     def load_profile(self):
         spec = importlib.util.spec_from_file_location("frame_test_profile", SCRIPTS / "profile_ui_probe.py")

@@ -148,6 +148,34 @@ def cleanup_session(device, connection, port, original):
         original.add_note("CI frame cleanup failed: " + ", ".join(type(e).__name__ for e in errors))
 
 
+def start_instrumentation(device, session: str, token: str) -> str:
+    """Keep am's watcher alive: without -w Android provides no UiAutomation.
+
+    The only shell interpolation is freshly generated, validated hex. All
+    descriptors are redirected so the launch call returns while am -w retains
+    the instrumentation connection. Stopping the owned helper ends that watcher.
+    """
+    if re.fullmatch(r"[a-f0-9]{32}", session) is None or re.fullmatch(r"[a-f0-9]{64}", token) is None:
+        raise ValueError("Invalid instrumentation session identity")
+    log = "/data/local/tmp/analyst-ci-frame-" + session + ".log"
+    command = (
+        "am instrument -w -r -e session " + session + " -e token " + token
+        + " " + DRIVER_COMPONENT + " > " + log + " 2>&1 < /dev/null &"
+    )
+    checked(device, "shell", command)
+    return log
+
+
+def report_session_failure(device, log: str | None, token: str, original) -> None:
+    if log is None:
+        return
+    try:
+        detail = checked(device, "shell", "tail", "-c", "2000", log, timeout=10)
+        print("UIAUTOMATION_SESSION_FAILURE=" + detail.replace(token, "[redacted]"), flush=True)
+    except Exception as error:
+        original.add_note("Frame-session diagnostics unavailable: " + type(error).__name__)
+
+
 @contextmanager
 def frame_session(device):
     assert_disposable(device)
@@ -163,11 +191,12 @@ def frame_session(device):
     print("CI_FRAME_DRIVER_SHA256=" + digest, flush=True)
     connection = None
     port = None
+    log = None
+    token = ""
     try:
         session = secrets.token_hex(16)
         token = secrets.token_hex(32)
-        checked(device, "shell", "am", "instrument", "-e", "session", session,
-                "-e", "token", token, DRIVER_COMPONENT)
+        log = start_instrumentation(device, session, token)
         value = checked(device, "forward", "tcp:0", "localabstract:analyst-ci-frame-" + session).strip()
         if not value.isdecimal() or not 1024 <= int(value) <= 65535:
             raise ValueError("Unexpected loopback forwarding port")
@@ -175,5 +204,8 @@ def frame_session(device):
         connection = connect_session(port, token)
         print("UIAUTOMATION_SESSION=connected;protocol=1", flush=True)
         yield FrameReader(connection).ready_tree
+    except Exception as original:
+        report_session_failure(device, log, token, original)
+        raise
     finally:
         cleanup_session(device, connection, port, sys.exc_info()[1])
