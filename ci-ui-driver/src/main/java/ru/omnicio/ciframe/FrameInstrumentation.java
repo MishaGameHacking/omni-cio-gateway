@@ -21,14 +21,18 @@ import java.io.OutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 import org.xmlpull.v1.XmlSerializer;
 
 /** One public UiAutomation connection for the whole disposable-emulator scenario.
  * A separate test-only package survives force-stop/restart of the app under test.
- * The only operation exposed is reading a fresh accessibility tree, not commands.
+ * Reads fresh frames and supports one narrowly scoped portfolio scroll action.
  */
 public final class FrameInstrumentation extends Instrumentation {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
+    private static final String APP_PACKAGE = "ru.omnicio.app.debug";
+    private static final String PORTFOLIO_LIST = "portfolio-content";
     private String socketName;
     private byte[] token;
     private WindowManager windows;
@@ -81,22 +85,63 @@ public final class FrameInstrumentation extends Instrumentation {
         byte[] supplied = new byte[64];
         input.readFully(supplied);
         if (!MessageDigest.isEqual(token, supplied)) throw new IOException("Session authentication failed");
-        output.writeInt(1); // Protocol version, sent only after UiAutomation is connected.
+        output.writeInt(1); // Existing read protocol; high request bit selects the sole scroll action.
         output.flush();
         int previous = 0;
         while (true) {
-            int request = input.readInt();
-            if (request == 0) return;
+            int rawRequest = input.readInt();
+            if (rawRequest == 0) return;
+            int request = rawRequest & Integer.MAX_VALUE;
             if (request <= previous) throw new IOException("Non-monotonic frame request");
             previous = request;
             if (!automation.clearCache()) throw new IOException("Could not invalidate accessibility cache");
             AccessibilityNodeInfo root = automation.getRootInActiveWindow();
-            byte[] frame = root == null ? new byte[0] : encodeTree(root);
-            output.writeInt(request);
-            output.writeInt(root == null ? 0 : 1);
-            output.writeInt(frame.length);
-            output.write(frame);
-            output.flush();
+            if (rawRequest < 0) {
+                if (!scrollPortfolio(root)) throw new IOException("Exact visible portfolio cannot scroll forward");
+                output.writeInt(request);
+                output.writeInt(2); // An action acknowledgement is NEVER a frame.
+                output.writeInt(0);
+                output.flush();
+            } else {
+                byte[] frame = root == null ? new byte[0] : encodeTree(root);
+                output.writeInt(request);
+                output.writeInt(root == null ? 0 : 1);
+                output.writeInt(frame.length);
+                output.write(frame);
+                output.flush();
+            }
+        }
+    }
+
+    private boolean scrollPortfolio(AccessibilityNodeInfo root) throws IOException {
+        if (root == null || !APP_PACKAGE.contentEquals(root.getPackageName())) return false;
+        List<AccessibilityNodeInfo> matches = new ArrayList<>();
+        findPortfolio(root, matches, 0, new int[] {0});
+        if (matches.size() != 1) return false;
+        AccessibilityNodeInfo list = matches.get(0);
+        Rect bounds = new Rect();
+        list.getBoundsInScreen(bounds);
+        if (!bounds.intersect(windows.getMaximumWindowMetrics().getBounds()) || bounds.isEmpty()) return false;
+        AccessibilityNodeInfo.AccessibilityAction action = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD;
+        if (!list.getActionList().contains(action)) return false;
+        // Dispatch through the actual Compose accessibility action. This does
+        // not set app state, change the selected section, click a button, or
+        // substitute data. The next request must verify a fresh visible frame.
+        return list.performAction(action.getId());
+    }
+
+    private static void findPortfolio(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> matches,
+            int depth, int[] count) throws IOException {
+        if (depth > 100 || ++count[0] > 5000) throw new IOException("Scroll search exceeds node budget");
+        String id = node.getViewIdResourceName();
+        boolean exactId = PORTFOLIO_LIST.equals(id) || (APP_PACKAGE + ":id/" + PORTFOLIO_LIST).equals(id);
+        if (exactId && APP_PACKAGE.contentEquals(node.getPackageName())
+                && node.isVisibleToUser() && node.isEnabled() && node.isScrollable()) {
+            matches.add(node);
+        }
+        for (int index = 0; index < node.getChildCount(); index++) {
+            AccessibilityNodeInfo child = node.getChild(index);
+            if (child != null && child.isVisibleToUser()) findPortfolio(child, matches, depth + 1, count);
         }
     }
 
