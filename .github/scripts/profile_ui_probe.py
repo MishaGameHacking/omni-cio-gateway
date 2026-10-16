@@ -26,20 +26,49 @@ DARK_BACKGROUND = "ff020a16"
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
     """Compose may merge card labels into text or content-description nodes."""
     for node in tree.iter("node"):
-        labels = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
+        labels = node.get("text", "").splitlines() + node.get(
+            "content-desc", ""
+        ).splitlines()
         if text in [label.strip() for label in labels]:
             return node
     return None
 
 
 def node_bounds(node: ET.Element) -> tuple[int, int, int, int]:
-    match = re.fullmatch(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", node.get("bounds", ""))
+    match = re.fullmatch(
+        r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]",
+        node.get("bounds", ""),
+    )
     if match is None:
         raise AssertionError("Missing UI bounds")
     left, top, right, bottom = map(int, match.groups())
     if left < 0 or top < 0 or right <= left or bottom <= top:
         raise AssertionError("UI target is empty or outside the visible screen")
     return left, top, right, bottom
+
+
+def _horizontal_scroll_direction(x1: int, y1: int, x2: int, y2: int) -> str:
+    if y1 != y2 or x1 == x2:
+        raise ValueError("Horizontal semantic scroll geometry is invalid")
+    return "end" if x2 < x1 else "start"
+
+
+def _vertical_scroll_direction(x1: int, y1: int, x2: int, y2: int) -> str:
+    if x1 != x2 or y1 == y2:
+        raise ValueError("Vertical semantic scroll geometry is invalid")
+    return "end" if y2 < y1 else "start"
+
+
+def semantic_scroll_direction(
+    area: str,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+) -> str:
+    if area == "profile-tabs":
+        return _horizontal_scroll_direction(x1, y1, x2, y2)
+    return _vertical_scroll_direction(x1, y1, x2, y2)
 
 
 class ProfileProbe:
@@ -51,7 +80,9 @@ class ProfileProbe:
         response = self.device(*args, timeout=timeout)
         if response.returncode:
             detail = (response.stdout + "\n" + response.stderr).strip()[-1500:]
-            raise RuntimeError(f"UI test command failed ({response.returncode}): {detail}")
+            raise RuntimeError(
+                f"UI test command failed ({response.returncode}): {detail}"
+            )
         return response.stdout
 
     def tree(self):
@@ -88,7 +119,9 @@ class ProfileProbe:
             if not 100 <= picture.stat().st_size <= 2097152:
                 raise AssertionError("Unexpected emulator screenshot size")
             image = picture.read_bytes()
-            if not image.startswith(b"\x89PNG\r\n\x1a\n") or not image.endswith(b"\x00\x00\x00\x00IEND\xaeB`\x82"):
+            if not image.startswith(b"\x89PNG\r\n\x1a\n") or not image.endswith(
+                b"\x00\x00\x00\x00IEND\xaeB`\x82"
+            ):
                 raise AssertionError("Invalid or incomplete emulator screenshot")
             picture.replace(destination)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
@@ -107,28 +140,34 @@ class ProfileProbe:
         raise AssertionError(message) from last_error
 
     def find(self, text):
-        return self.wait_for(lambda: matching_node(self.tree(), text), "UI label not found: " + text)
+        return self.wait_for(
+            lambda: matching_node(self.tree(), text),
+            "UI label not found: " + text,
+        )
 
     def find_all(self, labels):
         """Check simultaneous labels in one fresh frame, not five new sessions."""
+
         def read():
             frame = self.tree()
             nodes = [matching_node(frame, label) for label in labels]
             return nodes if all(node is not None for node in nodes) else None
 
-        return self.wait_for(read, "UI labels not found together: " + ", ".join(labels))
+        return self.wait_for(
+            read,
+            "UI labels not found together: " + ", ".join(labels),
+        )
 
     def bounds(self, text):
         return node_bounds(self.find(text))
 
     def _semantic_scroll_callback(self, area: str, direction: str):
-        """Translate bounded list geometry into one exact accessibility action.
+        """Map validated list geometry to one exact accessibility action.
 
-        The previous shell drag could begin over a clickable profile card. On a
-        busy Android 16 emulator that gesture could be interpreted as a tap,
-        open a modal dialog and remove ``profile-content`` from the active root.
-        The persistent UiAutomation session now scrolls the exact tagged list
-        through its public Compose accessibility action instead.
+        The old shell drag could begin over a clickable profile card and open a
+        modal dialog instead of scrolling. This callback keeps the existing
+        bounded geometry contract, but delegates movement to the exact tagged
+        Compose list through the owned persistent UiAutomation session.
         """
         from persistent_ui import FrameReader, SCROLL_LIST_CODES
 
@@ -139,16 +178,11 @@ class ProfileProbe:
             raise ValueError("Unknown semantic scroll target")
 
         def scroll(x1, y1, x2, y2):
-            if area == "profile-tabs":
-                if y1 != y2 or x1 == x2:
-                    raise ValueError("Horizontal semantic scroll geometry is invalid")
-                observed = "end" if x2 < x1 else "start"
-            else:
-                if x1 != x2 or y1 == y2:
-                    raise ValueError("Vertical semantic scroll geometry is invalid")
-                observed = "end" if y2 < y1 else "start"
+            observed = semantic_scroll_direction(area, x1, y1, x2, y2)
             if observed != direction:
-                raise ValueError("Semantic scroll direction disagrees with list geometry")
+                raise ValueError(
+                    "Semantic scroll direction disagrees with list geometry"
+                )
             reader.scroll_list(area, direction)
 
         return scroll
@@ -167,10 +201,18 @@ class ProfileProbe:
         if target is None:
             from profile_scroll import visible_label
 
-            target = self.wait_for(lambda: visible_label(self.tree(), text), "UI label not visible: " + text)
+            target = self.wait_for(
+                lambda: visible_label(self.tree(), text),
+                "UI label not visible: " + text,
+            )
         return target
 
-    def reveal_resource(self, resource_id, area="profile-content", direction="end"):
+    def reveal_resource(
+        self,
+        resource_id,
+        area="profile-content",
+        direction="end",
+    ):
         from profile_scroll import reveal_resource_in_list
 
         target = reveal_resource_in_list(
@@ -192,7 +234,13 @@ class ProfileProbe:
 
     def tap_node(self, node):
         left, top, right, bottom = node_bounds(node)
-        self.command("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+        self.command(
+            "shell",
+            "input",
+            "tap",
+            str((left + right) // 2),
+            str((top + bottom) // 2),
+        )
 
     def tap(self, text, area="profile-content", direction="end"):
         self.tap_node(self.reveal(text, area, direction))
@@ -201,10 +249,18 @@ class ProfileProbe:
         """Wait for a dialog action; never scroll the obscured profile behind it."""
         from profile_scroll import visible_label
 
-        target = self.wait_for(lambda: visible_label(self.tree(), text), "Dialog action not visible: " + text)
+        target = self.wait_for(
+            lambda: visible_label(self.tree(), text),
+            "Dialog action not visible: " + text,
+        )
         self.tap_node(target)
 
-    def tap_resource(self, resource_id, area="profile-content", direction="end"):
+    def tap_resource(
+        self,
+        resource_id,
+        area="profile-content",
+        direction="end",
+    ):
         self.tap_node(self.reveal_resource(resource_id, area, direction))
 
     def tap_profile_content(self, text):
@@ -251,7 +307,8 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        self.marker("probe-foreground:" + ("fff4f7ff" if expected == DARK_BACKGROUND else "ff101722"))
+        foreground = "fff4f7ff" if expected == DARK_BACKGROUND else "ff101722"
+        self.marker("probe-foreground:" + foreground)
 
     def open(self):
         from profile_launch import launch_profile
@@ -265,19 +322,43 @@ class ProfileProbe:
         # Sample each selected tab, not a clipped sliver left outside the rail.
         peer = node_bounds(self.tab(SETTINGS_LABEL))
         target = node_bounds(self.tab(INFO_LABEL))
-        print("PROFILE_TAB_GEOMETRY=" + json.dumps({"settings": peer, "about": target}), flush=True)
+        print(
+            "PROFILE_TAB_GEOMETRY="
+            + json.dumps({"settings": peer, "about": target}),
+            flush=True,
+        )
         assert_horizontal_geometry(peer, target)
 
     def dashboards(self):
-        from profile_launch import start_status, profile_frame
+        from profile_launch import profile_frame, start_status
 
         self.command("shell", "settings", "put", "system", "font_scale", "1.0")
         self.command("shell", "cmd", "uimode", "night", "yes")
         for screen in ("home", "portfolio"):
             self.command("shell", "am", "force-stop", PACKAGE)
-            start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY, "--es", "spectrum_screen", screen))
+            start_status(
+                self.command(
+                    "shell",
+                    "am",
+                    "start",
+                    "-W",
+                    "-n",
+                    ACTIVITY,
+                    "--es",
+                    "spectrum_screen",
+                    screen,
+                )
+            )
             evidence = {}
-            self.wait_for(lambda evidence=evidence: profile_frame(self.command, self.tree, evidence), "Dashboard is not resumed and ready")
+            self.wait_for(
+                lambda evidence=evidence: profile_frame(
+                    self.command,
+                    self.tree,
+                    evidence,
+                    expected_screen=screen,
+                ),
+                "Dashboard is not resumed and ready",
+            )
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
@@ -342,7 +423,10 @@ class ProfileProbe:
         self.find(CONFIRM_LABEL)
         if capture_evidence:
             self.capture("about")
-        if not any("Версия " in node.get("text", "") for node in self.tree().iter("node")):
+        if not any(
+            "Версия " in node.get("text", "")
+            for node in self.tree().iter("node")
+        ):
             raise AssertionError("About version text missing")
         self.tap_visible(CONFIRM_LABEL)
 
@@ -382,7 +466,11 @@ class ProfileProbe:
 
 
 def night_setting(output: str) -> str:
-    match = re.search(r"Night mode:\s*(yes|no|auto|custom)\b", output, flags=re.IGNORECASE)
+    match = re.search(
+        r"Night mode:\s*(yes|no|auto|custom)\b",
+        output,
+        flags=re.IGNORECASE,
+    )
     return match.group(1).lower() if match else "auto"
 
 
@@ -397,8 +485,16 @@ def exercise_checks(device, read_tree) -> None:
     """Run the unchanged screen assertions with an explicitly scoped frame source."""
     probe = ProfileProbe(device)
     probe.read_tree = read_tree
-    original_night = night_setting(probe.command("shell", "cmd", "uimode", "night"))
-    original_scale = probe.command("shell", "settings", "get", "system", "font_scale").strip()
+    original_night = night_setting(
+        probe.command("shell", "cmd", "uimode", "night")
+    )
+    original_scale = probe.command(
+        "shell",
+        "settings",
+        "get",
+        "system",
+        "font_scale",
+    ).strip()
     if re.fullmatch(r"\d(?:\.\d{1,3})?", original_scale) is None:
         original_scale = "1.0"
     try:
@@ -416,7 +512,9 @@ def exercise_checks(device, read_tree) -> None:
             test()
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
-            "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,persistence,about,security,section-scroll-reset,education,font-200,education-font-200,refresh-state-15,education-catalog-10",
+            "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,"
+            "persistence,about,security,section-scroll-reset,education,font-200,"
+            "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
     finally:
@@ -424,4 +522,9 @@ def exercise_checks(device, read_tree) -> None:
 
         # A cleanup disconnect must not replace a real UI assertion and thereby
         # make the outer driver retry an application defect as transport loss.
-        restore_device_settings(probe.command, original_scale, original_night, sys.exc_info()[1])
+        restore_device_settings(
+            probe.command,
+            original_scale,
+            original_night,
+            sys.exc_info()[1],
+        )
