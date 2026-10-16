@@ -20,9 +20,11 @@ import httpx
 try:
     from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
+    from .monitoring_access import assert_monitoring_access
 except ImportError:
     from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from ai_jobs import CURRENT_JOB, AnalysisQueue
+    from monitoring_access import assert_monitoring_access
 
 
 class GuardError(RuntimeError):
@@ -176,6 +178,7 @@ class GuardedAIClient:
             raise GuardError(str(error)) from None
 
     def _complete(self, tier, messages, max_output_tokens: int):
+        assert_monitoring_access(self.connect)
         route = self.check_ready(tier)
         if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
             reject('ai_output_limit_invalid')
@@ -207,6 +210,7 @@ class GuardedAIClient:
         try:
             if job:
                 AnalysisQueue(self.connect).assert_owner(*job)
+            assert_monitoring_access(self.connect)
             response = self._send(route, payload)
             usage = self._usage(response)
             returned = response.get('model')

@@ -18,9 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 try:
     from . import app as backend
     from . import tinvest_portfolio as portfolio
+    from .ai_jobs import assert_current_owner_in
+    from .monitoring_access import assert_monitoring_access_in, monitoring_active
 except ImportError:
     import app as backend
     import tinvest_portfolio as portfolio
+    from ai_jobs import assert_current_owner_in
+    from monitoring_access import assert_monitoring_access_in, monitoring_active
 
 READ_ERRORS = {
     400: {"description": "Invalid date range"},
@@ -299,9 +303,13 @@ def ensure_history(db) -> None:
 
 
 def record_history(user_id: int, accounts: list[dict], observed: str) -> None:
-    backend.client_updates.assert_user_can_run(backend.connect, user_id)
+    if not monitoring_active():
+        backend.client_updates.assert_user_can_run(backend.connect, user_id)
     stamp = int(datetime.fromisoformat(observed).timestamp())
     with closing(backend.connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        assert_current_owner_in(db)
+        assert_monitoring_access_in(db)
         ensure_history(db)
         for account in accounts:
             value = str(number(account["totalValue"]["value"]))

@@ -62,9 +62,13 @@ except ImportError:  # uvicorn top-level import compatibility
     from ai_guarded_client import GuardedAIClient, GuardError
 
 try:
-    from . import client_updates
+    from .monitoring_access import (
+        assert_monitoring_access, assert_monitoring_access_in, monitoring_connection,
+    )
 except ImportError:
-    import client_updates
+    from monitoring_access import (
+        assert_monitoring_access, assert_monitoring_access_in, monitoring_connection,
+    )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -342,6 +346,7 @@ def _save_snapshot(user_id: int, snapshot: Mapping[str, Any]) -> tuple[str, str]
     with closing(backend.connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         assert_current_owner_in(db)
+        assert_monitoring_access_in(db)
         db.execute(
             """
             INSERT INTO portfolio_snapshots(
@@ -649,6 +654,7 @@ def _record_run(
     with closing(backend.connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         assert_current_owner_in(db)
+        assert_monitoring_access_in(db)
         db.execute(
             """
             INSERT INTO analysis_runs(
@@ -699,6 +705,7 @@ def _insert_card(
     with closing(backend.connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         assert_current_owner_in(db)
+        assert_monitoring_access_in(db)
         db.execute(
             """
             INSERT INTO insight_cards(
@@ -749,9 +756,15 @@ def run_user_analysis(
     if user["tinvest_token_encrypted"] is None:
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
 
-    if not client_updates.user_can_run(backend.connect, user_id):
-        return {'state':'paused', 'reason':'client_update_required', 'tier':'none', 'card_id':None}
+    with monitoring_connection(user_id, user["tinvest_token_encrypted"]):
+        return _run_connected_analysis(user_id, user, current_time, force)
 
+
+def _run_connected_analysis(
+    user_id: int, user: sqlite3.Row, current_time: datetime, force: bool,
+) -> dict[str, Any]:
+    # Android readiness gates interactive API access, never server monitoring.
+    assert_monitoring_access(backend.connect)
     previous, previous_row = _latest_snapshot(user_id)
     try:
         snapshot = get_tinvest_portfolio(currency="RUB", user=user)
@@ -761,7 +774,7 @@ def run_user_analysis(
         logger.exception("Autonomous portfolio collection failed for user %s", user_id)
         raise HTTPException(status_code=503, detail="analysis_portfolio_unavailable") from None
 
-    client_updates.assert_user_can_run(backend.connect, user_id)
+    assert_monitoring_access(backend.connect)
     current_job = CURRENT_JOB.get()
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
@@ -808,7 +821,7 @@ def run_user_analysis(
             raise TimewebAIConfigurationError("analysis_budget_exhausted")
         # Missing credentials are free; uncertain network failures are not retried
         # for free. Reservation is never rolled back after a model attempt.
-        client_updates.assert_user_can_run(backend.connect, user_id)
+        assert_monitoring_access(backend.connect)
         guarded_client = GuardedAIClient(user_id, backend.connect)
         guarded_client.check_ready(decision.tier)
         if not _reserve_budget(user_id, current_time, decision.tier):
@@ -834,7 +847,7 @@ def run_user_analysis(
 
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
-    client_updates.assert_user_can_run(backend.connect, user_id)
+    assert_monitoring_access(backend.connect)
     _record_run(
         user_id=user_id,
         decision=decision,
@@ -893,8 +906,7 @@ def run_scheduler_cycle() -> dict[str, int]:
     with closing(backend.connect()) as db:
         users = db.execute("SELECT id FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
     for user in users:
-        if client_updates.user_can_run(backend.connect, int(user['id'])):
-            queue.enqueue(int(user['id']))
+        queue.enqueue(int(user['id']))
     return drain(queue, run_user_analysis)
 
 
@@ -1081,6 +1093,36 @@ def refresh(
             'tier': 'none', 'card_id': None, 'model': None, 'error_code': None}
 
 
+def monitoring_status(user: sqlite3.Row, queue_status: Mapping[str, Any]) -> dict[str, Any]:
+    """Report observed collection freshness, not a promise of portfolio safety."""
+    user_id = int(user["id"])
+    with closing(backend.connect()) as db:
+        last = db.execute(
+            "SELECT MAX(created_at) FROM portfolio_snapshots WHERE user_id = ?", (user_id,)
+        ).fetchone()[0]
+    now = int(time.time())
+    last_at = int(last) if last is not None and int(last) <= now else None
+    if user["tinvest_token_encrypted"] is None:
+        state = "not_connected"
+    elif not SCHEDULER_ENABLED:
+        state = "disabled"
+    elif queue_status.get("state") in {"failed", "uncertain"}:
+        state = "check_failed"
+    elif last_at is None:
+        state = "waiting"
+    elif now - last_at > max(120, 2 * SCHEDULER_INTERVAL_SECONDS):
+        state = "delayed"
+    else:
+        state = "current"
+    return {
+        "state": state,
+        "last_snapshot_at": (
+            datetime.fromtimestamp(last_at, UTC).isoformat() if last_at is not None else None
+        ),
+        "independent_of_android_session": True,
+    }
+
+
 @router.get("/status")
 def status(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
     user_id = int(user["id"])
@@ -1103,11 +1145,13 @@ def status(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
         except (GuardError, BudgetDenied) as error:
             readiness.append({'tier': tier.value, 'ready': False, 'reason': str(error)})
     ai_configured = all(item['ready'] for item in readiness)
+    queue_status = AnalysisQueue(backend.connect).user_status(user_id)
     return {
         "scheduler_enabled": SCHEDULER_ENABLED,
         "ai_configured": ai_configured,
         "route_readiness": readiness,
-        "queue": AnalysisQueue(backend.connect).user_status(user_id),
+        "queue": queue_status,
+        "monitoring": monitoring_status(user, queue_status),
         "spending": MoneyLedger(backend.connect).user_summary(user_id),
         "configuration_is_not_live_inference_proof": True,
         "deterministic_monitoring": True,

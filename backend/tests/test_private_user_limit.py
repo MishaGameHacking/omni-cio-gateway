@@ -174,7 +174,7 @@ class PrivateInstallationContractTests(unittest.TestCase):
 
     def test_owner_rules_record_closed_free_installation(self) -> None:
         rules = (self.root / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("максимум для пяти уникальных Telegram-аккаунтов", rules)
+        self.assertIn("максимум для пяти приглашённых уникальных Telegram-аккаунтов", rules)
         self.assertIn("не будет оплат, подписок, покупок", rules)
         self.assertIn("один общий процесс обслуживает от одного до пяти аккаунтов", rules)
 

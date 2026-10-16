@@ -142,5 +142,59 @@ class EmulatorFailureTests(unittest.TestCase):
         self.assertEqual(device.call_count, 2)
 
 
+    def test_broken_frame_with_offline_adb_restarts_complete_attempt(self):
+        calls = []
+        process = Mock(poll=Mock(return_value=None))
+        original = ConnectionError("frame ended")
+        def execute(attempt):
+            calls.append(attempt)
+            if attempt == 1:
+                classified = installation.classify_frame_failure(
+                    original, "adb", "emulator-5600", process
+                )
+                raise classified from original
+            return [{"test": "profile_ui", "success": True}]
+        with patch.object(installation, "adb_transport_connected", return_value=False) as probe, \
+                patch("builtins.print"):
+            result = installation.run_with_transport_retry(execute)
+        self.assertEqual(calls, [1, 2])
+        self.assertTrue(result[0]["success"])
+        probe.assert_called_once_with("adb", "emulator-5600")
+
+    def test_broken_frame_on_connected_emulator_keeps_original_failure(self):
+        original = ConnectionError("driver stopped")
+        process = Mock(poll=Mock(return_value=None))
+        with patch.object(installation, "adb_transport_connected", return_value=True), \
+                patch("builtins.print"):
+            result = installation.classify_frame_failure(
+                original, "adb", "emulator-5600", process
+            )
+        self.assertIs(result, original)
+
+    def test_ui_assertions_and_malformed_frames_never_probe_or_retry(self):
+        process = Mock(poll=Mock(return_value=1))
+        for original in (AssertionError("missing label"), ValueError("stale frame"), TimeoutError("slow UI")):
+            with self.subTest(error=type(original).__name__), \
+                    patch.object(installation, "adb_transport_connected") as probe:
+                result = installation.classify_frame_failure(
+                    original, "adb", "emulator-5600", process
+                )
+            self.assertIs(result, original)
+            probe.assert_not_called()
+        process.poll.assert_not_called()
+
+    def test_exited_emulator_classifies_frame_loss_without_touching_other_devices(self):
+        original = ConnectionError("frame ended")
+        process = Mock(poll=Mock(return_value=3221225477))
+        with patch.object(installation, "adb_transport_connected") as probe, \
+                patch("builtins.print"):
+            result = installation.classify_frame_failure(
+                original, "adb", "emulator-5600", process
+            )
+        self.assertIsInstance(result, installation.EmulatorTransportLost)
+        self.assertIn("3221225477", str(result))
+        probe.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

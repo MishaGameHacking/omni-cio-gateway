@@ -74,9 +74,9 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         self.assertIn("contains(github.event.head_commit.message, '[publish-apk]')", publication)
         self.assertIn('uses: ./.github/actions/check-apk', workflow)
         self.assertNotIn('publish_moscow_release.sh', workflow)
-        # Version code 26 belongs to the verified and physically installed 0.7.1.
+        # Version code 29 belongs to the published 0.7.4 upgrade baseline.
         # Any changed APK bytes must use a strictly newer identity.
-        self.assertIn('report.version_code <= 26', publication)
+        self.assertIn('report.version_code <= 29', publication)
 
 
 if __name__ == '__main__':
