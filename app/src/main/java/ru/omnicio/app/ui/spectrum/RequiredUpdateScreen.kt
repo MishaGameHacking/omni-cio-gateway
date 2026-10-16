@@ -1,8 +1,24 @@
 package ru.omnicio.app.ui.spectrum
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,52 +33,170 @@ import ru.omnicio.app.ui.updates.UpdateGateUi
 @Composable
 fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
     val motion = LocalSpectrumMotionPreference.current
-    SpectrumBackground(Modifier.fillMaxSize()) {
+    val updateRequired = state.decision == ReleaseDecision.UPDATE_REQUIRED
+    SpectrumUpdateBackdrop(
+        motionAllowed = motion.enabled,
+        modifier = Modifier.fillMaxSize(),
+    ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            item {
-                SpectrumIcon(SpectrumSymbol.Update, Modifier.size(112.dp), selected = true,
-                    tile = true, motionAllowed = motion.enabled)
+            item(key = "update-alert") {
+                SpectrumUpdateAlert(
+                    updateRequired = updateRequired,
+                    motionAllowed = motion.enabled,
+                    modifier = Modifier.size(148.dp),
+                )
             }
-            item { Text(state.title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
-            item {
+            item(key = "update-title") {
+                Text(
+                    text = state.title,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            item(key = "update-details") {
                 SpectrumCard(emphasized = true) {
                     Text(state.explanation, style = MaterialTheme.typography.bodyLarge)
-                    Text("Установлено: ${state.installedVersion}", style = MaterialTheme.typography.bodyLarge)
-                    state.release?.let { Text("Новая версия: ${it.versionName}", style = MaterialTheme.typography.bodyLarge) }
-                    state.release?.notes?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                    Text(
+                        "Установлено: ${state.installedVersion}",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    state.release?.let {
+                        Text(
+                            "Новая версия: ${it.versionName}",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    state.release?.notes
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+
                     if (state.checking && !state.busy) {
-                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                        Text("Проверяем доступность актуальной версии.")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            Text(
+                                "Проверяем доступность актуальной версии.",
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                     if (state.busy) {
                         Text("Скачивание и проверка: ${state.progressPercent}%")
-                        LinearProgressIndicator(progress = { state.progressPercent / 100f }, modifier = Modifier.fillMaxWidth())
+                        LinearProgressIndicator(
+                            progress = { state.progressPercent / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
-                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
-                    state.installationStatus?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                    state.error?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    state.installationStatus?.let {
+                        Text(it, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
             }
-            if (state.decision == ReleaseDecision.UPDATE_REQUIRED) {
-                item {
-                    Button(onClick = actions.update, enabled = state.canUpdate,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить приложение") }
+            item(key = "update-process") {
+                UpdateProcessSummary()
+            }
+            if (updateRequired) {
+                item(key = "update-action") {
+                    SpectrumPrimaryButton(
+                        text = "Обновить приложение",
+                        onClick = actions.update,
+                        enabled = state.canUpdate,
+                        symbol = SpectrumSymbol.Update,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 54.dp),
+                    )
                 }
             }
-            item {
-                Text("APK загружается с московского сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
-                    style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            item(key = "update-source") {
+                Text(
+                    "APK загружается с московского сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            item {
-                Text("Android может попросить разрешение на установку и открыть системное подтверждение. После установки при необходимости нажмите «Открыть».",
-                    style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            item(key = "update-android-confirmation") {
+                Text(
+                    "Android может попросить разрешение на установку и открыть системное подтверждение. После установки при необходимости нажмите «Открыть».",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            item { TextButton(onClick = actions.retry, enabled = state.canRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("Повторить проверку") } }
-            item { TextButton(onClick = actions.close, modifier = Modifier.heightIn(min = 48.dp)) { Text("Закрыть") } }
+            item(key = "update-retry") {
+                TextButton(
+                    onClick = actions.retry,
+                    enabled = state.canRetry,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text("Повторить проверку")
+                }
+            }
+            item(key = "update-close") {
+                TextButton(
+                    onClick = actions.close,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text("Закрыть")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateProcessSummary() {
+    SpectrumCard {
+        Text(
+            "Как проходит обновление",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        UpdateProcessStep("1", "Скачивание", "Получаем APK только из канала Analyst AI.")
+        UpdateProcessStep("2", "Проверка", "Сверяем размер, SHA-256, package, версию и подпись.")
+        UpdateProcessStep("3", "Установка", "Передаём проверенный APK системному установщику Android.")
+        UpdateProcessStep("4", "Запуск", "После установки открываем уже новую версию приложения.")
+    }
+}
+
+@Composable
+private fun UpdateProcessStep(number: String, title: String, explanation: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        SpectrumBadge(number, accent = LocalSpectrumPalette.current.cyan)
+        Spacer(Modifier.width(12.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                explanation,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
