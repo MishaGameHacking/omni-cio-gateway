@@ -50,18 +50,25 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
     val scroll = rememberScrollState()
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val equalWidth = ((maxWidth - gap * (labels.size - 1)) / labels.size).coerceAtLeast(0.dp)
-        val widths = measuredWidths.map { maxOf(equalWidth, it + 20.dp) }
+        val naturalWidths = measuredWidths.map { it + 20.dp }
+        val availableForCells = (maxWidth - gap * (labels.size - 1)).coerceAtLeast(0.dp)
+        val spare = (availableForCells - naturalWidths.sumDp()).coerceAtLeast(0.dp)
+        val distributed = spare / labels.size
+        val widths = naturalWidths.map { it + distributed }
         val safeSelected = selected.coerceIn(labels.indices)
 
         LaunchedEffect(safeSelected, widths, maxWidth, scroll.maxValue) {
-            val selectedStart = widths.take(safeSelected).sumDp() + gap * safeSelected
-            val selectedCenterPx = with(density) {
-                (selectedStart + widths[safeSelected] / 2).roundToPx()
+            if (scroll.maxValue == 0) {
+                scroll.scrollTo(0)
+            } else {
+                val selectedStart = widths.take(safeSelected).sumDp() + gap * safeSelected
+                val selectedCenterPx = with(density) {
+                    (selectedStart + widths[safeSelected] / 2).roundToPx()
+                }
+                val viewportPx = with(density) { maxWidth.roundToPx() }
+                val target = selectedCenterPx - viewportPx / 2
+                scroll.scrollTo(target.coerceIn(0, scroll.maxValue))
             }
-            val viewportPx = with(density) { maxWidth.roundToPx() }
-            val target = selectedCenterPx - viewportPx / 2
-            scroll.scrollTo(target.coerceIn(0, scroll.maxValue))
         }
 
         Row(
