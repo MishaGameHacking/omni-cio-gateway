@@ -141,11 +141,12 @@ public final class FrameInstrumentation extends Instrumentation {
             if (actionRequest) {
                 int listCode = (rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK;
                 boolean towardStart = (rawRequest & ACTION_START_FLAG) != 0;
-                if (!scrollExactList(root, listCode, towardStart)) {
-                    throw new IOException("Exact visible app list cannot perform requested scroll");
-                }
+                boolean performed = scrollExactList(root, listCode, towardStart);
                 output.writeInt(request);
-                output.writeInt(2); // An action acknowledgement is NEVER a frame.
+                // A semantic boundary is an acknowledged, non-performed action,
+                // not a broken transport. The caller still has to read a fresh
+                // frame and prove that the target is visible or fail normally.
+                output.writeInt(performed ? 2 : 3);
                 output.writeInt(0);
                 output.flush();
             } else {
@@ -167,22 +168,23 @@ public final class FrameInstrumentation extends Instrumentation {
             int listCode,
             boolean towardStart) throws IOException {
         String resourceId = listResourceId(listCode);
-        if (resourceId == null
-                || root == null
-                || !APP_PACKAGE.contentEquals(root.getPackageName())) {
-            return false;
+        if (resourceId == null) {
+            throw new IOException("Unknown semantic scroll list");
+        }
+        if (root == null || !APP_PACKAGE.contentEquals(root.getPackageName())) {
+            throw new IOException("Semantic scroll root is not the Analyst AI app");
         }
         List<AccessibilityNodeInfo> matches = new ArrayList<>();
         findList(root, resourceId, matches, 0, new int[] {0});
         if (matches.size() != 1) {
-            return false;
+            throw new IOException("Expected one exact visible app list");
         }
         AccessibilityNodeInfo list = matches.get(0);
         Rect bounds = new Rect();
         list.getBoundsInScreen(bounds);
         if (!bounds.intersect(windows.getMaximumWindowMetrics().getBounds())
                 || bounds.isEmpty()) {
-            return false;
+            throw new IOException("Semantic scroll list is outside the app window");
         }
         AccessibilityNodeInfo.AccessibilityAction action = towardStart
                 ? AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD
@@ -191,8 +193,9 @@ public final class FrameInstrumentation extends Instrumentation {
             return false;
         }
         // Dispatch through the actual Compose accessibility action. This never
-        // injects a coordinate drag over a clickable card. The following request
-        // must still prove the expected label in a fresh accessibility frame.
+        // injects a coordinate drag over a clickable card. False is a normal
+        // boundary result; the next fresh frame determines whether the target
+        // is already safely visible.
         return list.performAction(action.getId());
     }
 
@@ -279,7 +282,11 @@ public final class FrameInstrumentation extends Instrumentation {
         attr(xml, "enabled", Boolean.toString(node.isEnabled()));
         attr(xml, "selected", Boolean.toString(node.isSelected()));
         attr(xml, "scrollable", Boolean.toString(node.isScrollable()));
-        attr(xml, "checked", Boolean.toString(node.isChecked()));
+        attr(
+                xml,
+                "checked",
+                Boolean.toString(
+                        node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE));
         attr(xml, "checkable", Boolean.toString(node.isCheckable()));
         for (int index = 0; index < node.getChildCount(); index++) {
             AccessibilityNodeInfo child = node.getChild(index);
