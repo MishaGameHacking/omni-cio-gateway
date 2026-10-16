@@ -43,11 +43,14 @@ class Android16LiveSpectrumTests(unittest.TestCase):
             "Анализ мировых рынков",
         ):
             self.assertIn(label, source)
+        # Check actual APIs/imports, not explanatory comments that may name a
+        # forbidden technology while documenting why it is not used.
         for forbidden in (
             "Image(",
             "painterResource",
             "AsyncImage",
-            "WebView",
+            "android.webkit",
+            "WebView(",
             ".gif",
             "AnimatedImageVector",
         ):
@@ -104,7 +107,8 @@ class Android16LiveSpectrumTests(unittest.TestCase):
             "openConnection",
             "Image(",
             "painterResource",
-            "WebView",
+            "android.webkit",
+            "WebView(",
             ".gif",
         ):
             self.assertNotIn(forbidden, screen + visuals)
