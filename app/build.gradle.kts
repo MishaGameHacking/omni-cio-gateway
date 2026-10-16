@@ -11,9 +11,9 @@ android {
         applicationId = "ru.omnicio.app"
         minSdk = 36
         targetSdk = 36
-        // Code 28 belongs to the published 0.7.3 preview; the complete live catalogue gets a new identity.
-        versionCode = 29
-        versionName = "0.7.4"
+        // Preserve the installed preview identity; each published update has a new code.
+        versionCode = 30
+        versionName = "0.7.5"
     }
 
     buildTypes {

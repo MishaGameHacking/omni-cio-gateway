@@ -241,6 +241,12 @@ class AnalysisBackendClient(
             unreadCount = json.optInt("unread_count"),
             profileConfigured = json.optBoolean("profile_configured"),
             lastRun = last,
+            monitoring = json.optJSONObject("monitoring")?.let { item ->
+                PortfolioMonitoringStatus(
+                    state = item.optString("state"),
+                    lastSnapshotAt = item.optNullableString("last_snapshot_at"),
+                )
+            },
         )
     }
 

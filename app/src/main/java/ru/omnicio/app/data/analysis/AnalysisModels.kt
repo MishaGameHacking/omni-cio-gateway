@@ -62,6 +62,11 @@ data class AnalysisRunStatus(
     val createdAt: String,
 )
 
+data class PortfolioMonitoringStatus(
+    val state: String,
+    val lastSnapshotAt: String?,
+)
+
 data class AnalysisStatus(
     val schedulerEnabled: Boolean,
     val aiConfigured: Boolean,
@@ -69,6 +74,7 @@ data class AnalysisStatus(
     val unreadCount: Int,
     val profileConfigured: Boolean,
     val lastRun: AnalysisRunStatus?,
+    val monitoring: PortfolioMonitoringStatus? = null,
 )
 
 data class RefreshResult(

@@ -257,11 +257,11 @@ def enforce(connect: Callable[[], sqlite3.Connection], *, user_id: int,
 
 
 def user_can_run(connect: Callable[[], sqlite3.Connection], user_id: int) -> bool:
-    """Pause account jobs until at least one unexpired session reports current APK.
+    """Inspect current-client readiness for client-bound work only.
 
-    A stale device is always gated itself; it cannot disable another device's
-    valid current session. Data is retained. Already-sent network calls cannot
-    be unsent; callers must repeat this check before publishing their result.
+    Never use this probe to gate server portfolio monitoring. The latter is
+    bound to the user's broker connection, not Android sessions or APK releases.
+    A stale device does not invalidate another device's current session.
     """
     if not enabled():
         return True

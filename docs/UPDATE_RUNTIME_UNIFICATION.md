@@ -6,7 +6,7 @@ This document records the integration contract. It is **not** evidence that an A
 
 - One `MandatoryUpdateHost` owns version policy, download, verification, permission handling, installer handoff and post-install version recovery. Spectrum supplies presentation only; it does not start a second updater.
 - One transport contract is used: `/client/update-policy`, `/client/ready`, `/client/apk/...`, `X-Analyst-Version-Code` and `X-Analyst-Package`.
-- The guarded native installer, typed release metadata, bounded checksummed stream and authenticated server pause/resume from #832 are retained.
+- The guarded native installer, typed release metadata, bounded checksummed stream and authenticated client compatibility checks from #832 are retained. As of F11.1, server portfolio monitoring is independent of Android sessions and APK versions; it is bound to the broker connection instead.
 - The former `AppRelease` / `AppUpdateClient` / `AppUpdateVerifier` / `AppUpdateInstaller` / `UpdateCheckStore` runtime is removed. `UpdateFlow` remains pure state-machine research and performs no network or install work.
 - `BootstrapActivity` is a routing-only exported launcher. It forwards only the documented `analystai://auth` URI to private `MainActivity`; arbitrary external extras are not forwarded.
 - Existing Telegram code exchange and encrypted session storage, five tabs, education entry, theme preference, package identity, signing certificate and version-code continuity are preserved.

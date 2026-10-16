@@ -112,7 +112,7 @@ jobs:
           py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
           if errorlevel 1 exit /b 1
 
-      - name: Download installed 0.7.1 APK for exact upgrade compatibility test
+      - name: Download installed 0.7.4 APK for exact upgrade compatibility test
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
@@ -120,14 +120,14 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-e0b82ba5f4889fbea7cc650591b2fabe7db596e0'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.7.1-preview-e0b82ba.apk');
-            if (!asset) throw new Error('0.7.1 reference APK missing');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-ce5cbc190d2c875364716a6454f774bf543c2a08'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.7.4-preview-ce5cbc1.apk');
+            if (!asset) throw new Error('0.7.4 reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
             const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-            if (digest !== '343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7') {
-              throw new Error('0.7.1 reference APK checksum mismatch');
+            if (digest !== '1229b9ced44dfc54fbdfe40ba7203f557a41ca8c574bde1ca90caa107d7c799f') {
+              throw new Error('0.7.4 reference APK checksum mismatch');
             }
             const destination = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(destination, bytes);
@@ -196,8 +196,8 @@ jobs:
             const sha = context.sha;
             const reportPath = 'app/build/outputs/apk/preview/apk-verification.json';
             const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            // Code 26 belongs to the installed 0.7.1 preview. Changed bytes must use a newer code.
-            if (!Number.isSafeInteger(report.version_code) || report.version_code <= 26) {
+            // Code 29 belongs to the installed 0.7.4 preview. Changed bytes must use a newer code.
+            if (!Number.isSafeInteger(report.version_code) || report.version_code <= 29) {
               throw new Error('A new versionCode is required before publishing changed APK bytes');
             }
             const data = fs.readFileSync('app/build/outputs/apk/preview/app-preview.apk');
@@ -209,10 +209,13 @@ jobs:
             const tag = `android-preview-${sha}`;
             const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
             const title = `Analyst AI ${version}`;
+            const releaseNotes = fs.readFileSync('docs/releases/0.7.5.md', 'utf8').trim();
+            if (!releaseNotes.includes('0.7.5') || !releaseNotes.includes('F11.1')) throw new Error('Release notes do not identify this update');
             const body = [
+              releaseNotes,
               'Signed, non-debuggable preview APK. Android 16+ only; application ID ru.omnicio.app.debug.',
               'Uses the existing test signing key, not a production-store signing key.',
-              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.7.1 preview, plus profile/education UI on an Android 16 x86_64 emulator verified.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.7.4 preview, plus profile/education UI on an Android 16 x86_64 emulator verified.',
               'A successful emulator run does not claim that every physical-device configuration has been reproduced.',
               `SHA-256: ${hash}`,
               `Signing certificate SHA-256: ${report.certificate_sha256}`,

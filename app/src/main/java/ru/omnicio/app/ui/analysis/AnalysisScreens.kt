@@ -527,17 +527,25 @@ private fun AnalysisProfileContent(
 
 @Composable
 private fun MonitoringStatus(status: AnalysisStatus?) {
-    val title = when {
-        status == null -> "Состояние сервера не получено"
-        !status.schedulerEnabled -> "Фоновая обработка отключена"
-        status.deterministicMonitoring -> "Сервер сообщает о фоновом контроле"
-        else -> "Фоновый контроль не подтверждён"
+    val monitoring = status?.monitoring
+    val title = when (monitoring?.state) {
+        "current" -> "Сервер получает данные портфеля"
+        "waiting" -> "Ожидается первая проверка"
+        "delayed" -> "Проверка портфеля задерживается"
+        "check_failed" -> "Последняя проверка не завершена"
+        "not_connected" -> "Подключите портфель"
+        "disabled" -> "Фоновая обработка отключена"
+        else -> "Состояние наблюдения не получено"
     }
-    val text = if (status?.aiConfigured == true) {
-        "Конфигурация модели присутствует. Это не доказательство выполненного вызова. Расходы ограничиваются сервером."
-    } else {
-        "Подключение модели не подтверждено. Не считаем настройку или отсутствие сообщений доказательством безопасности портфеля."
+    val description = when (monitoring?.state) {
+        "not_connected" -> "Подключите T‑API в профиле."
+        "disabled" -> "Серверный планировщик отключён. Автоматические проверки не выполняются."
+        "delayed", "check_failed" -> "Последние данные сохранены. Свежая проверка ещё не подтверждена."
+        "current", "waiting" -> "Проверка выполняется на сервере и не зависит от открытого приложения."
+        else -> "Обновите экран, чтобы получить состояние сервера."
     }
+    val observed = analysisTime(monitoring?.lastSnapshotAt)
+    val text = if (observed == null) description else "$description\nПоследние данные: $observed."
     StatusCard(title, text)
 }
 
