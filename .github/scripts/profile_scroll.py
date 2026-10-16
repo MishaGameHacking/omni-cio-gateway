@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import re
+import time
+import json
+import math
 import xml.etree.ElementTree as ET
 
 PACKAGE = "ru.omnicio.app.debug"
@@ -95,28 +98,75 @@ def _reveal_target(
     resource_id: str,
     max_swipes: int,
     direction: str,
+    layout_timeout: float,
 ) -> ET.Element | None:
+    _validate_request(resource_id, direction, max_swipes, layout_timeout)
+    deadline = time.monotonic() + layout_timeout
+    for attempt in range(max_swipes + 1):
+        tree, target, bounds = _ready_scroll_frame(
+            read_tree, find_target, resource_id, attempt, deadline, layout_timeout > 0
+        )
+        if target is not None:
+            return target
+        if bounds is None:
+            return None
+        gesture = _gesture(bounds, SCROLL_AXES[resource_id], direction)
+        if gesture is None:
+            return None
+        expired = layout_timeout > 0 and time.monotonic() >= deadline
+        if attempt == max_swipes or expired:
+            _layout_diagnostic(tree, resource_id, attempt)
+            raise AssertionError("List target not reachable: " + target_description)
+        swipe(*gesture)
+        if layout_timeout > 0:
+            time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+    raise AssertionError("List scroll did not finish")
+
+
+def _validate_request(resource_id, direction, max_swipes, layout_timeout):
     if resource_id not in LIST_IDS:
         raise ValueError("unknown_scroll_list")
     if direction not in {"start", "end"}:
         raise ValueError("unknown_scroll_direction")
     if type(max_swipes) is not int or not 0 <= max_swipes <= 20:
         raise ValueError("invalid_scroll_limit")
-    for attempt in range(max_swipes + 1):
+    if type(layout_timeout) not in (int, float) or not math.isfinite(layout_timeout) or not 0 <= layout_timeout <= 12:
+        raise ValueError("invalid_layout_timeout")
+
+
+def _ready_scroll_frame(read_tree, find_target, resource_id, swipes, deadline, wait):
+    pending = 0
+    while True:
         tree = read_tree()
         target = find_target(tree)
-        if target is not None:
-            return target
         bounds = _scroll_area(tree, resource_id)
-        if bounds is None:
-            return None
-        gesture = _gesture(bounds, SCROLL_AXES[resource_id], direction)
-        if gesture is None:
-            return None
-        if attempt == max_swipes:
-            raise AssertionError("List target not reachable: " + target_description)
-        swipe(*gesture)
-    raise AssertionError("List scroll did not finish")
+        if target is not None or bounds is not None or not wait:
+            return tree, target, bounds
+        # A valid active root can precede its Compose scroll semantics. Do not
+        # switch to a passive label-only wait: an offscreen target still needs
+        # scrolling when this exact list becomes available again.
+        expired = time.monotonic() >= deadline
+        if pending == 0 or expired:
+            _layout_diagnostic(tree, resource_id, swipes)
+        if expired:
+            raise AssertionError("Scroll layout not ready: " + resource_id)
+        pending += 1
+        time.sleep(min(0.2, max(0, deadline - time.monotonic())))
+
+
+def _layout_diagnostic(tree: ET.Element, resource_id: str, swipes: int) -> None:
+    # Test tags and geometry only: no ordinary labels, balances or tokens.
+    nodes = [
+        {key: node.get(key, "") for key in (
+            "package", "resource-id", "bounds", "scrollable", "visible-to-user"
+        )}
+        for node in tree.iter("node")
+        if node.get("resource-id") in LIST_IDS
+        or node.get("resource-id") in {f"{PACKAGE}:id/{name}" for name in LIST_IDS}
+    ][:20]
+    print("SCROLL_LAYOUT_DIAGNOSTIC=" + json.dumps({
+        "area": resource_id, "swipes": swipes, "lists": nodes,
+    }), flush=True)
 
 
 def reveal_in_list(
@@ -127,11 +177,14 @@ def reveal_in_list(
     resource_id: str,
     max_swipes: int = 10,
     direction: str = "end",
+    layout_timeout: float = 0,
 ) -> ET.Element | None:
     """Return the visible exact label or fail after a bounded number of gestures.
 
     None means this particular list is not visible; no other list or system
-    window is scrolled. Header/dialog labels may be found without any gesture.
+    window is scrolled. A positive layout_timeout waits for this exact list
+    within one overall deadline without resetting the swipe budget.
+    Header/dialog labels may be found without any gesture.
     """
     return _reveal_target(
         read_tree,
@@ -141,6 +194,7 @@ def reveal_in_list(
         resource_id=resource_id,
         max_swipes=max_swipes,
         direction=direction,
+        layout_timeout=layout_timeout,
     )
 
 
@@ -152,6 +206,7 @@ def reveal_resource_in_list(
     resource_id: str,
     max_swipes: int = 10,
     direction: str = "end",
+    layout_timeout: float = 0,
 ) -> ET.Element | None:
     """Reveal an exact Compose testTag without depending on merged label text."""
     return _reveal_target(
@@ -162,6 +217,7 @@ def reveal_resource_in_list(
         resource_id=resource_id,
         max_swipes=max_swipes,
         direction=direction,
+        layout_timeout=layout_timeout,
     )
 
 

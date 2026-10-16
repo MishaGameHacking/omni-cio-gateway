@@ -136,6 +136,7 @@ class ProfileProbe:
             text,
             resource_id=area,
             direction=direction,
+            layout_timeout=12,
         )
         if target is None:
             from profile_scroll import visible_label
@@ -152,6 +153,7 @@ class ProfileProbe:
             resource_id,
             resource_id=area,
             direction=direction,
+            layout_timeout=12,
         )
         if target is None:
             from profile_scroll import visible_resource
