@@ -42,13 +42,17 @@ class FrameReader:
         self.sequence = 0
         self.broken = False
 
-    def tree(self):
+    def tree(self, *, deadline: float | None = None):
         if self.broken:
             raise ConnectionError("Failed UiAutomation stream cannot reuse a previous frame")
         self.sequence += 1
-        deadline = time.monotonic() + FRAME_TIMEOUT
+        if deadline is None:
+            deadline = time.monotonic() + FRAME_TIMEOUT
         try:
-            self.connection.settimeout(FRAME_TIMEOUT)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Fresh UI frame deadline exceeded")
+            self.connection.settimeout(remaining)
             self.connection.sendall(struct.pack(">I", self.sequence))
             received, status, size = struct.unpack(
                 ">III", read_exact(self.connection, 12, deadline=deadline)
@@ -65,18 +69,33 @@ class FrameReader:
             root = ET.fromstring(payload)
             if root.tag != "hierarchy" or next(root.iter("node"), None) is None:
                 raise ValueError("UiAutomation returned an empty hierarchy")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Fresh UI frame deadline exceeded")
             return root
         except Exception:
             self.broken = True
             raise
 
     def ready_tree(self):
-        root = self.tree()
-        if root is None:
-            # A short window transition is not a broken stream. The existing
-            # caller still requires a current foreground Activity and UI labels.
-            raise RuntimeError("UiAutomation active root is not ready")
-        return root
+        # A successfully received null root can occur while a dialog closes.
+        # Wait only for that explicit not-ready response, within the original
+        # frame budget. Every retry requests a NEW sequence; malformed frames,
+        # transport errors and missing/wrong UI labels are never retried here.
+        deadline = time.monotonic() + FRAME_TIMEOUT
+        pending = 0
+        while time.monotonic() < deadline:
+            root = self.tree(deadline=deadline)
+            if root is not None:
+                if pending:
+                    print(f"UIAUTOMATION_ROOT_READY=pending-{pending};sequence-{self.sequence}", flush=True)
+                return root
+            pending += 1
+            if pending == 1:
+                print(f"UIAUTOMATION_ROOT_PENDING=sequence-{self.sequence}", flush=True)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(0.1, remaining))
+        raise RuntimeError(f"UiAutomation active root is not ready within {FRAME_TIMEOUT}s ({pending} null frames)")
 
 
 def checked(device, *args, timeout=30):

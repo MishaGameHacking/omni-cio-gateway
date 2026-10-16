@@ -45,8 +45,7 @@ class FrameProtocolTests(unittest.TestCase):
 
     def test_null_root_does_not_reuse_frame_or_disconnect(self):
         reader = frames.FrameReader(Stream(packet(status=0, payload=b"") + packet(2)))
-        with self.assertRaises(RuntimeError):
-            reader.ready_tree()
+        self.assertIsNone(reader.tree())
         self.assertFalse(reader.broken)
         self.assertEqual(reader.ready_tree().tag, "hierarchy")
 
@@ -115,7 +114,7 @@ class FrameProtocolTests(unittest.TestCase):
         connection.close.assert_called_once()
         self.assertIn("CI frame cleanup failed", original.__notes__[0])
         self.assertEqual(device.call_args_list[0].args, ("shell", "am", "force-stop", frames.DRIVER_PACKAGE))
-        self.assertEqual(device.call_args_list[1].args, ("forward", "--remove", "tcp:53000"))
+        self.assertEqual(device.call_args_list[1].args, ("forward", "--remove", f"tcp:{53000}"))
 
     def test_cleanup_failure_blocks_an_otherwise_successful_pass(self):
         device = Mock(side_effect=OSError("stop failed"))
@@ -128,6 +127,85 @@ class FrameProtocolTests(unittest.TestCase):
         with patch.object(frames.socket, "create_connection", return_value=connection), self.assertRaises(ValueError):
             frames.connect_session(53000, "a" * 64)
         connection.close.assert_called_once()
+
+
+class FrameReadinessTests(unittest.TestCase):
+    def test_dialog_transition_requires_new_frame_not_previous_tree(self):
+        stream = Stream(packet() + packet(2, status=0, payload=b"")
+                        + packet(3, payload=XML.replace(b'"A"', b'"B"')))
+        reader = frames.FrameReader(stream)
+        self.assertEqual(next(reader.ready_tree().iter("node")).get("text"), "A")
+        with patch.object(frames.time, "sleep"):
+            self.assertEqual(next(reader.ready_tree().iter("node")).get("text"), "B")
+        self.assertEqual(stream.sent, [struct.pack(">I", n) for n in (1, 2, 3)])
+        self.assertFalse(reader.broken)
+
+    def test_permanent_null_root_fails_with_one_budget_not_per_poll(self):
+        now = [0.0]
+        reader = frames.FrameReader(Mock())
+        def advance(seconds):
+            now[0] += seconds
+        with patch.object(frames, "FRAME_TIMEOUT", 0.25), \
+                patch.object(frames.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(frames.time, "sleep", side_effect=advance), \
+                patch.object(reader, "tree", return_value=None) as read, \
+                self.assertRaisesRegex(RuntimeError, "not ready within"):
+            reader.ready_tree()
+        self.assertEqual(read.call_count, 3)
+        self.assertTrue(all(call.kwargs == {"deadline": 0.25} for call in read.call_args_list))
+        self.assertEqual(now[0], 0.25)
+
+    def test_invalid_packet_after_null_is_not_retried(self):
+        stream = Stream(packet(status=0, payload=b"") + packet(2, status=99) + packet(3))
+        reader = frames.FrameReader(stream)
+        with patch.object(frames.time, "sleep"), self.assertRaises(ValueError):
+            reader.ready_tree()
+        self.assertEqual(len(stream.sent), 2)
+        self.assertTrue(reader.broken)
+
+    def test_disconnect_after_null_is_not_retried(self):
+        stream = Stream(packet(status=0, payload=b""))
+        reader = frames.FrameReader(stream)
+        with patch.object(frames.time, "sleep"), self.assertRaises(ConnectionError):
+            reader.ready_tree()
+        self.assertEqual(len(stream.sent), 2)
+        self.assertTrue(reader.broken)
+
+    def test_does_not_wait_for_desired_package_or_hide_wrong_screen(self):
+        stream = Stream(packet(payload=XML.replace(b"ru.omnicio.app.debug", b"other.app")))
+        reader = frames.FrameReader(stream)
+        root = reader.ready_tree()
+        self.assertEqual(next(root.iter("node")).get("package"), "other.app")
+        self.assertEqual(len(stream.sent), 1)
+
+    def test_expired_budget_sends_no_new_request(self):
+        stream = Mock()
+        reader = frames.FrameReader(stream)
+        with patch.object(frames.time, "monotonic", return_value=10), self.assertRaises(TimeoutError):
+            reader.tree(deadline=9)
+        stream.sendall.assert_not_called()
+
+    def test_socket_send_and_fragments_share_remaining_budget(self):
+        stream = Stream(packet())
+        stream.settimeout = Mock()
+        reader = frames.FrameReader(stream)
+        with patch.object(frames.time, "monotonic", return_value=5):
+            self.assertEqual(reader.tree(deadline=7).tag, "hierarchy")
+        self.assertTrue(stream.settimeout.call_count > 1)
+        self.assertTrue(all(call.args == (2,) for call in stream.settimeout.call_args_list))
+
+    def test_late_parsed_frame_cannot_pass_deadline(self):
+        now = [0.0]
+        reader = frames.FrameReader(Stream(packet()))
+        real_parse = ET.fromstring
+        def parse_late(payload):
+            now[0] = 31.0
+            return real_parse(payload)
+        with patch.object(frames.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(frames.ET, "fromstring", side_effect=parse_late), \
+                self.assertRaises(TimeoutError):
+            reader.ready_tree()
+        self.assertTrue(reader.broken)
 
 
 class InstrumentationLaunchTests(unittest.TestCase):
