@@ -42,6 +42,10 @@ class NativeAiAnalystTests(unittest.TestCase):
         for forbidden in ("Random(", "Math.random", "100/100", "+15%"):
             self.assertNotIn(forbidden, self.card)
 
+    def test_home_card_stacks_for_large_system_fonts(self):
+        self.assertIn("LocalDensity.current.fontScale", self.card)
+        self.assertIn("maxWidth < 320.dp || fontScale > 1.3f", self.card)
+
     def test_profile_tabs_fit_natural_widths_before_scrolling(self):
         self.assertIn("val measuredWidths", self.profile_tabs)
         self.assertIn("val naturalWidths = measuredWidths.map", self.profile_tabs)
