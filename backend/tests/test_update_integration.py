@@ -208,12 +208,14 @@ class ApplicationUpdateTests(unittest.TestCase):
         self.assertEqual(self.count_rows('insight_cards'), 0)
 
     def test_writes_recheck_connection_and_scope_is_always_reset(self):
+        snapshot = sample_snapshot()
+        observed_at = datetime.now(UTC).isoformat()
         with monitoring_connection(self.uid, b'fake-only'):
             self.change_connection(None)
             with self.assertRaises(HTTPException):
-                ai._save_snapshot(self.uid, sample_snapshot())
+                ai._save_snapshot(self.uid, snapshot)
             with self.assertRaises(HTTPException):
-                record_history(self.uid, sample_snapshot()['accounts'], datetime.now(UTC).isoformat())
+                record_history(self.uid, snapshot['accounts'], observed_at)
         self.assertEqual(self.count_rows('portfolio_snapshots'), 0)
         # A completed scope must not contaminate subsequent work after reconnect.
         self.change_connection(b'new-test-token')
