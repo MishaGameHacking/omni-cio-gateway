@@ -97,6 +97,22 @@ def adb_transport_connected(adb: str, serial: str) -> bool:
     return state.returncode == 0 and state.stdout.strip() == "device"
 
 
+def classify_frame_failure(error: Exception, adb: str, serial: str, process) -> Exception:
+    """Retry a broken frame stream only with independent emulator-loss evidence."""
+    if not isinstance(error, ConnectionError):
+        return error
+    exit_code = process.poll()
+    connected = exit_code is None and adb_transport_connected(adb, serial)
+    print(
+        f"FRAME_TRANSPORT_STATE=exit_code:{exit_code};adb_connected:{connected}",
+        flush=True,
+    )
+    if connected:
+        return error
+    return EmulatorTransportLost(
+        f"{serial} lost during frame read; emulator_exit_code={exit_code}"
+    )
+
 def free_emulator_port() -> int:
     # Outside the default 5555..5585 discovery range of unrelated ADB servers.
     for port in range(5600, 5680, 2):
@@ -468,6 +484,12 @@ def run_attempt(
                 record_profile_check(device, results, exercise)
             failed = False
             return results
+        except Exception as original:
+            classified = classify_frame_failure(original, adb, serial, process)
+            if classified is not original:
+                transport_lost = True
+                raise classified from original
+            raise
         finally:
             log.flush()
             _write_report(work / "install-results.json", results)
