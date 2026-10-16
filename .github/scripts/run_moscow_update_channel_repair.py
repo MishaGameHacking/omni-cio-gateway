@@ -6,7 +6,7 @@ only exact, counted substitutions before execution:
 * four child-process environment prefixes use ``env`` so Bash does not try to
   reassign readonly variables in the current shell;
 * every audited 0.6.0 artifact and policy read-back marker is replaced with the
-  exact, immutable, emulator-verified 0.7.1 release identity.
+  exact, immutable, emulator-verified 0.7.4 release identity.
 
 Any missing, duplicated, or changed source marker aborts before cloud access.
 """
@@ -47,44 +47,45 @@ PREFIX_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 # The policy assertions appear twice: once on the server itself and once through
 # the public HTTPS hostname. Both must validate the same release identity.
 RELEASE_REPLACEMENTS: tuple[tuple[str, str, int], ...] = (
-    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="26"', 1),
+    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="29"', 1),
     (
         'readonly VERSION_NAME="0.6.0-preview"',
-        'readonly VERSION_NAME="0.7.1-preview"',
+        'readonly VERSION_NAME="0.7.4-preview"',
         1,
     ),
     (
         'readonly APK_SHA256="31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
-        'readonly APK_SHA256="343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7"',
+        'readonly APK_SHA256="1229b9ced44dfc54fbdfe40ba7203f557a41ca8c574bde1ca90caa107d7c799f"',
         1,
     ),
-    ('readonly APK_BYTES="4100464"', 'readonly APK_BYTES="4151124"', 1),
-    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792095055"', 1),
+    ('readonly APK_BYTES="4100464"', 'readonly APK_BYTES="4167544"', 1),
+    ('readonly MIN_SDK="33"', 'readonly MIN_SDK="36"', 1),
+    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792171072"', 1),
     (
         '"notes": "Проверенная версия Analyst AI 0.6.0-preview. Исправлен серверный канал проверки версии.",',
-        '"notes": "Проверенная версия Analyst AI 0.7.1-preview. Закрытый доступ до пяти аккаунтов и новый интерфейс Spectrum.",',
+        '"notes": "Проверенная версия Analyst AI 0.7.4-preview. Живые элементы Spectrum, Android 16 и исправленное обновление старых preview-версий.",',
         1,
     ),
-    ('assert payload["version_code"] == 23', 'assert payload["version_code"] == 26', 2),
+    ('assert payload["version_code"] == 23', 'assert payload["version_code"] == 29', 2),
     (
         'assert payload["minimum_version_code"] == 23',
-        'assert payload["minimum_version_code"] == 26',
+        'assert payload["minimum_version_code"] == 29',
         2,
     ),
     (
         'assert payload["version_name"] == "0.6.0-preview"',
-        'assert payload["version_name"] == "0.7.1-preview"',
+        'assert payload["version_name"] == "0.7.4-preview"',
         2,
     ),
     (
         'assert payload["apk_sha256"] == "31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
-        'assert payload["apk_sha256"] == "343f46a392f93c5d6014f639d2e1e07ce31c7ffbf3fdd28e85cdeb8659c155a7"',
+        'assert payload["apk_sha256"] == "1229b9ced44dfc54fbdfe40ba7203f557a41ca8c574bde1ca90caa107d7c799f"',
         2,
     ),
-    ('assert payload["apk_bytes"] == 4100464', 'assert payload["apk_bytes"] == 4151124', 2),
+    ('assert payload["apk_bytes"] == 4100464', 'assert payload["apk_bytes"] == 4167544', 2),
     (
         '# clients. Enforcement can be activated only after the owner verifies 0.6.0.',
-        '# clients. Enforcement can be activated only after the owner verifies 0.7.1.',
+        '# clients. Enforcement can be activated only after the owner verifies 0.7.4.',
         1,
     ),
 )
@@ -142,7 +143,7 @@ def validate_child_environment_prefixes(patched: str) -> None:
 
 
 def validate_release_identity(patched: str) -> None:
-    """Confirm that only the requested 0.7.1 identity is staged."""
+    """Confirm that only the requested 0.7.4 identity is staged."""
     for old, new, expected in RELEASE_REPLACEMENTS:
         if old in patched or patched.count(new) != expected:
             raise RuntimeError(
@@ -152,7 +153,7 @@ def validate_release_identity(patched: str) -> None:
 
 
 def patched_source() -> str:
-    """Return a syntax-preserving script for the exact 0.7.1 release."""
+    """Return a syntax-preserving script for the exact 0.7.4 release."""
     source = apply_release_identity(SOURCE.read_text(encoding="utf-8"))
     patched, counts = apply_child_environment_prefixes(source)
     require_expected_prefix_counts(counts)
