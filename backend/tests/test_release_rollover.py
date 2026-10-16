@@ -32,7 +32,12 @@ class ReleaseRolloverTests(unittest.TestCase):
 
     def report(self, version=23, certificate=CERT):
         sha = hashlib.sha256(self.apk.read_bytes()).hexdigest()
-        checks = {'clean_install': True, 'upgrade': True, 'launch': True}
+        checks = {
+            'clean_install': True,
+            'upgrade': True,
+            'upgrade_launch': True,
+            'launch': True,
+        }
         return dict(sha256=sha, bytes=self.apk.stat().st_size, certificate_sha256=certificate,
                     signature_v2=True, zipalign_16kb=True, debuggable=False, test_only=False,
                     package=PACKAGE, version_code=version, version_name=f'test-{version}', min_sdk=36,
