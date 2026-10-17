@@ -21,7 +21,7 @@ def png_bytes():
 
 
 class CaptureTransportTests(unittest.TestCase):
-    def exercise_capture(self, payload, fail=False, copies=1):
+    def exercise_capture(self, payload, fail=False, copies=1, name='capture'):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / '.github/scripts/profile_ui_probe.py'
@@ -39,20 +39,20 @@ class CaptureTransportTests(unittest.TestCase):
                 return ''
             probe = ui.ProfileProbe(Mock())
             with patch.object(ui, '__file__', str(source)), patch.object(probe, 'command', side_effect=command):
-                destination = root / 'app/build/outputs/apk/preview/ui-screens/capture.png'
+                destination = root / 'app/build/outputs/apk/preview/ui-screens' / (name + '.png')
                 destination.parent.mkdir(parents=True)
                 destination.write_bytes(b'previous-frame-must-not-count')
                 if fail:
                     with self.assertRaises(RuntimeError) as raised:
-                        probe.capture('capture')
+                        probe.capture(name)
                     self.assertIs(raised.exception, failure)
                     self.assertEqual(destination.read_bytes(), b'previous-frame-must-not-count')
                 elif payload is None or copies != 1 or not payload.endswith(b'\0\0\0\0IEND\xaeB`\x82'):
                     with self.assertRaises(AssertionError):
-                        probe.capture('capture')
+                        probe.capture(name)
                     self.assertEqual(destination.read_bytes(), b'previous-frame-must-not-count')
                 else:
-                    probe.capture('capture')
+                    probe.capture(name)
                     self.assertEqual(destination.read_bytes(), payload)
             return calls
 
@@ -64,6 +64,18 @@ class CaptureTransportTests(unittest.TestCase):
 
     def test_missing_frame_cannot_reuse_previous_picture(self):
         self.exercise_capture(None)
+
+    def test_numbered_ux100_capture_preserves_exact_bytes(self):
+        for name in ('workspace-ux100', 'ux100-chart', 'ux100-impact'):
+            self.exercise_capture(png_bytes(), name=name)
+
+    def test_unsafe_capture_names_fail_before_device_access(self):
+        device = Mock()
+        probe = ui.ProfileProbe(device)
+        for name in ('../escape', 'a/b', 'a\\b', '', '-capture', 'a.png', 'a' * 65):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                probe.capture(name)
+        device.assert_not_called()
 
     def test_duplicate_frames_cannot_count_as_one_screenshot(self):
         self.exercise_capture(png_bytes(), copies=2)

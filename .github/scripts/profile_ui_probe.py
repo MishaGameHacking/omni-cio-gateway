@@ -99,7 +99,7 @@ class ProfileProbe:
         established console transport; it still must produce a complete PNG.
         A fresh directory prevents reusing a previous frame. Errors remain fatal.
         """
-        if re.fullmatch(r"[a-z-]+", name) is None:
+        if re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name) is None:
             raise ValueError("Invalid screenshot label")
         root = Path(__file__).resolve().parents[2]
         directory = root / "app/build/outputs/apk/preview/ui-screens"
