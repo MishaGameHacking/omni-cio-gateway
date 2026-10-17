@@ -6,7 +6,7 @@ only exact, counted substitutions before execution:
 * four child-process environment prefixes use ``env`` so Bash does not try to
   reassign readonly variables in the current shell;
 * every audited 0.6.0 artifact and policy read-back marker is replaced with the
-  exact, immutable, emulator-verified 0.8.0 release identity.
+  exact, immutable, emulator-verified 0.9.0 release identity.
 
 Any missing, duplicated, or changed source marker aborts before cloud access.
 """
@@ -47,45 +47,45 @@ PREFIX_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 # The policy assertions appear twice: once on the server itself and once through
 # the public HTTPS hostname. Both must validate the same release identity.
 RELEASE_REPLACEMENTS: tuple[tuple[str, str, int], ...] = (
-    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="32"', 1),
+    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="33"', 1),
     (
         'readonly VERSION_NAME="0.6.0-preview"',
-        'readonly VERSION_NAME="0.8.0-preview"',
+        'readonly VERSION_NAME="0.9.0-preview"',
         1,
     ),
     (
         'readonly APK_SHA256="31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
-        'readonly APK_SHA256="b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31"',
+        'readonly APK_SHA256="32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076"',
         1,
     ),
-    ('readonly APK_BYTES="4100464"', 'readonly APK_BYTES="4216696"', 1),
+    ('readonly APK_BYTES="4100464"', 'readonly APK_BYTES="4331384"', 1),
     ('readonly MIN_SDK="33"', 'readonly MIN_SDK="36"', 1),
-    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792223530"', 1),
+    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792236422"', 1),
     (
         '"notes": "Проверенная версия Analyst AI 0.6.0-preview. Исправлен серверный канал проверки версии.",',
-        '"notes": "Проверенная версия Analyst AI 0.8.0-preview. Workspace: новый интерфейс капитала, портфеля, рисков и уведомлений. Настройки оформления и черновик стратегии. Android 16 и новее.",',
+        '"notes": "Проверенная версия Analyst AI 0.9.0-preview. UX100: компактный портфель, поиск, фильтры, интерактивные графики и приватность. Единая стратегия и понятные состояния; новые расчёты подключаются позднее. Android 16 и новее.",',
         1,
     ),
-    ('assert payload["version_code"] == 23', 'assert payload["version_code"] == 32', 2),
+    ('assert payload["version_code"] == 23', 'assert payload["version_code"] == 33', 2),
     (
         'assert payload["minimum_version_code"] == 23',
-        'assert payload["minimum_version_code"] == 32',
+        'assert payload["minimum_version_code"] == 33',
         2,
     ),
     (
         'assert payload["version_name"] == "0.6.0-preview"',
-        'assert payload["version_name"] == "0.8.0-preview"',
+        'assert payload["version_name"] == "0.9.0-preview"',
         2,
     ),
     (
         'assert payload["apk_sha256"] == "31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
-        'assert payload["apk_sha256"] == "b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31"',
+        'assert payload["apk_sha256"] == "32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076"',
         2,
     ),
-    ('assert payload["apk_bytes"] == 4100464', 'assert payload["apk_bytes"] == 4216696', 2),
+    ('assert payload["apk_bytes"] == 4100464', 'assert payload["apk_bytes"] == 4331384', 2),
     (
         '# clients. Enforcement can be activated only after the owner verifies 0.6.0.',
-        '# clients. Enforcement can be activated only after the owner verifies 0.8.0.',
+        '# clients. Enforcement can be activated only after the owner verifies 0.9.0.',
         1,
     ),
 )
@@ -143,7 +143,7 @@ def validate_child_environment_prefixes(patched: str) -> None:
 
 
 def validate_release_identity(patched: str) -> None:
-    """Confirm that only the requested 0.8.0 identity is staged."""
+    """Confirm that only the requested 0.9.0 identity is staged."""
     for old, new, expected in RELEASE_REPLACEMENTS:
         if old in patched or patched.count(new) != expected:
             raise RuntimeError(
@@ -153,7 +153,7 @@ def validate_release_identity(patched: str) -> None:
 
 
 def patched_source() -> str:
-    """Return a syntax-preserving script for the exact 0.8.0 release."""
+    """Return a syntax-preserving script for the exact 0.9.0 release."""
     source = apply_release_identity(SOURCE.read_text(encoding="utf-8"))
     patched, counts = apply_child_environment_prefixes(source)
     require_expected_prefix_counts(counts)
