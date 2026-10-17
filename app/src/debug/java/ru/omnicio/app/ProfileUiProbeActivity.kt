@@ -50,7 +50,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val feedbackChecks = runUpdateFeedbackChecks()
         val submissionChecks = runInstallSubmissionChecks()
         val analysisChecks = runAnalysisPresentationChecks()
-        check(runPortfolioGeometryChecks() == 50)
+        check(runPortfolioGeometryChecks() == 67)
         check(runPositionSelectionChecks() == 18)
         check(runInstrumentDetailsChecks() == 18)
         val releaseJsonChecks = runReleaseJsonChecks()

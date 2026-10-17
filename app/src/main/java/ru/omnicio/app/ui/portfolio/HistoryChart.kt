@@ -89,7 +89,9 @@ private fun BarTooltip(model: HistoryBars, selected: Int, currency: String) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val width = minOf(maxWidth, 224.dp)
         val x = if (selected < 0) 0.dp else ((maxWidth * ((selected + .5f) / model.bars.size)) - width / 2).coerceIn(0.dp, maxWidth - width)
-        Surface(Modifier.width(width).offset(x = x), shape = RoundedCornerShape(12.dp),
+        Surface(Modifier.width(width).offset(x = x).semantics {
+            contentDescription = bar?.let { "Выбранный интервал: ${it.start} — ${it.end}" } ?: "Выбор интервала"
+        }, shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(bar?.title() ?: "Нажмите на столбец", style = MaterialTheme.typography.bodySmall)

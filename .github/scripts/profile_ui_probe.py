@@ -413,10 +413,10 @@ class ProfileProbe:
                 chart = self.reveal_resource("history-bars", "workspace-content")
                 left, top, right, bottom = node_bounds(chart)
                 self.command("shell", "input", "tap", str(left + (right - left) // 34), str((top + bottom) // 2))
-                self.find("1 окт. 2026")
+                self.find("Выбранный интервал: 2026-10-01 — 2026-10-01")
                 self.capture("bars-selected")
                 self.tap("Следующий столбец", "workspace-content")
-                self.find("2 окт. 2026")
+                self.find("Выбранный интервал: 2026-10-02 — 2026-10-02")
                 self.tap("Сбросить выбор", "workspace-content")
                 self.find("За показанный период")
                 self.tap("Скрыть суммы", "workspace-content", direction="start")
@@ -534,6 +534,22 @@ class ProfileProbe:
         self.horizontal_info()
         self.capture("large-font")
         self.education("education-large-font")
+
+        from profile_launch import profile_frame, start_status
+        self.command("shell", "am", "force-stop", PACKAGE)
+        start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
+                                  "--es", "spectrum_screen", "ux100"))
+        evidence = {"expected_screen": "ux100"}
+        self.wait_for(lambda: profile_frame(self.command, self.tree, evidence, expected_screen="ux100"),
+                      "Large-font chart screen is not resumed")
+        self.tap_visible("График")
+        chart = self.reveal_resource("history-bars", "workspace-content")
+        self.tap_node(chart)
+        self.reveal("Изменение стоимости", "workspace-content")
+        self.reveal("Минимум / максимум", "workspace-content")
+        self.capture("bars-large-font")
+        self.tap("Сбросить выбор", "workspace-content", direction="start")
+        self.find("За показанный период")
 
 
 def night_setting(output: str) -> str:

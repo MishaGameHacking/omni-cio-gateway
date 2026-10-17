@@ -31,7 +31,7 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
         item(key = "history") {
             CompactCard {
                 CurrencyChoice(account.totalValue.currency)
-                AccountDataNotice(request)
+                if (request.error != null || request.showingPreviousQuery || request.json == null) AccountDataNotice(request)
                 if (request.json == null) PeriodControls(period) { start = it.start; end = it.end }
                 request.json?.let { data ->
                     val history = data.objects("history").mapNotNull { point ->
@@ -54,6 +54,7 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                 if (current.showingPreviousQuery || current.json == null) {
                     Notice(current.error ?: "Обновляем статистику интервала…")
                 } else {
+                    current.error?.let { Notice(it) }
                     CashFlowSummary(current.json)
                 }
             }

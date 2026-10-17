@@ -172,8 +172,8 @@ jobs:
             const crypto = require('crypto');
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
-            const shots = ['workspace-ux100', 'ux100-chart', 'bars-selected', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-            const names = ['apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json', 'ui-screens-api35/ux100-chart.png', 'ui-screens-api35/bars-selected.png', ...shots.map(n => `ui-screens/${n}.png`)];
+            const shots = ['workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
+            const names = ['apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json', 'ui-screens-api35/ux100-chart.png', 'ui-screens-api35/bars-selected.png', 'ui-screens-api35/bars-large-font.png', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {
               const file = path.join(base, name);
