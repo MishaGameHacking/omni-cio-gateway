@@ -228,7 +228,13 @@ class SemanticActionTests(unittest.TestCase):
             "node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE",
         ):
             self.assertIn(required, source)
-        self.assertNotIn("node.isChecked()", source)
+        # API35 is now supported by explicit OWNER requirement. The old public
+        # method is restricted to the version-guarded branch; API36 keeps its API.
+        helper = source[source.index("private static boolean checkedState"):source.index("private static final class BoundedOutput")]
+        self.assertIn("Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA", helper)
+        self.assertIn("node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE", helper)
+        self.assertIn("return node.isChecked();", helper)
+        self.assertEqual(source.count("node.isChecked()"), 1)
         self.assertNotIn("ACTION_CLICK", source)
         self.assertNotIn("executeShellCommand", source)
         self.assertNotIn("getTargetContext()", source)
