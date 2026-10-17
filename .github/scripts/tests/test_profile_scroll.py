@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 PATH = Path(__file__).resolve().parents[1] / "profile_scroll.py"
@@ -51,6 +51,50 @@ def tree(
 
 
 class ProfileScrollTests(unittest.TestCase):
+    def button_frame(self, bounds):
+        frame = tree(resource="education-content", target_resource="lesson-toggle-start-plan", bounds=bounds)
+        target = module.visible_resource(frame, "lesson-toggle-start-plan")
+        target.set("clickable", "true")
+        target.set("enabled", "true")
+        return frame
+
+    def test_partly_hidden_button_is_not_tapped_outside_list(self):
+        frames = Mock(side_effect=[
+            self.button_frame("[20,480][300,540]"),
+            self.button_frame("[20,410][300,470]"),
+        ])
+        swipe = Mock()
+        target = module.reveal_resource_in_list(
+            frames, swipe, "lesson-toggle-start-plan", resource_id="education-content", for_tap=True,
+        )
+        self.assertEqual(target.get("bounds"), "[20,410][300,470]")
+        swipe.assert_called_once()
+
+    def test_tap_rectangle_is_clipped_to_visible_viewport(self):
+        frame = self.button_frame("[20,440][300,530]")
+        target = module.tappable_resource(frame, "lesson-toggle-start-plan", "education-content")
+        self.assertEqual(target.get("bounds"), "[20,440][300,500]")
+        module.visible_resource(frame, "lesson-toggle-start-plan").set("enabled", "false")
+        self.assertIsNone(module.tappable_resource(frame, "lesson-toggle-start-plan", "education-content"))
+
+    @patch.object(module.time, "sleep")
+    def test_button_tap_waits_for_three_equal_fresh_bounds(self, _sleep):
+        frames = Mock(side_effect=[self.button_frame(bounds) for bounds in [
+            "[20,420][300,480]", "[20,390][300,450]", "[20,350][300,410]",
+            "[20,350][300,410]", "[20,350][300,410]",
+        ]])
+        target = module.settled_resource(frames, "lesson-toggle-start-plan", "education-content")
+        self.assertEqual(target.get("bounds"), "[20,350][300,410]")
+        self.assertEqual(frames.call_count, 5)
+
+    @patch.object(module.time, "sleep")
+    def test_continuously_moving_button_fails_without_a_tap(self, _sleep):
+        frames = Mock(side_effect=[self.button_frame(bounds) for bounds in [
+            "[20,420][300,480]", "[20,390][300,450]", "[20,350][300,410]",
+        ]])
+        with self.assertRaises(AssertionError):
+            module.settled_resource(frames, "lesson-toggle-start-plan", "education-content", max_frames=3)
+
     def test_visible_label_does_not_scroll(self):
         swipe = Mock()
         result = module.reveal_in_profile(lambda: tree("Безопасность"), swipe, "Безопасность")

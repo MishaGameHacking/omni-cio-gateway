@@ -34,6 +34,14 @@ def reports():
     return runs
 
 
+def android15_report():
+    run = deepcopy(reports()[0])
+    run['android_api'] = 35
+    run['results'] = [r for r in run['results'] if r['test'] not in {
+        'previous_clean_install', 'upgrade_to_candidate', 'upgrade_bootstrap_launch'}]
+    return run
+
+
 class EvidenceTests(unittest.TestCase):
     def reject(self, data):
         with self.assertRaises(InstallationEvidenceError):
@@ -48,6 +56,22 @@ class EvidenceTests(unittest.TestCase):
             'upgrade_launch': True,
             'launch': True,
         })
+
+    def test_android15_clean_launch_ui_and_android16_upgrade_are_distinct(self):
+        data = [android15_report(), *reports()]
+        result = from_ci_reports(data, CANDIDATE)
+        self.assertEqual(result['35'], {'clean_install': True, 'launch': True, 'upgrade': False, 'upgrade_launch': False})
+        self.assertTrue(result['36']['upgrade'])
+
+    def test_android15_does_not_replace_upgrade_or_allow_wrong_artifact(self):
+        self.reject([android15_report()])
+        for name in ('candidate_clean_install', 'activity_launch', 'profile_ui'):
+            run = android15_report()
+            run['results'] = [r for r in run['results'] if r['test'] != name]
+            self.reject([run, *reports()])
+        run = android15_report()
+        run['results'][0]['apk_sha256'] = PREVIOUS
+        self.reject([run, *reports()])
 
     def test_transcript_is_not_mutated(self):
         data = reports()

@@ -59,6 +59,26 @@ class UpdateTests(unittest.TestCase):
                 'package': 'ru.omnicio.app.debug', 'version_code': version, 'version_name': '0.6.0-preview',
                 'min_sdk': 36, 'installation_evidence': {'apk_sha256': sha, '36': checks}}
 
+    def test_android15_release_requires_both_real_transcripts(self):
+        from backend.tests.test_installation_evidence import android15_report, reports
+        from backend.installation_evidence import from_ci_reports
+        report = self.evidence(24)
+        report['min_sdk'] = 35
+        with self.assertRaises(updates.ReleaseUnavailable):
+            publish(self.root, self.apk, report, expected_certificate=CERT)
+        transcripts = [android15_report(), *reports()]
+        for run in transcripts:
+            for record in run['results']:
+                if 'apk_sha256' in record and record['test'] != 'previous_clean_install':
+                    record['apk_sha256'] = report['sha256']
+        report['installation_tests'] = transcripts
+        report['installation_evidence'] = from_ci_reports(transcripts, report['sha256'])
+        release = publish(self.root, self.apk, report, expected_certificate=CERT)
+        self.assertEqual(release.min_sdk, 35)
+        report['min_sdk'] = 34
+        with self.assertRaises(updates.ReleaseUnavailable):
+            publish(self.root, self.apk, report, expected_certificate=CERT)
+
     def enforce(self, version='23', token='test', uid=1, package='ru.omnicio.app.debug'):
         return updates.enforce(self.connect, user_id=uid, authorization='Bearer '+token,
             headers={updates.CODE_HEADER: version, updates.PACKAGE_HEADER: package})

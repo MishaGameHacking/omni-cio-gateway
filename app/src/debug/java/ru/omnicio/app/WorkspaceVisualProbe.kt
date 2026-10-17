@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
 import ru.omnicio.app.ui.portfolio.HistoryChart
 import ru.omnicio.app.ui.portfolio.HistoryPoint
-import ru.omnicio.app.ui.portfolio.HistoryMarker
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
 import ru.omnicio.app.ui.workspace.*
 
@@ -32,11 +31,16 @@ internal fun WorkspaceVisualProbe(onBack: () -> Unit) {
                 }
                 if (section == 1) item {
                     BalanceVisibilityButton()
-                    HistoryChart(listOf(HistoryPoint("2026-10-16T10:00:00Z", BigDecimal("4000")),
-                        HistoryPoint("2026-10-16T11:00:00Z", BigDecimal("4050")),
-                        HistoryPoint("2026-10-17T10:00:00Z", BigDecimal("4500")),
-                        HistoryPoint("2026-10-17T11:00:00Z", BigDecimal("4480"))), "RUB",
-                        listOf(HistoryMarker("2026-10-17T10:00:00Z", "Тестовое пополнение")))
+                    HistoryChart((1..17).filter { it != 8 }.map { day ->
+                        val value = when (day) {
+                            1 -> BigDecimal("0.08")
+                            2 -> BigDecimal.ZERO
+                            3 -> BigDecimal("-20")
+                            else -> BigDecimal(4000 + day * 30)
+                        }
+                        HistoryPoint("2026-10-${day.toString().padStart(2, '0')}T10:00:00Z", value)
+                    } + HistoryPoint("2026-10-17T11:00:00Z", BigDecimal("4480")), "RUB")
+
                 }
                 if (section == 2) item {
                     StrategyImpact(StrategyImpactUi(listOf(ImpactRow("Резерв", "10%", "15%"), ImpactRow("Компания", "8%", "5%")),

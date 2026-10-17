@@ -76,7 +76,7 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         self.assertNotIn('publish_moscow_release.sh', workflow)
         # Version code 31 belongs to the published 0.7.6 upgrade baseline.
         # Any changed APK bytes must use a strictly newer identity.
-        self.assertIn('report.version_code <= 32', publication)
+        self.assertIn('report.version_code <= 33', publication)
 
 
 if __name__ == '__main__':

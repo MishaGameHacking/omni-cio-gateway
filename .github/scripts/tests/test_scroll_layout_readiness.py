@@ -165,7 +165,8 @@ class ScrollLayoutReadinessTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         # Label, resource-id and selected-tab content paths each wait for the
         # exact Compose list rather than accepting a transient missing root.
-        self.assertEqual(source.count("layout_timeout=12,"), 3)
+        self.assertEqual(source.count("layout_timeout=12,"), 4)
+        self.assertIn("for_tap=True,", source)
         self.assertIn(
             'self.reveal("Денежные средства", "portfolio-content")',
             source,

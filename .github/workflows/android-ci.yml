@@ -140,7 +140,7 @@ jobs:
         run: |
           call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
-      - name: Download installed 0.8.0 APK for exact upgrade compatibility test
+      - name: Download installed 0.9.0 APK for exact upgrade compatibility test
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
@@ -148,16 +148,16 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-7fe22f35b07bd2fc92b5860e23418214333b8a21'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.8.0-preview-7fe22f3.apk');
-            if (!asset) throw new Error('0.8.0 reference APK missing');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.9.0-preview-a957e62.apk');
+            if (!asset) throw new Error('0.9.0 reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
-            if (crypto.createHash('sha256').update(bytes).digest('hex') !== 'b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31') throw new Error('0.8.0 reference APK checksum mismatch');
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076') throw new Error('0.9.0 reference APK checksum mismatch');
             const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);
-      - name: Validate preview installation, upgrade and profile UI on Android 16
+      - name: Validate preview installation, upgrade and profile UI on Android 15 and 16
         uses: ./.github/actions/check-apk
         env:
           RUN_PROFILE_UI_TESTS: "1"
@@ -172,8 +172,8 @@ jobs:
             const crypto = require('crypto');
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
-            const shots = ['workspace-ux100', 'ux100-chart', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-            const names = ['apk-verification.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
+            const shots = ['workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
+            const names = ['apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json', 'ui-screens-api35/ux100-chart.png', 'ui-screens-api35/bars-selected.png', 'ui-screens-api35/bars-large-font.png', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {
               const file = path.join(base, name);

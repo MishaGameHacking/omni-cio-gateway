@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import subprocess
 import xml.etree.ElementTree as ET
 from unittest.mock import Mock
 
@@ -57,6 +58,42 @@ RESUMED = "topResumedActivity=ActivityRecord{123 u0 " + ACTIVITY + " t12}"
 
 
 class ProfileLaunchTests(unittest.TestCase):
+    def test_host_launch_timeout_still_requires_exact_ready_screen(self):
+        command = Mock(side_effect=["", subprocess.TimeoutExpired("am start", 15), RESUMED, RESUMED])
+        read_tree = Mock(return_value=tree(screen="probe-screen:home"))
+        launch_profile(command, read_tree, lambda read, message: read(), expected_screen="home")
+        self.assertEqual(command.call_count, 4)
+        self.assertEqual(command.call_args_list[1].args[-1], "home")
+        read_tree.assert_called_once()
+
+    def test_host_timeout_with_wrong_or_missing_screen_fails(self):
+        for screen in ("probe-screen:profile", "", "probe-screen:portfolio"):
+            with self.subTest(screen=screen):
+                command = Mock(side_effect=["", subprocess.TimeoutExpired("am start", 15), RESUMED])
+                with self.assertRaises(AssertionError):
+                    launch_profile(command, lambda: tree(screen=screen), lambda read, message: read(), expected_screen="home")
+
+    def test_host_timeout_with_unresumed_activity_never_reads_old_frame(self):
+        command = Mock(side_effect=["", subprocess.TimeoutExpired("am start", 15), "lastResumedActivity " + ACTIVITY])
+        read_tree = Mock(return_value=tree(screen="probe-screen:home"))
+        with self.assertRaises(AssertionError):
+            launch_profile(command, read_tree, lambda read, message: read(), expected_screen="home")
+        read_tree.assert_not_called()
+
+    def test_nonlaunch_timeout_is_not_recovered(self):
+        command = Mock(side_effect=subprocess.TimeoutExpired("am force-stop", 15))
+        read_tree, wait = Mock(), Mock()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            launch_profile(command, read_tree, wait)
+        read_tree.assert_not_called()
+        wait.assert_not_called()
+
+    def test_unknown_screen_is_rejected_before_adb(self):
+        command = Mock()
+        with self.assertRaises(ValueError):
+            launch_profile(command, Mock(), Mock(), expected_screen="other")
+        command.assert_not_called()
+
     def test_supported_statuses(self):
         self.assertEqual(start_status("Starting: Intent\nStatus: ok\n"), "ok")
         self.assertEqual(start_status("Status: timeout\n"), "timeout")

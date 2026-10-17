@@ -32,17 +32,17 @@ OWNER разрешил заново спроектировать все экра
 
 ## Android
 
-- Минимальная поддерживаемая версия устройства: **Android 16 / API 36**.
-- Android 15 / API 35 и все более старые версии не поддерживаются и не должны устанавливать приложение.
-- `minSdk`, `compileSdk` и `targetSdk` текущей линии держать не ниже API 36; повышать их при переходе на более новые стабильные Android.
-- Использовать стабильные публичные возможности Android 16 и новее без fallback-кода, polyfill и обходов, существующих только ради Android 15 и ниже.
+- Минимальная поддерживаемая версия устройства: **Android 15 / API 35** — новое указание OWNER 17.10.2026 заменяет прежнее ограничение API 36.
+- Android 14 / API 34 и более старые версии не поддерживаются.
+- `minSdk = 35`, `compileSdk = 36`, `targetSdk = 36`. Повышение целевой версии не должно лишать поддержки Android 15 без нового решения OWNER.
+- Использовать стабильные публичные API Android 15+. Новые API проверять по версии ОС, если они недоступны на API 35.
 - Deprecated, legacy и non-SDK API не использовать, когда в Android 16+ есть актуальная публичная альтернатива.
 - Edge-to-edge считать обязательным: системные панели прозрачны, а контент учитывает `safeDrawing`/IME-insets без двойных отступов.
 - Навигацию «Назад» строить на современном predictive-back контракте Activity/Compose; не перехватывать `KEYCODE_BACK` и не возвращать старый `onBackPressed()`-код.
 - Интерфейс проектировать адаптивно: не полагаться на принудительную ориентацию, фиксированное соотношение сторон или один размер телефона; проверять узкий экран, крупный шрифт, split-screen и большие дисплеи.
 - Анимационное состояние читать в draw/graphics-layer фазе, когда возможно, чтобы не пересобирать весь экран на каждом кадре.
 - Для длительных пользовательских операций, которые действительно продолжаются вне экрана, применять актуальные API Android 16, включая progress-centric notification, только при наличии реального фонового процесса.
-- Проверки установки, обновления, запуска и интерфейса выполнять на Android 16 / API 36 или более новой поддерживаемой версии; API 33–35 не являются релизной матрицей.
+- Релизная матрица: чистая установка, запуск и полный UI на API 35 и 36; обновление с опубликованного 0.9.0 / 33 на API 36 (этот исходный APK не устанавливался на API 35). Не выдавать чистую установку Android 15 за проверку обновления.
 - Основной стек Android: Kotlin, Jetpack Compose, Gradle Kotlin DSL. Другие языки и технологии использовать, когда они действительно нужны задаче.
 
 ## Как понимать запросы OWNER
@@ -141,3 +141,8 @@ OWNER разрешил заново спроектировать все экра
 ## OWNER 17.10.2026 — F01.3 / UX100
 
 OWNER approved implementing the 100 UX audit recommendations in a new version, limited to native interface design and user interactions. Preserve existing authenticated read-only functions. New plan, strategy-effect, risk, delivery and chat algorithms remain future work. Mark drafts as local and inactive; do not show synthetic recommendations in production. UX scope, source mapping and data dependencies are tracked in docs/UX100.md. Interface release 0.9.0 / 33 is published and delivered to Timeweb; upgrade from 0.8.0 / 32 is verified on the Android 16 emulator. See docs/PLAN_STATUS.md for release and delivery evidence. Use published 0.9.0 / 33 as the baseline for the next APK release. Physical-device verification and new investment algorithms remain separate tasks. Publish only after all checks pass for the exact head.
+
+
+## OWNER 17.10.2026 — F01.4 / F22
+
+Заменить линейную историю стоимости портфеля столбцами Spectrum: выбор касанием/проведением, дата и точное значение, компактная статистика интервала ниже. Интервал содержит последний реальный снимок; пропуски не заменяются нулями. Денежные потоки выбранного интервала получаются из существующего read-only API; изменение стоимости не называть прибылью. Поддержка Android 15+ обязательна. Следующий выпуск 0.10.0 / 34; алгоритмы инвестиционных рекомендаций остаются отдельным этапом.

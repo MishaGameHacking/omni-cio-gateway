@@ -9,11 +9,11 @@ android {
 
     defaultConfig {
         applicationId = "ru.omnicio.app"
-        minSdk = 36
+        minSdk = 35
         targetSdk = 36
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 33
-        versionName = "0.9.0"
+        versionCode = 34
+        versionName = "0.10.0"
     }
 
     buildTypes {

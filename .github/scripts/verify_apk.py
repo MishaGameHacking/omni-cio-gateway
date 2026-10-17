@@ -23,7 +23,7 @@ def check_dex(data: bytes) -> str:
     require(len(data) >= 112, "Truncated DEX header")
     version = data[4:7].decode("ascii", errors="replace")
     require(data[:4] == b"dex\n" and data[7] == 0, "Invalid DEX magic")
-    require(version in {"035", "037", "038", "039", "040"}, "Unsupported DEX version for the Android 16 build")
+    require(version in {"035", "037", "038", "039", "040"}, "Unsupported DEX version for the Android 15+ build")
     size, header, endian = struct.unpack_from("<III", data, 32)
     require(size == len(data) and header == 112 and endian == 0x12345678, "Invalid DEX header")
     # Required DEX identifier, NOT a trust mechanism. apksigner verifies authenticity.
@@ -83,14 +83,14 @@ def check_manifest(badging: str, xmltree: str, version: int, non_debuggable: boo
         raise InvalidAPK("Package metadata missing")
     require(package.group(1) == "ru.omnicio.app.debug", "Unexpected application ID")
     require(int(package.group(2)) == version, "Wrong versionCode")
-    require("sdkVersion:'36'" in badging, "Unexpected minimum Android version")
+    require("sdkVersion:'35'" in badging, "Unexpected minimum Android version")
     require("targetSdkVersion:'36'" in badging, "Unexpected target Android version")
     require(not manifest_flag(xmltree, "testOnly"), "testOnly APK cannot be distributed")
     require(not re.search(r"A: (?:android:)?(?:split|isSplitRequired)[(=]", xmltree), "Split APK is not standalone")
     if non_debuggable:
         require(not manifest_flag(xmltree, "debuggable"), "Distributed preview must not be debuggable")
     return {"package": package.group(1), "version_code": version, "version_name": package.group(3),
-            "min_sdk": 36, "target_sdk": 36, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False}
+            "min_sdk": 35, "target_sdk": 36, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False}
 
 
 def output_directory() -> Path:

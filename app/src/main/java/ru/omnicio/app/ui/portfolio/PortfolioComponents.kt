@@ -1,14 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
-import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.runtime.saveable.rememberSaveable
 import ru.omnicio.app.ui.workspace.*
-import java.time.Duration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -16,23 +9,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -248,106 +233,6 @@ private fun StructureCaption(center: String, caption: String, modifier: Modifier
         Text(center, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center)
-    }
-}
-
-internal data class HistoryMarker(val date: String, val label: String)
-
-@Composable
-internal fun HistoryChart(points: List<HistoryPoint>, currency: String, markers: List<HistoryMarker> = emptyList()) {
-    if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Notice("График скрыт режимом приватности."); return }
-    if (points.size < 2) {
-        Notice(if (points.isEmpty()) "За этот период пока нет сохранённых снимков стоимости." else "Первый снимок сохранён. График появится после следующего измерения.")
-        return
-    }
-    val geometry = remember(points) { portfolioHistory(points) }
-    if (geometry == null) {
-        Notice("История содержит несовместимые значения. Повторите загрузку; пропуски не заменяются нулями.")
-        return
-    }
-    val data = geometry.coordinates
-    var selected by rememberSaveable(currency) { mutableIntStateOf(-1) }
-    val pointIndex = if (selected < 0) data.lastIndex else selected.coerceIn(data.indices)
-    val current = data[pointIndex]
-    val accent = LocalSpectrumPalette.current.cyan
-    val outline = MaterialTheme.colorScheme.outlineVariant
-    val dates = remember(data) { data.map { Instant.parse(it.point.date) } }
-    val gaps = remember(dates) {
-        val intervals = dates.zipWithNext { first, last -> Duration.between(first, last).seconds }
-        val typical = intervals.sorted()[intervals.size / 2]
-        intervals.map { it > maxOf(1800L, typical * 3) }
-    }
-    Text(decimalText(current.point.value) + " " + currencySymbol(currency), style = MaterialTheme.typography.headlineSmall)
-    Text(dateText(current.point.date), style = MaterialTheme.typography.bodySmall)
-    DataRow("Диапазон шкалы", "${decimalText(geometry.low)} — ${decimalText(geometry.high)} ${currencySymbol(currency)}")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-    Column(Modifier.height(180.dp), verticalArrangement = Arrangement.SpaceBetween) {
-        listOf(geometry.high, geometry.high.add(geometry.low).divide(BigDecimal("2")), geometry.low).forEach { Text(decimalText(it), style = MaterialTheme.typography.labelSmall) }
-    }
-    Canvas(Modifier.weight(1f).height(180.dp)
-        .semantics { contentDescription = "Стоимость портфеля. ${data.size} снимков. Выбран ${dateText(current.point.date)}: ${decimalText(current.point.value)} $currency. Точные значения доступны под графиком."
-            customActions = listOf(
-                CustomAccessibilityAction("Предыдущая точка") { selected = (pointIndex - 1).coerceAtLeast(0); true },
-                CustomAccessibilityAction("Следующая точка") { selected = (pointIndex + 1).coerceAtMost(data.lastIndex); true },
-            )
-        }
-        .pointerInput(data) { detectTapGestures { point -> selected = data.indices.minBy { kotlin.math.abs(data[it].x * size.width - point.x) } } }
-        .pointerInput(data) { detectDragGestures { change, _ ->
-            change.consume()
-            selected = data.indices.minBy { kotlin.math.abs(data[it].x * size.width - change.position.x) }
-        } }) {
-        val inset = 5.dp.toPx()
-        val innerWidth = (size.width - inset * 2).coerceAtLeast(1f)
-        val innerHeight = (size.height - inset * 2).coerceAtLeast(1f)
-        for (level in 0..2) {
-            val y = inset + innerHeight * level / 2
-            drawLine(outline.copy(alpha = .4f), Offset(inset, y), Offset(size.width - inset, y), 1.dp.toPx())
-        }
-        val curve = Path()
-        data.forEachIndexed { index, coordinate ->
-            val x = inset + coordinate.x * innerWidth
-            val y = inset + coordinate.y * innerHeight
-            if (index == 0 || gaps[index - 1]) curve.moveTo(x, y) else curve.lineTo(x, y)
-        }
-        markers.forEach { marker ->
-            val instant = runCatching { Instant.parse(marker.date) }.getOrNull()
-            if (instant != null && instant in dates.first()..dates.last()) {
-                val part = Duration.between(dates.first(), instant).toMillis().toDouble() / Duration.between(dates.first(), dates.last()).toMillis()
-                val markerX = inset + part.toFloat() * innerWidth
-                drawCircle(accent, 3.dp.toPx(), Offset(markerX, size.height - inset))
-            }
-        }
-        drawPath(curve, accent, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        val x = inset + current.x * innerWidth
-        drawLine(outline, Offset(x, inset), Offset(x, size.height - inset), 1.dp.toPx())
-        drawCircle(accent, 4.dp.toPx(), Offset(x, inset + current.y * innerHeight))
-    }
-    }
-    DataRow(dateText(data.first().point.date, "dd.MM.yy"), dateText(data.last().point.date, "dd.MM.yy"))
-    if (gaps.any { it }) Notice("Разрывы линии — длительные промежутки между сохранёнными наблюдениями.")
-    markers.filter { marker -> runCatching { Instant.parse(marker.date) in dates.first()..dates.last() }.getOrDefault(false) }
-        .forEach { marker -> Text("${dateText(marker.date)} · ${marker.label}", style = MaterialTheme.typography.bodySmall) }
-    DetailFold("Как читать график") {
-        Notice("Показана стоимость по сохранённым снимкам. Пополнения и выводы меняют стоимость; это не график инвестиционной прибыли.")
-    }
-    HistoryValues(data, currency)
-}
-
-@Composable
-private fun HistoryValues(data: List<HistoryCoordinate>, currency: String) {
-    var expanded by remember(currency) { mutableStateOf(false) }
-    var page by remember(currency) { mutableIntStateOf(0) }
-    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Скрыть значения графика" else "Значения графика") }
-    if (!expanded) return
-    val window = historyWindow(data.size, page)
-    for (index in window.first until window.end) {
-        val point = data[index].point
-        DataRow(dateText(point.date), decimalText(point.value) + " " + currencySymbol(currency))
-    }
-    Notice("Показаны ${window.first + 1}–${window.end} из ${data.size} снимков.")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = { page = window.page - 1 }, enabled = window.page > 0, modifier = Modifier.weight(1f)) { Text("Предыдущие") }
-        TextButton(onClick = { page = window.page + 1 }, enabled = window.page + 1 < window.pages, modifier = Modifier.weight(1f)) { Text("Следующие") }
     }
 }
 

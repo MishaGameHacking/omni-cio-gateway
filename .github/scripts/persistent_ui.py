@@ -176,8 +176,8 @@ def assert_disposable(device):
         raise ValueError("Frame instrumentation is restricted to the owned disposable AVD")
     if checked(device, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
         raise ValueError("Frame instrumentation refuses physical devices")
-    if checked(device, "shell", "getprop", "ro.build.version.sdk").strip() != "36":
-        raise ValueError("Frame instrumentation requires the tested API 36 image")
+    if checked(device, "shell", "getprop", "ro.build.version.sdk").strip() not in {"35", "36"}:
+        raise ValueError("Frame instrumentation requires a tested API 35 or 36 image")
 
 
 def connect_session(port: int, token: str):

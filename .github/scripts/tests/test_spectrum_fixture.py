@@ -30,7 +30,7 @@ class SpectrumFixtureTests(unittest.TestCase):
     def test_capture_stage_checks_foreground_palette_and_screen(self):
         source = (ROOT / '.github/scripts/profile_ui_probe.py').read_text(encoding='utf-8')
         stage = source.split('    def dashboards(self):', 1)[1].split('    def themes(self):', 1)[0]
-        for required in ('profile_frame(', 'probe-screen:', 'self.palette(DARK_BACKGROUND)', 'self.capture("spectrum-" + screen)'):
+        for required in ('launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)', 'probe-screen:', 'self.palette(DARK_BACKGROUND)', 'self.capture("spectrum-" + screen)'):
             self.assertIn(required, stage)
         workflow = (ROOT / '.github/workflows/android-ci.yml').read_text(encoding='utf-8')
         for name in ('spectrum-home', 'spectrum-portfolio', 'spectrum-allocation'):

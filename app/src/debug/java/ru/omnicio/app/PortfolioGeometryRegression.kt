@@ -27,8 +27,8 @@ internal fun runPortfolioGeometryChecks(): Int {
     verify(model.coordinates.map { it.y } == listOf(0.5f, 0f) && model.zero == 1f)
     verify(portfolioHistory(listOf(a, a.copy(value = BigDecimal("100.0")), b))!!.coordinates.size == 2)
     verify(portfolioHistory(listOf(a, a.copy(value = BigDecimal("99")), b)) == null)
-    verify(portfolioHistory(listOf(a, a)) == null)
-    verify(portfolioHistory(listOf(a)) == null)
+    verify(portfolioHistory(listOf(a, a))!!.coordinates.size == 1)
+    verify(portfolioHistory(listOf(a))!!.coordinates.single().x == 0.5f)
     verify(portfolioHistory(emptyList()) == null)
     verify(portfolioHistory(listOf(a.copy(date = "invalid"), b)) == null)
     verify(portfolioHistory(listOf(a.copy(date = "2026-10-12T00:00:00"), b)) == null)
@@ -61,5 +61,26 @@ internal fun runPortfolioGeometryChecks(): Int {
     verify(!portfolioStackedLayout(400f, 1f))
     verify(portfolioStackedLayout(0f, 1f))
     verify(portfolioStackedLayout(Float.NaN, 1f))
+    val bars = historyBars(listOf(a, middle, b))!!
+    verify(bars.bars.size == 2 && bars.bars.first().close == middle)
+    verify(bars.bars.first().points.size == 2)
+    verify(historyChange(bars.bars.first().points) == BigDecimal("50"))
+    verify(historyChange(listOf(a)) == null)
+    val gapBars = historyBars(listOf(a, b.copy(date = "2026-10-15T00:00:00Z")))!!
+    verify(gapBars.bars.size == 4 && gapBars.bars[1].close == null)
+    verify(gapBars.bars.last().close?.value == BigDecimal("200"))
+    verify(historyBars(listOf(a.copy(value = BigDecimal.ZERO)))!!.bars.single().close?.value == BigDecimal.ZERO)
+    verify(historyBars(listOf(a.copy(value = BigDecimal("-100"))))!!.source.low == BigDecimal("-100"))
+    verify(historyBars(listOf(a, a.copy(value = BigDecimal("10")))) == null)
+    val boundary = historyBars(listOf(a.copy(date = "2026-10-12T20:59:59Z"), b.copy(date = "2026-10-12T21:00:00Z")))!!
+    verify(boundary.bars.size == 2 && boundary.bars.last().start.toString() == "2026-10-13")
+    val months = historyBars(listOf(a.copy(date = "2025-01-01T00:00:00Z"), b))!!
+    verify(months.interval == "месяц" && months.bars.size == 22)
+    verify(months.bars[1].points.isEmpty())
+    verify(historyBarIndex(-20f, 300f, 30) == 0)
+    verify(historyBarIndex(300f, 300f, 30) == 29)
+    verify(historyBarIndex(150f, 300f, 30) == 15)
+    verify(runCatching { historyBarIndex(Float.NaN, 300f, 30) }.isFailure)
+    verify(runCatching { historyBarIndex(0f, 0f, 30) }.isFailure)
     return passed
 }

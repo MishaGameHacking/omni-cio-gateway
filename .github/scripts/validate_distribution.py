@@ -17,13 +17,13 @@ from backend.installation_evidence import from_ci_reports
 
 
 def checked_installation(api: int) -> dict:
-    require(api == 36, "Unexpected emulator API")
+    require(api in {35, 36}, "Unexpected emulator API")
     directory = output_directory()
     folder = fixed_file(directory, f"install-api-{api}")
     results_path = fixed_file(folder, "install-results.json")
     results = json.loads(results_path.read_text(encoding="utf-8"))
     profile_required = os.getenv("RUN_PROFILE_UI_TESTS") == "1"
-    validate_results(results, upgrade_required=bool(os.getenv("PREVIOUS_APK")),
+    validate_results(results, upgrade_required=api == 36,
                      profile_required=profile_required)
     return {"android_api": api, "abi": "x86_64", "profile_ui_required": profile_required,
             "results": results}
@@ -57,7 +57,7 @@ def main() -> None:
     apk = fixed_file(directory, "app-preview.apk")
     require(report["sha256"] == hashlib.sha256(apk.read_bytes()).hexdigest(),
             "APK changed after static verification")
-    report["installation_tests"] = [checked_installation(36)]
+    report["installation_tests"] = [checked_installation(35), checked_installation(36)]
     # A complete build without a real upgrade, or a stale report from another
     # artifact, cannot produce the canonical publisher evidence.
     report["installation_evidence"] = from_ci_reports(report["installation_tests"], report["sha256"])

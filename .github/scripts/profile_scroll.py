@@ -59,6 +59,46 @@ def visible_resource(tree: ET.Element, resource_id: str) -> ET.Element | None:
     return None
 
 
+def tappable_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Element | None:
+    """Clip a target to its list viewport before using its tap coordinates.
+
+    Compose can report a child's logical bounds while most of the button is
+    still below the clipped list. Canvas pointer-input targets need not expose
+    clickable=true, so the caller must assert the resulting interaction state.
+    """
+    target = visible_resource(tree, target_id)
+    viewport = _scroll_area(tree, list_id)
+    if target is None or viewport is None:
+        return None
+    if target.get("enabled") == "false":
+        return None
+    left, top, right, bottom = _bounds(target)
+    x1, y1, x2, y2 = viewport
+    left, top = max(left, x1), max(top, y1)
+    right, bottom = min(right, x2), min(bottom, y2)
+    if right - left < 48 or bottom - top < 48:
+        return None
+    clipped = ET.Element(target.tag, dict(target.attrib))
+    clipped.set("bounds", f"[{left},{top}][{right},{bottom}]")
+    return clipped
+
+
+def settled_resource(read_tree, target_id: str, list_id: str, max_frames: int = 20):
+    """Require three equal fresh rectangles after an asynchronous scroll."""
+    if list_id not in LIST_IDS or not 3 <= max_frames <= 30:
+        raise ValueError("Unknown list or invalid frame limit")
+    previous, stable = None, 0
+    for _ in range(max_frames):
+        target = tappable_resource(read_tree(), target_id, list_id)
+        bounds = target.get("bounds") if target is not None else None
+        stable = stable + 1 if bounds is not None and bounds == previous else int(bounds is not None)
+        if stable >= 3:
+            return target
+        previous = bounds
+        time.sleep(0.1)
+    raise AssertionError("List button geometry did not settle: " + target_id)
+
+
 def _scroll_area(tree: ET.Element, resource_id: str):
     names = {resource_id, f"{PACKAGE}:id/{resource_id}"}
     candidates = [
@@ -208,12 +248,14 @@ def reveal_resource_in_list(
     max_swipes: int = 10,
     direction: str = "end",
     layout_timeout: float = 0,
+    for_tap: bool = False,
 ) -> ET.Element | None:
     """Reveal an exact Compose testTag without depending on merged label text."""
     return _reveal_target(
         read_tree,
         swipe,
-        lambda tree: visible_resource(tree, target_resource_id),
+        lambda tree: tappable_resource(tree, target_resource_id, resource_id)
+        if for_tap else visible_resource(tree, target_resource_id),
         target_resource_id,
         resource_id=resource_id,
         max_swipes=max_swipes,

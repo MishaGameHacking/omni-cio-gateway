@@ -26,7 +26,7 @@ internal fun portfolioFractions(slices: List<ChartSlice>): List<ChartFraction>? 
 private data class DatedPoint(val point: HistoryPoint, val instant: Instant)
 
 private fun orderedHistory(points: List<HistoryPoint>): List<DatedPoint>? {
-    if (points.size !in 2..10_000) return null
+    if (points.size !in 1..10_000) return null
     if (points.any { it.date.length > 64 || it.value.precision() > 128 || it.value.scale() !in -128..128 }) return null
     val dated = try { points.map { DatedPoint(it, Instant.parse(it.date)) }.sortedBy { it.instant } }
         catch (_: java.time.DateTimeException) { return null }
@@ -37,7 +37,7 @@ private fun orderedHistory(points: List<HistoryPoint>): List<DatedPoint>? {
             if (last.point.value.compareTo(item.point.value) != 0) return null
         } else result.add(item)
     }
-    return result.takeIf { it.size >= 2 }
+    return result.takeIf { it.isNotEmpty() }
 }
 
 private fun seconds(duration: Duration): BigDecimal = BigDecimal.valueOf(duration.seconds)
@@ -57,10 +57,10 @@ internal fun portfolioHistory(points: List<HistoryPoint>): HistoryGeometry? {
     val span = high.subtract(low)
     val first = dated.first().instant
     val duration = seconds(Duration.between(first, dated.last().instant))
-    if (duration.signum() <= 0) return null
+    if (duration.signum() < 0) return null
     val zero = if (span.signum() == 0) 1f else ratio(high, span)
     val coordinates = dated.map {
-        val x = ratio(seconds(Duration.between(first, it.instant)), duration)
+        val x = if (duration.signum() == 0) 0.5f else ratio(seconds(Duration.between(first, it.instant)), duration)
         val y = if (span.signum() == 0) zero else ratio(high.subtract(it.point.value), span)
         HistoryCoordinate(it.point, x, y)
     }
