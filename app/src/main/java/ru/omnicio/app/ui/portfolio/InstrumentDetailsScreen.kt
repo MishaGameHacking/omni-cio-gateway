@@ -47,7 +47,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                                 DataRow("Стоимость вашей позиции", position.currentValue.moneyText())
                                 DataRow(labels.quantity, position.quantity.quantityText())
                                 DataRow("Результат позиции", position.expectedYieldAmount.moneyText(true))
-                                position.expectedYieldPercent?.let { DataRow("Доходность, полученная от API", it.percentText()) }
+                                position.expectedYieldPercent?.let { DataRow("Доходность позиции", it.percentText()) }
                                 DataRow("За день", position.dailyYieldAmount.moneyText(true))
                             }
                         }
@@ -58,7 +58,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                                 DataRow("Средняя цена", position.averagePrice.moneyText())
                                 labels.accrued?.let { DataRow(it, position.currentNkd.moneyText()) }
                                 DataRow("Заблокированное количество", position.blockedQuantity.quantityText())
-                                DataRow("Блокировка по данным API", if (position.blocked) "Да" else "Не отмечена")
+                                DataRow("Блокировка у брокера", if (position.blocked) "Да" else "Не отмечена")
                                 if (position.blocked) Notice("Есть ограничения. Возможность сделки нужно уточнить в приложении брокера.")
                                 Notice("Отсутствие отметки о блокировке не подтверждает, что торги сейчас доступны.")
                             }
@@ -70,20 +70,20 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         DataRow("Тикер", position.ticker ?: "—")
                                         DataRow("ISIN", position.isin ?: "—")
-                                        DataRow("Компания по данным API", position.company ?: "Не указана API")
+                                        DataRow("Компания", position.company ?: "Нет данных")
                                         DataRow("Биржа", position.exchange ?: "—")
-                                        DataRow("Отрасль", position.sector ?: "Не указана API")
+                                        DataRow("Отрасль", position.sector ?: "Нет данных")
                                         DataRow("Идентификатор", position.id)
                                     }
                                 }
-                                Notice("Переход открывает карточку брокера, а не создаёт заявку. Проверьте название, тикер и ISIN перед сделкой.")
+                                Notice("Сделку вы подтверждаете в Т-Инвестициях. Перед ней проверьте название и ISIN.")
                             }
                         }
                         item(key = "broker-action") {
                             BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
                         }
                         item(key = "data-limitations") {
-                            Notice("«—» означает, что значение не получено или не может быть корректно рассчитано. Цены и результаты показаны в валютах API, количество не переводится в лоты. Это сведения о позиции, не обещание дохода и не полный анализ компании.")
+                            Notice("«—» — нет достоверного значения. Валюта указана у каждой суммы; количество — в единицах, не в лотах.")
                         }
                     }
                 }

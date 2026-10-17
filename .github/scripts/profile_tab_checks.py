@@ -131,7 +131,12 @@ def settled_tab(read_tree, resource_id: str, max_frames: int = 20):
     for _ in range(max_frames):
         target = tappable_tab(read_tree(), resource_id)
         bounds = target.get("bounds") if target is not None else None
-        stable = stable + 1 if bounds is not None and bounds == previous else 1 if bounds else 0
+        if bounds is None:
+            stable = 0
+        elif bounds == previous:
+            stable += 1
+        else:
+            stable = 1
         if stable >= 3:
             return target
         previous = bounds
