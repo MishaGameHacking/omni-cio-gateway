@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
@@ -85,7 +87,7 @@ internal fun AccountDataNotice(data: AccountData) {
     when {
         data.error != null -> Notice(data.error)
         data.json == null -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(Modifier.size(28.dp), description = "Получаем данные счёта")
             Text("Загружаем данные счёта…")
         }
         else -> Notice("Получено ${dateText(data.json.optString("asOf"))} · обновляется автоматически")
@@ -142,3 +144,4 @@ internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod)
         }
     }
 }
+

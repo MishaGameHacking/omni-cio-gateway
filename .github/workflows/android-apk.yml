@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "app/**"
+      - "tools/**"
       - "ci-ui-driver/**"
       - "backend/installation_evidence.py"
       - "build.gradle.kts"
@@ -112,7 +113,7 @@ jobs:
           py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
           if errorlevel 1 exit /b 1
 
-      - name: Download installed 0.9.0 APK for exact upgrade compatibility test
+      - name: Download installed 0.10.0 APK for exact upgrade compatibility test
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
@@ -120,14 +121,14 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.9.0-preview-a957e62.apk');
-            if (!asset) throw new Error('0.9.0 reference APK missing');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.10.0-preview-0a894dd.apk');
+            if (!asset) throw new Error('0.10.0 reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
             const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-            if (digest !== '32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076') {
-              throw new Error('0.9.0 reference APK checksum mismatch');
+            if (digest !== '3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3') {
+              throw new Error('0.10.0 reference APK checksum mismatch');
             }
             const destination = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(destination, bytes);
@@ -198,8 +199,8 @@ jobs:
             const sha = context.sha;
             const reportPath = 'app/build/outputs/apk/preview/apk-verification.json';
             const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            // Code 33 belongs to the installed 0.9.0 preview. Changed bytes must use a newer code.
-            if (!Number.isSafeInteger(report.version_code) || report.version_code <= 33) {
+            // Code 34 belongs to the installed 0.10.0 preview. Changed bytes must use a newer code.
+            if (!Number.isSafeInteger(report.version_code) || report.version_code <= 34) {
               throw new Error('A new versionCode is required before publishing changed APK bytes');
             }
             const data = fs.readFileSync('app/build/outputs/apk/preview/app-preview.apk');
@@ -211,13 +212,13 @@ jobs:
             const tag = `android-preview-${sha}`;
             const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
             const title = `Analyst AI ${version}`;
-            const releaseNotes = fs.readFileSync('docs/releases/0.10.0.md', 'utf8').trim();
-            if (!releaseNotes.includes('0.10.0') || !releaseNotes.includes('F01.4')) throw new Error('Release notes do not identify this update');
+            const releaseNotes = fs.readFileSync('docs/releases/0.11.0.md', 'utf8').trim();
+            if (!releaseNotes.includes('0.11.0') || !releaseNotes.includes('3D100')) throw new Error('Release notes do not identify this update');
             const body = [
               releaseNotes,
               'Signed, non-debuggable preview APK. Android 15+; application ID ru.omnicio.app.debug.',
               'Uses the existing test signing key, not a production-store signing key.',
-              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.9.0 preview, plus clean installation and full profile/education UI on Android 15 and 16 x86_64 emulators verified.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.10.0 preview, plus clean installation and full profile/education UI on Android 15 and 16 x86_64 emulators verified.',
               'A successful emulator run does not claim that every physical-device configuration has been reproduced.',
               `SHA-256: ${hash}`,
               `Signing certificate SHA-256: ${report.certificate_sha256}`,

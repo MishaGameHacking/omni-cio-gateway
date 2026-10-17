@@ -2,6 +2,7 @@ package ru.omnicio.app.ui.analysis
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,6 +36,12 @@ import ru.omnicio.app.ui.spectrum.SpectrumPageHeader
 import ru.omnicio.app.ui.spectrum.SpectrumPrimaryButton
 import ru.omnicio.app.ui.spectrum.SpectrumProgressBar
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumChoiceChip as FilterChip
+import ru.omnicio.app.ui.spectrum.SpectrumSlider as Slider
+import ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator
+import ru.omnicio.app.ui.spatial.SpatialToggleVisual
+import ru.omnicio.app.ui.spatial.rememberSpatialHapticClick
 
 @Composable
 internal fun AnalysisScaffold(
@@ -327,7 +334,7 @@ internal fun StatusCard(title: String, text: String, accent: Boolean = false) {
 internal fun LoadingCard() {
     SpectrumCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            CircularProgressIndicator(Modifier.size(32.dp))
+            SpectrumLoadingIndicator(Modifier.size(32.dp), "Получаем актуальные данные")
             Text("Получаем актуальные данные…", modifier = Modifier.weight(1f))
         }
     }
@@ -404,19 +411,23 @@ internal fun SwitchCard(
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val change = rememberSpatialHapticClick { onCheckedChange(!checked) }
     SpectrumCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
                 value = checked,
                 enabled = enabled,
                 role = Role.Switch,
-                onValueChange = onCheckedChange,
+                interactionSource = interaction,
+                indication = null,
+                onValueChange = { change() },
             ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            Switch(checked = checked, enabled = enabled, onCheckedChange = null)
+            SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp))
         }
     }
 }

@@ -12,8 +12,8 @@ android {
         minSdk = 35
         targetSdk = 36
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 34
-        versionName = "0.10.0"
+        versionCode = 35
+        versionName = "0.11.0"
     }
 
     buildTypes {
@@ -65,7 +65,10 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.filament.android)
+    implementation(libs.filament.gltfio)
 
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }
 

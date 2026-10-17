@@ -98,6 +98,7 @@ logger = logging.getLogger(__name__)
 
 class SessionExchange(BaseModel):
     code: str
+    device_name: str | None = None
 
 
 class TInvestTokenPayload(BaseModel):
@@ -154,6 +155,11 @@ def init_db() -> None:
             END;
             """
         )
+        try:
+            from .volume_devices import migrate
+        except ImportError:
+            from volume_devices import migrate
+        migrate(db)
         db.commit()
 
     client_updates.initialize(connect)
@@ -192,6 +198,9 @@ def session_user(authorization: str | None = Header(default=None)) -> sqlite3.Ro
             """,
             (hash_token(raw), int(time.time())),
         ).fetchone()
+        if row is not None:
+            db.execute("UPDATE workspace_session_devices SET last_seen_at=? WHERE token_hash=? AND last_seen_at<?",
+                       (int(time.time()), hash_token(raw), int(time.time()) - 60))
         db.commit()
     if row is None:
         raise HTTPException(status_code=401, detail="invalid_session")
@@ -473,9 +482,12 @@ def telegram_callback(
 )
 def exchange_session(payload: SessionExchange) -> dict:
     now = int(time.time())
+    if payload.device_name is not None and (not isinstance(payload.device_name, str) or len(payload.device_name) > 100 or any(ord(c) < 32 for c in payload.device_name)):
+        raise HTTPException(status_code=422, detail="invalid_device_name")
     code_hash = hash_token(payload.code.strip())
 
     with closing(connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
         purge_expired(db)
         row = db.execute(
             """
@@ -491,17 +503,23 @@ def exchange_session(payload: SessionExchange) -> dict:
         if row is None:
             raise HTTPException(status_code=401, detail="invalid_login_code")
 
-        db.execute("UPDATE login_codes SET used = 1 WHERE code_hash = ?", (code_hash,))
+        consumed = db.execute("UPDATE login_codes SET used = 1 WHERE code_hash = ? AND used = 0 AND expires_at >= ?", (code_hash, now))
+        if consumed.rowcount != 1:
+            raise HTTPException(status_code=401, detail="invalid_login_code")
         session = secrets.token_urlsafe(48)
+        device_id = secrets.token_hex(16)
         db.execute(
             "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
             (hash_token(session), row["user_id"], now + SESSION_TTL),
         )
+        db.execute("INSERT INTO workspace_session_devices VALUES (?,?,?,?,?)",
+                   (hash_token(session), device_id, (payload.device_name or "Android").strip(), now, now))
         db.commit()
 
     return {
         "access_token": session,
         "expires_in": SESSION_TTL,
+        "device_id": device_id,
         "user": {
             "telegram_id": row["telegram_id"],
             "name": row["name"],
@@ -680,3 +698,31 @@ try:
 except ImportError:
     from portfolio_research import router as portfolio_research_router
 app.include_router(portfolio_research_router)
+
+# These routes expose real source-backed state and acknowledged jobs. The 3D
+# renderer has no separate API, no frame polling and no trading write access.
+try:
+    from .volume_workspace import router as volume_workspace_router
+    from .volume_state import router as volume_state_router
+    from .volume_market import router as volume_market_router
+    from .volume_jobs import router as volume_jobs_router
+    from .volume_chat import router as volume_chat_router
+    from .volume_notifications import router as volume_notifications_router
+    from .volume_devices import router as volume_devices_router
+    from .volume_plans import router as volume_plans_router
+    from .volume_analysis import router as volume_analysis_router
+except ImportError:
+    from volume_workspace import router as volume_workspace_router
+    from volume_state import router as volume_state_router
+    from volume_market import router as volume_market_router
+    from volume_jobs import router as volume_jobs_router
+    from volume_chat import router as volume_chat_router
+    from volume_notifications import router as volume_notifications_router
+    from volume_devices import router as volume_devices_router
+    from volume_plans import router as volume_plans_router
+    from volume_analysis import router as volume_analysis_router
+
+for volume_router in (volume_workspace_router, volume_state_router, volume_market_router,
+                      volume_jobs_router, volume_chat_router, volume_notifications_router,
+                      volume_devices_router, volume_plans_router, volume_analysis_router):
+    app.include_router(volume_router)

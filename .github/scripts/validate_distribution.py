@@ -23,7 +23,8 @@ def checked_installation(api: int) -> dict:
     results_path = fixed_file(folder, "install-results.json")
     results = json.loads(results_path.read_text(encoding="utf-8"))
     profile_required = os.getenv("RUN_PROFILE_UI_TESTS") == "1"
-    validate_results(results, upgrade_required=api == 36,
+    # The installed 0.10 baseline supports both APIs; both now require upgrade.
+    validate_results(results, upgrade_required=True,
                      profile_required=profile_required)
     return {"android_api": api, "abi": "x86_64", "profile_ui_required": profile_required,
             "results": results}

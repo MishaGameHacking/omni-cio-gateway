@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "app/**"
+      - "tools/**"
       - "ci-ui-driver/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
@@ -140,7 +141,7 @@ jobs:
         run: |
           call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
-      - name: Download installed 0.9.0 APK for exact upgrade compatibility test
+      - name: Download installed 0.10.0 APK for exact upgrade compatibility test
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
@@ -148,12 +149,12 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.9.0-preview-a957e62.apk');
-            if (!asset) throw new Error('0.9.0 reference APK missing');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.10.0-preview-0a894dd.apk');
+            if (!asset) throw new Error('0.10.0 reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
-            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076') throw new Error('0.9.0 reference APK checksum mismatch');
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3') throw new Error('0.10.0 reference APK checksum mismatch');
             const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);

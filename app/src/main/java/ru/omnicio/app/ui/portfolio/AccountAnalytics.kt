@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,19 +16,28 @@ import androidx.compose.ui.unit.sp
 import java.math.BigDecimal
 import org.json.JSONObject
 import ru.omnicio.app.data.portfolio.*
+import ru.omnicio.app.data.market.*
+import ru.omnicio.app.data.market.records
 import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.*
 
 @Composable
-internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false) {
-    var start by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
-    var end by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
+internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false, initialDate: String? = null) {
+    val anchor = initialDate?.let { runCatching { java.time.Instant.parse(it).atZone(Moscow).toLocalDate() }.getOrNull()
+        ?: runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull() }
+    var start by rememberSaveable(account.id, initialDate) { mutableStateOf(anchor?.minusMonths(1)?.toString()) }
+    var end by rememberSaveable(account.id, initialDate) { mutableStateOf(anchor?.plusMonths(1)?.toString()) }
     val period = PortfolioPeriod(start, end)
     var selectedPeriod by remember(account.id, period) { mutableStateOf<PortfolioPeriod?>(null) }
     val request = rememberAccountData(token, account.id, "analytics",
         period.parameters() + ("currency" to account.totalValue.currency), interval = 60_000)
     val selectedData = selectedPeriod?.let { scope -> rememberAccountData(token, account.id, "analytics",
         scope.parameters() + ("currency" to account.totalValue.currency), interval = 60_000) }
+    val workspace = LocalWorkspaceSnapshot.current
+    val askAnalyst = LocalAskAnalyst.current
+    val events = workspace?.sectionData("events")?.records("items").orEmpty().filter { event ->
+        event.stringList("instrument_uids").any { uid -> account.positions.any { it.id == uid } } || event.optionalText("account_id") == account.id
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "history") {
             CompactCard {
@@ -38,13 +49,21 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                         point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
                     }
                     HistoryChart(history, data.optString("currency"),
+                        markers = events.mapNotNull { event -> event.optionalText("occurred_at")?.let { HistoryMarker(it, event.optionalText("title") ?: "Событие источника") } },
                         selectionKey = "${account.id}:${request.displayedParameters}",
+                        initialSelectedDate = anchor?.toString(),
                         onSelection = { if (!request.showingPreviousQuery) selectedPeriod = it },
                         controls = { PeriodControls(period) { start = it.start; end = it.end } })
                     if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
                 }
             }
         }
+        item(key = "period-comparison") { DetailFold("Сравнить два периода") { AccountPeriodComparison(token, account) } }
+        if (events.isNotEmpty()) item(key = "source-events") { DetailFold("События рядом с графиком") {
+            val destination = LocalPortfolioDestination.current
+            Text("Связи относятся к инструментам текущего портфеля. Совпадение даты с изменением баланса не определяет его причину.")
+            WorkspaceEvents(events, workspace?.records("sources").orEmpty()) { uid -> destination(PortfolioDestination(accountId = account.id, query = uid)) }
+        } }
         item(key = "cashflow") {
             CompactCard {
                 SectionHeading("Движение денег")
@@ -56,6 +75,9 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                 } else {
                     current.error?.let { Notice(it) }
                     CashFlowSummary(current.json)
+                    TextButton(onClick = { askAnalyst(ChatContext(mode = "portfolio", accountId = account.id,
+                        title = "${account.name} · ${scope.start ?: "вся история"} — ${scope.end ?: "по последний снимок"}",
+                        start = scope.start, end = scope.end)) }) { Text("Обсудить выбранный период") }
                 }
             }
         }
@@ -128,7 +150,7 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
             }
         }
         items(payments) { row ->
-            Card(onClick = { selected = row }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            SpectrumCard(onClick = { selected = row }) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     val uid = row.optString("instrumentUid")
                     val name = account.positions.firstOrNull { it.id == uid }?.title ?: row.optString("title")
@@ -153,16 +175,9 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
 @Composable
 private fun PaymentBars(points: List<HistoryPoint>, currency: String) {
     if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Notice("Суммы скрыты"); return }
-    val color = MaterialTheme.colorScheme.primary
     val max = points.maxOf { it.value }.takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE
-    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(80.dp)) {
-        val step = size.width / points.size
-        points.forEachIndexed { index, point ->
-            val height = (point.value.toDouble() / max.toDouble() * size.height).toFloat().coerceIn(0f, size.height)
-            drawRect(color, androidx.compose.ui.geometry.Offset(index * step + 2.dp.toPx(), size.height - height),
-                androidx.compose.ui.geometry.Size((step - 4.dp.toPx()).coerceAtLeast(1f), height))
-        }
-    }
+    ru.omnicio.app.ui.spatial.SpatialBars(points.map { it.value.toDouble() }, 0.0, max.toDouble(), modifier = Modifier.fillMaxWidth().height(100.dp))
     DataRow(points.first().date.take(7), points.last().date.take(7))
     Notice("Оценка выплат · $currency · максимум ${decimalText(max)}")
 }
+

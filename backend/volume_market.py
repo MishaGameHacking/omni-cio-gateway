@@ -1,0 +1,523 @@
+"""Read-only market adapters and evidence-rich instrument dossiers."""
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+import re
+import threading
+import time
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+try:
+    from . import app as backend, portfolio_details as details, research_store
+    from .credit_evidence import Rating, Source, credit_assessment, EvidenceError
+    from .investment_links import instrument_link
+    from .volume_contract import (SCHEMA_VERSION, date_range, decimal, digest,
+        error_code, money, now_iso, require_id, safe_section, section, source,
+        text_number, timestamp, reviewed_source, financial_context)
+except ImportError:
+    import app as backend
+    import portfolio_details as details
+    import research_store
+    from credit_evidence import Rating, Source, credit_assessment, EvidenceError
+    from investment_links import instrument_link
+    from volume_contract import (SCHEMA_VERSION, date_range, decimal, digest,
+        error_code, money, now_iso, require_id, safe_section, section, source,
+        text_number, timestamp, reviewed_source, financial_context)
+
+router = APIRouter(prefix='/workspace', tags=['workspace-market'])
+DOCS = 'https://developer.tbank.ru/invest/api/'
+READ_METHODS = {
+    'candles': 'MarketDataService/GetCandles',
+    'trading_status': 'MarketDataService/GetTradingStatus',
+    'order_book': 'MarketDataService/GetOrderBook',
+    'calendar': 'InstrumentsService/TradingSchedules',
+    'reports': 'InstrumentsService/GetAssetReports',
+    'fundamentals': 'InstrumentsService/GetAssetFundamentals',
+    'news': 'InstrumentsService/News',
+    'asset': 'InstrumentsService/GetAssetBy',
+    'shares': 'InstrumentsService/Shares', 'bonds': 'InstrumentsService/Bonds',
+    'etfs': 'InstrumentsService/Etfs', 'currencies': 'InstrumentsService/Currencies',
+    'futures': 'InstrumentsService/Futures', 'options': 'InstrumentsService/Options',
+}
+_rate_lock = threading.Lock()
+_next_instrument_read: dict[tuple, float] = {}
+
+
+def pace_instruments(scope: tuple) -> None:
+    # Leave headroom below the documented 200/minute instrument-service limit.
+    # The wait is bounded and is never driven by animation frames.
+    with _rate_lock:
+        now = time.monotonic()
+        due = max(now, _next_instrument_read.get(scope, now))
+        _next_instrument_read[scope] = due + 0.4
+        if len(_next_instrument_read) > 256:
+            for key in list(_next_instrument_read):
+                if _next_instrument_read[key] < now:
+                    del _next_instrument_read[key]
+    delay = due - now
+    if delay > 0:
+        time.sleep(min(delay, 5))
+INTERVALS = {
+    'minute': ('CANDLE_INTERVAL_1_MIN', 1, 2400),
+    'five_minutes': ('CANDLE_INTERVAL_5_MIN', 7, 2400),
+    'quarter_hour': ('CANDLE_INTERVAL_15_MIN', 21, 2400),
+    'hour': ('CANDLE_INTERVAL_HOUR', 90, 2400),
+    'day': ('CANDLE_INTERVAL_DAY', 2192, 2400),
+    'week': ('CANDLE_INTERVAL_WEEK', 1826, 300),
+    'month': ('CANDLE_INTERVAL_MONTH', 3652, 120),
+}
+
+
+def broker_read(reader: details.BrokerReader, method: str, body: dict) -> dict:
+    if method not in READ_METHODS:
+        raise ValueError('read_method_not_allowed')
+    if READ_METHODS[method].startswith('InstrumentsService/'):
+        pace_instruments(reader.scope)
+    return details.portfolio._post_tinvest(reader.client,
+        details.BASE + READ_METHODS[method], reader.token, body)
+
+
+def instrument(user: Any, uid: str) -> dict:
+    require_id(uid)
+    def load():
+        with details.BrokerReader(user) as reader:
+            pace_instruments(reader.scope)
+            raw = reader.read('instrument', {'idType': 'INSTRUMENT_ID_TYPE_UID', 'id': uid})
+        item = raw.get('instrument')
+        if not isinstance(item, dict) or item.get('uid') != uid:
+            raise HTTPException(502, 'instrument_identity_mismatch')
+        item = {**item, '_source': source('GetInstrumentBy', uid, now_iso(),
+                url=DOCS + 'instruments-service-get-instrument-by', ttl=86400)}
+        return item
+    # Full instrument responses contain client-specific requiredTests/rights.
+    return details.cached(('workspace-instrument', *details.identity(user), uid), 300, load)
+
+
+def instrument_kind(raw: dict) -> str:
+    return str(raw.get('instrumentType') or raw.get('instrumentKind') or '').lower().removeprefix('instrument_type_')
+
+
+def quote_unit(raw: dict, price_currency: str | None = None) -> tuple[str, str, str | None]:
+    kind = instrument_kind(raw)
+    if kind == 'bond':
+        return 'percent_of_nominal', '% номинала', None
+    if kind in {'future', 'futures'}:
+        return 'points', 'пункты', None
+    currency = str(price_currency or raw.get('currency') or '').upper()
+    if re.fullmatch(r'[A-Z]{3}', currency):
+        return 'quote_currency', currency, currency
+    return 'quote_units', 'единицы котировки', None
+
+
+def normalize_candles(rows: Any, *, observed_at: str, source_id: str) -> list[dict]:
+    if not isinstance(rows, list):
+        raise HTTPException(502, 'candles_invalid_response')
+    result = {}
+    for raw in rows:
+        if not isinstance(raw, dict):
+            raise HTTPException(502, 'candles_invalid_response')
+        values = {key: decimal(raw.get(key)) for key in ('open', 'high', 'low', 'close')}
+        if any(value is None for value in values.values()):
+            raise HTTPException(502, 'candles_invalid_price')
+        if not values['low'] <= min(values['open'], values['close']) <= max(values['open'], values['close']) <= values['high']:
+            raise HTTPException(502, 'candles_invalid_ohlc')
+        try:
+            instant = timestamp(raw.get('time'))
+            if instant > timestamp(observed_at):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(502, 'candles_invalid_time') from None
+        volume = raw.get('volume')
+        if isinstance(volume, bool) or not re.fullmatch(r'\d{1,19}', str(volume)):
+            raise HTTPException(502, 'candles_invalid_volume')
+        complete = raw.get('isComplete')
+        if type(complete) is not bool:
+            raise HTTPException(502, 'candles_completion_unknown')
+        row = {'time': instant.isoformat(), **{key: text_number(value) for key, value in values.items()},
+               'volume_lots': str(int(volume)), 'is_complete': complete, 'source_id': source_id}
+        if row['time'] in result and result[row['time']] != row:
+            raise HTTPException(502, 'candles_conflicting_values')
+        result[row['time']] = row
+    return sorted(result.values(), key=lambda row: row['time'])
+
+
+def load_candles(user: Any, uid: str, start: date | None, end: date | None, interval: str) -> dict:
+    if interval not in INTERVALS:
+        raise HTTPException(422, 'candle_interval_not_supported')
+    enum, max_days, limit = INTERVALS[interval]
+    begin, finish = date_range(start, end, days=min(30, max_days), max_days=max_days)
+    meta = instrument(user, uid)
+    with details.BrokerReader(user) as reader:
+        raw = broker_read(reader, 'candles', {'instrumentId': uid, 'from': begin.isoformat(),
+            'to': finish.isoformat(), 'interval': enum, 'limit': limit,
+            'candleSourceType': 'CANDLE_SOURCE_EXCHANGE'})
+    observed = now_iso()
+    quote_currencies = {str(row.get('priceCurrency')).upper() for row in raw.get('candles', []) if isinstance(row, dict) and row.get('priceCurrency')}
+    if len(quote_currencies) > 1:
+        raise HTTPException(502, 'candles_currency_changed_in_range')
+    unit, label, currency = quote_unit(meta, next(iter(quote_currencies), raw.get('priceCurrency')))
+    ref = source('GetCandles', uid, observed, url=DOCS + 'market-data-service-get-candles',
+                 unit=unit, currency=currency, ttl=60)
+    rows = normalize_candles(raw.get('candles'), observed_at=observed, source_id=ref['id'])
+    # A full provider page is not a proof that the whole requested range fits.
+    limited = len(rows) >= limit
+    event_section = safe_section(lambda: instrument_events(user, uid, meta, begin, finish), empty={'items': []})
+    return {'schema_version': SCHEMA_VERSION, 'instrument_uid': uid, 'interval': interval,
+            'start': begin.isoformat(), 'end': finish.isoformat(), 'as_of': observed,
+            'state': 'partial' if limited else 'available',
+            'reason': 'provider_candle_limit_reached' if limited else None,
+            'unit': unit, 'unit_label': label, 'currency': currency, 'sources': [ref, *event_section.get('sources', [])],
+            'candles': rows, 'events': (event_section.get('data') or {}).get('items', []),
+            'events_state': event_section['state'], 'gaps_filled': False,
+            'price_basis': 'exchange_quote_not_portfolio_valuation'}
+
+
+@router.get('/instruments/{uid}/candles')
+def candles(uid: str, start: date | None = None, end: date | None = None,
+            interval: str = Query('day', max_length=30), user: Any = Depends(backend.current_user)) -> dict:
+    require_id(uid)
+    return details.cached(('workspace-candles', *details.identity(user), uid, start, end, interval),
+                          30, lambda: load_candles(user, uid, start, end, interval))
+
+
+def instrument_events(user: Any, uid: str, meta: dict, begin: datetime, finish: datetime) -> dict:
+    items, refs, errors = [], [], []
+    kind = instrument_kind(meta)
+    with details.BrokerReader(user) as reader:
+        methods = [('reports', 'events', 'report')]
+        if kind == 'bond':
+            methods.append(('coupons', 'events', 'coupon'))
+        elif kind == 'share':
+            methods.append(('dividends', 'dividends', 'dividend'))
+        for method, field, event_kind in methods:
+            body = {'instrumentId': uid, 'from': begin.isoformat(), 'to': finish.isoformat()}
+            try:
+                raw = broker_read(reader, method, body) if method == 'reports' else reader.read(method, body)
+                rows = raw.get(field, [])
+                if not isinstance(rows, list):
+                    raise HTTPException(502, 'events_invalid_response')
+            except HTTPException as error:
+                errors.append(error_code(error))
+                continue
+            observed = now_iso()
+            ref = source({'reports': 'GetAssetReports', 'coupons': 'GetBondCoupons', 'dividends': 'GetDividends'}[method],
+                         uid, observed, url=DOCS + 'instruments-service', ttl=3600)
+            refs.append(ref)
+            for raw_event in rows:
+                if not isinstance(raw_event, dict):
+                    continue
+                when = raw_event.get('reportDate') if event_kind == 'report' else raw_event.get('couponDate') if event_kind == 'coupon' else raw_event.get('paymentDate') or raw_event.get('recordDate')
+                try:
+                    at = timestamp(when)
+                except ValueError:
+                    continue
+                if not begin <= at <= finish:
+                    continue
+                if event_kind == 'report':
+                    # An elapsed calendar date does not prove publication.
+                    status = 'scheduled'
+                    amount = None
+                    title = 'Дата отчёта по календарю брокера'
+                else:
+                    status = 'cancelled' if str(raw_event.get('dividendType', '')).lower() == 'cancelled' else 'announced'
+                    amount = money(raw_event.get('payOneBond' if event_kind == 'coupon' else 'dividendNet'))
+                    title = 'Купон' if event_kind == 'coupon' else 'Дивиденд'
+                identifier = digest({'uid': uid, 'kind': event_kind, 'event': raw_event})
+                items.append({'id': identifier, 'kind': event_kind, 'title': title, 'date': at.isoformat(),
+                    'occurred_at': at.isoformat(), 'status': status, 'per_unit': amount,
+                    'instrument_uids': [uid], 'source_ids': [ref['id']], 'relationship': 'broker_link'})
+    return section({'items': sorted(items, key=lambda item: item['date']), 'errors': errors},
+                   state='partial' if errors else 'available', reason=errors[0] if errors else None,
+                   as_of=now_iso(), sources=refs)
+
+
+def _news_uids(raw: dict) -> list[str]:
+    values = raw.get('instrumentId', [])
+    if not isinstance(values, list):
+        return []
+    return sorted({row['instrument']['instrumentUid'] for row in values
+        if isinstance(row, dict) and isinstance(row.get('instrument'), dict)
+        and isinstance(row['instrument'].get('instrumentUid'), str)})
+
+
+def deduplicate_news(rows: list[dict], *, uid: str | None, ref: dict) -> list[dict]:
+    groups, seen = {}, set()
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        identifier, title = str(raw.get('id', '')), str(raw.get('title', '')).strip()
+        uids = _news_uids(raw)
+        if not identifier or not title or identifier in seen or (uid and uid not in uids):
+            continue
+        try:
+            published = timestamp(raw.get('ts'))
+            if published > timestamp(ref['observed_at']):
+                continue
+        except ValueError:
+            continue
+        seen.add(identifier)
+        normalized = re.sub(r'\W+', ' ', title.casefold()).strip()
+        key = digest([normalized, published.date().isoformat(), uids])
+        origin = {'provider': str(raw.get('source') or 'T-Invest')[:160],
+                  'source_id': ref['id'], 'broker_news_id': identifier}
+        if key not in groups:
+            groups[key] = {'id': key, 'title': title[:500], 'published_at': published.isoformat(),
+                'sources': [], 'source_ids': [ref['id']], 'instrument_uids': uids,
+                'relationship': 'broker_link', 'deduplication': 'same_id_or_normalized_headline',
+                'summary': str(raw.get('summary') or '')[:1500]}
+        groups[key]['sources'].append(origin)
+    return sorted(groups.values(), key=lambda item: item['published_at'], reverse=True)
+
+
+def load_news(user: Any, uid: str | None = None) -> dict:
+    rows, cursor, cursors, complete = [], None, set(), False
+    with details.BrokerReader(user) as reader:
+        for _ in range(10):
+            body = {'limit': 1000}
+            if cursor is not None:
+                body['cursor'] = cursor
+            raw = broker_read(reader, 'news', body)
+            if not isinstance(raw.get('items', []), list):
+                raise HTTPException(502, 'news_invalid_response')
+            rows.extend(raw.get('items', []))
+            if not raw.get('hasNext'):
+                complete = True
+                break
+            cursor = str(raw.get('nextCursor') or '')
+            if not re.fullmatch(r'\d{1,20}', cursor) or cursor in cursors:
+                break
+            cursors.add(cursor)
+    observed = now_iso()
+    ref = source('News', 'market-news', observed, url=DOCS + 'instruments-service-news', ttl=300)
+    items = deduplicate_news(rows, uid=uid, ref=ref)
+    return section({'items': items, 'complete': complete, 'provider_history_hours': 24},
+                   state='available' if complete else 'partial',
+                   reason=None if complete else 'news_page_limit_or_cursor_failure', as_of=observed, sources=[ref])
+
+
+def rating_section(uid: str, meta: dict) -> dict:
+    at = datetime.now(timezone.utc)
+    try:
+        identity = research_store.latest_verified(backend.connect, 'issuer_identity', uid, at)
+        issuer = identity.get('issuer_id') if identity else None
+        history = research_store.records(backend.connect, 'rating', uid, at=at)
+        if issuer:
+            history += research_store.records(backend.connect, 'rating', issuer, at=at)
+        ratings = [Rating(**{**row, 'source': Source(**row['source'])}) for row in history]
+        assessment = credit_assessment(ratings, issuer_id=issuer, instrument_id=uid,
+                                       at=at, bond=instrument_kind(meta) == 'bond')
+    except (ValueError, TypeError, KeyError, EvidenceError):
+        return section({'items': [], 'history': [], 'warnings': ['Проверенные рейтинги недоступны.']},
+                       state='unavailable', reason='rating_evidence_unavailable')
+    return section({'items': assessment['ratings'], 'history': history, 'warnings': assessment['warnings'],
+                    'issuer_id': issuer, 'has_required_rating': assessment['has_required_rating'],
+                    'scales_are_not_averaged': True},
+                   state='available' if assessment['has_required_rating'] else 'partial',
+                   reason=None if assessment['has_required_rating'] else 'verified_rating_required',
+                   as_of=at.isoformat(), sources=[reviewed_source(row['source'], provider=row['agency'], method='credit_rating', subject=row['subject_id']) for row in history])
+
+
+def metric_section(user: Any, uid: str, meta: dict) -> dict:
+    asset_uid = meta.get('assetUid')
+    if not asset_uid:
+        return section({'items': [], 'conflicts': []}, state='unavailable', reason='asset_identity_required')
+    with details.BrokerReader(user) as reader:
+        raw = broker_read(reader, 'fundamentals', {'assets': [asset_uid]})
+    rows = [row for row in raw.get('fundamentals', []) if isinstance(row, dict) and row.get('assetUid') == asset_uid]
+    observed = now_iso()
+    ref = source('GetAssetFundamentals', asset_uid, observed,
+                 url=DOCS + 'instruments-service-get-asset-fundamentals', ttl=3600)
+    if not rows:
+        return section({'items': [], 'conflicts': []}, state='unavailable', reason='fundamentals_not_supplied', sources=[ref])
+    # Compare the basis before calling different observations contradictory.
+    unique = {digest(row): row for row in rows}
+    if len(unique) > 1:
+        bases = {(row.get('fiscalPeriodEndDate'), row.get('currency')) for row in rows}
+        return section({'items': [], 'conflicts': [{'label': 'Расхождение фундаментальных показателей', 'basis_matches': len(bases) == 1,
+            'reason': 'same_basis_different_values' if len(bases) == 1 else 'different_period_or_currency',
+            'observations': [{'source_id': ref['id'], 'value': {key: value for key, value in row.items() if key != 'assetUid'}, 'period': row.get('fiscalPeriodEndDate')} for row in rows], 'source_ids': [ref['id']]}]},
+            state='partial', reason='fundamentals_conflict', as_of=observed, sources=[ref])
+    raw = rows[0]
+    labels = {'revenueTtm': ('Выручка за 12 месяцев', 'currency'),
+              'netIncomeTtm': ('Чистая прибыль за 12 месяцев', 'currency'),
+              'freeCashFlowTtm': ('Свободный денежный поток за 12 месяцев', 'currency'),
+              'netDebtToEbitda': ('Чистый долг / EBITDA', 'ratio'),
+              'currentRatioMrq': ('Текущая ликвидность', 'ratio')}
+    items = []
+    for key, (label, unit) in labels.items():
+        value = raw.get(key)
+        # Broker JSON double fields are converted via their decimal spelling.
+        value = decimal(str(value)) if type(value) in (int, float, str) else None
+        items.append({'id': key, 'label': label, 'value': text_number(value), 'unit': unit,
+                      'currency': raw.get('currency') if unit == 'currency' else None,
+                      'period': raw.get('fiscalPeriodEndDate'), 'source_ids': [ref['id']]})
+    return section({'items': items, 'conflicts': [], 'basis': 'broker_metrics_not_audited_statement'},
+                   as_of=observed, sources=[ref])
+
+
+def trading_section(user: Any, uid: str, meta: dict) -> dict:
+    with details.BrokerReader(user) as reader:
+        raw = broker_read(reader, 'trading_status', {'instrumentId': uid})
+    observed = now_iso()
+    ref = source('GetTradingStatus', uid, observed, ttl=30)
+    if raw.get('instrumentUid') not in {None, uid}:
+        raise HTTPException(502, 'trading_status_identity_mismatch')
+    return section({'status': raw.get('tradingStatus'), 'api_trade_available': raw.get('apiTradeAvailableFlag'),
+                    'limit_order_available': raw.get('limitOrderAvailableFlag'), 'market_order_available': raw.get('marketOrderAvailableFlag'),
+                    'required_tests': meta.get('requiredTests'), 'execution_guaranteed': False}, as_of=observed, sources=[ref])
+
+
+@financial_context
+def liquidity_section(user: Any, uid: str, meta: dict) -> dict:
+    with details.BrokerReader(user) as reader:
+        raw = broker_read(reader, 'order_book', {'instrumentId': uid, 'depth': 1})
+    if raw.get('instrumentUid') not in {None, uid}:
+        raise HTTPException(502, 'order_book_identity_mismatch')
+    observed = now_iso()
+    ref = source('GetOrderBook', uid, observed, ttl=30)
+    def side(name):
+        rows = raw.get(name, [])
+        if not isinstance(rows, list) or not rows:
+            return None
+        price, quantity = decimal(rows[0].get('price')), decimal(rows[0].get('quantity'))
+        if price is None or quantity is None or quantity < 0 or quantity != quantity.to_integral_value():
+            raise HTTPException(502, 'order_book_value_invalid')
+        return {'price': text_number(price), 'quantity_lots': text_number(quantity)}
+    bid, ask = side('bids'), side('asks')
+    unit, label, currency = quote_unit(meta)
+    spread = decimal(ask['price']) - decimal(bid['price']) if bid and ask else None
+    if spread is not None and spread < 0:
+        raise HTTPException(502, 'order_book_crossed_observation')
+    return section({'best_bid': bid, 'best_ask': ask, 'spread': text_number(spread), 'unit': unit, 'unit_label': label,
+                    'currency': currency, 'depth_consistent': raw.get('isConsistent'),
+                    'basis': 'observed_top_of_book_not_guarantee_of_liquidation_or_execution'},
+                   state='available' if bid and ask and raw.get('isConsistent') is True else 'partial',
+                   reason=None if bid and ask and raw.get('isConsistent') is True else 'order_book_empty_or_not_consistent', as_of=observed, sources=[ref])
+
+
+def load_dossier(user: Any, uid: str) -> dict:
+    meta = instrument(user, uid)
+    observed = now_iso()
+    ref = meta.get('_source') or source('GetInstrumentBy', uid, observed, url=DOCS + 'instruments-service-get-instrument-by', ttl=300)
+    kind = instrument_kind(meta)
+    snapshot = details.dashboard(currency='RUB', user=user)
+    holdings = [{'account_id': account['id'], 'account_name': account['name'],
+        'quantity': text_number(decimal(position.get('quantity'))), 'value': money(position.get('currentValue')),
+        'blocked': bool(position.get('blocked'))}
+        for account in snapshot.get('accounts', []) for position in account.get('positions', []) if position.get('id') == uid]
+    begin = datetime.now(timezone.utc) - timedelta(days=30)
+    finish = begin + timedelta(days=395)
+    events = safe_section(lambda: instrument_events(user, uid, meta, begin, finish), empty={'items': []})
+    rating = rating_section(uid, meta)
+    try:
+        issuer_identity = research_store.latest_verified(backend.connect, 'issuer_identity', uid, datetime.now(timezone.utc))
+    except EvidenceError:
+        issuer_identity = None
+    reports = [row for row in (events.get('data') or {}).get('items', []) if row['kind'] == 'report']
+    try:
+        issuer = (rating.get('data') or {}).get('issuer_id')
+        statement = research_store.latest_verified(backend.connect, 'statement', issuer, datetime.now(timezone.utc)) if issuer else None
+    except EvidenceError:
+        statement = None
+    if statement:
+        reports.append({'id': digest(statement), 'date': statement['source']['published_at'],
+                        'title': 'Опубликованная проверенная отчётность',
+                        'status': 'published', 'source_ids': [statement['source']['id']],
+                        'source': reviewed_source(statement['source'], provider='Reviewed issuer report', method='statement', subject=issuer), 'period_start': statement.get('period_start'),
+                        'period_end': statement.get('period_end')})
+    sections = {
+        'instrument': section({'uid': uid, 'title': meta.get('name'), 'ticker': meta.get('ticker'),
+            'isin': meta.get('isin'), 'instrument_type': kind, 'lot': meta.get('lot'),
+            'currency': meta.get('currency'), 'country_of_risk': meta.get('countryOfRisk'),
+            'sector': meta.get('sector'), 'broker_url': instrument_link(kind, meta.get('ticker'), meta.get('isin')),
+            'issuer_id': issuer_identity.get('issuer_id') if issuer_identity else None,
+            'issuer_name': issuer_identity.get('issuer_name') if issuer_identity else None,
+            'issuer_source': reviewed_source(issuer_identity['source'], provider='Reviewed issuer register', method='issuer_identity', subject=uid) if issuer_identity else None,
+            'required_tests': meta.get('requiredTests', []), 'api_trade_available': meta.get('apiTradeAvailableFlag'),
+            'access_is_read_only': True}, as_of=ref['observed_at'], sources=[ref]),
+        'holdings': section({'items': holdings}, as_of=snapshot.get('asOf')),
+        'ratings': rating,
+        'metrics': safe_section(lambda: metric_section(user, uid, meta), empty={'items': [], 'conflicts': []}),
+        'reports': section({'items': reports}, state=events['state'], reason=events['reason'], sources=events['sources']),
+        'news': safe_section(lambda: details.cached(('workspace-news', *details.identity(user)), 300,
+                            lambda: load_news(user)), empty={'items': []}),
+        'events': events,
+        'trading': safe_section(lambda: trading_section(user, uid, meta), empty={}),
+        'liquidity': safe_section(lambda: liquidity_section(user, uid, meta), empty={}),
+    }
+    sections['news']['data']['items'] = [row for row in sections['news']['data'].get('items', []) if uid in row['instrument_uids']]
+    if issuer_identity:
+        sections['instrument']['sources'].append(sections['instrument']['data']['issuer_source'])
+    if statement:
+        sections['reports']['sources'].append(reports[-1]['source'])
+    try:
+        from .volume_state import broker_key, record
+        from .ai_budget import transaction
+    except ImportError:
+        from volume_state import broker_key, record
+        from ai_budget import transaction
+    with transaction(backend.connect) as db:
+        record(db, int(user['id']), 'instrument_market', uid, {'instrument_uid': uid, 'broker_key': broker_key(user),
+               'trading': sections['trading'], 'liquidity': sections['liquidity'], 'ratings': rating})
+    return {'schema_version': SCHEMA_VERSION, 'instrument_uid': uid, 'as_of': observed,
+            'sections': sections, 'sources': list({item['id']: item for value in sections.values() for item in value.get('sources', [])}.values()), 'autotrading': False}
+
+
+def portfolio_metadata(user: Any, positions: list[dict], stored: dict, progress, checkpoint: dict) -> None:
+    """Use broker catalog batches before per-UID fallback for large portfolios."""
+    methods = {'share': 'shares', 'bond': 'bonds', 'etf': 'etfs', 'currency': 'currencies', 'futures': 'futures', 'option': 'options'}
+    wanted = {p['id']: p for p in positions if p.get('instrumentType') != 'cash' and p['id'] not in stored}
+    total = len(wanted) + len(stored)
+    groups: dict[str, set] = {}
+    for uid, item in wanted.items():
+        if item.get('instrumentType') in methods:
+            groups.setdefault(item['instrumentType'], set()).add(uid)
+    with details.BrokerReader(user) as reader:
+        for kind, identifiers in groups.items():
+            if len(identifiers) < 10:
+                continue
+            progress('collecting_metadata', checkpoint, completed=len(stored), total=total)
+            try:
+                raw = broker_read(reader, methods[kind], {'instrumentStatus': 'INSTRUMENT_STATUS_ALL'})
+            except HTTPException:
+                continue
+            instruments = raw.get('instruments')
+            if not isinstance(instruments, list):
+                continue
+            observed = now_iso()
+            for item in instruments:
+                if isinstance(item, dict) and item.get('uid') in identifiers:
+                    uid = item['uid']
+                    stored[uid] = {**item, 'instrumentType': kind, '_source': source(methods[kind].title(), uid, observed, ttl=86400)}
+            progress('collecting_metadata', checkpoint, completed=len(stored), total=total)
+
+
+@router.get('/instruments/{uid}/dossier')
+def dossier(uid: str, user: Any = Depends(backend.current_user)) -> dict:
+    require_id(uid)
+    revision = research_store.revision(backend.connect)
+    return details.cached(('workspace-dossier', *details.identity(user), uid, revision), 60,
+                          lambda: load_dossier(user, uid))
+
+
+def load_calendar(user: Any) -> dict:
+    begin = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time(), timezone.utc)
+    finish = begin + timedelta(days=6, hours=23, minutes=59)
+    with details.BrokerReader(user) as reader:
+        raw = broker_read(reader, 'calendar', {'from': begin.isoformat(), 'to': finish.isoformat()})
+    exchanges = raw.get('exchanges')
+    if not isinstance(exchanges, list):
+        raise HTTPException(502, 'calendar_invalid_response')
+    observed = now_iso()
+    ref = source('TradingSchedules', 'broker-market-sections', observed,
+                 url=DOCS + 'instruments-service-trading-schedules', ttl=900)
+    return {'schema_version': SCHEMA_VERSION, 'as_of': observed, 'timezone': 'UTC',
+            'display_timezones': ['Europe/Moscow', 'device_local'], 'exchanges': exchanges,
+            'source': ref, 'basis': 'broker_sections_not_guaranteed_instrument_availability'}
+
+
+@router.get('/markets/calendar')
+def calendar(user: Any = Depends(backend.current_user)) -> dict:
+    return details.cached(('workspace-calendar', *details.identity(user)), 900, lambda: load_calendar(user))

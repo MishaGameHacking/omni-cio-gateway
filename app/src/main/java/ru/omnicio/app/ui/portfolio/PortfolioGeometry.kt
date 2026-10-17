@@ -5,8 +5,8 @@ import java.math.MathContext
 import java.time.Duration
 import java.time.Instant
 
-internal data class ChartSlice(val title: String, val weight: Float)
-internal data class ChartFraction(val title: String, val fraction: Double)
+internal data class ChartSlice(val title: String, val weight: Float, val id: String = title)
+internal data class ChartFraction(val title: String, val fraction: Double, val id: String = title)
 internal data class HistoryPoint(val date: String, val value: BigDecimal)
 internal data class HistoryCoordinate(val point: HistoryPoint, val x: Float, val y: Float)
 internal data class HistoryGeometry(
@@ -20,7 +20,7 @@ internal fun portfolioFractions(slices: List<ChartSlice>): List<ChartFraction>? 
     if (slices.any { it.title.isBlank() || !it.weight.isFinite() || it.weight < 0 }) return null
     val total = slices.sumOf { it.weight.toDouble() }
     if (total <= 0 || !total.isFinite()) return null
-    return slices.filter { it.weight > 0 }.map { ChartFraction(it.title, it.weight / total) }
+    return slices.filter { it.weight > 0 }.map { ChartFraction(it.title, it.weight / total, it.id) }
 }
 
 private data class DatedPoint(val point: HistoryPoint, val instant: Instant)
@@ -77,3 +77,4 @@ internal fun historyWindow(total: Int, requested: Int): HistoryWindow {
 
 internal fun portfolioStackedLayout(widthDp: Float, fontScale: Float): Boolean =
     !widthDp.isFinite() || !fontScale.isFinite() || widthDp < 288f || fontScale >= 1.5f
+

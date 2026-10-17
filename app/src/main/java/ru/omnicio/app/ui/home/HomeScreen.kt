@@ -1,19 +1,34 @@
 package ru.omnicio.app.ui.home
 
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.portfolio.*
+import ru.omnicio.app.data.market.rememberWorkspaceRequest
+import ru.omnicio.app.data.workspace.rememberPersonalWorkspace
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.portfolio.*
@@ -23,6 +38,7 @@ import ru.omnicio.app.ui.workspace.*
 
 /** A decision workspace: capital, next destination and actual allocation. */
 @Composable
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: PortfolioCurrency,
     refreshing: Boolean, refreshError: String?, lastUpdatedMillis: Long?, onCurrencyClick: () -> Unit,
     onOpenPortfolio: () -> Unit, onOpenRecommendations: () -> Unit, onOpenRisk: () -> Unit,
@@ -32,17 +48,78 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val waiting = state == PortfolioUiState.Loading || state == PortfolioUiState.ApiConnected
     val prefs = LocalWorkspacePreferences.current.value
+    val itemMotion = prefs.motion != MotionLevel.OFF && android.animation.ValueAnimator.areAnimatorsEnabled()
+    val itemDuration = if (prefs.motion == MotionLevel.SUBDUED) 100 else 220
+    val navigate = LocalWorkspaceNavigator.current
+    val personal = rememberPersonalWorkspace()
+    val listState = rememberLazyListState()
+    var collapsed by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var previewOrder by remember { mutableStateOf<List<String>?>(null) }
+    var savingOrder by remember { mutableStateOf<List<String>?>(null) }
+    var undoOrder by remember { mutableStateOf<List<String>?>(null) }
+    val savedOrder = normalizedDashboardOrder(personal.dashboardOrder)
+    val order = previewOrder ?: savedOrder
+    LaunchedEffect(personal.dashboardOrder, savingOrder) {
+        if (savingOrder != null && savedOrder == savingOrder) { savingOrder = null; previewOrder = null; editing = false }
+    }
+    var attributionStart by rememberSaveable { mutableStateOf<String?>(java.time.LocalDate.now().minusMonths(1).toString()) }
+    var attributionEnd by rememberSaveable { mutableStateOf<String?>(java.time.LocalDate.now().toString()) }
+    val attributionPeriod = PortfolioPeriod(attributionStart, attributionEnd)
+    val workspace = rememberWorkspaceRequest(parameters = attributionPeriod.parameters() + ("currency" to selectedCurrency.name),
+        refreshKey = LocalWorkspaceRefreshKey.current)
+    val refresh = LocalPortfolioRefresh.current
+    val pullState = rememberPullToRefreshState()
+    var requested by remember { mutableStateOf(false) }
+    var sawLoading by remember { mutableStateOf(false) }
+    var beforeRefresh by remember { mutableStateOf<String?>(null) }
+    var refreshMessage by remember { mutableStateOf<String?>(null) }
+    val refreshNow = {
+        if (!refreshing) { beforeRefresh = financialFingerprint(snapshot); requested = true; sawLoading = false; refreshMessage = null; refresh() }
+    }
+    LaunchedEffect(refreshing, refreshError, snapshot, requested) {
+        if (requested && refreshing) sawLoading = true
+        if (requested && !refreshing && (sawLoading || refreshError != null)) {
+            refreshMessage = when {
+                refreshError != null -> "Обновление не завершено: $refreshError"
+                financialFingerprint(snapshot) == beforeRefresh -> "Проверено: новых значений в портфеле нет"
+                else -> "Портфель обновлён по данным брокера"
+            }
+            requested = false; workspace.refresh()
+        }
+    }
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = { AnalystBottomBar(AnalystTab.Home, onOpenPortfolio, onOpenProfile) }) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshNow, state = pullState,
+                modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), indicator = {
+                    if (pullState.distanceFraction > 0f || refreshing) SpectrumCard(Modifier.align(Alignment.TopCenter).padding(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SpectrumIcon(SpectrumSymbol.Sources, Modifier.size(32.dp), selected = refreshing)
+                            Text(if (refreshing) "Запрашиваем данные…" else if (pullState.distanceFraction >= 1f) "Отпустите для обновления" else "Потяните для обновления")
+                        }
+                    }
+                }) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState,
                 contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+                stickyHeader(key = "compact-capital") {
+                    if (snapshot != null && (collapsed || listState.firstVisibleItemIndex > 1)) Surface(color = MaterialTheme.colorScheme.surface) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = onCurrencyClick, modifier = Modifier.weight(1f)) { Text(snapshot.totalValue.moneyText(), style = MaterialTheme.typography.titleMedium) }
+                            TextButton(onClick = { collapsed = !collapsed }) { Text(if (collapsed) "Развернуть" else "Свернуть") }
+                        }
+                    }
+                }
                 item(key = "brand-header") { HomeHeader(user, onOpenMessages) }
                 item(key = "portfolio-hero") {
-                    CapitalHero(state, snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis,
+                    if (!collapsed) CapitalHero(state, snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis,
                         prefs.hideHomeBalance, onCurrencyClick, onConnect)
+                    Row(Modifier.fillMaxWidth()) {
+                        if (snapshot != null) TextButton(onClick = { collapsed = !collapsed }) { Text(if (collapsed) "Развернуть капитал" else "Свернуть капитал") }
+                        TextButton(onClick = refreshNow, enabled = !refreshing && !waiting) { Text("Обновить") }
+                    }
+                    refreshMessage?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall) }
                 }
-                item(key = "assistant") { HomeNextStep(state, snapshot, refreshError, waiting, onConnect, onOpenRisk, onOpenRecommendations) }
                 if (!snapshot?.warnings.isNullOrEmpty()) {
                     item(key = "attention") { SpectrumCard {
                         Text("Требует внимания", style = MaterialTheme.typography.titleMedium)
@@ -50,15 +127,50 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                         if (snapshot.warnings.size > 2) DetailFold("Все ограничения (${snapshot.warnings.size})") { snapshot.warnings.drop(2).forEach { Text(it) } }
                     } }
                 }
-                item(key = "monitoring") { ObservationSummary(onOpenRisk) }
                 item(key = "capabilities") { HomeQuickActions(onOpenPortfolio, onOpenPayments) }
-                if (snapshot != null && prefs.homeStructure) {
-                    item(key = "allocation") { AllocationOverview(snapshot, onOpenPortfolio) }
+                if (personal.loaded && !personal.releaseDismissed(ru.omnicio.app.BuildConfig.VERSION_NAME)) item(key = "release-introduction") {
+                    SpectrumCard {
+                        Text("Что нового в 0.11", style = MaterialTheme.typography.titleMedium)
+                        Text("Объёмный интерфейс, сохранённые исследования, сравнение инструментов и контекстный аналитик.", style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { navigate(WorkspaceRoute.NewFeatures) }) { Text("Посмотреть возможности") }
+                        TextButton(onClick = { personal.dismissRelease(ru.omnicio.app.BuildConfig.VERSION_NAME) }, enabled = !personal.busy) { Text("Больше не показывать") }
+                    }
                 }
-
+                item(key = "order-controls") {
+                    Row {
+                        TextButton(onClick = { previewOrder = savedOrder; editing = true }, enabled = personal.loaded) { Text("Настроить главный экран") }
+                        if (undoOrder != null) TextButton(onClick = { personal.saveDashboardOrder(undoOrder!!); undoOrder = null }, enabled = !personal.busy) { Text("Отменить порядок") }
+                    }
+                    if (previewOrder != null && previewOrder != savedOrder) Text("Просмотр нового порядка · ещё не сохранён")
+                }
+                items(order, key = { "dashboard:$it" }) { key ->
+                    Box(Modifier.animateItem(
+                        fadeInSpec = if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
+                        placementSpec = if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
+                        fadeOutSpec = if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null)) {
+                        when (key) {
+                            "assistant" -> HomeNextStep(state, snapshot, refreshError, waiting, onConnect, onOpenRisk, onOpenRecommendations)
+                            "changes" -> if (snapshot != null) ChangesSinceVisit(snapshot, personal)
+                            "composition" -> if (snapshot != null) CapitalComposition(snapshot, workspace.json)
+                            "attribution" -> if (snapshot != null) Column {
+                                WorkspaceRequestNotice(workspace)
+                                if (!workspace.showingPreviousQuery) HomeAttribution(workspace.json, attributionPeriod) { attributionStart = it.start; attributionEnd = it.end }
+                                else PeriodControls(attributionPeriod) { attributionStart = it.start; attributionEnd = it.end }
+                            }
+                            "payouts" -> if (snapshot != null) HomePayoutTimeline(workspace.json, onOpenPayments)
+                            "goal" -> if (snapshot != null) HomeGoalProgress(workspace.json)
+                            "monitoring" -> ObservationSummary(onOpenRisk)
+                            "allocation" -> if (snapshot != null && prefs.homeStructure) AllocationOverview(snapshot, onOpenPortfolio)
+                        }
+                    }
+                }
+            }
             }
         }
     }
+    if (editing) DashboardOrderEditor(order, savedOrder, personal.busy, personal.error,
+        onPreview = { previewOrder = it }, onSave = { undoOrder = savedOrder; savingOrder = order; personal.saveDashboardOrder(order) },
+        onClose = { editing = false; previewOrder = null })
 }
 
 @Composable
@@ -94,15 +206,14 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
                 else -> "Получаем счета и позиции…"
             }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state == PortfolioUiState.Loading || state == PortfolioUiState.ApiConnected) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+                SpectrumLoadingIndicator(description = "Получаем счета и позиции")
             } else SpectrumPrimaryButton("Подключение счёта", onConnect, Modifier.fillMaxWidth())
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Всего в портфеле", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = onCurrency, modifier = Modifier.heightIn(min = 48.dp)) { Text("${currency.name} ▾") }
             }
-            Text(if (hidden) "••• •••" else snapshot.totalValue.moneyText(),
-                style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            InteractiveBalance(snapshot.totalValue, hidden, onCurrency)
             BalanceVisibilityButton()
             if (snapshot.totalValue.currency != currency.name) Text("Показана предыдущая оценка в ${snapshot.totalValue.currency}. Запрошена ${currency.name}.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -121,27 +232,34 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
 }
 
 @Composable
+internal fun InteractiveBalance(amount: MoneyAmount, hidden: Boolean, onCurrency: () -> Unit) {
+    var revealed by remember { mutableStateOf(false) }
+    val active = workspaceForeground()
+    val select by rememberUpdatedState(onCurrency)
+    LaunchedEffect(active, hidden) { revealed = false }
+    val text = if (hidden && !(revealed && active)) "••• •••" else
+        "${decimalText(amount.value.toBigDecimal())} ${currencySymbol(amount.currency)}"
+    Text(text, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
+            onClick("Следующая валюта оценки") { select(); true }
+        }.pointerInput(hidden, active) {
+            detectTapGestures(onTap = { select() }, onLongPress = { if (hidden && active) revealed = true },
+                onPress = { try { tryAwaitRelease() } finally { revealed = false } })
+        })
+    Text(if (hidden) "Нажмите для смены валюты. Удерживайте, чтобы увидеть только эту сумму; отпустите, чтобы скрыть." else "Нажмите на сумму: RUB → USD → EUR",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    WorkspaceGestureHint("balance-currency", "Валюта одним касанием", "Касание суммы меняет валюту RUB → USD → EUR. Скрытую сумму можно увидеть только на время удержания; настройка приватности сохраняется.")
+}
+
+@Composable
 private fun AllocationOverview(snapshot: PortfolioSnapshot, onOpenPortfolio: () -> Unit) {
     SpectrumCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Распределение", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = onOpenPortfolio) { Text("Подробнее ›") }
         }
-        val valid = snapshot.allocations.all { it.sharePercent.toBigDecimal().signum() >= 0 } &&
-            snapshot.allocations.sumOf { it.sharePercent.toBigDecimal() } <= java.math.BigDecimal("100.1")
         if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("Структура скрыта"); return@SpectrumCard }
-        if (snapshot.allocations.isEmpty()) Text("Структура пока не получена")
-        val palette = LocalSpectrumPalette.current
-        val colors = listOf(palette.cyan, palette.violet, palette.amber, palette.blue, palette.rose)
-        val sorted = snapshot.allocations.sortedByDescending { it.sharePercent.toBigDecimal() }
-        val visible = sorted.take(3)
-        visible.forEachIndexed { index, item ->
-            DataRow(item.title, item.sharePercent.percentText())
-            if (valid) SpectrumProgressBar(item.sharePercent.toBigDecimal().toFloat() / 100f, accent = colors[index])
-        }
-        if (sorted.size > 3) DetailFold("Остальные категории (${sorted.size - 3})") {
-            sorted.drop(3).forEach { DataRow(it.title, it.sharePercent.percentText()) }
-        }
+        AssetStructure(snapshot.allocations, snapshot.totalValue)
         Text("Счетов: ${snapshot.accounts.size}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -170,3 +288,4 @@ private fun HomeNextStep(state: PortfolioUiState, snapshot: PortfolioSnapshot?, 
                             if (snapshot == null) onConnect else if (snapshot.warnings.isNotEmpty()) onOpenRisk else onOpenRecommendations, Modifier.fillMaxWidth(), enabled = !waiting)
                     }
 }
+

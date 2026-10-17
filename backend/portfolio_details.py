@@ -168,6 +168,10 @@ class BrokerReader:
             value = self.read("instrument", {"idType": kind, "id": identifier}).get("instrument", {})
         except HTTPException:
             return {}
+        # Instrument responses can also contain client-specific tests and
+        # permissions. Only public identity fields enter this shared cache.
+        value = {key: value[key] for key in ("uid", "figi", "ticker", "classCode", "isin", "name", "sector",
+                 "assetUid", "exchange", "lot", "currency", "countryOfRisk", "countryOfRiskName", "instrumentType", "instrumentKind") if key in value}
         public_store(key, value, 86400)
         return value
 
@@ -219,6 +223,7 @@ def normalize_position(raw: dict, metadata: dict) -> dict:
         "blockedQuantity": quote(raw.get("blockedLots")), "isin": metadata.get("isin"),
         "sector": metadata.get("sector"), "company": metadata.get("name"),
         "assetUid": metadata.get("assetUid"), "exchange": metadata.get("exchange"),
+        "countryOfRisk": metadata.get("countryOfRisk"), "countryOfRiskName": metadata.get("countryOfRiskName"),
         "lot": metadata.get("lot"), "figi": raw.get("figi"), "classCode": metadata.get("classCode") or raw.get("classCode"),
     }
 

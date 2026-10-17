@@ -19,12 +19,20 @@ import ru.omnicio.app.ui.workspace.*
 
 /** Uses a current position resolved by account and id; no stale detail snapshot. */
 @Composable
-internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> Unit, accountName: String? = null) {
+internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> Unit, accountName: String? = null,
+    embedded: Boolean = false, sharedKey: String = position.id, accountId: String? = null) {
     var section by rememberSaveable(position.id) { mutableIntStateOf(0) }
     val labels = instrumentDetailLabels(position.instrumentType, position.currentNkd != null)
     val session = LocalWorkspaceSession.current
-    Dialog(onDismissRequest = close,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    val askAnalyst = LocalAskAnalyst.current
+    val navigate = LocalWorkspaceNavigator.current
+    val openPortfolio = LocalPortfolioDestination.current
+    val discuss = {
+        close()
+        askAnalyst(ChatContext(mode = "instrument", instrumentUid = position.id,
+            title = position.ticker ?: position.title, accountId = accountId))
+    }
+    val content: @Composable () -> Unit = {
         SpectrumBackground(Modifier.fillMaxSize()) {
             Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = { WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close) },
@@ -43,7 +51,16 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                         Text("Сводка остаётся рядом с подробностями.", style = MaterialTheme.typography.bodyMedium)
                     }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    SpectrumTabs(listOf("Позиция", "Исследование", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ru.omnicio.app.ui.spatial.SpatialObject(sharedKey) {
+                            SpectrumAssetMark(position.instrumentType, position.company ?: position.title, instrumentSharedModifier(sharedKey).size(64.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(position.title, style = MaterialTheme.typography.titleMedium)
+                            Text(position.ticker ?: labels.type, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    SpectrumTabs(listOf("Позиция", "Котировки", "Досье", "Исследование", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
                     LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(20.dp),
                         verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                         if (position.blocked) item(key = "restriction") { SpectrumCard(emphasized = true) {
@@ -53,21 +70,29 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                         } }
                         if (section == 0) {
                             item(key = "position-summary") { InstrumentPositionSummary(position) }
-                            item(key = "strategy-check") { WorkspaceEmpty("Соответствие стратегии",
-                                "Проверка действующих правил для этой бумаги ещё не подключена. Заключение не получено.") }
-                            if (position.instrumentType == "bond") item { DetailFold("Погашение и ближайший купон") {
-                                Text("Условия выпуска не получены. Календарь опубликованных выплат доступен в вашем счёте.")
-                            } }
-                            if (position.instrumentType == "share") item { DetailFold("Корпоративные события") {
-                                Text("Проверенные события показаны в исследовании, если источник их предоставил.")
+                            item(key = "watch-position") { WatchPositionAction(position) }
+                            item(key = "position-actions") { SpectrumCard {
+                                Text("Разобраться в позиции", style = MaterialTheme.typography.titleLarge)
+                                SpectrumPrimaryButton("Обсудить с аналитиком", discuss, Modifier.fillMaxWidth(), enabled = session.token.isNotBlank())
+                                SpectrumSecondaryButton("Проверить мои правила и стратегию", { close(); navigate(WorkspaceRoute.Strategies) }, Modifier.fillMaxWidth())
+                                SpectrumSecondaryButton("События и отчётность этой бумаги", { section = 2 }, Modifier.fillMaxWidth())
+                                if (accountId != null) SpectrumSecondaryButton("Календарь выплат счёта", {
+                                    close(); openPortfolio(PortfolioDestination(section = 4, accountId = accountId))
+                                }, Modifier.fillMaxWidth())
                             } }
                         }
                         if (section == 1) item {
+                            if (position.instrumentType in setOf("cash", "currency") && position.id.startsWith("cash:"))
+                                Text("Денежный остаток не является торгуемым инструментом. История его стоимости входит в динамику счёта.")
+                            else InstrumentQuotesPanel(position, accountId, close)
+                        }
+                        if (section == 2) item { InstrumentDossierPanel(position, close) }
+                        if (section == 3) item {
                             if (session.token.isBlank()) WorkspaceEmpty("Исследование недоступно", "Нужен действующий сеанс и сведения из источников.")
                             else PortfolioResearchPanel(session.token, instrumentId = position.id, showRefresh = false)
-                            ContextQuestion(position.id)
+                            SpectrumSecondaryButton("Обсудить эту бумагу", discuss, Modifier.fillMaxWidth(), enabled = session.token.isNotBlank())
                         }
-                        if (section == 2) item(key = "instrument-identifiers") { InstrumentPassport(position) }
+                        if (section == 4) item(key = "instrument-identifiers") { InstrumentPassport(position) }
                     }
                 }
                 }
@@ -75,6 +100,8 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
             }
         }
     }
+    if (embedded) content() else Dialog(onDismissRequest = close,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) { content() }
 }
 
 @Composable
@@ -115,3 +142,4 @@ private fun InstrumentPassport(position: PortfolioPosition) {
                             Notice("Перед сделкой сверьте название и ISIN у брокера.")
                             }
 }
+

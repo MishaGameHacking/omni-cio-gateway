@@ -1,39 +1,34 @@
 package ru.omnicio.app.ui.spectrum
 
-import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
-import ru.omnicio.app.ui.workspace.InterfaceDensity
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import ru.omnicio.app.ui.spatial.*
+import ru.omnicio.app.ui.workspace.InterfaceDensity
+import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 
 @Immutable
 data class SpectrumPalette(
@@ -83,32 +78,13 @@ internal val SpectrumPrimaryStops = listOf(
     Color(0xFF3158D5), Color(0xFF5036DA), Color(0xFF7136BF),
 )
 
+
 @Composable
 fun SpectrumBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val palette = LocalSpectrumPalette.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val starColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.11f)
-    Box(modifier.background(Brush.verticalGradient(
-        if (dark) listOf(palette.backgroundTop, Color(0xFF0C1420), palette.backgroundBottom, palette.backgroundTop)
-        else listOf(palette.backgroundTop, palette.backgroundBottom, Color(0xFFF8FAFF)),
-    ))) {
-        Canvas(Modifier.fillMaxSize()) {
-            if (size.minDimension <= 0f) return@Canvas
-            val radius = size.minDimension
-            val glows = listOf(
-                Triple(Offset(size.width * 0.92f, size.height * 0.06f), 0.82f, palette.violet.copy(alpha = if (dark) 0.11f else 0.06f)),
-                Triple(Offset(size.width * 0.02f, size.height * 0.74f), 0.72f, palette.cyan.copy(alpha = if (dark) 0.08f else 0.04f)),
-                Triple(Offset(size.width * 0.70f, size.height * 0.62f), 0.55f, palette.rose.copy(alpha = if (dark) 0.08f else 0.035f)),
-            )
-            glows.forEach { (center, factor, color) ->
-                drawCircle(Brush.radialGradient(listOf(color, Color.Transparent), center, radius * factor), radius * factor, center)
-            }
-            if (dark) repeat(8) { index ->
-                drawCircle(starColor, if (index % 5 == 0) 1.8f else 1f,
-                    Offset(((index * 73) % 101) / 100f * size.width, ((index * 41 + 17) % 97) / 100f * size.height))
-            }
-        }
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    // The shared scene supplies the solid background and every dimensional surface.
+    // Painting an opaque Compose background here would cover its meshes.
+    Box(modifier, contentAlignment = Alignment.TopCenter) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
             Box(Modifier.widthIn(max = 840.dp).fillMaxSize(), content = content)
         }
     }
@@ -122,39 +98,27 @@ fun SpectrumCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val prefs = LocalWorkspacePreferences.current.value
-    val shape = RoundedCornerShape(if (prefs.density == InterfaceDensity.COMPACT) 18.dp else 24.dp)
-    val interaction = if (onClick == null) Modifier else Modifier.clip(shape).clickable(role = Role.Button, onClick = onClick)
-    Card(
-        modifier = modifier.then(interaction),
-        shape = shape,
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                emphasized && dark -> palette.cardStrong.copy(alpha = 0.96f)
-                dark -> palette.card.copy(alpha = 0.93f)
-                emphasized -> palette.cardStrong
-                else -> palette.card
-            },
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = BorderStroke(1.dp, Brush.linearGradient(listOf(
-            palette.cyan.copy(alpha = if (emphasized) 0.30f else 0.03f),
-            palette.blue.copy(alpha = if (emphasized) 0.18f else 0.03f),
-            palette.violet.copy(alpha = if (emphasized) 0.30f else 0.03f),
-            palette.rose.copy(alpha = if (emphasized) 0.12f else 0.03f),
-        ))),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (prefs.depth && emphasized) 2.dp else 0.dp),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(if (prefs.density == InterfaceDensity.COMPACT) 12.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (prefs.density == InterfaceDensity.COMPACT) 8.dp else 10.dp), content = content)
+    val compact = LocalWorkspacePreferences.current.value.density == InterfaceDensity.COMPACT
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+    val click = rememberSpatialHapticClick { onClick?.invoke() }
+    val clickable = if (onClick == null) Modifier else Modifier.heightIn(min = 48.dp)
+        .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = click)
+    SpatialSurface(modifier.then(clickable), color = if (emphasized) palette.cardStrong else palette.card,
+        state = when { pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }, emphasized = emphasized) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+            Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 18.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp), content = content)
+        }
     }
 }
 
 @Composable
 fun SpectrumBadge(text: String, modifier: Modifier = Modifier, accent: Color = LocalSpectrumPalette.current.cyan) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(999.dp), color = accent.copy(alpha = 0.14f),
-        contentColor = MaterialTheme.colorScheme.onSurface, border = BorderStroke(1.dp, accent.copy(alpha = 0.40f))) {
+    SpatialSurface(modifier, SpatialSurfaceKind.Chip, color = lerp(LocalSpectrumPalette.current.card, accent, .13f)) {
         Text(text, Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -167,13 +131,18 @@ fun SpectrumPageHeader(
     modifier: Modifier = Modifier,
     @Suppress("UNUSED_PARAMETER") eyebrow: String = "Analyst AI",
 ) {
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            SpatialSurface(kind = SpatialSurfaceKind.Heading, color = LocalSpectrumPalette.current.cardStrong) {
+                Text(title, Modifier.padding(horizontal = 10.dp, vertical = 6.dp).semantics { heading() },
+                    style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface)
+            }
             if (subtitle.isNotBlank()) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium)
         }
-        SpectrumIcon(symbol, Modifier.size(44.dp), selected = true, tile = true, motionAllowed = false)
+        SpectrumIcon(symbol, Modifier.size(48.dp), selected = true, tile = true, motionAllowed = true)
     }
 }
 
@@ -185,33 +154,40 @@ fun SpectrumPrimaryButton(
     enabled: Boolean = true,
     symbol: SpectrumSymbol? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val brush = Brush.horizontalGradient(if (enabled) SpectrumPrimaryStops else listOf(colors.surfaceVariant, colors.surfaceVariant))
-    val labelColor = if (enabled) Color.White else colors.onSurfaceVariant
-    Surface(onClick = onClick, enabled = enabled, modifier = modifier, color = Color.Transparent,
-        contentColor = labelColor, shape = RoundedCornerShape(18.dp)) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 54.dp).background(brush).padding(horizontal = 18.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+    val click = rememberSpatialHapticClick(onClick)
+    val state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }
+    SpatialSurface(modifier.clickable(interactionSource = interaction, indication = null,
+        enabled = enabled, role = Role.Button, onClick = click), SpatialSurfaceKind.Button,
+        color = SpectrumPrimaryStops.first(), state = state, emphasized = true) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 18.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             if (symbol != null) {
-                SpectrumIcon(symbol, Modifier.size(26.dp), selected = true, tile = false, motionAllowed = false)
+                SpatialIcon(symbol.asset, Modifier.size(26.dp), tint = Color.White, state = state)
                 Spacer(Modifier.width(9.dp))
             }
-            Text(text, color = labelColor, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(text, color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
     }
 }
 
 @Composable
 fun SpectrumSecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val palette = LocalSpectrumPalette.current
-    Surface(onClick = onClick, enabled = enabled, modifier = modifier, shape = RoundedCornerShape(18.dp),
-        color = palette.cardStrong.copy(alpha = if (enabled) 0.78f else 0.45f),
-        contentColor = MaterialTheme.colorScheme.onSurface, border = BorderStroke(1.dp, palette.blue.copy(alpha = 0.40f))) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+    val click = rememberSpatialHapticClick(onClick)
+    SpatialSurface(modifier.clickable(interactionSource = interaction, indication = null,
+        enabled = enabled, role = Role.Button, onClick = click), SpatialSurfaceKind.Button,
+        color = LocalSpectrumPalette.current.cardStrong,
+        state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center) {
+            Text(text, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center)
         }
     }
 }
@@ -226,10 +202,11 @@ fun SpectrumActionTile(
     accent: Color = LocalSpectrumPalette.current.cyan,
 ) {
     SpectrumCard(modifier = modifier, onClick = onClick) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(Modifier.size(48.dp), shape = RoundedCornerShape(16.dp), color = accent.copy(alpha = 0.14f),
-                border = BorderStroke(1.dp, accent.copy(alpha = 0.35f))) {
-                SpectrumIcon(symbol, Modifier.padding(8.dp), selected = true, tile = false, motionAllowed = false)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SpatialSurface(Modifier.size(48.dp), SpatialSurfaceKind.Chip,
+                color = lerp(LocalSpectrumPalette.current.cardStrong, accent, .12f)) {
+                SpatialIcon(symbol.asset, Modifier.fillMaxSize().padding(8.dp), tint = accent, state = SpatialState.Selected)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
@@ -241,10 +218,10 @@ fun SpectrumActionTile(
 
 @Composable
 fun SpectrumMetricPill(label: String, value: String, modifier: Modifier = Modifier, accent: Color = LocalSpectrumPalette.current.blue) {
-    Surface(modifier, shape = RoundedCornerShape(18.dp), color = accent.copy(alpha = 0.12f),
-        contentColor = MaterialTheme.colorScheme.onSurface, border = BorderStroke(1.dp, accent.copy(alpha = 0.26f))) {
+    SpatialSurface(modifier, SpatialSurfaceKind.Chip, color = lerp(LocalSpectrumPalette.current.card, accent, .12f)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(value, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium)
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
         }
     }
@@ -254,69 +231,18 @@ fun SpectrumMetricPill(label: String, value: String, modifier: Modifier = Modifi
 fun SpectrumProgressBar(fraction: Float, modifier: Modifier = Modifier, accent: Color = LocalSpectrumPalette.current.cyan) {
     if (!fraction.isFinite()) return
     val progress = fraction.coerceIn(0f, 1f)
-    Box(modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f))) {
-        Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(
-            Brush.horizontalGradient(listOf(accent.copy(alpha = 0.75f), accent, LocalSpectrumPalette.current.violet)),
-        ))
+    SpatialSurface(modifier.fillMaxWidth().height(8.dp).semantics {
+        progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
+    }, SpatialSurfaceKind.Chip, color = LocalSpectrumPalette.current.cardStrong) {
+        if (progress > 0f) SpatialSurface(Modifier.fillMaxWidth(progress).fillMaxHeight(),
+            SpatialSurfaceKind.Chip, color = accent) { }
     }
 }
 
-/** Original vector brain mark, rendered by Compose rather than a mockup image. */
+/** Original first-party sphere and orbital mesh; lighting comes from the shared scene. */
 @Composable
 fun SpectrumBrandOrb(modifier: Modifier = Modifier, compact: Boolean = false) {
-    val palette = LocalSpectrumPalette.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    Canvas(modifier.aspectRatio(1f)) {
-        if (size.minDimension <= 0f) return@Canvas
-        val unit = size.minDimension / 128f
-        withTransform({
-            translate((size.width - size.minDimension) / 2f, (size.height - size.minDimension) / 2f)
-            scale(unit, unit, Offset.Zero)
-        }) {
-            val center = Offset(64f, 64f)
-            drawCircle(Brush.radialGradient(listOf(palette.cyan.copy(alpha = if (dark) 0.26f else 0.12f),
-                palette.violet.copy(alpha = 0.10f), Color.Transparent), center, 63f), 63f, center)
-            if (!compact) {
-                drawCircle(Brush.radialGradient(listOf(palette.cardStrong, palette.backgroundTop.copy(alpha = 0.2f)),
-                    Offset(46f, 39f), 74f), 46f, center)
-                drawCircle(palette.blue.copy(alpha = 0.35f), 47f, center, style = Stroke(1f))
-                drawArc(palette.cyan.copy(alpha = 0.60f), 195f, 240f, false, Offset(4f, 44f), Size(120f, 40f),
-                    style = Stroke(1.5f, cap = StrokeCap.Round))
-                drawArc(palette.violet.copy(alpha = 0.65f), 18f, 220f, false, Offset(41f, 4f), Size(46f, 120f),
-                    style = Stroke(1.5f, cap = StrokeCap.Round))
-                drawCircle(palette.cyan, 2f, Offset(112f, 52f))
-                drawCircle(palette.rose, 1.5f, Offset(35f, 103f))
-            }
-            withTransform({ if (!compact) scale(0.72f, 0.72f, center) }) {
-                val hemisphere = Path().apply {
-                    moveTo(61f, 27f)
-                    cubicTo(59f, 16f, 46f, 15f, 40f, 23f)
-                    cubicTo(28f, 20f, 19f, 30f, 22f, 42f)
-                    cubicTo(9f, 46f, 9f, 62f, 18f, 69f)
-                    cubicTo(13f, 84f, 21f, 96f, 33f, 98f)
-                    cubicTo(39f, 112f, 57f, 110f, 61f, 100f)
-                    lineTo(61f, 27f)
-                    moveTo(39f, 24f); cubicTo(48f, 32f, 39f, 38f, 35f, 39f)
-                    moveTo(23f, 43f); cubicTo(39f, 40f, 46f, 48f, 41f, 58f)
-                    moveTo(18f, 69f); cubicTo(28f, 64f, 37f, 74f, 35f, 86f)
-                    moveTo(33f, 98f); cubicTo(34f, 86f, 45f, 82f, 50f, 91f)
-                    moveTo(61f, 45f); cubicTo(51f, 44f, 48f, 52f, 53f, 60f)
-                    moveTo(61f, 76f); cubicTo(53f, 73f, 46f, 72f, 43f, 65f)
-                    cubicTo(35f, 65f, 29f, 57f, 31f, 51f)
-                }
-                val sides = listOf(palette.cyan, palette.violet)
-                sides.forEachIndexed { index, color ->
-                    withTransform({ if (index == 1) scale(-1f, 1f, center) }) {
-                        if (dark) {
-                            drawPath(hemisphere, color.copy(alpha = 0.10f), style = Stroke(11f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                            drawPath(hemisphere, color.copy(alpha = 0.18f), style = Stroke(6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        }
-                        drawPath(hemisphere, color, style = Stroke(2.5f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        listOf(Offset(35f, 39f), Offset(53f, 60f), Offset(50f, 91f)).forEach { point -> drawCircle(color, 2.5f, point) }
-                    }
-                }
-            }
-        }
-    }
+    SpatialIcon(if (compact) "analyst" else "brand", modifier.aspectRatio(1f),
+        tint = LocalSpectrumPalette.current.cyan, motionAllowed = true)
 }
 

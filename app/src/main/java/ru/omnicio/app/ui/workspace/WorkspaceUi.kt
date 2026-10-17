@@ -12,6 +12,8 @@ import java.time.Duration
 import java.time.Instant
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spatial.SpatialIcon
+import ru.omnicio.app.ui.spatial.SpatialState
 
 val LocalCurrencyChoice = staticCompositionLocalOf<(PortfolioCurrency) -> Unit> { {} }
 val LocalPortfolioDestination = staticCompositionLocalOf<(PortfolioDestination) -> Unit> { {} }
@@ -27,23 +29,25 @@ fun PrivateValue(value: String): String = if (LocalWorkspacePreferences.current.
 @Composable
 fun BalanceVisibilityButton() {
     val prefs = LocalWorkspacePreferences.current
-    TextButton(onClick = { prefs.update(prefs.value.copy(hideHomeBalance = !prefs.value.hideHomeBalance)) },
-        modifier = Modifier.heightIn(min = 48.dp)) {
-        Text(if (prefs.value.hideHomeBalance) "Показать суммы" else "Скрыть суммы")
-    }
+    SpectrumTextButton(if (prefs.value.hideHomeBalance) "Показать суммы" else "Скрыть суммы",
+        onClick = { prefs.update(prefs.value.copy(hideHomeBalance = !prefs.value.hideHomeBalance)) },
+        modifier = Modifier.semantics { stateDescription = if (prefs.value.hideHomeBalance) "Суммы скрыты" else "Суммы видны" },
+        symbol = SpectrumSymbol.Profile)
 }
 
 @Composable
 fun CurrencyChoice(currency: String) {
     var open by rememberSaveable { mutableStateOf(false) }
     val select = LocalCurrencyChoice.current
-    TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("$currency ▾") }
-    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Валюта оценки") },
-        text = { Column { PortfolioCurrency.entries.forEach { choice ->
-            TextButton(onClick = { select(choice); open = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(if (choice.name == currency) "${choice.name} · выбрана" else choice.name)
-            }
-        } } }, confirmButton = { TextButton(onClick = { open = false }) { Text("Закрыть") } })
+    SpectrumTextButton("Валюта: $currency", onClick = { open = true }, symbol = SpectrumSymbol.Currency)
+    if (open) WorkspaceDialog("Валюта оценки", onDismiss = { open = false }) {
+        Text("Выберите валюту оценки брокера.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        WorkspaceChoices("Валюта", PortfolioCurrency.entries.map { it.name },
+            PortfolioCurrency.entries.indexOfFirst { it.name == currency }) { index ->
+            select(PortfolioCurrency.entries[index]);open = false
+        }
+        SpectrumSecondaryButton("Закрыть", { open = false }, Modifier.fillMaxWidth())
+    }
 }
 
 @Composable
@@ -51,11 +55,9 @@ fun DetailFold(title: String, modifier: Modifier = Modifier, initiallyOpen: Bool
     content: @Composable ColumnScope.() -> Unit) {
     var expanded by rememberSaveable(title) { mutableStateOf(initiallyOpen) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .semantics { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" }) {
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            Text(if (expanded) "−" else "+")
-        }
+        SpectrumTextButton(title, onClick = { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth().semantics { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" },
+            symbol = if (expanded) SpectrumSymbol.Collapse else SpectrumSymbol.Expand)
         if (expanded) content()
     }
 }
@@ -63,23 +65,33 @@ fun DetailFold(title: String, modifier: Modifier = Modifier, initiallyOpen: Bool
 @Composable
 fun WorkspaceEmpty(title: String, detail: String, action: String? = null, onAction: () -> Unit = {}, loading: Boolean = false) {
     SpectrumCard {
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (loading) SpectrumLoadingIndicator(Modifier.size(40.dp), title)
+            else SpatialIcon("sources", Modifier.size(40.dp), state = SpatialState.Idle)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+        }
         Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (action != null) SpectrumSecondaryButton(action, onAction, Modifier.fillMaxWidth())
     }
 }
 
 @Composable
 fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol: SpectrumSymbol? = null) {
-    Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-        .padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("‹ Назад") }
-        if (symbol != null) SpectrumIcon(symbol, Modifier.size(24.dp), motionAllowed = false)
-        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall,
+    val navigate = LocalWorkspaceNavigator.current
+    Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+        .padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
+            Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+            SpectrumIconButton(SpectrumSymbol.Search, "Поиск по инструментам", { navigate(WorkspaceRoute.Discovery) })
+            SpectrumIconButton(SpectrumSymbol.Calendar, "История действий", { navigate(WorkspaceRoute.ActivityHistory) })
+        }
+        if (subtitle.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (symbol != null) SpectrumIcon(symbol, Modifier.size(24.dp), tile = false)
+            Text(subtitle, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

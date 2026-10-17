@@ -125,6 +125,7 @@ class AnalysisBackendClient(
             }
             val status = connection.responseCode
             ru.omnicio.app.data.updates.ClientVersion.observeStatus(status)
+            ru.omnicio.app.data.backend.SessionExpiry.observe(status, bearer)
             val text = if (status in 200..299) {
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             } else {

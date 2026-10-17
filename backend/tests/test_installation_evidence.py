@@ -63,6 +63,26 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result['35'], {'clean_install': True, 'launch': True, 'upgrade': False, 'upgrade_launch': False})
         self.assertTrue(result['36']['upgrade'])
 
+    def test_android15_accepts_complete_upgrade_from_the_compatible_baseline(self):
+        upgraded = deepcopy(reports()[0])
+        upgraded['android_api'] = 35
+        result = from_ci_reports([upgraded, *reports()], CANDIDATE)
+        self.assertTrue(result['35']['upgrade'])
+        self.assertTrue(result['35']['upgrade_launch'])
+
+    def test_android15_partial_upgrade_or_wrong_artifact_is_rejected(self):
+        for missing in ('previous_clean_install', 'upgrade_to_candidate', 'upgrade_bootstrap_launch'):
+            upgraded = deepcopy(reports()[0])
+            upgraded['android_api'] = 35
+            upgraded['results'] = [row for row in upgraded['results'] if row['test'] != missing]
+            self.reject([upgraded, *reports()])
+        for name in ('upgrade_to_candidate', 'upgrade_bootstrap_launch', 'previous_clean_install'):
+            upgraded = deepcopy(reports()[0])
+            upgraded['android_api'] = 35
+            record = next(row for row in upgraded['results'] if row['test'] == name)
+            record['apk_sha256'] = CANDIDATE if name == 'previous_clean_install' else PREVIOUS
+            self.reject([upgraded, *reports()])
+
     def test_android15_does_not_replace_upgrade_or_allow_wrong_artifact(self):
         self.reject([android15_report()])
         for name in ('candidate_clean_install', 'activity_launch', 'profile_ui'):

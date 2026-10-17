@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "android-apk.yml"
 ACTION = ROOT / ".github" / "actions" / "check-apk" / "action.yml"
 INSTALLER = ROOT / ".github" / "scripts" / "test_apk_installation.py"
-REFERENCE_DIGEST = "32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076"
+REFERENCE_DIGEST = "3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3"
 
 
 class DistributableApkWorkflowTests(unittest.TestCase):
@@ -22,8 +22,8 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn('RUN_PROFILE_UI_TESTS: "1"', self.workflow)
 
     def test_workflow_pins_the_real_installed_reference_apk(self):
-        self.assertIn("Analyst-AI-0.9.0-preview-a957e62.apk", self.workflow)
-        self.assertIn("android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344", self.workflow)
+        self.assertIn("Analyst-AI-0.10.0-preview-0a894dd.apk", self.workflow)
+        self.assertIn("android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b", self.workflow)
         self.assertIn(REFERENCE_DIGEST, self.workflow)
         self.assertIn("core.exportVariable('PREVIOUS_APK'", self.workflow)
         self.assertNotIn("Analyst-AI-0.5.1-preview", self.workflow)
@@ -65,17 +65,18 @@ class DistributableApkWorkflowTests(unittest.TestCase):
             "contains(github.event.head_commit.message, '[publish-apk]')",
             release_block,
         )
-        self.assertIn("report.version_code <= 33", release_block)
+        self.assertIn("report.version_code <= 34", release_block)
         self.assertIn("hash !== report.sha256", release_block)
 
     def test_validation_source_changes_retrigger_main_apk(self):
         self.assertIn('- ".github/scripts/**"', self.workflow)
         self.assertIn('- "backend/installation_evidence.py"', self.workflow)
+        self.assertIn('- "tools/**"', self.workflow)
 
     def test_composite_action_is_fail_closed_and_always_tests_upgrade(self):
         self.assertIn("PREVIOUS_APK is required", self.action)
         self.assertIn("RUN_PROFILE_UI_TESTS must be 1", self.action)
-        self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 1)
+        self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 2)
         self.assertNotIn("if defined PREVIOUS_APK goto upgrade", self.action)
 
     def test_both_supported_android_versions_run_full_ui(self):
@@ -84,6 +85,7 @@ class DistributableApkWorkflowTests(unittest.TestCase):
             self.assertIn(f'system-images;android-{api};google_apis;x86_64', self.action)
         validator = (ROOT / '.github/scripts/validate_distribution.py').read_text(encoding='utf-8')
         self.assertIn('[checked_installation(35), checked_installation(36)]', validator)
+        self.assertIn('upgrade_required=True', validator)
         self.assertIn('if api in {35, 36} and os.getenv', self.installer)
 
     def test_candidate_is_launched_before_and_after_clean_install(self):

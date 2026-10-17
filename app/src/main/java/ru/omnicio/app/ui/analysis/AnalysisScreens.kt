@@ -1,8 +1,7 @@
 package ru.omnicio.app.ui.analysis
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
@@ -529,10 +528,11 @@ private fun AnalysisProfileContent(
             }
         }
     }
-    if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Есть несохранённые изменения") },
-        text = { Text("Вернитесь к настройкам и сохраните профиль либо выйдите без изменений.") },
-        confirmButton = { TextButton(onClick = { leaving = false }) { Text("Продолжить настройку") } },
-        dismissButton = { TextButton(enabled = pendingSave == null, onClick = onBack) { Text("Не сохранять") } })
+    if (leaving) WorkspaceDialog("Есть несохранённые изменения", onDismiss = { leaving = false }) {
+        Text("Вернитесь к настройкам и сохраните профиль либо выйдите без изменений.")
+        SpectrumSecondaryButton("Продолжить настройку", { leaving = false }, Modifier.fillMaxWidth())
+        SpectrumSecondaryButton("Не сохранять", onBack, Modifier.fillMaxWidth(), enabled = pendingSave == null)
+    }
 
     LaunchedEffect(pendingSave) {
         val submitted = pendingSave ?: return@LaunchedEffect

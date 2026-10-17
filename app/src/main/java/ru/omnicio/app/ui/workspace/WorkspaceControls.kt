@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spatial.*
 
 @Composable
 fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick: () -> Unit) {
@@ -23,7 +24,7 @@ fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick
                 if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("›", style = MaterialTheme.typography.titleLarge, color = LocalSpectrumPalette.current.cyan)
+            SpatialIcon("arrow", Modifier.size(22.dp), motionAllowed = false)
         }
     }
 }
@@ -38,7 +39,7 @@ fun WorkspaceToggle(title: String, detail: String, checked: Boolean, onChange: (
             if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked, onCheckedChange = null)
+        SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp))
     }
 }
 
@@ -52,7 +53,7 @@ fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, onSele
                     .selectable(selected == index, role = Role.RadioButton, onClick = { onSelect(index) })
                     .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    RadioButton(selected == index, onClick = null)
+                    SpatialChoiceVisual(selected == index, Modifier.size(24.dp))
                     Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                 }
             }

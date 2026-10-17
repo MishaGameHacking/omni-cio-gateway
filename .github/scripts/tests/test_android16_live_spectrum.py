@@ -1,5 +1,8 @@
-"""Source regressions for the OWNER-approved Android 16 live Spectrum UI."""
+"""Mesh wiring regressions; real rendering remains a separate emulator gate."""
+import hashlib
+import json
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -14,8 +17,8 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 36", "minSdk = 35", "targetSdk = 36"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 34", gradle)
-        self.assertIn('versionName = "0.10.0"', gradle)
+        self.assertIn("versionCode = 35", gradle)
+        self.assertIn('versionName = "0.11.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -31,18 +34,18 @@ class Android16LiveSpectrumTests(unittest.TestCase):
             "WorldMarkets",
         ):
             self.assertIn(enum_name + "(", source)
-        for label in (
-            "Живые графики",
-            "Анимированные индикаторы",
-            "Двухмерные и пространственные элементы",
-            "RGB-эффекты иконок",
-            "Интерактивный ИИ-ассистент",
-            "Умные уведомления",
-            "Персональные рекомендации",
-            "Контроль рисков",
-            "Анализ мировых рынков",
-        ):
-            self.assertIn(label, source)
+        families = re.findall(r'^\s*(\w+)\("([^"]+)", "([a-z_]+)"\)', source, re.M)
+        self.assertEqual(len(families), 9)
+        self.assertEqual(len({description for _, description, _ in families}), 9)
+        assets = ROOT / 'app/src/main/assets/spectrum3d'
+        catalogue = json.loads((assets / 'catalogue.json').read_text(encoding='utf-8'))
+        for _, description, asset in families:
+            self.assertTrue(description.strip())
+            for suffix in ('', '_low'):
+                name = asset + suffix + '.glb'
+                data = (assets / name).read_bytes()
+                self.assertEqual(data[:4], b'glTF')
+                self.assertEqual(hashlib.sha256(data).hexdigest(), catalogue['models'][asset + suffix]['sha256'])
         # Check actual APIs/imports, not explanatory comments that may name a
         # forbidden technology while documenting why it is not used.
         for forbidden in (
@@ -53,17 +56,29 @@ class Android16LiveSpectrumTests(unittest.TestCase):
             "WebView(",
             ".gif",
             "AnimatedImageVector",
+            "Canvas(",
         ):
             self.assertNotIn(forbidden, source)
-        self.assertIn("Canvas(", source)
+        self.assertIn("SpatialIcon(feature.asset", source)
+        self.assertIn("description = feature.description", source)
 
-    def test_live_clock_respects_activity_user_and_system_motion(self):
-        source = self.source("ui/spectrum/SpectrumLiveMotion.kt")
-        self.assertIn("Lifecycle.State.STARTED", source)
-        self.assertIn("ValueAnimator.areAnimatorsEnabled()", source)
-        self.assertIn("motionAllowed && active", source)
-        self.assertIn("LaunchedEffect(enabled, durationMillis)", source)
-        self.assertIn("repeat(2)", source)
+    def test_shared_scene_respects_lifecycle_system_motion_and_visible_slots(self):
+        host = self.source("ui/spatial/SpatialScene.kt")
+        renderer = self.source("ui/spatial/SpatialRenderer.kt")
+        self.assertIn("Lifecycle.State.STARTED", host)
+        self.assertIn("onDispose { active?.close() }", host)
+        self.assertIn("!ValueAnimator.areAnimatorsEnabled()", renderer)
+        self.assertIn("SpatialMotion.Off", renderer)
+        self.assertIn("SpatialMotion.Subdued", renderer)
+        self.assertIn("choreographer.removeFrameCallback(this)", renderer)
+        self.assertIn("windows.forEach { it.withdrawFrameRate() }", renderer)
+        self.assertIn("clipping.width<=0f||clipping.height<=0f", renderer)
+        self.assertEqual(renderer.count("Engine.create("), 1)
+        self.assertNotIn("Engine.create(", self.source("ui/spatial/SpatialComponents.kt"))
+        back = self.source("ui/spatial/SpatialInteraction.kt")
+        self.assertIn("PredictiveBackHandler(enabled)", back)
+        self.assertIn("finally {", back)
+        self.assertIn("window?.updateLocalBackProgress(0f)", back)
 
     def test_home_uses_real_state_for_avatar_and_live_shortcuts(self):
         home = self.source("ui/home/HomeScreen.kt")
@@ -93,8 +108,9 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         self.assertIn("Проверка", screen)
         self.assertIn("Установка", screen)
         self.assertIn("Запуск", screen)
-        self.assertIn("Brush.radialGradient", visuals)
-        self.assertIn("drawPath(", visuals)
+        self.assertIn('SpatialIcon("orbit"', visuals)
+        self.assertIn('SpatialIcon(if (updateRequired) "warning" else "update"', visuals)
+        self.assertIn("SpatialState.Attention", visuals)
         for forbidden in (
             "PackageInstaller",
             "openConnection",
@@ -103,23 +119,21 @@ class Android16LiveSpectrumTests(unittest.TestCase):
             "android.webkit",
             "WebView(",
             ".gif",
+            "Canvas(",
+            "drawPath(",
         ):
             self.assertNotIn(forbidden, screen + visuals)
 
-    def test_android16_live_ui_contract_is_documented(self):
-        spec = (ROOT / "docs/ANDROID16_LIVE_UI_SPEC.md").read_text(encoding="utf-8")
+    def test_mesh_contract_documents_native_input_accuracy_and_measurement_limits(self):
+        spec = self.source("ui/spatial/README.md")
         for phrase in (
-            "Live charts",
-            "Animated indicators",
-            "2D/spatial elements",
-            "RGB icon effects",
-            "Interactive AI assistant",
-            "Smart notifications",
-            "Personal recommendations",
-            "Risk control",
-            "World-market analysis",
-            "predictive-back",
-            "Edge-to-edge",
+            "orthographic camera",
+            "same engine",
+            "native field/toggle/selectable",
+            "Missing observations remain absent",
+            "off the UI thread",
+            "does **not** measure GPU",
+            "16KB",
         ):
             self.assertIn(phrase, spec)
 

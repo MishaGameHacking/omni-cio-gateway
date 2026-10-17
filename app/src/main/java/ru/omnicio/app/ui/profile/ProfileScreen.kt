@@ -7,16 +7,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +50,9 @@ import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import ru.omnicio.app.ui.theme.LocalThemePreference
 import ru.omnicio.app.ui.theme.ThemeMode
+import ru.omnicio.app.ui.spectrum.SpectrumSecondaryButton
+import ru.omnicio.app.ui.spatial.SpatialToggleVisual
+import ru.omnicio.app.ui.spatial.rememberSpatialHapticClick
 
 @Composable
 fun ProfileScreen(
@@ -135,6 +138,16 @@ fun ProfileScreen(
                                     workspace(WorkspaceRoute.NotificationSettings)
                                 }
                             }
+                            item(key = "devices") {
+                                WorkspaceLink("Устройства", "Активные сеансы и отзыв доступа", SpectrumSymbol.Profile) {
+                                    workspace(WorkspaceRoute.Devices)
+                                }
+                            }
+                            item(key = "activity-history") {
+                                WorkspaceLink("История действий", "Изменения, подтверждения и результаты", SpectrumSymbol.Calendar) {
+                                    workspace(WorkspaceRoute.ActivityHistory)
+                                }
+                            }
                             item(key = "assistant-workspace") {
                                 WorkspaceLink("Ассистент", "Портфель, действия и объяснения", SpectrumSymbol.Analyst) {
                                     workspace(WorkspaceRoute.Assistant)
@@ -204,6 +217,21 @@ fun ProfileScreen(
                         }
 
                         else -> {
+                            item(key = "new-features") {
+                                WorkspaceLink("Что нового", "Изменения этой версии", SpectrumSymbol.Update) {
+                                    workspace(WorkspaceRoute.NewFeatures)
+                                }
+                            }
+                            item(key = "research-library") {
+                                WorkspaceLink("Библиотека", "Сохранённые исследования и источники", SpectrumSymbol.Sources) {
+                                    workspace(WorkspaceRoute.Library)
+                                }
+                            }
+                            item(key = "analysis-timeline") {
+                                WorkspaceLink("История анализов", "Выводы и их изменения по времени", SpectrumSymbol.Pulse) {
+                                    workspace(WorkspaceRoute.AnalysisTimeline)
+                                }
+                            }
                             item(key = "education") {
                                 ProfileAction(
                                     title = "Обучение",
@@ -258,26 +286,11 @@ fun ProfileScreen(
             dialog = null
         }
 
-        "logout" -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("Выйти из Analyst AI?") },
-            text = {
-                Text("Для следующего входа потребуется подтверждение Telegram. Токен T‑API на сервере не удаляется.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        dialog = null
-                        onLogout()
-                    },
-                ) {
-                    Text("Выйти")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { dialog = null }) { Text("Отмена") }
-            },
-        )
+        "logout" -> WorkspaceDialog("Выйти из Analyst AI?", onDismiss = { dialog = null }) {
+            Text("Для следующего входа потребуется подтверждение Telegram. Токен T‑API на сервере не удаляется.")
+            SpectrumSecondaryButton("Выйти", { dialog = null;onLogout() }, Modifier.fillMaxWidth())
+            SpectrumSecondaryButton("Отмена", { dialog = null }, Modifier.fillMaxWidth())
+        }
     }
 }
 
@@ -325,10 +338,15 @@ private fun ProfileToggle(
     onChange: (Boolean) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val change = rememberSpatialHapticClick { onChange(!checked) }
     SpectrumCard(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(checked, role = Role.Switch, onValueChange = onChange),
+            .toggleable(checked, interactionSource = interaction, indication = null,
+                role = Role.Switch, onValueChange = { change() }),
+        emphasized = focused,
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val stacked = maxWidth < 300.dp || fontScale > 1.3f
@@ -346,11 +364,11 @@ private fun ProfileToggle(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    if (!stacked) Switch(checked = checked, onCheckedChange = null)
+                    if (!stacked) SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp))
                 }
                 if (stacked) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Switch(checked = checked, onCheckedChange = null)
+                        SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp))
                     }
                 }
             }
@@ -410,16 +428,10 @@ private fun ProfileAction(
 
 @Composable
 private fun InformationDialog(title: String, text: String, close: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = close,
-        title = { Text(title) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) { Text(text) }
-        },
-        confirmButton = {
-            TextButton(onClick = close) { Text("Понятно") }
-        },
-    )
+    WorkspaceDialog(title, close) {
+        Text(text)
+        SpectrumSecondaryButton("Понятно", close, Modifier.fillMaxWidth())
+    }
 }
 
 private fun accountSubtitle(user: AnalystUser): String {

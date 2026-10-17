@@ -157,11 +157,16 @@ def configured_route(tier, env=None, *, at: int | None = None) -> Route:
 
 
 class GuardedAIClient:
-    def __init__(self, user_id: int, connect, *, transport=None, env=None):
+    def __init__(self, user_id: int, connect, *, transport=None, env=None,
+                 attempt_id=None, budget_guard=None, before_send=None, after_response=None):
         self.user_id = user_id
         self.connect = connect
         self.env = os.environ if env is None else env
         self.transport = transport
+        self.attempt_id = attempt_id
+        self.budget_guard = budget_guard
+        self.before_send = before_send
+        self.after_response = after_response
         self.ledger = MoneyLedger(connect)
         self.ledger.initialize()
 
@@ -199,18 +204,24 @@ class GuardedAIClient:
             queue.assert_owner(*job)
             if queue.has_uncertain(self.user_id):
                 reject('ai_worker_reconciliation_required')
-        attempt = job[0] if job else uuid.uuid4().hex
+        attempt = self.attempt_id or (job[0] if job else uuid.uuid4().hex)
         reservation = hashlib.sha256((attempt + ':' + tier.value + ':' + route.identifier).encode()).hexdigest()
         self.ledger.reserve(user_id=self.user_id, key=reservation, route=route.identifier, model=route.model,
                             ceiling=ceiling, user_cap=micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')),
-                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job)
+                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job, guard=self.budget_guard)
         payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
         if route.mode == 'gateway':
             payload['model'] = route.model
+        sent = False
         try:
             if job:
                 AnalysisQueue(self.connect).assert_owner(*job)
             assert_monitoring_access(self.connect)
+            if self.before_send is not None:
+                self.before_send()
+            # Once dispatch may have begun, no timeout/cancellation can refund
+            # an unknown provider charge or cause an automatic paid replay.
+            sent = True
             response = self._send(route, payload)
             usage = self._usage(response)
             returned = response.get('model')
@@ -228,9 +239,17 @@ class GuardedAIClient:
             content = _result_content(response)
             if job:
                 AnalysisQueue(self.connect).assert_owner(*job)
+            if self.after_response is not None:
+                self.after_response()
             return ModelResult(model=returned, data=content, usage=usage)
         except Exception:
-            self.ledger.cool_down(route.identifier)
+            if sent:
+                self.ledger.cool_down(route.identifier)
+            else:
+                # This process knows dispatch never happened. Cancellation at
+                # the pre-send guard may release its unused reservation.
+                self.ledger.settle(reservation, model=route.model, cost=0,
+                                   input_tokens=0, output_tokens=0)
             raise
         finally:
             # No refund for timeouts, missing usage or interrupted workers.

@@ -40,7 +40,7 @@ internal fun PortfolioDashboard(
     onOpenSection: (Int) -> Unit,
     onPositionClick: (String, PortfolioPosition) -> Unit,
     modifier: Modifier = Modifier,
-    assetQuery: String = "", assetSector: String? = null, assetKind: String? = null,
+    assetQuery: String = "", assetSector: String? = null, assetKind: String? = null, assetAccountId: String? = null,
 ) {
     val openWorkspace = LocalWorkspaceNavigator.current
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
@@ -69,7 +69,7 @@ internal fun PortfolioDashboard(
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
             PortfolioHistorySection(snapshot.accounts, accessToken, Modifier.weight(1f))
         } else if (selectedSection == 1 && snapshot != null) {
-            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind)
+            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind, assetAccountId)
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"),
@@ -207,7 +207,7 @@ private fun PortfolioConnectionCard(state: PortfolioUiState, onProfile: () -> Un
         SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(64.dp), selected = true, tile = true)
         when (state) {
             PortfolioUiState.Loading, PortfolioUiState.ApiConnected -> {
-                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(Modifier.size(32.dp), description = "Получаем портфель")
                 SectionHeading("Собираем ваш портфель")
                 Notice("Загружаем счета и позиции из подключённого T‑Invest API.")
             }
@@ -246,4 +246,5 @@ private fun PortfolioHistorySection(
         }
     }
 }
+
 

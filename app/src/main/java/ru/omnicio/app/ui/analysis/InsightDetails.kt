@@ -14,6 +14,7 @@ import java.time.Instant
 import ru.omnicio.app.data.analysis.InsightCard
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.spatial.SpatialWindow
 
 @Composable
 internal fun InsightPreview(card: InsightCard, now: Instant = Instant.now(), open: () -> Unit) {
@@ -31,11 +32,13 @@ internal fun InsightPreview(card: InsightCard, now: Instant = Instant.now(), ope
 @Composable
 internal fun InsightDetails(card: InsightCard, now: Instant, readEnabled: Boolean, onRead: () -> Unit, close: () -> Unit) {
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        SpatialWindow(Modifier.fillMaxSize()) {
         WorkspaceDetailPage("Событие", "Факты и необходимые действия", close) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
                 .verticalScroll(rememberScrollState()).padding(20.dp)) {
                 InsightCardView(card, now, readEnabled, onRead)
             }
+        }
         }
     }
 }

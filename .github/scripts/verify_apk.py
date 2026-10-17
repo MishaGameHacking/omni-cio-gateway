@@ -6,8 +6,12 @@ import json
 from pathlib import Path
 import re
 import struct
+import sys
 import zipfile
 import zlib
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from check_native_alignment import NativeAlignmentError, check_elf, inspect_native_archive
 
 
 class InvalidAPK(ValueError):
@@ -33,20 +37,10 @@ def check_dex(data: bytes) -> str:
 
 
 def check_elf64(data: bytes) -> None:
-    require(len(data) >= 64 and data[:6] == b"\x7fELF\x02\x01", "Invalid little-endian ELF64")
-    offset = struct.unpack_from("<Q", data, 32)[0]
-    entry_size, count = struct.unpack_from("<HH", data, 54)
-    require(entry_size >= 56 and count > 0, "Invalid ELF program header table")
-    require(offset + count * entry_size <= len(data), "Truncated ELF program headers")
-    loads = 0
-    for index in range(count):
-        header = struct.unpack_from("<IIQQQQQQ", data, offset + index * entry_size)
-        if header[0] == 1:
-            loads += 1
-            alignment = header[7]
-            require(alignment >= 16384 and alignment & (alignment - 1) == 0, "ELF LOAD is not 16 KB aligned")
-            require((header[2] - header[3]) % alignment == 0, "ELF LOAD offset/address mismatch")
-    require(loads > 0, "ELF has no LOAD segment")
+    try:
+        require(check_elf(data)["bits"] == 64, "Expected ELF64")
+    except NativeAlignmentError as error:
+        raise InvalidAPK(str(error)) from error
 
 
 def inspect_archive(apk: Path) -> dict:
@@ -65,11 +59,18 @@ def inspect_archive(apk: Path) -> dict:
             if entry.filename.startswith("lib/") and entry.filename.endswith(".so"):
                 abi = entry.filename.split("/")[1]
                 native_abis.add(abi)
-                if abi in {"arm64-v8a", "x86_64"}:
-                    check_elf64(archive.read(entry))
-    if native_abis:
-        require({"arm64-v8a", "armeabi-v7a"} <= native_abis, "Phone ABIs missing from universal APK")
-    return {"abis": sorted(native_abis), "dex_versions": sorted(dex_versions)}
+    require({"arm64-v8a", "armeabi-v7a", "x86_64"} <= native_abis,
+            "Phone or emulator ABIs missing from universal 3D APK")
+    try:
+        native = inspect_native_archive(apk, require_stored=True)
+    except NativeAlignmentError as error:
+        raise InvalidAPK(str(error)) from error
+    packaged = {item["path"] for item in native["libraries"]}
+    for abi in ("arm64-v8a", "armeabi-v7a", "x86_64"):
+        for library in ("libfilament-jni.so", "libgltfio-jni.so"):
+            require(f"lib/{abi}/{library}" in packaged, "Required Filament JNI library missing")
+    return {"abis": sorted(native_abis), "dex_versions": sorted(dex_versions),
+            "native_alignment": native}
 
 
 def manifest_flag(xmltree: str, name: str) -> bool:

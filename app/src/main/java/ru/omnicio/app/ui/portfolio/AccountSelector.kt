@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,3 +24,4 @@ internal fun AccountSelector(accounts: List<PortfolioAccount>, selectedId: Strin
         }
     }
 }
+

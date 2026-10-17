@@ -1,5 +1,8 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumCard
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,7 +31,8 @@ internal fun categoryTitle(category: String): String = when (category) {
 }
 
 @Composable
-internal fun AccountOperations(token: String, account: PortfolioAccount) {
+internal fun AccountOperations(token: String, account: PortfolioAccount,
+    onPosition: ((PositionSelection) -> Unit)? = null, onHistory: ((String) -> Unit)? = null) {
     var start by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
     var end by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
     var category by rememberSaveable(account.id) { mutableIntStateOf(0) }
@@ -66,7 +70,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
                 previousDay = day
             }
             item(key = "operation:${operation.optString("id")}") {
-                Card(onClick = { chosen = operation }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                SpectrumCard(onClick = { chosen = operation }) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text(operation.optString("title").ifBlank { categoryTitle(operation.optString("category")) }, fontWeight = FontWeight.Medium)
@@ -119,12 +123,23 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
                 DataRow("Комиссия", operation.money("commission").moneyText())
                 DataRow("Результат операции", operation.money("yield").moneyText(true))
                 DataRow("Статус", operationStateLabel(operation.optString("state")))
+                DataRow("Счёт операции", account.name)
+                val uid = operation.nullableText("instrumentUid")
+                val linked = account.positions.singleOrNull { it.id == uid }
+                if (linked != null && onPosition != null) TextButton(onClick = {
+                    chosen = null; onPosition(PositionSelection(account.id, linked.id))
+                }) { Text("Открыть текущую позицию ${linked.ticker ?: linked.title}") }
+                else if (uid != null) Notice("Бумага не найдена среди текущих позиций этого счёта. Историческая операция сохраняется независимо от наличия позиции.")
+                val destination = LocalPortfolioDestination.current
+                TextButton(onClick = { chosen = null; destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("Открыть счёт операции") }
+                operation.nullableText("date")?.let { date -> if (onHistory != null) TextButton(onClick = { chosen = null; onHistory(date) }) { Text("Эта дата в динамике счёта") } }
                 DetailFold("Технические сведения") {
                     DataRow("Тип API", operation.optString("type"))
                     DataRow("Статус API", operation.optString("state"))
                     DataRow("ID", operation.optString("id"))
                 }
                 Notice(operation.nullableText("description") ?: "")
+                Notice("Связь операции с датой и позицией не означает, что именно она объясняет всё изменение баланса.")
             } }, confirmButton = { TextButton(onClick = { chosen = null }) { Text("Закрыть") } })
     }
 }
@@ -195,3 +210,4 @@ internal fun operationStateLabel(value: String): String = when (value) {
     "STOP_ORDER_TYPE_STOP_LIMIT" -> "Стоп-лимит"
     else -> "Статус уточняется · код в подробностях"
 }
+

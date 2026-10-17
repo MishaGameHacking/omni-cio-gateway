@@ -39,11 +39,12 @@ def _one_emulator(run: dict, digest: str) -> dict:
     api = run['android_api']
     required = {'candidate_clean_install'}
     upgrade = {'previous_clean_install', 'upgrade_to_candidate', 'upgrade_bootstrap_launch'}
-    if api == 36:
+    performed_upgrade = api == 36 or bool(records.keys() & upgrade)
+    if performed_upgrade:
         required |= upgrade
-    elif records.keys() & upgrade:
-        # The 0.9 baseline requires API36; API35 starts with a clean install.
-        raise InstallationEvidenceError('unexpected_android_15_upgrade_evidence')
+    # Historical 0.10 evidence used clean-only API35 because 0.9 required API36.
+    # New CI requires the complete upgrade group on both supported APIs. Preserve
+    # historical recovery while never promoting a partial group to success.
     launches = {'activity_launch', 'bootstrap_activity_launch'} & records.keys()
     if not required <= records.keys() or len(launches) != 1:
         raise InstallationEvidenceError('installation_evidence_incomplete')
@@ -51,14 +52,14 @@ def _one_emulator(run: dict, digest: str) -> dict:
     for name in bound:
         if _digest(records[name].get('apk_sha256')) != digest:
             raise InstallationEvidenceError('installation_artifact_mismatch')
-    if api == 36 and _digest(records['previous_clean_install'].get('apk_sha256')) == digest:
+    if performed_upgrade and _digest(records['previous_clean_install'].get('apk_sha256')) == digest:
         raise InstallationEvidenceError('upgrade_reinstalled_same_artifact')
     if not run['profile_ui_required'] or not {'debug_ui_fixture_install', 'profile_ui'} <= records.keys():
         raise InstallationEvidenceError('profile_ui_evidence_missing')
     return {
         'clean_install': True,
-        'upgrade': api == 36,
-        'upgrade_launch': api == 36,
+        'upgrade': performed_upgrade,
+        'upgrade_launch': performed_upgrade,
         'launch': True,
     }
 

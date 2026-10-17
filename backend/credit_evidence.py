@@ -82,7 +82,8 @@ def _source_identity_valid(source: Source) -> bool:
 
 LEVELS = ('AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
           'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'SD', 'RD', 'D')
-AGENCIES = {'ACRA': 'acra-ratings.ru', 'EXPERT_RA': 'raexpert.ru'}
+AGENCIES = {'ACRA': 'acra-ratings.ru', 'EXPERT_RA': 'raexpert.ru',
+            'NKR': 'ratings.ru', 'NRA': 'ra-national.ru'}
 RATING_UNAVAILABLE = 'Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.'
 INVALID_RATING = 'Некорректная запись рейтинга исключена из оценки.'
 
@@ -112,8 +113,12 @@ class Rating:
             return None
         if self.agency == 'ACRA':
             symbol = self.grade[:-4] if self.grade.endswith('(RU)') else ''
-        else:
+        elif self.agency == 'EXPERT_RA':
             symbol = self.grade[2:] if self.grade.startswith('ru') else ''
+        elif self.agency == 'NKR':
+            symbol = self.grade[:-3] if self.grade.endswith('.ru') else ''
+        else:
+            symbol = self.grade[:-4] if self.grade.endswith('|ru|') else ''
         return LEVELS.index(symbol) if symbol in LEVELS else None
 
     def bucket(self) -> str:

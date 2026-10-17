@@ -1,21 +1,21 @@
 package ru.omnicio.app.ui.profile
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -32,6 +32,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
+import ru.omnicio.app.ui.spatial.*
 
 /** Full-size accessible cells; larger fonts scroll horizontally without clipping the active label. */
 @Composable
@@ -84,39 +85,33 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
         ) {
             labels.forEachIndexed { index, label ->
                 val chosen = safeSelected == index
-                val brush = if (chosen) {
-                    Brush.linearGradient(
-                        listOf(
-                            palette.cyan.copy(alpha = 0.16f),
-                            palette.violet.copy(alpha = 0.22f),
-                            palette.rose.copy(alpha = 0.08f),
-                        ),
-                    )
-                } else {
-                    Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                }
-                Box(
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+                val pressed by interaction.collectIsPressedAsState()
+                val select = rememberSpatialHapticClick { onSelect(index) }
+                SpatialSurface(
                     modifier = Modifier
                         .width(widths[index])
                         .height(tabHeight)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(brush)
-                        .selectable(chosen, role = Role.Tab, onClick = { onSelect(index) })
+                        .selectable(chosen, interactionSource = interaction, indication = null, role = Role.Tab, onClick = select)
                         .testTag("profile-tab-$index")
                         .clearAndSetSemantics {
                             contentDescription = label
                             role = Role.Tab
                             this.selected = chosen
                             onClick(label = "Открыть $label") {
-                                onSelect(index)
+                                select()
                                 true
                             }
                         },
-                    contentAlignment = Alignment.Center,
+                    kind = SpatialSurfaceKind.Chip,
+                    color = if (chosen || focused) palette.cardStrong else palette.card,
+                    state = when { pressed -> SpatialState.Pressed; chosen || focused -> SpatialState.Selected; else -> SpatialState.Idle },
+                    emphasized = chosen,
                 ) {
                     Text(
                         label,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 8.dp, vertical = 10.dp),
                         maxLines = 1,
                         softWrap = false,
                         style = style,

@@ -71,6 +71,12 @@ def _identity(subject, payload, _source):
     issuer = payload.get('issuer_id')
     if not isinstance(issuer, str) or not issuer.strip() or len(issuer) > 160 or payload.get('instrument_uid') != subject:
         raise EvidenceError('identity_subject_mismatch')
+    for key in ('issuer_name', 'group_id', 'group_name'):
+        value = payload.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 240 or any(ord(char) < 32 for char in value)):
+            raise EvidenceError('identity_optional_field_invalid')
+    if payload.get('group_name') and not payload.get('group_id'):
+        raise EvidenceError('verified_group_identity_required')
 
 
 def _returns(subject, payload, source):

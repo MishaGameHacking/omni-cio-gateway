@@ -200,9 +200,38 @@ def _history_risk(cards, values, total, currency, at):
 
 def _optional_inputs(user, selected):
     assets = sorted({p['assetUid'] for p in selected if p.get('assetUid')})
+    fundamental_data, fundamental_error = {'fundamentals': []}, None
+    news_data, news_error = {'items': []}, None
     with details.BrokerReader(user) as reader:
-        fundamental_data, fundamental_error = optional_broker_read(reader, 'fundamentals', {'assets': assets}) if assets else ({}, None)
-        news_data, news_error = optional_broker_read(reader, 'news', {'limit': 100})
+        # The broker accepts at most 100 assets per request. Keep every position
+        # and mark unavailable batches; do not truncate the financial inventory.
+        for offset in range(0, len(assets), 100):
+            batch, error = optional_broker_read(reader, 'fundamentals', {'assets': assets[offset:offset + 100]})
+            if error:
+                fundamental_error = error
+                break
+            fundamental_data['fundamentals'].extend(batch.get('fundamentals', []))
+        cursor = '0'
+        seen_news = set()
+        for _ in range(10):
+            page, error = optional_broker_read(reader, 'news', {'limit': 1000, 'cursor': cursor})
+            if error:
+                news_error = error
+                break
+            for item in page.get('items', []):
+                key = str(item.get('id') or '') if isinstance(item, dict) else ''
+                if key and key not in seen_news:
+                    seen_news.add(key)
+                    news_data['items'].append(item)
+            if not page.get('hasNext'):
+                break
+            next_cursor = str(page.get('nextCursor') or '')
+            if not next_cursor.isdecimal() or next_cursor == cursor:
+                news_error = SOURCE_FAILURE
+                break
+            cursor = next_cursor
+        else:
+            news_error = SOURCE_FAILURE
     fundamentals, conflicts = {}, set()
     for item in fundamental_data.get('fundamentals', []):
         uid = item.get('assetUid') if isinstance(item, dict) else None
@@ -265,7 +294,7 @@ def collect_research(user: Any, *, profile: dict | None = None) -> dict:
         inventory = aggregate(snapshot, position_amount, 'RUB')
     except SnapshotError:
         raise HTTPException(502, detail='research_snapshot_inconsistent') from None
-    selected = list(inventory.positions.values())[:100]
+    selected = list(inventory.positions.values())
     fundamentals, news, errors = _optional_inputs(user, selected)
     cards, values = _research_cards(selected, profile, total, fundamentals, news, at)
     complete = inventory.fully_valued(values, total)

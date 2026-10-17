@@ -7,21 +7,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.workspace.*
 
 /** Only working, everyday destinations occupy the capital screen. */
 @Composable
 internal fun HomeQuickActions(onAssets: () -> Unit, onPayments: () -> Unit) {
     val largeFont = LocalDensity.current.fontScale >= 1.4f
+    val navigate = LocalWorkspaceNavigator.current
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (homeActionColumns(maxWidth.value, largeFont) == 1) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SpectrumSecondaryButton("Мои активы", onAssets, Modifier.fillMaxWidth())
                 SpectrumSecondaryButton("Ближайшие выплаты", onPayments, Modifier.fillMaxWidth())
+                SpectrumSecondaryButton("Поиск и наблюдение", { navigate(WorkspaceRoute.Discovery) }, Modifier.fillMaxWidth())
+                SpectrumSecondaryButton("Мои исследования", { navigate(WorkspaceRoute.Library) }, Modifier.fillMaxWidth())
             }
-        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpectrumSecondaryButton("Мои активы", onAssets, Modifier.weight(1f))
-            SpectrumSecondaryButton("Выплаты", onPayments, Modifier.weight(1f))
+        } else Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SpectrumSecondaryButton("Мои активы", onAssets, Modifier.weight(1f))
+                SpectrumSecondaryButton("Выплаты", onPayments, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SpectrumSecondaryButton("Поиск и наблюдение", { navigate(WorkspaceRoute.Discovery) }, Modifier.weight(1f))
+                SpectrumSecondaryButton("Мои исследования", { navigate(WorkspaceRoute.Library) }, Modifier.weight(1f))
+            }
         }
     }
 }
 internal fun homeActionColumns(widthDp: Float, largeFont: Boolean): Int = if (largeFont || widthDp < 260f) 1 else 2
+
