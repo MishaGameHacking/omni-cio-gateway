@@ -28,7 +28,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
             "cash", "currency" -> "Деньги и валюта"; else -> "Другие инструменты"
         }
     }.toList().sortedByDescending { it.second.size }
-    WorkspaceDetailPage("Отрасли и классы", "Ваши вложения", onBack, SpectrumSymbol.Market) { padding ->
+    WorkspaceDetailPage("Рынки и география", "Ваши вложения и подтверждённые сессии", onBack, SpectrumSymbol.Market) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { SpectrumCard(emphasized = true) {
@@ -41,8 +41,10 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
                 Text("Распределение имеющихся позиций по данным брокера.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
-            item { SpectrumTabs(listOf("Отрасли", "Классы"), section, { section = it }) }
-            groups.forEach { (title, rows) -> item(key = title) {
+            item { SpectrumTabs(listOf("Отрасли", "Классы", "География", "Сессии"), section, { section = it }) }
+            if (section == 2) item(key = "geography") { GeographyWorkspacePanel(snapshot?.totalValue?.currency ?: "RUB") }
+            if (section == 3) item(key = "trading-calendar") { TradingCalendarPanel() }
+            if (section < 2) groups.forEach { (title, rows) -> item(key = title) {
                 SpectrumCard(onClick = { expanded = if (expanded == title) null else title }) {
                     Text(title, style = MaterialTheme.typography.titleMedium)
                     Text("Позиций в счетах: ${rows.size} · ${if (expanded == title) "свернуть" else "показать"}",
@@ -54,7 +56,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
                     }
                 }
             } }
-            if (groups.isEmpty()) item {
+            if (section < 2 && groups.isEmpty()) item {
                 MarketEmptyState(state, onPortfolio)
             }
             item { SpectrumCard {

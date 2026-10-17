@@ -2,7 +2,7 @@ package ru.omnicio.app.ui.workspace
 
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
-import androidx.activity.compose.BackHandler
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,9 +24,9 @@ import ru.omnicio.app.ui.spectrum.*
 fun SaveResearchButton(payload: JSONObject, defaultTitle: String, instrumentId: String? = null,
     start: String? = null, end: String? = null, source: String = "T‑Invest / Analyst AI", observedAt: String? = null) {
     val personal = rememberPersonalWorkspace()
-    var open by remember { mutableStateOf(false) }
-    var title by remember(defaultTitle) { mutableStateOf(defaultTitle) }
-    var note by remember { mutableStateOf("") }
+    var open by rememberSaveable { mutableStateOf(false) }
+    var title by rememberSaveable(defaultTitle) { mutableStateOf(defaultTitle) }
+    var note by rememberSaveable { mutableStateOf("") }
     TextButton(onClick = { open = true }, enabled = personal.loaded && !personal.busy) { Text("Сохранить исследование") }
     personal.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Сохранить с контекстом") }, text = {
@@ -64,7 +64,7 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
     WorkspaceDetailPage("Сохранённое", "Исследования с датой и источниками", { if (selectedId != null) selectedId = null else onBack() }, SpectrumSymbol.Sources) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-            if (!personal.loaded) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (!personal.loaded) item { SpectrumLoadingIndicator(description = "Читаем сохранённые исследования") }
             personal.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = personal.retry) { Text("Повторить чтение") } } }
             if (selected == null) {
                 item { SpectrumTextField(query, { query = it }, label = { Text("Название, заметка или источник") }, modifier = Modifier.fillMaxWidth()) }
@@ -85,12 +85,14 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
                     Text("${selected.source} · сохранено ${dateText(selected.capturedAt)}", style = MaterialTheme.typography.bodySmall)
                     if (selected.start != null || selected.end != null) Text("${selected.start ?: "начало не указано"} — ${selected.end ?: "конец не указан"}")
                     if (selected.note.isNotBlank()) Text(PrivateValue(selected.note))
-                    val position = snapshot?.accounts?.flatMap { account -> account.positions.map { account.id to it } }?.firstOrNull { it.second.id == selected.instrumentId }
-                    if (position != null) TextButton(onClick = { currentKey = "${position.first}:${position.second.id}" }) { Text("Открыть текущую позицию") }
+                    val positions = snapshot?.accounts?.flatMap { account -> account.positions.filter { it.id == selected.instrumentId }.map { account to it } }.orEmpty()
+                    positions.forEach { (account, position) ->
+                        TextButton(onClick = { currentKey = "${account.id}:${position.id}" }) { Text(if (positions.size == 1) "Открыть текущую позицию" else "Текущая позиция · ${account.name}") }
+                    }
                 } }
                 item {
                     if (LocalWorkspacePreferences.current.value.hideHomeBalance) Text("Исследование скрыто режимом приватности.")
-                    else if (!archiveLoaded) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    else if (!archiveLoaded) SpectrumLoadingIndicator(description = "Расшифровываем сохранённый снимок")
                     else if (archive == null) Text("Сохранённый файл недоступен. Исследование не заменено текущими данными.")
                     else ArchiveContent(archive!!)
                 }

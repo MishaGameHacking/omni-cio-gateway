@@ -8,8 +8,8 @@ import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.updates.ClientVersion
 
 /** Authenticated, bounded transport. Only user actions/data effects call this; never the renderer. */
-class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL) {
-    fun request(token: String, path: String, method: String = "GET", body: JSONObject? = null): VolumeReply {
+class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL) : WorkspaceTransport {
+    override fun request(token: String, path: String, method: String, body: JSONObject?): VolumeReply {
         require(path == "/workspace" || path.startsWith("/workspace/") || path.startsWith("/workspace?"))
         require(method in setOf("GET", "POST", "PUT", "PATCH", "DELETE"))
         require(!path.contains("..") && !path.contains('#'))
@@ -33,21 +33,25 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
                 dispatched = true
                 connection.outputStream.use { it.write(encoded) }
             }
-            val status = connection.responseCode
-            ClientVersion.observeStatus(status)
-            ru.omnicio.app.data.backend.SessionExpiry.observe(status, token)
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val bytes = stream?.use { it.readNBytes(RESPONSE_LIMIT + 1) } ?: byteArrayOf()
-            if (bytes.size > RESPONSE_LIMIT) return VolumeReply(error = "Ответ слишком велик. Сузьте выбранный период.", code = "response_too_large", status = status)
-            val data = if (bytes.isEmpty()) JSONObject() else runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull()
-            if (status in 200..299 && data != null) VolumeReply(data = data, status = status)
-            else failure(status, data).let { reply ->
-                if (dispatched && (status >= 500 || status in 200..299)) reply.copy(ambiguous = true, retryable = false) else reply
-            }
+            readResponse(connection, token, dispatched)
         } catch (_: Exception) {
             VolumeReply(error = if (dispatched) "Не получено подтверждение сервера. Проверьте сохранённое задание перед повтором." else "Нет связи с сервером. Попробуйте позже.",
                 code = "network_unavailable", ambiguous = dispatched, retryable = !dispatched)
         } finally { connection?.disconnect() }
+    }
+
+    private fun readResponse(connection: HttpsURLConnection, token: String, dispatched: Boolean): VolumeReply {
+        val status = connection.responseCode
+        ClientVersion.observeStatus(status)
+        ru.omnicio.app.data.backend.SessionExpiry.observe(status, token)
+        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+        val bytes = stream?.use { it.readNBytes(RESPONSE_LIMIT + 1) } ?: byteArrayOf()
+        if (bytes.size > RESPONSE_LIMIT) return VolumeReply(error = "Ответ слишком велик. Сузьте выбранный период.", code = "response_too_large", status = status,
+            ambiguous = dispatched, retryable = !dispatched)
+        val data = if (bytes.isEmpty()) JSONObject() else runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull()
+        if (status in 200..299 && data != null) return VolumeReply(data = data, status = status)
+        val failed = failure(status, data)
+        return if (dispatched && (status >= 500 || status in 200..299)) failed.copy(ambiguous = true, retryable = false) else failed
     }
 
     private fun failure(status: Int, json: JSONObject?): VolumeReply {

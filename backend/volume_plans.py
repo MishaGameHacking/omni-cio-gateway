@@ -14,7 +14,7 @@ try:
     from . import app as backend, portfolio_details as details, volume_state as state, volume_jobs as jobs
     from .ai_budget import transaction
     from .investment_links import instrument_link
-    from .volume_contract import decimal, money, now_iso, source, text_number, ZERO, financial_context
+    from .volume_contract import HTTP_ERRORS, decimal, money, now_iso, source, text_number, ZERO, financial_context
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -22,7 +22,7 @@ except ImportError:
     import volume_jobs as jobs
     from ai_budget import transaction
     from investment_links import instrument_link
-    from volume_contract import decimal, money, now_iso, source, text_number, ZERO, financial_context
+    from volume_contract import HTTP_ERRORS, decimal, money, now_iso, source, text_number, ZERO, financial_context
 
 router = APIRouter(prefix="/workspace/plans", tags=["Manual broker reconciliation"])
 
@@ -50,7 +50,7 @@ def _current(plan: dict, user_id: int, db=None) -> dict:
     return plan
 
 
-@router.get("")
+@router.get("", responses=HTTP_ERRORS)
 def plans(user: Any = Depends(backend.current_user)) -> dict:
     return {"items": [_current(p, int(user["id"])) for p in state.records(int(user["id"]), "manual_plan")], "orders_api_enabled": False}
 
@@ -64,7 +64,7 @@ class PlanCreate(state.RequestId):
     strategy_version: int = Field(ge=0)
 
 
-@router.post("")
+@router.post("", responses=HTTP_ERRORS)
 def create(payload: PlanCreate, user: Any = Depends(backend.current_user)) -> dict:
     return _create(payload, user)
 
@@ -111,7 +111,7 @@ def _create(payload: PlanCreate, user: Any) -> dict:
     return result
 
 
-@router.post("/{identifier}/open-broker")
+@router.post("/{identifier}/open-broker", responses=HTTP_ERRORS)
 def opened(identifier: str, payload: state.RequestId, user: Any = Depends(backend.current_user)) -> dict:
     request = {"id": identifier, **payload.model_dump()}
     with transaction(backend.connect) as db:
@@ -131,7 +131,7 @@ class Reconcile(state.RequestId):
     operation_ids: list[str] = Field(default_factory=list, max_length=1000)
 
 
-@router.post("/{identifier}/reconcile", status_code=202)
+@router.post("/{identifier}/reconcile", status_code=202, responses=HTTP_ERRORS)
 def reconcile(identifier: str, payload: Reconcile, tasks: BackgroundTasks, user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:
         plan = _current(_plan(db, int(user["id"]), identifier), int(user["id"]), db)
@@ -206,6 +206,13 @@ def reconcile_plan(user: Any, payload: dict, progress) -> dict:
             db.execute("INSERT OR IGNORE INTO workspace_plan_operations VALUES (?,?,?,?,?)", (user_id, plan["account_id"], operation_id, identifier, state.encode(candidates[operation_id])))
         bound = db.execute("SELECT payload_json FROM workspace_plan_operations WHERE user_id=? AND plan_id=?", (user_id, identifier)).fetchall()
         linked = [json.loads(row[0]) for row in bound]
+        # The same operation ID may be corrected by the source. Preserve the
+        # association, but revalidate quantities/payment on every reconciliation.
+        for row in linked:
+            if row["id"] in candidates:
+                db.execute("UPDATE workspace_plan_operations SET payload_json=? WHERE user_id=? AND account_id=? AND operation_id=? AND plan_id=?",
+                    (state.encode(candidates[row["id"]]), user_id, plan["account_id"], row["id"], identifier))
+        linked = [candidates.get(row["id"], row) for row in linked]
         # A later reversal or missing row prevents a completed claim. Never keep
         # old execution proof when the current complete source contradicts it.
         stale_links = [row["id"] for row in linked if row["id"] not in candidates]

@@ -19,12 +19,14 @@ from pydantic import BaseModel, ConfigDict, Field
 try:
     from . import app as backend, research_store
     from .ai_budget import transaction
-    from .volume_contract import decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context
+    from .credit_evidence import Source
+    from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context
 except ImportError:
     import app as backend
     import research_store
     from ai_budget import transaction
-    from volume_contract import decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context
+    from credit_evidence import Source
+    from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context
 
 router = APIRouter(prefix="/workspace", tags=["Workspace state"])
 AXES = (("position", "Позиции"), ("issuer", "Эмитенты"), ("group", "Экономические группы"),
@@ -154,7 +156,7 @@ def strategy_data(user_id: int) -> dict:
     return {"active": active, "draft": None, "history": [_version(row) for row in rows], "limits_applied": active is not None}
 
 
-@router.get("/strategy")
+@router.get("/strategy", responses=HTTP_ERRORS)
 def get_strategy(user: Any = Depends(backend.current_user)) -> dict:
     return strategy_data(int(user["id"]))
 
@@ -167,76 +169,143 @@ def _identity(uid: str) -> dict | None:
     return research_store.latest_verified(backend.connect, "issuer_identity", uid, datetime.now(timezone.utc))
 
 
-@financial_context
-def exposure_data(snapshot: dict | None, config: dict | None = None) -> dict:
+def _verified_identity(item: dict) -> dict:
+    identity = item.get("verified_identity") or {}
+    try:
+        return identity if Source(**identity["source"]).valid(datetime.now(timezone.utc)) else {}
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+
+def _axis_identity(item: dict, axis: str) -> tuple:
+    identity, metadata = _verified_identity(item), item.get("metadata") or {}
+    uid, currency = str(item.get("instrument_uid") or ""), (item.get("value") or {}).get("currency")
+    identities = {
+        "position": (uid, item.get("title") or uid),
+        "issuer": (identity.get("issuer_id"), identity.get("issuer_name") or identity.get("issuer_id")),
+        "group": (identity.get("group_id"), identity.get("group_name") or identity.get("group_id")),
+        "sector": (metadata.get("sector"), metadata.get("sector")), "currency": (currency, currency),
+        "country": (metadata.get("country_of_risk"), metadata.get("country_of_risk_name") or metadata.get("country_of_risk")),
+    }
+    refs = list(item.get("source_ids", []))
+    if axis in {"issuer", "group"}:
+        refs.append(identity.get("source", {}).get("id"))
+    if axis in {"sector", "country"}:
+        refs.append((metadata.get("source") or {}).get("id"))
+    return (*identities[axis], [ref for ref in refs if ref])
+
+
+def _add_exposure(groups: dict, key: str, label: str, item: dict, value: Decimal, refs: list) -> None:
+    bucket = groups.setdefault(key, {"id": key, "label": label, "amount": ZERO, "instrument_uids": [], "source_ids": []})
+    bucket["amount"] += value
+    if item["instrument_uid"] not in bucket["instrument_uids"]:
+        bucket["instrument_uids"].append(item["instrument_uid"])
+    for ref in refs:
+        if ref not in bucket["source_ids"]:
+            bucket["source_ids"].append(ref)
+
+
+def _exposure_groups(rows: list, axis: str, currency: str) -> tuple:
+    groups, unknown = {}, []
+    known = not_applicable = 0
+    for item in rows:
+        if axis in {"issuer", "group", "sector", "country"} and item.get("instrument_type") == "cash":
+            not_applicable += 1
+            continue
+        identifier, label, refs = _axis_identity(item, axis)
+        value = decimal(item.get("value"))
+        if not identifier or value is None or (item.get("value") or {}).get("currency") != currency:
+            unknown.append(item["instrument_uid"])
+            continue
+        known += 1
+        _add_exposure(groups, str(identifier), str(label), item, value, refs)
+    return groups, unknown, known, not_applicable
+
+
+def _concentration(bucket: dict, total: Decimal | None, limit: Decimal | None, currency: str) -> dict:
+    share = bucket["amount"] / total * 100 if total is not None and total > 0 else None
+    return {"id": bucket["id"], "label": bucket["label"], "instrument_uids": bucket["instrument_uids"], "source_ids": bucket["source_ids"],
+            "value": money(bucket["amount"], currency), "share_percent": text_number(share), "limit_percent": text_number(limit),
+            "breached": share > limit if share is not None and limit is not None else None}
+
+
+def _coverage_state(complete: bool, known: int) -> str:
+    if complete:
+        return "available"
+    return "partial" if known else "unavailable"
+
+
+def _observation_age(at: str | None) -> int | None:
+    if not at:
+        return None
+    return max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(at)).total_seconds()))
+
+
+def _exposure_axis(snapshot: dict | None, axis: str, label: str, limits: dict) -> tuple:
     rows = positions(snapshot)
     currency = (snapshot or {}).get("currency", "RUB")
+    groups, unknown, known, not_applicable = _exposure_groups(rows, axis, currency)
     total = decimal(((snapshot or {}).get("capital") or {}).get("total"))
-    limits = (config or {}).get("limits", {})
+    output = [_concentration(bucket, total, decimal(limits.get(axis + "_percent")), currency) for bucket in groups.values()]
+    incomplete = (snapshot or {}).get("position_coverage", {}).get("incomplete_reasons", [])
+    complete = bool(snapshot) and not unknown and not incomplete
+    as_of = (snapshot or {}).get("as_of")
+    result = {"id": axis, "label": label, "complete": complete, "unknown_count": len(unknown), "items": output}
+    coverage = {"direction": axis, "state": _coverage_state(complete, known), "known_positions": known, "total_positions": len(rows),
+                "missing_instrument_uids": sorted(set(unknown)), "not_applicable_positions": not_applicable, "as_of": as_of,
+                "age_seconds": _observation_age(as_of), "incomplete_reasons": incomplete,
+                "basis": "operator_reviewed_identity" if axis in {"issuer", "group"} else "broker_snapshot_no_fx_conversion"}
+    return result, coverage
+
+
+@financial_context
+def exposure_data(snapshot: dict | None, config: dict | None = None) -> dict:
     axes, coverage, concentrations = [], [], []
     for axis, label in AXES:
-        groups: dict[str, dict] = {}
-        unknown = []
-        known = 0
-        not_applicable = 0
-        for item in rows:
-            if axis in {"issuer", "group", "sector", "country"} and item.get("instrument_type") == "cash":
-                not_applicable += 1
-                continue
-            uid = str(item.get("instrument_uid") or "")
-            identity = item.get("verified_identity") or {}
-            metadata = item.get("metadata") or {}
-            if identity:
-                try:
-                    from .credit_evidence import Source
-                except ImportError:
-                    from credit_evidence import Source
-                try:
-                    if not Source(**identity["source"]).valid(datetime.now(timezone.utc)):
-                        identity = {}
-                except (KeyError, TypeError, ValueError):
-                    identity = {}
-            identities = {
-                "position": (uid, item.get("title") or uid),
-                "issuer": (identity.get("issuer_id"), identity.get("issuer_name") or identity.get("issuer_id")),
-                "group": (identity.get("group_id"), identity.get("group_name") or identity.get("group_id")),
-                "sector": (metadata.get("sector"), metadata.get("sector")),
-                "currency": ((item.get("value") or {}).get("currency"), (item.get("value") or {}).get("currency")),
-                "country": (metadata.get("country_of_risk"), metadata.get("country_of_risk_name") or metadata.get("country_of_risk")),
-            }
-            identifier, name = identities[axis]
-            value = decimal(item.get("value"))
-            if not identifier or value is None or (item.get("value") or {}).get("currency") != currency:
-                unknown.append(uid)
-                continue
-            known += 1
-            key = str(identifier)
-            bucket = groups.setdefault(key, {"id": key, "label": str(name), "amount": ZERO, "instrument_uids": [], "source_ids": []})
-            bucket["amount"] += value
-            if uid not in bucket["instrument_uids"]:
-                bucket["instrument_uids"].append(uid)
-            refs = identity.get("source", {}) if axis in {"issuer", "group"} else {}
-            metadata_ref = (metadata.get("source") or {}).get("id") if axis in {"sector", "country"} else None
-            for ref in [refs.get("id"), metadata_ref, *item.get("source_ids", [])]:
-                if ref and ref not in bucket["source_ids"]:
-                    bucket["source_ids"].append(ref)
-        output = []
-        for bucket in groups.values():
-            amount = bucket.pop("amount")
-            share = amount / total * 100 if total is not None and total > 0 else None
-            limit = decimal(limits.get(axis + "_percent"))
-            normalized = {**bucket, "value": money(amount, currency), "share_percent": text_number(share),
-                          "limit_percent": text_number(limit), "breached": share > limit if share is not None and limit is not None else None}
-            output.append(normalized)
-            concentrations.append({"direction": axis, **normalized})
-        complete = bool(snapshot) and not unknown
-        axes.append({"id": axis, "label": label, "complete": complete, "unknown_count": len(unknown), "items": output})
-        coverage.append({"direction": axis, "state": "available" if complete else "partial" if known else "unavailable",
-                         "known_positions": known, "total_positions": len(rows), "missing_instrument_uids": sorted(set(unknown)),
-                         "not_applicable_positions": not_applicable, "as_of": (snapshot or {}).get("as_of"),
-                         "age_seconds": max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(snapshot["as_of"])).total_seconds())) if snapshot and snapshot.get("as_of") else None,
-                         "basis": "operator_reviewed_identity" if axis in {"issuer", "group"} else "broker_snapshot_no_fx_conversion"})
+        observation, completeness = _exposure_axis(snapshot, axis, label, (config or {}).get("limits", {}))
+        axes.append(observation)
+        coverage.append(completeness)
+        concentrations.extend({"direction": axis, **row} for row in observation["items"])
     return {"axes": axes, "coverage": coverage, "concentrations": concentrations}
+
+
+def _market_observation(position: dict, direction: str, snapshot: dict | None, market_rows: dict) -> dict:
+    current = None
+    if direction == "ratings":
+        current = (snapshot or {}).get("rating_observations", {}).get(position["instrument_uid"])
+    return current or market_rows.get(position["instrument_uid"], {}).get(direction, {})
+
+
+def _fresh_market_observation(item: dict, direction: str) -> bool:
+    refs = item.get("sources", [])
+    if direction == "ratings":
+        # Expired history remains inspectable independently of current proof.
+        current_ids = {row.get("source", {}).get("id") for row in item.get("data", {}).get("items", [])}
+        refs = [ref for ref in refs if ref.get("id") in current_ids]
+    if item.get("state") != "available" or not refs:
+        return False
+    try:
+        return all(datetime.fromisoformat(ref["expires_at"].replace("Z", "+00:00")) > datetime.now(timezone.utc) for ref in refs)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return False
+
+
+def _market_coverage(snapshot: dict | None, direction: str, market_rows: dict) -> dict:
+    scoped = [p for p in positions(snapshot) if p.get("instrument_type") != "cash"]
+    known, missing, dates = 0, [], []
+    for position in scoped:
+        item = _market_observation(position, direction, snapshot, market_rows)
+        if not _fresh_market_observation(item, direction):
+            missing.append(position["instrument_uid"])
+            continue
+        known += 1
+        if item.get("as_of"):
+            dates.append(item["as_of"])
+    at = min(dates) if dates else None
+    complete = known == len(scoped) and bool(snapshot) and not (snapshot or {}).get("position_coverage", {}).get("incomplete_reasons")
+    return {"direction": direction, "state": _coverage_state(complete, known), "known_positions": known, "total_positions": len(scoped),
+            "not_applicable_positions": len(positions(snapshot)) - len(scoped), "missing_instrument_uids": sorted(set(missing)),
+            "as_of": at, "age_seconds": _observation_age(at), "basis": "verified_dossier_observations_with_expiry_not_a_safety_guarantee"}
 
 
 def risk_data(user: Any, currency: str = "RUB", *, config: dict | None = None, snapshot: dict | None = None) -> dict:
@@ -244,29 +313,7 @@ def risk_data(user: Any, currency: str = "RUB", *, config: dict | None = None, s
     active = active_strategy(int(user["id"]))
     values = exposure_data(snapshot, config if config is not None else (active or {}).get("config"))
     market_rows = {row["instrument_uid"]: row for row in records(int(user["id"]), "instrument_market", limit=10000) if row.get("broker_key") == broker_key(user)}
-    scoped = [p for p in positions(snapshot) if p.get("instrument_type") != "cash"]
-    for direction in ("trading", "liquidity", "ratings"):
-        known, missing, dates = 0, [], []
-        for position in scoped:
-            item = market_rows.get(position["instrument_uid"], {}).get(direction, {})
-            refs = item.get("sources", [])
-            if direction == "ratings":
-                # Historical expired ratings remain inspectable but do not make
-                # a newer, valid current assessment disappear.
-                current_ids = {r.get("source", {}).get("id") for r in item.get("data", {}).get("items", [])}
-                refs = [ref for ref in refs if ref.get("id") in current_ids]
-            fresh = refs and all(datetime.fromisoformat(ref["expires_at"].replace("Z", "+00:00")) > datetime.now(timezone.utc) for ref in refs)
-            if item.get("state") == "available" and fresh:
-                known += 1
-                if item.get("as_of"):
-                    dates.append(item["as_of"])
-            else:
-                missing.append(position["instrument_uid"])
-        values["coverage"].append({"direction": direction, "state": "available" if known == len(scoped) and bool(snapshot) else "partial" if known else "unavailable",
-            "known_positions": known, "total_positions": len(scoped), "not_applicable_positions": len(positions(snapshot)) - len(scoped),
-            "missing_instrument_uids": sorted(set(missing)), "as_of": min(dates) if dates else None,
-            "age_seconds": max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(min(dates))).total_seconds())) if dates else None,
-            "basis": "verified_dossier_observations_with_expiry_not_a_safety_guarantee"})
+    values["coverage"].extend(_market_coverage(snapshot, direction, market_rows) for direction in ("trading", "liquidity", "ratings"))
     with closing(backend.connect()) as db:
         history = db.execute("SELECT payload_json FROM workspace_events WHERE user_id=? AND kind LIKE 'risk_%' ORDER BY created_at DESC,id LIMIT 100", (int(user["id"]),)).fetchall()
     return {"snapshot_id": (snapshot or {}).get("snapshot_id"), "as_of": (snapshot or {}).get("as_of"),
@@ -275,7 +322,7 @@ def risk_data(user: Any, currency: str = "RUB", *, config: dict | None = None, s
             "coverage_is_not_probability_of_loss": True}
 
 
-@router.get("/risks")
+@router.get("/risks", responses=HTTP_ERRORS)
 def get_risks(currency: Literal["RUB", "USD", "EUR"] = "RUB", user: Any = Depends(backend.current_user)) -> dict:
     return risk_data(user, currency)
 
@@ -323,7 +370,7 @@ class StrategyPreview(StrictModel):
     rollback_to_version: int | None = Field(default=None, ge=1)
 
 
-@router.post("/strategy/preview")
+@router.post("/strategy/preview", responses=HTTP_ERRORS)
 def preview_strategy(payload: StrategyPreview, user: Any = Depends(backend.current_user)) -> dict:
     return _preview_strategy(payload, user)
 
@@ -375,7 +422,7 @@ class StrategyConfirm(RequestId):
     expected_version: int = Field(ge=0)
 
 
-@router.post("/strategy/confirm")
+@router.post("/strategy/confirm", responses=HTTP_ERRORS)
 def confirm_strategy(payload: StrategyConfirm, user: Any = Depends(backend.current_user)) -> dict:
     user_id, now = int(user["id"]), int(time.time())
     request = payload.model_dump()
@@ -436,12 +483,12 @@ def goal_data(user: Any) -> dict:
     return {"items": result}
 
 
-@router.get("/goals")
+@router.get("/goals", responses=HTTP_ERRORS)
 def goals(user: Any = Depends(backend.current_user)) -> dict:
     return goal_data(user)
 
 
-@router.post("/goals")
+@router.post("/goals", responses=HTTP_ERRORS)
 def save_goal(payload: GoalWrite, user: Any = Depends(backend.current_user)) -> dict:
     target, reserve = decimal(payload.target.amount), decimal(payload.reserve.amount)
     if target is None or target <= 0 or reserve is None or reserve < 0 or payload.target.currency != payload.reserve.currency:
@@ -458,7 +505,7 @@ def save_goal(payload: GoalWrite, user: Any = Depends(backend.current_user)) -> 
     return result
 
 
-@router.delete("/goals/{identifier}")
+@router.delete("/goals/{identifier}", responses=HTTP_ERRORS)
 def delete_goal(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
     with transaction(backend.connect) as db:
         db.execute("DELETE FROM workspace_records WHERE user_id=? AND kind='goal' AND id=?", (int(user["id"]), identifier))
@@ -476,14 +523,14 @@ class Scenario(StrictModel):
     shocks: list[Shock] = Field(min_length=1, max_length=100)
 
 
-@router.post("/risks/scenario")
+@router.post("/risks/scenario", responses=HTTP_ERRORS)
 def scenario(payload: Scenario, user: Any = Depends(backend.current_user)) -> dict:
     return _scenario(payload, user)
 
 
 @financial_context
-def _scenario(payload: Scenario, user: Any) -> dict:
-    snapshot = saved_snapshot(user, payload.currency)
+def _scenario(payload: Scenario, user: Any, snapshot: dict | None = None) -> dict:
+    snapshot = snapshot if snapshot is not None else saved_snapshot(user, payload.currency)
     if snapshot is None:
         raise HTTPException(409, "workspace_refresh_required")
     assumptions, selectors = [], set()
@@ -531,6 +578,30 @@ def _scenario(payload: Scenario, user: Any) -> dict:
             "positions": output, "is_forecast": False, "basis": "user_shocks_linear_valuation_no_fx_or_derivative_model", "complete": not unknown}
 
 
+class ScenarioVariant(StrictModel):
+    id: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=120)
+    shocks: list[Shock] = Field(min_length=1, max_length=100)
+
+
+class ScenarioComparison(StrictModel):
+    currency: Literal["RUB", "USD", "EUR"] = "RUB"
+    scenarios: list[ScenarioVariant] = Field(min_length=2, max_length=4)
+
+
+@router.post("/risks/scenarios/compare", responses=HTTP_ERRORS)
+def compare_scenarios(payload: ScenarioComparison, user: Any = Depends(backend.current_user)) -> dict:
+    if len({row.id for row in payload.scenarios}) != len(payload.scenarios):
+        raise HTTPException(422, "scenario_comparison_duplicate_id")
+    snapshot = saved_snapshot(user, payload.currency)
+    if snapshot is None:
+        raise HTTPException(409, "workspace_refresh_required")
+    results = [{"id": row.id, "title": row.title,
+                "result": _scenario(Scenario(currency=payload.currency, shocks=row.shocks), user, snapshot)} for row in payload.scenarios]
+    return {"snapshot_id": snapshot["snapshot_id"], "as_of": snapshot["as_of"], "currency": payload.currency,
+            "scenarios": results, "comparison_basis": "same_observed_snapshot_same_currency", "assumptions_are_user_defined": True}
+
+
 class CheckCreate(RequestId):
     event_id: str | None = None
     instrument_uids: list[str] = Field(default_factory=list, max_length=2000)
@@ -542,28 +613,48 @@ class CheckUpdate(StrictModel):
     state: Literal["pending", "reviewed"]
 
 
-@router.get("/risks/checks")
+@router.get("/risks/checks", responses=HTTP_ERRORS)
 def get_checks(user: Any = Depends(backend.current_user)) -> dict:
     return {"items": records(int(user["id"]), "risk_check")}
 
 
-@router.post("/risks/checks")
+@router.post("/risks/checks", responses=HTTP_ERRORS)
 def create_check(payload: CheckCreate, user: Any = Depends(backend.current_user)) -> dict:
     user_id, request = int(user["id"]), payload.model_dump()
     snapshot = saved_snapshot(user)
-    held = {p["instrument_uid"] for p in positions(snapshot)}
-    if any(uid not in held for uid in payload.instrument_uids):
-        raise HTTPException(422, "risk_check_instrument_not_in_snapshot")
     with transaction(backend.connect) as db:
         prior = receipt(db, user_id, payload.request_id, "risk_check", request)
         if prior:
             return prior
-        if payload.event_id and not db.execute("SELECT 1 FROM workspace_events WHERE id=? AND user_id=?", (payload.event_id, user_id)).fetchone():
-            raise HTTPException(404, "risk_event_not_found")
+        event = None
+        if payload.event_id:
+            row = db.execute("SELECT payload_json FROM workspace_events WHERE id=? AND user_id=? AND kind LIKE 'risk_%'", (payload.event_id, user_id)).fetchone()
+            if row is None:
+                raise HTTPException(404, "risk_event_not_found")
+            event = json.loads(row[0])
+        if snapshot is None and event is None:
+            raise HTTPException(409, "risk_check_basis_unavailable")
+        owned = {p["instrument_uid"] for p in positions(snapshot)} | set((event or {}).get("instrument_uids", []))
+        selected_uids = sorted(set(payload.instrument_uids) or set((event or {}).get("instrument_uids", [])) or owned)
+        if any(uid not in owned for uid in selected_uids):
+            raise HTTPException(422, "risk_check_instrument_not_in_snapshot_or_owned_event")
+        selected_positions = [{key: p.get(key) for key in ("instrument_uid", "account_id", "title", "quantity", "value", "source_ids")}
+                              for p in positions(snapshot) if not selected_uids or p["instrument_uid"] in selected_uids]
+        source_ids = set((event or {}).get("source_ids", [])) | {ref for p in selected_positions for ref in p.get("source_ids", [])}
+        all_sources = (snapshot or {}).get("sources", []) + (event or {}).get("sources", [])
+        checked_sources = list({ref["id"]: ref for ref in all_sources if ref.get("id") in source_ids}.values())
+        linked_source_ids = sorted({ref["id"] for ref in checked_sources})
+        strategy = db.execute("SELECT version,config_json,confirmed_at FROM workspace_strategy_versions WHERE user_id=? ORDER BY version DESC LIMIT 1", (user_id,)).fetchone()
         identifier = uuid.uuid4().hex
         result = {"id": identifier, "title": payload.title, "state": "to_review", "created_at": now_iso(),
-                  "snapshot_id": (snapshot or {}).get("snapshot_id"), "instrument_uids": payload.instrument_uids, "event_id": payload.event_id,
-                  "steps": [{"id": key, "title": title, "state": "pending", "source_ids": []} for key, title in (
+                  "snapshot_id": (snapshot or {}).get("snapshot_id"), "instrument_uids": selected_uids, "event_id": payload.event_id,
+                  "basis": {"snapshot_id": (snapshot or {}).get("snapshot_id"), "as_of": (snapshot or {}).get("as_of"),
+                            "positions": selected_positions, "event": event, "strategy_version": strategy[0] if strategy else 0,
+                            "confirmed_strategy": {"version": strategy[0], "config": json.loads(strategy[1]),
+                                "confirmed_at": datetime.fromtimestamp(strategy[2], timezone.utc).isoformat()} if strategy else None,
+                            "closed_instrument_uids": sorted(set(selected_uids) - {p["instrument_uid"] for p in selected_positions})},
+                  "sources": checked_sources,
+                  "steps": [{"id": key, "title": title, "state": "pending", "source_ids": linked_source_ids} for key, title in (
                       ("sources", "Проверить источники и дату данных"), ("limits", "Сопоставить риск с подтверждёнными лимитами"),
                       ("decision", "Записать решение после проверки"))], "execution_state": "not_executed"}
         record(db, user_id, "risk_check", identifier, result)
@@ -571,7 +662,7 @@ def create_check(payload: CheckCreate, user: Any = Depends(backend.current_user)
     return result
 
 
-@router.patch("/risks/checks/{identifier}")
+@router.patch("/risks/checks/{identifier}", responses=HTTP_ERRORS)
 def update_check(identifier: str, payload: CheckUpdate, user: Any = Depends(backend.current_user)) -> dict:
     with transaction(backend.connect) as db:
         row = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='risk_check' AND id=?", (int(user["id"]), identifier)).fetchone()
@@ -587,7 +678,7 @@ def update_check(identifier: str, payload: CheckUpdate, user: Any = Depends(back
     return result
 
 
-@router.get("/risks/events")
+@router.get("/risks/events", responses=HTTP_ERRORS)
 def risk_events(limit: int = 100, user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:
         rows = db.execute("SELECT payload_json FROM workspace_events WHERE user_id=? AND kind LIKE 'risk_%' ORDER BY created_at DESC,id LIMIT ?", (int(user["id"]), min(max(limit, 1), 500))).fetchall()

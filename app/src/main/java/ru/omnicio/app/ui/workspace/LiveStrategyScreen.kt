@@ -1,6 +1,6 @@
 package ru.omnicio.app.ui.workspace
 
-import androidx.activity.compose.BackHandler
+import ru.omnicio.app.ui.spatial.SpatialBackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -9,6 +9,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +38,8 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     var preview by remember { mutableStateOf<JSONObject?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
+    var draftSaved by remember(userId) { mutableStateOf(false) }
+    var draftRevision by remember(userId) { mutableIntStateOf(0) }
     val config = remember(configText) { JSONObject(configText) }
     val dirty = configText != baseline
     val version = active?.optInt("version") ?: 0
@@ -55,22 +60,27 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
             loaded = true
         }
     }
-    LaunchedEffect(userId, configText, loaded) {
-        if (loaded) withContext(Dispatchers.IO) { storage.saveJson(userId, "strategy_editor", JSONObject().put("config", JSONObject(configText))) }
+    LaunchedEffect(userId, configText, loaded, draftRevision) {
+        if (loaded) draftSaved = withContext(Dispatchers.IO) { storage.saveJson(userId, "strategy_editor", JSONObject().put("config", JSONObject(configText))) }
     }
-    val edit: (JSONObject) -> Unit = { if (!previewAction.busy && !confirmAction.busy) { configText = it.toString(); preview = null; savedMessage = null } }
+    val edit: (JSONObject) -> Unit = { if (!previewAction.busy && !confirmAction.busy) { draftSaved = false; configText = it.toString(); preview = null; savedMessage = null } }
     val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
-    BackHandler(onBack = leave)
+    SpatialBackHandler(onBack = leave)
     WorkspaceDetailPage("Моя стратегия", "Версии правил и влияние на текущий портфель", leave, SpectrumSymbol.Goal) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(20.dp),
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { WorkspaceRequestState(resource) }
                 item { SpectrumCard(emphasized = true) {
                     Text(if (active == null) "Правила ещё не подтверждены" else "Действует версия " + version, style = MaterialTheme.typography.titleLarge)
-                    Text(if (dirty) "Изменения сохранены как ваш черновик. Для применения нужен расчёт и подтверждение."
-                        else "Подтверждённая версия используется при серверной проверке портфеля.")
+                    Text(when {
+                        dirty && draftSaved -> "Изменения сохранены как ваш черновик. Для применения нужен расчёт и подтверждение."
+                        dirty -> "Изменения пока открыты на этом экране. Сохранение черновика ещё не подтверждено."
+                        active == null -> "Рассчитайте влияние правил и подтвердите первую версию, чтобы использовать её при проверке портфеля."
+                        else -> "Подтверждённая версия используется при серверной проверке портфеля."
+                    })
+                    if (loaded && dirty && !draftSaved) SpectrumSecondaryButton("Повторить сохранение черновика", { draftRevision++ }, Modifier.fillMaxWidth())
                     active?.optString("confirmed_at")?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
                     savedMessage?.let { Text(it, color = LocalSpectrumPalette.current.emerald) }
                 } }
@@ -86,13 +96,13 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                             StrategyDifference(active?.optJSONObject("config"), previous)
                             SpectrumSecondaryButton("Проверить возврат к этой версии", {
                                 previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
-                                    .put("config", previous).put("rollback_to_version", old.optInt("version")))
+                                    .put("rollback_to_version", old.optInt("version")))
                             }, Modifier.fillMaxWidth(), !previewAction.busy && !confirmAction.busy)
                         }
                     } }
                 }
                 item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
-                preview?.let { result -> item { StrategyPreview(result) {
+                preview?.let { result -> item { StrategyPreview(result, !confirmAction.busy && !previewAction.busy) {
                     confirmAction.perform("/workspace/strategy/confirm", JSONObject().put("preview_id", result.text("preview_id"))
                         .put("expected_version", result.optInt("expected_version")).put("request_id", UUID.randomUUID().toString()))
                 } } }
@@ -100,16 +110,17 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                     WorkspaceActionState(previewAction); WorkspaceActionState(confirmAction)
                     SpectrumPrimaryButton("Рассчитать влияние", {
                         previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version).put("config", config))
-                    }, Modifier.fillMaxWidth(), !previewAction.busy && !confirmAction.busy && validStrategy(config), SpectrumSymbol.Risk)
+                    }, Modifier.fillMaxWidth(), loaded && !previewAction.busy && !confirmAction.busy && validStrategy(config), SpectrumSymbol.Risk)
                 }
-                if (!validStrategy(config)) item { Text("Проверьте горизонт, сумму резерва и лимиты от 0 до 100%.", color = MaterialTheme.colorScheme.error) }
+                if (!validStrategy(config)) item { Text("Проверьте горизонт, сумму резерва и лимиты больше 0 и до 100%.", color = MaterialTheme.colorScheme.error) }
             }
         }
     }
     if (leaving) WorkspaceDialog("Изменения стратегии", { leaving = false }) {
-        Text("Черновик сохранён на этом устройстве. Действующие правила изменятся только после подтверждения сервера.")
+        Text(if (draftSaved) "Черновик сохранён на этом устройстве. Действующие правила изменятся только после подтверждения сервера."
+            else "Сохранение черновика не подтверждено. При выходе изменения могут потеряться; действующие правила не изменятся.")
         SpectrumPrimaryButton("Продолжить редактирование", { leaving = false }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton("Вернуться позже", { leaving = false; onBack() }, Modifier.fillMaxWidth())
+        SpectrumSecondaryButton(if (draftSaved) "Вернуться позже" else "Уйти без сохранённого черновика", { leaving = false; onBack() }, Modifier.fillMaxWidth())
         SpectrumSecondaryButton("Отменить изменения", { configText = baseline; leaving = false; onBack() }, Modifier.fillMaxWidth())
     }
 }
@@ -125,7 +136,7 @@ internal fun validStrategy(config: JSONObject): Boolean {
     val limits = config.optJSONObject("limits") ?: return false
     return horizon in 1..600 && amount != null && amount.signum() >= 0 && limitTitles.keys.all {
         val number = limits.optString(it).toBigDecimalOrNull()
-        number != null && number.signum() >= 0 && number <= java.math.BigDecimal(100)
+        number != null && number.signum() > 0 && number <= java.math.BigDecimal(100)
     }
 }
 
@@ -135,6 +146,9 @@ private fun StrategyGoalEditor(config: JSONObject, edit: (JSONObject) -> Unit) {
     SpectrumCard {
         WorkspaceChoices("Цель", listOf("Сохранение капитала", "Регулярные выплаты", "Рост капитала"),
             choices.indexOf(config.text("goal")).coerceAtLeast(0)) { edit(JSONObject(config.toString()).put("goal", choices[it])) }
+        val riskLevels = listOf("conservative", "moderate", "aggressive")
+        WorkspaceChoices("Отношение к риску", listOf("Консервативное", "Умеренное", "Высокое"),
+            riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0)) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
         WorkspaceTextInput(config.optInt("horizon_months", 36).toString(),
             { raw -> raw.toIntOrNull()?.let { edit(JSONObject(config.toString()).put("horizon_months", it)) } },
             "Горизонт, месяцев", Modifier.fillMaxWidth(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
@@ -186,7 +200,7 @@ private fun strategyValue(value: String?): String = when (value) {
 }
 
 @Composable
-private fun StrategyPreview(preview: JSONObject, confirm: () -> Unit) {
+private fun StrategyPreview(preview: JSONObject, enabled: Boolean, confirm: () -> Unit) {
     val impact = preview.optJSONObject("impact") ?: JSONObject()
     SpectrumCard(emphasized = true) {
         Text("Влияние на текущий портфель", style = MaterialTheme.typography.titleLarge)
@@ -196,7 +210,7 @@ private fun StrategyPreview(preview: JSONObject, confirm: () -> Unit) {
         impact.strings("warnings").forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
         Text("Расчёт действителен до " + localMoment(preview.text("expires_at", "")), style = MaterialTheme.typography.bodySmall)
         Text("Если портфель или правила изменятся, потребуется новый расчёт.", style = MaterialTheme.typography.bodySmall)
-        SpectrumPrimaryButton("Подтвердить эту версию", confirm, Modifier.fillMaxWidth(), preview.optBoolean("can_confirm"), SpectrumSymbol.Goal)
+        SpectrumPrimaryButton("Подтвердить эту версию", confirm, Modifier.fillMaxWidth(), enabled && preview.optBoolean("can_confirm"), SpectrumSymbol.Goal)
     }
 }
 

@@ -48,8 +48,8 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
             Text("Удерживайте карточку и перемещайте вверх или вниз. Порядок на главном меняется в режиме просмотра до сохранения.")
             order.forEachIndexed { index, id ->
                 key(id) {
-                    Surface(color = if (dragging == id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        shape = MaterialTheme.shapes.medium,
+                    ru.omnicio.app.ui.spatial.SpatialSurface(color = if (dragging == id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        state = if (dragging == id) ru.omnicio.app.ui.spatial.SpatialState.Selected else ru.omnicio.app.ui.spatial.SpatialState.Idle,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).pointerInput(id, busy) {
                             if (!busy) detectDragGesturesAfterLongPress(
                                 onDragStart = { dragging = id; drift = 0f },
@@ -67,8 +67,8 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
                         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(28.dp), selected = dragging == id)
                             Text(dashboardCards.getValue(id), Modifier.weight(1f).padding(horizontal = 8.dp))
-                            TextButton(onClick = { onPreview(moveDashboardCard(order, id, -1)) }, enabled = index > 0 && !busy) { Text("↑") }
-                            TextButton(onClick = { onPreview(moveDashboardCard(order, id, 1)) }, enabled = index < order.lastIndex && !busy) { Text("↓") }
+                            TextButton(onClick = { onPreview(moveDashboardCard(order, id, -1)) }, enabled = index > 0 && !busy) { Text("Выше") }
+                            TextButton(onClick = { onPreview(moveDashboardCard(order, id, 1)) }, enabled = index < order.lastIndex && !busy) { Text("Ниже") }
                         }
                     }
                 }

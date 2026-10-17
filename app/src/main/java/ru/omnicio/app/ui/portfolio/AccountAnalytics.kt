@@ -22,15 +22,32 @@ import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.*
 
 @Composable
-internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false, initialDate: String? = null) {
+internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false,
+    initialDate: String? = null, initialStart: String? = null, initialEnd: String? = null, initialResolution: String? = null) {
     val anchor = initialDate?.let { runCatching { java.time.Instant.parse(it).atZone(Moscow).toLocalDate() }.getOrNull()
         ?: runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull() }
-    var start by rememberSaveable(account.id, initialDate) { mutableStateOf(anchor?.minusMonths(1)?.toString()) }
-    var end by rememberSaveable(account.id, initialDate) { mutableStateOf(anchor?.plusMonths(1)?.toString()) }
+    val today = java.time.LocalDate.now(Moscow)
+    val targetStart = initialStart?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    val targetEnd = initialEnd?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }?.coerceAtMost(today)
+    val validTarget = targetStart != null && targetEnd != null && targetStart <= targetEnd
+    val defaultStart = if (validTarget) targetStart else anchor?.let { when (initialResolution) {
+        "intraday" -> it; "hour" -> it.minusDays(15); else -> it.minusMonths(1)
+    } }
+    val defaultEnd = (if (validTarget) targetEnd else anchor?.let { when (initialResolution) {
+        "intraday" -> it; "hour" -> it.plusDays(15); else -> it.plusMonths(1)
+    } })?.coerceAtMost(today)
+    var start by rememberSaveable(account.id, initialDate, initialStart, initialEnd, initialResolution) { mutableStateOf(defaultStart?.toString()) }
+    var end by rememberSaveable(account.id, initialDate, initialStart, initialEnd, initialResolution) { mutableStateOf(defaultEnd?.toString()) }
+    var resolutionOverride by rememberSaveable(account.id, initialDate, initialStart, initialEnd, initialResolution) {
+        mutableStateOf(initialResolution?.takeIf { it in setOf("intraday", "hour", "day") })
+    }
     val period = PortfolioPeriod(start, end)
+    val setPeriod: (PortfolioPeriod) -> Unit = { start = it.start; end = it.end; resolutionOverride = null }
+    val sourceParameters = mapOf("currency" to account.totalValue.currency) +
+        (resolutionOverride?.let { mapOf("history_resolution" to it) } ?: emptyMap())
     var selectedPeriod by remember(account.id, period) { mutableStateOf<PortfolioPeriod?>(null) }
     val request = rememberAccountData(token, account.id, "analytics",
-        period.parameters() + ("currency" to account.totalValue.currency), interval = 60_000)
+        period.parameters() + sourceParameters, interval = 60_000)
     val selectedData = selectedPeriod?.let { scope -> rememberAccountData(token, account.id, "analytics",
         scope.parameters() + ("currency" to account.totalValue.currency), interval = 60_000) }
     val workspace = LocalWorkspaceSnapshot.current
@@ -43,7 +60,7 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
             CompactCard {
                 CurrencyChoice(account.totalValue.currency)
                 if (request.error != null || request.showingPreviousQuery || request.json == null) AccountDataNotice(request)
-                if (request.json == null) PeriodControls(period) { start = it.start; end = it.end }
+                if (request.json == null) PeriodControls(period, setPeriod)
                 request.json?.let { data ->
                     val history = data.objects("history").mapNotNull { point ->
                         point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
@@ -52,8 +69,10 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                         markers = events.mapNotNull { event -> event.optionalText("occurred_at")?.let { HistoryMarker(it, event.optionalText("title") ?: "Событие источника") } },
                         selectionKey = "${account.id}:${request.displayedParameters}",
                         initialSelectedDate = anchor?.toString(),
+                        initialSelectedInstant = initialDate?.let { runCatching { java.time.Instant.parse(it).toString() }.getOrNull() },
+                        sourceResolution = data.optionalText("historyResolution") ?: resolutionOverride,
                         onSelection = { if (!request.showingPreviousQuery) selectedPeriod = it },
-                        controls = { PeriodControls(period) { start = it.start; end = it.end } })
+                        controls = { PeriodControls(period, setPeriod) })
                     if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
                 }
             }

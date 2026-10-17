@@ -1,4 +1,4 @@
-"""Deploy the Telegram browser-login repair to the exact Moscow backend.
+"""Deploy the reviewed backend and verify login/workspace on the exact Moscow host.
 
 The deployment verifies the existing Timeweb server, uses a short-lived SSH key,
 stages and preflights the checked-in backend, switches only the systemd Uvicorn
@@ -20,6 +20,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 import diagnose_moscow_telegram as cloud
@@ -36,6 +37,11 @@ REMOTE_DEPLOY_ROOT = "/root/analyst-ai-deploy"
 REMOTE_ARCHIVE_FILENAME = "backend.tgz"
 REMOTE_SCRIPT_FILENAME = "deploy.sh"
 MAX_PUBLIC_RESPONSE = 256_000
+WORKSPACE_READ_PATHS = (
+    "/workspace", "/workspace/strategy", "/workspace/risks", "/workspace/chat/threads",
+    "/workspace/notifications/preferences", "/workspace/devices",
+    "/workspace/analysis/checks/release-verification",
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -192,6 +198,28 @@ def verify_public_endpoint() -> None:
         raise RuntimeError("Public Telegram popup policy is missing")
     if "no-store" not in headers.get("cache-control", ""):
         raise RuntimeError("Public Telegram login page may be cached")
+    verify_workspace_authentication()
+
+
+def verify_workspace_authentication() -> None:
+    """A missing route or an unauthenticated successful read blocks deployment.
+
+    These probes send no credentials, invoke no model, and do not create records.
+    Authorized user workflows are covered by the backend integration suite.
+    """
+    for path in WORKSPACE_READ_PATHS:
+        request = urllib.request.Request(
+            PUBLIC_URL + path,
+            headers={"Accept": "application/json", "User-Agent": "Analyst-AI-deploy-check/1"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                status = response.status
+        except urllib.error.HTTPError as error:
+            status = error.code
+            error.close()
+        if status != 401:
+            raise RuntimeError(f"Workspace authentication probe failed for {path}: HTTP {status}")
 
 
 def parser() -> argparse.ArgumentParser:

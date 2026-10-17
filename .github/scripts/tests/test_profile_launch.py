@@ -58,6 +58,24 @@ RESUMED = "topResumedActivity=ActivityRecord{123 u0 " + ACTIVITY + " t12}"
 
 
 class ProfileLaunchTests(unittest.TestCase):
+    def test_business_launch_requires_exact_screen_and_scenario(self):
+        ready = tree(screen="probe-screen:business-risk;probe-scenario:partial")
+        self.assertIsNotNone(ready_marker(ready, "business-risk", "partial"))
+        self.assertIsNone(ready_marker(ready, "business-risk", "ready"))
+        self.assertIsNone(ready_marker(ready, "business-plans", "partial"))
+        command = Mock(side_effect=["", "Status: ok", RESUMED, RESUMED])
+        launch_profile(command, lambda: ready, lambda read, message: read(), expected_screen="business-risk", scenario="partial")
+        self.assertEqual(command.call_args_list[1].args[-6:], ("--es", "spectrum_screen", "business-risk", "--es", "spectrum_scenario", "partial"))
+
+    def test_unsupported_business_scenarios_fail_before_adb(self):
+        for screen, scenario in (("business-risk", "job"), ("business-strategy", "job"),
+                                 ("business-notifications", "job"), ("profile", "ready"),
+                                 ("business-plans", "unknown")):
+            command = Mock()
+            with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):
+                launch_profile(command, Mock(), Mock(), expected_screen=screen, scenario=scenario)
+            command.assert_not_called()
+
     def test_host_launch_timeout_still_requires_exact_ready_screen(self):
         command = Mock(side_effect=["", subprocess.TimeoutExpired("am start", 15), RESUMED, RESUMED])
         read_tree = Mock(return_value=tree(screen="probe-screen:home"))

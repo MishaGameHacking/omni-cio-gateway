@@ -9,6 +9,8 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +35,33 @@ normalizer_spec.loader.exec_module(normalizer)
 
 
 class TelegramAuthDeploymentTests(unittest.TestCase):
+    def test_workspace_probe_requires_authentication_for_every_read_route(self) -> None:
+        observed = []
+
+        def unauthenticated(request, timeout):
+            observed.append(request.full_url)
+            self.assertNotIn("Authorization", request.headers)
+            self.assertIsNone(request.data)
+            self.assertEqual(timeout, 15)
+            raise HTTPError(request.full_url, 401, "Unauthorized", {}, None)
+
+        with patch.object(module.urllib.request, "urlopen", side_effect=unauthenticated):
+            module.verify_workspace_authentication()
+        self.assertEqual(observed, [module.PUBLIC_URL + path for path in module.WORKSPACE_READ_PATHS])
+
+    def test_workspace_probe_blocks_missing_routes_and_unexpected_status(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        with patch.object(module.urllib.request, "urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "Workspace authentication probe failed"):
+                module.verify_workspace_authentication()
+        for status in (403, 404, 500):
+            with self.subTest(status=status):
+                failure = HTTPError(module.PUBLIC_URL + "/workspace", status, "Unexpected", {}, None)
+                with patch.object(module.urllib.request, "urlopen", side_effect=failure):
+                    with self.assertRaisesRegex(RuntimeError, "Workspace authentication probe failed"):
+                        module.verify_workspace_authentication()
+
     def test_checked_in_source_and_pinned_jwks_validate(self) -> None:
         metadata = module.validate_source()
         self.assertRegex(metadata["jwks_sha256"], r"^[0-9a-f]{64}$")

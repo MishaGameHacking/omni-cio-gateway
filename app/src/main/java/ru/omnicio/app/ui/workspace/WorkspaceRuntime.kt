@@ -24,7 +24,7 @@ data class WorkspaceRuntime(val data: JSONObject?, val revision: Int, val busy: 
 @Composable
 fun rememberWorkspaceRuntime(session: WorkspaceSession, connected: Boolean, currency: PortfolioCurrency,
     onExpired: () -> Unit): WorkspaceRuntime {
-    val client = remember { VolumeWorkspaceClient() }
+    val client = LocalWorkspaceTransport.current
     val expired by rememberUpdatedState(onExpired)
     val foreground = workspaceForeground()
     var data by remember(session.userId, session.token, currency) { mutableStateOf<JSONObject?>(null) }

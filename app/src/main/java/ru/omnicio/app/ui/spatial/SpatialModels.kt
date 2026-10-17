@@ -45,6 +45,7 @@ internal data class SpatialPrimitive(
     val motionAllowed: Boolean = true,
     val key: String = "mesh",
     val sharedKey: String? = null,
+    val rotationY: Float = 0f,
 )
 
 internal data class SpatialSlot(
@@ -94,12 +95,14 @@ object SpatialChartGeometry {
 /** Actual measured host statistics. Submit time is CPU time, not GPU execution time. */
 data class SpatialDiagnostics(
     val engineCount: Int = 0,
+    val windowCount: Int = 0,
     val submittedFrames: Long = 0,
     val skippedFrames: Long = 0,
     val frameIntervalP95Ms: Double = 0.0,
     val cpuSubmitP95Ms: Double = 0.0,
     val visibleMeshes: Int = 0,
     val cachedAssets: Int = 0,
+    val pendingAssets: Int = 0,
     val pooledInstances: Int = 0,
     val quality: String = "standard",
     val error: String? = null,

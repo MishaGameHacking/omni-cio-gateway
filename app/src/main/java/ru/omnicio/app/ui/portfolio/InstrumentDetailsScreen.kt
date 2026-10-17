@@ -36,7 +36,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
         SpectrumBackground(Modifier.fillMaxSize()) {
             Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = { WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close) },
-                bottomBar = { Surface(color = MaterialTheme.colorScheme.background) {
+                bottomBar = { ru.omnicio.app.ui.spatial.SpatialSurface(kind = ru.omnicio.app.ui.spatial.SpatialSurfaceKind.Dock, color = MaterialTheme.colorScheme.background) {
                     Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
                         BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin, compact = true)
                     }

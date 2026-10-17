@@ -21,7 +21,7 @@ try:
     from .ai_budget import MoneyLedger, transaction
     from .ai_guarded_client import GuardedAIClient, GuardError
     from .ai_policy import AnalysisTier
-    from .volume_contract import decimal, digest, money, now_iso, source, section, safe_section, date_range, text_number, ZERO, financial_context
+    from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, source, section, safe_section, date_range, text_number, ZERO, financial_context
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -32,7 +32,7 @@ except ImportError:
     from ai_budget import MoneyLedger, transaction
     from ai_guarded_client import GuardedAIClient, GuardError
     from ai_policy import AnalysisTier
-    from volume_contract import decimal, digest, money, now_iso, source, section, safe_section, date_range, text_number, ZERO, financial_context
+    from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, source, section, safe_section, date_range, text_number, ZERO, financial_context
 
 router = APIRouter(prefix="/workspace", tags=["Materialized workspace"])
 
@@ -43,7 +43,7 @@ def normalize_snapshot(user: Any, dashboard: dict, metadata: dict | None = None)
     metadata = metadata or {}
     sources, rows, cash = [], [], defaultdict(Decimal)
     for account in dashboard.get("accounts", []):
-        ref = source("GetPortfolio/GetPositions", account["id"], observed, currency=currency, unit="money")
+        ref = source(dashboard.get("source_method", "GetPortfolio/GetPositions"), account["id"], observed, currency=currency, unit="money")
         sources.append(ref)
         for position in account.get("positions", []):
             uid = position["id"]
@@ -293,6 +293,19 @@ def collect(user: Any, payload: dict, checkpoint: dict, progress) -> dict:
 
 def persist(user: Any, snapshot: dict) -> None:
     user_id = int(user["id"])
+    try:
+        from . import volume_credit
+    except ImportError:
+        import volume_credit
+    rating_observations = volume_credit.observations(snapshot)
+    rating_signature = volume_credit.signature(rating_observations)
+    if snapshot.get("rating_signature") != rating_signature:
+        snapshot["snapshot_id"] = digest({"positions": snapshot.get("positions", []), "capital": snapshot.get("capital"),
+                                          "as_of": snapshot["as_of"], "rating_signature": rating_signature})
+    snapshot["rating_signature"] = rating_signature
+    snapshot["rating_observations"] = rating_observations
+    snapshot["sources"] = list({r["id"]: r for r in snapshot.get("sources", []) +
+                               [ref for observation in rating_observations.values() for ref in observation.get("sources", [])]}.values())
     active = state.active_strategy(user_id)
     current_risk = state.exposure_data(snapshot, (active or {}).get("config"))
     old = state.saved_snapshot(user, snapshot["currency"])
@@ -300,6 +313,7 @@ def persist(user: Any, snapshot: dict) -> None:
     old_breaches = {(r["direction"], r["id"]): r for r in (old or {}).get("risk_breaches", old_risk["concentrations"]) if r["breached"]}
     new_breaches = {(r["direction"], r["id"]): r for r in current_risk["concentrations"] if r["breached"]}
     all_current = {(r["direction"], r["id"]): r for r in current_risk["concentrations"]}
+    complete_axes = {row["direction"] for row in current_risk["coverage"] if row["state"] == "available"}
     snapshot["risk_breaches"] = list(new_breaches.values())
     snapshot["applied_strategy_version"] = (active or {}).get("version", 0)
     with transaction(backend.connect) as db:
@@ -322,7 +336,11 @@ def persist(user: Any, snapshot: dict) -> None:
             if before is not None and after is not None and before["share_percent"] == after["share_percent"]:
                 continue
             details_row = after or before
-            missing_basis = after is None and (key not in all_current or all_current[key]["breached"] is None)
+            # An incomplete aggregate may fall below its limit only because a
+            # position lost its valuation/identity. That is not risk resolution.
+            missing_basis = after is None and (key[0] not in complete_axes or
+                key in all_current and all_current[key]["breached"] is None or
+                decimal(snapshot.get("capital", {}).get("total")) in {None, ZERO})
             kind = "risk_limit_observed" if after else "risk_data_stale" if missing_basis else "risk_limit_resolved"
             risk_event = state.event(db, user_id, kind, snapshot["snapshot_id"],
                 {"title": ("Превышение лимита: " if after else "Основание риска требует обновления: " if missing_basis else "Лимит восстановлен: ") + details_row["label"],
@@ -333,6 +351,7 @@ def persist(user: Any, snapshot: dict) -> None:
                                      body="Проверьте подтверждённый лимит и актуальность источника; это не выполненная сделка.", event_id=risk_event["id"])
         for item in snapshot.get("events", {}).get("items", []):
             state.event(db, user_id, "market_news", snapshot["snapshot_id"], item, item["id"])
+        volume_credit.record_changes_in(db, user_id, snapshot, old)
 
 
 def ai_data(user: Any) -> dict:
@@ -341,6 +360,8 @@ def ai_data(user: Any) -> dict:
         row = db.execute("SELECT * FROM analysis_runs WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 1", (user_id,)).fetchone()
         cards = db.execute("SELECT id,title,summary,actions_json,evidence_json,created_at FROM insight_cards WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 2", (user_id,)).fetchall()
         checked = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='monitor_check' ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
+        check_rows = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='monitor_check' ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
+        slot_rows = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='monitor_slot' ORDER BY id", (user_id,)).fetchall()
         monitor_jobs = db.execute("SELECT id,status,result_json,error_code,created_at,updated_at,cancel_requested_at FROM ai_work_jobs WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 20", (user_id,)).fetchall()
     last_check = json.loads(checked[0]) if checked else None
     last = None if not row else {"id": row["id"], "created_at": datetime.fromtimestamp(row["created_at"], timezone.utc).isoformat(),
@@ -383,12 +404,19 @@ def ai_data(user: Any) -> dict:
                       "result": json.loads(row["result_json"]) if row["result_json"] else None, "error_code": row["error_code"],
                       "created_at": datetime.fromtimestamp(row["created_at"], timezone.utc).isoformat(),
                       "updated_at": datetime.fromtimestamp(row["updated_at"], timezone.utc).isoformat(), "kind": "scheduled_monitor"} for row in monitor_jobs]
-    return {"last_run": last, "last_check": last_check, "monitor_jobs": observed_jobs,
+    check_history = []
+    for record in check_rows:
+        item = json.loads(record[0])
+        summary = {key: item.get(key) for key in ("check_id", "checked_at", "state", "reason", "tier", "card_id", "run_id", "error_code")}
+        summary["observation_count"] = (item.get("trigger") or {}).get("coverage", {}).get("total", 0)
+        check_history.append(summary)
+    return {"last_run": last, "last_check": last_check, "check_history": check_history,
+            "slot_checks": [json.loads(row[0]) for row in slot_rows], "monitor_jobs": observed_jobs,
             "next_runs": notifications.schedule_slots(user_id), "jobs": user_jobs(user_id),
             "budget": MoneyLedger(backend.connect).user_summary(user_id), "readiness": readiness, "analysis_diff": diff}
 
 
-@router.get("")
+@router.get("", responses=HTTP_ERRORS)
 def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None = None, end: date | None = None,
               user: Any = Depends(backend.current_user)) -> dict:
     snapshot = state.saved_snapshot(user, currency)
@@ -422,7 +450,7 @@ def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None
                              "frame_network_requests": False}, "requested_range": {"start": str(start) if start else None, "end": str(end) if end else None}}
 
 
-@router.get("/operations/{account_id}/{operation_id}/position")
+@router.get("/operations/{account_id}/{operation_id}/position", responses=HTTP_ERRORS)
 def operation_position(account_id: str, operation_id: str, user: Any = Depends(backend.current_user)) -> dict:
     snapshot = state.saved_snapshot(user)
     operation = next((row for row in (snapshot or {}).get("operations", {}).get("items", []) if row["account_id"] == account_id and row["id"] == operation_id), None)

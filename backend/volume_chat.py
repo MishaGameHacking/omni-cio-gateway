@@ -7,10 +7,12 @@ strategy. Request IDs survive network ambiguity and process restarts.
 from __future__ import annotations
 
 from contextlib import closing
+import base64
 from datetime import date, datetime, timedelta, timezone
 import json
 import uuid
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import Field
@@ -20,7 +22,7 @@ try:
     from .ai_budget import transaction, token_cost
     from .ai_guarded_client import GuardedAIClient, GuardError
     from .ai_policy import AnalysisTier
-    from .volume_contract import digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
+    from .volume_contract import HTTP_ERRORS, digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
 except ImportError:
     import app as backend
     import volume_jobs as jobs
@@ -28,7 +30,7 @@ except ImportError:
     from ai_budget import transaction, token_cost
     from ai_guarded_client import GuardedAIClient, GuardError
     from ai_policy import AnalysisTier
-    from volume_contract import digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
+    from volume_contract import HTTP_ERRORS, digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
 
 router = APIRouter(prefix="/workspace/chat", tags=["Verified-context AI conversation"])
 MAX_OUTPUT = 1600
@@ -73,7 +75,7 @@ class ThreadCreate(state.RequestId):
     title: str = Field(default="Новый диалог", min_length=1, max_length=120)
 
 
-@router.post("/threads")
+@router.post("/threads", responses=HTTP_ERRORS)
 def create_thread(payload: ThreadCreate, user: Any = Depends(backend.current_user)) -> dict:
     user_id, request = int(user["id"]), payload.model_dump()
     with transaction(backend.connect) as db:
@@ -86,7 +88,7 @@ def create_thread(payload: ThreadCreate, user: Any = Depends(backend.current_use
     return result
 
 
-@router.get("/threads")
+@router.get("/threads", responses=HTTP_ERRORS)
 def threads(user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:
         rows = db.execute("SELECT * FROM workspace_chat_threads WHERE user_id=? ORDER BY created_at DESC,id LIMIT 200", (int(user["id"]),)).fetchall()
@@ -100,14 +102,32 @@ def _thread(db, user_id: int, identifier: str):
     return row
 
 
-@router.get("/threads/{identifier}/messages")
+@router.get("/threads/{identifier}/messages", responses=HTTP_ERRORS)
 def messages(identifier: str, before: str | None = None, user: Any = Depends(backend.current_user)) -> dict:
+    user_id, cursor_at, cursor_id = int(user["id"]), None, None
+    if before:
+        try:
+            if len(before) > 2000 or not before.startswith("c1_"):
+                raise ValueError
+            cursor = json.loads(base64.urlsafe_b64decode(before[3:].encode()))
+            if cursor.get("user_id") != user_id or cursor.get("thread_id") != identifier:
+                raise ValueError
+            cursor_at, cursor_id = cursor["at"], cursor["id"]
+            timestamp(cursor_at)
+            if not isinstance(cursor_id, str) or not 1 <= len(cursor_id) <= 160:
+                raise ValueError
+        except (ValueError, KeyError, TypeError, AttributeError, UnicodeError):
+            raise HTTPException(422, "chat_cursor_invalid_or_wrong_scope") from None
     with closing(backend.connect()) as db:
-        _thread(db, int(user["id"]), identifier)
-        rows = db.execute("SELECT * FROM workspace_chat_messages WHERE thread_id=? AND user_id=? AND (? IS NULL OR created_at<?) ORDER BY created_at DESC,id DESC LIMIT 101", (identifier, int(user["id"]), before, before)).fetchall()
+        _thread(db, user_id, identifier)
+        rows = db.execute("""SELECT * FROM workspace_chat_messages WHERE thread_id=? AND user_id=?
+            AND (? IS NULL OR created_at<? OR (created_at=? AND id<?))
+            ORDER BY created_at DESC,id DESC LIMIT 101""", (identifier, user_id, cursor_at, cursor_at, cursor_at, cursor_id)).fetchall()
     output = [{"id": row["id"], "role": row["role"], "text": row["text"], "created_at": row["created_at"],
                "request_id": row["request_id"], "job_id": row["job_id"], **json.loads(row["payload_json"])} for row in reversed(rows[:100])]
-    return {"thread_id": identifier, "items": output, "has_more": len(rows) > 100, "next_before": rows[99]["created_at"] if len(rows) > 100 else None}
+    following = "c1_" + base64.urlsafe_b64encode(state.encode({"user_id": user_id, "thread_id": identifier,
+        "at": rows[99]["created_at"], "id": rows[99]["id"]}).encode()).decode() if len(rows) > 100 else None
+    return {"thread_id": identifier, "items": output, "has_more": len(rows) > 100, "next_before": following}
 
 
 class Context(state.StrictModel):
@@ -136,7 +156,7 @@ def _history_facts(user_id: int, snapshot: dict, account_ids: set[str], begin: d
     if not account_ids:
         return [], {"available": False, "included_observations": 0, "selection_is_complete": True}
     span = finish - begin
-    resolution = "intraday" if span.days < 2 else "hour" if span.days < 32 else "day"
+    resolution = "intraday" if span <= timedelta(days=2) else "hour" if span <= timedelta(days=32) else "day"
     with closing(backend.connect()) as db:
         marks = ",".join("?" for _ in account_ids)
         rows = db.execute(f"""SELECT account_id,observed_at,value FROM portfolio_value_history
@@ -161,7 +181,9 @@ def _history_facts(user_id: int, snapshot: dict, account_ids: set[str], begin: d
                        "source_ids": [ref["id"]], "as_of": row["observed_at"], "source": ref,
                        "highlight": {"section": "history", "id": identifier, "account_id": row["account_id"],
                                      "date": row["observed_at"], "currency": snapshot["currency"], "resolution": resolution,
-                                     "start": begin.date().isoformat(), "end": (finish - timedelta(microseconds=1)).date().isoformat()}})
+                                     "start": begin.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat(),
+                                     "end": (finish - timedelta(microseconds=1)).astimezone(ZoneInfo("Europe/Moscow")).date().isoformat(),
+                                     "calendar_timezone": "Europe/Moscow"}})
     return result, {"available": bool(result), "included_observations": len(result),
                     "observations_in_bounded_query": len(rows), "selection_is_complete": len(result) == len(rows),
                     "query_truncated": len(rows) > 1000, "resolution": resolution,
@@ -192,10 +214,10 @@ def fact_packet(user: Any, context: dict) -> dict:
     def add(identifier, value, refs, section_name, highlight_id=None, observed=None, target=None):
         facts.append({"id": identifier, "value": value, "source_ids": refs, "as_of": observed or snapshot["as_of"]})
         highlights.append({"section": section_name, "id": highlight_id or identifier, **(target or {})})
-    add("capital:total", owned[account_id]["value"] if account_id else snapshot["capital"]["total"], [r["id"] for r in snapshot.get("sources", []) if r.get("method") == "GetPortfolio/GetPositions" and (not account_id or r.get("subject_id") == account_id)], "capital")
+    add("capital:total", owned[account_id]["value"] if account_id else snapshot["capital"]["total"], [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"} and (not account_id or r.get("subject_id") == account_id)], "capital")
     facts[-1]["scope"] = "selected_account_balance" if account_id else "whole_portfolio_balance"
     for index, value in enumerate([] if account_id else snapshot["capital"].get("cash", [])):
-        add("capital:cash:" + str(index), value, [r["id"] for r in snapshot.get("sources", []) if r.get("method") == "GetPortfolio/GetPositions"], "capital")
+        add("capital:cash:" + str(index), value, [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"}], "capital")
     for index, item in enumerate(selected):
         uid = item["instrument_uid"]
         add("position:" + str(index), {"instrument_uid": uid, "title": item["title"], "instrument_type": item["instrument_type"],
@@ -212,9 +234,17 @@ def fact_packet(user: Any, context: dict) -> dict:
         # filtering selects relevant risks without silently changing denominators.
         value["basis_scope"] = "whole_portfolio_confirmed_limit_relevant_to_selected_positions"
         add("risk:" + str(index), value, item["source_ids"], "risks", item["id"], target={"direction": item["direction"]})
+    credit_rows = [(uid, row) for uid, observation in snapshot.get("rating_observations", {}).items() if uid in scoped_uids
+                   for row in observation.get("data", {}).get("items", [])]
+    for index, (uid, row) in enumerate(credit_rows[:24]):
+        add("rating:" + str(index), {k: row[k] for k in ("agency", "scale", "subject_kind", "subject_id", "grade", "status", "outlook")},
+            [row["source"]["id"]], "portfolio", uid, observed=row["source"]["checked_at"],
+            target={"instrument_uid": uid, "account_id": account_id})
     begin, requested_finish = date_range(date.fromisoformat(str(context["start"])) if context.get("start") else None,
                                          date.fromisoformat(str(context["end"])) if context.get("end") else None)
     finish = min(requested_finish, timestamp(snapshot["as_of"]))
+    if begin > finish:
+        raise HTTPException(409, "chat_period_after_verified_snapshot")
     relevant_events = []
     for item in snapshot.get("events", {}).get("items", []):
         linked = sorted(scoped_uids.intersection(item.get("instrument_uids", [])))
@@ -284,6 +314,7 @@ def fact_packet(user: Any, context: dict) -> dict:
                          "operations": {"included": min(len(operations), 24), "scoped_count": len(operations), "selection_is_complete": len(operations) <= 24, "range_complete": complete},
                          "history": observations_coverage, "events": {"included": min(len(relevant_events), 15), "scoped_count": len(relevant_events)},
                          "risks": {"included": min(len(relevant_risks), 40), "scoped_count": len(relevant_risks), "basis_scope": "whole_portfolio"},
+                         "ratings": {"included": min(len(credit_rows), 24), "scoped_count": len(credit_rows), "scales_are_not_averaged": True},
                          "unresolved_source_ids": sorted(used_refs - refs_by_id.keys()),
                          "risk_directions": risk["coverage"]}, "strategy_version": (active or {}).get("version", 0),
             "tool_permissions": {"broker": "read_only", "strategy": "preview_requires_separate_confirmation", "orders": False, "external_messages": False}}
@@ -320,7 +351,7 @@ def ready(user_id: int, tier: AnalysisTier) -> tuple[GuardedAIClient, Any]:
     return client, route
 
 
-@router.post("/estimate")
+@router.post("/estimate", responses=HTTP_ERRORS)
 def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> dict:
     try:
         client, route = ready(int(user["id"]), AnalysisTier(payload.tier))
@@ -336,7 +367,7 @@ def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> di
                 "max_output_tokens": MAX_OUTPUT, "context_as_of": None}
 
 
-@router.post("/threads/{identifier}/messages", status_code=202)
+@router.post("/threads/{identifier}/messages", status_code=202, responses=HTTP_ERRORS)
 def send_message(identifier: str, payload: MessageCreate, tasks: BackgroundTasks, user: Any = Depends(backend.current_user)) -> dict:
     user_id = int(user["id"])
     request = {"thread_id": identifier, **payload.model_dump(mode="json", exclude={"request_id"})}

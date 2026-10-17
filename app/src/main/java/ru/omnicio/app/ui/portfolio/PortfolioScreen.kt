@@ -2,7 +2,7 @@ package ru.omnicio.app.ui.portfolio
 
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
-import androidx.activity.compose.BackHandler
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -58,6 +59,9 @@ fun PortfolioScreen(
     onDestinationConsumed: () -> Unit = {},
     initialPositionId: String? = null,
     initialHistoryDate: String? = null,
+    initialHistoryStart: String? = null,
+    initialHistoryEnd: String? = null,
+    initialHistoryResolution: String? = null,
 ) {
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
     var section by rememberSaveable { mutableIntStateOf(0) }
@@ -67,13 +71,23 @@ fun PortfolioScreen(
     var assetKind by rememberSaveable { mutableStateOf<String?>(null) }
     var assetAccountId by rememberSaveable { mutableStateOf<String?>(null) }
     var historyDate by rememberSaveable(initialHistoryDate) { mutableStateOf(initialHistoryDate) }
-    var selectForSection by remember { mutableStateOf<Int?>(null) }
-    var positionDetails by remember(accessToken) { mutableStateOf<PositionSelection?>(null) }
+    var historyStart by rememberSaveable(initialHistoryStart) { mutableStateOf(initialHistoryStart) }
+    var historyEnd by rememberSaveable(initialHistoryEnd) { mutableStateOf(initialHistoryEnd) }
+    var historyResolution by rememberSaveable(initialHistoryResolution) { mutableStateOf(initialHistoryResolution) }
+    var operationId by rememberSaveable { mutableStateOf<String?>(null) }
+    var operationDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var operationRequestKey by rememberSaveable { mutableIntStateOf(0) }
+    var routeError by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectForSection by rememberSaveable { mutableStateOf<Int?>(null) }
+    var positionDetails by rememberSaveable(accessToken, stateSaver = Saver<PositionSelection?, List<String>>(
+        save = { it?.let { value -> listOf(value.accountId, value.positionId, value.virtual.toString()) } ?: emptyList() },
+        restore = { if (it.size == 3) PositionSelection(it[0], it[1], it[2].toBooleanStrictOrNull() ?: false) else null },
+    )) { mutableStateOf<PositionSelection?>(null) }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
     val listState = rememberLazyListState()
     val listScope = rememberCoroutineScope()
-    var initialPositionHandled by remember(initialPositionId) { mutableStateOf(false) }
+    var initialPositionHandled by rememberSaveable(initialPositionId) { mutableStateOf(false) }
     LaunchedEffect(initialPositionId, snapshot) {
         if (!initialPositionHandled && initialPositionId != null && snapshot != null) {
             val candidates = snapshot.accounts.filter { destination?.accountId == null || it.id == destination.accountId }
@@ -85,7 +99,18 @@ fun PortfolioScreen(
     }
     LaunchedEffect(destination, snapshot?.accounts?.map { it.id }) {
         destination?.let { target ->
-            if (target.query.isNotBlank()) {
+            if (target.operationId != null) {
+                val accounts = snapshot?.accounts ?: return@LaunchedEffect
+                operationId = target.operationId; operationDate = target.operationDate
+                operationRequestKey++
+                val targetAccount = accounts.firstOrNull { it.id == target.accountId }
+                when {
+                    targetAccount != null -> { accountId = targetAccount.id; section = 1 }
+                    target.accountId != null -> { routeError = "Счёт этой операции отсутствует в текущем подтверждённом снимке. Операцию другого счёта не подставляем."; operationId = null; operationDate = null }
+                    accounts.size == 1 -> { accountId = accounts.single().id; section = 1 }
+                    else -> selectForSection = 1
+                }
+            } else if (target.query.isNotBlank()) {
                 val accounts = snapshot?.accounts ?: return@LaunchedEffect
                 val exact = accounts.filter { target.accountId == null || it.id == target.accountId }.flatMap { account ->
                     account.positions.filter { it.id == target.query }.map { PositionSelection(account.id, it.id) }
@@ -128,8 +153,11 @@ fun PortfolioScreen(
             if (account != null) {
                 AccountScreen(account, accessToken, section, { section = it },
                     { accountId = null; section = 0 }, snapshot.asOf, refreshError,
-                    Modifier.padding(insets).consumeWindowInsets(insets), snapshot.accounts, { accountId = it }, { positionDetails = it }, historyDate,
-                    { date -> historyDate = date; section = 3 })
+                    Modifier.padding(insets).consumeWindowInsets(insets), snapshot.accounts,
+                    { accountId = it; operationId = null; operationDate = null }, { positionDetails = it }, historyDate,
+                    { date -> historyDate = date; historyStart = null; historyEnd = null; historyResolution = null; section = 3 },
+                    historyStart = historyStart, historyEnd = historyEnd, historyResolution = historyResolution,
+                    initialOperationId = operationId, initialOperationDate = operationDate, operationRequestKey = operationRequestKey)
             } else {
                 PortfolioDashboard(
                     state = state,
@@ -168,6 +196,8 @@ fun PortfolioScreen(
                 TextButton(onClick = { accountId = item.id; section = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
             } } }, confirmButton = { TextButton(onClick = { selectForSection = null }) { Text("Отмена") } })
     }
+    routeError?.let { message -> AlertDialog(onDismissRequest = { routeError = null }, title = { Text("Ссылка на операцию") },
+        text = { Text(message) }, confirmButton = { TextButton(onClick = { routeError = null }) { Text("Закрыть") } }) }
 }
 
 @Composable
@@ -212,6 +242,12 @@ private fun AccountScreen(
     accounts: List<PortfolioAccount>, onAccount: (String) -> Unit, onPosition: (PositionSelection) -> Unit,
     initialHistoryDate: String? = null,
     onHistory: (String) -> Unit = {},
+    historyStart: String? = null,
+    historyEnd: String? = null,
+    historyResolution: String? = null,
+    initialOperationId: String? = null,
+    initialOperationDate: String? = null,
+    operationRequestKey: Int = 0,
 ) {
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -220,9 +256,10 @@ private fun AccountScreen(
         }
         Box(Modifier.padding(horizontal = 20.dp)) { ChoiceRow(listOf("Обзор", OperationsTitle, "Заявки", AnalyticsTitle, "Выплаты"), section, onSection) }
         when (section) {
-            1 -> AccountOperations(token, account, onPosition, onHistory)
+            1 -> key(account.id, operationRequestKey) { AccountOperations(token, account, onPosition, onHistory, initialOperationId, initialOperationDate) }
             2 -> AccountOrders(token, account)
-            3 -> AccountAnalytics(token, account, initialDate = initialHistoryDate)
+            3 -> AccountAnalytics(token, account, initialDate = initialHistoryDate,
+                initialStart = historyStart, initialEnd = historyEnd, initialResolution = historyResolution)
             4 -> AccountPayments(token, account)
             else -> AccountOverview(account, onSection, asOf, error, onPosition)
         }

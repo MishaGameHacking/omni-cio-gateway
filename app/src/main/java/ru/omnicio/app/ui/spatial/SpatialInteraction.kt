@@ -31,14 +31,36 @@ fun SpatialBackHandler(enabled: Boolean = true, onBack: () -> Unit) {
 }
 
 /** One user action, one native pulse. Android's own haptic setting is respected. */
+enum class SpatialHaptic { Action, Selection, Confirmed, Rejected }
+
 @Composable
-fun rememberSpatialHapticClick(onClick: () -> Unit): () -> Unit {
+fun rememberSpatialHapticFeedback(): (SpatialHaptic) -> Unit {
     val view = LocalView.current
     val owner = LocalSpatialOwner.current
-    val action by rememberUpdatedState(onClick)
     return remember(view, owner) {
+        { kind ->
+            if (owner?.tactile == true) view.performHapticFeedback(when (kind) {
+                SpatialHaptic.Action -> HapticFeedbackConstants.VIRTUAL_KEY
+                SpatialHaptic.Selection -> HapticFeedbackConstants.SEGMENT_TICK
+                SpatialHaptic.Confirmed -> HapticFeedbackConstants.CONFIRM
+                SpatialHaptic.Rejected -> HapticFeedbackConstants.REJECT
+            })
+            Unit
+        }
+    }
+}
+
+@Composable
+fun rememberSpatialHapticClick(onClick: () -> Unit): () -> Unit =
+    rememberSpatialHapticClick(SpatialHaptic.Action, onClick)
+
+@Composable
+fun rememberSpatialHapticClick(kind: SpatialHaptic, onClick: () -> Unit): () -> Unit {
+    val feedback = rememberSpatialHapticFeedback()
+    val action by rememberUpdatedState(onClick)
+    return remember(feedback, kind) {
         {
-            if (owner?.tactile == true) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            feedback(kind)
             action()
         }
     }

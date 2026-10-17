@@ -20,12 +20,12 @@ try:
     from . import app as backend
     from .ai_budget import transaction
     from .volume_state import StrictModel, encode
-    from .volume_contract import now_iso
+    from .volume_contract import HTTP_ERRORS, now_iso
 except ImportError:
     import app as backend
     from ai_budget import transaction
     from volume_state import StrictModel, encode
-    from volume_contract import now_iso
+    from volume_contract import HTTP_ERRORS, now_iso
 
 router = APIRouter(prefix="/workspace/notifications", tags=["Notification delivery"])
 DEFAULTS = {"timezone": "Europe/Moscow", "morning": "09:00", "evening": "19:00", "quiet_start": "22:00",
@@ -152,12 +152,12 @@ def _item(row) -> dict:
         "created_at": _iso(row["created_at"]), "eligible_at": _iso(row["eligible_at"]), "acknowledged_at": _iso(row["acknowledged_at"])}
 
 
-@router.get("/preferences")
+@router.get("/preferences", responses=HTTP_ERRORS)
 def preferences(user: Any = Depends(backend.current_user)) -> dict:
     return preferences_data(int(user["id"]))
 
 
-@router.put("/preferences")
+@router.put("/preferences", responses=HTTP_ERRORS)
 def update_preferences(payload: PreferencesWrite, user: Any = Depends(backend.current_user)) -> dict:
     value, user_id, now = validated_preferences(payload), int(user["id"]), int(time.time())
     with transaction(backend.connect) as db:
@@ -178,7 +178,7 @@ def update_preferences(payload: PreferencesWrite, user: Any = Depends(backend.cu
     return preferences_data(user_id)
 
 
-@router.get("/events")
+@router.get("/events", responses=HTTP_ERRORS)
 def events(limit: int = 100, user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:
         rows = db.execute("SELECT * FROM workspace_notification_outbox WHERE user_id=? ORDER BY created_at DESC,id LIMIT ?", (int(user["id"]), min(max(limit, 1), 500))).fetchall()
@@ -189,7 +189,7 @@ class Claim(StrictModel):
     limit: int = Field(default=20, ge=1, le=100)
 
 
-@router.post("/claim")
+@router.post("/claim", responses=HTTP_ERRORS)
 def claim(payload: Claim, user: Any = Depends(backend.current_user)) -> dict:
     now, user_id = int(time.time()), int(user["id"])
     identifier, expires = uuid.uuid4().hex, now + 120
@@ -213,7 +213,7 @@ class Ack(StrictModel):
     state: Literal["presented", "read"]
 
 
-@router.post("/{identifier}/ack")
+@router.post("/{identifier}/ack", responses=HTTP_ERRORS)
 def acknowledge(identifier: str, payload: Ack, user: Any = Depends(backend.current_user)) -> dict:
     now = int(time.time())
     with transaction(backend.connect) as db:
@@ -234,7 +234,7 @@ class Preview(StrictModel):
     preferences: Preferences
 
 
-@router.post("/preview")
+@router.post("/preview", responses=HTTP_ERRORS)
 def preview(payload: Preview, user: Any = Depends(backend.current_user)) -> dict:
     value = validated_preferences(payload.preferences)
     with closing(backend.connect()) as db:

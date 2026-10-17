@@ -6,6 +6,8 @@ import math
 import pathlib
 import struct
 import unittest
+from contextlib import ExitStack
+from unittest.mock import patch
 
 import generate_spectrum_meshes as catalogue
 
@@ -43,6 +45,10 @@ class MeshCatalogueTest(unittest.TestCase):
                     view = doc['bufferViews'][accessor['bufferView']]
                     values = struct.unpack_from('<' + 'f' * accessor['count'] * 3, binary, view.get('byteOffset', 0))
                     self.assertTrue(all(math.isfinite(value) for value in values))
+                    for axis in range(3):
+                        self.assertEqual(accessor['min'][axis], min(values[axis::3]))
+                        self.assertEqual(accessor['max'][axis], max(values[axis::3]))
+                    self.assertTrue(all(value != 0 or math.copysign(1, value) == 1 for value in values))
                     if index == 1:
                         self.assertTrue(all(abs(sum(v*v for v in values[i:i+3]) - 1) < 1e-5 for i in range(0,len(values),3)))
                 self.assertEqual(expected['triangles'] * 3, doc['accessors'][2]['count'])
@@ -77,6 +83,36 @@ class MeshCatalogueTest(unittest.TestCase):
             if all(abs(p[2]-.075)<1e-9 for p in (a,b,c)):
                 area += abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))/2
         self.assertAlmostEqual(.56*.8-.56*.17/2, area)
+
+    def test_canonical_encoding_resists_platform_libm_ulp_differences(self):
+        # Offline cross-platform simulation, not a substitute for Windows CI.
+        # Perturb every trig/sqrt/hypot result in both directions. Degenerate
+        # topology and JSON bounds must remain identical to the packaged bytes.
+        functions = {name: getattr(math, name) for name in ('sin', 'cos', 'sqrt', 'hypot')}
+        def shifted(function, direction):
+            def evaluate(*args):
+                value = function(*args)
+                for _ in range(8):
+                    value = math.nextafter(value, direction)
+                return value
+            return evaluate
+        for direction in (-math.inf, math.inf):
+            with ExitStack() as stack:
+                for name, function in functions.items():
+                    stack.enter_context(patch.object(catalogue.math, name, shifted(function, direction)))
+                for name in catalogue.NAMES:
+                    for suffix, detail in (('', True), ('_low', False)):
+                        key = name + suffix
+                        with self.subTest(direction=direction, model=key):
+                            actual = catalogue.encode(catalogue.icon(name, detail), key)
+                            self.assertEqual(actual, (catalogue.DEST / (key + '.glb')).read_bytes())
+
+    def test_canonical_coordinates_collapse_signed_zero_and_reject_nonfinite(self):
+        for value in (-0.0, 0.0, -1e-17, 1e-17):
+            self.assertEqual(struct.pack('<f', catalogue.canonical_float32(value)), bytes(4))
+        for value in (math.nan, math.inf, -math.inf):
+            with self.assertRaises(ValueError):
+                catalogue.canonical_float32(value)
 
 
 if __name__ == '__main__': unittest.main()

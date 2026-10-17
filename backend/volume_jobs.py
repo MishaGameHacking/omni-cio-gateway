@@ -17,14 +17,14 @@ try:
     from .ai_budget import transaction
     from .ai_jobs import AnalysisQueue
     from .monitoring_access import monitoring_connection, assert_monitoring_access_in
-    from .volume_contract import digest, error_code, date_range
+    from .volume_contract import HTTP_ERRORS, digest, error_code, date_range
     from .volume_state import RequestId, StrictModel, encode
 except ImportError:
     import app as backend
     from ai_budget import transaction
     from ai_jobs import AnalysisQueue
     from monitoring_access import monitoring_connection, assert_monitoring_access_in
-    from volume_contract import digest, error_code, date_range
+    from volume_contract import HTTP_ERRORS, digest, error_code, date_range
     from volume_state import RequestId, StrictModel, encode
 
 router = APIRouter(prefix="/workspace", tags=["Durable workspace jobs"])
@@ -261,7 +261,7 @@ class AnalysisRequest(RequestId):
     reason: Literal["manual"] = "manual"
 
 
-@router.post("/refresh", status_code=202)
+@router.post("/refresh", status_code=202, responses=HTTP_ERRORS)
 def refresh(payload: Refresh, tasks: BackgroundTasks, user: Any = Depends(backend.current_user)) -> dict:
     date_range(payload.start, payload.end)
     if not user["tinvest_token_encrypted"]:
@@ -271,14 +271,14 @@ def refresh(payload: Refresh, tasks: BackgroundTasks, user: Any = Depends(backen
     return result
 
 
-@router.post("/analysis", status_code=202)
+@router.post("/analysis", status_code=202, responses=HTTP_ERRORS)
 def analysis(payload: AnalysisRequest, tasks: BackgroundTasks, user: Any = Depends(backend.current_user)) -> dict:
     result = enqueue(int(user["id"]), payload.request_id, "analysis", {"reason": payload.reason})
     tasks.add_task(run_job, result["job_id"])
     return result
 
 
-@router.get("/jobs/by-request/{request_id}")
+@router.get("/jobs/by-request/{request_id}", responses=HTTP_ERRORS)
 def job_by_request(request_id: str, user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:
         row = db.execute("SELECT job_id FROM workspace_job_requests WHERE user_id=? AND request_id=?", (int(user["id"]), request_id)).fetchone()
@@ -287,12 +287,12 @@ def job_by_request(request_id: str, user: Any = Depends(backend.current_user)) -
     return get_job(int(user["id"]), row[0])
 
 
-@router.get("/jobs/{identifier}")
+@router.get("/jobs/{identifier}", responses=HTTP_ERRORS)
 def job_status(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
     return get_job(int(user["id"]), identifier)
 
 
-@router.post("/jobs/{identifier}/cancel")
+@router.post("/jobs/{identifier}/cancel", responses=HTTP_ERRORS)
 def cancel(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
     with transaction(backend.connect) as db:
         row = db.execute("SELECT * FROM workspace_jobs WHERE id=? AND user_id=?", (identifier, int(user["id"]))).fetchone()
@@ -307,7 +307,7 @@ def cancel(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
     return get_job(int(user["id"]), identifier)
 
 
-@router.post("/jobs/{identifier}/retry", status_code=202)
+@router.post("/jobs/{identifier}/retry", status_code=202, responses=HTTP_ERRORS)
 def retry(identifier: str, payload: RequestId, tasks: BackgroundTasks, user: Any = Depends(backend.current_user)) -> dict:
     status = get_job(int(user["id"]), identifier)
     if not status["can_retry"]:

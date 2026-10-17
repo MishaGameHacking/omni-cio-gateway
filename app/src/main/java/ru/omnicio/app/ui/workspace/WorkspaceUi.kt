@@ -18,7 +18,8 @@ import ru.omnicio.app.ui.spatial.SpatialState
 val LocalCurrencyChoice = staticCompositionLocalOf<(PortfolioCurrency) -> Unit> { {} }
 val LocalPortfolioDestination = staticCompositionLocalOf<(PortfolioDestination) -> Unit> { {} }
 data class PortfolioDestination(val section: Int = 1, val accountId: String? = null,
-    val query: String = "", val sector: String? = null, val kind: String? = null)
+    val query: String = "", val sector: String? = null, val kind: String? = null,
+    val operationId: String? = null, val operationDate: String? = null)
 
 val workspaceGap: androidx.compose.ui.unit.Dp
     @Composable get() = if (LocalWorkspacePreferences.current.value.density == InterfaceDensity.COMPACT) 8.dp else 14.dp

@@ -52,6 +52,14 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 
+/** UI-thread lifetime count across owners, so diagnostics can reveal a leaked Engine. */
+internal object SpatialNativeLifetime {
+    var engines = 0
+        private set
+    fun created() { engines++ }
+    fun destroyed() { check(engines > 0); engines-- }
+}
+
 /** One owner per Activity composition. Every JNI call below runs on its UI thread. */
 internal class SpatialOwner(private val context: Context) : Choreographer.FrameCallback {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -69,6 +77,7 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
     private var closing = false
     private var closed = false
     private var frames = 0L
+    internal val submittedFrameCount: Long get() = frames
     private var skipped = 0L
     private var thermal = power?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
     private val thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
@@ -114,6 +123,7 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
             Gltfio.init()
             Engine.create(Engine.Backend.OPENGL).also { e ->
                 engine = e
+                SpatialNativeLifetime.created()
                 provider = UbershaderProvider(e)
                 loader = AssetLoader(e, requireNotNull(provider), EntityManager.get())
                 resources = ResourceLoader(e)
@@ -155,6 +165,7 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
     fun releaseWindow(window: SpatialRenderWindow) {
         if (windows.remove(window)) window.destroy()
         maybeClose()
+        if (!closing) invalidate()
     }
     fun invalidate() {
         if (!foreground || closed || engine==null) return
@@ -278,9 +289,10 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
             lastFrame=0;windows.forEach { it.withdrawFrameRate() }
         }
         if (!pending || frames%30L==0L) diagnostics=SpatialDiagnostics(
-            engineCount=if(engine==null)0 else 1,submittedFrames=frames,skippedFrames=skipped,
+            engineCount=SpatialNativeLifetime.engines,windowCount=windows.count { it.hasSurface },
+            submittedFrames=frames,skippedFrames=skipped,
             frameIntervalP95Ms=percentile(intervals),cpuSubmitP95Ms=percentile(submits),
-            visibleMeshes=windows.sumOf { it.meshCount },cachedAssets=pools.size,
+            visibleMeshes=windows.sumOf { it.meshCount },cachedAssets=pools.size,pendingAssets=loading.size,
             pooledInstances=pools.values.sumOf { it.leases.size },
             quality=if(reducedQuality)"economy" else "standard",error=diagnostics.error,
         )
@@ -299,7 +311,7 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
         resources?.destroy();loader?.destroy();provider?.destroyMaterials();provider?.destroy()
         ambient?.let { engine?.destroyIndirectLight(it) }
         if(light!=0){engine?.destroyEntity(light);EntityManager.get().destroy(light)}
-        engine?.destroy()
+        engine?.let { it.destroy();SpatialNativeLifetime.destroyed() }
         resources=null;loader=null;provider=null;ambient=null;light=0;engine=null
     }
 }
@@ -447,6 +459,7 @@ internal class SpatialRenderWindow(
                 val backProgress = if (owner.effectiveMotion == SpatialMotion.Off) 0f
                     else max(owner.navigationProgress, localBackProgress)
                 Matrix.translateM(mesh.matrix,0,x,y,(depth-pressed*2f-backProgress*48f)*density)
+                if (p.rotationY != 0f) Matrix.rotateM(mesh.matrix, 0, p.rotationY, 0f, 1f, 0f)
                 if(p.tilt){
                     val nod=if(assetName=="avatar"||assetName=="analyst"||assetName=="brand")wave*9f else wave*4f
                     Matrix.rotateM(mesh.matrix,0,-7f+nod,1f,0f,0f)

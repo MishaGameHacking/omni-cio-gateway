@@ -10,6 +10,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
@@ -17,6 +20,8 @@ import org.json.JSONObject
 import java.util.UUID
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spectrum.*
+
+private const val planResourcePath = "/workspace/plans/"
 
 @Composable
 fun PlansWorkspaceScreen(onBack: () -> Unit) {
@@ -51,12 +56,12 @@ fun PlansWorkspaceScreen(onBack: () -> Unit) {
             val identifier = handoff
             handoff = null; leftApplication = false
             refreshPortfolio(); resource.refresh()
-            mutation.perform("/workspace/plans/" + VolumeWorkspaceClient.encode(identifier.orEmpty()) + "/reconcile",
-                JSONObject().put("request_id", UUID.randomUUID().toString()), job = true)
+            mutation.perform(planResourcePath + VolumeWorkspaceClient.encode(identifier.orEmpty()) + "/reconcile",
+                JSONObject().put("request_id", UUID.randomUUID().toString()), job = true, userInitiated = false)
         }
     }
     WorkspaceDetailPage("Действия", "Расчёт, ручной переход и сверка результата", onBack, SpectrumSymbol.Goal) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource); WorkspaceActionState(create); WorkspaceActionState(mutation); WorkspaceActionState(open) }
             item { SpectrumCard(emphasized = true) {
@@ -67,14 +72,17 @@ fun PlansWorkspaceScreen(onBack: () -> Unit) {
                 SpectrumSecondaryButton("Работа аналитика и расход", { navigate(WorkspaceRoute.AnalysisTimeline) }, Modifier.fillMaxWidth())
             } }
             item { PendingJobRecovery { jobId = it } }
+            if (resource.data != null && resource.data.records("items").isEmpty() && !resource.busy) item {
+                WorkspaceEmpty("Планов пока нет", "Подготовьте первый расчёт, чтобы затем открыть инструмент у брокера и сверить фактический результат.", "Подготовить план", { editor = true })
+            }
             linkError?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
             jobId?.let { id -> item { WorkspaceJobPanel(id, { resource.refresh(); refreshPortfolio() }, { jobId = null }) } }
             resource.data?.records("items").orEmpty().forEach { plan -> item(key = plan.text("id")) {
                 PlanCard(plan, enabled = !mutation.busy && !open.busy, onOpen = {
-                    open.perform("/workspace/plans/" + VolumeWorkspaceClient.encode(plan.text("id")) + "/open-broker",
+                    open.perform(planResourcePath + VolumeWorkspaceClient.encode(plan.text("id")) + "/open-broker",
                         JSONObject().put("request_id", UUID.randomUUID().toString()))
                 }, onReconcile = { operationIds ->
-                    mutation.perform("/workspace/plans/" + VolumeWorkspaceClient.encode(plan.text("id")) + "/reconcile",
+                    mutation.perform(planResourcePath + VolumeWorkspaceClient.encode(plan.text("id")) + "/reconcile",
                         JSONObject().put("request_id", UUID.randomUUID().toString()).put("operation_ids", JSONArray(operationIds)), job = true)
                 })
             } }
@@ -101,8 +109,9 @@ private fun PlanEditor(strategyVersion: Int, action: WorkspaceAction, close: () 
             val found = account?.positions.orEmpty().filter { search.isBlank() || it.title.contains(search, true) || it.ticker?.contains(search, true) == true }
             if (position != null) Text("Выбрано: " + position.title, style = MaterialTheme.typography.titleMedium)
             DetailFold("Выбрать из позиций · " + found.size, initiallyOpen = position == null) {
-                found.forEach { item -> SpectrumSecondaryButton((if (positionId == item.id) "Выбрано · " else "") + item.title,
+                found.take(30).forEach { item -> SpectrumSecondaryButton((if (positionId == item.id) "Выбрано · " else "") + item.title,
                     { positionId = item.id }, Modifier.fillMaxWidth(), !action.busy) }
+                if (found.size > 30) Text("Показаны первые 30 позиций. Уточните название или тикер в поиске.")
             }
             WorkspaceChoices("Направление", listOf("Купить", "Продать"), side) { side = it }
             WorkspaceTextInput(quantity, { quantity = it.replace(',', '.').take(30) }, "Количество единиц инструмента", Modifier.fillMaxWidth(),

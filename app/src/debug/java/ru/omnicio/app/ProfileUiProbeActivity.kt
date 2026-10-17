@@ -27,6 +27,7 @@ import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
 import ru.omnicio.app.ui.workspace.*
 import androidx.compose.runtime.CompositionLocalProvider
+import ru.omnicio.app.ui.spectrum.LocalSpectrumTabScrollTag
 
 /** Debug-only UI fixture. No network calls or authentication bypass in preview. */
 class ProfileUiProbeActivity : ComponentActivity() {
@@ -35,7 +36,10 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100") } ?: "profile"
+        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial") +
+            businessProbeRoutes.map { "business-$it" }
+        val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in allowedScreens } ?: "profile"
+        val scenario = intent.getStringExtra("spectrum_scenario")?.takeIf { it in businessProbeScenarios } ?: "ready"
         if (screen == "strategy") getSharedPreferences("strategy_draft_synthetic-ui-test", 0).edit().clear().apply()
         check(runWorkspaceUxChecks() == 24)
         check(runInstrumentLinkRegressions() == 15)
@@ -61,14 +65,17 @@ class ProfileUiProbeActivity : ComponentActivity() {
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 var appearanceOpen by remember { mutableStateOf(false) }
                 var educationOpen by remember { mutableStateOf(false) }
-                val readinessMarker = "probe-screen:$screen;probe-background:$background;probe-foreground:$foreground;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true"
+                val readinessMarker = "probe-screen:$screen;probe-scenario:$scenario;probe-background:$background;probe-foreground:$foreground;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true;${spatialProbeMarker()}"
                 Box(
                     Modifier
                         .fillMaxSize()
                         .semantics { contentDescription = readinessMarker },
                 ) {
-                    CompositionLocalProvider(LocalWorkspaceNavigator provides { if (it == WorkspaceRoute.Appearance) appearanceOpen = true }) {
+                    CompositionLocalProvider(LocalWorkspaceNavigator provides { if (it == WorkspaceRoute.Appearance) appearanceOpen = true },
+                        LocalSpectrumTabScrollTag provides "profile-tabs") {
                     if (appearanceOpen) AppearanceScreen { appearanceOpen = false }
+                    else if (screen == "spatial") SpatialRendererProbe()
+                    else if (screen.startsWith("business-")) BusinessWorkspaceProbe(screen, scenario, onBack = { finish() })
                     else if (screen != "profile") {
                         SpectrumDashboardProbe(screen)
                     } else if (educationOpen) {

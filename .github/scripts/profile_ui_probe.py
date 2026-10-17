@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
-WORKSPACE_BACK = "‹ Назад"
+WORKSPACE_BACK = "Назад"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 INFO_LABEL = "О приложении"
@@ -126,6 +126,7 @@ class ProfileProbe:
                 raise AssertionError("Invalid or incomplete emulator screenshot")
             picture.replace(destination)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
+        return destination
 
     def wait_for(self, read, message):
         deadline = time.monotonic() + 12
@@ -366,6 +367,14 @@ class ProfileProbe:
                 self.find("Денежные средства")
         self.command("shell", "am", "force-stop", PACKAGE)
 
+    def spatial(self):
+        from spatial_ui_probe import exercise_spatial
+        exercise_spatial(self)
+
+    def business(self):
+        from business_ui_probe import exercise_business
+        exercise_business(self)
+
     def workspace(self):
         from profile_launch import launch_profile
         for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
@@ -413,8 +422,9 @@ class ProfileProbe:
                 self.tap("Обновления события (2)", "workspace-content")
                 self.find("Уточнение источника")
             elif screen == "appearance":
-                self.reveal("Движение", "workspace-content")
-                self.tap("Движение", "workspace-content")
+                self.reveal("Без движения", "workspace-content")
+                self.tap("Без движения", "workspace-content")
+                self.find("Объём сохраняется. Объекты сразу принимают конечное состояние без движения.")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
             self.tap_visible(WORKSPACE_BACK)
@@ -438,11 +448,18 @@ class ProfileProbe:
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
         self.tap("Светлая", "workspace-content")
+        self.palette(LIGHT_BACKGROUND)
+        self.tap_visible(WORKSPACE_BACK)
+        self.palette(DARK_BACKGROUND)
+        self.tap(THEME_LABEL)
+        self.tap("Светлая", "workspace-content")
+        self.tap("Применить", "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
         self.tap("Тёмная", "workspace-content")
+        self.tap("Применить", "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
@@ -452,11 +469,13 @@ class ProfileProbe:
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
         self.tap("Светлая", "workspace-content")
+        self.tap("Применить", "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
         self.tap("Как в системе", "workspace-content")
+        self.tap("Применить", "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
@@ -568,6 +587,8 @@ def exercise_checks(device, read_tree) -> None:
         original_scale = "1.0"
     try:
         stages = (
+            ("spatial-renderer", probe.spatial),
+            ("business-22-cases", probe.business),
             ("spectrum-dashboards", probe.dashboards),
             ("workspace-interactions", probe.workspace),
             ("profile-preflight", probe.profile_preflight),

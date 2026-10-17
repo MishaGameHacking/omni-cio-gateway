@@ -105,21 +105,23 @@ fun InsightFeedScreen(
     onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
+    initialCardId: String? = null,
 ) {
     key(accessToken) {
         val client = remember { AnalysisBackendClient() }
         InsightScreen(
             token = accessToken,
             selected = AnalystTab.Home,
-            title = "Уведомления",
-            subtitle = "Важное для вашего портфеля",
-            symbol = SpectrumSymbol.Messages,
-            emptyTitle = "Важных сообщений пока нет",
-            emptyText = "Система сообщит об изменении состава портфеля, риске или завершённом обзоре.",
+            title = "Отчёты Analyst AI",
+            subtitle = "Выводы, подтверждения и срок актуальности",
+            symbol = SpectrumSymbol.Analyst,
+            emptyTitle = "Отчётов пока нет",
+            emptyText = "Здесь появятся сохранённые выводы после анализа данных портфеля.",
             onPortfolioClick = onPortfolioClick,
             onProfileClick = onProfileClick,
             modifier = modifier,
             client = client,
+            initialCardId = initialCardId,
             fetch = { token ->
                 when (val result = client.fetchFeed(token)) {
                     is BackendResult.Success -> BackendResult.Success(result.value.cards)
@@ -170,6 +172,7 @@ private fun InsightScreen(
     modifier: Modifier,
     client: AnalysisBackendClient,
     fetch: (String) -> BackendResult<List<InsightCard>>,
+    initialCardId: String? = null,
 ) {
     var reload by remember { mutableIntStateOf(0) }
     val state by rememberAnalysisData(token, reload, fetch)
@@ -177,6 +180,27 @@ private fun InsightScreen(
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var section by rememberSaveable { mutableIntStateOf(0) }
     var readError by remember { mutableStateOf<String?>(null) }
+    var requestedCardHandled by rememberSaveable(initialCardId) { mutableStateOf(false) }
+    var requestedCardProblem by remember(initialCardId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(initialCardId, state.value, state.loading, state.problem) {
+        val requested = initialCardId ?: return@LaunchedEffect
+        if (requestedCardHandled || state.loading || state.problem != null) return@LaunchedEffect
+        val loaded = state.value ?: return@LaunchedEffect
+        if (requested.isBlank() || loaded.any { it.id.isBlank() } || loaded.map { it.id }.toSet().size != loaded.size) {
+            requestedCardProblem = "Не удалось однозначно проверить ссылку на отчёт. Обновите список."
+            return@LaunchedEffect
+        }
+        // Resolve against the authenticated loaded feed. An incoming identifier
+        // must never create a placeholder card or mark any card as read.
+        val card = loaded.singleOrNull { it.id == requested }
+        if (card == null) {
+            requestedCardProblem = "Этот отчёт отсутствует в загруженной части ленты. Обновите список; более ранние записи могут быть недоступны через этот экран."
+        } else {
+            selectedId = card.id
+            requestedCardHandled = true
+            requestedCardProblem = null
+        }
+    }
     val now = rememberAnalysisClock()
     AnalysisScaffold(
         selected = selected,
@@ -208,6 +232,9 @@ private fun InsightScreen(
                 )
             }
             loadStatus(state) { reload++ }
+            requestedCardProblem?.let {
+                item(key = "requested-card-missing") { StatusCard("Отчёт не открыт", it) }
+            }
             readError?.let {
                 item(key = "read-error") { StatusCard("Отметка не сохранена", it) }
             }

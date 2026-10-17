@@ -14,14 +14,63 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
+import tempfile
 import zipfile
 
 PAGE_BYTES = 16_384
 PT_LOAD = 1
 PT_GNU_RELRO = 0x6474E552
 PF_W = 2
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def trusted_artifact_path(argument: Path, repository_root: Path = REPOSITORY_ROOT) -> Path:
+    """CLI reads only build artifacts in this checkout, with no symlink hops."""
+    root = repository_root.resolve(strict=True)
+    require(".." not in argument.parts, "Parent traversal is not an artifact path")
+    candidate = argument if argument.is_absolute() else root / argument
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as error:
+        raise NativeAlignmentError("Artifact is outside the trusted checkout") from error
+    require(any(candidate.is_relative_to(root / prefix) for prefix in
+                ("app/build", "ci-ui-driver/build", "build")), "Artifact is outside trusted build roots")
+    current = root
+    for part in relative.parts:
+        current = current / part
+        require(not current.is_symlink(), "Artifact path contains a symlink")
+    path = candidate.resolve(strict=True)
+    require(path.is_relative_to(root) and path.is_file(), "Artifact is not a regular checkout file")
+    require(path.suffix.lower() in {".so", ".aar", ".apk"}, "Expected .so, .aar or .apk")
+    require(0 < path.stat().st_size <= 512 * 1024 * 1024, "Artifact exceeds bounded input size")
+    return path
+
+
+def write_report(output: str, repository_root: Path = REPOSITORY_ROOT) -> Path:
+    """The CLI cannot choose an overwrite target. Its report path is fixed."""
+    root = repository_root.resolve(strict=True)
+    folder = root
+    for name in ("app", "build", "reports"):
+        folder = folder / name
+        require(not folder.is_symlink(), "Report directory contains a symlink")
+        folder.mkdir(exist_ok=True)
+        require(folder.resolve(strict=True).is_relative_to(root), "Report directory escapes checkout")
+    destination = folder / "native-alignment.json"
+    require(not destination.is_symlink(), "Report destination is a symlink")
+    require(not destination.exists() or destination.is_file(), "Report destination is not a regular file")
+    # A fixed, verified directory and atomic rename avoid following an existing
+    # destination as a write stream. No CLI-supplied path reaches the output sink.
+    descriptor, temporary = tempfile.mkstemp(prefix=".native-alignment-", suffix=".json", dir=folder)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(output)
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return destination
 
 
 class NativeAlignmentError(ValueError):
@@ -164,11 +213,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifacts", nargs="+", type=Path)
     parser.add_argument("--require-stored", action="store_true")
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--output", action="store_true", help="Write app/build/reports/native-alignment.json in this checkout")
     arguments = parser.parse_args()
     reports = []
     for argument in arguments.artifacts:
-        path = argument.resolve(strict=True)
+        path = trusted_artifact_path(argument)
         if path.suffix.lower() == ".so":
             data = path.read_bytes()
             reports.append({"artifact": path.name, "sha256": hashlib.sha256(data).hexdigest(),
@@ -178,7 +227,7 @@ def main() -> None:
             reports.append(inspect_native_archive(path, require_stored=arguments.require_stored))
     output = json.dumps({"artifacts": reports}, indent=2, sort_keys=True) + "\n"
     if arguments.output:
-        arguments.output.write_text(output, encoding="utf-8")
+        write_report(output)
     print(output, end="")
 
 

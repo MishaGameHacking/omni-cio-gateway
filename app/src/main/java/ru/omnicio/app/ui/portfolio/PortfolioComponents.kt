@@ -4,6 +4,9 @@ import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import ru.omnicio.app.ui.workspace.*
 import androidx.compose.foundation.background
@@ -27,6 +30,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,12 +140,16 @@ internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = nul
     val fontScale = LocalDensity.current.fontScale
     var preview by remember(position.id) { mutableStateOf(false) }
     val showPreview = onPreview ?: { preview = true }
-    Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .2f) else Color.Transparent,
-        shape = RoundedCornerShape(16.dp),
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+    ru.omnicio.app.ui.spatial.SpatialSurface(color = LocalSpectrumPalette.current.card,
+        state = when { pressed -> ru.omnicio.app.ui.spatial.SpatialState.Pressed; selected || focused -> ru.omnicio.app.ui.spatial.SpatialState.Selected; else -> ru.omnicio.app.ui.spatial.SpatialState.Idle },
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-            .combinedClickable(onClick = onClick, onLongClick = showPreview, onLongClickLabel = "Кратко о позиции")
-            .semantics(mergeDescendants = true) {}) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            .combinedClickable(interactionSource = interaction, indication = null, role = Role.Button,
+                onClick = onClick, onLongClick = showPreview, onLongClickLabel = "Кратко о позиции")
+            .semantics(mergeDescendants = true) { this.selected = selected }) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(12.dp)) {
             val stacked = portfolioStackedLayout(maxWidth.value, fontScale)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,

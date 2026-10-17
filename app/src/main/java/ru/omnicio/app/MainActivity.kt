@@ -534,7 +534,11 @@ private fun SignedInAppContent(
 ) {
     var portfolioDestination by remember { mutableStateOf<PortfolioDestination?>(null) }
     var historyDate by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var historyStart by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var historyEnd by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var historyResolution by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
     var libraryId by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var reportId by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
     var chatJson by rememberSaveable(session.user.telegramId) { mutableStateOf(ChatContext().json().toString()) }
     var chatTitle by rememberSaveable(session.user.telegramId) { mutableStateOf("Мой портфель") }
     val json = remember(chatJson) { JSONObject(chatJson) }
@@ -547,7 +551,10 @@ private fun SignedInAppContent(
     val goBack = LocalWorkspaceBack.current
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
-    val navigateWorkspace: (WorkspaceRoute) -> Unit = { route -> onScreenChange(AppScreen.valueOf(route.name)) }
+    val navigateWorkspace: (WorkspaceRoute) -> Unit = { route ->
+        if (route == WorkspaceRoute.Reports) reportId = null
+        onScreenChange(AppScreen.valueOf(route.name))
+    }
     val holder = rememberSaveableStateHolder()
     val motion = LocalSpectrumMotionPreference.current.enabled && android.animation.ValueAnimator.areAnimatorsEnabled()
     val appContext = LocalContext.current
@@ -558,8 +565,13 @@ private fun SignedInAppContent(
         val saved = withContext(Dispatchers.IO) { storage.readJson(session.user.telegramId, "navigation_detail") }
         if (saved != null) {
             saved.optJSONObject("portfolio")?.let { target ->
-                portfolioDestination = PortfolioDestination(target.optInt("section", 1), target.optString("account_id").takeIf { it.isNotBlank() }, target.optString("query", ""))
+                portfolioDestination = PortfolioDestination(target.optInt("section", 1), target.optString("account_id").takeIf { it.isNotBlank() }, target.optString("query", ""),
+                    operationId = target.text("operation_id", "").takeIf(String::isNotBlank),
+                    operationDate = target.text("operation_date", "").takeIf(String::isNotBlank))
                 historyDate = target.optString("date").takeIf { it.isNotBlank() && it != "null" }
+                historyStart = target.text("start", "").takeIf(String::isNotBlank)
+                historyEnd = target.text("end", "").takeIf(String::isNotBlank)
+                historyResolution = target.text("resolution", "").takeIf(String::isNotBlank)
                 lastTarget = target
             }
             saved.optJSONObject("chat")?.let { chatJson = it.toString() }
@@ -574,6 +586,8 @@ private fun SignedInAppContent(
     val toPortfolio: (PortfolioDestination) -> Unit = { target ->
         portfolioDestination = target
         lastTarget = JSONObject().put("section", target.section).put("account_id", target.accountId ?: "").put("query", target.query).put("date", historyDate ?: "")
+            .put("start", historyStart ?: "").put("end", historyEnd ?: "").put("resolution", historyResolution ?: "")
+            .put("operation_id", target.operationId ?: "").put("operation_date", target.operationDate ?: "")
         openPortfolio()
     }
     val evidenceNavigator: (EvidenceTarget) -> Unit = { target ->
@@ -581,8 +595,12 @@ private fun SignedInAppContent(
             "capital" -> onScreenChange(AppScreen.Home)
             "risk" -> onScreenChange(AppScreen.Risk)
             "research" -> { libraryId = target.id; onScreenChange(AppScreen.Library) }
-            "history" -> { historyDate = target.date; toPortfolio(PortfolioDestination(section = 3, accountId = target.accountId)) }
-            "operation", "operations" -> toPortfolio(PortfolioDestination(section = 2, accountId = target.accountId, query = target.id))
+            "history" -> {
+                historyDate = target.date; historyStart = target.start; historyEnd = target.end; historyResolution = target.resolution
+                toPortfolio(PortfolioDestination(section = 3, accountId = target.accountId))
+            }
+            "operation", "operations" -> toPortfolio(PortfolioDestination(section = 1, accountId = target.accountId,
+                operationId = target.id.takeIf(String::isNotBlank), operationDate = target.date))
             else -> toPortfolio(PortfolioDestination(section = 1, accountId = target.accountId, query = target.id))
         }
     }
@@ -594,7 +612,8 @@ private fun SignedInAppContent(
         LocalWorkspaceRefreshKey provides workspace.revision, LocalWorkspaceSnapshot provides workspace.data,
         LocalChatContext provides chatContext, LocalAskAnalyst provides { target ->
             chatJson = target.json().toString(); chatTitle = target.title; onScreenChange(AppScreen.Assistant)
-        }, LocalEvidenceNavigator provides evidenceNavigator) {
+        }, LocalEvidenceNavigator provides evidenceNavigator,
+        LocalOpenAnalysisReport provides { id -> reportId = id; onScreenChange(AppScreen.Reports) }) {
         SessionExpiryObserver(session.accessToken, reauthenticate)
         NotificationDeliveryRuntime()
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -619,11 +638,12 @@ private fun SignedInAppContent(
                                     AppScreen.Portfolio -> PortfolioScreen(state = portfolioState, accessToken = session.accessToken,
                                         refreshing = portfolioRefreshing, refreshError = portfolioError, lastUpdatedMillis = portfolioLastSuccessMillis,
                                         selectedCurrency = portfolioCurrency, onProfileClick = openProfile, onConnect = { onScreenChange(AppScreen.TApi) },
-                                        destination = portfolioDestination, initialHistoryDate = historyDate, onDestinationConsumed = { portfolioDestination = null })
+                                        destination = portfolioDestination, initialHistoryDate = historyDate, initialHistoryStart = historyStart,
+                                        initialHistoryEnd = historyEnd, initialHistoryResolution = historyResolution, onDestinationConsumed = { portfolioDestination = null })
                                     AppScreen.Recommendations -> PrimaryWorkspaceShell(AnalystTab.Actions, openPortfolio, openProfile) { PlansWorkspaceScreen(goBack) }
                                     AppScreen.Risk -> PrimaryWorkspaceShell(AnalystTab.Risk, openPortfolio, openProfile) { RiskWorkspaceScreen(goBack) }
                                     AppScreen.Messages -> NotificationEventsScreen(goBack)
-                                    AppScreen.Reports -> InsightFeedScreen(session.accessToken, openPortfolio, openProfile)
+                                    AppScreen.Reports -> InsightFeedScreen(session.accessToken, openPortfolio, openProfile, initialCardId = reportId)
                                     AppScreen.Profile -> ProfileScreen(user = session.user, tApiConfigured = tApiConfigured, screenshotsBlocked = screenshotsBlocked,
                                         onScreenshotsBlockedChange = onScreenshotsBlockedChange, onPortfolioClick = openPortfolio,
                                         onOpenTApi = { onScreenChange(AppScreen.TApi) }, onOpenEducation = { onScreenChange(AppScreen.Education) }, onLogout = onLogout)

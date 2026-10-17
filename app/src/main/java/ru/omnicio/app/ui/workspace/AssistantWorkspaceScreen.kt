@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.UUID
@@ -36,7 +37,11 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     var initialized by remember(session.userId) { mutableStateOf(false) }
     var estimate by remember { mutableStateOf<JSONObject?>(null) }
     var estimateSignature by remember { mutableStateOf("") }
-    val messages = rememberWorkspaceResource("/workspace/chat/threads/" + threadId + "/messages", threadId.isNotBlank())
+    var cursors by rememberSaveable(session.userId, threadId) { mutableStateOf(listOf("")) }
+    var jobState by remember(jobId) { mutableStateOf("queued") }
+    val cursor = cursors.last()
+    val messages = rememberWorkspaceResource("/workspace/chat/threads/" + threadId + "/messages" +
+        (if (cursor.isBlank()) "" else "?before=" + ru.omnicio.app.data.workspace.VolumeWorkspaceClient.encode(cursor)), threadId.isNotBlank())
     val messageItems = messages.data?.records("items").orEmpty()
     val send = rememberWorkspaceAction { result ->
         jobId = result.optString("job_id").takeIf { it.isNotBlank() }
@@ -46,7 +51,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         threadId = result.text("thread_id", ""); threads.refresh()
     }
     val tiers = listOf("fast", "standard", "premium")
-    val signature = question + "|" + questionContext.json().toString() + "|" + tiers[tier]
+    val signature = threadId + "|" + question + "|" + questionContext.json().toString() + "|" + tiers[tier]
     val startMessage: () -> Unit = {
         send.perform("/workspace/chat/threads/" + threadId + "/messages",
             JSONObject().put("request_id", UUID.randomUUID().toString()).put("text", question.trim())
@@ -69,14 +74,23 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         }
     }
     val listState = rememberLazyListState()
-    LaunchedEffect(messageItems.size) { if (messageItems.isNotEmpty()) listState.animateScrollToItem(messageItems.size) }
+    LaunchedEffect(messageItems.lastOrNull()?.text("id"), cursor) {
+        if (messageItems.isNotEmpty() && cursor.isBlank()) listState.animateScrollToItem(messageItems.size)
+    }
+    LaunchedEffect(cursor) { if (cursor.isNotBlank()) listState.scrollToItem(0) }
     WorkspaceDetailPage("Ассистент", "Объяснения с проверяемыми основаниями", onBack, SpectrumSymbol.Analyst) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { SpectrumCard(emphasized = true) {
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        SpatialIcon("analyst", Modifier.size(64.dp), state = if (busy) SpatialState.Loading else if (send.error != null) SpatialState.Attention else SpatialState.Idle)
+                        SpatialIcon("analyst", Modifier.size(64.dp), state = when {
+                            jobId != null && jobState in setOf("failed", "uncertain", "cancelled") -> SpatialState.Attention
+                            send.error != null || estimateAction.error != null -> SpatialState.Attention
+                            busy -> SpatialState.Loading
+                            messageItems.lastOrNull()?.text("role") == "assistant" -> SpatialState.Success
+                            else -> SpatialState.Idle
+                        })
                         Column(Modifier.weight(1f)) {
                             Text(questionContext.title, style = MaterialTheme.typography.titleLarge)
                             Text("Контекст виден в каждом запросе. Числа и источники проверяются отдельно от объяснения.", style = MaterialTheme.typography.bodySmall)
@@ -92,15 +106,27 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                     }
                 } }
                 item { WorkspaceRequestState(threads); WorkspaceRequestState(messages); WorkspaceActionState(create) }
+                if (messages.data?.optBoolean("has_more") == true) item {
+                    SpectrumSecondaryButton("Более ранние сообщения", {
+                        messages.data?.text("next_before", "")?.takeIf(String::isNotBlank)?.let { cursors = cursors + it }
+                    }, Modifier.fillMaxWidth(), !messages.busy)
+                }
+                if (cursors.size > 1) item { SpectrumCard {
+                    Text("Предыдущая часть диалога · страница " + cursors.size)
+                    SpectrumSecondaryButton("К более новым сообщениям", { cursors = cursors.dropLast(1) }, Modifier.fillMaxWidth(), !messages.busy)
+                    SpectrumSecondaryButton("К последним сообщениям", { cursors = listOf("") }, Modifier.fillMaxWidth(), !messages.busy)
+                } }
                 items(messageItems, key = { it.text("id") }) { message -> AssistantMessage(message, onPortfolio, onActions, onStrategy) }
                 if (messageItems.isEmpty() && !messages.busy) item { WorkspaceEmpty("С чего начнём?", "Спросите о позиции, изменениях капитала или правилах стратегии. Ответ появится после фактического запроса к модели.") }
-                jobId?.let { id -> item { WorkspaceJobPanel(id, onCompleted = { messages.refresh(); threads.refresh(); jobId = null }, onClose = { jobId = null }) } }
+                jobId?.let { id -> item { WorkspaceJobPanel(id, onCompleted = { cursors = listOf(""); messages.refresh(); threads.refresh(); jobId = null },
+                    onClose = { jobId = null }, onStateChanged = { jobState = it }) } }
                 item { WorkspaceActionState(send); WorkspaceActionState(estimateAction) }
                 item { PendingJobRecovery(onThreadRecovered = { threadId = it }) { jobId = it } }
                 estimate?.let { value -> item { SpectrumCard {
                     Text(if (value.optBoolean("available")) "Оценка расхода" else "Модель пока недоступна", style = MaterialTheme.typography.titleMedium)
                     Text(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Точная стоимость не подтверждена")
-                    Text("Оценка ограничивает запрос; окончательный расход зависит от фактического использования.", style = MaterialTheme.typography.bodySmall)
+                    Text("Предварительная оценка по текущему контексту; фактическое использование учитывается сервером.", style = MaterialTheme.typography.bodySmall)
+                    value.text("context_as_of", "").takeIf(String::isNotBlank)?.let { Text("Контекст от " + localMoment(it), style = MaterialTheme.typography.bodySmall) }
                     if (!value.optBoolean("available")) Text("Проверьте готовность сервиса в истории анализов.")
                 } } }
             }
@@ -113,7 +139,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                 val approvedDeep = tier == 2 && estimateSignature == signature && estimate?.optBoolean("available") == true
                 SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 2) "Проверить стоимость" else "Отправить",
                     { if (approvedDeep) startMessage() else estimateAction.perform("/workspace/chat/estimate",
-                        JSONObject().put("text", question.trim()).put("context", questionContext.json()).put("tier", tiers[tier])) },
+                        JSONObject().put("text", question.trim()).put("thread_id", threadId).put("context", questionContext.json()).put("tier", tiers[tier])) },
                     Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)
             }
         }
@@ -167,12 +193,17 @@ fun PendingJobRecovery(onThreadRecovered: (String) -> Unit = {}, onRecovered: (S
     val storage = remember(context) { ru.omnicio.app.data.workspace.JobCheckpointStore(context) }
     var checkpoints by remember(session.userId) { mutableStateOf<List<JSONObject>>(emptyList()) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(session.userId) { checkpoints = withContext(Dispatchers.IO) { storage.list(session.userId) } }
     val recovery = rememberWorkspaceAction { result ->
         val path = selected?.text("path", "").orEmpty()
         val thread = Regex("/workspace/chat/threads/([^/]+)/messages").matchEntire(path)?.groupValues?.getOrNull(1)
-        if (thread != null) onThreadRecovered(thread)
-        result.optString("job_id").takeIf(String::isNotBlank)?.let(onRecovered)
+        result.optString("job_id").takeIf(String::isNotBlank)?.let { jobId -> scope.launch {
+            selected?.let { point -> withContext(Dispatchers.IO) { storage.save(session.userId, point.text("request_id"), path, jobId) } }
+            if (thread != null) onThreadRecovered(thread)
+            onRecovered(jobId)
+            checkpoints = withContext(Dispatchers.IO) { storage.list(session.userId) }
+        } }
     }
     if (checkpoints.isNotEmpty()) SpectrumCard {
         DetailFold("Сохранённые задания · " + checkpoints.size) {

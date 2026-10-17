@@ -67,7 +67,9 @@ def _broker_metric(raw: dict, key: str) -> float | None:
         numeric = float(value)
     except (ValueError, OverflowError):
         return None
-    return numeric if isfinite(numeric) else None
+    # GetAssetFundamentals documents zero as an unavailable observation. It
+    # must not become a real zero in financial reasoning or risk coverage.
+    return numeric if isfinite(numeric) and numeric != 0 else None
 
 
 def broker_company_summary(raw: dict, sector: str) -> dict:
@@ -220,6 +222,13 @@ def _optional_inputs(user, selected):
                 break
             for item in page.get('items', []):
                 key = str(item.get('id') or '') if isinstance(item, dict) else ''
+                if not key:
+                    news_error = SOURCE_FAILURE
+                    # Keep a linked, dated headline inspectable even when the
+                    # provider omits its ID; do not declare complete coverage.
+                    if isinstance(item, dict):
+                        news_data['items'].append(item)
+                    continue
                 if key and key not in seen_news:
                     seen_news.add(key)
                     news_data['items'].append(item)

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import zipfile
 
-from check_native_alignment import NativeAlignmentError, check_elf, inspect_native_archive
+from check_native_alignment import NativeAlignmentError, check_elf, inspect_native_archive, trusted_artifact_path, write_report
 
 
 def elf(*, bits=64, alignment=16384, address=0, relro_size=None, memory_size=16384):
@@ -35,6 +35,63 @@ def elf(*, bits=64, alignment=16384, address=0, relro_size=None, memory_size=163
 
 
 class NativeAlignmentTests(unittest.TestCase):
+    def test_cli_reads_only_regular_files_inside_checkout_build_roots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            build = root / "app/build/outputs/apk"
+            build.mkdir(parents=True)
+            artifact = build / "candidate.so"
+            artifact.write_bytes(elf())
+            self.assertEqual(trusted_artifact_path(Path("app/build/outputs/apk/candidate.so"), root), artifact)
+            outside = Path(directory) / "outside.so"
+            outside.write_bytes(elf())
+            for path in (outside, Path("app/build/outputs/apk/../apk/candidate.so"), root / "source.so"):
+                with self.subTest(path=path), self.assertRaises(NativeAlignmentError):
+                    trusted_artifact_path(path, root)
+
+    def test_cli_rejects_file_and_parent_symlinks_and_output_traversal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            build = root / "app/build"
+            build.mkdir(parents=True)
+            outside = Path(directory) / "outside"
+            outside.mkdir()
+            (outside / "secret.so").write_bytes(elf())
+            link = build / "redirect"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError as error:
+                # Windows can lack symlink creation privilege. Test the same
+                # decision through the real pathlib query without skipping gates.
+                from unittest.mock import patch
+                with patch.object(Path, "is_symlink", return_value=True):
+                    with self.assertRaises(NativeAlignmentError):
+                        trusted_artifact_path(build / "secret.so", root)
+                    with self.assertRaises(NativeAlignmentError):
+                        write_report("{}\n", root)
+                self.assertIsInstance(error, OSError)
+            else:
+                with self.assertRaises(NativeAlignmentError):
+                    trusted_artifact_path(link / "secret.so", root)
+                direct = build / "linked.so"
+                direct.symlink_to(outside / "secret.so")
+                with self.assertRaises(NativeAlignmentError):
+                    trusted_artifact_path(direct, root)
+                (build / "reports").symlink_to(outside, target_is_directory=True)
+                with self.assertRaises(NativeAlignmentError):
+                    write_report("{}\n", root)
+                self.assertFalse((outside / "native-alignment.json").exists())
+
+    def test_cli_report_has_one_fixed_location_and_atomic_regular_overwrite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = write_report('{"first":true}\n', root)
+            second = write_report('{"second":true}\n', root)
+            self.assertEqual(first, root / "app/build/reports/native-alignment.json")
+            self.assertEqual(first, second)
+            self.assertEqual(second.read_text(), '{"second":true}\n')
+            self.assertEqual(list(second.parent.glob(".native-alignment-*")), [])
+
     def test_real_elf_layouts_on_both_classes(self):
         for bits in (32, 64):
             self.assertEqual(check_elf(elf(bits=bits))["bits"], bits)

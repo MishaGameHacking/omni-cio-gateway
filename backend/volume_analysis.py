@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException
 
 try:
     from . import app as backend
-    from .volume_contract import digest
+    from .volume_contract import HTTP_ERRORS, digest
     from .volume_state import encode
 except ImportError:
     import app as backend
-    from volume_contract import digest
+    from volume_contract import HTTP_ERRORS, digest
     from volume_state import encode
 
 router = APIRouter(prefix="/workspace/analysis", tags=["Analysis fact versions"])
@@ -31,7 +31,7 @@ def snapshot_facts(snapshot: dict) -> list[dict]:
     def add(key, value, refs, section, identifier):
         result.append({"id": key, "value": value, "source_ids": refs, "as_of": snapshot["as_of"],
                        "highlight": {"section": section, "id": identifier}})
-    refs = [r["id"] for r in snapshot.get("sources", []) if r.get("method") == "GetPortfolio/GetPositions"]
+    refs = [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"}]
     add("capital:total:" + snapshot["currency"], snapshot["capital"]["total"], refs, "capital", "total")
     for position in snapshot.get("positions", []):
         key = "position:" + digest({"account_id": position["account_id"], "instrument_uid": position["instrument_uid"]})
@@ -40,6 +40,12 @@ def snapshot_facts(snapshot: dict) -> list[dict]:
                   "blocked_quantity": position.get("blocked_quantity")}, position.get("source_ids", []), "portfolio", position["instrument_uid"])
     for row in snapshot.get("risk_breaches", []):
         add("risk:" + row["direction"] + ":" + row["id"], {k: row[k] for k in ("share_percent", "limit_percent", "breached")}, row["source_ids"], "risks", row["id"])
+    for uid, observation in snapshot.get("rating_observations", {}).items():
+        for rating in observation.get("data", {}).get("items", []):
+            key = "rating:" + digest({k: rating[k] for k in ("agency", "scale", "subject_kind", "subject_id")})
+            add(key, {k: rating[k] for k in ("agency", "scale", "subject_kind", "subject_id", "grade", "status", "outlook")},
+                [rating["source"]["id"]], "portfolio", uid)
+            result[-1]["as_of"] = rating["source"]["checked_at"]
     for item in snapshot.get("events", {}).get("items", []):
         add("event:" + item["id"], {key: item.get(key) for key in ("title", "summary", "occurred_at", "instrument_uids", "relationship")}, item.get("source_ids", []), "events", item["id"])
         result[-1]["as_of"] = snapshot.get("section_as_of", {}).get("events", snapshot["as_of"])
@@ -84,7 +90,7 @@ def comparison(user_id: int, current_card: str | None, previous_card: str | None
             "basis": "stored_verified_observations_compared_by_stable_fact_identity", "not_a_model_text_comparison": True}
 
 
-@router.get("/diff")
+@router.get("/diff", responses=HTTP_ERRORS)
 def diff(current_card_id: str, previous_card_id: str | None = None, offset: int = 0, limit: int = 100,
          user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:

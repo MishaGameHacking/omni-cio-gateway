@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.math.MathContext
@@ -46,6 +47,8 @@ internal fun HistoryChart(
     points: List<HistoryPoint>, currency: String, markers: List<HistoryMarker> = emptyList(),
     selectionKey: String = currency, onSelection: (PortfolioPeriod?) -> Unit = {},
     initialSelectedDate: String? = null,
+    initialSelectedInstant: String? = null,
+    sourceResolution: String? = null,
     controls: @Composable () -> Unit = {},
 ) {
     if (LocalWorkspacePreferences.current.value.hideHomeBalance) {
@@ -59,6 +62,7 @@ internal fun HistoryChart(
         controls(); return
     }
     var selectedStart by rememberSaveable(selectionKey.substringBefore(':'), initialSelectedDate) { mutableStateOf(initialSelectedDate) }
+    var selectedObservation by rememberSaveable(selectionKey.substringBefore(':'), initialSelectedInstant) { mutableStateOf(initialSelectedInstant) }
     val anchor = selectedStart?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     val selected = model.bars.indexOfFirst { anchor != null && !anchor.isBefore(it.start) && !anchor.isAfter(it.end) }
     val bar = model.bars.getOrNull(selected)
@@ -66,7 +70,9 @@ internal fun HistoryChart(
     var rangeEnd by rememberSaveable(selectionKey) { mutableStateOf<String?>(null) }
     val selectedRange = if (rangeStart != null && rangeEnd != null) PortfolioPeriod(rangeStart, rangeEnd) else null
     val latest = model.source.coordinates.last().point
-    val choose: (Int) -> Unit = { index -> model.bars.getOrNull(index)?.let { selectedStart = it.start.toString(); rangeStart = null; rangeEnd = null } }
+    val choose: (Int) -> Unit = { index -> model.bars.getOrNull(index)?.let {
+        selectedStart = it.start.toString(); selectedObservation = null; rangeStart = null; rangeEnd = null
+    } }
     val selectionCallback by rememberUpdatedState(onSelection)
     LaunchedEffect(bar?.period, selectedRange) {
         // Scrubbing is entirely local; request interval cash flows after selection settles.
@@ -77,6 +83,17 @@ internal fun HistoryChart(
     Text("${decimalText(latest.value)} ${currencySymbol(currency)}", style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.SemiBold)
     Notice("Последний снимок · ${dateText(latest.date)}")
+    selectedObservation?.let { timestamp ->
+        val exact = model.source.coordinates.firstOrNull { sameHistoryInstant(it.point.date, timestamp) }?.point
+        Text("Точное наблюдение по ссылке", style = MaterialTheme.typography.titleMedium)
+        Text(dateText(timestamp, "dd.MM.yyyy HH:mm:ss"), style = MaterialTheme.typography.bodyMedium)
+        if (exact != null) DataRow("Зафиксированный баланс", "${exact.value.toPlainString()} ${currencySymbol(currency)}")
+        else Notice("Наблюдение с этим точным моментом не найдено в полученной выборке. Другая запись этого дня не подставляется. Возможно, детальная история уже вышла из срока хранения; проверьте источник и диапазон.")
+        if (sourceResolution in setOf("intraday", "hour", "day")) Notice("Частота исходного наблюдения: " + when (sourceResolution) {
+            "intraday" -> "внутри дня"; "hour" -> "часовая"; else -> "дневная"
+        })
+        Notice("Столбик ниже показывает последнее наблюдение своего интервала; оно может отличаться от точной записи по ссылке.")
+    }
     BarTooltip(model, selected, currency)
     BarCanvas(model, selected, currency, choose)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -84,7 +101,7 @@ internal fun HistoryChart(
         Text(model.bars.last().end.format(DateTimeFormatter.ofPattern("dd.MM.yy")), style = MaterialTheme.typography.labelSmall)
     }
     controls()
-    BarNavigation(model, selected, choose) { selectedStart = null; rangeStart = null; rangeEnd = null }
+    BarNavigation(model, selected, choose) { selectedStart = null; selectedObservation = null; rangeStart = null; rangeEnd = null }
     if (model.bars.size > 1) HistoryRangeSelector(model, selectedRange) { rangeStart = it?.start; rangeEnd = it?.end }
     val visiblePoints = if (selectedRange == null) bar?.points ?: model.source.coordinates.map { it.point }
         else model.bars.filter { !it.end.isBefore(LocalDate.parse(rangeStart)) && !it.start.isAfter(LocalDate.parse(rangeEnd)) }.flatMap { it.points }
@@ -105,7 +122,7 @@ internal fun HistoryChart(
             val date = runCatching { java.time.Instant.parse(marker.date).atZone(Moscow).toLocalDate() }.getOrNull()
                 ?: runCatching { LocalDate.parse(marker.date.take(10)) }.getOrNull()
             val index = model.bars.indexOfFirst { date != null && !date.isBefore(it.start) && !date.isAfter(it.end) }
-            TextButton(onClick = { selectedStart = date?.toString(); rangeStart = null; rangeEnd = null }, enabled = index >= 0) {
+            TextButton(onClick = { selectedStart = date?.toString(); selectedObservation = null; rangeStart = null; rangeEnd = null }, enabled = index >= 0) {
                 Text("${dateText(marker.date)} · ${marker.label}${if (index < 0) " · вне графика" else ""}")
             }
         }
@@ -117,8 +134,9 @@ internal fun HistoryChart(
         Notice("Стоимость меняется и при пополнениях или выводах. Её изменение не равно инвестиционной прибыли. Пустой интервал означает отсутствие наблюдений.")
         DataRow("Диапазон шкалы", "${decimalText(model.source.low)} — ${decimalText(model.source.high)} ${currencySymbol(currency)}")
         markers.forEach { Notice("${dateText(it.date)} · ${it.label}") }
-        HistoryValues(model.source.coordinates, currency, selectedStart) { date ->
-            selectedStart = java.time.Instant.parse(date).atZone(Moscow).toLocalDate().toString(); rangeStart = null; rangeEnd = null
+        HistoryValues(model.source.coordinates, currency, selectedStart, selectedObservation) { date ->
+            selectedStart = java.time.Instant.parse(date).atZone(Moscow).toLocalDate().toString()
+            selectedObservation = java.time.Instant.parse(date).toString(); rangeStart = null; rangeEnd = null
         }
     }
 }
@@ -129,9 +147,9 @@ private fun BarTooltip(model: HistoryBars, selected: Int, currency: String) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val width = minOf(maxWidth, 224.dp)
         val x = if (selected < 0) 0.dp else ((maxWidth * ((selected + .5f) / model.bars.size)) - width / 2).coerceIn(0.dp, maxWidth - width)
-        Surface(Modifier.width(width).offset(x = x).semantics {
+        ru.omnicio.app.ui.spatial.SpatialSurface(Modifier.width(width).offset(x = x).semantics {
             contentDescription = bar?.let { "Выбранный интервал: ${it.start} — ${it.end}" } ?: "Выбор интервала"
-        }, shape = RoundedCornerShape(12.dp),
+        }, kind = ru.omnicio.app.ui.spatial.SpatialSurfaceKind.Chip,
             color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(bar?.title() ?: "Нажмите на столбец", style = MaterialTheme.typography.bodySmall)
@@ -237,17 +255,20 @@ private fun HistoryStatistics(points: List<HistoryPoint>, title: String?, curren
 }
 
 @Composable
-private fun HistoryValues(data: List<HistoryCoordinate>, currency: String, selectedDate: String?, onSelect: (String) -> Unit) {
-    var page by remember(currency) { mutableIntStateOf(0) }
-    LaunchedEffect(selectedDate) {
-        val index = data.indexOfFirst { java.time.Instant.parse(it.point.date).atZone(Moscow).toLocalDate().toString() == selectedDate }
+private fun HistoryValues(data: List<HistoryCoordinate>, currency: String, selectedDate: String?, selectedInstant: String?, onSelect: (String) -> Unit) {
+    var page by rememberSaveable(currency) { mutableIntStateOf(0) }
+    LaunchedEffect(selectedDate, selectedInstant) {
+        val index = if (selectedInstant != null) data.indexOfFirst { sameHistoryInstant(it.point.date, selectedInstant) }
+        else data.indexOfFirst { java.time.Instant.parse(it.point.date).atZone(Moscow).toLocalDate().toString() == selectedDate }
         if (index >= 0) page = index / 10
     }
     val window = historyWindow(data.size, page)
     for (index in window.first until window.end) {
         val point = data[index].point
-        TextButton(onClick = { onSelect(point.date) }, modifier = Modifier.fillMaxWidth()) {
-            Text("${dateText(point.date)} · ${decimalText(point.value)} ${currencySymbol(currency)}")
+        val selected = selectedInstant?.let { sameHistoryInstant(point.date, it) } == true
+        TextButton(onClick = { onSelect(point.date) }, modifier = Modifier.fillMaxWidth().testTag("history-observation-$index")
+            .semantics { this.selected = selected }) {
+            Text("${if (selected) "Выбрано · " else ""}${dateText(point.date, "dd.MM.yyyy HH:mm:ss")} · ${point.value.toPlainString()} ${currencySymbol(currency)}")
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -255,4 +276,8 @@ private fun HistoryValues(data: List<HistoryCoordinate>, currency: String, selec
         TextButton(onClick = { page = window.page + 1 }, enabled = window.page + 1 < window.pages, modifier = Modifier.weight(1f)) { Text("Следующие") }
     }
 }
+
+internal fun sameHistoryInstant(first: String, second: String): Boolean = runCatching {
+    java.time.Instant.parse(first) == java.time.Instant.parse(second)
+}.getOrDefault(false)
 

@@ -32,9 +32,12 @@ internal fun categoryTitle(category: String): String = when (category) {
 
 @Composable
 internal fun AccountOperations(token: String, account: PortfolioAccount,
-    onPosition: ((PositionSelection) -> Unit)? = null, onHistory: ((String) -> Unit)? = null) {
-    var start by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
-    var end by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
+    onPosition: ((PositionSelection) -> Unit)? = null, onHistory: ((String) -> Unit)? = null,
+    initialOperationId: String? = null, initialOperationDate: String? = null) {
+    val targetDay = initialOperationDate?.let { raw -> runCatching { java.time.Instant.parse(raw).atZone(Moscow).toLocalDate().toString() }.getOrNull()
+        ?: runCatching { java.time.LocalDate.parse(raw.take(10)).toString() }.getOrNull() }
+    var start by rememberSaveable(account.id, initialOperationId, initialOperationDate) { mutableStateOf(targetDay) }
+    var end by rememberSaveable(account.id, initialOperationId, initialOperationDate) { mutableStateOf(targetDay) }
     var category by rememberSaveable(account.id) { mutableIntStateOf(0) }
     val period = PortfolioPeriod(start, end)
     val request = rememberAccountData(token, account.id, "operations", period.parameters())
@@ -42,7 +45,9 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
     var next by remember(token, account.id, period) { mutableStateOf<String?>(null) }
     var loadedOlder by remember(token, account.id, period) { mutableStateOf(false) }
     var pageError by remember(token, account.id, period) { mutableStateOf<String?>(null) }
-    var chosen by remember { mutableStateOf<JSONObject?>(null) }
+    var chosenId by rememberSaveable(account.id, initialOperationId, initialOperationDate) { mutableStateOf(initialOperationId) }
+    val chosen = items.singleOrNull { it.optString("id") == chosenId }
+    val searching = chosenId != null && chosen == null
     LaunchedEffect(request.json) {
         request.json?.let { data ->
             val first = data.objects("items")
@@ -50,10 +55,20 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
             if (!loadedOlder) next = data.optString("nextCursor").takeIf { data.optBoolean("hasNext") && it.isNotBlank() }
         }
     }
-    var filterOpen by remember { mutableStateOf(false) }
+    var filterOpen by rememberSaveable { mutableStateOf(false) }
     val key = OperationCategories[category].first
     val visible = items.filter { key == "all" || it.optString("category") == key ||
         (key == "income" && it.optString("category") in setOf("dividends", "coupons")) }
+    val appendPage: (JSONObject, String) -> Unit = { data, cursor ->
+        items = (items + data.objects("items")).distinctBy { it.optString("id") }.sortedByDescending { it.optString("date") }
+        loadedOlder = true
+        val after = data.optString("nextCursor")
+        next = after.takeIf { data.optBoolean("hasNext") && it.isNotBlank() && it != cursor }
+        if (data.optBoolean("hasNext") && next == null) pageError = "Брокер не вернул следующий курсор. История загружена не полностью."
+    }
+    if (searching && next != null && items.size < 10_000 && pageError == null) {
+        OperationPageRequest(token, account.id, period, next!!, appendPage) { pageError = it }
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(key = "range") {
             PeriodControls(period) { start = it.start; end = it.end }
@@ -70,7 +85,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
                 previousDay = day
             }
             item(key = "operation:${operation.optString("id")}") {
-                SpectrumCard(onClick = { chosen = operation }) {
+                SpectrumCard(onClick = { chosenId = operation.optString("id") }) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text(operation.optString("title").ifBlank { categoryTitle(operation.optString("category")) }, fontWeight = FontWeight.Medium)
@@ -83,24 +98,11 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
             }
         }
         if (visible.isEmpty() && request.json != null && next == null) item { Notice("Операций за выбранный период и категорию нет.") }
-        if (next != null && items.size < 10_000 && pageError == null) {
+        if (!searching && next != null && items.size < 10_000 && pageError == null) {
             val cursor = next!!
             item(key = "load:$cursor") {
                 Notice("Загружаем следующие операции…")
-                LaunchedEffect(cursor) {
-                    val response = withContext(Dispatchers.IO) { PortfolioDataClient().details(token, account.id, "operations", period.parameters() + ("cursor" to cursor)) }
-                    when (response) {
-                        is BackendResult.Failure -> pageError = response.message
-                        is BackendResult.Success -> {
-                            val data = response.value
-                            items = (items + data.objects("items")).distinctBy { it.optString("id") }.sortedByDescending { it.optString("date") }
-                            loadedOlder = true
-                            val after = data.optString("nextCursor")
-                            next = after.takeIf { data.optBoolean("hasNext") && it.isNotBlank() && it != cursor }
-                            if (data.optBoolean("hasNext") && next == null) pageError = "Брокер не вернул следующий курсор. История загружена не полностью."
-                        }
-                    }
-                }
+                OperationPageRequest(token, account.id, period, cursor, appendPage) { pageError = it }
             }
         }
         if (pageError != null) item {
@@ -113,8 +115,37 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
         text = { Column(Modifier.verticalScroll(rememberScrollState())) { OperationCategories.forEachIndexed { index, entry ->
             TextButton(onClick = { category = index; filterOpen = false }) { Text(entry.second) }
         } } }, confirmButton = { TextButton(onClick = { filterOpen = false }) { Text("Закрыть") } })
-    chosen?.let { operation ->
-        AlertDialog(onDismissRequest = { chosen = null }, title = { Text(operation.optString("title")) },
+    if (searching) AlertDialog(onDismissRequest = { chosenId = null }, title = { Text("Операция по ссылке") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Счёт: ${account.name}")
+            Text("Точный идентификатор: $chosenId")
+            if (request.loading || next != null && pageError == null && items.size < 10_000) {
+                ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(description = "Находим точную операцию")
+                Text("Проверяем страницы истории этого счёта…")
+            } else Text(pageError ?: request.error ?: "Операция не найдена в полученной выборке. Другая операция с похожим названием не подставляется.")
+        } }, confirmButton = { TextButton(onClick = { chosenId = null }) { Text("К истории счёта") } })
+    chosen?.let { operation -> OperationDetailDialog(operation, account, onPosition, onHistory) { chosenId = null } }
+}
+
+@Composable
+private fun OperationPageRequest(token: String, accountId: String, period: PortfolioPeriod, cursor: String,
+    onPage: (JSONObject, String) -> Unit, onError: (String) -> Unit) {
+    val receive by rememberUpdatedState(onPage)
+    val failure by rememberUpdatedState(onError)
+    LaunchedEffect(token, accountId, period, cursor) {
+        when (val response = withContext(Dispatchers.IO) {
+            PortfolioDataClient().details(token, accountId, "operations", period.parameters() + ("cursor" to cursor))
+        }) {
+            is BackendResult.Success -> receive(response.value, cursor)
+            is BackendResult.Failure -> failure(response.message)
+        }
+    }
+}
+
+@Composable
+private fun OperationDetailDialog(operation: JSONObject, account: PortfolioAccount,
+    onPosition: ((PositionSelection) -> Unit)?, onHistory: ((String) -> Unit)?, close: () -> Unit) {
+        AlertDialog(onDismissRequest = close, title = { Text(operation.optString("title")) },
             text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 DataRow("Дата, Москва", dateText(operation.nullableText("date")))
                 DataRow("Сумма", operation.money("payment").moneyText(true))
@@ -127,12 +158,12 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
                 val uid = operation.nullableText("instrumentUid")
                 val linked = account.positions.singleOrNull { it.id == uid }
                 if (linked != null && onPosition != null) TextButton(onClick = {
-                    chosen = null; onPosition(PositionSelection(account.id, linked.id))
+                    close(); onPosition(PositionSelection(account.id, linked.id))
                 }) { Text("Открыть текущую позицию ${linked.ticker ?: linked.title}") }
                 else if (uid != null) Notice("Бумага не найдена среди текущих позиций этого счёта. Историческая операция сохраняется независимо от наличия позиции.")
                 val destination = LocalPortfolioDestination.current
-                TextButton(onClick = { chosen = null; destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("Открыть счёт операции") }
-                operation.nullableText("date")?.let { date -> if (onHistory != null) TextButton(onClick = { chosen = null; onHistory(date) }) { Text("Эта дата в динамике счёта") } }
+                TextButton(onClick = { close(); destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("Открыть счёт операции") }
+                operation.nullableText("date")?.let { date -> if (onHistory != null) TextButton(onClick = { close(); onHistory(date) }) { Text("Эта дата в динамике счёта") } }
                 DetailFold("Технические сведения") {
                     DataRow("Тип API", operation.optString("type"))
                     DataRow("Статус API", operation.optString("state"))
@@ -140,8 +171,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
                 }
                 Notice(operation.nullableText("description") ?: "")
                 Notice("Связь операции с датой и позицией не означает, что именно она объясняет всё изменение баланса.")
-            } }, confirmButton = { TextButton(onClick = { chosen = null }) { Text("Закрыть") } })
-    }
+            } }, confirmButton = { TextButton(onClick = close) { Text("Закрыть") } })
 }
 
 @Composable

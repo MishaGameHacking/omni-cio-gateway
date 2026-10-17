@@ -201,7 +201,7 @@ fun DiscoveryWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit) {
     standaloneUid?.let { uid -> DiscoveryDossier(uid) { standaloneUid = null } }
     selectedResearch?.let { card ->
         Dialog(onDismissRequest = { selectedResearch = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(Modifier.fillMaxSize()) {
+            SpectrumBackground(Modifier.fillMaxSize()) {
                 LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                     item { TextButton(onClick = { selectedResearch = null }) { Text("Закрыть разбор") } }
                     item {
@@ -210,6 +210,7 @@ fun DiscoveryWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit) {
                         else {
                             Text("Показана одна выбранная карточка. Общие выводы относятся к исходному анализу.")
                             payload.remove("risk")
+                            payload.remove("examined_positions"); payload.remove("total_positions"); payload.remove("issuer_coverage_count")
                             ResearchSnapshot(payload, session.token)
                             SaveResearchButton(payload, "Разбор ${card.optString("name")}", card.optionalText("instrument_uid"), observedAt = payload.optionalText("as_of"))
                         }

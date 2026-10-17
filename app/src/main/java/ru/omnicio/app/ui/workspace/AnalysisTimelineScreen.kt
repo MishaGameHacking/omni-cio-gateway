@@ -6,6 +6,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import java.util.UUID
@@ -17,12 +20,15 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace")
     val refresh = LocalWorkspaceRefresh.current
     val navigate = LocalWorkspaceNavigator.current
+    val openReport = LocalOpenAnalysisReport.current
     val ai = resource.data?.optJSONObject("sections")?.optJSONObject("ai")?.optJSONObject("data")
     var selectedJob by rememberSaveable { mutableStateOf<String?>(null) }
-    var confirm by remember { mutableStateOf(false) }
+    var selectedCheck by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirm by rememberSaveable { mutableStateOf(false) }
     val run = rememberWorkspaceAction { selectedJob = it.optString("job_id").takeIf(String::isNotBlank); resource.refresh() }
     WorkspaceDetailPage("Работа аналитика", "Время, причины, основания и расход", onBack, SpectrumSymbol.Analyst) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+            .semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource) }
             item { PendingJobRecovery { selectedJob = it } }
@@ -36,7 +42,7 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
                     Text("Причина: " + analysisReason(last.text("reason", "")))
                     Text("Состояние: " + analysisState(last.text("state", "")))
                     Text("Глубина: " + analysisTier(last.text("tier", "")), style = MaterialTheme.typography.bodySmall)
-                    SpectrumSecondaryButton("Открыть сохранённые выводы", { navigate(WorkspaceRoute.Messages) }, Modifier.fillMaxWidth())
+                    SpectrumSecondaryButton("Открыть сохранённые выводы", { openReport(last.text("card_id", "").takeIf(String::isNotBlank)) }, Modifier.fillMaxWidth())
                 }
                 SpectrumSecondaryButton("Обновить сведения", { resource.refresh(); refresh() }, Modifier.fillMaxWidth())
             } }
@@ -46,9 +52,28 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
                 if (next.isEmpty()) Text("Расписание ещё не получено.")
                 next.forEach { slot ->
                     Text((if (slot.text("slot") == "morning") "Утро: " else "Вечер: ") + localMoment(slot.text("at", "")))
-                    Text(when (slot.text("gate")) { "market_closed" -> "Биржа закрыта: платный анализ не запускается"; "awaiting_calendar" -> "Ожидаем подтверждённый календарь"; else -> "Проверка по настроенным правилам" }, style = MaterialTheme.typography.bodySmall)
+                    Text(when (slot.text("gate")) {
+                        "market_closed" -> "Биржа закрыта: платный анализ не запускается"
+                        "awaiting_calendar" -> "Ожидаем подтверждённый календарь"
+                        "rule_disabled" -> "Плановые уведомления отключены в настройках"
+                        else -> "Проверка по настроенным правилам"
+                    }, style = MaterialTheme.typography.bodySmall)
                 }
                 SpectrumSecondaryButton("Изменить время и уведомления", { navigate(WorkspaceRoute.NotificationSettings) }, Modifier.fillMaxWidth())
+            } }
+            item { AnalysisSlotChecks(ai?.records("slot_checks").orEmpty()) { selectedCheck = it } }
+            item { MonitorCheckCard(ai?.optJSONObject("last_check")) }
+            item { AnalysisCheckHistory(ai?.records("check_history").orEmpty()) { selectedCheck = it } }
+            ai?.records("monitor_jobs").orEmpty().forEach { monitor -> item(key = "monitor:" + monitor.text("job_id")) {
+                DetailFold("Проверка · " + localMoment(monitor.text("created_at", ""))) {
+                    Text(jobStateTitle(monitor.text("state")))
+                    monitor.optJSONObject("result")?.let { result ->
+                        Text("Решение: " + monitorState(result.text("state", "")))
+                        Text("Причина: " + analysisReason(result.text("reason", "")))
+                        if (!result.isNull("card_id")) SpectrumSecondaryButton("Открыть вывод проверки", { openReport(result.text("card_id")) }, Modifier.fillMaxWidth())
+                    }
+                    monitor.text("error_code", "").takeIf(String::isNotBlank)?.let { Text("Проверка завершилась с ошибкой: " + readinessLabel(it)) }
+                }
             } }
             item { AnalysisComparison(ai?.optJSONObject("analysis_diff")) }
             item { SpectrumCard {
@@ -74,6 +99,7 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
             } } }
         }
     }
+    selectedCheck?.let { identifier -> AnalysisCheckDialog(identifier) { selectedCheck = null } }
     if (confirm) WorkspaceDialog("Запустить анализ?", { confirm = false }) {
         Text("Сервер обновит доступные факты и проверит лимиты. Обращение к модели возможно только в пределах действующих лимитов расхода. Вы сможете увидеть стадию и запросить отмену.")
         SpectrumPrimaryButton("Запустить по действующим лимитам", {
@@ -141,9 +167,44 @@ private fun AnalysisFactsDialog(currentId: String, previousId: String, close: ()
     }
 }
 
+@Composable
+internal fun MonitorCheckCard(check: JSONObject?) {
+    val navigate = LocalWorkspaceNavigator.current
+    val evidence = LocalEvidenceNavigator.current
+    val openReport = LocalOpenAnalysisReport.current
+    SpectrumCard {
+        Text("Последняя проверка условий", style = MaterialTheme.typography.titleMedium)
+        if (check == null) Text("Сохранённого решения планировщика пока нет.") else {
+            Text(localMoment(check.text("checked_at", "")))
+            Text(monitorState(check.text("state", "")))
+            Text("Причина: " + analysisReason(check.text("reason", "")))
+            if (check.text("state") == "skipped") Text("Проверка условий не создала новый вывод модели.")
+            if (check.text("state") == "fallback") Text("Сохранено объяснение алгоритмов; ответ модели не подтверждён.")
+            check.text("error_code", "").takeIf(String::isNotBlank)?.let { Text("Доступность модели: " + readinessLabel(it)) }
+            if (!check.isNull("card_id")) SpectrumSecondaryButton("Проверить основания вывода", { openReport(check.text("card_id")) }, Modifier.fillMaxWidth())
+            if (check.text("reason") == "risk_event") SpectrumSecondaryButton("Открыть событие риска", { evidence(EvidenceTarget("risk", "")) }, Modifier.fillMaxWidth())
+            if (check.text("reason") == "market_regime_changed") SpectrumSecondaryButton("Открыть связанные события", { navigate(WorkspaceRoute.Discovery) }, Modifier.fillMaxWidth())
+            AnalysisTriggerEvidence(check.optJSONObject("trigger"))
+        }
+    }
+}
+
+internal fun monitorState(raw: String): String = when (raw) {
+    "skipped" -> "Новый анализ не требовался"; "analysis_required" -> "Условия потребовали нового анализа"
+    "ready" -> "Вывод сохранён"; "fallback" -> "Сохранено объяснение алгоритмов"; else -> analysisState(raw)
+}
+
 internal fun analysisReason(raw: String): String = when (raw) {
     "manual" -> "Ваш запрос"; "morning", "scheduled_morning" -> "Утренняя проверка"; "evening", "scheduled_evening" -> "Вечерняя проверка"
-    "material_change" -> "Изменились значимые данные"; "risk_limit" -> "Изменение риска"; "initial", "first_connection" -> "Первое подключение"
+    "morning_brief" -> "Утренняя проверка"; "evening_brief" -> "Вечерняя проверка"
+    "material_change", "portfolio_changed" -> "Изменился состав портфеля"; "cash_changed" -> "Изменились свободные средства"
+    "risk_limit", "risk_event" -> "Изменилось подтверждённое основание риска"; "initial", "first_connection" -> "Первое подключение"
+    "market_regime_changed" -> "Изменились связанные рыночные события"; "data_recovery" -> "Восстановились доступные данные"
+    "no_material_change" -> "Значимых изменений не найдено"; "budget_exhausted" -> "Достигнут лимит расхода"
+    "cooldown" -> "С прошлого анализа прошло недостаточно времени"
+    "market_closed" -> "В подтверждённом календаре нет торговой сессии"
+    "awaiting_calendar" -> "Торговый календарь ещё не подтверждён"
+    "rule_disabled" -> "Плановые уведомления отключены в настройках"
     "user_requested" -> "Запрос пользователя"; else -> if (raw.isBlank()) "Причина не получена" else "Серверная проверка · " + raw.take(80)
 }
 private fun analysisTier(raw: String): String = when (raw) { "fast" -> "Краткая"; "standard" -> "Обычная"; "premium" -> "Углублённая"; else -> "Не получена" }

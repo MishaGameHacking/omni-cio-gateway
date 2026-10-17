@@ -3,8 +3,11 @@ package ru.omnicio.app.ui.portfolio
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.PortfolioPosition
@@ -15,9 +18,9 @@ import ru.omnicio.app.ui.spectrum.*
 @Composable
 internal fun PortfolioQuickPreview(position: PortfolioPosition, accountName: String?, close: () -> Unit, open: () -> Unit) {
     ModalBottomSheet(onDismissRequest = close) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(56.dp), selected = true, motionAllowed = true)
+                SpectrumAssetMark(position.instrumentType, position.title, Modifier.size(56.dp))
                 Column { Text(position.title, style = MaterialTheme.typography.titleLarge); accountName?.let { Text(it) } }
             }
             DataRow("Стоимость", position.currentValue.moneyText())
@@ -34,9 +37,9 @@ internal fun PortfolioQuickPreview(position: PortfolioPosition, accountName: Str
 internal fun WatchPositionAction(position: PortfolioPosition) {
     val personal = rememberPersonalWorkspace()
     val watch = personal.watches.firstOrNull { it.uid == position.id }
-    var editor by remember(position.id) { mutableStateOf(false) }
-    var reason by remember(position.id, watch?.reason) { mutableStateOf(watch?.reason ?: "") }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    var editor by rememberSaveable(position.id) { mutableStateOf(false) }
+    var reason by rememberSaveable(position.id, watch?.reason) { mutableStateOf(watch?.reason ?: "") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = { editor = true }, enabled = personal.loaded && !personal.busy) {
             Text(if (watch == null) "Наблюдать" else "Причина наблюдения")
         }

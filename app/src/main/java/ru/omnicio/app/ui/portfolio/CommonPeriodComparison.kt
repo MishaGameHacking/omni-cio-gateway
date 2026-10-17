@@ -39,7 +39,11 @@ internal fun CommonPeriodComparison(rows: List<PortfolioRow>) {
     val period = PortfolioPeriod(start, end)
     SpectrumCard {
         Text("Сравнить один рыночный период", style = MaterialTheme.typography.titleLarge)
-        PeriodControls(period) { start = it.start; end = it.end }
+        PeriodControls(period) { selected ->
+            val today = LocalDate.now(Moscow)
+            start = selected.start ?: today.minusYears(5).toString()
+            end = selected.end ?: today.toString()
+        }
         if (instruments.size < 2) { Text("Для рыночного сравнения нужны разные инструменты. Позиции одной бумаги на разных счетах имеют одну котировку."); return@SpectrumCard }
         if (start == null || end == null) { Text("Выберите точные границы периода. Котировки за неизвестный интервал не сравниваются."); return@SpectrumCard }
         val requests = instruments.map { row -> key(row.position.id) {

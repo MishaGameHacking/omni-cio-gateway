@@ -7,6 +7,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import ru.omnicio.app.ui.spatial.SpatialWindow
@@ -17,7 +20,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumCard
 fun WorkspaceDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         SpatialWindow(Modifier.widthIn(max = 600.dp).fillMaxWidth().heightIn(max = 680.dp)) {
-            SpectrumCard(Modifier.verticalScroll(rememberScrollState()), emphasized = true) {
+            SpectrumCard(Modifier.verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), emphasized = true) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 content()
             }

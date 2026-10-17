@@ -31,7 +31,7 @@ fun SpectrumChoiceChip(
     val pressed by interaction.collectIsPressedAsState()
     val focused by interaction.collectIsFocusedAsState()
     val state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; selected || focused -> SpatialState.Selected; else -> SpatialState.Idle }
-    val click = rememberSpatialHapticClick(onClick)
+    val click = rememberSpatialHapticClick(SpatialHaptic.Selection, onClick)
     SpatialSurface(modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).selectable(selected,
         interactionSource = interaction, indication = null, enabled = enabled, role = Role.Checkbox, onClick = click),
         SpatialSurfaceKind.Chip, color = if (selected) LocalSpectrumPalette.current.cardStrong else LocalSpectrumPalette.current.card,

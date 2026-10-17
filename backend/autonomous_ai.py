@@ -567,6 +567,8 @@ def _context(
 ) -> dict[str, Any]:
     as_of = now.astimezone(UTC).isoformat()
     source_id = f"tinvest:portfolio:{int(now.timestamp())}"
+    credit_sources = list({ref["id"]: {**ref, "as_of": ref["observed_at"], "fresh": datetime.fromisoformat(ref["expires_at"]) > now}
+                           for item in snapshot.get("_volume_verified_credit", []) for ref in item.get("sources", [])}.values())
     return {
         "portfolio": snapshot,
         "profile": dict(profile),
@@ -581,7 +583,7 @@ def _context(
                 "as_of": as_of,
                 "fresh": True,
             }
-        ],
+        ] + credit_sources,
     }
 
 
@@ -602,11 +604,11 @@ def _fallback_report(
     evidence_fact = f"Стоимость портфеля: {total:,.2f} {currency}".replace(",", " ")
 
     if decision.reason is AnalysisReason.RISK_EVENT:
-        title = "Обнаружен риск в структуре портфеля"
+        title = "Нужна проверка риска портфеля"
         summary = risk_message or "Алгоритмический контроль обнаружил превышение порога риска."
         severity = "critical"
         actions = (
-            "Проверьте долю крупнейшей позиции и допустимый риск в профиле.",
+            "Проверьте подтверждённые лимиты и первичные источники риска в досье.",
             "Не принимайте решение только по одному предупреждению — проверьте актуальность данных.",
         )
     elif decision.reason is AnalysisReason.PORTFOLIO_CHANGED:
@@ -632,16 +634,17 @@ def _fallback_report(
 
     if top is not None:
         evidence_fact += f"; крупнейший класс — {top[0]} ({top[1]:.1f}%)"
+    evidence = [AnalysisEvidence(fact=evidence_fact, source_id=f"tinvest:portfolio:{int(now.timestamp())}", as_of=as_of)]
+    for item in snapshot.get("_volume_verified_credit", []):
+        for row in item.get("data", {}).get("items", []):
+            evidence.append(AnalysisEvidence(fact=f"{row['agency']}: {row['grade']}; объект {row['subject_kind']}; прогноз {row['outlook']}",
+                source_id=row["source"]["id"], as_of=row["source"]["checked_at"]))
     return AnalysisReport(
         severity=severity,
         headline=title,
         summary=summary,
         actions=actions,
-        evidence=(AnalysisEvidence(
-            fact=evidence_fact,
-            source_id=f"tinvest:portfolio:{int(now.timestamp())}",
-            as_of=as_of,
-        ),),
+        evidence=tuple(evidence),
         uncertainties=(
             "Расширенный модельный комментарий недоступен; показан детерминированный вывод алгоритмов.",
         ),
@@ -804,14 +807,16 @@ def _run_connected_analysis(
         from portfolio_details import record_history
     record_history(user_id, snapshot.get("accounts", []), current_time.astimezone(UTC).isoformat())
     try:
-        from .volume_monitor import ingest, record_check
+        from .volume_monitor import ingest, record_check, trigger_evidence
     except ImportError:
-        from volume_monitor import ingest, record_check
+        from volume_monitor import ingest, record_check, trigger_evidence
     workspace_observation = ingest(user, snapshot, current_time)
     snapshot = {**snapshot, "_volume_risk_fingerprint": workspace_observation["risk_fingerprint"],
                 "_volume_news_fingerprint": workspace_observation["news_fingerprint"],
                 "_volume_critical_risk": workspace_observation["critical_risk"],
-                "_volume_risk_message": workspace_observation["risk_message"]}
+                "_volume_risk_message": workspace_observation["risk_message"],
+                "_volume_verified_credit": workspace_observation["credit_evidence"],
+                "_volume_credit_coverage": workspace_observation["credit_coverage"]}
     digest, material_digest = _save_snapshot(user_id, snapshot)
     profile = get_profile(user_id)
     signals, risk_message = _signals(
@@ -826,11 +831,12 @@ def _run_connected_analysis(
     )
     budget = _budget(user_id, current_time)
     decision = decide_analysis(signals, budget)
+    trigger = trigger_evidence(user, snapshot, previous, previous_row, workspace_observation, signals, current_time)
     if decision.tier is AnalysisTier.NONE and signals.critical_risk:
         # Safety messages do not depend on a paid-model quota.
         decision = AnalysisDecision(AnalysisTier.NONE, AnalysisReason.RISK_EVENT, True, 0)
     elif decision.tier is AnalysisTier.NONE:
-        record_check(user_id, current_time, status="skipped", reason=decision.reason.value, tier=decision.tier.value)
+        record_check(user_id, current_time, status="skipped", reason=decision.reason.value, tier=decision.tier.value, trigger=trigger)
         return {
             "state": "skipped",
             "reason": decision.reason.value,
@@ -838,7 +844,7 @@ def _run_connected_analysis(
             "card_id": None,
         }
 
-    record_check(user_id, current_time, status="analysis_required", reason=decision.reason.value, tier=decision.tier.value)
+    record_check(user_id, current_time, status="analysis_required", reason=decision.reason.value, tier=decision.tier.value, trigger=trigger)
     context = _context(snapshot, profile, current_time, risk_message)
     source_id = context["sources"][0]["id"]
     report: AnalysisReport | None = None
@@ -898,7 +904,7 @@ def _run_connected_analysis(
             source_id=source_id,
         )
     record_check(user_id, current_time, status=state, reason=decision.reason.value, tier=decision.tier.value,
-                 card_id=card_id, run_id=run_id, error_code=error_code)
+                 card_id=card_id, run_id=run_id, error_code=error_code, trigger=trigger)
     return {
         "state": state,
         "reason": decision.reason.value,
@@ -1013,7 +1019,7 @@ def read_profile(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str,
     return get_profile(int(user["id"]))
 
 
-@router.put("/profile")
+@router.put("/profile", responses={409: {"description": "Confirmed strategy rules require a fresh preview and explicit confirmation."}})
 def update_profile(
     payload: ProfileUpdate,
     user: sqlite3.Row = Depends(backend.current_user),

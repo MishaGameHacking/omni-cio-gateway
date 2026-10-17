@@ -8,10 +8,11 @@ import org.json.JSONObject
 class JobCheckpointStore(context: Context) {
     private val storage = EncryptedWorkspaceStore(context)
     fun save(userId: String, requestId: String, path: String, jobId: String? = null): Boolean = synchronized(lock) {
-        val existing = list(userId).filterNot { it.optString("request_id") == requestId }
+        val prior = list(userId)
+        val existing = prior.filterNot { it.optString("request_id") == requestId }
         if (existing.size >= 40) return false
         val checkpoint = JSONObject().put("request_id", requestId).put("path", path)
-            .put("job_id", jobId ?: JSONObject.NULL).put("created_at", java.time.Instant.now().toString())
+            .put("job_id", jobId ?: JSONObject.NULL).put("created_at", prior.firstOrNull { it.optString("request_id") == requestId }?.optString("created_at") ?: java.time.Instant.now().toString())
         storage.saveJson(userId, "job_checkpoints", JSONObject().put("items", JSONArray(listOf(checkpoint) + existing)))
     }
     fun list(userId: String): List<JSONObject> = synchronized(lock) {

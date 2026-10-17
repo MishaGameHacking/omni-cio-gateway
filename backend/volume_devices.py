@@ -14,6 +14,11 @@ except ImportError:
     import app as backend
     from ai_budget import transaction
 
+try:
+    from .volume_contract import HTTP_ERRORS
+except ImportError:
+    from volume_contract import HTTP_ERRORS
+
 router = APIRouter(prefix="/workspace/devices", tags=["Session devices"])
 
 
@@ -33,7 +38,7 @@ def _iso(value: int | None) -> str | None:
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
 
 
-@router.get("")
+@router.get("", responses=HTTP_ERRORS)
 def devices(user: Any = Depends(backend.current_user), authorization: str | None = Header(default=None)) -> dict:
     current_hash = backend.hash_token((authorization or "")[7:].strip())
     with transaction(backend.connect) as db:
@@ -45,7 +50,7 @@ def devices(user: Any = Depends(backend.current_user), authorization: str | None
                        "current": row["device_id"] == current} for row in rows], "current_device_id": current}
 
 
-@router.delete("/{identifier}")
+@router.delete("/{identifier}", responses=HTTP_ERRORS)
 def revoke(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
     with transaction(backend.connect) as db:
         # Idempotent acknowledgement never reveals another user's device.

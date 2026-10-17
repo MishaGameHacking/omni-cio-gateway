@@ -448,7 +448,10 @@ def summarize_operations(items: list[dict]) -> list[dict]:
             for (group, currency), amount in sorted(totals.items())]
 
 
-def load_analytics(user: Any, account_id: str, start: date | None, end: date | None, currency: str) -> dict:
+def load_analytics(user: Any, account_id: str, start: date | None, end: date | None, currency: str,
+                   history_resolution: str | None = None) -> dict:
+    if history_resolution not in {None, "intraday", "hour", "day"}:
+        raise HTTPException(422, "invalid_history_resolution")
     with BrokerReader(user) as reader:
         account = reader.account(account_id)
         begin, finish = period_bounds(start, end, account)
@@ -471,6 +474,7 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
         resolution = "intraday"
     elif span <= timedelta(days=32):
         resolution = "hour"
+    resolution = history_resolution or resolution
     with closing(backend.connect()) as db:
         ensure_history(db)
         rows = db.execute("""SELECT observed_at,value FROM portfolio_value_history
@@ -479,16 +483,17 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
             (int(user["id"]), account_id, currency, resolution, begin, finish)).fetchall()
     return {"summary": summarize_operations(items), "complete": complete, "operationCount": len(items),
             "history": [{"date": row["observed_at"], "value": row["value"]} for row in rows[:2000]], "historyTruncated": len(rows) > 2000,
-            "currency": currency, "historySource": "Analyst AI: сохранённые снимки T‑Invest",
+            "currency": currency, "historyResolution": resolution, "historySource": "Analyst AI: сохранённые снимки T‑Invest",
             "totalIncome": None, "asOf": iso_now(),
             "note": "История стоимости начинается с фактического сбора данных. Денежные потоки не равны инвестиционной прибыли. Суммы операций показаны в исходных валютах."}
 
 
 @router.get("/tinvest/accounts/{account_id}/analytics", responses=READ_ERRORS)
 def analytics(account_id: str, start: date | None = None, end: date | None = None,
-              currency: str = Query("RUB", pattern="^(RUB|USD|EUR)$"), user: Any = Depends(backend.current_user)) -> dict:
-    return cached(("analytics", *identity(user), account_id, start, end, currency), 60,
-                  lambda: load_analytics(user, account_id, start, end, currency))
+              currency: str = Query("RUB", pattern="^(RUB|USD|EUR)$"), user: Any = Depends(backend.current_user),
+              history_resolution: str | None = None) -> dict:
+    return cached(("analytics", *identity(user), account_id, start, end, currency, history_resolution), 60,
+                  lambda: load_analytics(user, account_id, start, end, currency, history_resolution))
 
 
 def payment_rows(raw: dict, position: dict, kind: str, now: datetime) -> list[dict]:

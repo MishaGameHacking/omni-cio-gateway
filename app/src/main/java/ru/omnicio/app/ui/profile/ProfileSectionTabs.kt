@@ -88,7 +88,7 @@ internal fun ProfileSectionTabs(selected: Int, onSelect: (Int) -> Unit) {
                 val interaction = remember { MutableInteractionSource() }
                 val focused by interaction.collectIsFocusedAsState()
                 val pressed by interaction.collectIsPressedAsState()
-                val select = rememberSpatialHapticClick { onSelect(index) }
+                val select = rememberSpatialHapticClick(SpatialHaptic.Selection) { onSelect(index) }
                 SpatialSurface(
                     modifier = Modifier
                         .width(widths[index])

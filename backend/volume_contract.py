@@ -19,6 +19,18 @@ SCHEMA_VERSION = 1
 ZERO = Decimal(0)
 MAX_VALUE = Decimal('1e24')
 FINANCIAL_CONTEXT = Context(prec=80, Emin=-100, Emax=100)
+HTTP_ERRORS = {
+    400: {"description": "Invalid request parameters."},
+    401: {"description": "An active authenticated session is required."},
+    403: {"description": "This user or connection is not permitted to access the resource."},
+    404: {"description": "The requested resource does not exist for this user."},
+    409: {"description": "The observed data, version, request identity, or operation state changed."},
+    422: {"description": "The request or resource identifier fails domain validation."},
+    429: {"description": "A configured request or budget limit prevents this operation."},
+    502: {"description": "A read-only source returned invalid or conflicting data."},
+    503: {"description": "The verified source, model configuration, or service is unavailable."},
+    504: {"description": "A source did not respond within its allowed time."},
+}
 
 
 def financial_context(function):

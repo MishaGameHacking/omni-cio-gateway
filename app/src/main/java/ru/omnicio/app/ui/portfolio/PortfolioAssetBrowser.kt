@@ -63,10 +63,10 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedKeys by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    var comparing by remember { mutableStateOf(false) }
-    var saveFilter by remember { mutableStateOf(false) }
-    var filterTitle by remember { mutableStateOf("") }
-    var batchReason by remember { mutableStateOf<String?>(null) }
+    var comparing by rememberSaveable { mutableStateOf(false) }
+    var saveFilter by rememberSaveable { mutableStateOf(false) }
+    var filterTitle by rememberSaveable { mutableStateOf("") }
+    var batchReason by rememberSaveable { mutableStateOf<String?>(null) }
     val allCurrent = snapshot.accounts.flatMap { account -> account.positions.map { PortfolioRow(account, it) } }
     val chosen = allCurrent.filter { portfolioRowKey(it) in selectedKeys }
     val open: (String, PortfolioPosition) -> Unit = { id, position ->
@@ -85,7 +85,7 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
             .filter { !onlyWatched || it.position.id in personal.watches.map { watch -> watch.uid } }
             .filter { exposureId == null || exposureMembership(exposureAxis, it.position.id).any { entry -> entry.optString("id") == exposureId } }
     }
-    var frozenOrder by remember(query, kind, sector, order, accountId, onlyWatched, exposureId) { mutableStateOf<List<String>?>(null) }
+    var frozenOrder by rememberSaveable(query, kind, sector, order, accountId, onlyWatched, exposureId) { mutableStateOf<List<String>?>(null) }
     val lookup = candidates.associateBy(::portfolioRowKey)
     val candidateKeys = candidates.map(::portfolioRowKey)
     val stableKeys = frozenOrder?.filter { it in lookup }?.let { it + candidateKeys.filterNot(it::contains) } ?: candidateKeys
@@ -171,7 +171,7 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
                 }
             }
             cashRows(cash, snapshot, showCash, { showCash = !showCash }, open, selectedKeys.toSet())
-            if (group == 1) item { Notice("Названия получены от брокера. Проверенные группы связанных эмитентов ещё не подключены.") }
+            if (group == 1) item { Notice("Здесь объединены одинаковые названия из данных брокера. Для проверенных отношений выберите «Проверенные эмитенты» или «Проверенные группы».") }
             if (order in 1..2 && rows.any { it.position.currentValue?.currency != snapshot.totalValue.currency }) item {
                 Notice("Сначала — оценки в ${snapshot.totalValue.currency}. Несопоставимые валюты и неизвестные значения расположены ниже.")
             }

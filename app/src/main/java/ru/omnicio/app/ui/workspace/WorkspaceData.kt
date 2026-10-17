@@ -18,12 +18,17 @@ import java.util.UUID
 import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
 import ru.omnicio.app.data.workspace.VolumeReply
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
+import ru.omnicio.app.ui.spatial.SpatialHaptic
+import ru.omnicio.app.ui.spatial.rememberSpatialHapticFeedback
 
 val LocalReauthenticate = staticCompositionLocalOf<() -> Unit> { {} }
+val LocalWorkspaceTransport = staticCompositionLocalOf<ru.omnicio.app.data.workspace.WorkspaceTransport> { VolumeWorkspaceClient() }
 val LocalPortfolioRefresh = staticCompositionLocalOf<() -> Unit> { {} }
 val LocalPortfolioSnapshot = staticCompositionLocalOf<ru.omnicio.app.data.portfolio.PortfolioSnapshot?> { null }
-data class EvidenceTarget(val section: String, val id: String, val date: String? = null, val accountId: String? = null)
+data class EvidenceTarget(val section: String, val id: String, val date: String? = null, val accountId: String? = null,
+    val start: String? = null, val end: String? = null, val resolution: String? = null)
 val LocalEvidenceNavigator = staticCompositionLocalOf<(EvidenceTarget) -> Unit> { {} }
+val LocalOpenAnalysisReport = staticCompositionLocalOf<(String?) -> Unit> { {} }
 data class ChatContext(val mode: String = "portfolio", val instrumentUid: String? = null, val title: String = "Мой портфель",
     val accountId: String? = null, val start: String? = null, val end: String? = null) {
     fun json(): JSONObject = JSONObject().put("mode", mode).put("instrument_uid", instrumentUid ?: JSONObject.NULL)
@@ -38,7 +43,7 @@ data class WorkspaceResource(val data: JSONObject?, val busy: Boolean, val error
 fun rememberWorkspaceResource(path: String, enabled: Boolean = true): WorkspaceResource {
     val session = LocalWorkspaceSession.current
     val reauthenticate = LocalReauthenticate.current
-    val client = remember { VolumeWorkspaceClient() }
+    val client = LocalWorkspaceTransport.current
     var data by remember(session.userId, session.token, path) { mutableStateOf<JSONObject?>(null) }
     var busy by remember(session.userId, path) { mutableStateOf(false) }
     var error by remember(session.userId, path) { mutableStateOf<String?>(null) }
@@ -74,9 +79,10 @@ class WorkspaceAction(
     val busy: Boolean,
     val error: String?,
     val ambiguous: Boolean,
-    private val execute: (String, JSONObject?, String, Boolean) -> Unit,
+    private val execute: (String, JSONObject?, String, Boolean, Boolean) -> Unit,
 ) {
-    fun perform(path: String, body: JSONObject? = null, method: String = "POST", job: Boolean = false) = execute(path, body, method, job)
+    fun perform(path: String, body: JSONObject? = null, method: String = "POST", job: Boolean = false,
+        userInitiated: Boolean = true) = execute(path, body, method, job, userInitiated)
 }
 
 /** A paid request ID is persisted BEFORE dispatch; a timeout can only recover that request. */
@@ -84,16 +90,17 @@ class WorkspaceAction(
 fun rememberWorkspaceAction(onSuccess: (JSONObject) -> Unit): WorkspaceAction {
     val session = LocalWorkspaceSession.current
     val context = LocalContext.current
-    val client = remember { VolumeWorkspaceClient() }
+    val client = LocalWorkspaceTransport.current
     val checkpoints = remember(context) { ru.omnicio.app.data.workspace.JobCheckpointStore(context) }
     val scope = rememberCoroutineScope()
     val callback by rememberUpdatedState(onSuccess)
+    val feedback = rememberSpatialHapticFeedback()
     val reauthenticate = LocalReauthenticate.current
     var busy by remember(session.userId) { mutableStateOf(false) }
     var error by remember(session.userId) { mutableStateOf<String?>(null) }
     var ambiguous by remember(session.userId) { mutableStateOf(false) }
     val invalidate = LocalWorkspaceInvalidate.current
-    return WorkspaceAction(busy, error, ambiguous) { path, body, method, tracked ->
+    return WorkspaceAction(busy, error, ambiguous) { path, body, method, tracked, userInitiated ->
         if (!busy && session.token.isNotBlank()) {
             busy = true; error = null; ambiguous = false
             scope.launch {
@@ -104,10 +111,18 @@ fun rememberWorkspaceAction(onSuccess: (JSONObject) -> Unit): WorkspaceAction {
                     val persisted = checkpoint == null || withContext(Dispatchers.IO) {
                         checkpoints.save(session.userId, checkpoint, path)
                     }
-                    if (!persisted) { error = "Не удалось сохранить задание на устройстве. Запрос не отправлен."; return@launch }
+                    if (!persisted) {
+                        error = "Не удалось сохранить задание на устройстве. Запрос не отправлен."
+                        if (userInitiated) feedback(SpatialHaptic.Rejected)
+                        return@launch
+                    }
                     val reply = withContext(Dispatchers.IO) { client.request(session.token, path, method, requestBody) }
                     if (reply.signedOut) reauthenticate()
                     error = reply.error; ambiguous = reply.ambiguous
+                    if (userInitiated && method != "GET") {
+                        if (reply.data != null) feedback(SpatialHaptic.Confirmed)
+                        else if (reply.error != null) feedback(SpatialHaptic.Rejected)
+                    }
                     reply.data?.let { result ->
                         if (checkpoint != null) withContext(Dispatchers.IO) {
                             checkpoints.save(session.userId, checkpoint, path, result.optString("job_id").takeIf(String::isNotBlank))

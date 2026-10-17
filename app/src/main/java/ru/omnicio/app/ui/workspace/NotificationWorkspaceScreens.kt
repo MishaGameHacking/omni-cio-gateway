@@ -11,6 +11,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
@@ -56,7 +59,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
         if (!save.busy && !simulate.busy) { draft = JSONObject(config?.toString() ?: "{}").put(key, value).toString(); applied = null; preview = null }
     }
     WorkspaceDetailPage("Уведомления", "Ваше время, условия и подтверждение применения", onBack, SpectrumSymbol.Notifications) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource) }
             config?.let { settings ->
                 item { SpectrumCard {
@@ -124,7 +127,7 @@ fun NotificationEventsScreen(onBack: () -> Unit) {
     val navigate = LocalWorkspaceNavigator.current
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     WorkspaceDetailPage("События", "Содержание и подтверждённые состояния доставки", onBack, SpectrumSymbol.Notifications) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource) }
             item { SpectrumSecondaryButton("Настроить события", { navigate(WorkspaceRoute.NotificationSettings) }, Modifier.fillMaxWidth()) }
             if (resource.data?.records("items")?.isEmpty() == true) item { WorkspaceEmpty("Новых событий пока нет", "Здесь сохраняются обзоры и подтверждённые изменения портфеля по вашим правилам.") }
@@ -143,7 +146,7 @@ fun NotificationEventsScreen(onBack: () -> Unit) {
 fun NotificationEventOverlay(id: String, onClose: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/notifications/events")
     val event = resource.data?.records("items")?.firstOrNull { it.text("id") == id }
-    val navigate = LocalWorkspaceNavigator.current
+    val openReport = LocalOpenAnalysisReport.current
     val read = rememberWorkspaceAction { onClose() }
     WorkspaceDialog(event?.text("title", "Событие") ?: "Событие", onClose) {
         WorkspaceRequestState(resource)
@@ -154,7 +157,7 @@ fun NotificationEventOverlay(id: String, onClose: () -> Unit) {
             if (event.text("state") != "read") SpectrumPrimaryButton("Отметить прочитанным", {
                 read.perform("/workspace/notifications/" + VolumeWorkspaceClient.encode(id) + "/ack", JSONObject().put("state", "read").put("claim_id", JSONObject.NULL))
             }, Modifier.fillMaxWidth(), !read.busy)
-            if (!event.isNull("source_card_id")) SpectrumSecondaryButton("Открыть выводы аналитика", { onClose(); navigate(WorkspaceRoute.Reports) }, Modifier.fillMaxWidth())
+            if (!event.isNull("source_card_id")) SpectrumSecondaryButton("Открыть выводы аналитика", { onClose(); openReport(event.text("source_card_id")) }, Modifier.fillMaxWidth())
             WorkspaceActionState(read)
         } else if (!resource.busy) Text("Это событие недоступно в текущем аккаунте или уже вышло из доступного периода.")
         SpectrumSecondaryButton("Вернуться к работе", onClose, Modifier.fillMaxWidth())

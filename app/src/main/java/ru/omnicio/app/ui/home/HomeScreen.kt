@@ -103,7 +103,7 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
             LazyColumn(Modifier.fillMaxSize(), state = listState,
                 contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 stickyHeader(key = "compact-capital") {
-                    if (snapshot != null && (collapsed || listState.firstVisibleItemIndex > 1)) Surface(color = MaterialTheme.colorScheme.surface) {
+                    if (snapshot != null && (collapsed || listState.firstVisibleItemIndex > 1)) ru.omnicio.app.ui.spatial.SpatialSurface(color = MaterialTheme.colorScheme.surface) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = onCurrencyClick, modifier = Modifier.weight(1f)) { Text(snapshot.totalValue.moneyText(), style = MaterialTheme.typography.titleMedium) }
                             TextButton(onClick = { collapsed = !collapsed }) { Text(if (collapsed) "Развернуть" else "Свернуть") }

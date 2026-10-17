@@ -17,6 +17,24 @@ import struct
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEST = ROOT / "app/src/main/assets/spectrum3d"
 VERSION = 1
+COORDINATE_SCALE = 1_000_000
+
+
+def canonical_float32(value):
+    """Pin authored floats before either binary encoding or JSON bounds.
+
+    Windows and Linux libm may differ by a few double-precision ULPs. Retaining
+    those doubles in accessor min/max made byte-identical geometry non-repeatable.
+    A one-microunit grid is below a display pixel even at a 4096px artboard and
+    keeps quantized unit normals within 2e-6 of their original length. Both the
+    buffer and its bounds use the same final IEEE754 float32, including +0 only.
+    """
+    if not math.isfinite(value):
+        raise ValueError("Non-finite authored mesh coordinate")
+    quantized = round(value * COORDINATE_SCALE) / COORDINATE_SCALE
+    if quantized == 0:
+        return 0.0
+    return struct.unpack('<f', struct.pack('<f', quantized))[0]
 
 
 class Mesh:
@@ -246,6 +264,8 @@ def icon(name, detail=True):
 def encode(mesh,name):
     data=bytearray();views=[];accessors=[]
     def pack(values,format_,kind,components):
+        if format_ == 'f':
+            values = [tuple(canonical_float32(value) for value in point) for point in values]
         while len(data)%4:data.append(0)
         start=len(data)
         flat=[x for v in values for x in v] if components>1 else values

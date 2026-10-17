@@ -13,7 +13,7 @@ try:
     from . import app as backend, portfolio_details as details, research_store
     from .credit_evidence import Rating, Source, credit_assessment, EvidenceError
     from .investment_links import instrument_link
-    from .volume_contract import (SCHEMA_VERSION, date_range, decimal, digest,
+    from .volume_contract import (HTTP_ERRORS, SCHEMA_VERSION, date_range, decimal, digest,
         error_code, money, now_iso, require_id, safe_section, section, source,
         text_number, timestamp, reviewed_source, financial_context)
 except ImportError:
@@ -22,7 +22,7 @@ except ImportError:
     import research_store
     from credit_evidence import Rating, Source, credit_assessment, EvidenceError
     from investment_links import instrument_link
-    from volume_contract import (SCHEMA_VERSION, date_range, decimal, digest,
+    from volume_contract import (HTTP_ERRORS, SCHEMA_VERSION, date_range, decimal, digest,
         error_code, money, now_iso, require_id, safe_section, section, source,
         text_number, timestamp, reviewed_source, financial_context)
 
@@ -154,6 +154,8 @@ def load_candles(user: Any, uid: str, start: date | None, end: date | None, inte
             'to': finish.isoformat(), 'interval': enum, 'limit': limit,
             'candleSourceType': 'CANDLE_SOURCE_EXCHANGE'})
     observed = now_iso()
+    if not isinstance(raw.get('candles'), list):
+        raise HTTPException(502, 'candles_invalid_response')
     quote_currencies = {str(row.get('priceCurrency')).upper() for row in raw.get('candles', []) if isinstance(row, dict) and row.get('priceCurrency')}
     if len(quote_currencies) > 1:
         raise HTTPException(502, 'candles_currency_changed_in_range')
@@ -174,7 +176,7 @@ def load_candles(user: Any, uid: str, start: date | None, end: date | None, inte
             'price_basis': 'exchange_quote_not_portfolio_valuation'}
 
 
-@router.get('/instruments/{uid}/candles')
+@router.get('/instruments/{uid}/candles', responses=HTTP_ERRORS)
 def candles(uid: str, start: date | None = None, end: date | None = None,
             interval: str = Query('day', max_length=30), user: Any = Depends(backend.current_user)) -> dict:
     require_id(uid)
@@ -208,6 +210,9 @@ def instrument_events(user: Any, uid: str, meta: dict, begin: datetime, finish: 
             for raw_event in rows:
                 if not isinstance(raw_event, dict):
                     continue
+                if event_kind == 'report' and raw_event.get('instrumentId') not in {None, uid}:
+                    errors.append('report_instrument_identity_mismatch')
+                    continue
                 when = raw_event.get('reportDate') if event_kind == 'report' else raw_event.get('couponDate') if event_kind == 'coupon' else raw_event.get('paymentDate') or raw_event.get('recordDate')
                 try:
                     at = timestamp(when)
@@ -228,47 +233,29 @@ def instrument_events(user: Any, uid: str, meta: dict, begin: datetime, finish: 
                 items.append({'id': identifier, 'kind': event_kind, 'title': title, 'date': at.isoformat(),
                     'occurred_at': at.isoformat(), 'status': status, 'per_unit': amount,
                     'instrument_uids': [uid], 'source_ids': [ref['id']], 'relationship': 'broker_link'})
+                if event_kind == 'report':
+                    items[-1].update(period_year=raw_event.get('periodYear'), period_num=raw_event.get('periodNum'),
+                        period_type=raw_event.get('periodType'), record_created_at=raw_event.get('createdAt'),
+                        publication_confirmed=False)
     return section({'items': sorted(items, key=lambda item: item['date']), 'errors': errors},
                    state='partial' if errors else 'available', reason=errors[0] if errors else None,
                    as_of=now_iso(), sources=refs)
 
 
 def _news_uids(raw: dict) -> list[str]:
-    values = raw.get('instrumentId', [])
-    if not isinstance(values, list):
-        return []
-    return sorted({row['instrument']['instrumentUid'] for row in values
-        if isinstance(row, dict) and isinstance(row.get('instrument'), dict)
-        and isinstance(row['instrument'].get('instrumentUid'), str)})
+    try:
+        from .volume_news import instrument_uids
+    except ImportError:
+        from volume_news import instrument_uids
+    return instrument_uids(raw)
 
 
 def deduplicate_news(rows: list[dict], *, uid: str | None, ref: dict) -> list[dict]:
-    groups, seen = {}, set()
-    for raw in rows:
-        if not isinstance(raw, dict):
-            continue
-        identifier, title = str(raw.get('id', '')), str(raw.get('title', '')).strip()
-        uids = _news_uids(raw)
-        if not identifier or not title or identifier in seen or (uid and uid not in uids):
-            continue
-        try:
-            published = timestamp(raw.get('ts'))
-            if published > timestamp(ref['observed_at']):
-                continue
-        except ValueError:
-            continue
-        seen.add(identifier)
-        normalized = re.sub(r'\W+', ' ', title.casefold()).strip()
-        key = digest([normalized, published.date().isoformat(), uids])
-        origin = {'provider': str(raw.get('source') or 'T-Invest')[:160],
-                  'source_id': ref['id'], 'broker_news_id': identifier}
-        if key not in groups:
-            groups[key] = {'id': key, 'title': title[:500], 'published_at': published.isoformat(),
-                'sources': [], 'source_ids': [ref['id']], 'instrument_uids': uids,
-                'relationship': 'broker_link', 'deduplication': 'same_id_or_normalized_headline',
-                'summary': str(raw.get('summary') or '')[:1500]}
-        groups[key]['sources'].append(origin)
-    return sorted(groups.values(), key=lambda item: item['published_at'], reverse=True)
+    try:
+        from .volume_news import group_news
+    except ImportError:
+        from volume_news import group_news
+    return group_news(rows, uid=uid, ref=ref)[0]
 
 
 def load_news(user: Any, uid: str | None = None) -> dict:
@@ -291,10 +278,16 @@ def load_news(user: Any, uid: str | None = None) -> dict:
             cursors.add(cursor)
     observed = now_iso()
     ref = source('News', 'market-news', observed, url=DOCS + 'instruments-service-news', ttl=300)
-    items = deduplicate_news(rows, uid=uid, ref=ref)
-    return section({'items': items, 'complete': complete, 'provider_history_hours': 24},
+    try:
+        from .volume_news import group_news
+    except ImportError:
+        from volume_news import group_news
+    items, errors = group_news(rows, uid=uid, ref=ref)
+    complete = complete and not errors
+    refs = list({r['id']: r for r in [ref] + [proof for item in items for proof in item['evidence_sources']]}.values())
+    return section({'items': items, 'complete': complete, 'provider_history_hours': 24, 'errors': errors},
                    state='available' if complete else 'partial',
-                   reason=None if complete else 'news_page_limit_or_cursor_failure', as_of=observed, sources=[ref])
+                   reason=None if complete else errors[0] if errors else 'news_page_limit_or_cursor_failure', as_of=observed, sources=refs)
 
 
 def rating_section(uid: str, meta: dict) -> dict:
@@ -350,10 +343,15 @@ def metric_section(user: Any, uid: str, meta: dict) -> dict:
         value = raw.get(key)
         # Broker JSON double fields are converted via their decimal spelling.
         value = decimal(str(value)) if type(value) in (int, float, str) else None
+        missing = 'broker_zero_means_unavailable' if value == 0 else 'not_supplied' if value is None else None
+        if missing:
+            value = None
         items.append({'id': key, 'label': label, 'value': text_number(value), 'unit': unit,
                       'currency': raw.get('currency') if unit == 'currency' else None,
-                      'period': raw.get('fiscalPeriodEndDate'), 'source_ids': [ref['id']]})
+                      'period': raw.get('fiscalPeriodEndDate'), 'source_ids': [ref['id']], 'missing_reason': missing})
     return section({'items': items, 'conflicts': [], 'basis': 'broker_metrics_not_audited_statement'},
+                   state='partial' if any(item['missing_reason'] for item in items) else 'available',
+                   reason='some_fundamentals_unavailable' if any(item['missing_reason'] for item in items) else None,
                    as_of=observed, sources=[ref])
 
 
@@ -494,7 +492,7 @@ def portfolio_metadata(user: Any, positions: list[dict], stored: dict, progress,
             progress('collecting_metadata', checkpoint, completed=len(stored), total=total)
 
 
-@router.get('/instruments/{uid}/dossier')
+@router.get('/instruments/{uid}/dossier', responses=HTTP_ERRORS)
 def dossier(uid: str, user: Any = Depends(backend.current_user)) -> dict:
     require_id(uid)
     revision = research_store.revision(backend.connect)
@@ -518,6 +516,6 @@ def load_calendar(user: Any) -> dict:
             'source': ref, 'basis': 'broker_sections_not_guaranteed_instrument_availability'}
 
 
-@router.get('/markets/calendar')
+@router.get('/markets/calendar', responses=HTTP_ERRORS)
 def calendar(user: Any = Depends(backend.current_user)) -> dict:
     return details.cached(('workspace-calendar', *details.identity(user)), 900, lambda: load_calendar(user))

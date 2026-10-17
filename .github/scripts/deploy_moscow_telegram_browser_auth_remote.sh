@@ -179,6 +179,15 @@ complete_routes = [
 ]
 if len(start_routes) != 1 or len(complete_routes) != 1:
     raise SystemExit("Telegram browser routes are not registered exactly once")
+workspace_paths = (
+    "/workspace", "/workspace/strategy", "/workspace/risks", "/workspace/chat/threads",
+    "/workspace/notifications/preferences", "/workspace/devices", "/workspace/analysis/checks/{identifier}",
+)
+for path in workspace_paths:
+    matches = [route for route in module.app.router.routes
+               if getattr(route, "path", None) == path and "GET" in (getattr(route, "methods", None) or set())]
+    if len(matches) != 1:
+        raise SystemExit(f"Workspace route is not registered exactly once: {path}")
 response = module.telegram_browser_start()
 body = response.body.decode("utf-8")
 required = (

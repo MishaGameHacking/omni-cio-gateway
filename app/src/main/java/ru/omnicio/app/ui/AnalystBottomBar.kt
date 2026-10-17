@@ -60,7 +60,7 @@ private fun DockDestination(tab: AnalystTab, active: Boolean, modifier: Modifier
     val pressed by interaction.collectIsPressedAsState()
     val focused by interaction.collectIsFocusedAsState()
     val state = when { pressed -> SpatialState.Pressed; active || focused -> SpatialState.Selected; else -> SpatialState.Idle }
-    val action = rememberSpatialHapticClick(click)
+    val action = rememberSpatialHapticClick(SpatialHaptic.Selection, click)
     val palette = LocalSpectrumPalette.current
     SpatialSurface(modifier.heightIn(min = 64.dp).selectable(active,
         interactionSource = interaction, indication = null, role = Role.Tab, onClick = action),

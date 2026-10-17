@@ -81,6 +81,7 @@ fun rememberWorkspaceRequest(path: String = "/workspace", parameters: Map<String
     var loading by remember(token, path) { mutableStateOf(false) }
     var error by remember(token, path) { mutableStateOf<String?>(null) }
     var attempt by remember(token, path) { mutableIntStateOf(0) }
+    var generation by remember(token, path) { mutableIntStateOf(0) }
     val client = remember { WorkspaceClient() }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, _ -> active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == true }
@@ -88,14 +89,16 @@ fun rememberWorkspaceRequest(path: String = "/workspace", parameters: Map<String
         onDispose { lifecycle?.removeObserver(observer) }
     }
     LaunchedEffect(token, path, parameters, attempt, active, refreshKey) {
-        if (!active || token.isBlank()) return@LaunchedEffect
+        val requestId = ++generation
+        if (!active || token.isBlank()) { loading = false; return@LaunchedEffect }
         loading = true; error = null
         try {
-            when (val result = withContext(Dispatchers.IO) { client.read(token, path, parameters) }) {
+            val result = withContext(Dispatchers.IO) { client.read(token, path, parameters) }
+            if (requestId == generation) when (result) {
                 is BackendResult.Success -> { json = result.value; displayed = parameters.toMap() }
                 is BackendResult.Failure -> error = result.message
             }
-        } finally { loading = false }
+        } finally { if (requestId == generation) loading = false }
     }
     return WorkspaceRequest(json, loading, error, json != null && displayed != parameters, displayed) { attempt++ }
 }

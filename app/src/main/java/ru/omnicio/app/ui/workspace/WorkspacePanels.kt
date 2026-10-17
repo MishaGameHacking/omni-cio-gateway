@@ -40,7 +40,7 @@ fun WorkspaceTextInput(value: String, onChange: (String) -> Unit, label: String,
 @Composable
 fun WorkspaceRequestState(resource: WorkspaceResource) {
     if (resource.busy && resource.data == null) SpectrumCard {
-        SpatialIcon("loading", Modifier.size(44.dp), state = SpatialState.Loading)
+        SpatialIcon("orbit", Modifier.size(44.dp), state = SpatialState.Loading)
         Text("Получаем подтверждённые данные…", Modifier.semantics { liveRegion = LiveRegionMode.Polite })
     }
     resource.error?.let { error -> WorkspaceEmpty("Не удалось обновить", error, "Повторить", resource.refresh) }
@@ -49,7 +49,7 @@ fun WorkspaceRequestState(resource: WorkspaceResource) {
 @Composable
 fun WorkspaceActionState(action: WorkspaceAction) {
     if (action.busy) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SpatialIcon("loading", Modifier.size(32.dp), state = SpatialState.Loading)
+        SpatialIcon("orbit", Modifier.size(32.dp), state = SpatialState.Loading)
         Text("Ожидаем подтверждение…", Modifier.semantics { liveRegion = LiveRegionMode.Polite })
     }
     action.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
@@ -82,19 +82,22 @@ fun EvidenceLinks(evidence: List<JSONObject>, highlights: List<JSONObject> = emp
     highlights.filter { it.text("section", "") in setOf("instrument", "portfolio", "operation", "operations", "history", "research", "risk", "risks", "capital", "events") }
         .forEach { target -> SpectrumSecondaryButton(target.text("label", "Показать в портфеле"), {
             val section = when (target.text("section")) { "risks" -> "risk"; "capital" -> "capital"; else -> target.text("section") }
-            if (section == "events") workspace(WorkspaceRoute.Messages) else navigate(EvidenceTarget(section, target.text("id", ""),
-                target.optString("date").takeIf { it.isNotBlank() && it != "null" }, target.optString("account_id").takeIf { it.isNotBlank() && it != "null" }))
+            val identifier = if (section == "operation" || section == "operations") target.text("operation_id", target.text("id", "").takeUnless { it.startsWith("operation:") }.orEmpty()) else target.text("id", "")
+            if (section == "events") workspace(WorkspaceRoute.Discovery) else navigate(EvidenceTarget(section, identifier,
+                target.text("date", "").takeIf(String::isNotBlank), target.text("account_id", "").takeIf(String::isNotBlank),
+                target.text("start", "").takeIf(String::isNotBlank), target.text("end", "").takeIf(String::isNotBlank), target.text("resolution", "").takeIf(String::isNotBlank)))
         }, Modifier.fillMaxWidth()) }
 }
 
 private val terminalJobs = setOf("completed", "cancelled", "failed", "uncertain")
 
 @Composable
-fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -> Unit = {}) {
+fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -> Unit = {}, onStateChanged: (String) -> Unit = {}) {
     val session = LocalWorkspaceSession.current
-    val client = remember { VolumeWorkspaceClient() }
+    val client = LocalWorkspaceTransport.current
     val foreground = workspaceForeground()
     val completed by rememberUpdatedState(onCompleted)
+    val stateChanged by rememberUpdatedState(onStateChanged)
     val reauthenticate = LocalReauthenticate.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val checkpoints = remember(context) { ru.omnicio.app.data.workspace.JobCheckpointStore(context) }
@@ -114,6 +117,7 @@ fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -
             if (reply.signedOut) { reauthenticate(); return@LaunchedEffect }
             if (reply.data != null) job = reply.data
             val state = job?.text("state", "")
+            if (!state.isNullOrBlank()) stateChanged(state)
             if (state == "completed" && !notified) {
                 withContext(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
                 notified = true; completed()
@@ -125,7 +129,7 @@ fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -
     val state = job?.text("state", "queued") ?: "queued"
     SpectrumCard(emphasized = true) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpatialIcon(if (state == "completed") "check" else if (state in terminalJobs) "risk" else "loading", Modifier.size(40.dp),
+            SpatialIcon(if (state == "completed") "check" else if (state in terminalJobs) "risk" else "orbit", Modifier.size(40.dp),
                 state = if (state == "completed") SpatialState.Success else if (state in terminalJobs) SpatialState.Attention else SpatialState.Loading)
             Column { Text(jobStateTitle(state), style = MaterialTheme.typography.titleMedium)
                 Text(jobStageTitle(job?.text("stage", "queued") ?: "queued"), style = MaterialTheme.typography.bodySmall) }

@@ -28,7 +28,7 @@ jobs:
             for (const number of numbers) {
               const pr = (await github.rest.pulls.get({...context.repo, pull_number:number})).data;
               let check;
-              for (let attempt=0; attempt<12; attempt++) {
+              for (let attempt=0; attempt<36; attempt++) {
                 const checks = (await github.rest.checks.listForRef({...context.repo, ref:pr.head.sha, per_page:100})).data.check_runs;
                 check = checks.find(item=>item.name==='SonarCloud Code Analysis');
                 if (check?.status==='completed') break;

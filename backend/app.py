@@ -478,6 +478,7 @@ def telegram_callback(
     "/auth/session",
     responses={
         401: {"description": "The one-time login code is invalid or expired."},
+        422: {"description": "The supplied device name is invalid."},
     },
 )
 def exchange_session(payload: SessionExchange) -> dict:
@@ -711,6 +712,7 @@ try:
     from .volume_devices import router as volume_devices_router
     from .volume_plans import router as volume_plans_router
     from .volume_analysis import router as volume_analysis_router
+    from .volume_monitor import router as volume_monitor_router
 except ImportError:
     from volume_workspace import router as volume_workspace_router
     from volume_state import router as volume_state_router
@@ -721,8 +723,9 @@ except ImportError:
     from volume_devices import router as volume_devices_router
     from volume_plans import router as volume_plans_router
     from volume_analysis import router as volume_analysis_router
+    from volume_monitor import router as volume_monitor_router
 
 for volume_router in (volume_workspace_router, volume_state_router, volume_market_router,
                       volume_jobs_router, volume_chat_router, volume_notifications_router,
-                      volume_devices_router, volume_plans_router, volume_analysis_router):
+                      volume_devices_router, volume_plans_router, volume_analysis_router, volume_monitor_router):
     app.include_router(volume_router)

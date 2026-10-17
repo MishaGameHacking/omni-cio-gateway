@@ -4,6 +4,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 import sqlite3
 
 try:
@@ -19,7 +20,7 @@ except ImportError:
     from evidence_history import HistoryUnavailable, read_history
     from evidence_revision import initialize_revision, read_revision, RevisionUnavailable
 
-KINDS = {'rating', 'statement', 'issuer_identity', 'total_returns'}
+KINDS = {'rating', 'statement', 'issuer_identity', 'total_returns', 'news_event'}
 
 
 def initialize(db):
@@ -90,7 +91,27 @@ def _returns(subject, payload, source):
         raise EvidenceError('history_after_publication')
 
 
-VALIDATORS = {'rating': _rating, 'statement': _statement, 'issuer_identity': _identity, 'total_returns': _returns}
+def _news_event(subject, payload, source):
+    if payload.get('broker_news_id') != subject or not re.fullmatch(r'\d{1,20}', subject):
+        raise EvidenceError('news_subject_mismatch')
+    if not re.fullmatch(r'[A-Za-z0-9_.:\-]{1,160}', str(payload.get('event_id', ''))):
+        raise EvidenceError('news_event_identity_required')
+    if not re.fullmatch(r'[0-9a-f]{64}', str(payload.get('news_sha256', ''))):
+        raise EvidenceError('news_observation_fingerprint_required')
+    role = payload.get('publication_role')
+    if role not in {'primary', 'repost', 'independent_report'}:
+        raise EvidenceError('news_publication_role_invalid')
+    primary = payload.get('primary_source')
+    if role in {'primary', 'repost'} and not isinstance(primary, dict):
+        raise EvidenceError('news_primary_source_required')
+    if primary is not None and not Source(**primary).valid(stamp(source.checked_at)):
+        raise EvidenceError('news_primary_source_not_verified')
+    if role == 'primary' and primary['url'] != source.url:
+        raise EvidenceError('news_primary_source_does_not_match_publication')
+
+
+VALIDATORS = {'rating': _rating, 'statement': _statement, 'issuer_identity': _identity, 'total_returns': _returns,
+              'news_event': _news_event}
 
 
 def import_record(connect, *, kind: str, subject: str, payload: dict, at: datetime | None = None) -> str:

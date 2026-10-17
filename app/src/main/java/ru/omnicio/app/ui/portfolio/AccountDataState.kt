@@ -104,7 +104,7 @@ internal data class PortfolioPeriod(val start: String?, val end: String?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod) -> Unit) {
-    var calendar by remember { mutableStateOf(false) }
+    var calendar by rememberSaveable { mutableStateOf(false) }
     val today = LocalDate.now(Moscow)
     val starts = listOf(today, today.minusMonths(1).plusDays(1), today.minusMonths(6).plusDays(1),
         today.minusYears(1).plusDays(1), today.withDayOfYear(1), null)
