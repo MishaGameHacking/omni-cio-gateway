@@ -23,7 +23,7 @@ internal fun matchingPosition(position: PortfolioPosition, query: String): Boole
 
 /** No conversion, issuer identity inference or simulated risk ranking. */
 internal fun sortedPortfolioRows(rows: List<PortfolioRow>, order: Int, currency: String): List<PortfolioRow> {
-    val names = compareBy<PortfolioRow>(String.CASE_INSENSITIVE_ORDER) { it.position.title }
+    val names = compareBy<PortfolioRow> { it.position.title.lowercase(java.util.Locale.ROOT) }
     return when (order) {
         0 -> rows.sortedWith(compareBy<PortfolioRow> { !it.position.blocked }.then(names))
         1, 2 -> rows.sortedWith(compareByDescending<PortfolioRow> {
@@ -109,7 +109,16 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
                 Notice("Сначала — оценки в ${snapshot.totalValue.currency}. Несопоставимые валюты и неизвестные значения расположены ниже.")
             }
             groups.forEach { (label, entries) ->
-                item(key = "heading:$label") { SectionHeading(label) }
+                item(key = "heading:$label") {
+                    SectionHeading(label)
+                    if (group == 1) {
+                        val values = entries.mapNotNull { it.position.currentValue }
+                        values.groupBy { it.currency }.forEach { (currency, amounts) ->
+                            DataRow("Стоимость выпусков · $currency", decimalText(amounts.sumOf { it.value.toBigDecimal() }) + " " + currencySymbol(currency))
+                        }
+                        if (values.size != entries.size) Notice("Часть выпусков без оценки; сумма неполная.")
+                    }
+                }
                 items(entries, key = { "${it.account.id}:${it.position.id}" }) { row ->
                     PositionLine(row.position, total = snapshot.totalValue,
                         accountName = if (group == 0) null else row.account.name) { onPosition(row.account.id, row.position) }
@@ -117,7 +126,10 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
                 }
             }
             if (snapshot.accounts.any { it.virtualPositions.isNotEmpty() }) item { DetailFold("Виртуальные позиции") {
-                Text("Доступны в подробностях соответствующего счёта.", style = MaterialTheme.typography.bodyMedium)
+                val destination = LocalPortfolioDestination.current
+                snapshot.accounts.filter { it.virtualPositions.isNotEmpty() }.forEach { account ->
+                    TextButton(onClick = { destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("${account.name} · ${account.virtualPositions.size}") }
+                }
             } }
         }
     }

@@ -95,7 +95,7 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                 item { DetailFold("Что изменено (${strategyChanges(baseline, draft).size})") {
                     strategyChanges(baseline, draft).ifEmpty { listOf("Изменений нет") }.forEach { Text(it) }
                 } }
-                item { WorkspaceEmpty("Влияние на портфель", "Сравнение до и после появится после подключения расчёта. Черновик не меняет текущий анализ.") }
+                item { StrategyImpact(null) }
                 if (section < 3) item { SpectrumPrimaryButton("Далее", { section++ }, Modifier.fillMaxWidth()) }
                 if (draft.ratings.isEmpty()) item { Text("Выберите хотя бы один рейтинг.", color = MaterialTheme.colorScheme.error) }
                 item { SpectrumPrimaryButton(if (saved && !dirty) "Черновик сохранён" else "Сохранить черновик", save,

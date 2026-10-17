@@ -1,5 +1,8 @@
 package ru.omnicio.app.ui.analysis
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
@@ -435,6 +438,8 @@ private fun AnalysisProfileContent(
 ) {
     var section by rememberSaveable { mutableIntStateOf(initialSection.coerceIn(0, 2)) }
     val client = remember { AnalysisBackendClient() }
+    var baseline by remember { mutableStateOf<AnalysisProfile?>(null) }
+    var leaving by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<AnalysisProfile?>(null) }
     var status by remember { mutableStateOf<AnalysisStatus?>(null) }
     var pendingSave by remember { mutableStateOf<AnalysisProfile?>(null) }
@@ -443,13 +448,16 @@ private fun AnalysisProfileContent(
     var message by remember { mutableStateOf<String?>(null) }
     var saveFailed by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
+    val dirty = draft != null && draft != baseline
+    val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
+    BackHandler(onBack = leave)
     LaunchedEffect(reload) {
         loading = true
         problem = null
         status = null
         try {
             when (val result = withContext(Dispatchers.IO) { client.fetchProfile(token) }) {
-                is BackendResult.Success -> draft = result.value
+                is BackendResult.Success -> { draft = result.value; baseline = result.value }
                 is BackendResult.Failure -> {
                     problem = result.message
                     draft = null
@@ -471,6 +479,7 @@ private fun AnalysisProfileContent(
         onPortfolioClick = onPortfolioClick,
         onProfileClick = onProfileClick,
         modifier = modifier,
+        showBottomBar = false,
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -483,7 +492,7 @@ private fun AnalysisProfileContent(
             item(key = "back") {
                 SpectrumSecondaryButton(
                     text = "Назад",
-                    onClick = onBack,
+                    onClick = leave,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -515,11 +524,12 @@ private fun AnalysisProfileContent(
                         )
                     }
                 }
+                if (dirty) item { Text("Есть несохранённые изменения. Они применятся к следующим проверкам после сохранения.") }
                 item(key = "save") {
                     SpectrumPrimaryButton(
                         text = if (pendingSave != null) "Сохраняем…" else "Сохранить профиль",
                         onClick = { pendingSave = profile },
-                        enabled = pendingSave == null && valid,
+                        enabled = pendingSave == null && valid && dirty,
                         modifier = Modifier.fillMaxWidth(),
                         symbol = SpectrumSymbol.Analyst,
                     )
@@ -527,6 +537,11 @@ private fun AnalysisProfileContent(
             }
         }
     }
+    if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Есть несохранённые изменения") },
+        text = { Text("Вернитесь к настройкам и сохраните профиль либо выйдите без изменений.") },
+        confirmButton = { TextButton(onClick = { leaving = false }) { Text("Продолжить настройку") } },
+        dismissButton = { TextButton(enabled = pendingSave == null, onClick = onBack) { Text("Не сохранять") } })
+
     LaunchedEffect(pendingSave) {
         val submitted = pendingSave ?: return@LaunchedEffect
         message = null
@@ -535,6 +550,7 @@ private fun AnalysisProfileContent(
             when (val result = withContext(Dispatchers.IO) { client.saveProfile(token, submitted) }) {
                 is BackendResult.Success -> {
                     draft = result.value
+                    baseline = result.value
                     message = "Профиль сохранён и будет применён к следующим проверкам."
                 }
                 is BackendResult.Failure -> {

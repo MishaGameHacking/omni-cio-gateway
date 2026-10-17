@@ -203,12 +203,11 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
             PositionLine(position, total = account.totalValue) { selected = PositionSelection(account.id, position.id) }
         }
         if (account.positions.isEmpty()) item { Notice("Позиции отсутствуют") }
-        if (account.virtualPositions.isNotEmpty()) {
-            item { SectionHeading("Виртуальные позиции") }
-            items(account.virtualPositions, key = { "virtual:${it.id}" }) { position ->
+        if (account.virtualPositions.isNotEmpty()) item { DetailFold("Виртуальные позиции (${account.virtualPositions.size})") {
+            account.virtualPositions.forEach { position ->
                 PositionLine(position, total = account.totalValue) { selected = PositionSelection(account.id, position.id, virtual = true) }
             }
-        }
+        } }
         item { CompactCard { SectionHeading("Баланс активов"); AccountStructure(account) } }
         item {
             CompactCard {

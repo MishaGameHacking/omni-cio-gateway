@@ -362,12 +362,18 @@ class ProfileProbe:
             if screen == "portfolio":
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
+                self.tap_resource("portfolio-search", "workspace-probe")
+                self.command("shell", "input", "text", "NO_SUCH_ASSET")
+                self.command("shell", "input", "keyevent", "BACK")
+                self.find("Ничего не найдено")
+                self.tap_visible("Сбросить")
+                self.find("Денежные средства")
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def workspace(self):
         from profile_launch import profile_frame, start_status
         for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
-                              ("assistant", "Ассистент"), ("market", "Отрасли и классы")):
+                              ("assistant", "Ассистент"), ("market", "Отрасли и классы"), ("ux100", "Проверка UX100")):
             self.command("shell", "am", "force-stop", PACKAGE)
             start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
                                       "--es", "spectrum_screen", screen))
@@ -388,6 +394,22 @@ class ProfileProbe:
                 self.reveal("Сохранить черновик", "workspace-content")
                 self.tap("Сохранить черновик", "workspace-content")
                 self.find("Черновик сохранён")
+            elif screen == "ux100":
+                self.reveal("Отложить", "workspace-content")
+                self.tap("Отложить", "workspace-content")
+                self.tap_visible("Нужно подумать")
+                self.find("Отложено: Нужно подумать · изменить")
+                self.tap_visible("График")
+                self.capture("ux100-chart")
+                self.tap("Скрыть суммы", "workspace-content", direction="start")
+                self.find("График скрыт режимом приватности.")
+                self.tap("Показать суммы", "workspace-content", direction="start")
+                self.tap_visible("Изменения")
+                self.find("Влияние изменений")
+                self.capture("ux100-impact")
+                self.tap_visible("События")
+                self.tap("Обновления события (2)", "workspace-content")
+                self.find("Уточнение источника")
             elif screen == "appearance":
                 self.reveal("Движение", "workspace-content")
                 self.tap("Движение", "workspace-content")

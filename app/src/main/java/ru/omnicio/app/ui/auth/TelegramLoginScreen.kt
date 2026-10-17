@@ -15,7 +15,7 @@ import ru.omnicio.app.ui.spectrum.*
 
 @Composable
 fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: () -> Unit,
-    modifier: Modifier = Modifier) {
+    modifier: Modifier = Modifier, loadingLabel: String = "Проверяем сохранённый сеанс…") {
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
@@ -28,6 +28,7 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                 Text("Портфель, решения и спокойный взгляд вперёд.", textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SpectrumCard(emphasized = true) {
+                    Text("1. Вход  ·  2. Счёт  ·  3. Портфель", style = MaterialTheme.typography.labelMedium)
                     Text("Войти в своё пространство", style = MaterialTheme.typography.titleLarge)
                     Text("Подтвердите вход через Telegram. Пароль остаётся в Telegram.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -35,7 +36,7 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                     if (loading) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            Text("Проверяем сохранённый сеанс…", Modifier.weight(1f))
+                            Text(loadingLabel, Modifier.weight(1f))
                         }
                     } else SpectrumPrimaryButton("Войти через Telegram", onLoginClick, Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Messages)
                 }

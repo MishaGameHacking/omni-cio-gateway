@@ -79,6 +79,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                         if (section == 1) item {
                             if (session.token.isBlank()) WorkspaceEmpty("Исследование недоступно", "Нужен действующий сеанс и сведения из источников.")
                             else PortfolioResearchPanel(session.token, instrumentId = position.id, showRefresh = false)
+                            ContextQuestion(position.id)
                         }
                         if (section == 2) item(key = "instrument-identifiers") { SpectrumCard {
                             Text("Паспорт инструмента", style = MaterialTheme.typography.titleLarge)

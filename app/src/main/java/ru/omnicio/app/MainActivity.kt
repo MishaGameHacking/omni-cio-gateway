@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
@@ -87,7 +88,7 @@ private fun nextBackStack(current: AppScreen, destination: AppScreen, history: L
 }
 
 private sealed interface AuthUiState {
-    data object Loading : AuthUiState
+    data class Loading(val stage: String = "Проверяем сохранённый сеанс…") : AuthUiState
     data class SignedOut(val errorMessage: String? = null) : AuthUiState
     data class SignedIn(
         val accessToken: String,
@@ -234,7 +235,7 @@ private fun AnalystAiApp(
     val legacyTInvestStore = remember(context) { TInvestTokenStore(context) }
     val backend = remember { AnalystBackendClient() }
 
-    var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading) }
+    var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading()) }
     var initialSessionChecked by remember { mutableStateOf(false) }
     var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
     var backStack by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
@@ -262,7 +263,7 @@ private fun AnalystAiApp(
         val code = authCode?.takeIf { it.isNotBlank() }
         if (code != null) {
             initialSessionChecked = true
-            authState = AuthUiState.Loading
+            authState = AuthUiState.Loading("Подтверждаем вход через Telegram…")
             when (val result = withContext(Dispatchers.IO) {
                 backend.exchangeTelegramCode(code)
             }) {
@@ -438,9 +439,10 @@ private fun AnalystAppContent(
     onLogout: () -> Unit,
 ) {
     when (val current = authState) {
-        AuthUiState.Loading -> {
+        is AuthUiState.Loading -> {
             TelegramLoginScreen(
                 loading = true,
+                loadingLabel = authState.stage,
                 errorMessage = authError,
                 onLoginClick = onStartTelegramLogin,
             )

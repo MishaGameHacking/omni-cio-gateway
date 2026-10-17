@@ -23,7 +23,7 @@ import ru.omnicio.app.ui.portfolio.PortfolioScreen
 /** Debug source set only: exercise real presenters, never a separate HTML mockup. */
 @Composable
 internal fun SpectrumDashboardProbe(screen: String) {
-    require(screen in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market"))
+    require(screen in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100"))
     var destination by rememberSaveable(screen) { mutableStateOf(screen) }
     val state = remember {
         val amount = MoneyAmount(ApiDecimal(4000, 0), "RUB")
@@ -56,6 +56,7 @@ internal fun SpectrumDashboardProbe(screen: String) {
                 }
             }) {
             when (destination) {
+            "ux100" -> WorkspaceVisualProbe { destination = "home" }
             "appearance" -> AppearanceScreen { destination = "home" }
             "strategy" -> StrategyWorkspaceScreen("synthetic-ui-test", { destination = "home" }, { destination = "portfolio" })
             "assistant" -> AssistantWorkspaceScreen({ destination = "home" }, { destination = "portfolio" },

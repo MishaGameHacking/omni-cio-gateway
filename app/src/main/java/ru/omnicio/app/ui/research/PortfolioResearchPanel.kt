@@ -81,6 +81,7 @@ fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, sh
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         if (state.stale) Text("Показан предыдущий результат. Новая проверка не выполнена; выводы могли устареть.", fontWeight = FontWeight.SemiBold)
+        if (state.loading && state.data == null) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
         if (showRefresh) TextButton(onClick = { retry++ }, enabled = active && !state.loading && accessToken.isNotBlank(),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text(if (state.loading) "Проверяем данные…" else "Повторить проверку бумаг")

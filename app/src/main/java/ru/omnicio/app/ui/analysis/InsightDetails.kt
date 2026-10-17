@@ -21,7 +21,7 @@ internal fun InsightPreview(card: InsightCard, now: Instant = Instant.now(), ope
         SpectrumBadge(when (card.severity) { "critical" -> "Критично"; "warning" -> "Требует внимания"; "watch" -> "Наблюдение"; else -> "Информация" })
         Text(insightValidity(card.createdAt, card.validUntil, now), style = MaterialTheme.typography.bodySmall)
         Text(card.title, style = MaterialTheme.typography.titleMedium)
-        Text(card.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+        Text(PrivateValue(card.summary), style = MaterialTheme.typography.bodyMedium, maxLines = 2,
             overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(listOfNotNull(if (!card.isRead) "Новое" else null, analysisTime(card.createdAt)).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall, color = LocalSpectrumPalette.current.cyan)

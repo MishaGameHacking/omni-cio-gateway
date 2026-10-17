@@ -35,7 +35,8 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market") } ?: "profile"
+        val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100") } ?: "profile"
+        check(runWorkspaceUxChecks() == 19)
         check(runInstrumentLinkRegressions() == 15)
         val researchChecks = runResearchPresentationChecks()
         val refreshChecks = runRefreshStateRegressionChecks()
