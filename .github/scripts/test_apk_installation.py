@@ -473,7 +473,7 @@ def run_attempt(
                     )
             install("candidate_clean_install", apk)
             launch_candidate("bootstrap_activity_launch")
-            if api == 36 and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+            if api in {35, 36} and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                 from profile_ui_probe import exercise
 
                 debug_apk = (

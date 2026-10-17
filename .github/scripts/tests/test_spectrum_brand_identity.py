@@ -44,10 +44,10 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
         self.assertIsNotNone(version)
-        self.assertEqual(int(version.group(1)), 33)
-        for sdk in ("compileSdk = 36", "minSdk = 36", "targetSdk = 36"):
+        self.assertEqual(int(version.group(1)), 34)
+        for sdk in ("compileSdk = 36", "minSdk = 35", "targetSdk = 36"):
             self.assertIn(sdk, gradle)
-        self.assertIn('versionName = "0.9.0"', gradle)
+        self.assertIn('versionName = "0.10.0"', gradle)
         self.assertNotIn('versionName = "0.7.6"', gradle)
         self.assertIn('applicationId = "ru.omnicio.app"', gradle)
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
@@ -61,7 +61,7 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
             "Версия ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             profile,
         )
-        self.assertIn("только для Android 16 и новее", profile)
+        self.assertIn("для Android 15 и новее", profile)
         self.assertNotIn("Android 13+", profile)
         self.assertNotIn("Версия 0.7.1-preview", profile)
 

@@ -5,7 +5,7 @@ android {
     compileSdk = 36
     defaultConfig {
         applicationId = "ru.omnicio.ciframe"
-        minSdk = 36
+        minSdk = 35
         targetSdk = 36
         versionCode = 1
         versionName = "1"

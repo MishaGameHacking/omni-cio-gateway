@@ -21,53 +21,40 @@ import ru.omnicio.app.ui.spectrum.*
 internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false) {
     var start by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
     var end by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
-    var chartMode by rememberSaveable(account.id) { mutableIntStateOf(0) }
     val period = PortfolioPeriod(start, end)
+    var selectedPeriod by remember(account.id, period) { mutableStateOf<PortfolioPeriod?>(null) }
     val request = rememberAccountData(token, account.id, "analytics",
         period.parameters() + ("currency" to account.totalValue.currency), interval = 60_000)
+    val selectedData = selectedPeriod?.let { scope -> rememberAccountData(token, account.id, "analytics",
+        scope.parameters() + ("currency" to account.totalValue.currency), interval = 60_000) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "history") {
             CompactCard {
-                SpectrumTabs(listOf("Стоимость", "Доход"), chartMode, { chartMode = it })
                 CurrencyChoice(account.totalValue.currency)
-                PeriodControls(period) { start = it.start; end = it.end }
                 AccountDataNotice(request)
+                if (request.json == null) PeriodControls(period) { start = it.start; end = it.end }
                 request.json?.let { data ->
                     val history = data.objects("history").mapNotNull { point ->
                         point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
                     }
-                    if (chartMode == 0) HistoryChart(history, data.optString("currency"), data.objects("cashFlowMarkers").mapNotNull { marker ->
-                        val date = marker.nullableText("date"); val label = marker.nullableText("label")
-                        if (date != null && label != null) HistoryMarker(date, label) else null
-                    })
-                    else WorkspaceEmpty("Доход за период", "Расчёт с учётом пополнений, выводов и расходов ещё не подключён. Стоимость доступна в соседней вкладке.")
+                    HistoryChart(history, data.optString("currency"),
+                        selectionKey = "${account.id}:${request.displayedParameters}",
+                        onSelection = { if (!request.showingPreviousQuery) selectedPeriod = it },
+                        controls = { PeriodControls(period) { start = it.start; end = it.end } })
                     if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
                 }
             }
         }
-        if (!historyOnly) item(key = "cashflow") {
+        item(key = "cashflow") {
             CompactCard {
-                SectionHeading("Доходы и движение денег")
-                val data = request.json
-                Notice("Денежные потоки за выбранный период. Инвестиционный результат рассчитывается отдельно.")
-                if (data != null) {
-                    if (!data.optBoolean("complete")) Notice("Внимание: обработана только часть операций. Суммы ниже неполные; сузьте период.")
-                    val rows = data.objects("summary")
-                    if (rows.isEmpty()) Notice("За выбранный период учтённых денежных операций нет.")
-                    val groups = listOf("Внесено / выведено" to setOf("deposits", "withdrawals"),
-                        "Инвестиционные поступления" to setOf("dividends", "coupons", "redemptions"),
-                        "Расходы" to setOf("fees", "tax"), "Оборот и прочее" to setOf("trades", "margin", "other"))
-                    groups.forEach { (title, categories) -> DetailFold(title) {
-                        val values = rows.filter { it.optString("category") in categories }
-                        if (values.isEmpty()) Notice("В полученной выборке нет операций этой группы.")
-                        values.forEach { row -> DataRow(categoryTitle(row.optString("category")), row.money("amount").moneyText()) }
-                    } }
-                    val known = groups.flatMap { it.second }.toSet()
-                    rows.filter { it.optString("category") !in known }.forEach { row ->
-                        DataRow("Прочие поступления / списания", row.money("amount").moneyText())
-                    }
-                    Notice("${data.optInt("operationCount")} операций в расчёте. Суммы в исходных валютах, без неподтверждённого пересчёта.")
-                    Notice(data.optString("note"))
+                SectionHeading("Движение денег")
+                val scope = selectedPeriod ?: period
+                Notice(if (selectedPeriod == null) "За выбранный период" else "${scope.start} — ${scope.end}")
+                val current = selectedData ?: request
+                if (current.showingPreviousQuery || current.json == null) {
+                    Notice(current.error ?: "Обновляем статистику интервала…")
+                } else {
+                    CashFlowSummary(current.json)
                 }
             }
         }
@@ -86,6 +73,21 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
         }
         if (!historyOnly) item(key = "structure") { CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) } }
     }
+}
+
+@Composable
+internal fun CashFlowSummary(data: JSONObject) {
+    if (!data.optBoolean("complete")) Notice("Получена часть операций. Суммы неполные; попробуйте более короткий период.")
+    val rows = data.objects("summary").filter { it.money("amount")?.value?.toBigDecimal()?.signum() != 0 }
+    val primary = setOf("deposits", "withdrawals", "dividends", "coupons")
+    val visible = rows.filter { it.optString("category") in primary }
+    visible.forEach { row -> DataRow(categoryTitle(row.optString("category")), row.money("amount").moneyText()) }
+    if (rows.isEmpty()) Notice(if (data.optBoolean("complete")) "За этот период денежных операций нет." else "В полученной части операций нет денежных сумм.")
+    val other = rows.filter { it.optString("category") !in primary }
+    if (other.isNotEmpty()) DetailFold("Расходы, оборот и другие операции") {
+        other.forEach { row -> DataRow(categoryTitle(row.optString("category")), row.money("amount").moneyText()) }
+    }
+    Notice("Денежные потоки в исходных валютах. Это не расчёт инвестиционной прибыли.")
 }
 
 @Composable

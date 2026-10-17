@@ -88,16 +88,17 @@ class FrameProtocolTests(unittest.TestCase):
 
     def test_disposable_check_refuses_physical_wrong_avd_or_api(self):
         for values in (("other-avd\nOK",), ("analyst-install-1-1\nOK", "0"),
-                       ("analyst-install-1-1\nOK", "1", "35")):
+                       ("analyst-install-1-1\nOK", "1", "34")):
             device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in values])
             with self.subTest(values=values), self.assertRaises(ValueError):
                 frames.assert_disposable(device)
             self.assertFalse(any("install" in call.args for call in device.call_args_list))
 
-    def test_disposable_check_accepts_only_owned_api36(self):
-        device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in ("analyst-install-123-2\nOK", "1", "36")])
-        frames.assert_disposable(device)
-        self.assertEqual(device.call_count, 3)
+    def test_disposable_check_accepts_owned_supported_api(self):
+        for api in ("35", "36"):
+            device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in ("analyst-install-123-2\nOK", "1", api)])
+            frames.assert_disposable(device)
+            self.assertEqual(device.call_count, 3)
 
     def test_checked_preserves_both_output_streams_and_code(self):
         device = Mock(return_value=Mock(returncode=7, stdout="stdout error", stderr="stderr error"))
@@ -292,7 +293,7 @@ class DriverSourceTests(unittest.TestCase):
         self.assertIn('android:testOnly="true"', manifest)
         self.assertIn('android:targetPackage="ru.omnicio.ciframe"', manifest)
         self.assertNotIn("uses-permission", manifest)
-        self.assertIn("minSdk = 36", build)
+        self.assertIn("minSdk = 35", build)
         self.assertIn("it.enable = false", build)
         self.assertIn("isMinifyEnabled = true", build)
         self.assertIn("isShrinkResources = true", build)

@@ -40,7 +40,7 @@ def _require_apk_evidence(report: dict, *, sha256: str, size: int, certificate: 
         raise ReleaseUnavailable('apk_verification_evidence_mismatch')
 
 
-def _require_android_16_installation(report: dict, *, sha256: str) -> dict:
+def _require_supported_installation(report: dict, *, sha256: str) -> dict:
     tested = report.get('installation_evidence')
     if not isinstance(tested, dict) or tested.get('apk_sha256') != sha256:
         raise ReleaseUnavailable('installation_evidence_missing')
@@ -48,12 +48,18 @@ def _require_android_16_installation(report: dict, *, sha256: str) -> dict:
     required_checks = ('clean_install', 'upgrade', 'upgrade_launch', 'launch')
     if not isinstance(checks, dict) or any(checks.get(key) is not True for key in required_checks):
         raise ReleaseUnavailable('installation_evidence_incomplete')
+    if report.get('min_sdk') == 35:
+        android15 = tested.get('35')
+        if not isinstance(android15, dict) or any(android15.get(key) is not True for key in ('clean_install', 'launch')):
+            raise ReleaseUnavailable('android_15_evidence_incomplete')
+        if 'installation_tests' not in report:
+            raise ReleaseUnavailable('android_15_transcript_required')
     return tested
 
 
 def _require_android_floor(report: dict) -> None:
     minimum_sdk = report.get('min_sdk')
-    if type(minimum_sdk) is not int or minimum_sdk < 36:
+    if type(minimum_sdk) is not int or minimum_sdk < 35:
         raise ReleaseUnavailable('unsupported_android_floor')
 
 
@@ -72,7 +78,7 @@ def _evidence(report: dict, *, sha256: str, size: int, certificate: str) -> None
     if not isinstance(report, dict):
         raise ReleaseUnavailable('apk_verification_evidence_mismatch')
     _require_apk_evidence(report, sha256=sha256, size=size, certificate=certificate)
-    tested = _require_android_16_installation(report, sha256=sha256)
+    tested = _require_supported_installation(report, sha256=sha256)
     _require_android_floor(report)
     _require_transcript_match(report, tested, sha256=sha256)
 

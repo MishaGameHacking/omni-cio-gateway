@@ -39,12 +39,13 @@ class SpectrumProductionTokens(unittest.TestCase):
         self.assertNotIn('PortfolioSnapshot(', dashboard)
 
     def test_history_keeps_validated_real_points_and_value_table(self):
-        source = (UI / 'portfolio/PortfolioComponents.kt').read_text(encoding='utf-8')
-        self.assertIn('portfolioHistory(points)', source)
-        self.assertIn('HistoryValues(data, currency)', source)
-        self.assertIn('Path()', source)
+        source = (UI / 'portfolio/HistoryChart.kt').read_text(encoding='utf-8')
+        geometry = (UI / 'portfolio/HistoryBars.kt').read_text(encoding='utf-8')
+        self.assertIn('portfolioHistory(points)', geometry)
+        self.assertIn('HistoryValues(model.source.coordinates, currency)', source)
+        self.assertIn('drawRoundRect(', source)
+        self.assertNotIn('drawPath(', source)
         self.assertNotIn('Random', source)
-        self.assertIn('SpectrumTabs(options, selected, onSelect)', source)
 
 
 if __name__ == '__main__':
