@@ -7,6 +7,7 @@ import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Xml;
@@ -288,8 +289,7 @@ public final class FrameInstrumentation extends Instrumentation {
         attr(
                 xml,
                 "checked",
-                Boolean.toString(
-                        node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE));
+                Boolean.toString(checkedState(node)));
         attr(xml, "checkable", Boolean.toString(node.isCheckable()));
         for (int index = 0; index < node.getChildCount(); index++) {
             AccessibilityNodeInfo child = node.getChild(index);
@@ -298,6 +298,15 @@ public final class FrameInstrumentation extends Instrumentation {
             }
         }
         xml.endTag(null, "node");
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean checkedState(AccessibilityNodeInfo node) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            return node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE;
+        }
+        // Public API35 contract; getChecked() only exists from API36.
+        return node.isChecked();
     }
 
     private static final class BoundedOutput extends FilterOutputStream {
