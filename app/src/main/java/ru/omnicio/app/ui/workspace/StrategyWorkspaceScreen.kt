@@ -3,6 +3,8 @@ package ru.omnicio.app.ui.workspace
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +32,9 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
     )) }
     var draft by rememberSaveable(userId, stateSaver = StrategyDraftSaver) { mutableStateOf(baseline) }
     var section by rememberSaveable { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val selectSection: (Int) -> Unit = { section = it; scope.launch { listState.scrollToItem(0) } }
     var saved by rememberSaveable { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
     var openActiveAfterLeave by remember { mutableStateOf(false) }
@@ -44,9 +49,9 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
     }
     WorkspaceDetailPage("Моя стратегия", "Действующие правила и будущие изменения", leave, SpectrumSymbol.Goal) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            SpectrumTabs(listOf("Цель", "Отбор", "Доли", "Доход"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
+            SpectrumTabs(listOf("Цель", "Отбор", "Доли", "Доход"), section, selectSection, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
-                contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+                state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { SpectrumCard {
                     SpectrumBadge("Черновик · не применяется")
                     Text("Шаг ${section + 1} из 4. Сохраняется на устройстве. Расчёт по этим правилам ещё не подключён.")
@@ -82,7 +87,7 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                     strategyChanges(baseline, draft).ifEmpty { listOf("Изменений нет") }.forEach { Text(it) }
                 } }
                 item { StrategyImpact(null) }
-                if (section < 3) item { SpectrumPrimaryButton("Далее", { section++ }, Modifier.fillMaxWidth()) }
+                if (section < 3) item { SpectrumPrimaryButton("Далее", { selectSection(section + 1) }, Modifier.fillMaxWidth()) }
                 if (draft.ratings.isEmpty()) item { Text("Выберите хотя бы один рейтинг.", color = MaterialTheme.colorScheme.error) }
                 item { SpectrumPrimaryButton(if (saved && !dirty) "Черновик сохранён" else "Сохранить черновик", save,
                     Modifier.fillMaxWidth(), enabled = dirty && draft.ratings.isNotEmpty()) }
