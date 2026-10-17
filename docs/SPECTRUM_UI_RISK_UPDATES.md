@@ -1,4 +1,33 @@
-# Analyst AI / Spectrum — staged integration, not a release
+# Historical Spectrum UI, risk and update integration
+
+## Current status — 2026-10-17
+
+This file preserves the **2026-10-13** draft and its original baseline. The
+navigation, media/prototype descriptions, component-only update status and
+remaining-work list below are historical. They do not override later owner
+instructions or describe what is still absent from the current APK.
+
+The active native UI is Workspace/Spectrum with **«Капитал», «Портфель»,
+«Действия», «Риски», «Профиль»**; education, assistant and other workspaces are
+separate routes. Portfolio history uses calendar bars in F01.4; Android 15+
+is supported with minSdk 35 and compile/target 36. The application uses native
+Canvas/graphics animation, not the historical GIF prototype as its runtime.
+The unified update gate, downloader and installer are connected.
+
+Current authorities:
+
+- [MASTER_PLAN.md](MASTER_PLAN.md) and [PLAN_STATUS.md](PLAN_STATUS.md): product scope, completed deliveries and open work.
+- [WORKSPACE_UI.md](WORKSPACE_UI.md), [UX100.md](UX100.md) and [SPECTRUM_DESIGN_CANON.md](SPECTRUM_DESIGN_CANON.md): screens, interactions and motion.
+- [UPDATE_RUNTIME_UNIFICATION.md](UPDATE_RUNTIME_UNIFICATION.md) and [APK_INSTALLATION.md](APK_INSTALLATION.md): updater and current installation matrix.
+- [RISK_REBALANCING.md](RISK_REBALANCING.md): existing source-bound research and unfinished investment planner.
+
+A complete investment-action engine, four-agency live evidence pipeline,
+server-side conversation and reliable background notifications remain open.
+Emulator checks and APK publication do not prove operation on the owner's phone.
+The learning catalogue remains available; expanding education is paused by the
+approved plan.
+
+## Historical draft from 2026-10-13
 
 Date: 2026-10-13. Baseline: e99007a24f015617d904248aac3e5eddf4efa4d1.
 

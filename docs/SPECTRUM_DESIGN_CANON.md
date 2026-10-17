@@ -1,6 +1,8 @@
 # Analyst AI Spectrum — canonical product design
 
-Status: owner-approved visual direction from 2026-10-13, clarified by the owner on 2026-10-15. This document turns the reference collage into repeatable implementation rules. It does not make synthetic balances, ratings, charts or recommendations valid production data.
+Status: Spectrum direction approved 2026-10-13, refined by the owner on 2026-10-15 and superseded where needed by the **Workspace redesign and Android 15+ clarification of 2026-10-17**. Updated against **0.10.0-preview / 34**, F01.4 / F22.
+
+This document records the current shared visual language. [WORKSPACE_UI](WORKSPACE_UI.md) defines the current screen map; [MASTER_PLAN](MASTER_PLAN.md) and [PLAN_STATUS](PLAN_STATUS.md) define product scope and completion evidence. Synthetic balances, ratings, charts or recommendations are not valid production data.
 
 ## Product impression
 
@@ -14,45 +16,46 @@ Analyst AI should feel like a calm personal analytical instrument, not a game, c
 - plain Russian text that explains the portfolio effect without unexplained jargon;
 - T‑Invest remains a verified data source, not the visual identity of the product.
 
-The five primary destinations are: **Главная, Портфель, Риски, Обучение, Профиль**.
+The five primary destinations are: **Капитал, Портфель, Действия, Риски, Профиль**.
 
-- **Главная** is the Analyst AI dashboard: real balance, core metrics, shortcuts, a deterministic explanation and portfolio structure.
-- **Портфель** contains verified accounts, positions, operations, payments and analytics.
-- **Риски** contains structured server signals, morning/evening checks and uncertainty labels.
-- **Обучение** is a first-class destination rather than a hidden profile page.
-- **Профиль** contains appearance, account, T‑API, risk profile and application information.
-- **Рекомендации** and **Сообщения** are internal destinations opened from Главная. They do not replace the five primary tabs.
+- **Капитал** is the Analyst AI dashboard: real balance, broker result and freshness, two shortcuts to assets/payments, a deterministic explanation and optional portfolio structure.
+- **Портфель** contains accounts, positions, structure, balance history, operations, payments and read-only analytics.
+- **Действия** opens the available analysis, with a separate plan view. The concrete trade-plan calculation remains unconnected and is labelled accordingly.
+- **Риски** shows actual observation signals, data completeness, detail and uncertainty. Its visual presentation does not complete the risk model.
+- **Профиль** groups settings, account and application information, with access to appearance, T‑API, strategies, notifications and other secondary tools.
+- **Обучение**, **Ассистент**, **Уведомления**, **Моя стратегия** and **Отрасли и классы** are separately accessible internal destinations. Education is no longer a primary bottom tab.
+- Do not restore the “Живые возможности” capability showcase, its technical catalogue or Android badge on the capital screen.
 
 ## Color system
 
-Dark foundation:
+Default dark Aurora foundation in 0.10.0:
 
 | Token | Value | Use |
 |---|---:|---|
-| Spectrum top | `#020A16` | application background |
-| Spectrum bottom | `#07192B` | application background |
-| Spectrum card | `#071A2A` | normal glass surfaces |
-| Spectrum strong card | `#0B2940` | hero/recommendation surfaces |
+| Spectrum top | `#090E18` | application background |
+| Spectrum bottom | `#111827` | application background |
+| Spectrum card | `#121D2B` | normal glass surfaces |
+| Spectrum strong card | `#192A3B` | hero/recommendation surfaces |
 | Text | `#F4F7FF` | primary text |
 | Supporting text | `#B8C2D2` | explanations and metadata |
-| Cyan | `#36E0FF` | navigation/action accent |
+| Cyan / mint | `#70E0D2` | navigation/action accent |
 | Blue | `#4C8DFF` | charts and neutral analytics |
 | Violet | `#8A5CFF` | brand/AI accent |
 | Rose | `#FF4FA3` | news/attention decoration, not loss |
 | Emerald | `#19E6A2` | positive action and verified completion |
 | Amber | `#FFC857` | warning/attention with text |
 
-Light foundation remains quiet rather than neon-white: `#F5F8FF` background, white cards, dark text, saturated but accessible accent variants.
+Light mode uses a `#F5F8FF` foundation, white cards, dark text and accessible accent variants. **Аврора**, **Океан** and **Ирис** change the accent palette through the shared theme; screens consume theme tokens instead of copying a local palette.
 
 Semantic financial colors are separate from RGB branding. Profit/loss/warning/rating must include words and values. A violet glow must never mean “safe”; an emerald glow must never silently mean “guaranteed profit”.
 
 ## Layout and component rules
 
 - 4dp base grid; screen horizontal padding 20dp.
-- Main card radius 24dp; pills fully rounded; thin 1dp spectral border on Spectrum cards.
-- Body text at least 16sp where it carries meaning; supporting metadata may use 12–14sp.
+- Main card radius is 24dp in the default density and 18dp in compact density; pills remain rounded and Spectrum cards use the shared border treatment.
+- Body text is at least 16sp where it carries meaning. Supporting labels use the shared typography; compact chart-axis labels have exact-value text and accessibility alternatives.
 - Minimum touch target 48dp.
-- Bottom navigation uses original Spectrum symbols and finite selection motion.
+- Bottom navigation uses original Spectrum symbols, persistent text labels and a clear selected surface. The current primary-navigation icons are static.
 - Use 2D charts with labels and accessible text/table alternatives. Decorative depth belongs behind data, not in perspective-distorted wedges or axes.
 - Preserve content while a new currency/period loads. Never blank a page just because a different view is requested.
 - Real data comes from the user’s APIs and verified server sources. Preview/demo data must be visibly labelled.
@@ -61,22 +64,40 @@ Semantic financial colors are separate from RGB branding. Profit/loss/warning/ra
 Reusable implementation lives in:
 
 - `ui/spectrum/SpectrumDesignSystem.kt` — palette, backgrounds, glass cards, branded buttons, metrics, progress and the Analyst AI brand orb;
-- `ui/spectrum/SpectrumIcon.kt` — original finite-motion icons;
-- `ui/theme/AnalystTheme.kt` — system/light/dark mode, typography and saved motion preference;
+- `ui/spectrum/SpectrumIcon.kt` — original icons with optional finite selection motion;
+- `ui/spectrum/SpectrumLiveMotion.kt` — lifecycle-gated finite motion for native visual families;
+- `ui/theme/AnalystTheme.kt` — system/light/dark mode, typography, accent variants and saved motion preference;
+- `ui/workspace` — screen composition, appearance controls and local draft/preferences;
 - `ui/AnalystBottomBar.kt` — five production destinations;
-- `ui/home/HomeScreen.kt` — production dashboard based on real portfolio data.
+- `ui/home/HomeScreen.kt` — production dashboard based on real portfolio data;
+- `ui/portfolio/HistoryBars.kt` and `HistoryChart.kt` — saved-balance grouping, columns, selection and exact values.
+
+These paths are relative to `app/src/main/java/ru/omnicio/app/`.
+
+## Financial charts
+
+The F01.4 history is available at **Портфель → Динамика** with a choice of account, and inside **счёт → Аналитика**.
+
+- Draw native 2D columns from real saved account balances. Each interval uses its last snapshot, preserving the exact original amount; it is not a sum of snapshots.
+- Group in the Moscow timezone by day, week, month or year according to the history span. Leave missing intervals empty and include the most recent real snapshot.
+- Keep the zero baseline and negative values truthful. Small/zero-value markers must not inflate the money scale.
+- A tap, horizontal drag or previous/next action exposes dates and exact balance. Reset restores whole-period statistics; exact source values remain available in a disclosure.
+- Label balance movement as **Изменение стоимости**. Cash flows are obtained separately from the existing read-only endpoint and retain source currencies; neither is labelled investment profit.
+- Show single-snapshot, empty, incomplete or invalid-history states explicitly. Respect the user's hidden-balance setting.
+- Do not describe these saved-balance columns as instrument OHLC candles or imply that unavailable quote history has been implemented.
 
 ## Motion
 
-- Selection animation: one short 180ms rise and 420ms settle; no automatic infinite loop.
-- App setting “Живые RGB-эффекты” controls decorative motion.
-- Platform animator-disabled state and Activity lifecycle are mandatory gates.
-- GIF/WebP is allowed for a small hero or onboarding scene, but not for every row in a portfolio list. Static vector alternatives are required.
-- Motion must stop when the app is backgrounded. Reduced-motion mode keeps all information available.
+- An icon may use a short 180ms rise and 420ms settle when its caller enables selection motion. The shared live-motion helper performs two finite cycles.
+- **Оформление → Движение** controls decorative motion; **Глубина** controls shadows and spatial accents.
+- Platform animator-disabled state, visibility and an Activity lifecycle of at least `STARTED` are mandatory gates.
+- Native icons, the assistant and update visuals use Compose Canvas/graphics APIs. Do not substitute GIF/WebP sequences, PNG artwork, remote images or WebViews for these program elements.
+- Read motion state during drawing or graphics-layer work. Do not give each portfolio row its own timer or repeatedly recompose an entire screen.
+- Motion stops when the app is backgrounded or the element leaves composition. Reduced-motion mode keeps all information available.
 
 ## Education architecture
 
-The built-in beginner curriculum is original copy with links to official material. It is organised around decisions a user actually faces:
+The existing beginner curriculum is original copy with links to official material. This UI stage preserves its content; expansion remains outside the current instruction. It is organised around decisions a user actually faces:
 
 1. goal, horizon and emergency reserve;
 2. broker/exchange/depository mechanics;
@@ -105,19 +126,19 @@ Official reading map used for curriculum design:
 The collage establishes these production patterns without authorizing fake data:
 
 - branded loading/login scene with a spectral brain/orbit and honest progress state;
-- home dashboard with real balance, metrics, five compact destinations and an Analyst AI explanation card;
+- capital dashboard with real balance, metrics, two useful shortcuts and an Analyst AI explanation card;
 - portfolio with verified accounts, structure, positions and broker-source timestamps;
-- recommendations with rationale, current/target role, risk limits and source status;
+- actions and analysis with real source status; concrete quantities and portfolio-effect calculations appear only when their plan dependencies are implemented;
 - risk screen with signal breakdown, validity and uncertainty;
 - education cards with bright original 2D lesson symbols;
 - profile/settings hub using the same glass system;
 - full-screen mandatory update gate only after the updater pipeline is genuinely safe.
 
-## Implementation order
+## Current platform and maintenance contract
 
-1. Apply Spectrum tokens, theme-aware text and the exact product navigation.
-2. Implement the real-data Home dashboard.
-3. Convert recommendations, risks, education, profile and login to shared Spectrum components.
-4. Convert deeper portfolio/account/detail screens without changing verified financial logic.
-5. Integrate richer recommendation/risk data only after collectors and validation exist.
-6. Release a new APK only after exact-head Android CI, installation/update tests, backend tests and quality checks succeed.
+- Android baseline: `minSdk = 35`, `compileSdk = 36`, `targetSdk = 36`. Follow the [native UI specification](ANDROID16_LIVE_UI_SPEC.md) for edge-to-edge, predictive back, adaptive layouts and motion.
+- Workspace screens and the F01.4 saved-balance columns are part of the published 0.10.0 preview. Release, server delivery and physical-device acceptance remain separate entries in [PLAN_STATUS](PLAN_STATUS.md).
+- Build further screen changes from the shared components, preserving real read-only functions and user state.
+- Connect recommendations, risk, strategy effects, chat and delivery only when the corresponding collectors, calculations and validation from the master plan are ready. Local drafts remain explicitly inactive.
+- Release a new functional APK only after all applicable checks for the candidate commit pass, including Android installation/UI on API 35 and API 36 and the applicable upgrade path. Preserve the preview package, signing identity and user data.
+- Documentation-only maintenance records the already published behavior and does not imply a new application version.

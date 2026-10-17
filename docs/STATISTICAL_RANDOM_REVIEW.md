@@ -1,5 +1,18 @@
 # Narrow S2245 review: deterministic historical resampling
 
+## Current scope check — 2026-10-17
+
+The reviewed `bootstrap_capital_floor` call and line-local `# NOSONAR(S2245)`
+remain in [portfolio_risk.py](../backend/portfolio_risk.py), with the scope
+regression in [test_statistical_random_scope.py](../backend/tests/test_statistical_random_scope.py).
+The finding identifiers and job references below remain historical evidence
+for PRs #832/#833; they are not the latest CI result or permission to suppress
+new findings. Current risk implementation and outstanding validation are tracked
+under F14/F21 in [PLAN_STATUS.md](PLAN_STATUS.md) and
+[RISK_REBALANCING.md](RISK_REBALANCING.md).
+
+## Historical review
+
 Reviewed 2026-10-14 for PR #832 and the identical function in PR #833.
 This is a source-context review by the implementation assistant, not an
 independent security audit or a certification of the application's safety.
