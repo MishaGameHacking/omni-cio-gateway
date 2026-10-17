@@ -64,10 +64,14 @@ def _require_android_floor(report: dict) -> None:
 
 
 def _require_transcript_match(report: dict, tested: dict, *, sha256: str) -> None:
+    version = report.get('version_code')
+    require_runtime = type(version) is int and version >= 35
     if 'installation_tests' not in report:
+        if require_runtime:
+            raise ReleaseUnavailable('runtime_installation_transcript_required')
         return
     try:
-        derived = from_ci_reports(report['installation_tests'], sha256)
+        derived = from_ci_reports(report['installation_tests'], sha256, require_runtime_16kb=require_runtime)
     except InstallationEvidenceError as error:
         raise ReleaseUnavailable('installation_transcript_invalid') from error
     if tested != derived:

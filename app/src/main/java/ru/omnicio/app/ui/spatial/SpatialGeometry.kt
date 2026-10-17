@@ -58,7 +58,9 @@ internal object SpatialGeometry {
             put("meshes",array(listOf(JSONObject().put("primitives",array(listOf(JSONObject()
                 .put("attributes",JSONObject().put("POSITION",0).put("NORMAL",1)).put("material",0)))))))
             put("materials",array(listOf(JSONObject().put("pbrMetallicRoughness",JSONObject()
-                .put("baseColorFactor",array(listOf(1,1,1,1))).put("metallicFactor",.12).put("roughnessFactor",.4)))))
+                .put("baseColorFactor",array(listOf(1,1,1,1)))
+                .put("metallicFactor", SpatialMaterial.Ceramic.metallic.toDouble())
+                .put("roughnessFactor", SpatialMaterial.Ceramic.roughness.toDouble())))))
             put("buffers",array(listOf(JSONObject().put("byteLength",bytes.capacity()))))
             put("bufferViews",array(listOf(JSONObject().put("buffer",0).put("byteOffset",0).put("byteLength",posBytes),
                 JSONObject().put("buffer",0).put("byteOffset",posBytes).put("byteLength",posBytes))))

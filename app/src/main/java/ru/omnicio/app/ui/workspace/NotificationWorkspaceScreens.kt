@@ -112,7 +112,7 @@ private fun NotificationPreview(result: JSONObject) {
         listOf("matched" to "Подошли бы", "suppressed" to "Были бы отложены или исключены").forEach { (key, title) ->
             DetailFold(title + " · " + result.records(key).size) {
                 result.records(key).forEach { event ->
-                    Text(event.text("title", "Событие"), style = MaterialTheme.typography.titleSmall)
+                    Text(notificationTitle(event), style = MaterialTheme.typography.titleSmall)
                     Text(notificationReason(event.text("reason", "")), style = MaterialTheme.typography.bodySmall)
                     event.optString("eligible_at").takeIf(String::isNotBlank)?.let { Text(localMoment(it)) }
                 }
@@ -148,7 +148,7 @@ fun NotificationEventOverlay(id: String, onClose: () -> Unit) {
     val event = resource.data?.records("items")?.firstOrNull { it.text("id") == id }
     val openReport = LocalOpenAnalysisReport.current
     val read = rememberWorkspaceAction { onClose() }
-    WorkspaceDialog(event?.text("title", "Событие") ?: "Событие", onClose) {
+    WorkspaceDialog(notificationTitle(event), onClose) {
         WorkspaceRequestState(resource)
         if (event != null) {
             Text(event.text("body", ""))
@@ -163,6 +163,8 @@ fun NotificationEventOverlay(id: String, onClose: () -> Unit) {
         SpectrumSecondaryButton("Вернуться к работе", onClose, Modifier.fillMaxWidth())
     }
 }
+
+private fun notificationTitle(event: JSONObject?) = event?.text("title", "Событие") ?: "Событие"
 
 internal fun notificationRulesValid(value: JSONObject): Boolean = runCatching {
     ZoneId.of(value.getString("timezone"))

@@ -42,7 +42,11 @@ class NativeAlignmentTests(unittest.TestCase):
             build.mkdir(parents=True)
             artifact = build / "candidate.so"
             artifact.write_bytes(elf())
-            self.assertEqual(trusted_artifact_path(Path("app/build/outputs/apk/candidate.so"), root), artifact)
+            checked = trusted_artifact_path(Path("app/build/outputs/apk/candidate.so"), root)
+            # Windows temporary roots can use 8.3 aliases; the checker deliberately
+            # returns the canonical long path after all traversal/link checks.
+            self.assertEqual(checked, artifact.resolve(strict=True))
+            self.assertTrue(checked.samefile(artifact))
             outside = Path(directory) / "outside.so"
             outside.write_bytes(elf())
             for path in (outside, Path("app/build/outputs/apk/../apk/candidate.so"), root / "source.so"):
@@ -87,7 +91,9 @@ class NativeAlignmentTests(unittest.TestCase):
             root = Path(directory)
             first = write_report('{"first":true}\n', root)
             second = write_report('{"second":true}\n', root)
-            self.assertEqual(first, root / "app/build/reports/native-alignment.json")
+            expected = (root / "app/build/reports/native-alignment.json").resolve(strict=True)
+            self.assertEqual(first, expected)
+            self.assertTrue(first.samefile(expected))
             self.assertEqual(first, second)
             self.assertEqual(second.read_text(), '{"second":true}\n')
             self.assertEqual(list(second.parent.glob(".native-alignment-*")), [])

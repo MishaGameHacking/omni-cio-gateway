@@ -69,7 +69,7 @@ class ProfileLaunchTests(unittest.TestCase):
 
     def test_unsupported_business_scenarios_fail_before_adb(self):
         for screen, scenario in (("business-risk", "job"), ("business-strategy", "job"),
-                                 ("business-notifications", "job"), ("profile", "ready"),
+                                 ("business-notifications", "job"), ("business-analysis", "job"), ("profile", "ready"),
                                  ("business-plans", "unknown")):
             command = Mock()
             with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):

@@ -422,6 +422,14 @@ class StrategyConfirm(RequestId):
     expected_version: int = Field(ge=0)
 
 
+def _legacy_horizon(months: int) -> str:
+    if months < 12:
+        return "short"
+    if months < 60:
+        return "medium"
+    return "long"
+
+
 @router.post("/strategy/confirm", responses=HTTP_ERRORS)
 def confirm_strategy(payload: StrategyConfirm, user: Any = Depends(backend.current_user)) -> dict:
     user_id, now = int(user["id"]), int(time.time())
@@ -445,7 +453,7 @@ def confirm_strategy(payload: StrategyConfirm, user: Any = Depends(backend.curre
         db.execute("UPDATE workspace_strategy_previews SET consumed_at=? WHERE id=?", (now, payload.preview_id))
         # The existing monitor reads these common rules; Volume also applies all
         # confirmed issuer/group/sector/currency limits through risk_data.
-        horizon = "short" if config["horizon_months"] < 12 else "medium" if config["horizon_months"] < 60 else "long"
+        horizon = _legacy_horizon(config["horizon_months"])
         try:
             from .volume_notifications import _preferences
         except ImportError:
@@ -528,54 +536,70 @@ def scenario(payload: Scenario, user: Any = Depends(backend.current_user)) -> di
     return _scenario(payload, user)
 
 
-@financial_context
-def _scenario(payload: Scenario, user: Any, snapshot: dict | None = None) -> dict:
-    snapshot = snapshot if snapshot is not None else saved_snapshot(user, payload.currency)
-    if snapshot is None:
-        raise HTTPException(409, "workspace_refresh_required")
+def _scenario_assumptions(shocks: list[Shock]) -> tuple[list, set]:
     assumptions, selectors = [], set()
-    for shock in payload.shocks:
+    for shock in shocks:
         value = decimal(shock.percent)
         if value is None or not -100 <= value <= 1000 or (shock.axis, shock.id) in selectors:
             raise HTTPException(422, "scenario_shock_invalid_or_duplicate")
         selectors.add((shock.axis, shock.id))
         assumptions.append({**shock.model_dump(), "percent": text_number(value)})
+    return assumptions, selectors
+
+
+def _scenario_position(item: dict, assumptions: list, currency: str) -> tuple:
+    uid = item["instrument_uid"]
+    value = decimal(item.get("value"))
+    metadata = item.get("metadata") or {}
+    identities = {"instrument": uid, "sector": metadata.get("sector"), "country": metadata.get("country_of_risk"),
+                  "currency": (item.get("value") or {}).get("currency")}
+    matches = [shock for shock in assumptions if shock["axis"] == "all" or shock["id"] == identities.get(shock["axis"])]
+    matched = {(shock["axis"], shock["id"]) for shock in matches}
+    unknown_membership = any(shock["axis"] != "all" and identities.get(shock["axis"]) is None and
+                             not (item.get("instrument_type") == "cash" and shock["axis"] in {"sector", "country"}) for shock in assumptions)
+    # A scenario has no implicit rule for composing overlapping shocks.
+    if len(matches) > 1:
+        raise HTTPException(422, "scenario_overlapping_shocks")
+    if unknown_membership:
+        return None, matched, True
+    if not matches:
+        return None, matched, False
+    if value is None or item["value"]["currency"] != currency or item.get("instrument_type") in {"futures", "option"}:
+        return None, matched, True
+    shock = decimal(matches[0]["percent"])
+    result = {"instrument_uid": uid, "account_id": item["account_id"], "before": money(value, currency),
+              "shock_percent": text_number(shock), "estimated_change": money(value * shock / 100, currency)}
+    return result, matched, False
+
+
+@financial_context
+def _scenario(payload: Scenario, user: Any, snapshot: dict | None = None) -> dict:
+    snapshot = snapshot if snapshot is not None else saved_snapshot(user, payload.currency)
+    if snapshot is None:
+        raise HTTPException(409, "workspace_refresh_required")
+    assumptions, selectors = _scenario_assumptions(payload.shocks)
     output, unknown, total_change, matched_selectors = [], [], ZERO, set()
     for item in positions(snapshot):
-        uid = item["instrument_uid"]
-        value = decimal(item.get("value"))
-        metadata = item.get("metadata") or {}
-        identities = {
-            "instrument": uid, "sector": metadata.get("sector"), "country": metadata.get("country_of_risk"),
-            "currency": (item.get("value") or {}).get("currency")}
-        matches = [shock for shock in assumptions if shock["axis"] == "all" or shock["id"] == identities.get(shock["axis"])]
-        matched_selectors.update((shock["axis"], shock["id"]) for shock in matches)
-        unknown_membership = any(shock["axis"] != "all" and identities.get(shock["axis"]) is None and
-                                 not (item.get("instrument_type") == "cash" and shock["axis"] in {"sector", "country"}) for shock in assumptions)
-        # Overlapping shocks have no implicit composition rule. Require the user
-        # to choose an unambiguous scenario instead of silently adding losses.
-        if len(matches) > 1:
-            raise HTTPException(422, "scenario_overlapping_shocks")
-        if unknown_membership:
-            unknown.append(uid)
-            continue
-        if not matches:
-            continue
-        if value is None or item["value"]["currency"] != payload.currency or item.get("instrument_type") in {"futures", "option"}:
-            unknown.append(uid)
-            continue
-        shock = decimal(matches[0]["percent"])
-        change = value * shock / 100
-        total_change += change
-        output.append({"instrument_uid": uid, "before": money(value, payload.currency), "shock_percent": text_number(shock), "estimated_change": money(change, payload.currency)})
+        result, matched, uncovered = _scenario_position(item, assumptions, payload.currency)
+        matched_selectors.update(matched)
+        if uncovered:
+            unknown.append(item["instrument_uid"])
+        if result is not None:
+            total_change += decimal(result["estimated_change"])
+            output.append(result)
     if selectors - matched_selectors:
         raise HTTPException(422, "scenario_selector_not_in_verified_positions")
     baseline = decimal(snapshot.get("capital", {}).get("total"))
+    incomplete = list(snapshot.get("position_coverage", {}).get("incomplete_reasons", []))
+    if baseline is None:
+        incomplete.append("capital_valuation_unavailable")
+    complete = not unknown and not incomplete
     return {"snapshot_id": snapshot["snapshot_id"], "as_of": snapshot["as_of"], "assumptions": assumptions,
             "baseline": money(baseline, payload.currency), "estimated_change": money(total_change, payload.currency),
-            "estimated_after": money(baseline + total_change, payload.currency) if baseline is not None and not unknown else None,
+            "estimated_after": money(baseline + total_change, payload.currency) if baseline is not None and complete else None,
             "covered_positions": len(output), "total_positions": len(positions(snapshot)), "uncovered_instrument_uids": sorted(set(unknown)),
-            "positions": output, "is_forecast": False, "basis": "user_shocks_linear_valuation_no_fx_or_derivative_model", "complete": not unknown}
+            "positions": output, "is_forecast": False, "basis": "user_shocks_linear_valuation_no_fx_or_derivative_model",
+            "complete": complete, "incomplete_reasons": incomplete, "estimated_change_basis": "covered_positions_only"}
 
 
 class ScenarioVariant(StrictModel):

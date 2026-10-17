@@ -37,6 +37,7 @@ REMOTE_DEPLOY_ROOT = "/root/analyst-ai-deploy"
 REMOTE_ARCHIVE_FILENAME = "backend.tgz"
 REMOTE_SCRIPT_FILENAME = "deploy.sh"
 MAX_PUBLIC_RESPONSE = 256_000
+DEPLOY_USER_AGENT = "Analyst-AI-deploy-check/1"
 WORKSPACE_READ_PATHS = (
     "/workspace", "/workspace/strategy", "/workspace/risks", "/workspace/chat/threads",
     "/workspace/notifications/preferences", "/workspace/devices",
@@ -173,7 +174,7 @@ def retry(command: list[str], *, attempts: int = 5, delay: float = 5.0) -> None:
 def verify_public_endpoint() -> None:
     health_request = urllib.request.Request(
         PUBLIC_URL + "/health",
-        headers={"Accept": "application/json", "User-Agent": "Analyst-AI-deploy-check/1"},
+        headers={"Accept": "application/json", "User-Agent": DEPLOY_USER_AGENT},
     )
     with urllib.request.urlopen(health_request, timeout=20) as response:
         health = json.loads(response.read(MAX_PUBLIC_RESPONSE).decode("utf-8"))
@@ -182,7 +183,7 @@ def verify_public_endpoint() -> None:
 
     login_request = urllib.request.Request(
         PUBLIC_URL + "/auth/telegram/start",
-        headers={"Accept": "text/html", "User-Agent": "Analyst-AI-deploy-check/1"},
+        headers={"Accept": "text/html", "User-Agent": DEPLOY_USER_AGENT},
     )
     with urllib.request.urlopen(login_request, timeout=20) as response:
         body = response.read(MAX_PUBLIC_RESPONSE + 1)
@@ -210,7 +211,7 @@ def verify_workspace_authentication() -> None:
     for path in WORKSPACE_READ_PATHS:
         request = urllib.request.Request(
             PUBLIC_URL + path,
-            headers={"Accept": "application/json", "User-Agent": "Analyst-AI-deploy-check/1"},
+            headers={"Accept": "application/json", "User-Agent": DEPLOY_USER_AGENT},
         )
         try:
             with urllib.request.urlopen(request, timeout=15) as response:

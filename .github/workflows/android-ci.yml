@@ -36,7 +36,10 @@ jobs:
       group: analyst-android-pr-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 40
+    # API35 16KB + API36, both upgrades, 52 business/font cases per API,
+    # native rendering and two-minute scroll checks plus the initial 1.7GB image.
+    # Individual device commands and semantic assertions keep their short deadlines.
+    timeout-minutes: 70
     env:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.longpaths
@@ -174,8 +177,8 @@ jobs:
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
             const shots = ['workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-            const spatialShots = ['spatial-dark', 'spatial-light', 'spatial-dialog', 'spatial-bars', 'spatial-candles', 'spatial-ring', 'spatial-selected', 'spatial-clipping', 'spatial-long-scroll', 'spatial-rotation', 'spatial-large-font', 'spatial-dialog-large-font'];
-            const businessShots = ['risk', 'assistant', 'plans', 'strategy', 'notifications'].flatMap(route =>
+            const spatialShots = ['spatial-dark', 'spatial-light', 'spatial-dialog', 'spatial-bars', 'spatial-candles', 'spatial-ring', 'spatial-selected', 'spatial-clipping', 'spatial-long-scroll', 'spatial-rotation', 'spatial-large-font', 'spatial-dialog-large-font', 'spatial-system-motion-off', 'spatial-thermal-moderate', 'spatial-predictive-back-progress', 'spatial-predictive-back-cancelled', 'business-assistant-draft-rotation', 'business-assistant-draft-rotation-font-200'];
+            const businessShots = ['risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis'].flatMap(route =>
               ['ready', 'empty', 'partial', 'error', 'job'].filter(state => state !== 'job' || ['assistant', 'plans'].includes(route)).flatMap(state =>
                 ['', '-font-200'].map(suffix => `business-${route}-${state}${suffix}`)));
             const allShots = [...shots, ...spatialShots, ...businessShots];

@@ -103,6 +103,21 @@ class SpatialFrameEvidenceTests(unittest.TestCase):
         transition.extend(marker(frames=10))
         self.assertIsNone(evidence.spatial_metrics(transition))
 
+    def test_policy_metrics_use_real_public_ranges_and_no_duplicate_keys(self):
+        observed = evidence.spatial_metrics(marker(thermal=2, **{"system-motion": "true", "power-save": "false", "back-progress": .3}))
+        self.assertEqual(2, observed["thermal"])
+        self.assertTrue(observed["system-motion"])
+        self.assertFalse(observed["power-save"])
+        for changes in ({"thermal": 7}, {"back-progress": 1.2}, {"system-motion": "yes"}, {"power-save": "0"}):
+            invalid = marker(**changes)
+            with self.subTest(changes=changes), self.assertRaises(AssertionError):
+                evidence.spatial_metrics(invalid)
+        duplicate = marker()
+        node = next(duplicate.iter("node"))
+        node.set("content-desc", node.get("content-desc") + ";probe-spatial-frames:100")
+        with self.assertRaises(AssertionError):
+            evidence.spatial_metrics(duplicate)
+
     def test_mesh_witness_rejects_blank_flat_fill_and_flat_silhouette(self):
         for image in (synthetic_image(), synthetic_image(background=(0, 200, 240)),
                       synthetic_image(paint=lambda x, y: (0, 200, 240) if 20 <= x < 80 and 20 <= y < 80 else None)):

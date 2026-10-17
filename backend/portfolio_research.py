@@ -200,49 +200,10 @@ def _history_risk(cards, values, total, currency, at):
                 'explanation': 'История не прошла проверку полноты, целостности и сопоставимости.'}
 
 
-def _optional_inputs(user, selected):
-    assets = sorted({p['assetUid'] for p in selected if p.get('assetUid')})
-    fundamental_data, fundamental_error = {'fundamentals': []}, None
-    news_data, news_error = {'items': []}, None
-    with details.BrokerReader(user) as reader:
-        # The broker accepts at most 100 assets per request. Keep every position
-        # and mark unavailable batches; do not truncate the financial inventory.
-        for offset in range(0, len(assets), 100):
-            batch, error = optional_broker_read(reader, 'fundamentals', {'assets': assets[offset:offset + 100]})
-            if error:
-                fundamental_error = error
-                break
-            fundamental_data['fundamentals'].extend(batch.get('fundamentals', []))
-        cursor = '0'
-        seen_news = set()
-        for _ in range(10):
-            page, error = optional_broker_read(reader, 'news', {'limit': 1000, 'cursor': cursor})
-            if error:
-                news_error = error
-                break
-            for item in page.get('items', []):
-                key = str(item.get('id') or '') if isinstance(item, dict) else ''
-                if not key:
-                    news_error = SOURCE_FAILURE
-                    # Keep a linked, dated headline inspectable even when the
-                    # provider omits its ID; do not declare complete coverage.
-                    if isinstance(item, dict):
-                        news_data['items'].append(item)
-                    continue
-                if key and key not in seen_news:
-                    seen_news.add(key)
-                    news_data['items'].append(item)
-            if not page.get('hasNext'):
-                break
-            next_cursor = str(page.get('nextCursor') or '')
-            if not next_cursor.isdecimal() or next_cursor == cursor:
-                news_error = SOURCE_FAILURE
-                break
-            cursor = next_cursor
-        else:
-            news_error = SOURCE_FAILURE
+def _verified_fundamentals(items, assets):
+    fundamental_error = None
     fundamentals, conflicts = {}, set()
-    for item in fundamental_data.get('fundamentals', []):
+    for item in items:
         uid = item.get('assetUid') if isinstance(item, dict) else None
         if not isinstance(uid, str) or uid not in assets:
             fundamental_error = SOURCE_FAILURE
@@ -254,7 +215,61 @@ def _optional_inputs(user, selected):
         del fundamentals[uid]
     if conflicts:
         fundamental_error = SOURCE_FAILURE
-    return fundamentals, news_data.get('items', []), [e for e in (fundamental_error, news_error) if e]
+    return fundamentals, fundamental_error
+
+
+def _optional_fundamentals(reader, assets):
+    items, error = [], None
+    # Keep every position and split the broker's limit of 100 assets per read.
+    for offset in range(0, len(assets), 100):
+        batch, error = optional_broker_read(reader, 'fundamentals', {'assets': assets[offset:offset + 100]})
+        if error:
+            break
+        items.extend(batch.get('fundamentals', []))
+    fundamentals, validation_error = _verified_fundamentals(items, assets)
+    return fundamentals, validation_error or error
+
+
+def _append_news_page(items, news, seen) -> bool:
+    complete = True
+    for item in items:
+        key = str(item.get('id') or '') if isinstance(item, dict) else ''
+        if not key:
+            complete = False
+            # A linked, dated headline remains inspectable without claiming a
+            # complete inventory when the source omitted its news identity.
+            if isinstance(item, dict):
+                news.append(item)
+            continue
+        if key not in seen:
+            seen.add(key)
+            news.append(item)
+    return complete
+
+
+def _optional_news(reader):
+    news, seen, cursor, news_error = [], set(), '0', None
+    for _ in range(10):
+        page, error = optional_broker_read(reader, 'news', {'limit': 1000, 'cursor': cursor})
+        if error:
+            return news, error
+        if not _append_news_page(page.get('items', []), news, seen):
+            news_error = SOURCE_FAILURE
+        if not page.get('hasNext'):
+            return news, news_error
+        following = str(page.get('nextCursor') or '')
+        if not following.isdecimal() or following == cursor:
+            return news, SOURCE_FAILURE
+        cursor = following
+    return news, SOURCE_FAILURE
+
+
+def _optional_inputs(user, selected):
+    assets = sorted({p['assetUid'] for p in selected if p.get('assetUid')})
+    with details.BrokerReader(user) as reader:
+        fundamentals, fundamental_error = _optional_fundamentals(reader, assets)
+        news, news_error = _optional_news(reader)
+    return fundamentals, news, [error for error in (fundamental_error, news_error) if error]
 
 
 def _research_cards(selected, profile, total, fundamentals, news, at):

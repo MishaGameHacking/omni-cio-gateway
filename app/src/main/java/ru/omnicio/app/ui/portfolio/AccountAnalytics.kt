@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import androidx.compose.foundation.clickable

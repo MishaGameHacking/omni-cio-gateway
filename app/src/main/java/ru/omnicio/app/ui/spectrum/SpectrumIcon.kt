@@ -15,7 +15,7 @@ enum class SpectrumSymbol(val asset: String) {
     Messages("messages"), Education("education"), Profile("profile"), Risk("risk"),
     Allocation("allocation"), Update("update"), Sources("sources"), Analyst("analyst"),
     Notifications("notifications"), Market("market"), Goal("goal"),
-    Back("back"), Search("search"), Check("check"), Close("close"), Calendar("calendar"),
+    Back("back"), Forward("forward"), Search("search"), Check("check"), Close("close"), Calendar("calendar"),
     Settings("settings"), Bookmark("bookmark"),
     Expand("plus"), Collapse("minus"), Currency("currency"),
 }

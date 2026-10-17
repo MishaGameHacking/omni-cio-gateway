@@ -55,9 +55,9 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
     val listState = rememberLazyListState()
     var collapsed by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
-    var previewOrder by remember { mutableStateOf<List<String>?>(null) }
-    var savingOrder by remember { mutableStateOf<List<String>?>(null) }
-    var undoOrder by remember { mutableStateOf<List<String>?>(null) }
+    var previewOrder by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    var savingOrder by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    var undoOrder by rememberSaveable { mutableStateOf<List<String>?>(null) }
     val savedOrder = normalizedDashboardOrder(personal.dashboardOrder)
     val order = previewOrder ?: savedOrder
     LaunchedEffect(personal.dashboardOrder, savingOrder) {
@@ -184,11 +184,7 @@ private fun HomeHeader(user: AnalystUser, onMessagesClick: () -> Unit) {
             Text("Ваш капитал", style = MaterialTheme.typography.headlineMedium)
         }
         BadgedBox(badge = { AttentionBadge() }) {
-        IconButton(onClick = onMessagesClick, modifier = Modifier.size(48.dp)
-            .semantics { contentDescription = "Уведомления" }) {
-            SpectrumLiveFeatureIcon(SpectrumLiveFeature.Notifications, Modifier.size(34.dp),
-                motionAllowed = false)
-        }
+        SpectrumIconButton(SpectrumSymbol.Notifications, "Уведомления", onMessagesClick, Modifier.size(48.dp))
         }
     }
 }
@@ -222,7 +218,7 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
                 Text("Текущий результат брокера", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f))
+            Spacer(Modifier.height(4.dp))
             val observed = snapshot.asOf ?: updated?.let { java.time.Instant.ofEpochMilli(it).toString() }
             Text("Данные: ${relativeObservation(observed)}${if (refreshing) " · обновляем" else ""}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

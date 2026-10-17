@@ -14,33 +14,60 @@ import struct
 import zlib
 
 PACKAGE = "ru.omnicio.app.debug"
+REQUIRED_METRICS = {"engines", "windows", "frames", "meshes", "pending", "error", "motion", "density"}
+COUNTERS = ("engines", "windows", "frames", "meshes", "pending", "pool", "thermal")
+MEASUREMENTS = ("density", "font-scale", "cpu-p95", "interval-p95", "back-progress")
+
+
+def _numeric_metric(value, *, counter=False):
+    if counter:
+        if not value.isdigit():
+            raise AssertionError("Invalid spatial counter")
+        return int(value)
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise AssertionError("Invalid spatial measurement")
+    return number
+
+
+def _validated_spatial_record(record):
+    if record["error"] != "none":
+        raise AssertionError("The actual spatial renderer reported an error")
+    for key in COUNTERS:
+        if key in record:
+            record[key] = _numeric_metric(record[key], counter=True)
+    for key in MEASUREMENTS:
+        if key in record:
+            record[key] = _numeric_metric(record[key])
+    for key in ("system-motion", "power-save"):
+        if key in record:
+            if record[key] not in {"true", "false"}:
+                raise AssertionError("Invalid observed system policy")
+            record[key] = record[key] == "true"
+    if record["density"] <= 0 or record.get("back-progress", 0) > 1 or record.get("thermal", 0) > 6:
+        raise AssertionError("Spatial measurements exceed their public API ranges")
+    return record
+
+
+def _spatial_record(node):
+    record = {}
+    for part in node.get("content-desc", "").split(";"):
+        if part.startswith("probe-spatial-"):
+            key, _, value = part.partition(":")
+            name = key.removeprefix("probe-spatial-")
+            if name in record:
+                raise AssertionError("Duplicate spatial metric in one observed marker")
+            record[name] = value
+    return _validated_spatial_record(record) if REQUIRED_METRICS <= record.keys() else None
 
 
 def spatial_metrics(tree):
     records = []
     for node in tree.iter("node"):
-        if node.get("package") != PACKAGE:
+        if node.get("package") != PACKAGE or node.get("visible-to-user") == "false":
             continue
-        record = {}
-        for part in node.get("content-desc", "").split(";"):
-            if part.startswith("probe-spatial-"):
-                key, _, value = part.partition(":")
-                record[key.removeprefix("probe-spatial-")] = value
-        if {"engines", "windows", "frames", "meshes", "pending", "error", "motion", "density"} <= record.keys():
-            if record["error"] != "none":
-                raise AssertionError("The actual spatial renderer reported an error")
-            for key in ("engines", "windows", "frames", "meshes", "pending", "pool"):
-                if key in record:
-                    if not record[key].isdigit():
-                        raise AssertionError("Invalid spatial counter")
-                    record[key] = int(record[key])
-            for key in ("density", "font-scale", "cpu-p95", "interval-p95"):
-                if key in record:
-                    record[key] = float(record[key])
-                    if not math.isfinite(record[key]) or record[key] < 0:
-                        raise AssertionError("Invalid spatial measurement")
-            if record["density"] <= 0:
-                raise AssertionError("Invalid measured density")
+        record = _spatial_record(node)
+        if record is not None:
             records.append(record)
     if not records or any(record != records[0] for record in records[1:]):
         return None

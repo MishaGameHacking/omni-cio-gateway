@@ -39,7 +39,7 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
                 Text("Последний анализ", style = MaterialTheme.typography.titleLarge)
                 if (last == null) Text("Подтверждённых запусков ещё нет.") else {
                     Text(localMoment(last.text("created_at", "")))
-                    Text("Причина: " + analysisReason(last.text("reason", "")))
+                    Text(analysisReasonLine(last))
                     Text("Состояние: " + analysisState(last.text("state", "")))
                     Text("Глубина: " + analysisTier(last.text("tier", "")), style = MaterialTheme.typography.bodySmall)
                     SpectrumSecondaryButton("Открыть сохранённые выводы", { openReport(last.text("card_id", "").takeIf(String::isNotBlank)) }, Modifier.fillMaxWidth())
@@ -69,7 +69,7 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
                     Text(jobStateTitle(monitor.text("state")))
                     monitor.optJSONObject("result")?.let { result ->
                         Text("Решение: " + monitorState(result.text("state", "")))
-                        Text("Причина: " + analysisReason(result.text("reason", "")))
+                        Text(analysisReasonLine(result))
                         if (!result.isNull("card_id")) SpectrumSecondaryButton("Открыть вывод проверки", { openReport(result.text("card_id")) }, Modifier.fillMaxWidth())
                     }
                     monitor.text("error_code", "").takeIf(String::isNotBlank)?.let { Text("Проверка завершилась с ошибкой: " + readinessLabel(it)) }
@@ -177,7 +177,7 @@ internal fun MonitorCheckCard(check: JSONObject?) {
         if (check == null) Text("Сохранённого решения планировщика пока нет.") else {
             Text(localMoment(check.text("checked_at", "")))
             Text(monitorState(check.text("state", "")))
-            Text("Причина: " + analysisReason(check.text("reason", "")))
+            Text(analysisReasonLine(check))
             if (check.text("state") == "skipped") Text("Проверка условий не создала новый вывод модели.")
             if (check.text("state") == "fallback") Text("Сохранено объяснение алгоритмов; ответ модели не подтверждён.")
             check.text("error_code", "").takeIf(String::isNotBlank)?.let { Text("Доступность модели: " + readinessLabel(it)) }
@@ -193,6 +193,8 @@ internal fun monitorState(raw: String): String = when (raw) {
     "skipped" -> "Новый анализ не требовался"; "analysis_required" -> "Условия потребовали нового анализа"
     "ready" -> "Вывод сохранён"; "fallback" -> "Сохранено объяснение алгоритмов"; else -> analysisState(raw)
 }
+
+private fun analysisReasonLine(value: JSONObject) = "Причина: " + analysisReason(value.text("reason", ""))
 
 internal fun analysisReason(raw: String): String = when (raw) {
     "manual" -> "Ваш запрос"; "morning", "scheduled_morning" -> "Утренняя проверка"; "evening", "scheduled_evening" -> "Вечерняя проверка"

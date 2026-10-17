@@ -18,6 +18,33 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEST = ROOT / "app/src/main/assets/spectrum3d"
 VERSION = 1
 COORDINATE_SCALE = 1_000_000
+MATERIALS = {
+    'ceramic': {'name': 'SpectrumCeramic', 'metallic': .04, 'roughness': .46},
+    'metal': {'name': 'SpectrumBrushedMetal', 'metallic': .72, 'roughness': .28},
+    'glass_coating': {'name': 'SpectrumGlassCoating', 'metallic': .0, 'roughness': .30,
+                      'clearcoat': 1.0, 'clearcoat_roughness': .12},
+}
+METAL_MODELS = frozenset(('portfolio risk update sources notifications settings calendar '
+                          'stock bond fund currency monogram market').split())
+COATED_MODELS = frozenset('analyst avatar brand globe orbit goal'.split())
+
+
+def material_family(name):
+    base = name.removesuffix('_low')
+    return 'glass_coating' if base in COATED_MODELS else 'metal' if base in METAL_MODELS else 'ceramic'
+
+
+def gltf_material(family):
+    preset = MATERIALS[family]
+    material = {'name': preset['name'], 'pbrMetallicRoughness': {
+        'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': preset['metallic'],
+        'roughnessFactor': preset['roughness']}, 'doubleSided': False, 'alphaMode': 'OPAQUE'}
+    if family == 'glass_coating':
+        # A real dielectric clearcoat lobe, not screen-space refraction. Text and
+        # chart data stay readable over opaque native/mesh surfaces in both themes.
+        material['extensions'] = {'KHR_materials_clearcoat': {
+            'clearcoatFactor': preset['clearcoat'], 'clearcoatRoughnessFactor': preset['clearcoat_roughness']}}
+    return material
 
 
 def canonical_float32(value):
@@ -201,6 +228,8 @@ def icon(name, detail=True):
             m.box((i-1)*.26,h/2-.36,w=.19,h=h,d=.19)
     elif name=="back":
         m.rod(.3,0,-.3,0,.055);m.rod(-.3,0,-.03,.27,.055);m.rod(-.3,0,-.03,-.27,.055)
+    elif name=="forward":
+        m.rod(-.3,0,.3,0,.055);m.rod(.3,0,.03,.27,.055);m.rod(.3,0,.03,-.27,.055)
     elif name=="close":
         m.rod(-.28,-.28,.28,.28,.055);m.rod(-.28,.28,.28,-.28,.055)
     elif name in ("plus","minus"):
@@ -278,15 +307,17 @@ def encode(mesh,name):
     gltf={'asset':{'version':'2.0','generator':f'Analyst AI Spectrum mesh catalogue {VERSION}'},
           'scene':0,'scenes':[{'nodes':[0]}],'nodes':[{'mesh':0,'name':name}],
           'meshes':[{'primitives':[{'attributes':{'POSITION':position,'NORMAL':normal},'indices':indices,'material':0}]}],
-          'materials':[{'name':'SpectrumCeramic','pbrMetallicRoughness':{'baseColorFactor':[1,1,1,1],'metallicFactor':.12,'roughnessFactor':.36},'doubleSided':False}],
+          'materials':[gltf_material(material_family(name))],
           'buffers':[{'byteLength':len(data)}],'bufferViews':views,'accessors':accessors}
+    if material_family(name) == 'glass_coating':
+        gltf['extensionsUsed'] = ['KHR_materials_clearcoat']
     js=json.dumps(gltf,separators=(',',':')).encode();js+=b' '*((-len(js))%4)
     data+=b'\x00'*((-len(data))%4)
     size=12+8+len(js)+8+len(data)
     return struct.pack('<III',0x46546C67,2,size)+struct.pack('<II',len(js),0x4E4F534A)+js+struct.pack('<II',len(data),0x004E4942)+data
 
 
-NAMES=('surface button chip input dock heading bar home portfolio ideas pulse messages education profile risk allocation update sources analyst notifications market goal avatar brand globe orbit check warning error settings bookmark calendar stock bond fund currency monogram search arrow back close charts plus minus').split()
+NAMES=('surface button chip input dock heading bar home portfolio ideas pulse messages education profile risk allocation update sources analyst notifications market goal avatar brand globe orbit check warning error settings bookmark calendar stock bond fund currency monogram search arrow back forward close charts plus minus').split()
 
 
 def generate(check=False):
@@ -295,7 +326,8 @@ def generate(check=False):
     for name in NAMES:
         for suffix,detail in (('',True),('_low',False)):
             key=name+suffix;mesh=icon(name,detail);payload=encode(mesh,key);path=DEST/(key+'.glb')
-            manifest['models'][key]={'sha256':hashlib.sha256(payload).hexdigest(),'bytes':len(payload),'triangles':len(mesh.indices)//3}
+            manifest['models'][key]={'sha256':hashlib.sha256(payload).hexdigest(),'bytes':len(payload),
+                                    'triangles':len(mesh.indices)//3,'material':material_family(key)}
             if check:
                 if not path.exists() or path.read_bytes()!=payload:errors.append(str(path))
             else:path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(payload)

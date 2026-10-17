@@ -31,6 +31,7 @@ router = APIRouter(prefix="/workspace", tags=["Durable workspace jobs"])
 CURRENT_WORKSPACE_JOB: ContextVar[tuple[str, str, int] | None] = ContextVar("volume_current_job", default=None)
 LEASE = 900
 TERMINAL = {"completed", "cancelled", "failed", "uncertain"}
+OWNED_JOB_SQL = "SELECT * FROM workspace_jobs WHERE id=? AND user_id=?"
 
 
 class JobStopped(RuntimeError):
@@ -69,6 +70,27 @@ def _expire(db, now: int) -> None:
         owner=NULL,expires_at=NULL,updated_at=? WHERE state='running' AND expires_at<=?""", (now, now))
 
 
+def _analysis_job_override(value: dict, row, db) -> None:
+    result = value["result"]
+    if not result or not result.get("analysis_job_id") or db is None:
+        return
+    child = db.execute("SELECT * FROM ai_work_jobs WHERE id=? AND user_id=?", (result["analysis_job_id"], row["user_id"])).fetchone()
+    if child is None:
+        return
+    cancelled = child["error_code"] == "analysis_cancelled"
+    cancelling = "cancel_requested_at" in child.keys() and child["cancel_requested_at"] is not None and child["status"] == "running"
+    child_state = child["status"]
+    if cancelled:
+        child_state = "cancelled"
+    elif cancelling:
+        child_state = "cancel_requested"
+    value.update(state=child_state, stage="done" if child["status"] == "completed" else "analysis_monitor",
+                 error_code=child["error_code"], cancel_requested=cancelled or cancelling,
+                 updated_at=_iso(child["updated_at"]), can_retry=False)
+    if child["result_json"]:
+        value["result"] = {**result, **json.loads(child["result_json"])}
+
+
 def _job(row, db=None) -> dict:
     result = json.loads(row["result_json"]) if row["result_json"] else None
     value = {"job_id": row["id"], "request_id": row["request_id"], "kind": row["kind"],
@@ -79,23 +101,15 @@ def _job(row, db=None) -> dict:
     progress = json.loads(row["checkpoint_json"]).get("_progress")
     if progress:
         value["progress"] = progress
-    if row["kind"] == "analysis" and result and result.get("analysis_job_id") and db is not None:
-        child = db.execute("SELECT * FROM ai_work_jobs WHERE id=? AND user_id=?", (result["analysis_job_id"], row["user_id"])).fetchone()
-        if child:
-            cancelled = child["error_code"] == "analysis_cancelled"
-            cancelling = "cancel_requested_at" in child.keys() and child["cancel_requested_at"] is not None and child["status"] == "running"
-            value.update(state="cancelled" if cancelled else "cancel_requested" if cancelling else child["status"],
-                         stage="done" if child["status"] == "completed" else "analysis_monitor", error_code=child["error_code"],
-                         cancel_requested=cancelled or cancelling, updated_at=_iso(child["updated_at"]), can_retry=False)
-            if child["result_json"]:
-                value["result"] = {**result, **json.loads(child["result_json"])}
+    if row["kind"] == "analysis":
+        _analysis_job_override(value, row, db)
     return value
 
 
 def get_job(user_id: int, identifier: str) -> dict:
     with transaction(backend.connect) as db:
         _expire(db, int(time.time()))
-        row = db.execute("SELECT * FROM workspace_jobs WHERE id=? AND user_id=?", (identifier, user_id)).fetchone()
+        row = db.execute(OWNED_JOB_SQL, (identifier, user_id)).fetchone()
         if row is None:
             raise HTTPException(404, "workspace_job_not_found")
         return _job(row, db)
@@ -187,6 +201,55 @@ def _claim(identifier: str | None = None) -> dict | None:
         return {**dict(row), "owner": owner}
 
 
+def _enqueue_analysis(job: dict) -> dict:
+    progress("analysis_queued")
+    with transaction(backend.connect) as db:
+        assert_current_in(db)
+        result = {"analysis_job_id": AnalysisQueue(backend.connect).enqueue_in(db, job["user_id"])["job_id"]}
+        db.execute("UPDATE workspace_jobs SET result_json=? WHERE id=? AND owner=?", (encode(result), job["id"], job["owner"]))
+    return result
+
+
+def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
+    try:
+        from .volume_workspace import collect
+        from .volume_chat import run_message
+        from .volume_plans import reconcile_plan
+    except ImportError:
+        from volume_workspace import collect
+        from volume_chat import run_message
+        from volume_plans import reconcile_plan
+    if job["kind"] == "refresh":
+        return collect(user, payload, checkpoint, progress)
+    if job["kind"] == "chat":
+        return run_message(user, job, payload)
+    if job["kind"] == "analysis":
+        return _enqueue_analysis(job)
+    if job["kind"] == "reconcile":
+        return reconcile_plan(user, payload, progress)
+    raise HTTPException(422, "workspace_job_kind_invalid")
+
+
+def _failure_state(row, error: Exception, pending_money) -> tuple[str, str]:
+    if row["paid_started"] and pending_money:
+        return "uncertain", "workspace_paid_outcome_unknown"
+    if row["cancel_requested"] or isinstance(error, JobStopped):
+        return "cancelled", "workspace_job_cancelled"
+    return "failed", error_code(error)
+
+
+def _fail_job(job: dict, error: Exception) -> None:
+    # Paid outcome may be settled even when model JSON is invalid. The job is
+    # still not replayable; a new intentional message is a new operation.
+    with transaction(backend.connect) as db:
+        row = db.execute("SELECT * FROM workspace_jobs WHERE id=? AND owner=? AND state='running'", (job["id"], job["owner"])).fetchone()
+        if row is None:
+            return
+        pending_money = db.execute("SELECT 1 FROM ai_money_reservations WHERE user_id=? AND state IN ('reserved','uncertain') AND created_at>=?", (job["user_id"], row["created_at"])).fetchone()
+        status, code = _failure_state(row, error, pending_money)
+        db.execute("UPDATE workspace_jobs SET state=?,error_code=?,updated_at=? WHERE id=? AND owner=?", (status, code, int(time.time()), job["id"], job["owner"]))
+
+
 def run_job(identifier: str | None = None) -> None:
     job = _claim(identifier)
     if job is None:
@@ -199,45 +262,12 @@ def run_job(identifier: str | None = None) -> None:
             raise HTTPException(409, "tinvest_not_connected")
         payload, checkpoint = json.loads(job["payload_json"]), json.loads(job["checkpoint_json"])
         with monitoring_connection(job["user_id"], user["tinvest_token_encrypted"]):
-            if job["kind"] == "refresh":
-                try:
-                    from .volume_workspace import collect
-                except ImportError:
-                    from volume_workspace import collect
-                result = collect(user, payload, checkpoint, progress)
-            elif job["kind"] == "chat":
-                try:
-                    from .volume_chat import run_message
-                except ImportError:
-                    from volume_chat import run_message
-                result = run_message(user, job, payload)
-            elif job["kind"] == "analysis":
-                progress("analysis_queued")
-                with transaction(backend.connect) as db:
-                    assert_current_in(db)
-                    result = {"analysis_job_id": AnalysisQueue(backend.connect).enqueue_in(db, job["user_id"])["job_id"]}
-                    db.execute("UPDATE workspace_jobs SET result_json=? WHERE id=? AND owner=?", (encode(result), job["id"], job["owner"]))
-            elif job["kind"] == "reconcile":
-                try:
-                    from .volume_plans import reconcile_plan
-                except ImportError:
-                    from volume_plans import reconcile_plan
-                result = reconcile_plan(user, payload, progress)
-            else:
-                raise HTTPException(422, "workspace_job_kind_invalid")
+            result = _perform_job(job, user, payload, checkpoint)
             with transaction(backend.connect) as db:
                 assert_current_in(db)
                 db.execute("UPDATE workspace_jobs SET state='completed',stage='done',result_json=?,checkpoint_json='{}',updated_at=? WHERE id=? AND owner=?", (encode(result), int(time.time()), job["id"], job["owner"]))
     except Exception as error:
-        # Paid outcome may be settled even when model JSON is invalid. The job is
-        # still not replayable; a new intentional message is a new operation.
-        with transaction(backend.connect) as db:
-            row = db.execute("SELECT * FROM workspace_jobs WHERE id=? AND owner=? AND state='running'", (job["id"], job["owner"])).fetchone()
-            if row:
-                pending_money = db.execute("SELECT 1 FROM ai_money_reservations WHERE user_id=? AND state IN ('reserved','uncertain') AND created_at>=?", (job["user_id"], row["created_at"])).fetchone()
-                status = "uncertain" if row["paid_started"] and pending_money else "cancelled" if row["cancel_requested"] or isinstance(error, JobStopped) else "failed"
-                code = "workspace_paid_outcome_unknown" if status == "uncertain" else "workspace_job_cancelled" if status == "cancelled" else error_code(error)
-                db.execute("UPDATE workspace_jobs SET state=?,error_code=?,updated_at=? WHERE id=? AND owner=?", (status, code, int(time.time()), job["id"], job["owner"]))
+        _fail_job(job, error)
     finally:
         CURRENT_WORKSPACE_JOB.reset(token)
 
@@ -295,7 +325,7 @@ def job_status(identifier: str, user: Any = Depends(backend.current_user)) -> di
 @router.post("/jobs/{identifier}/cancel", responses=HTTP_ERRORS)
 def cancel(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
     with transaction(backend.connect) as db:
-        row = db.execute("SELECT * FROM workspace_jobs WHERE id=? AND user_id=?", (identifier, int(user["id"]))).fetchone()
+        row = db.execute(OWNED_JOB_SQL, (identifier, int(user["id"]))).fetchone()
         if not row:
             raise HTTPException(404, "workspace_job_not_found")
         result = json.loads(row["result_json"]) if row["result_json"] else {}
@@ -313,7 +343,7 @@ def retry(identifier: str, payload: RequestId, tasks: BackgroundTasks, user: Any
     if not status["can_retry"]:
         raise HTTPException(409, "workspace_job_not_safely_retryable")
     with closing(backend.connect()) as db:
-        row = db.execute("SELECT * FROM workspace_jobs WHERE id=? AND user_id=?", (identifier, int(user["id"]))).fetchone()
+        row = db.execute(OWNED_JOB_SQL, (identifier, int(user["id"]))).fetchone()
     request = json.loads(row["payload_json"])
     checkpoint = json.loads(row["checkpoint_json"])
     if row["kind"] == "chat":

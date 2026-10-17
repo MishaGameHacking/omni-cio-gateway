@@ -159,6 +159,7 @@ source "$ENV_FILE"
 set +a
 DATABASE_PATH="$PREFLIGHT_DB" STAGED_BACKEND="$STAGING/backend" "$VENV_PYTHON" - <<'PY'
 import os
+from contextlib import closing
 from pathlib import Path
 import sys
 
@@ -167,6 +168,19 @@ sys.path.insert(0, str(staged))
 import telegram_browser_app as module
 
 module.legacy.init_db()
+from autonomous_ai import init_autonomous_db
+
+# Initialize the same schema as production startup in this isolated database.
+# Do not enter the lifespan or start the scheduler during staging.
+init_autonomous_db()
+with closing(module.legacy.connect()) as db:
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+required_tables = {
+    "workspace_snapshots", "workspace_strategy_versions", "workspace_jobs",
+    "workspace_chat_messages", "workspace_notification_outbox", "workspace_plan_operations",
+}
+if not required_tables <= tables:
+    raise SystemExit("Workspace schema failed isolated startup preflight")
 start_routes = [
     route for route in module.app.router.routes
     if getattr(route, "path", None) == "/auth/telegram/start"

@@ -3,14 +3,17 @@ package ru.omnicio.app.ui.workspace
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.LocalDate
 import java.util.UUID
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
+import ru.omnicio.app.data.workspace.VolumeReply
+import ru.omnicio.app.data.workspace.WorkspaceTransport
 
 val LocalWorkspaceRefreshKey = staticCompositionLocalOf { 0 }
 val LocalWorkspaceSnapshot = staticCompositionLocalOf<JSONObject?> { null }
@@ -59,27 +62,35 @@ fun rememberWorkspaceRuntime(session: WorkspaceSession, connected: Boolean, curr
             }
             val activeId = jobId
             if (activeId != null) {
-                while (isActive) {
-                    val reply = withContext(Dispatchers.IO) { client.request(session.token, "/workspace/jobs/${VolumeWorkspaceClient.encode(activeId)}") }
-                    if (reply.signedOut) { expired(); return@LaunchedEffect }
-                    if (reply.error != null) { error = reply.error; break }
-                    val state = reply.data?.optString("state")
-                    if (state in setOf("completed", "failed", "cancelled", "uncertain")) {
-                        jobId = null
-                        if (state == "completed") {
-                            val latest = withContext(Dispatchers.IO) { client.request(session.token, "/workspace?currency=" + currency.name) }
-                            latest.data?.let { data = it; revision++ }
-                            error = latest.error
-                            if (jobCurrency != currency.name && latest.data?.isNull("snapshot_id") != false) {
-                                attemptedCurrency = null; requested++
-                            }
-                        } else error = "Сбор дополнительных данных завершился без нового снимка. Основной портфель доступен отдельно."
-                        break
-                    }
-                    delay(1_500)
+                val reply = awaitMaterialization(client, session.token, activeId)
+                if (reply.signedOut) { expired(); return@LaunchedEffect }
+                if (reply.error != null) error = reply.error
+                else {
+                    jobId = null
+                    if (reply.data?.optString("state") == "completed") {
+                        val latest = withContext(Dispatchers.IO) { client.request(session.token, "/workspace?currency=" + currency.name) }
+                        if (latest.signedOut) { expired(); return@LaunchedEffect }
+                        latest.data?.let { data = it; revision++ }
+                        error = latest.error
+                        if (jobCurrency != currency.name && latest.data?.isNull("snapshot_id") != false) {
+                            attemptedCurrency = null; requested++
+                        }
+                    } else error = "Сбор дополнительных данных завершился без нового снимка. Основной портфель доступен отдельно."
                 }
             }
         } finally { busy = false }
     }
     return WorkspaceRuntime(data, revision, busy, error, jobId, { if (!busy) requested++ }, { readRequested++ })
+}
+
+private suspend fun awaitMaterialization(client: WorkspaceTransport, token: String, identifier: String): VolumeReply {
+    val terminal = setOf("completed", "failed", "cancelled", "uncertain")
+    while (true) {
+        currentCoroutineContext().ensureActive()
+        val reply = withContext(Dispatchers.IO) {
+            client.request(token, "/workspace/jobs/${VolumeWorkspaceClient.encode(identifier)}")
+        }
+        if (reply.signedOut || reply.error != null || reply.data?.optString("state") in terminal) return reply
+        delay(1_500)
+    }
 }

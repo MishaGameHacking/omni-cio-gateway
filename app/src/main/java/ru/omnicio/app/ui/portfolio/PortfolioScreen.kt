@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
@@ -192,7 +194,7 @@ fun PortfolioScreen(
     if (selectForSection != null && snapshot != null) {
         AlertDialog(onDismissRequest = { selectForSection = null }, title = { Text("Выберите счёт") },
             containerColor = LocalSpectrumPalette.current.card,
-            text = { Column(Modifier.verticalScroll(rememberScrollState())) { snapshot.accounts.forEach { item ->
+            text = { Column { snapshot.accounts.forEach { item ->
                 TextButton(onClick = { accountId = item.id; section = selectForSection ?: 0; selectForSection = null }) { Text(item.name) }
             } } }, confirmButton = { TextButton(onClick = { selectForSection = null }) { Text("Отмена") } })
     }

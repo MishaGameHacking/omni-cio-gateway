@@ -13,11 +13,13 @@ import org.json.JSONObject
 import ru.omnicio.app.data.portfolio.MoneyAmount
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.spatial.SpatialWindow
 
 @Composable
 internal fun AssetComparisonDialog(rows: List<PortfolioRow>, observedAt: String?, close: () -> Unit) {
     val entries = rows.distinctBy(::portfolioRowKey).take(3)
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        SpatialWindow(Modifier.fillMaxSize()) {
         SpectrumBackground(Modifier.fillMaxSize()) {
             Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = { WorkspaceHeader("Сравнение", "Одни поля · одна дата наблюдения", close) }) { padding ->
@@ -53,6 +55,7 @@ internal fun AssetComparisonDialog(rows: List<PortfolioRow>, observedAt: String?
                     } } }
                 }
             }
+        }
         }
     }
 }

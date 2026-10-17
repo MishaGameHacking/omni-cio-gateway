@@ -99,6 +99,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                     WorkspaceRoute.Assistant -> page = "assistant"
                     WorkspaceRoute.Strategies -> page = "strategy"
                     WorkspaceRoute.Messages -> page = "notifications"
+                    WorkspaceRoute.AnalysisTimeline -> page = "analysis"
                     else -> navigation = "workspace:${destination.name}"
                 }
             },
@@ -110,13 +111,14 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                     "plans" -> PlansWorkspaceScreen(onBack)
                     "strategy" -> LiveStrategyScreen(userId, onBack)
                     "notifications" -> NotificationEventsScreen(onBack)
+                    "analysis" -> AnalysisTimelineScreen(onBack)
                 }
             }
         }
     }
 }
 
-internal val businessProbeRoutes = setOf("assistant", "risk", "plans", "strategy", "notifications")
+internal val businessProbeRoutes = setOf("assistant", "risk", "plans", "strategy", "notifications", "analysis")
 internal val businessProbeScenarios = setOf("ready", "empty", "partial", "error", "job")
 private const val PROBE_AS_OF = "2026-10-17T10:00:00Z"
 private const val PROBE_ACCOUNT = "synthetic-account"
@@ -185,8 +187,14 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     private val jobPolls = mutableMapOf<String, Int>()
     private val requestJobs = mutableMapOf(PROBE_REQUEST to PROBE_JOB)
 
-    fun workspace(): JSONObject = jObject("schema_version" to 1, "snapshot_id" to "synthetic-snapshot", "currency" to "RUB",
-        "as_of" to PROBE_AS_OF, "sources" to jArray(probeSource()), "sections" to JSONObject())
+    fun workspace(): JSONObject {
+        val ai = timelineProbeAi(scenario)
+        val sources = ai.optJSONObject("last_check")?.optJSONObject("trigger")?.records("sources").orEmpty()
+        return jObject("schema_version" to 1, "snapshot_id" to "synthetic-snapshot", "currency" to "RUB",
+            "as_of" to PROBE_AS_OF, "sources" to JSONArray(listOf(probeSource()) + sources),
+            "sections" to jObject("ai" to jObject("state" to if (scenario == "empty") "not_configured" else "available",
+                "data" to ai, "as_of" to PROBE_AS_OF, "sources" to JSONArray(sources))))
+    }
 
     @Synchronized
     override fun request(token: String, path: String, method: String, body: JSONObject?): VolumeReply {
@@ -198,6 +206,23 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
         return try {
             when {
                 method == "GET" && endpoint == "/workspace" -> ok(workspace())
+                method == "GET" && endpoint.startsWith("/workspace/analysis/checks/") -> {
+                    val check = timelineProbeCheck(scenario, endpoint.substringAfterLast('/'))
+                        ?: return VolumeReply(error = "Тестовая проверка не найдена.", code = "not_found", status = 404)
+                    ok(check)
+                }
+                method == "GET" && endpoint == "/workspace/analysis/diff" -> {
+                    val parameters = fixtureQuery(path)
+                    require(parameters["current_card_id"] == "synthetic-analysis")
+                    require(parameters["previous_card_id"] in setOf(null, "synthetic-previous-analysis"))
+                    require(parameters["offset"]?.toIntOrNull() in setOf(null, 0))
+                    ok(timelineProbeFacts())
+                }
+                method == "POST" && endpoint == "/workspace/analysis" -> {
+                    require(body?.optString("reason") == "manual")
+                    if (scenario in setOf("empty", "partial")) return conflict("Синтетический анализ недоступен по состоянию источника.")
+                    enqueue(body)
+                }
                 method == "GET" && endpoint == "/workspace/risks" -> ok(risks())
                 method == "GET" && endpoint == "/workspace/risks/checks" -> ok(jObject("items" to JSONArray(checks)))
                 method == "GET" && endpoint == "/workspace/risks/events" -> ok(jObject("items" to riskEvents()))
@@ -317,6 +342,11 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     }
 
     private fun ok(data: JSONObject) = VolumeReply(data = JSONObject(data.toString()), status = 200)
+    private fun fixtureQuery(path: String): Map<String, String> = path.substringAfter('?', "").split('&').mapNotNull { pair ->
+        val parts = pair.split('=', limit = 2)
+        if (parts.size != 2) null else java.net.URLDecoder.decode(parts[0], Charsets.UTF_8) to
+            java.net.URLDecoder.decode(parts[1], Charsets.UTF_8)
+    }.toMap()
     private fun conflict(message: String) = VolumeReply(error = message, code = "synthetic_conflict", status = 409)
     private fun invalid(message: String): VolumeReply {
         trace.value = trace.value.copy(errors = (trace.value.errors + message).takeLast(10))

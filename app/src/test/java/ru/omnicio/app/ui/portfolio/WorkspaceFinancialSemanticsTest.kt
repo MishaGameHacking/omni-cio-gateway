@@ -49,6 +49,44 @@ class WorkspaceFinancialSemanticsTest {
         assertNull(result)
     }
 
+    @Test fun anEvidenceInstantResolvesTheObservationAndNeverAnotherBalanceOnTheSameDay() {
+        assertTrue(sameHistoryInstant("2026-10-01T12:00:00Z", "2026-10-01T15:00:00+03:00"))
+        assertFalse(sameHistoryInstant("2026-10-01T12:00:00Z", "2026-10-01T15:00:01+03:00"))
+        assertFalse(sameHistoryInstant("2026-10-01T12:00:00Z", "2026-10-01"))
+    }
+
+    @Test fun restoredRangeDatesStayInsideTheSelectedBucketsAfterGroupingChanges() {
+        val points = listOf(history("2026-10-01", "100"), history("2026-10-31", "105"))
+        val start = LocalDate.parse("2026-10-13")
+        val end = LocalDate.parse("2026-10-23")
+        for (grouping in listOf("day", "week", "month")) {
+            val bars = historyBars(points, grouping)!!.bars
+            val indices = historyRangeIndices(bars, start.toString(), end.toString())
+            assertTrue(start in bars[indices.first].start..bars[indices.first].end)
+            assertTrue(end in bars[indices.last].start..bars[indices.last].end)
+        }
+    }
+
+    @Test fun rangeDatesOutsideTheReceivedSeriesClampWithoutInventingObservations() {
+        val bars = historyBars(listOf(history("2026-10-10", "100"), history("2026-10-20", "101")), "day")!!.bars
+        assertEquals(0..bars.lastIndex, historyRangeIndices(bars, "2026-01-01", "2026-12-31"))
+        assertEquals(0..0, historyRangeIndices(bars, "2026-01-01", "2026-01-02"))
+        assertEquals(bars.lastIndex..bars.lastIndex, historyRangeIndices(bars, "2026-12-01", "2026-12-02"))
+    }
+
+    @Test fun reportPublicationRequiresASeparateDatedSourceAndHonorsAnExplicitUnconfirmedFlag() {
+        assertEquals(ReportPublicationState.Scheduled, reportPublicationState("scheduled", false, true))
+        assertEquals(ReportPublicationState.Unconfirmed, reportPublicationState("published", false, true))
+        assertEquals(ReportPublicationState.Unconfirmed, reportPublicationState("published", true, false))
+        assertEquals(ReportPublicationState.Published, reportPublicationState("published", null, true))
+    }
+
+    @Test fun reportDatesUseMoscowCalendarForInstantsAndPreserveSourceCalendarDates() {
+        assertEquals(LocalDate.parse("2026-10-02"), reportCalendarDate("2026-10-01T22:30:00Z"))
+        assertEquals(LocalDate.parse("2026-10-01"), reportCalendarDate("2026-10-01"))
+        assertNull(reportCalendarDate("не опубликовано"))
+    }
+
     private fun candle(day: Int, price: String, complete: Boolean = true): MarketCandle {
         val value = BigDecimal(price)
         return MarketCandle("2026-10-${day.toString().padStart(2, '0')}T00:00:00Z", value, value, value, value,

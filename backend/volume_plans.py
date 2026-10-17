@@ -14,7 +14,7 @@ try:
     from . import app as backend, portfolio_details as details, volume_state as state, volume_jobs as jobs
     from .ai_budget import transaction
     from .investment_links import instrument_link
-    from .volume_contract import HTTP_ERRORS, decimal, money, now_iso, source, text_number, ZERO, financial_context
+    from .volume_contract import HTTP_ERRORS, decimal, money, now_iso, source, text_number, timestamp, ZERO, financial_context
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -22,7 +22,7 @@ except ImportError:
     import volume_jobs as jobs
     from ai_budget import transaction
     from investment_links import instrument_link
-    from volume_contract import HTTP_ERRORS, decimal, money, now_iso, source, text_number, ZERO, financial_context
+    from volume_contract import HTTP_ERRORS, decimal, money, now_iso, source, text_number, timestamp, ZERO, financial_context
 
 router = APIRouter(prefix="/workspace/plans", tags=["Manual broker reconciliation"])
 
@@ -71,6 +71,11 @@ def create(payload: PlanCreate, user: Any = Depends(backend.current_user)) -> di
 
 @financial_context
 def _create(payload: PlanCreate, user: Any) -> dict:
+    user_id, request = int(user["id"]), payload.model_dump()
+    with closing(backend.connect()) as db:
+        previous = state.receipt(db, user_id, payload.request_id, "manual_plan", request)
+    if previous:
+        return previous
     amount = decimal(payload.quantity)
     if amount is None or amount <= 0:
         raise HTTPException(422, "manual_plan_quantity_invalid")
@@ -88,7 +93,6 @@ def _create(payload: PlanCreate, user: Any) -> dict:
     url = instrument_link(position["instrument_type"], position.get("ticker"), position["metadata"].get("isin"))
     if not url:
         raise HTTPException(409, "manual_plan_official_link_unavailable")
-    user_id, request = int(user["id"]), payload.model_dump()
     with transaction(backend.connect) as db:
         previous = state.receipt(db, user_id, payload.request_id, "manual_plan", request)
         if previous:
@@ -133,13 +137,101 @@ class Reconcile(state.RequestId):
 
 @router.post("/{identifier}/reconcile", status_code=202, responses=HTTP_ERRORS)
 def reconcile(identifier: str, payload: Reconcile, tasks: BackgroundTasks, user: Any = Depends(backend.current_user)) -> dict:
-    with closing(backend.connect()) as db:
+    def validate_plan(db, _job_id):
         plan = _current(_plan(db, int(user["id"]), identifier), int(user["id"]), db)
-    if plan["state"] == "obsolete" or not plan.get("opened_at"):
-        raise HTTPException(409, "manual_plan_handoff_required_or_obsolete")
-    result = jobs.enqueue(int(user["id"]), payload.request_id, "reconcile", {"plan_id": identifier, "operation_ids": sorted(set(payload.operation_ids))})
+        if plan["state"] == "obsolete" or not plan.get("opened_at"):
+            raise HTTPException(409, "manual_plan_handoff_required_or_obsolete")
+    result = jobs.enqueue(int(user["id"]), payload.request_id, "reconcile",
+                          {"plan_id": identifier, "operation_ids": sorted(set(payload.operation_ids))}, before_insert=validate_plan)
     tasks.add_task(jobs.run_job, result["job_id"])
     return result
+
+
+def _candidate_operation(raw: dict, plan: dict, after: datetime, until: datetime) -> dict | None:
+    item = details.normalize_operation(raw)
+    kind = item["type"].removeprefix("OPERATION_TYPE_")
+    allowed = {"BUY", "BUY_CARD", "DELIVERY_BUY"} if plan["side"] == "buy" else {"SELL", "DELIVERY_SELL"}
+    quantity = decimal(item.get("quantity"))
+    if kind not in allowed or item.get("instrumentUid") != plan["instrument_uid"] or item.get("state") != "OPERATION_STATE_EXECUTED":
+        return None
+    if not item["id"] or quantity is None or quantity <= 0:
+        return None
+    try:
+        when = timestamp(item["date"])
+    except ValueError:
+        return None
+    if not after <= when <= until:
+        return None
+    return {"id": item["id"], "date": item["date"], "quantity": text_number(quantity), "payment": money(item.get("payment")),
+            "instrument_uid": item["instrumentUid"], "account_id": plan["account_id"], "side": plan["side"]}
+
+
+def _candidate_rows(response: dict, plan: dict, after: datetime, until: datetime, candidates: dict) -> None:
+    rows = response.get("items", [])
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise HTTPException(502, "operations_response_invalid")
+    for raw in rows:
+        item = _candidate_operation(raw, plan, after, until)
+        if item is None:
+            continue
+        if item["id"] in candidates and candidates[item["id"]] != item:
+            raise HTTPException(502, "operation_conflicting_observations")
+        candidates[item["id"]] = item
+
+
+def _collect_candidates(reader, plan: dict, progress) -> tuple[dict, bool]:
+    cursor, candidates, complete = "", {}, False
+    after, until = timestamp(plan["opened_at"]), datetime.now(timezone.utc)
+    for page in range(100):
+        progress("reconciling", completed=page, total=None)
+        response = reader.read("operations", {"accountId": plan["account_id"], "from": plan["opened_at"], "to": until.isoformat(),
+                                               "cursor": cursor, "limit": 1000, "state": "OPERATION_STATE_EXECUTED", "withoutTrades": False})
+        _candidate_rows(response, plan, after, until, candidates)
+        if not response.get("hasNext"):
+            complete = True
+            break
+        following = str(response.get("nextCursor") or "")
+        if not following or following == cursor:
+            raise HTTPException(502, "operations_cursor_invalid")
+        cursor = following
+    return candidates, complete
+
+
+def _read_reconciliation(user: Any, plan: dict, progress) -> tuple:
+    with details.BrokerReader(user) as reader:
+        reader.account(plan["account_id"])
+        account = reader.read("portfolio", {"accountId": plan["account_id"], "currency": "RUB"})
+        observed_position = next((p for p in account.get("positions", []) if p.get("instrumentUid") == plan["instrument_uid"]), None)
+        candidates, complete = _collect_candidates(reader, plan, progress)
+    observed = now_iso()
+    ref = source("GetOperationsByCursor/GetPortfolio", plan["account_id"], observed)
+    for item in candidates.values():
+        item["source_ids"] = [ref["id"]]
+    return observed_position, candidates, complete, ref
+
+
+def _bind_operations(db, user_id: int, identifier: str, account_id: str, selected: list, candidates: dict) -> list:
+    for operation_id in selected:
+        existing = db.execute("SELECT plan_id FROM workspace_plan_operations WHERE user_id=? AND account_id=? AND operation_id=?", (user_id, account_id, operation_id)).fetchone()
+        if existing and existing[0] != identifier:
+            raise HTTPException(409, "operation_already_bound_to_other_plan")
+        db.execute("INSERT OR IGNORE INTO workspace_plan_operations VALUES (?,?,?,?,?)", (user_id, account_id, operation_id, identifier, state.encode(candidates[operation_id])))
+    bound = db.execute("SELECT payload_json FROM workspace_plan_operations WHERE user_id=? AND plan_id=?", (user_id, identifier)).fetchall()
+    linked = [json.loads(row[0]) for row in bound]
+    # Source corrections retain association but replace the quantity/payment.
+    for row in linked:
+        if row["id"] in candidates:
+            db.execute("UPDATE workspace_plan_operations SET payload_json=? WHERE user_id=? AND account_id=? AND operation_id=? AND plan_id=?",
+                (state.encode(candidates[row["id"]]), user_id, account_id, row["id"], identifier))
+    return [candidates.get(row["id"], row) for row in linked]
+
+
+def _reconciliation_state(complete: bool, stale_links: list, amount, goal) -> str:
+    if complete and not stale_links and amount >= goal:
+        return "done"
+    if amount > 0:
+        return "partial"
+    return "pending"
 
 
 @financial_context
@@ -152,45 +244,7 @@ def reconcile_plan(user: Any, payload: dict, progress) -> dict:
     if not plan.get("opened_at"):
         raise HTTPException(409, "manual_plan_handoff_required")
     progress("reconciling")
-    cursor, candidates, complete = "", {}, False
-    with details.BrokerReader(user) as reader:
-        reader.account(plan["account_id"])
-        account = reader.read("portfolio", {"accountId": plan["account_id"], "currency": "RUB"})
-        observed_position = next((p for p in account.get("positions", []) if p.get("instrumentUid") == plan["instrument_uid"]), None)
-        for page in range(100):
-            progress("reconciling", completed=page, total=None)
-            response = reader.read("operations", {"accountId": plan["account_id"], "from": plan["opened_at"], "to": now_iso(),
-                                                   "cursor": cursor, "limit": 1000, "state": "OPERATION_STATE_EXECUTED", "withoutTrades": False})
-            for raw in response.get("items", []):
-                item = details.normalize_operation(raw)
-                kind = item["type"].removeprefix("OPERATION_TYPE_")
-                right_side = kind in ({"BUY", "BUY_CARD", "DELIVERY_BUY"} if plan["side"] == "buy" else {"SELL", "DELIVERY_SELL"})
-                quantity = decimal(item.get("quantity"))
-                if not right_side or item.get("instrumentUid") != plan["instrument_uid"] or item.get("state") != "OPERATION_STATE_EXECUTED" or not item["id"] or quantity is None or quantity <= 0:
-                    continue
-                try:
-                    when = datetime.fromisoformat(item["date"].replace("Z", "+00:00"))
-                    after = datetime.fromisoformat(plan["opened_at"])
-                    if when.tzinfo is None or when < after or when > datetime.now(timezone.utc):
-                        continue
-                except (TypeError, ValueError):
-                    continue
-                normalized = {"id": item["id"], "date": item["date"], "quantity": text_number(quantity), "payment": money(item.get("payment")),
-                              "instrument_uid": item["instrumentUid"], "account_id": plan["account_id"], "side": plan["side"]}
-                if item["id"] in candidates and candidates[item["id"]] != normalized:
-                    raise HTTPException(502, "operation_conflicting_observations")
-                candidates[item["id"]] = normalized
-            if not response.get("hasNext"):
-                complete = True
-                break
-            following = str(response.get("nextCursor") or "")
-            if not following or following == cursor:
-                raise HTTPException(502, "operations_cursor_invalid")
-            cursor = following
-    observed = now_iso()
-    ref = source("GetOperationsByCursor/GetPortfolio", plan["account_id"], observed)
-    for item in candidates.values():
-        item["source_ids"] = [ref["id"]]
+    observed_position, candidates, complete, ref = _read_reconciliation(user, plan, progress)
     selected = payload.get("operation_ids", [])
     if any(value not in candidates for value in selected):
         raise HTTPException(409, "selected_operation_not_verified")
@@ -199,27 +253,14 @@ def reconcile_plan(user: Any, payload: dict, progress) -> dict:
         current = _current(_plan(db, user_id, identifier), user_id, db)
         if current["state"] == "obsolete":
             raise HTTPException(409, "strategy_version_changed")
-        for operation_id in selected:
-            existing = db.execute("SELECT plan_id FROM workspace_plan_operations WHERE user_id=? AND account_id=? AND operation_id=?", (user_id, plan["account_id"], operation_id)).fetchone()
-            if existing and existing[0] != identifier:
-                raise HTTPException(409, "operation_already_bound_to_other_plan")
-            db.execute("INSERT OR IGNORE INTO workspace_plan_operations VALUES (?,?,?,?,?)", (user_id, plan["account_id"], operation_id, identifier, state.encode(candidates[operation_id])))
-        bound = db.execute("SELECT payload_json FROM workspace_plan_operations WHERE user_id=? AND plan_id=?", (user_id, identifier)).fetchall()
-        linked = [json.loads(row[0]) for row in bound]
-        # The same operation ID may be corrected by the source. Preserve the
-        # association, but revalidate quantities/payment on every reconciliation.
-        for row in linked:
-            if row["id"] in candidates:
-                db.execute("UPDATE workspace_plan_operations SET payload_json=? WHERE user_id=? AND account_id=? AND operation_id=? AND plan_id=?",
-                    (state.encode(candidates[row["id"]]), user_id, plan["account_id"], row["id"], identifier))
-        linked = [candidates.get(row["id"], row) for row in linked]
+        linked = _bind_operations(db, user_id, identifier, plan["account_id"], selected, candidates)
         # A later reversal or missing row prevents a completed claim. Never keep
         # old execution proof when the current complete source contradicts it.
         stale_links = [row["id"] for row in linked if row["id"] not in candidates]
         amount = sum((decimal(row["quantity"]) for row in linked if row["id"] in candidates), ZERO)
         goal = decimal(plan["quantity"])
-        new_state = "done" if complete and not stale_links and amount >= goal else "partial" if amount > 0 else "pending"
-        current.update(state=new_state, reconciled_at=observed, candidate_operations=list(candidates.values()), bound_operations=linked,
+        new_state = _reconciliation_state(complete, stale_links, amount, goal)
+        current.update(state=new_state, reconciled_at=ref["observed_at"], candidate_operations=list(candidates.values()), bound_operations=linked,
                        executed_quantity=text_number(amount), observed_quantity=text_number(decimal((observed_position or {}).get("quantity"))),
                        execution_state="observed_executed_operations" if amount > 0 else "not_confirmed", source_ids=[ref["id"]],
                        sources=[ref], reconciliation_complete=complete, stale_operation_links=stale_links,

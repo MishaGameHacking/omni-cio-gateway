@@ -25,7 +25,7 @@ def checked_installation(api: int) -> dict:
     profile_required = os.getenv("RUN_PROFILE_UI_TESTS") == "1"
     # The installed 0.10 baseline supports both APIs; both now require upgrade.
     validate_results(results, upgrade_required=True,
-                     profile_required=profile_required)
+                     profile_required=profile_required, android_api=api)
     return {"android_api": api, "abi": "x86_64", "profile_ui_required": profile_required,
             "results": results}
 
@@ -61,7 +61,8 @@ def main() -> None:
     report["installation_tests"] = [checked_installation(35), checked_installation(36)]
     # A complete build without a real upgrade, or a stale report from another
     # artifact, cannot produce the canonical publisher evidence.
-    report["installation_evidence"] = from_ci_reports(report["installation_tests"], report["sha256"])
+    report["installation_evidence"] = from_ci_reports(
+        report["installation_tests"], report["sha256"], require_runtime_16kb=True)
     report["installation_method"] = "adb_emulator_not_in_app_self_update"
     report["device_install_test"] = "passed_on_emulators_not_a_physical_phone"
     save_report(report)

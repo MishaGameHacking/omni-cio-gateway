@@ -6,11 +6,12 @@ accessibility frames, mutation results and actual screenshots become evidence.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import re
 import time
 
-ROUTES = ("risk", "assistant", "plans", "strategy", "notifications")
+ROUTES = ("risk", "assistant", "plans", "strategy", "notifications", "analysis")
 CASES = tuple((route, scenario) for route in ROUTES
               for scenario in ("ready", "empty", "partial", "error", "job")
               if scenario != "job" or route in {"assistant", "plans"})
@@ -19,6 +20,7 @@ ERROR = "Синтетический отказ источника. Настоя�
 ANSWER = "СИНТЕТИЧЕСКИЙ ОТВЕТ: тестовая доля компании 70% сопоставлена с пользовательским лимитом 60%. Это проверка интерфейса, не инвестиционный совет."
 PARTIAL_ANSWER = "СИНТЕТИЧЕСКИЙ ОТВЕТ: часть исходных сведений отсутствует; точный вывод не подтверждён."
 UNCERTAIN = "Исход запроса к модели пока не подтверждён. Автоматического повторного запроса нет."
+CONFIRM_VERSION = "Подтвердить эту версию"
 
 
 def labels(node):
@@ -50,6 +52,8 @@ def exercise_business(probe):
     from profile_launch import launch_profile
     from profile_ui_probe import matching_node
     from spatial_frame_evidence import ready_spatial_metrics
+    from native_input_evidence import rotate_focused_draft
+    from analysis_ui_probe import exercise_analysis
 
     reader = getattr(probe.read_tree, "__self__", None)
     if not isinstance(reader, FrameReader):
@@ -75,17 +79,18 @@ def exercise_business(probe):
         launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="business-" + route, scenario=scenario)
         probe.find(BANNER)
 
-        def observed():
+        def observed(route=route, scenario=scenario):
             return probe.wait_for(lambda: business_marker(probe.tree(), route, scenario), "Business fixture did not complete an actual request")
 
         before = observed()
         checks = []
+        draft_rotation = None
         if scenario == "error":
             probe.reveal("Не удалось обновить", "workspace-content")
             probe.reveal(ERROR, "workspace-content")
             baseline = observed()["requests"]
             probe.tap("Повторить", "workspace-content")
-            probe.wait_for(lambda: (value if (value := observed())["requests"] > baseline else None),
+            probe.wait_for(lambda observe=observed, minimum=baseline: (value if (value := observe())["requests"] > minimum else None),
                            "Retry did not issue a new synthetic transport request")
             probe.reveal(ERROR, "workspace-content")
             checks.extend(("explicit-source-error", "retry-real-request"))
@@ -132,18 +137,18 @@ def exercise_business(probe):
                 probe.reveal("Влияние на текущий портфель", "workspace-content")
                 if scenario == "partial":
                     probe.reveal("Тест: источник части связей отсутствует; применение недоступно.", "workspace-content")
-                    confirm = probe.reveal("Подтвердить эту версию", "workspace-content")
+                    confirm = probe.reveal(CONFIRM_VERSION, "workspace-content")
                     if confirm.get("enabled") != "false":
                         raise AssertionError("Incomplete strategy preview can be confirmed")
                     checks.append("incomplete-preview-blocks-confirm")
                 else:
-                    probe.tap("Подтвердить эту версию", "workspace-content")
+                    probe.tap(CONFIRM_VERSION, "workspace-content")
                     probe.reveal("Действует версия 4", "workspace-content", direction="start")
                     probe.tap("Версии", "profile-tabs")
                     probe.reveal("Версия 2", "workspace-content")
                     probe.tap("Проверить возврат к этой версии", "workspace-content")
                     probe.reveal("Влияние на текущий портфель", "workspace-content")
-                    probe.tap("Подтвердить эту версию", "workspace-content")
+                    probe.tap(CONFIRM_VERSION, "workspace-content")
                     probe.reveal("Действует версия 5", "workspace-content", direction="start")
                     checks.extend(("preview-before-confirm", "new-confirmed-version", "rollback-creates-new-version"))
         elif route == "plans":
@@ -191,6 +196,8 @@ def exercise_business(probe):
                     checks.append("read-ack-same-event")
                 else:
                     checks.append("pending-is-not-delivered")
+        elif route == "analysis":
+            checks.extend(exercise_analysis(probe, scenario, observed))
         elif route == "assistant":
             if scenario == "empty":
                 probe.reveal("С чего начнём?", "workspace-content")
@@ -202,25 +209,29 @@ def exercise_business(probe):
                     checks.append("uncertainty-visible")
                 else:
                     probe.tap("Показать синтетическую позицию", "workspace-content")
-                    probe.wait_for(lambda: (value if (value := observed())["navigation"] == "instrument:synthetic-stock::" else None), "Position evidence opened a different destination")
+                    probe.wait_for(lambda observe=observed: (value if (value := observe())["navigation"] == "instrument:synthetic-stock::" else None), "Position evidence opened a different destination")
                     probe.tap("Показать синтетическую дату", "workspace-content")
-                    probe.wait_for(lambda: (value if (value := observed())["navigation"] == "history:synthetic-history:synthetic-account:2026-10-17T10:00:00Z" else None), "History evidence lost its date/account")
+                    probe.wait_for(lambda observe=observed: (value if (value := observe())["navigation"] == "history:synthetic-history:synthetic-account:2026-10-17T10:00:00Z" else None), "History evidence lost its date/account")
                     probe.tap_visible("Ваш вопрос")
                     probe.command("shell", "input", "text", "UIprobe")
+                    rotation_name = "business-assistant-draft-rotation" + ("-font-200" if math.isclose(font_scale, 2.0) else "")
+                    draft_rotation = rotate_focused_draft(probe, "UIprobe", rotation_name)
+                    checks.extend(("unsent-draft-survives-rotation", "native-input-focus-and-caret-retained"))
                     probe.command("shell", "input", "keyevent", "BACK")
                     baseline = observed()["requests"]
                     probe.tap_visible("Отправить")
                     probe.reveal("UIprobe", "workspace-content")
-                    probe.wait_for(lambda: (value if (value := observed())["requests"] >= baseline + 3 else None), "Chat did not execute estimate/send/read contracts")
+                    probe.wait_for(lambda observe=observed, minimum=baseline + 3: (value if (value := observe())["requests"] >= minimum else None), "Chat did not execute estimate/send/read contracts")
                     checks.extend(("exact-position-and-date-destinations", "native-chat-input", "estimate-and-send-contract"))
         actual = observed()
         renderer = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Business screen did not render its genuine meshes")
-        if renderer.get("font-scale") != font_scale:
+        if not math.isclose(renderer.get("font-scale", 0.0), font_scale, rel_tol=0.0, abs_tol=1e-6):
             raise AssertionError("The actual Compose font scale differs from the requested accessibility scenario")
-        name = "business-" + route + "-" + scenario + ("-font-200" if font_scale == 2.0 else "")
+        name = "business-" + route + "-" + scenario + ("-font-200" if math.isclose(font_scale, 2.0) else "")
         probe.capture(name)
         records.append({"case": route + "/" + scenario, "font_scale": font_scale, "before": before, "after": actual,
-                        "checks": checks, "renderer": renderer, "screenshot": name + ".png"})
+                        "checks": checks, "native_input_rotation": draft_rotation,
+                        "renderer": renderer, "screenshot": name + ".png"})
         print("BUSINESS_UI_CASE_PASSED=" + route + "/" + scenario + ";font=" + str(font_scale), flush=True)
 
     report = {"fixture": "debug-only-synthetic-transport", "actual_device_observations": True,
@@ -232,3 +243,4 @@ def exercise_business(probe):
         raise AssertionError("Business evidence escapes checkout")
     (folder / "business-verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("BUSINESS_UI_VERIFICATION=" + json.dumps(report, ensure_ascii=True, sort_keys=True), flush=True)
+    return report

@@ -15,6 +15,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spatial.SpatialWindow
+import ru.omnicio.app.ui.workspace.WorkspaceGestureHint
 
 internal val dashboardCards = linkedMapOf(
     "assistant" to "Следующий шаг", "changes" to "С прошлого посещения", "composition" to "Состав капитала",
@@ -41,11 +43,14 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
     val rowHeight = with(LocalDensity.current) { 76.dp.toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
     var drift by remember { mutableFloatStateOf(0f) }
-    ModalBottomSheet(onDismissRequest = onClose) {
+    ModalBottomSheet(onDismissRequest = onClose, dragHandle = null) {
+        SpatialWindow(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Порядок главного экрана", style = MaterialTheme.typography.titleLarge)
             Text("Удерживайте карточку и перемещайте вверх или вниз. Порядок на главном меняется в режиме просмотра до сохранения.")
+            WorkspaceGestureHint("dashboard-reorder", "Порядок карточек",
+                "Удерживайте карточку для перемещения. Кнопки «Выше» и «Ниже» меняют порядок без жестов; результат применяется после сохранения.")
             order.forEachIndexed { index, id ->
                 key(id) {
                     ru.omnicio.app.ui.spatial.SpatialSurface(color = if (dragging == id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
@@ -78,6 +83,7 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
             TextButton(onClick = { onPreview(saved) }, enabled = !busy && order != saved, modifier = Modifier.fillMaxWidth()) { Text("Отменить изменения порядка") }
             TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Закрыть") }
             Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.safeDrawing).heightIn(min = 16.dp))
+        }
         }
     }
 }

@@ -1,10 +1,13 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import ru.omnicio.app.ui.spectrum.SpectrumCard
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -12,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -77,26 +81,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
             TextButton(onClick = { filterOpen = true }) { Text("Фильтр: ${OperationCategories[category].second} ▾") }
             AccountDataNotice(request)
         }
-        var previousDay = ""
-        visible.forEach { operation ->
-            val day = dateText(operation.nullableText("date"), "d MMMM yyyy")
-            if (day != previousDay) {
-                item(key = "day:$day") { Text(day, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp)) }
-                previousDay = day
-            }
-            item(key = "operation:${operation.optString("id")}") {
-                SpectrumCard(onClick = { chosenId = operation.optString("id") }) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text(operation.optString("title").ifBlank { categoryTitle(operation.optString("category")) }, fontWeight = FontWeight.Medium)
-                            Notice(account.name)
-                            if (operation.optString("state") != "OPERATION_STATE_EXECUTED") Notice(operationStateLabel(operation.optString("state")))
-                        }
-                        SignedAmount(operation.money("payment"))
-                    }
-                }
-            }
-        }
+        operationRows(visible, account) { chosenId = it }
         if (visible.isEmpty() && request.json != null && next == null) item { Notice("Операций за выбранный период и категорию нет.") }
         if (!searching && next != null && items.size < 10_000 && pageError == null) {
             val cursor = next!!
@@ -112,27 +97,73 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
         if (items.size >= 10_000 && next != null) item { Notice("Показаны первые 10 000 операций. Сузьте период, чтобы увидеть оставшиеся.") }
     }
     if (filterOpen) AlertDialog(onDismissRequest = { filterOpen = false }, title = { Text("Категория операций") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) { OperationCategories.forEachIndexed { index, entry ->
+        text = { Column { OperationCategories.forEachIndexed { index, entry ->
             TextButton(onClick = { category = index; filterOpen = false }) { Text(entry.second) }
         } } }, confirmButton = { TextButton(onClick = { filterOpen = false }) { Text("Закрыть") } })
-    if (searching) AlertDialog(onDismissRequest = { chosenId = null }, title = { Text("Операция по ссылке") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Счёт: ${account.name}")
-            Text("Точный идентификатор: $chosenId")
-            if (request.loading || next != null && pageError == null && items.size < 10_000) {
-                ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(description = "Находим точную операцию")
-                Text("Проверяем страницы истории этого счёта…")
-            } else Text(pageError ?: request.error ?: "Операция не найдена в полученной выборке. Другая операция с похожим названием не подставляется.")
-        } }, confirmButton = { TextButton(onClick = { chosenId = null }) { Text("К истории счёта") } })
+    if (searching) OperationTargetDialog(chosenId.orEmpty(), account.name, request, next, pageError, items.size) { chosenId = null }
     chosen?.let { operation -> OperationDetailDialog(operation, account, onPosition, onHistory) { chosenId = null } }
+}
+
+private fun LazyListScope.operationRows(rows: List<JSONObject>, account: PortfolioAccount, choose: (String) -> Unit) {
+    rows.groupBy { dateText(it.nullableText("date"), "d MMMM yyyy") }.forEach { (day, operations) ->
+        item(key = "day:$day") { Text(day, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp)) }
+        items(operations, key = { "operation:${it.optString("id")}" }) { operation ->
+            OperationRow(operation, account.name) { choose(operation.optString("id")) }
+        }
+    }
+}
+
+@Composable
+private fun OperationRow(operation: JSONObject, accountName: String, open: () -> Unit) {
+    val fontScale = LocalDensity.current.fontScale
+    SpectrumCard(onClick = open) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (portfolioStackedLayout(maxWidth.value, fontScale)) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OperationIdentity(operation, accountName)
+                SignedAmount(operation.money("payment"))
+            } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) { OperationIdentity(operation, accountName) }
+                Box(Modifier.weight(1f)) { SignedAmount(operation.money("payment")) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OperationIdentity(operation: JSONObject, accountName: String) {
+    Text(operation.optString("title").ifBlank { categoryTitle(operation.optString("category")) }, fontWeight = FontWeight.Medium)
+    Notice(accountName)
+    if (operation.optString("state") != "OPERATION_STATE_EXECUTED") Notice(operationStateLabel(operation.optString("state")))
+}
+
+@Composable
+private fun OperationTargetDialog(id: String, accountName: String, request: AccountData, next: String?, pageError: String?,
+    count: Int, close: () -> Unit) {
+    val canContinue = next != null && pageError == null && count < 10_000
+    AlertDialog(onDismissRequest = close, title = { Text("Операция по ссылке") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Счёт: $accountName")
+            Text("Точный идентификатор: $id")
+            when {
+                request.loading || canContinue -> {
+                    ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(description = "Находим точную операцию")
+                    Text("Проверяем страницы истории этого счёта…")
+                }
+                count >= 10_000 && next != null -> Text("Проверены первые 10 000 операций. Поиск неполный: сузьте период, чтобы проверить остальные.")
+                else -> Text(pageError ?: request.error ?: "Операция не найдена в полученной выборке. Другая операция с похожим названием не подставляется.")
+            }
+        }
+    }, confirmButton = { TextButton(onClick = close) { Text("К истории счёта") } })
 }
 
 @Composable
 private fun OperationPageRequest(token: String, accountId: String, period: PortfolioPeriod, cursor: String,
     onPage: (JSONObject, String) -> Unit, onError: (String) -> Unit) {
+    val foreground = workspaceForeground()
     val receive by rememberUpdatedState(onPage)
     val failure by rememberUpdatedState(onError)
-    LaunchedEffect(token, accountId, period, cursor) {
+    LaunchedEffect(token, accountId, period, cursor, foreground) {
+        if (!foreground || token.isBlank()) return@LaunchedEffect
         when (val response = withContext(Dispatchers.IO) {
             PortfolioDataClient().details(token, accountId, "operations", period.parameters() + ("cursor" to cursor))
         }) {
@@ -146,7 +177,7 @@ private fun OperationPageRequest(token: String, accountId: String, period: Portf
 private fun OperationDetailDialog(operation: JSONObject, account: PortfolioAccount,
     onPosition: ((PositionSelection) -> Unit)?, onHistory: ((String) -> Unit)?, close: () -> Unit) {
         AlertDialog(onDismissRequest = close, title = { Text(operation.optString("title")) },
-            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 DataRow("Дата, Москва", dateText(operation.nullableText("date")))
                 DataRow("Сумма", operation.money("payment").moneyText(true))
                 DataRow("Цена", operation.money("price").moneyText())

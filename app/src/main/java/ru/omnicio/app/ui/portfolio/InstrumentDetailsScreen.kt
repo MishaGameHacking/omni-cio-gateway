@@ -16,6 +16,7 @@ import ru.omnicio.app.ui.instruments.BrokerInstrumentActions
 import ru.omnicio.app.ui.research.PortfolioResearchPanel
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.spatial.SpatialWindow
 
 /** Uses a current position resolved by account and id; no stale detail snapshot. */
 @Composable
@@ -101,7 +102,9 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
         }
     }
     if (embedded) content() else Dialog(onDismissRequest = close,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) { content() }
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            SpatialWindow(Modifier.fillMaxSize()) { content() }
+        }
 }
 
 @Composable

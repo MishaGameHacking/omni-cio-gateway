@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -138,8 +139,10 @@ internal fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> 
 internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = null, accountName: String? = null,
     selected: Boolean = false, onPreview: (() -> Unit)? = null, sharedKey: String = position.id, onClick: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
-    var preview by remember(position.id) { mutableStateOf(false) }
+    var preview by rememberSaveable(sharedKey) { mutableStateOf(false) }
     val showPreview = onPreview ?: { preview = true }
+    val previewClick = ru.omnicio.app.ui.spatial.rememberSpatialHapticClick(ru.omnicio.app.ui.spatial.SpatialHaptic.Selection, showPreview)
+    val rowClick = ru.omnicio.app.ui.spatial.rememberSpatialHapticClick(onClick)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val focused by interaction.collectIsFocusedAsState()
@@ -147,7 +150,7 @@ internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = nul
         state = when { pressed -> ru.omnicio.app.ui.spatial.SpatialState.Pressed; selected || focused -> ru.omnicio.app.ui.spatial.SpatialState.Selected; else -> ru.omnicio.app.ui.spatial.SpatialState.Idle },
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
             .combinedClickable(interactionSource = interaction, indication = null, role = Role.Button,
-                onClick = onClick, onLongClick = showPreview, onLongClickLabel = "Кратко о позиции")
+                onClick = rowClick, onLongClick = previewClick, onLongClickLabel = "Кратко о позиции", hapticFeedbackEnabled = false)
             .semantics(mergeDescendants = true) { this.selected = selected }) {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(12.dp)) {
             val stacked = portfolioStackedLayout(maxWidth.value, fontScale)

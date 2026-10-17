@@ -373,12 +373,13 @@ class ProfileProbe:
 
     def business(self):
         from business_ui_probe import exercise_business
-        exercise_business(self)
+        report = exercise_business(self)
+        self.business_cases = [row["case"] + "@" + format(row["font_scale"], "g") for row in report["cases"]]
 
     def workspace(self):
         from profile_launch import launch_profile
         for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
-                              ("assistant", "Ассистент"), ("market", "Отрасли и классы"), ("ux100", "Проверка UX100")):
+                              ("assistant", "Ассистент"), ("market", "Рынки и география"), ("ux100", "Проверка UX100")):
             launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)
             self.find(label)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
@@ -562,14 +563,14 @@ def night_setting(output: str) -> str:
     return match.group(1).lower() if match else "auto"
 
 
-def exercise(device) -> None:
+def exercise(device) -> dict:
     from persistent_ui import frame_session
 
     with frame_session(device) as read_tree:
-        exercise_checks(device, read_tree)
+        return exercise_checks(device, read_tree)
 
 
-def exercise_checks(device, read_tree) -> None:
+def exercise_checks(device, read_tree) -> dict:
     """Run the unchanged screen assertions with an explicitly scoped frame source."""
     probe = ProfileProbe(device)
     probe.read_tree = read_tree
@@ -588,7 +589,7 @@ def exercise_checks(device, read_tree) -> None:
     try:
         stages = (
             ("spatial-renderer", probe.spatial),
-            ("business-22-cases", probe.business),
+            ("business-26-cases", probe.business),
             ("spectrum-dashboards", probe.dashboards),
             ("workspace-interactions", probe.workspace),
             ("profile-preflight", probe.profile_preflight),
@@ -608,6 +609,8 @@ def exercise_checks(device, read_tree) -> None:
             "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
+        return {"ui_suite": "spectrum-3d-100-v1", "business_case_count": len(probe.business_cases),
+                "business_cases": probe.business_cases}
     finally:
         from profile_snapshot import restore_device_settings
 

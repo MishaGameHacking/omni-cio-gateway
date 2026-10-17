@@ -27,18 +27,19 @@ router = APIRouter(prefix="/workspace/analysis", tags=["Monitor evidence"])
 
 def _slot_checks_in(db, user_id: int, now: datetime, check: dict) -> None:
     try:
-        from .volume_notifications import _preferences
+        from .volume_notifications import _preferences, calendar_gate
     except ImportError:
-        from volume_notifications import _preferences
+        from volume_notifications import _preferences, calendar_gate
     preferences, _, _ = _preferences(db, user_id)
     local = now.astimezone(ZoneInfo(preferences["timezone"]))
     row = db.execute("SELECT payload_json FROM workspace_snapshots WHERE user_id=? AND currency='RUB'", (user_id,)).fetchone()
     calendar = (json.loads(row[0]) if row else {}).get("calendar", {})
     market_date = now.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat()
-    days = [day for exchange in calendar.get("data", {}).get("exchanges", []) for day in exchange.get("days", [])
-            if str(day.get("date", ""))[:10] == market_date]
-    gate = "rule_disabled" if not preferences["enabled"] or not preferences["briefs_enabled"] else \
-        "awaiting_calendar" if not days else "market_closed" if not any(day.get("isTradingDay") is True for day in days) else "due"
+    gate = calendar_gate(calendar, market_date)
+    if not preferences["enabled"] or not preferences["briefs_enabled"]:
+        gate = "rule_disabled"
+    elif gate == "scheduled":
+        gate = "due"
     for slot in ("morning", "evening"):
         hour, minute = map(int, preferences[slot].split(":"))
         due = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -97,6 +98,20 @@ def _observed_positions(raw: dict | None) -> dict:
             for account in (raw or {}).get("accounts", []) for item in account.get("positions", [])}
 
 
+def _position_changes(current: dict, prior: dict, base_ids: list, has_previous: bool) -> list:
+    observations = []
+    if not has_previous:
+        return observations
+    for key in sorted(current.keys() | prior.keys()):
+        before, after = prior.get(key), current.get(key)
+        if (before or {}).get("quantity") == (after or {}).get("quantity"):
+            continue
+        item = after or before
+        observations.append({"id": "position:" + digest(key), "kind": "cash_quantity" if key[1].startswith("cash:") else "position_quantity",
+            "title": item["title"], "before": before, "after": after, "instrument_uids": [key[1]], "source_ids": base_ids})
+    return observations
+
+
 def trigger_evidence(user, raw, previous, previous_row, observation: dict, signals, now: datetime) -> dict:
     """Bind policy signals to actual observations, independently of model text."""
     snapshot = observation["snapshot"]
@@ -114,13 +129,7 @@ def trigger_evidence(user, raw, previous, previous_row, observation: dict, signa
     observations = [{"id": "portfolio_value", "kind": "portfolio_value", "title": "Наблюдаемая стоимость портфеля",
         "before": money((previous or {}).get("totalValue")), "after": money(raw.get("totalValue")),
         "instrument_uids": [], "source_ids": base_ids}]
-    for key in sorted(current.keys() | prior.keys()):
-        before, after = prior.get(key), current.get(key)
-        if previous is None or (before or {}).get("quantity") == (after or {}).get("quantity"):
-            continue
-        item = after or before
-        observations.append({"id": "position:" + digest(key), "kind": "cash_quantity" if key[1].startswith("cash:") else "position_quantity",
-            "title": item["title"], "before": before, "after": after, "instrument_uids": [key[1]], "source_ids": base_ids})
+    observations.extend(_position_changes(current, prior, base_ids, previous is not None))
     for breach in observation["breaches"]:
         observations.append({"id": "limit:" + digest([breach["direction"], breach["id"]]), "kind": "risk_concentration",
             "title": breach["label"], "before": None, "after": breach,
@@ -137,7 +146,8 @@ def trigger_evidence(user, raw, previous, previous_row, observation: dict, signa
     selected = observations[:80]
     needed = {identifier for item in selected for identifier in item["source_ids"]}
     return {"snapshot_id": snapshot["snapshot_id"], "previous_snapshot_id": previous_row["digest"] if previous_row is not None else None,
-            "as_of": snapshot["as_of"], "comparison_basis": "previous_autonomous_observation", "policy_signals": asdict(signals),
+            "as_of": snapshot["as_of"], "checked_at": now.astimezone(timezone.utc).isoformat(),
+            "comparison_basis": "previous_autonomous_observation", "policy_signals": asdict(signals),
             "observations": selected, "sources": [ref for identifier, ref in refs.items() if identifier in needed],
             "coverage": {"total": len(observations), "included": len(selected), "truncated": len(selected) < len(observations)},
             "first_observation": previous is None}
@@ -178,12 +188,10 @@ def ingest(user, raw, now: datetime) -> dict:
     if old.get("news"):
         news = safe_section(lambda: details.cached(("workspace-news", *details.identity(user)), 900, lambda: market.load_news(user)), empty={"items": []})
         normalized["news"] = news
-        held = {p["instrument_uid"] for p in normalized["positions"]}
-        normalized["events"] = {"items": [{**item, "kind": "news", "impact_is_inference": True, "impact": None}
-                                         for item in news.get("data", {}).get("items", []) if held.intersection(item.get("instrument_uids", []))]}
+        normalized["events"] = {"items": workspace._held_news(normalized, news)}
         normalized["sources"] += news.get("sources", [])
         normalized["section_as_of"]["events"] = news.get("as_of")
-    normalized["snapshot_id"] = digest({"positions": normalized["positions"], "capital": normalized["capital"], "as_of": normalized["as_of"]})
+    normalized["snapshot_id"] = digest({key: normalized[key] for key in ("positions", "capital", "as_of", "position_coverage")})
     workspace.persist(user, normalized)
     active = state.active_strategy(int(user["id"]))
     exposure = state.exposure_data(normalized, (active or {}).get("config"))
@@ -196,8 +204,13 @@ def ingest(user, raw, now: datetime) -> dict:
               if critical(rating, old.get("rating_observations", {}).get(uid))]
     fingerprint = digest({"limits": [{k: row[k] for k in ("direction", "id", "share_percent", "limit_percent")} for row in breaches],
                           "credit": normalized.get("rating_signature") if credit else None})
+    risk_message = None
+    if breaches:
+        risk_message = "Превышен подтверждённый лимит: " + breaches[0]["label"]
+    elif credit:
+        risk_message = "Изменилось проверенное основание кредитного риска"
     return {"snapshot": normalized, "breaches": breaches, "risk_fingerprint": fingerprint, "critical_risk": bool(breaches or credit),
-            "risk_message": ("Превышен подтверждённый лимит: " + breaches[0]["label"]) if breaches else "Изменилось проверенное основание кредитного риска" if credit else None,
+            "risk_message": risk_message,
             "credit_evidence": [{"instrument_uid": uid, **normalized["rating_observations"][uid]} for uid in credit[:40]],
             "credit_coverage": {"critical_instruments": len(credit), "included": min(40, len(credit))},
             "news_fingerprint": digest(sorted(item["id"] for item in normalized.get("events", {}).get("items", [])))}

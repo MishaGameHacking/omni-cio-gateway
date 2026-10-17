@@ -40,7 +40,10 @@ internal fun spatialProbeMarker(): String {
         "probe-spatial-motion:${owner?.effectiveMotion?.name ?: "Unavailable"};" +
         "probe-spatial-cpu-p95:${stats.cpuSubmitP95Ms};probe-spatial-interval-p95:${stats.frameIntervalP95Ms};" +
         "probe-spatial-quality:${stats.quality};probe-spatial-density:${LocalDensity.current.density};" +
-        "probe-spatial-font-scale:${LocalDensity.current.fontScale}"
+        "probe-spatial-font-scale:${LocalDensity.current.fontScale};" +
+        "probe-spatial-thermal:${owner?.thermalStatus ?: 0};probe-spatial-system-motion:${owner?.systemMotionEnabled == true};" +
+        "probe-spatial-power-save:${owner?.powerSaveMode == true};" +
+        "probe-spatial-back-progress:${LocalSpatialWindow.current?.localBackProgress ?: 0f}"
 }
 
 /** Synthetic geometry/input fixture only. No account, broker, credentials or network. */
@@ -55,6 +58,8 @@ internal fun SpatialRendererProbe() {
     var input by rememberSaveable { mutableStateOf("native") }
     var dialog by remember { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    var backScreen by rememberSaveable { mutableStateOf(false) }
+    var backCommits by rememberSaveable { mutableIntStateOf(0) }
     val list = rememberLazyListState()
     LaunchedEffect(Unit) {
         theme.preview(ThemeMode.DARK)
@@ -62,10 +67,22 @@ internal fun SpatialRendererProbe() {
     }
     DisposableEffect(Unit) { onDispose { theme.cancelPreview(); preferences.cancelPreview() } }
     LaunchedEffect(section) { list.scrollToItem(0) }
+    if (backScreen) {
+        SpatialBackHandler { backCommits++; backScreen = false }
+        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+            Text("Экран возврата", style = MaterialTheme.typography.headlineMedium)
+            SpatialIcon("back", Modifier.size(128.dp), tint = palette.cyan)
+            Text("Подтверждённых возвратов: $backCommits")
+            Text("Системный жест управляет настоящей сценой. Отмена оставляет этот экран открытым.")
+        }
+        return
+    }
     Column(Modifier.fillMaxSize().safeDrawingPadding().semantics { testTagsAsResourceId = true }) {
         Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", Modifier.padding(12.dp),
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
-        SpectrumTabs(listOf("Форма 3D", "Графики 3D", "Отсечение 3D", "Нагрузка"), section, { section = it })
+        SpectrumTabs(listOf("Форма 3D", "Графики 3D", "Отсечение 3D", "Нагрузка", "Правила 3D"), section, { section = it })
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("workspace-content"), state = list,
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (section == 0) {
@@ -143,7 +160,7 @@ internal fun SpatialRendererProbe() {
                         }
                     }
                 }
-            } else {
+            } else if (section == 3) {
                 items(120, key = { "stress-$it" }) { index ->
                     SpectrumCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -154,6 +171,17 @@ internal fun SpatialRendererProbe() {
                             }
                         }
                     }
+                }
+            } else {
+                item {
+                    Text("Синтетическая непрерывная модель", style = MaterialTheme.typography.titleMedium)
+                    SpatialIcon("orbit", Modifier.fillMaxWidth().height(132.dp), tint = palette.cyan,
+                        state = SpatialState.Loading)
+                    Text("Источник политики: настройки Android и настоящий thermal listener.")
+                }
+                item {
+                    SpectrumTextButton("Открыть экран возврата", { backScreen = true }, Modifier.fillMaxWidth())
+                    Text("Подтверждённых возвратов: $backCommits")
                 }
             }
         }

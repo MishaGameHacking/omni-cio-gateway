@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import androidx.compose.foundation.layout.*
@@ -13,12 +15,17 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.PortfolioPosition
 import ru.omnicio.app.data.workspace.rememberPersonalWorkspace
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spatial.SpatialWindow
+import ru.omnicio.app.ui.workspace.WorkspaceGestureHint
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PortfolioQuickPreview(position: PortfolioPosition, accountName: String?, close: () -> Unit, open: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = close) {
+    ModalBottomSheet(onDismissRequest = close, dragHandle = null) {
+        SpatialWindow(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            WorkspaceGestureHint("position-preview", "Краткий просмотр позиции",
+                "Удержание открывает эту сводку. Кнопка «Кратко» в строке делает то же самое; полная карточка доступна ниже.")
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SpectrumAssetMark(position.instrumentType, position.title, Modifier.size(56.dp))
                 Column { Text(position.title, style = MaterialTheme.typography.titleLarge); accountName?.let { Text(it) } }
@@ -29,6 +36,7 @@ internal fun PortfolioQuickPreview(position: PortfolioPosition, accountName: Str
             WatchPositionAction(position)
             SpectrumPrimaryButton("Открыть карточку", open, Modifier.fillMaxWidth())
             SpectrumSecondaryButton("Закрыть", close, Modifier.fillMaxWidth())
+        }
         }
     }
 }

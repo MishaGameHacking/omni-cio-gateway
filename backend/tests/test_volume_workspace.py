@@ -98,6 +98,157 @@ def operation(identifier="op-1", *, account="owned-account-a", uid="aaa", quanti
             "quantity": quantity, "payment": {"currency": "RUB", "value": payment}, "state": "OPERATION_STATE_EXECUTED", "source_ids": []}
 
 
+def broker_fixture(fixture, read):
+    class Reader:
+        scope = ("synthetic-transport",)
+
+        def __init__(self, user):
+            assert user["id"] == fixture["user"]["id"]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, method, body):
+            return read(method, body)
+
+    fixture["patch"].setattr(details, "BrokerReader", Reader)
+    fixture["patch"].setattr(market, "pace_instruments", lambda scope: None)
+
+
+def synchronized_history(fixture):
+    begin = datetime.now(timezone.utc) - timedelta(days=3)
+    end = begin + timedelta(days=1)
+    with closing(backend.connect()) as db:
+        details.ensure_history(db)
+        for at, amounts in ((begin, ("80", "120")), (end, ("100", "150"))):
+            for account, value in zip(fixture["snapshot"]["accounts"], amounts):
+                db.execute("INSERT INTO portfolio_value_history VALUES (?,?,?,?,?,?,?)",
+                           (fixture["user"]["id"], account["id"], "RUB", "day", int(at.timestamp()) // 86400 * 86400, at.isoformat(), value))
+        db.commit()
+    return begin, end
+
+
+def test_attribution_uses_synchronized_boundaries_and_excludes_duplicate_external_flows(fixture):
+    begin, end = synchronized_history(fixture)
+    when = (begin + timedelta(hours=2)).isoformat()
+    deposited = {**operation("deposit", payment="30", at=when), "category": "deposits"}
+    withdrawn = {**operation("withdrawal", payment="-10", at=when), "category": "withdrawals"}
+    dividend = {**operation("dividend", payment="3", at=when), "category": "dividends"}
+    opening_flow = {**operation("opening-flow", payment="100", at=begin.isoformat()), "category": "deposits"}
+    result = workspace.attribution(fixture["user"], fixture["snapshot"], [deposited, deposited, withdrawn, dividend, opening_flow], True, begin, end)
+    assert result["opening_value"] == money("200", "RUB")
+    assert result["closing_value"] == money("250", "RUB")
+    assert result["external_net_flow"] == money("20", "RUB")
+    assert result["residual_after_external_flows"] == money("30", "RUB")
+    assert result["fx_component"] is None
+    assert result["complete"] is True
+
+
+@pytest.mark.parametrize("failure", ["foreign_currency", "naive_time", "duplicate_conflict", "missing_account_boundary"])
+def test_attribution_does_not_invent_unobservable_fx_or_incomplete_flow_remainders(fixture, failure):
+    begin, end = synchronized_history(fixture)
+    deposited = {**operation("deposit", payment="30", at=(begin + timedelta(hours=2)).isoformat()), "category": "deposits"}
+    operations = [deposited]
+    if failure == "foreign_currency":
+        deposited["payment"]["currency"] = "USD"
+    elif failure == "naive_time":
+        deposited["date"] = "2026-01-01T12:00:00"
+    elif failure == "duplicate_conflict":
+        operations.append({**deposited, "payment": {"currency": "RUB", "value": "60"}})
+    else:
+        with closing(backend.connect()) as db:
+            db.execute("DELETE FROM portfolio_value_history WHERE user_id=? AND account_id=? AND observed_at=?",
+                       (fixture["user"]["id"], "owned-account-b", end.isoformat()))
+            db.commit()
+    result = workspace.attribution(fixture["user"], fixture["snapshot"], operations, True, begin, end)
+    assert result["complete"] is False
+    assert result["external_net_flow"] is None
+    assert result["residual_after_external_flows"] is None
+    assert result["fx_component"] is None
+
+
+@pytest.mark.parametrize("field,value,reason", [("limitsLoading", True, "broker_limits_loading"),
+                                               ("virtualPositionCount", 1, "virtual_positions_not_valued")])
+def test_incomplete_broker_positions_cannot_resolve_risk_or_claim_complete_scenario(fixture, field, value, reason):
+    activate(fixture, config(position=30))
+    save(fixture)
+    dashboard = deepcopy(fixture["dashboard"])
+    dashboard["accounts"][0][field] = value
+    dashboard["accounts"][0]["positions"][0]["currentValue"]["value"] = "10"
+    current = workspace.normalize_snapshot(fixture["user"], dashboard)
+    current["snapshot_id"] = "incomplete-broker-observation"
+    save(fixture, current)
+    coverage = next(row for row in state.risk_data(fixture["user"])["coverage"] if row["direction"] == "position")
+    assert coverage["state"] == "partial"
+    assert reason in coverage["incomplete_reasons"]
+    scenario = state.scenario(state.Scenario(shocks=[{"axis": "all", "id": "all", "percent": "-10"}]), user=fixture["user"])
+    assert scenario["estimated_after"] is None
+    assert scenario["complete"] is False
+    assert reason in scenario["incomplete_reasons"]
+    events = state.risk_events(user=fixture["user"])["items"]
+    assert any(row["kind"] == "risk_data_stale" and "aaa" in row["instrument_uids"] for row in events)
+    assert not any(row["kind"] == "risk_limit_resolved" and "aaa" in row["instrument_uids"] for row in events)
+
+
+def test_collected_payouts_and_operation_links_keep_actual_status_account_and_source(fixture):
+    now = datetime.fromisoformat(fixture["dashboard"]["asOf"])
+    payment_date = (now + timedelta(days=5)).isoformat()
+    paid = {**operation("div-paid", at=(now - timedelta(hours=1)).isoformat()), "type": "OPERATION_TYPE_DIVIDEND",
+            "payment": {"currency": "RUB", "units": "7", "nano": 0}}
+    later = {**paid, "id": "div-pending", "state": "OPERATION_STATE_PROGRESS"}
+
+    def read(method, body):
+        if method == "operations":
+            return {"items": [paid, paid, later] if body["accountId"] == "owned-account-a" else [], "hasNext": False}
+        assert method == "dividends"
+        if body["instrumentId"] != "aaa":
+            return {"dividends": []}
+        return {"dividends": [
+            {"paymentDate": payment_date, "recordDate": (now + timedelta(days=1)).isoformat(), "dividendNet": {"currency": "RUB", "units": "2"}},
+            {"paymentDate": payment_date, "recordDate": (now - timedelta(days=1)).isoformat(), "dividendNet": {"currency": "RUB", "units": "3"}},
+        ]}
+
+    broker_fixture(fixture, read)
+    checkpoint = {"dashboard": deepcopy(fixture["dashboard"]), "metadata": {"aaa": {}, "bbb": {}},
+                  "news": {"data": {"items": []}}, "calendar": {"data": {"exchanges": []}}}
+    workspace.collect(fixture["user"], {"currency": "RUB"}, checkpoint, lambda *args, **kwargs: None)
+    snapshot = state.saved_snapshot(fixture["user"])
+    payouts = snapshot["payouts"]["items"]
+    assert len(payouts) == 3
+    assert {row["status"] for row in payouts} == {"expected", "announced", "received"}
+    expected = next(row for row in payouts if row["status"] == "expected")
+    assert expected["amount"] == money("20", "RUB")
+    assert expected["estimate_is_guaranteed"] is False
+    assert next(row for row in payouts if row["status"] == "announced")["amount"] is None
+    received = next(row for row in payouts if row["status"] == "received")
+    assert received["amount"] == money("7", "RUB")
+    assert received["operation_id"] == "div-paid"
+    response = fixture["client"].get("/workspace/operations/owned-account-a/div-paid/position")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["position_ref"] == {"account_id": "owned-account-a", "instrument_uid": "aaa", "currently_held": True}
+    assert len(result["positions"]) == 1
+    assert result["operation"]["source_ids"] == received["source_ids"]
+    assert fixture["client"].get("/workspace/operations/owned-account-b/div-paid/position").status_code == 404
+    with pytest.raises(HTTPException):
+        workspace.operation_position("owned-account-a", "div-paid", user=fixture["other"])
+
+
+def test_operation_collection_rejects_conflicting_source_rows_without_replacing_snapshot(fixture):
+    raw = {**operation("source-conflict"), "payment": {"currency": "RUB", "units": "-16", "nano": 0}}
+    changed = {**raw, "payment": {"currency": "RUB", "units": "-32", "nano": 0}}
+    broker_fixture(fixture, lambda method, body: {"items": [raw, changed], "hasNext": False})
+    checkpoint = {"dashboard": deepcopy(fixture["dashboard"]), "metadata": {"aaa": {}, "bbb": {}}}
+    previous = state.saved_snapshot(fixture["user"])["snapshot_id"]
+    with pytest.raises(HTTPException) as failure:
+        workspace.collect(fixture["user"], {"currency": "RUB"}, checkpoint, lambda *args, **kwargs: None)
+    assert failure.value.detail == "operation_conflicting_observations"
+    assert state.saved_snapshot(fixture["user"])["snapshot_id"] == previous
+
+
 def test_workspace_read_never_fans_out_or_runs_ai(fixture):
     def unexpected(*args, **kwargs):
         pytest.fail("A materialized GET must not make an external request")
@@ -203,8 +354,9 @@ def test_strategy_preview_detects_snapshot_change_and_rollback_creates_new_versi
     preview = state.preview_strategy(state.StrategyPreview(expected_version=1, config=config(position=50)), user=fixture["user"])
     fixture["snapshot"]["snapshot_id"] = "changed-after-preview"
     save(fixture)
+    confirmation = state.StrategyConfirm(preview_id=preview["preview_id"], expected_version=1, request_id="strategy-stale-preview")
     with pytest.raises(HTTPException) as failure:
-        state.confirm_strategy(state.StrategyConfirm(preview_id=preview["preview_id"], expected_version=1, request_id="strategy-stale-preview"), user=fixture["user"])
+        state.confirm_strategy(confirmation, user=fixture["user"])
     assert failure.value.detail == "strategy_snapshot_changed"
     _, _, second = activate(fixture, config(position=50), expected=1, request="strategy-second-confirm")
     rollback = state.preview_strategy(state.StrategyPreview(expected_version=2, rollback_to_version=1), user=fixture["user"])
@@ -241,7 +393,8 @@ def test_notification_quiet_hours_and_read_ack_without_claim(fixture):
     prefs = {**notifications.DEFAULTS, "timezone": "Europe/Moscow"}
     at = int(datetime(2026, 10, 12, 20, 30, tzinfo=timezone.utc).timestamp())
     status, due, why = notifications.eligibility(prefs, "risk", at)
-    assert status == "pending" and why == "quiet_hours"
+    assert status == "pending"
+    assert why == "quiet_hours"
     assert datetime.fromtimestamp(due, timezone.utc).isoformat() == "2026-10-13T05:00:00+00:00"
     with transaction(backend.connect) as db:
         notifications.enqueue_in(db, int(fixture["user"]["id"]), kind="risk", title="Fixture event", body="Source observed", event_id="fixture-event")
@@ -255,7 +408,8 @@ def test_notification_quiet_hours_and_read_ack_without_claim(fixture):
 def test_notification_preferences_are_applied_to_monitor_and_preview_sends_nothing(fixture):
     payload = notifications.PreferencesWrite(expected_version=0, enabled=False)
     saved = notifications.update_preferences(payload, user=fixture["user"])
-    assert saved["applied"] and saved["delivery_channel"] == "app_poll"
+    assert saved["applied"]
+    assert saved["delivery_channel"] == "app_poll"
     assert ai.get_profile(int(fixture["user"]["id"]))["notify_critical"] is False
     with transaction(backend.connect) as db:
         notifications.enqueue_in(db, int(fixture["user"]["id"]), kind="risk", title="Fixture", body="Actual test event", event_id="preview-event")
@@ -313,7 +467,8 @@ def test_cancelled_worker_cannot_commit_and_paid_expiry_cannot_retry(fixture):
         db.execute("UPDATE workspace_jobs SET paid_started=1,expires_at=0 WHERE id=?", (identifier,))
         jobs._expire(db, int(time.time()))
     result = jobs.get_job(int(fixture["user"]["id"]), identifier)
-    assert result["state"] == "uncertain" and not result["can_retry"]
+    assert result["state"] == "uncertain"
+    assert not result["can_retry"]
     with pytest.raises(HTTPException):
         jobs.retry(identifier, state.RequestId(request_id="cannot-repeat-paid"), BackgroundTasks(), user=fixture["user"])
 
@@ -347,7 +502,8 @@ def test_chat_scope_sources_real_history_and_allowlisted_navigation(fixture):
     result = chat.validate_response({"answer": "Fixture explanation", "claims": [{"text": "Observed", "fact_ids": [real_bar["id"]]}],
                                      "highlights": [{**target, "account_id": "malicious-other-account"}]}, packet)
     assert result["highlights"][0]["account_id"] == "owned-account-a"
-    assert result["sources"] and result["coverage"]["history"]["included_observations"] == 1
+    assert result["sources"]
+    assert result["coverage"]["history"]["included_observations"] == 1
     messages, _ = chat.model_messages(fixture["user"], "Explain", {"mode": "portfolio", "account_id": "owned-account-a"})
     assert "owned-account-a" not in json.dumps(messages)
     with pytest.raises(GuardError):
@@ -372,7 +528,8 @@ def test_chat_cursor_paginates_identical_timestamps_and_is_bound_to_user_thread(
     second = chat.messages(thread, first["next_before"], user=fixture["user"])
     third = chat.messages(thread, second["next_before"], user=fixture["user"])
     all_ids = [row["id"] for page in (first, second, third) for row in page["items"]]
-    assert len(all_ids) == 205 and len(set(all_ids)) == 205
+    assert len(all_ids) == 205
+    assert len(set(all_ids)) == 205
     assert third["has_more"] is False
     other_thread = chat.create_thread(chat.ThreadCreate(request_id="other-pagination-thread"), user=fixture["other"])["thread_id"]
     with pytest.raises(HTTPException) as failure:
@@ -403,11 +560,13 @@ def test_real_guarded_chat_is_charged_once_and_recovered_by_request(fixture):
     assert first.status_code == 202, first.text
     identifier = first.json()["job_id"]
     recovered = fixture["client"].get("/workspace/jobs/by-request/chat-stable-request").json()
-    assert recovered["job_id"] == identifier and recovered["state"] == "completed", recovered
+    assert recovered["job_id"] == identifier, recovered
+    assert recovered["state"] == "completed", recovered
     assert fixture["client"].post(endpoint, json=body).json()["job_id"] == identifier
     assert len(calls) == 1
     response = fixture["client"].get(endpoint).json()["items"][-1]
-    assert response["role"] == "assistant" and response["sources"]
+    assert response["role"] == "assistant"
+    assert response["sources"]
     assert response["claims"][0]["fact_ids"] == ["capital:total"]
     assert MoneyLedger(backend.connect).user_summary(int(fixture["user"]["id"]))["unresolved_attempts"] == 0
     assert fixture["client"].post(endpoint, json={**body, "text": "Changed request payload"}).status_code == 409
@@ -420,7 +579,8 @@ def test_ambiguous_chat_timeout_cannot_repeat_or_fake_an_answer(fixture):
     body = {"request_id": "timeout-chat-request", "text": "Explain", "tier": "fast"}
     job = fixture["client"].post(endpoint, json=body).json()
     outcome = jobs.get_job(int(fixture["user"]["id"]), job["job_id"])
-    assert outcome["state"] == "uncertain" and outcome["can_retry"] is False
+    assert outcome["state"] == "uncertain"
+    assert outcome["can_retry"] is False
     assert fixture["client"].post(endpoint, json=body).json()["job_id"] == job["job_id"]
     assert len(calls) == 1
     assert [r["role"] for r in fixture["client"].get(endpoint).json()["items"]] == ["user"]
@@ -440,7 +600,8 @@ def test_guarded_cancellation_before_send_refunds_known_unsent_only(fixture):
         client.complete_json(tier=ai.AnalysisTier.FAST, messages=[{"role": "user", "content": "Fixture"}], max_output_tokens=10)
     assert not calls
     summary = MoneyLedger(backend.connect).user_summary(int(fixture["user"]["id"]))
-    assert summary["unresolved_attempts"] == 0 and summary["estimated_and_reserved_rub"] == "0"
+    assert summary["unresolved_attempts"] == 0
+    assert summary["estimated_and_reserved_rub"] == "0"
 
 
 def test_actual_ohlc_units_missing_intervals_and_conflict_validation():
@@ -448,8 +609,10 @@ def test_actual_ohlc_units_missing_intervals_and_conflict_validation():
     at = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
     row = {"time": at, "open": "100.123456789", "high": "102", "low": "99", "close": "101", "volume": "7", "isComplete": False}
     values = market.normalize_candles([row, row], observed_at=observed, source_id="fixture-source")
-    assert len(values) == 1 and values[0]["open"] == "100.123456789"
-    assert values[0]["is_complete"] is False and values[0]["volume_lots"] == "7"
+    assert len(values) == 1
+    assert values[0]["open"] == "100.123456789"
+    assert values[0]["is_complete"] is False
+    assert values[0]["volume_lots"] == "7"
     assert market.quote_unit({"instrumentType": "bond", "currency": "rub"})[0] == "percent_of_nominal"
     assert market.quote_unit({"instrumentType": "futures", "currency": "rub"})[2] is None
     with pytest.raises(HTTPException):
@@ -520,7 +683,8 @@ def test_risk_check_freezes_owned_evidence_and_survives_a_closed_position(fixtur
     first = state.create_check(payload, user=fixture["user"])
     assert first["basis"]["positions"][0]["value"] == money("80", "RUB")
     assert first["basis"]["confirmed_strategy"]["version"] == 1
-    assert first["sources"] and first["steps"][0]["source_ids"]
+    assert first["sources"]
+    assert first["steps"][0]["source_ids"]
     fixture["snapshot"]["positions"] = [p for p in fixture["snapshot"]["positions"] if p["instrument_uid"] != "aaa"]
     save(fixture)
     assert state.create_check(payload, user=fixture["user"]) == first
@@ -549,7 +713,8 @@ def test_monitor_trigger_uses_previous_real_observation_and_preserves_slot_decis
     trigger = monitor.trigger_evidence(fixture["user"], current, previous, previous_row, observation,
         AnalysisSignals(portfolio_changed=True, digest_changed=True, morning_due=True), now)
     change = next(row for row in trigger["observations"] if row["kind"] == "position_quantity")
-    assert change["before"]["quantity"] == "10" and change["after"]["quantity"] == "11"
+    assert change["before"]["quantity"] == "10"
+    assert change["after"]["quantity"] == "11"
     assert trigger["previous_snapshot_id"] == previous_row["digest"]
     assert set(change["source_ids"]).issubset({ref["id"] for ref in trigger["sources"]})
     user_id = int(fixture["user"]["id"])
@@ -587,6 +752,28 @@ def test_broker_fundamental_zero_is_absent_while_negative_value_is_real(fixture)
     assert portfolio_research._broker_metric(raw, "netIncomeTtm") == -12.5
 
 
+@pytest.mark.parametrize("currency,expected", [("rub", "same_basis_different_values"), ("usd", "different_period_or_currency")])
+def test_fundamental_conflicts_preserve_basis_and_do_not_turn_missing_zero_into_money(fixture, currency, expected):
+    broker_fixture(fixture, lambda *args: {})
+    first = {"assetUid": "asset-aaa", "currency": "rub", "revenueTtm": 0, "netIncomeTtm": -12.5,
+             "fiscalPeriodEndDate": "2026-06-30T00:00:00Z", "ebitdaTtm": 0}
+    second = {**first, "currency": currency, "revenueTtm": 100, "ebitdaTtm": 20}
+    unrelated = {**second, "assetUid": "other-asset", "revenueTtm": 9999}
+    fixture["patch"].setattr(market, "broker_read", lambda *args: {"fundamentals": [first, second, unrelated]})
+    result = market.metric_section(fixture["user"], "aaa", {"assetUid": "asset-aaa"})
+    assert result["state"] == "partial"
+    assert result["data"]["instrument_uid"] == "aaa"
+    assert result["data"]["items"] == []
+    conflict = result["data"]["conflicts"][0]
+    assert conflict["reason"] == expected
+    assert len(conflict["observations"]) == 2
+    assert conflict["observations"][0]["value"]["revenueTtm"] is None
+    assert conflict["observations"][0]["value"]["ebitdaTtm"] is None
+    assert conflict["observations"][1]["value"]["revenueTtm"] == "100"
+    assert conflict["observations"][1]["currency"] == currency
+    assert conflict["source_ids"] == [result["sources"][0]["id"]]
+
+
 def test_report_calendar_uses_one_instrument_and_never_infers_publication(fixture):
     class Reader:
         def __init__(self, user):
@@ -600,7 +787,9 @@ def test_report_calendar_uses_one_instrument_and_never_infers_publication(fixtur
             return {"dividends": []}
     when = datetime.now(timezone.utc) - timedelta(days=2)
     def read(reader, method, body):
-        assert method == "reports" and body["instrumentId"] == "aaa" and "instrumentIds" not in body
+        assert method == "reports"
+        assert body["instrumentId"] == "aaa"
+        assert "instrumentIds" not in body
         return {"events": [{"instrumentId": "aaa", "reportDate": when.isoformat(), "periodYear": 2026,
                              "periodNum": 2, "periodType": "PERIOD_TYPE_QUARTER", "createdAt": when.isoformat()},
                             {"instrumentId": "not-requested", "reportDate": when.isoformat()}]}
@@ -609,8 +798,10 @@ def test_report_calendar_uses_one_instrument_and_never_infers_publication(fixtur
     result = market.instrument_events(fixture["user"], "aaa", {"instrumentType": "share"}, when - timedelta(days=1), when + timedelta(days=3))
     assert len(result["data"]["items"]) == 1
     event = result["data"]["items"][0]
-    assert event["status"] == "scheduled" and event["publication_confirmed"] is False
-    assert event["period_num"] == 2 and event["period_year"] == 2026
+    assert event["status"] == "scheduled"
+    assert event["publication_confirmed"] is False
+    assert event["period_num"] == 2
+    assert event["period_year"] == 2026
     assert result["state"] == "partial"
 
 
@@ -620,11 +811,13 @@ def test_news_does_not_infer_original_or_same_event_from_equal_headlines(fixture
     second = {"id": "102", "source": "Agency B", "title": "Same headline", "content": "Different second fact", "ts": when}
     ref = source("News", "market-news", now_iso())
     result, errors = news.group_news([first, first, second], uid=None, ref=ref)
-    assert not errors and len(result) == 2
+    assert not errors
+    assert len(result) == 2
     assert all(row["event_identity_verified"] is False and row["primary_sources"] == [] for row in result)
     assert all(row["sources"][0]["publication_role"] == "unknown" for row in result)
     result, errors = news.group_news([first, {**second, "id": "101"}], uid=None, ref=ref)
-    assert result == [] and "news_id_conflicting_observations" in errors
+    assert result == []
+    assert "news_id_conflicting_observations" in errors
 
 
 def test_reviewed_news_links_bind_exact_observations_and_expose_original_repost(fixture):
@@ -637,7 +830,9 @@ def test_reviewed_news_links_bind_exact_observations_and_expose_original_repost(
                    "publication_role": role, "primary_source": primary, "source": proof}
         research_store.import_record(backend.connect, kind="news_event", subject=raw["id"], payload=payload)
     result, errors = news.group_news([first, second], uid=None, ref=source("News", "market-news", now_iso()))
-    assert not errors and len(result) == 1 and result[0]["event_identity_verified"]
+    assert not errors
+    assert len(result) == 1
+    assert result[0]["event_identity_verified"]
     assert {row["publication_role"] for row in result[0]["sources"]} == {"primary", "repost"}
     assert result[0]["primary_sources"][0]["url"] == primary["url"]
     changed, errors = news.group_news([first, {**second, "content": "A corrected unrelated statement"}], uid=None,
@@ -646,13 +841,24 @@ def test_reviewed_news_links_bind_exact_observations_and_expose_original_repost(
     assert next(row for row in changed if row["id"] != "event:fixture-report-event")["sources"][0]["publication_role"] == "unknown"
 
 
+@pytest.mark.parametrize("role,primary", [("primary", None), ("repost", None), ("independent_report", "not-a-source")])
+def test_news_review_rejects_missing_or_malformed_primary_source(fixture, role, primary):
+    payload = {"broker_news_id": "77", "event_id": "reviewed-event", "news_sha256": "a" * 64,
+               "publication_role": role, "primary_source": primary, "source": reviewed("publication-proof")}
+    with pytest.raises(research_store.EvidenceError):
+        research_store.import_record(backend.connect, kind="news_event", subject="77", payload=payload)
+    assert research_store.latest_verified(backend.connect, "news_event", "77", datetime.now(timezone.utc)) is None
+
+
 def test_manual_broker_handoff_does_not_claim_execution_and_requires_operation_association(fixture):
     plan = plans.create(plans.PlanCreate(request_id="manual-plan-create", title="Fixture manual plan", instrument_uid="aaa",
         account_id="owned-account-a", side="buy", quantity="2", strategy_version=0), user=fixture["user"])
-    assert plan["state"] == "calculated" and plan["executed_quantity"] == "0"
+    assert plan["state"] == "calculated"
+    assert plan["executed_quantity"] == "0"
     opened = plans.opened(plan["id"], state.RequestId(request_id="manual-plan-open"), user=fixture["user"])
     assert opened["execution_state"] == "not_confirmed"
     raw = operation(at=now_iso())
+    raw["payment"] = {"currency": "RUB", "units": "-16", "nano": 0}
     class Reader:
         def __init__(self, user):
             pass
@@ -667,14 +873,28 @@ def test_manual_broker_handoff_does_not_claim_execution_and_requires_operation_a
             return {"positions": [{"instrumentUid": "aaa", "quantity": "12"}]} if method == "portfolio" else {"items": [raw], "hasNext": False}
     fixture["patch"].setattr(details, "BrokerReader", Reader)
     pending = plans.reconcile_plan(fixture["user"], {"plan_id": plan["id"], "operation_ids": []}, lambda *args, **kwargs: None)
-    assert pending["state"] == "pending" and pending["executed_quantity"] == "0"
+    assert pending["state"] == "pending"
+    assert pending["executed_quantity"] == "0"
     assert len(pending["candidate_operations"]) == 1
     done = plans.reconcile_plan(fixture["user"], {"plan_id": plan["id"], "operation_ids": [raw["id"]]}, lambda *args, **kwargs: None)
-    assert done["state"] == "done" and done["executed_quantity"] == "2"
+    assert done["state"] == "done"
+    assert done["executed_quantity"] == "2"
     assert done["automatic_order_execution"] is False
     raw["quantity"] = "1"
     corrected = plans.reconcile_plan(fixture["user"], {"plan_id": plan["id"], "operation_ids": []}, lambda *args, **kwargs: None)
-    assert corrected["state"] == "partial" and corrected["executed_quantity"] == "1"
+    assert corrected["state"] == "partial"
+    assert corrected["executed_quantity"] == "1"
+
+
+def test_manual_plan_request_recovery_survives_a_later_position_change(fixture):
+    request = plans.PlanCreate(request_id="recover-original-plan", title="Saved plan", instrument_uid="aaa",
+                               account_id="owned-account-a", side="buy", quantity="2", strategy_version=0)
+    created = plans.create(request, user=fixture["user"])
+    fixture["snapshot"]["positions"] = [row for row in fixture["snapshot"]["positions"] if row["instrument_uid"] != "aaa"]
+    fixture["snapshot"]["snapshot_id"] = "after-position-closed"
+    save(fixture)
+    assert plans.create(request, user=fixture["user"]) == created
+    assert len(state.records(fixture["user"]["id"], "manual_plan")) == 1
 
 
 def test_reviewed_rating_change_updates_risk_history_sources_and_coverage(fixture):
@@ -694,9 +914,11 @@ def test_reviewed_rating_change_updates_risk_history_sources_and_coverage(fixtur
     changed = next(item for item in events if item["kind"] == "risk_rating_changed")
     assert changed["details"]["before"]["items"][0]["grade"] == "A(RU)"
     assert changed["details"]["after"]["items"][0]["grade"] == "BBB-(RU)"
-    assert "rating-second" in changed["source_ids"] and changed["sources"]
+    assert "rating-second" in changed["source_ids"]
+    assert changed["sources"]
     coverage = next(row for row in state.risk_data(fixture["user"])["coverage"] if row["direction"] == "ratings")
-    assert coverage["known_positions"] == 1 and coverage["state"] == "partial"
+    assert coverage["known_positions"] == 1
+    assert coverage["state"] == "partial"
 
 
 @pytest.mark.parametrize("agency,grade,domain", [("NKR", "BBB-.ru", "ratings.ru"), ("NRA", "BBB-|ru|", "ra-national.ru")])

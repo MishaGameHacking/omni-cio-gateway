@@ -65,6 +65,8 @@ internal fun InstrumentQuotesPanel(position: PortfolioPosition, accountId: Strin
                     TextButton(onClick = { selectedTime = snapshot.candles[(selected + 1).coerceIn(0, snapshot.candles.lastIndex)].time }) { Text("Следующая") }
                 }
                 if (chosen != null && snapshot.candles.size > 35) DetailFold("Лупа выбранного интервала") {
+                    WorkspaceGestureHint("quotes-magnifier", "Лупа рыночных свечей",
+                        "Выбранная свеча и соседние интервалы показаны крупнее. Здесь отдельная шкала цены; точные числа и кнопки доступны без проведения по графику.")
                     val first = (selected - 3).coerceAtLeast(0)
                     val nearby = snapshot.candles.subList(first, (selected + 4).coerceAtMost(snapshot.candles.size))
                     Text("Увеличенный фрагмент; локальная шкала цены.", style = MaterialTheme.typography.bodySmall)
@@ -109,21 +111,21 @@ private fun CandleSurface(candles: List<MarketCandle>, selected: Int, choose: (I
         SpatialCandles(candles.map { SpatialCandle(it.open.toDouble(), it.high.toDouble(), it.low.toDouble(), it.close.toDouble()) },
             low, high, selected.takeIf { it >= 0 }, Modifier.fillMaxSize())
     }
-    DataRow("Шкала цены", "${decimalText(candles.minOf { it.low }, 4)} — ${decimalText(candles.maxOf { it.high }, 4)}")
+    DataRow("Шкала цены", "${candles.minOf { it.low }.toPlainString()} — ${candles.maxOf { it.high }.toPlainString()}")
 }
 
 @Composable
 private fun CandleDetails(candle: MarketCandle, unit: String) {
     Text(dateText(candle.time), style = MaterialTheme.typography.titleMedium)
-    DataRow("Открытие / закрытие", "${decimalText(candle.open, 4)} / ${decimalText(candle.close, 4)} $unit")
-    DataRow("Минимум / максимум", "${decimalText(candle.low, 4)} / ${decimalText(candle.high, 4)} $unit")
-    DataRow("Объём", "${decimalText(candle.volumeLots, 0)} лотов")
+    DataRow("Открытие / закрытие", "${candle.open.toPlainString()} / ${candle.close.toPlainString()} $unit")
+    DataRow("Минимум / максимум", "${candle.low.toPlainString()} / ${candle.high.toPlainString()} $unit")
+    DataRow("Объём", "${candle.volumeLots.toPlainString()} лотов")
     Text(if (candle.isComplete) "Свеча завершена" else "Текущий интервал ещё формируется", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
 private fun CandleValues(candles: List<MarketCandle>, selected: Int, choose: (Int) -> Unit) {
-    var page by remember { mutableIntStateOf(0) }
+    var page by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(selected) { if (selected >= 0) page = selected / 10 }
     val pages = ((candles.size + 9) / 10).coerceAtLeast(1)
     DetailFold("Точная таблица свечей") {
@@ -131,7 +133,7 @@ private fun CandleValues(candles: List<MarketCandle>, selected: Int, choose: (In
         candles.indices.drop(safePage * 10).take(10).forEach { index ->
             val row = candles[index]
             TextButton(onClick = { choose(index) }, modifier = Modifier.fillMaxWidth().semantics { this.selected = index == selected }) {
-                Text("${if (index == selected) "Выбрано · " else ""}${dateText(row.time)}\nО ${decimalText(row.open, 4)} · В ${decimalText(row.high, 4)} · Н ${decimalText(row.low, 4)} · З ${decimalText(row.close, 4)}")
+                Text("${if (index == selected) "Выбрано · " else ""}${dateText(row.time)}\nО ${row.open.toPlainString()} · В ${row.high.toPlainString()} · Н ${row.low.toPlainString()} · З ${row.close.toPlainString()}")
             }
         }
         Row { TextButton(onClick = { page = safePage - 1 }, enabled = safePage > 0) { Text("Назад") }

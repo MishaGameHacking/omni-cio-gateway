@@ -1,10 +1,11 @@
 """Synthetic CI records. These tests do NOT perform an Android installation."""
 from copy import deepcopy
 import unittest
-from backend.installation_evidence import InstallationEvidenceError, from_ci_reports
+from backend.installation_evidence import BUSINESS_CASE_IDS, CURRENT_UI_SUITE, InstallationEvidenceError, from_ci_reports
 
 CANDIDATE = 'a' * 64
 PREVIOUS = 'b' * 64
+UI_FIXTURE = 'c' * 64
 
 
 def reports():
@@ -40,6 +41,24 @@ def android15_report():
     run['results'] = [r for r in run['results'] if r['test'] not in {
         'previous_clean_install', 'upgrade_to_candidate', 'upgrade_bootstrap_launch'}]
     return run
+
+
+def runtime_reports():
+    runs = []
+    for api, size, tag in ((35, 16384, 'google_apis_ps16k'), (36, 4096, 'google_apis')):
+        run = deepcopy(reports()[0])
+        run['android_api'] = api
+        next(row for row in run['results'] if row['test'] == 'debug_ui_fixture_install')['apk_sha256'] = UI_FIXTURE
+        next(row for row in run['results'] if row['test'] == 'profile_ui').update(
+            ui_suite=CURRENT_UI_SUITE, business_case_count=len(BUSINESS_CASE_IDS),
+            business_cases=sorted(BUSINESS_CASE_IDS), fixture_apk_sha256=UI_FIXTURE)
+        run['results'].append({'test': 'kernel_page_size', 'success': True,
+                               'android_api': api, 'abi': 'x86_64',
+                               'system_image': f'system-images;android-{api};{tag};x86_64',
+                               'page_size_bytes': size, 'command': 'getconf PAGE_SIZE',
+                               'apk_sha256': CANDIDATE})
+        runs.append(run)
+    return runs
 
 
 class EvidenceTests(unittest.TestCase):
@@ -210,6 +229,67 @@ class EvidenceTests(unittest.TestCase):
         data = reports()
         del data[0]['profile_ui_required']
         self.reject(data)
+
+    def test_new_release_requires_real_16kb_and_4kb_full_matrix(self):
+        checked = from_ci_reports(runtime_reports(), CANDIDATE, require_runtime_16kb=True)
+        self.assertEqual(16384, checked['35']['page_size_bytes'])
+        self.assertTrue(checked['35']['runtime_16kb'])
+        self.assertEqual(4096, checked['36']['page_size_bytes'])
+        self.assertFalse(checked['36']['runtime_16kb'])
+        self.assertEqual(52, checked['35']['business_case_count'])
+        self.assertEqual(52, checked['36']['business_case_count'])
+        # Historical transcripts remain usable for recovery, never a new 3D release.
+        for old in (reports(), [android15_report(), *reports()]):
+            from_ci_reports(old, CANDIDATE)
+            with self.assertRaises(InstallationEvidenceError):
+                from_ci_reports(old, CANDIDATE, require_runtime_16kb=True)
+
+    def test_new_release_cannot_omit_kernel_upgrade_or_profile_on_either_api(self):
+        for index in (0, 1):
+            for name in ('kernel_page_size', 'previous_clean_install', 'upgrade_to_candidate',
+                         'upgrade_bootstrap_launch', 'candidate_clean_install', 'activity_launch', 'profile_ui'):
+                data = runtime_reports()
+                data[index]['results'] = [r for r in data[index]['results'] if r['test'] != name]
+                with self.subTest(api=index, missing=name), self.assertRaises(InstallationEvidenceError):
+                    from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
+
+    def test_kernel_measurement_is_bound_to_exact_platform_and_candidate(self):
+        for field, value in (('android_api', 36), ('android_api', 35.0), ('abi', 'arm64-v8a'),
+                             ('system_image', 'system-images;android-35;google_apis;x86_64'),
+                             ('page_size_bytes', 4096), ('page_size_bytes', '16384'),
+                             ('page_size_bytes', True), ('apk_sha256', PREVIOUS),
+                             ('command', 'static-elf-check')):
+            data = runtime_reports()
+            data[0]['results'][-1][field] = value
+            # Even the backwards-compatible parser must not accept false new evidence.
+            with self.subTest(field=field, value=value):
+                self.reject(data)
+
+    def test_new_release_requires_all_six_routes_and_both_native_font_sizes(self):
+        self.assertEqual(52, len(BUSINESS_CASE_IDS))
+        self.assertEqual({f'analysis/{state}@{font}' for state in ('ready', 'partial', 'empty', 'error') for font in (1, 2)},
+                         {case for case in BUSINESS_CASE_IDS if case.startswith('analysis/')})
+        for field, value in (('ui_suite', 'old-profile-only'), ('business_case_count', 44),
+                             ('business_case_count', 52.0), ('business_case_count', True),
+                             ('business_cases', sorted(BUSINESS_CASE_IDS)[:-1]), ('business_cases', '52'),
+                             ('fixture_apk_sha256', CANDIDATE), ('fixture_apk_sha256', None)):
+            data = runtime_reports()
+            next(row for row in data[0]['results'] if row['test'] == 'profile_ui')[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(InstallationEvidenceError):
+                from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
+
+    def test_duplicate_case_or_missing_receipt_cannot_replace_a_full_run(self):
+        for api in (0, 1):
+            data = runtime_reports()
+            profile = next(row for row in data[api]['results'] if row['test'] == 'profile_ui')
+            profile['business_cases'][-1] = profile['business_cases'][0]
+            with self.assertRaises(InstallationEvidenceError):
+                from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
+            for field in ('ui_suite', 'business_case_count', 'business_cases', 'fixture_apk_sha256'):
+                data = runtime_reports()
+                del next(row for row in data[api]['results'] if row['test'] == 'profile_ui')[field]
+                with self.subTest(api=api, missing=field), self.assertRaises(InstallationEvidenceError):
+                    from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
 
 
 if __name__ == '__main__':

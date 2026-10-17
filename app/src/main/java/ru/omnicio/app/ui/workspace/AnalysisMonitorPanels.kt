@@ -5,6 +5,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import org.json.JSONObject
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spectrum.SpectrumCard
@@ -40,7 +43,8 @@ private fun AnalysisSlotResult(check: JSONObject, openCheck: (String) -> Unit) {
         SpectrumSecondaryButton("Открыть этот отчёт", { openReport(card) }, Modifier.fillMaxWidth())
     }
     check.text("check_id", "").takeIf(String::isNotBlank)?.let { id ->
-        SpectrumSecondaryButton("Что проверялось", { openCheck(id) }, Modifier.fillMaxWidth())
+        SpectrumSecondaryButton("Что проверялось", { openCheck(id) }, Modifier.fillMaxWidth()
+            .semantics { testTagsAsResourceId = true }.testTag("analysis-check-$id"))
     }
 }
 

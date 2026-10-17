@@ -53,9 +53,9 @@ def pace_instruments(scope: tuple) -> None:
         due = max(now, _next_instrument_read.get(scope, now))
         _next_instrument_read[scope] = due + 0.4
         if len(_next_instrument_read) > 256:
-            for key in list(_next_instrument_read):
-                if _next_instrument_read[key] < now:
-                    del _next_instrument_read[key]
+            expired = [key for key, deadline in _next_instrument_read.items() if deadline < now]
+            for key in expired:
+                del _next_instrument_read[key]
     delay = due - now
     if delay > 0:
         time.sleep(min(delay, 5))
@@ -111,32 +111,36 @@ def quote_unit(raw: dict, price_currency: str | None = None) -> tuple[str, str, 
     return 'quote_units', 'единицы котировки', None
 
 
+def _normalized_candle(raw: dict, observed_at: str, source_id: str) -> dict:
+    if not isinstance(raw, dict):
+        raise HTTPException(502, 'candles_invalid_response')
+    values = {key: decimal(raw.get(key)) for key in ('open', 'high', 'low', 'close')}
+    if any(value is None for value in values.values()):
+        raise HTTPException(502, 'candles_invalid_price')
+    if not values['low'] <= min(values['open'], values['close']) <= max(values['open'], values['close']) <= values['high']:
+        raise HTTPException(502, 'candles_invalid_ohlc')
+    try:
+        instant = timestamp(raw.get('time'))
+        if instant > timestamp(observed_at):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(502, 'candles_invalid_time') from None
+    volume = raw.get('volume')
+    if isinstance(volume, bool) or not re.fullmatch(r'\d{1,19}', str(volume)):
+        raise HTTPException(502, 'candles_invalid_volume')
+    complete = raw.get('isComplete')
+    if type(complete) is not bool:
+        raise HTTPException(502, 'candles_completion_unknown')
+    return {'time': instant.isoformat(), **{key: text_number(value) for key, value in values.items()},
+            'volume_lots': str(int(volume)), 'is_complete': complete, 'source_id': source_id}
+
+
 def normalize_candles(rows: Any, *, observed_at: str, source_id: str) -> list[dict]:
     if not isinstance(rows, list):
         raise HTTPException(502, 'candles_invalid_response')
     result = {}
     for raw in rows:
-        if not isinstance(raw, dict):
-            raise HTTPException(502, 'candles_invalid_response')
-        values = {key: decimal(raw.get(key)) for key in ('open', 'high', 'low', 'close')}
-        if any(value is None for value in values.values()):
-            raise HTTPException(502, 'candles_invalid_price')
-        if not values['low'] <= min(values['open'], values['close']) <= max(values['open'], values['close']) <= values['high']:
-            raise HTTPException(502, 'candles_invalid_ohlc')
-        try:
-            instant = timestamp(raw.get('time'))
-            if instant > timestamp(observed_at):
-                raise ValueError
-        except ValueError:
-            raise HTTPException(502, 'candles_invalid_time') from None
-        volume = raw.get('volume')
-        if isinstance(volume, bool) or not re.fullmatch(r'\d{1,19}', str(volume)):
-            raise HTTPException(502, 'candles_invalid_volume')
-        complete = raw.get('isComplete')
-        if type(complete) is not bool:
-            raise HTTPException(502, 'candles_completion_unknown')
-        row = {'time': instant.isoformat(), **{key: text_number(value) for key, value in values.items()},
-               'volume_lots': str(int(volume)), 'is_complete': complete, 'source_id': source_id}
+        row = _normalized_candle(raw, observed_at, source_id)
         if row['time'] in result and result[row['time']] != row:
             raise HTTPException(502, 'candles_conflicting_values')
         result[row['time']] = row
@@ -312,10 +316,63 @@ def rating_section(uid: str, meta: dict) -> dict:
                    as_of=at.isoformat(), sources=[reviewed_source(row['source'], provider=row['agency'], method='credit_rating', subject=row['subject_id']) for row in history])
 
 
+FUNDAMENTAL_LABELS = {'revenueTtm': ('Выручка за 12 месяцев', 'currency'),
+                      'netIncomeTtm': ('Чистая прибыль за 12 месяцев', 'currency'),
+                      'freeCashFlowTtm': ('Свободный денежный поток за 12 месяцев', 'currency'),
+                      'netDebtToEbitda': ('Чистый долг / EBITDA', 'ratio'),
+                      'currentRatioMrq': ('Текущая ликвидность', 'ratio')}
+
+
+def _fundamental_value(raw: Any) -> tuple[str | None, str | None]:
+    # The broker's double fields use zero as an unavailable-data marker.
+    value = decimal(str(raw)) if type(raw) in (int, float, str) else None
+    if value == 0:
+        return None, 'broker_zero_means_unavailable'
+    if value is None:
+        return None, 'not_supplied'
+    return text_number(value), None
+
+
+def _fundamental_items(raw: dict, ref: dict) -> list:
+    items = []
+    for key, (label, unit) in FUNDAMENTAL_LABELS.items():
+        value, missing = _fundamental_value(raw.get(key))
+        items.append({'id': key, 'label': label, 'value': value, 'unit': unit,
+                      'currency': raw.get('currency') if unit == 'currency' else None,
+                      'period': raw.get('fiscalPeriodEndDate'), 'source_ids': [ref['id']], 'missing_reason': missing})
+    return items
+
+
+def _fundamental_observation(raw: dict) -> dict:
+    result = {}
+    for key, value in raw.items():
+        if key == 'assetUid':
+            continue
+        numeric = type(value) in (int, float) or (isinstance(value, str) and decimal(value) is not None)
+        if numeric or key in FUNDAMENTAL_LABELS:
+            result[key] = _fundamental_value(value)[0]
+        else:
+            result[key] = value
+    return result
+
+
+def _fundamental_conflict(rows: list, ref: dict) -> dict:
+    bases = {(row.get('fiscalPeriodEndDate'), row.get('currency')) for row in rows}
+    observations = []
+    for row in rows:
+        items = _fundamental_items(row, ref)
+        observations.append({'source_id': ref['id'], 'value': _fundamental_observation(row),
+                             'period': row.get('fiscalPeriodEndDate'), 'currency': row.get('currency'),
+                             'metrics': items})
+    return {'label': 'Расхождение фундаментальных показателей', 'basis_matches': len(bases) == 1,
+            'reason': 'same_basis_different_values' if len(bases) == 1 else 'different_period_or_currency',
+            'observations': observations, 'source_ids': [ref['id']]}
+
+
 def metric_section(user: Any, uid: str, meta: dict) -> dict:
     asset_uid = meta.get('assetUid')
     if not asset_uid:
-        return section({'items': [], 'conflicts': []}, state='unavailable', reason='asset_identity_required')
+        return section({'instrument_uid': uid, 'items': [], 'conflicts': []}, state='unavailable', reason='asset_identity_required')
     with details.BrokerReader(user) as reader:
         raw = broker_read(reader, 'fundamentals', {'assets': [asset_uid]})
     rows = [row for row in raw.get('fundamentals', []) if isinstance(row, dict) and row.get('assetUid') == asset_uid]
@@ -323,33 +380,14 @@ def metric_section(user: Any, uid: str, meta: dict) -> dict:
     ref = source('GetAssetFundamentals', asset_uid, observed,
                  url=DOCS + 'instruments-service-get-asset-fundamentals', ttl=3600)
     if not rows:
-        return section({'items': [], 'conflicts': []}, state='unavailable', reason='fundamentals_not_supplied', sources=[ref])
+        return section({'instrument_uid': uid, 'items': [], 'conflicts': []}, state='unavailable', reason='fundamentals_not_supplied', sources=[ref])
     # Compare the basis before calling different observations contradictory.
     unique = {digest(row): row for row in rows}
     if len(unique) > 1:
-        bases = {(row.get('fiscalPeriodEndDate'), row.get('currency')) for row in rows}
-        return section({'items': [], 'conflicts': [{'label': 'Расхождение фундаментальных показателей', 'basis_matches': len(bases) == 1,
-            'reason': 'same_basis_different_values' if len(bases) == 1 else 'different_period_or_currency',
-            'observations': [{'source_id': ref['id'], 'value': {key: value for key, value in row.items() if key != 'assetUid'}, 'period': row.get('fiscalPeriodEndDate')} for row in rows], 'source_ids': [ref['id']]}]},
+        return section({'instrument_uid': uid, 'items': [], 'conflicts': [_fundamental_conflict(list(unique.values()), ref)]},
             state='partial', reason='fundamentals_conflict', as_of=observed, sources=[ref])
-    raw = rows[0]
-    labels = {'revenueTtm': ('Выручка за 12 месяцев', 'currency'),
-              'netIncomeTtm': ('Чистая прибыль за 12 месяцев', 'currency'),
-              'freeCashFlowTtm': ('Свободный денежный поток за 12 месяцев', 'currency'),
-              'netDebtToEbitda': ('Чистый долг / EBITDA', 'ratio'),
-              'currentRatioMrq': ('Текущая ликвидность', 'ratio')}
-    items = []
-    for key, (label, unit) in labels.items():
-        value = raw.get(key)
-        # Broker JSON double fields are converted via their decimal spelling.
-        value = decimal(str(value)) if type(value) in (int, float, str) else None
-        missing = 'broker_zero_means_unavailable' if value == 0 else 'not_supplied' if value is None else None
-        if missing:
-            value = None
-        items.append({'id': key, 'label': label, 'value': text_number(value), 'unit': unit,
-                      'currency': raw.get('currency') if unit == 'currency' else None,
-                      'period': raw.get('fiscalPeriodEndDate'), 'source_ids': [ref['id']], 'missing_reason': missing})
-    return section({'items': items, 'conflicts': [], 'basis': 'broker_metrics_not_audited_statement'},
+    items = _fundamental_items(rows[0], ref)
+    return section({'instrument_uid': uid, 'items': items, 'conflicts': [], 'basis': 'broker_metrics_not_audited_statement'},
                    state='partial' if any(item['missing_reason'] for item in items) else 'available',
                    reason='some_fundamentals_unavailable' if any(item['missing_reason'] for item in items) else None,
                    as_of=observed, sources=[ref])
@@ -463,6 +501,17 @@ def load_dossier(user: Any, uid: str) -> dict:
             'sections': sections, 'sources': list({item['id']: item for value in sections.values() for item in value.get('sources', [])}.values()), 'autotrading': False}
 
 
+def _store_catalog_instruments(raw: dict, kind: str, method: str, identifiers: set, stored: dict) -> None:
+    instruments = raw.get('instruments')
+    if not isinstance(instruments, list):
+        return
+    observed = now_iso()
+    for item in instruments:
+        if isinstance(item, dict) and item.get('uid') in identifiers:
+            uid = item['uid']
+            stored[uid] = {**item, 'instrumentType': kind, '_source': source(method.title(), uid, observed, ttl=86400)}
+
+
 def portfolio_metadata(user: Any, positions: list[dict], stored: dict, progress, checkpoint: dict) -> None:
     """Use broker catalog batches before per-UID fallback for large portfolios."""
     methods = {'share': 'shares', 'bond': 'bonds', 'etf': 'etfs', 'currency': 'currencies', 'futures': 'futures', 'option': 'options'}
@@ -481,14 +530,7 @@ def portfolio_metadata(user: Any, positions: list[dict], stored: dict, progress,
                 raw = broker_read(reader, methods[kind], {'instrumentStatus': 'INSTRUMENT_STATUS_ALL'})
             except HTTPException:
                 continue
-            instruments = raw.get('instruments')
-            if not isinstance(instruments, list):
-                continue
-            observed = now_iso()
-            for item in instruments:
-                if isinstance(item, dict) and item.get('uid') in identifiers:
-                    uid = item['uid']
-                    stored[uid] = {**item, 'instrumentType': kind, '_source': source(methods[kind].title(), uid, observed, ttl=86400)}
+            _store_catalog_instruments(raw, kind, methods[kind], identifiers, stored)
             progress('collecting_metadata', checkpoint, completed=len(stored), total=total)
 
 

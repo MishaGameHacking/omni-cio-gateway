@@ -119,10 +119,7 @@ fun rememberWorkspaceAction(onSuccess: (JSONObject) -> Unit): WorkspaceAction {
                     val reply = withContext(Dispatchers.IO) { client.request(session.token, path, method, requestBody) }
                     if (reply.signedOut) reauthenticate()
                     error = reply.error; ambiguous = reply.ambiguous
-                    if (userInitiated && method != "GET") {
-                        if (reply.data != null) feedback(SpatialHaptic.Confirmed)
-                        else if (reply.error != null) feedback(SpatialHaptic.Rejected)
-                    }
+                    reportActionFeedback(reply, feedback, method, userInitiated)
                     reply.data?.let { result ->
                         if (checkpoint != null) withContext(Dispatchers.IO) {
                             checkpoints.save(session.userId, checkpoint, path, result.optString("job_id").takeIf(String::isNotBlank))
@@ -133,6 +130,15 @@ fun rememberWorkspaceAction(onSuccess: (JSONObject) -> Unit): WorkspaceAction {
                 } finally { busy = false }
             }
         }
+    }
+}
+
+private fun reportActionFeedback(reply: VolumeReply, feedback: (SpatialHaptic) -> Unit,
+    method: String, userInitiated: Boolean) {
+    if (!userInitiated || method == "GET") return
+    when {
+        reply.data != null -> feedback(SpatialHaptic.Confirmed)
+        reply.error != null -> feedback(SpatialHaptic.Rejected)
     }
 }
 

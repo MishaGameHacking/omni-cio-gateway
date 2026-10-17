@@ -1,5 +1,7 @@
 # Analyst AI — Android-приложение и Timeweb backend
 
+**В разработке: [3D100 / 0.11.0 / 35](docs/3D100.md), [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880).** Настоящие 3D-модели и диаграммы, рабочий чат, версии стратегий, риск-сценарии, планы со сверкой, источники и уведомления реализуются одним совместимым обновлением. Код ветки и результаты проверок описаны в реестре; новый APK ещё не опубликован. Ниже приведена последняя доставленная версия.
+
 **Опубликован [0.10.0-preview / 34](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b). Android 15 и новее.**
 
 F01.4 / F22: нативная столбчатая история стоимости счёта, выбор интервала,
@@ -148,9 +150,10 @@ Android и серверное хранение T‑Invest read-only токена
 Основные команды Windows:
 
 ```text
-py -3 -m unittest discover -s backend/tests -p "test_*.py" -v
+py -3 -m pip install -r backend/requirements-dev.txt
+py -3 -m pytest backend/tests -q
 py -3 -m unittest discover -s .github/scripts/tests -p "test_*.py" -v
-gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview
+gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview
 ```
 
 На Linux/macOS используются `python3` и `./gradlew`. Все применимые проверки

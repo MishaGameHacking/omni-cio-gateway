@@ -30,6 +30,7 @@ except ImportError:
 router = APIRouter(prefix="/workspace/notifications", tags=["Notification delivery"])
 DEFAULTS = {"timezone": "Europe/Moscow", "morning": "09:00", "evening": "19:00", "quiet_start": "22:00",
             "quiet_end": "08:00", "briefs_enabled": True, "critical_enabled": True, "enabled": True}
+CLOCK_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
 
 
 def initialize() -> None:
@@ -51,10 +52,10 @@ def initialize() -> None:
 
 class Preferences(StrictModel):
     timezone: str = Field(default="Europe/Moscow", max_length=80)
-    morning: str = Field(default="09:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
-    evening: str = Field(default="19:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
-    quiet_start: str = Field(default="22:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
-    quiet_end: str = Field(default="08:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    morning: str = Field(default="09:00", pattern=CLOCK_PATTERN)
+    evening: str = Field(default="19:00", pattern=CLOCK_PATTERN)
+    quiet_start: str = Field(default="22:00", pattern=CLOCK_PATTERN)
+    quiet_end: str = Field(default="08:00", pattern=CLOCK_PATTERN)
     briefs_enabled: bool = True
     critical_enabled: bool = True
     enabled: bool = True
@@ -249,6 +250,16 @@ def preview(payload: Preview, user: Any = Depends(backend.current_user)) -> dict
             "history_end": _iso(rows[0]["created_at"]) if rows else None, "sent": False}
 
 
+def calendar_gate(calendar: dict, market_date: str) -> str:
+    days = [day for exchange in calendar.get("data", {}).get("exchanges", []) for day in exchange.get("days", [])
+            if str(day.get("date", "")).startswith(market_date)]
+    if not days:
+        return "awaiting_calendar"
+    if any(day.get("isTradingDay") is True for day in days):
+        return "scheduled"
+    return "market_closed"
+
+
 def schedule_slots(user_id: int, at: datetime | None = None) -> list[dict]:
     now = at or datetime.now(timezone.utc)
     with closing(backend.connect()) as db:
@@ -266,8 +277,7 @@ def schedule_slots(user_id: int, at: datetime | None = None) -> list[dict]:
         due = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if due < local:
             due += timedelta(days=1)
-        trade_days = [day for exchange in calendar.get("data", {}).get("exchanges", []) for day in exchange.get("days", []) if str(day.get("date", ""))[:10] == due.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat()]
-        gate = "awaiting_calendar" if not trade_days else "scheduled" if any(day.get("isTradingDay") is True for day in trade_days) else "market_closed"
+        gate = calendar_gate(calendar, due.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat())
         result.append({"slot": slot, "at": due.astimezone(timezone.utc).isoformat(), "gate": gate})
     return result
 
@@ -281,8 +291,7 @@ def due_flags(user_id: int, now: datetime, has_run) -> tuple[bool, bool]:
     calendar = (json.loads(row[0]) if row else {}).get("calendar", {})
     local = now.astimezone(ZoneInfo(preferences["timezone"]))
     market_date = now.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat()
-    days = [day for exchange in calendar.get("data", {}).get("exchanges", []) for day in exchange.get("days", []) if str(day.get("date", ""))[:10] == market_date]
-    if not days or not any(day.get("isTradingDay") is True for day in days):
+    if calendar_gate(calendar, market_date) != "scheduled":
         return False, False
     flags = []
     for slot in ("morning", "evening"):

@@ -2,21 +2,15 @@ package ru.omnicio.app.ui.portfolio
 
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -26,13 +20,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import java.math.MathContext
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
+import ru.omnicio.app.ui.spectrum.SpectrumRangeSlider
+import ru.omnicio.app.ui.spectrum.SpectrumIconButton
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.workspace.DetailFold
 import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 import ru.omnicio.app.ui.spatial.SpatialBars
+import ru.omnicio.app.ui.spatial.SpatialChartGuides
 import java.time.LocalDate
 
 internal data class HistoryMarker(val date: String, val label: String)
@@ -95,14 +92,14 @@ internal fun HistoryChart(
         Notice("Столбик ниже показывает последнее наблюдение своего интервала; оно может отличаться от точной записи по ссылке.")
     }
     BarTooltip(model, selected, currency)
-    BarCanvas(model, selected, currency, choose)
+    HistoryBarPlot(model, selected, currency, choose)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(model.bars.first().start.format(DateTimeFormatter.ofPattern("dd.MM.yy")), style = MaterialTheme.typography.labelSmall)
         Text(model.bars.last().end.format(DateTimeFormatter.ofPattern("dd.MM.yy")), style = MaterialTheme.typography.labelSmall)
     }
     controls()
     BarNavigation(model, selected, choose) { selectedStart = null; selectedObservation = null; rangeStart = null; rangeEnd = null }
-    if (model.bars.size > 1) HistoryRangeSelector(model, selectedRange) { rangeStart = it?.start; rangeEnd = it?.end }
+    if (model.bars.size > 1) HistoryRangeSelector(model, selectedRange, selectionKey) { rangeStart = it?.start; rangeEnd = it?.end }
     val visiblePoints = if (selectedRange == null) bar?.points ?: model.source.coordinates.map { it.point }
         else model.bars.filter { !it.end.isBefore(LocalDate.parse(rangeStart)) && !it.start.isAfter(LocalDate.parse(rangeEnd)) }.flatMap { it.points }
     HistoryStatistics(visiblePoints, selectedRange?.let { "${it.start} — ${it.end}" } ?: bar?.title(), currency)
@@ -161,7 +158,7 @@ private fun BarTooltip(model: HistoryBars, selected: Int, currency: String) {
 }
 
 @Composable
-private fun BarCanvas(model: HistoryBars, selected: Int, currency: String, choose: (Int) -> Unit) {
+private fun HistoryBarPlot(model: HistoryBars, selected: Int, currency: String, choose: (Int) -> Unit) {
     val palette = LocalSpectrumPalette.current
     val outline = MaterialTheme.colorScheme.outlineVariant
     val accent = palette.cyan
@@ -183,42 +180,35 @@ private fun BarCanvas(model: HistoryBars, selected: Int, currency: String, choos
         } }) {
         SpatialBars(model.bars.map { it.close?.value?.toDouble() }, model.source.low.toDouble(), model.source.high.toDouble(),
             selected.takeIf { it >= 0 }, Modifier.fillMaxSize().padding(vertical = 8.dp), listOf(palette.blue))
-        Canvas(Modifier.fillMaxSize()) {
-        val top = 8.dp.toPx()
-        val plotHeight = size.height - top * 2
-        val zeroY = top + model.source.zero * plotHeight
-        val step = size.width / model.bars.size
-        val width = minOf(step * .72f, 28.dp.toPx())
-        for (level in 0..2) {
-            val y = top + plotHeight * level / 2
-            drawLine(outline.copy(alpha = .35f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
-        }
-        drawLine(outline, Offset(0f, zeroY), Offset(size.width, zeroY), 1.dp.toPx())
-        model.bars.forEachIndexed { i, bar ->
-            val x = (i + .5f) * step
-            if (i == selected) drawLine(accent.copy(alpha = .45f), Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
-            if (bar.close == null) {
-                drawLine(outline, Offset(x - width / 4, zeroY), Offset(x + width / 4, zeroY), 2.dp.toPx())
-            }
-        }
-        }
+        SpatialChartGuides(model.bars.size, model.source.zero,
+            model.bars.indices.filter { model.bars[it].close == null }.toSet(), selected.takeIf { it >= 0 },
+            Modifier.fillMaxSize().padding(vertical = 8.dp), gridColor = outline.copy(alpha = .35f), selectedColor = accent)
     }
 }
 
 @Composable
-private fun HistoryRangeSelector(model: HistoryBars, selected: PortfolioPeriod?, onSelect: (PortfolioPeriod?) -> Unit) {
-    var handles by remember(model.bars.first().start, model.bars.last().end) { mutableStateOf(0f..model.bars.lastIndex.toFloat()) }
+private fun HistoryRangeSelector(model: HistoryBars, selected: PortfolioPeriod?, selectionKey: String,
+    onSelect: (PortfolioPeriod?) -> Unit) {
+    var draftStart by rememberSaveable(selectionKey, selected?.start) { mutableStateOf(selected?.start ?: model.bars.first().start.toString()) }
+    var draftEnd by rememberSaveable(selectionKey, selected?.end) { mutableStateOf(selected?.end ?: model.bars.last().end.toString()) }
+    val indices = historyRangeIndices(model.bars, draftStart, draftEnd)
+    val commit = {
+        val current = historyRangeIndices(model.bars, draftStart, draftEnd)
+        onSelect(PortfolioPeriod(model.bars[current.first].start.toString(), model.bars[current.last].end.toString()))
+    }
     DetailFold("Выбрать две границы") {
-        val first = handles.start.toInt().coerceIn(0, model.bars.lastIndex)
-        val last = handles.endInclusive.toInt().coerceIn(first, model.bars.lastIndex)
-        Text("${model.bars[first].start} — ${model.bars[last].end}")
-        RangeSlider(value = handles, onValueChange = { handles = it }, valueRange = 0f..model.bars.lastIndex.toFloat(),
-            steps = (model.bars.size - 2).coerceAtLeast(0), onValueChangeFinished = {
-                val left = handles.start.toInt().coerceIn(0, model.bars.lastIndex)
-                val right = handles.endInclusive.toInt().coerceIn(left, model.bars.lastIndex)
-                onSelect(PortfolioPeriod(model.bars[left].start.toString(), model.bars[right].end.toString()))
-            }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Границы выбранного периода" })
-        TextButton(onClick = { onSelect(PortfolioPeriod(model.bars[first].start.toString(), model.bars[last].end.toString())) }) { Text("Показать статистику диапазона") }
+        ru.omnicio.app.ui.workspace.WorkspaceGestureHint("history-range", "Два ограничителя периода",
+            "Проведите каждый ограничитель до нужной даты. Точные границы видны над дорожкой; календарь и кнопка ниже доступны без жестов.")
+        Text("${model.bars[indices.first].start} — ${model.bars[indices.last].end}", Modifier.testTag("history-range-dates"))
+        SpectrumRangeSlider(value = indices.first.toFloat()..indices.last.toFloat(), onValueChange = { value ->
+            val first = value.start.toInt().coerceIn(0, model.bars.lastIndex)
+            val last = value.endInclusive.toInt().coerceIn(first, model.bars.lastIndex)
+            draftStart = model.bars[first].start.toString(); draftEnd = model.bars[last].end.toString()
+        }, valueRange = 0f..model.bars.lastIndex.toFloat(), steps = (model.bars.size - 2).coerceAtLeast(0),
+            onValueChangeFinished = commit, startDescription = "Начало периода: ${model.bars[indices.first].start}",
+            endDescription = "Конец периода: ${model.bars[indices.last].end}",
+            modifier = Modifier.fillMaxWidth().testTag("history-range-selector").semantics { contentDescription = "Границы выбранного периода" })
+        TextButton(onClick = commit) { Text("Показать статистику диапазона") }
         if (selected != null) TextButton(onClick = { onSelect(null) }) { Text("Сбросить диапазон") }
         Text("Запрос выполняется после отпускания границы. Точные даты можно выбрать в календаре периода.", style = MaterialTheme.typography.bodySmall)
     }
@@ -228,13 +218,13 @@ private fun HistoryRangeSelector(model: HistoryBars, selected: PortfolioPeriod?,
 private fun BarNavigation(model: HistoryBars, selected: Int, choose: (Int) -> Unit, reset: () -> Unit) {
     val index = if (selected < 0) model.bars.lastIndex else selected
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { choose(index - 1) }, enabled = index > 0,
-            modifier = Modifier.testTag("history-selection-previous").semantics { contentDescription = "Предыдущий столбец" }) { Text("‹", style = MaterialTheme.typography.headlineSmall) }
+        SpectrumIconButton(SpectrumSymbol.Back, "Предыдущий столбец", { choose(index - 1) }, enabled = index > 0,
+            modifier = Modifier.testTag("history-selection-previous"))
         TextButton(onClick = reset, enabled = selected >= 0, modifier = Modifier.weight(1f).testTag("history-selection-reset")) {
             Text(if (selected < 0) "Весь период" else "Сбросить выбор")
         }
-        IconButton(onClick = { choose(index + 1) }, enabled = index < model.bars.lastIndex,
-            modifier = Modifier.testTag("history-selection-next").semantics { contentDescription = "Следующий столбец" }) { Text("›", style = MaterialTheme.typography.headlineSmall) }
+        SpectrumIconButton(SpectrumSymbol.Forward, "Следующий столбец", { choose(index + 1) }, enabled = index < model.bars.lastIndex,
+            modifier = Modifier.testTag("history-selection-next"))
     }
 }
 

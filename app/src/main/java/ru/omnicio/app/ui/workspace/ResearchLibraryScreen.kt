@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.workspace
 
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
@@ -53,7 +55,8 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
     var selectedId by rememberSaveable(user, initialId) { mutableStateOf(initialId) }
     var archive by remember(user, selectedId) { mutableStateOf<JSONObject?>(null) }
     var archiveLoaded by remember(user, selectedId) { mutableStateOf(false) }
-    var delete by remember { mutableStateOf<SavedResearch?>(null) }
+    var deleteId by rememberSaveable(user) { mutableStateOf<String?>(null) }
+    val delete = personal.research.firstOrNull { it.id == deleteId }
     var currentKey by rememberSaveable(user) { mutableStateOf<String?>(null) }
     val selected = personal.research.firstOrNull { it.id == selectedId }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
@@ -75,7 +78,7 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
                     Text("Сохранено ${dateText(entry.capturedAt)}", style = MaterialTheme.typography.bodySmall)
                     Text("Наблюдение ${dateText(entry.observedAt)} · ${entry.source}", style = MaterialTheme.typography.bodySmall)
                     if (entry.note.isNotBlank()) Text(PrivateValue(entry.note))
-                    TextButton(onClick = { delete = entry }) { Text("Удалить") }
+                    TextButton(onClick = { deleteId = entry.id }) { Text("Удалить") }
                 } }
             } else {
                 item { SpectrumCard(emphasized = true) {
@@ -106,9 +109,9 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
     if (currentKey != null && current == null) AlertDialog(onDismissRequest = { currentKey = null }, title = { Text("Текущая позиция не получена") },
         text = { Text("Сохранённое исследование остаётся доступным. Прежняя цена не подставляется вместо текущей позиции.") },
         confirmButton = { TextButton(onClick = { currentKey = null }) { Text("Закрыть") } })
-    delete?.let { entry -> AlertDialog(onDismissRequest = { delete = null }, title = { Text("Удалить исследование?") },
-        text = { Text(entry.title) }, confirmButton = { TextButton(onClick = { personal.deleteResearch(entry.id); delete = null }) { Text("Удалить") } },
-        dismissButton = { TextButton(onClick = { delete = null }) { Text("Оставить") } }) }
+    delete?.let { entry -> AlertDialog(onDismissRequest = { deleteId = null }, title = { Text("Удалить исследование?") },
+        text = { Text(entry.title) }, confirmButton = { TextButton(onClick = { personal.deleteResearch(entry.id); deleteId = null }) { Text("Удалить") } },
+        dismissButton = { TextButton(onClick = { deleteId = null }) { Text("Оставить") } }) }
 }
 
 @Composable

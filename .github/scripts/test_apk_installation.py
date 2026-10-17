@@ -131,7 +131,16 @@ def record_profile_check(device, results, exercise) -> None:
     result = {"test": "profile_ui", "success": False}
     results.append(result)
     try:
-        exercise(device)
+        receipt = exercise(device)
+        if not isinstance(receipt, dict) or set(receipt) != {"ui_suite", "business_case_count", "business_cases"}:
+            raise ValueError("Profile UI did not return its completed runtime matrix")
+        fixtures = [row for row in results if row.get("test") == "debug_ui_fixture_install" and row.get("success") is True]
+        if len(fixtures) != 1:
+            raise ValueError("The UI receipt has no unique installed debug fixture")
+        result.update(receipt)
+        result["fixture_apk_sha256"] = fixtures[0].get("apk_sha256")
+        from installation_report import validate_current_ui
+        validate_current_ui(result, fixtures[0])
     except Exception as exc:
         result["error_type"] = type(exc).__name__
         raise
@@ -231,7 +240,9 @@ def run_attempt(
         sdk / "cmdline-tools" / "latest" / "bin" / ("avdmanager" + batch)
     )
     name = f"analyst-install-{os.getpid()}-{attempt}"
-    image = f"system-images;android-{api};google_apis;x86_64"
+    from kernel_page_size import measured_record, system_image
+
+    image = system_image(api)
     create = run(
         [
             manager,
@@ -461,6 +472,18 @@ def run_attempt(
                 flush=True,
             )
             verify_emulator_identity(device, name, api)
+            page_size = device("shell", "getconf", "PAGE_SIZE")
+            try:
+                if page_size.returncode:
+                    raise RuntimeError("The booted kernel could not report its page size")
+                kernel = measured_record(api, page_size.stdout, candidate_digest)
+            except (RuntimeError, ValueError):
+                results.append({"test": "kernel_page_size", "success": False,
+                                "android_api": api, "system_image": image,
+                                "observed": page_size.stdout.strip()[:80]})
+                raise
+            results.append(kernel)
+            print("KERNEL_PAGE_SIZE=" + json.dumps(kernel, sort_keys=True), flush=True)
             package = "ru.omnicio.app.debug"
             if previous:
                 install("previous_clean_install", previous)

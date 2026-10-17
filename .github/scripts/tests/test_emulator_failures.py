@@ -15,21 +15,32 @@ SPEC.loader.exec_module(installation)
 
 class EmulatorFailureTests(unittest.TestCase):
     def test_success_requires_completed_exercise(self):
-        results = []
+        from backend.installation_evidence import BUSINESS_CASE_IDS, CURRENT_UI_SUITE
+        fixture = {"test": "debug_ui_fixture_install", "success": True, "apk_sha256": "c" * 64}
+        receipt = {"ui_suite": CURRENT_UI_SUITE, "business_case_count": 52, "business_cases": sorted(BUSINESS_CASE_IDS)}
+        results = [fixture]
         device = Mock()
 
         def exercise(actual):
             self.assertIs(actual, device)
             self.assertEqual(
                 results,
-                [{"test": "profile_ui", "success": False}],
+                [fixture, {"test": "profile_ui", "success": False}],
             )
+            return receipt
 
         installation.record_profile_check(device, results, exercise)
         self.assertEqual(
             results,
-            [{"test": "profile_ui", "success": True}],
+            [fixture, {"test": "profile_ui", "success": True, **receipt, "fixture_apk_sha256": "c" * 64}],
         )
+
+    def test_empty_or_partial_exercise_receipt_remains_a_failed_check(self):
+        for receipt in (None, {}, {"ui_suite": "spectrum-3d-100-v1", "business_case_count": 0, "business_cases": []}):
+            results = [{"test": "debug_ui_fixture_install", "success": True, "apk_sha256": "c" * 64}]
+            with self.subTest(receipt=receipt), self.assertRaises(ValueError):
+                installation.record_profile_check(Mock(), results, Mock(return_value=receipt))
+            self.assertFalse(results[-1]["success"])
 
     def test_screenshot_timeout_is_recorded_and_propagated(self):
         results = []

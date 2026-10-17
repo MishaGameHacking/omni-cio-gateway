@@ -4,444 +4,544 @@
   "source": "First-party procedural geometry; no remote content",
   "models": {
     "surface": {
-      "sha256": "782a51e58174f736560886aad96ae865154133debe67ebc3cbc41ed33c94b2d3",
-      "bytes": 14392,
-      "triangles": 160
+      "sha256": "94c2d6c2349a64d4f11dfa75cb3e75a5a973872390d7fb300d0349e33c2d17b8",
+      "bytes": 14416,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "surface_low": {
-      "sha256": "d39bd202ee1db2ad52b64ff59a35b1ea881c4edc9baed6de650016e94c698b3a",
-      "bytes": 9020,
-      "triangles": 96
+      "sha256": "b4572dc19d4a59bfc528318318ecbd8ec0d4a5a92f75183d82374f842403ee8a",
+      "bytes": 9040,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "button": {
-      "sha256": "2604b1de282f490216b61e3efd474b5db1ac1268130c450add2822bf2cebb453",
-      "bytes": 14392,
-      "triangles": 160
+      "sha256": "3fc28d709f19ae23600314a3a6d069b92e802741064dca0a36c649fb1d8cf25d",
+      "bytes": 14412,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "button_low": {
-      "sha256": "66f5a6f0c8be5a3a605d65de8e4d5e88b934dff25b3e46916bec865599a02c56",
-      "bytes": 9020,
-      "triangles": 96
+      "sha256": "eb04b56f311978ac930938172bfe55b744c58c2a7c4e8fec068633391b69fe1c",
+      "bytes": 9040,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "chip": {
-      "sha256": "d86631dc1b123b4575733914bc04447cd52f9523c43db64f50fd1c0642ebbb5d",
-      "bytes": 14392,
-      "triangles": 160
+      "sha256": "a2572ae0f87847c1baf403ce169bda88a312ad01a90d3e1b798774a405c429d0",
+      "bytes": 14412,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "chip_low": {
-      "sha256": "79b33dfe35b98e7d9cc47463c7ce6eff2b0544aca3a4747e35d608dc80e23142",
-      "bytes": 9016,
-      "triangles": 96
+      "sha256": "5be9fd568cc0322d383874498924f84e5e064f35700144239aa8f470d9e567da",
+      "bytes": 9036,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "input": {
-      "sha256": "268884183971134bec971c38f459871f0da15492d11559da7d20a08f7b631a0b",
-      "bytes": 14392,
-      "triangles": 160
+      "sha256": "4de339a5460a3c850acc5c1693c1f75160569b78ab7b1a5f73a3f093eced2f58",
+      "bytes": 14412,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "input_low": {
-      "sha256": "f03a99fbaec6b7cd685aa26fba67c0671354d7645bd559482a8ac69338a8266d",
-      "bytes": 9016,
-      "triangles": 96
+      "sha256": "db0b79d19bb31dd3edba79ae239b740ce2a0bf79a996604dde4d91b3345c6a8b",
+      "bytes": 9040,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "dock": {
-      "sha256": "5cc639c29acc2eb3a9f5c1e511794cf678e74a00256daf32613ab4811246df9e",
-      "bytes": 14392,
-      "triangles": 160
+      "sha256": "0168d9a85b69c3539b3b53f4f5ee7636a667abb0b184ad5ad3c71b8a5489d9ba",
+      "bytes": 14412,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "dock_low": {
-      "sha256": "81cc3e1ce9f1823f80f94e3e9c4b2cdb36deb7f4b635df5bd4e1bf826da291d6",
-      "bytes": 9016,
-      "triangles": 96
+      "sha256": "15f6f25b5281f66a92b65651649a62d3b39ea63ff79c1d2a114e1da3261e33b3",
+      "bytes": 9036,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "heading": {
-      "sha256": "5061d7fc652750e3831846d3903a9e0321f40d1bd8341218d1ef02e09f98d0bd",
-      "bytes": 14392,
-      "triangles": 160
+      "sha256": "705bfae28cbe9081ebe97d53164275b1abe972e5d001d94b6aebcfc2deff9ce9",
+      "bytes": 14416,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "heading_low": {
-      "sha256": "6adfce766232b8ed25199f9f8ec7f8ffdf99e1f55e3d1cb1e9c14307707810f5",
-      "bytes": 9020,
-      "triangles": 96
+      "sha256": "8d1853d5a1ee4084668f58656cde7f2da919d82df8e3818bb4cfaa2ccb7ecda1",
+      "bytes": 9040,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "bar": {
-      "sha256": "6273e1f1521722fab3259bdef916724868a5179f7ccbdeb873cc2e95e8130d28",
-      "bytes": 14356,
-      "triangles": 160
+      "sha256": "aff561ab3c4883f6f9f89d9fb6e8fdc4d50907a50323bb11f544bfd857ace2cd",
+      "bytes": 14380,
+      "triangles": 160,
+      "material": "ceramic"
     },
     "bar_low": {
-      "sha256": "740e54ac446a16faaa9b0b650d917e179e21bb79983e794222f5125614d56826",
-      "bytes": 8984,
-      "triangles": 96
+      "sha256": "91a2f6f16b0b0ce8dfcadd194835b476d45f878001de08fa7c18d80c558ab854",
+      "bytes": 9004,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "home": {
-      "sha256": "dde1a8ecace99b889b655cd57779c159f04dbd4af08161edc868ca0e15d05f8c",
-      "bytes": 4708,
-      "triangles": 44
+      "sha256": "eec90ff08c2031e5c16e11f14425750a4932bbcd9dab98d592c5c68e6bf941e2",
+      "bytes": 4728,
+      "triangles": 44,
+      "material": "ceramic"
     },
     "home_low": {
-      "sha256": "931c0aa864ff5b3f9544e8664c6bdd9ea3606f9106f42184d446d9c62601d257",
-      "bytes": 4712,
-      "triangles": 44
+      "sha256": "b4ee9eb8e75b72b40d5426138efbe33150d386cb30f87e4d4a7c14d4a52792e5",
+      "bytes": 4732,
+      "triangles": 44,
+      "material": "ceramic"
     },
     "portfolio": {
-      "sha256": "3f499687f48017c26c82bf125b073c6f14c2aaba3437e47f1a1f2e8938828d3b",
-      "bytes": 23528,
-      "triangles": 268
+      "sha256": "4c7fc602137cd9b6b89ec1f320cf2ac310e277dbc7e18413a95e9db035f93edc",
+      "bytes": 23556,
+      "triangles": 268,
+      "material": "metal"
     },
     "portfolio_low": {
-      "sha256": "e80558f2ee1c3ccddbe479bd56fcc9bbc583eb7481758847b8d2d62aae68254a",
-      "bytes": 15132,
-      "triangles": 168
+      "sha256": "f5a5d5caa619c3b5a27cbf868254407c5fa83de9536783fcb6457b1cfc1fc269",
+      "bytes": 15160,
+      "triangles": 168,
+      "material": "metal"
     },
     "ideas": {
-      "sha256": "23a0e55245f03e9babb013b531ceece89abfc93d5dda72b3946f19957cd57dad",
-      "bytes": 52120,
-      "triangles": 608
+      "sha256": "d79a6e851ba86502bd29703631b2e30b0c2e04f1978d599b90c410e81a91e4a9",
+      "bytes": 52140,
+      "triangles": 608,
+      "material": "ceramic"
     },
     "ideas_low": {
-      "sha256": "0cde37827c9b476f655e568dc541b6b1143927183dc07177321fde156bf752f7",
-      "bytes": 19528,
-      "triangles": 220
+      "sha256": "e4ac86b746abfd4f4b64c642ddae67c9d5dcdc7a7238f29d4a45992280a9a264",
+      "bytes": 19548,
+      "triangles": 220,
+      "material": "ceramic"
     },
     "pulse": {
-      "sha256": "7df951de904e72cba14eaa21f540d8002ae07230089d5b49c566de8b28d30501",
-      "bytes": 57528,
-      "triangles": 672
+      "sha256": "660c9c9c45d25b84f73aeae2b2195126588e803ec710ec0c2066326732560a03",
+      "bytes": 57552,
+      "triangles": 672,
+      "material": "ceramic"
     },
     "pulse_low": {
-      "sha256": "c05801bb683b286529e33f0ecfd36f841091f67fa68cf52002223d08f38b31a6",
-      "bytes": 22904,
-      "triangles": 260
+      "sha256": "2d4123fb011251b702d16015f50ff7b34d11e9a093f3099d7b10f144bace8071",
+      "bytes": 22924,
+      "triangles": 260,
+      "material": "ceramic"
     },
     "messages": {
-      "sha256": "b33eaee5413a3b05a6e4f9360c007b698d11767261f8c84058023e8982647f7e",
-      "bytes": 18152,
-      "triangles": 204
+      "sha256": "f0d1710d41b5dbfd724dd200755b477c2a4fa8987d2761f871f3e37cf00fc560",
+      "bytes": 18176,
+      "triangles": 204,
+      "material": "ceramic"
     },
     "messages_low": {
-      "sha256": "154645580259a0f8875cb5b3658e8432ff971354f005b58231a7bd0c8f12396e",
-      "bytes": 12780,
-      "triangles": 140
+      "sha256": "0fffdc595344543dcee6ac12c3acbd8fb0cf5728ffaa8657ef053ded0aa56bf6",
+      "bytes": 12804,
+      "triangles": 140,
+      "material": "ceramic"
     },
     "education": {
-      "sha256": "5069f16d5a672a66cdf796ca29d009a2325bdc8f89b7d28102d46f25e07415bd",
-      "bytes": 3024,
-      "triangles": 24
+      "sha256": "5f3724493a9277e1d8c00bef3e77afb41927ecf5a1f0fcdcb86b4a8ca88f49fe",
+      "bytes": 3044,
+      "triangles": 24,
+      "material": "ceramic"
     },
     "education_low": {
-      "sha256": "93993e34123f3ae3be65c90f60644c1cb03f70d9dc4cf828fa5db8c777f89755",
-      "bytes": 3028,
-      "triangles": 24
+      "sha256": "966d5814fbccd5ceef27eb37713a8af754133e8304d7386526f722901984a7d4",
+      "bytes": 3048,
+      "triangles": 24,
+      "material": "ceramic"
     },
     "profile": {
-      "sha256": "1de5944663f0dcbde9c38c73631529cce586ce043191b5fdfbaddfafbbac4a83",
-      "bytes": 28568,
-      "triangles": 328
+      "sha256": "6928eb7fd1eee8cf6dea25c068aa9d7771dd4749d21ca5f23683f781b0367f67",
+      "bytes": 28592,
+      "triangles": 328,
+      "material": "ceramic"
     },
     "profile_low": {
-      "sha256": "017b8e30d4d0ef78b165d374b13efab7c227081fe97d6c262ca69ba3f8630856",
-      "bytes": 12104,
-      "triangles": 132
+      "sha256": "10aea1fb9b1b82a6e7ecfbeddcc3c28a4c1593845e4de05390d62db33572184b",
+      "bytes": 12124,
+      "triangles": 132,
+      "material": "ceramic"
     },
     "risk": {
-      "sha256": "9fdf0b01fd76c2489de31aa47efa19f91558a57834bbf9708ee40b54e39ab857",
-      "bytes": 8124,
-      "triangles": 84
+      "sha256": "dc1901f26389ed33e8b251d05fc3189326f71eb188dc4256ecb51c9ddbc7e9bb",
+      "bytes": 8152,
+      "triangles": 84,
+      "material": "metal"
     },
     "risk_low": {
-      "sha256": "ebc5cfcf4667ff80544888203d46069547cde2beafd64f662f0f25e806e65285",
-      "bytes": 6112,
-      "triangles": 60
+      "sha256": "ce277c21c7772f22557c24745624ad8829588ba21305a44b9599d6f79b6c218a",
+      "bytes": 6140,
+      "triangles": 60,
+      "material": "metal"
     },
     "allocation": {
-      "sha256": "d6913a1766f764b3e8cf240bcd84d84ad6a1a0cc4450566e681cd7a2261a2554",
-      "bytes": 4040,
-      "triangles": 36
+      "sha256": "9fb728b50f08e55ee7edb74ae7cb370248a3ce9ecbdc2cb42936ea6faaf26646",
+      "bytes": 4060,
+      "triangles": 36,
+      "material": "ceramic"
     },
     "allocation_low": {
-      "sha256": "b871cbd2c150655ff37d3975a227c101293141a63b88dafd26f9f0e7de5a5467",
-      "bytes": 4044,
-      "triangles": 36
+      "sha256": "26a25a15ad5fc48959f4749e93418018206558795b1c53e4a9d184049718a615",
+      "bytes": 4064,
+      "triangles": 36,
+      "material": "ceramic"
     },
     "update": {
-      "sha256": "32ccdf45a6d8ac5eca9ea1e0f816252d8910f81faf269418fd748adff4c759f3",
-      "bytes": 10760,
-      "triangles": 116
+      "sha256": "1e8147fef4804dade00dafaec85d7d7399fa4b69a707bbf646f83093d0aa76ca",
+      "bytes": 10784,
+      "triangles": 116,
+      "material": "metal"
     },
     "update_low": {
-      "sha256": "7ba820b7615339185cdbc4199e46ab3e0945fa2d43c0602175440971d61e9004",
-      "bytes": 7736,
-      "triangles": 80
+      "sha256": "4e2d4fb581919f6f0cbd6fcae92e46eb3d986ae4badbb32d8bf2412baadce829",
+      "bytes": 7760,
+      "triangles": 80,
+      "material": "metal"
     },
     "sources": {
-      "sha256": "f94b0e9dbac94c4b37d89c7e35639100a11ad6624e0e52c700af28b73ba7608d",
-      "bytes": 17480,
-      "triangles": 196
+      "sha256": "31826587bb76dba31990b616ad2662b0e06c0203a007def1e30743c48cadd794",
+      "bytes": 17504,
+      "triangles": 196,
+      "material": "metal"
     },
     "sources_low": {
-      "sha256": "c563edc06465c4fc92d020576ce444cc09613c9eaf7d6141215a9710b10d63fc",
-      "bytes": 12108,
-      "triangles": 132
+      "sha256": "3cbdb4f0e70c861145cc70bf062112412590d27f2be377cde4cb67e454581f30",
+      "bytes": 12132,
+      "triangles": 132,
+      "material": "metal"
     },
     "analyst": {
-      "sha256": "8568f3887943987422de84653d839b317a0997c221b980feeb1c22d1e72e4a41",
-      "bytes": 119356,
-      "triangles": 1408
+      "sha256": "a5bd5842352608df705115670c13881fda887d9d557894d05e42319f603c4f14",
+      "bytes": 119524,
+      "triangles": 1408,
+      "material": "glass_coating"
     },
     "analyst_low": {
-      "sha256": "33c7b9482f3c08092849b781502e9930c01e493ef1edb6474efb633b4422a380",
-      "bytes": 20260,
-      "triangles": 228
+      "sha256": "18c2608dd25d35b7c44ad6dc6ea5acd26b02a28a7d71e8ccf4ccf8a4acb9af8e",
+      "bytes": 20424,
+      "triangles": 228,
+      "material": "glass_coating"
     },
     "notifications": {
-      "sha256": "6f3de792e5cf100833760f4f99bf2b0948cb9f7d7b595e7bb4985e6c23823052",
-      "bytes": 9080,
-      "triangles": 96
+      "sha256": "c543526992adfed0d6312a801822f8bad13eb72408b181b62287fae6e870634a",
+      "bytes": 9108,
+      "triangles": 96,
+      "material": "metal"
     },
     "notifications_low": {
-      "sha256": "cc4cedb8075357629ea84c4755552b73952fb2719e672facea901557d2392f01",
-      "bytes": 6732,
-      "triangles": 68
+      "sha256": "8faf84f07a74ded4e0783c7a6ed2c8b5c9afc42527441ada99d7ea563295135d",
+      "bytes": 6760,
+      "triangles": 68,
+      "material": "metal"
     },
     "market": {
-      "sha256": "dbfe63f57b34c7e29d7fe58e54f33dbe21ba9a86f57975c1556c2f5b961aade7",
-      "bytes": 4032,
-      "triangles": 36
+      "sha256": "4a49b4e8e7868ec22e006303ecf24a5190eb035fd242c54b358c6a8a789babb2",
+      "bytes": 4060,
+      "triangles": 36,
+      "material": "metal"
     },
     "market_low": {
-      "sha256": "d436eb7a591deb6cdd6cf3917b56207c790e855c02c85a5d0ae11ba78a4efeee",
-      "bytes": 4036,
-      "triangles": 36
+      "sha256": "c9f2fe9e9217fed51d3e7a064dce142c145a09204046e8be3b3667ea9161d49f",
+      "bytes": 4064,
+      "triangles": 36,
+      "material": "metal"
     },
     "goal": {
-      "sha256": "1a4c4f65acb65157ea15cad7da88ab6b5c71004a706a82d8ca7888b959a9bc46",
-      "bytes": 89812,
-      "triangles": 1056
+      "sha256": "67044ec9622c635462be06d6c26cc2666068b218c55a5d4050e0df3a1f31a6e4",
+      "bytes": 89980,
+      "triangles": 1056,
+      "material": "glass_coating"
     },
     "goal_low": {
-      "sha256": "bc61b06ee0d22bca72158defb415d06e2d05b23af880a806c3fe1bbabfc837c9",
-      "bytes": 30988,
-      "triangles": 356
+      "sha256": "812a75a9764c9bf914150798e8f7ce41f2c319b5b7199ba63f56133743729bd5",
+      "bytes": 31152,
+      "triangles": 356,
+      "material": "glass_coating"
     },
     "avatar": {
-      "sha256": "ab000a85fd743eb8434e9bc6b252abe7c99c8b89b510f344a2e2a8b0cc195080",
-      "bytes": 119356,
-      "triangles": 1408
+      "sha256": "91a6ec4f9cbbe6429b221347dd87c61bae85d7c87c005705a54018f727f460b6",
+      "bytes": 119520,
+      "triangles": 1408,
+      "material": "glass_coating"
     },
     "avatar_low": {
-      "sha256": "e2dd02d6d61c7197035322e41c54ee3b7a7aee7ce6fc12eeac8fda5f07aeba68",
-      "bytes": 20260,
-      "triangles": 228
+      "sha256": "c0e612e1cdc3db6180e6d4f6851067752c08616dfe17881c4ebfa6b45976bebc",
+      "bytes": 20424,
+      "triangles": 228,
+      "material": "glass_coating"
     },
     "brand": {
-      "sha256": "cf2fd2ca8e68db74b6b7940e7c9bf1660e25d600d59d77ca7bcccb7fd1b522f3",
-      "bytes": 119356,
-      "triangles": 1408
+      "sha256": "f2f71f707e0f2a5039dc636d7fd7c9b2065fecda527bfc722ca828ca15e50806",
+      "bytes": 119520,
+      "triangles": 1408,
+      "material": "glass_coating"
     },
     "brand_low": {
-      "sha256": "62a811a356f5e70e71d4130434cc8fb64031d77164277cb5680b761aaaf7d518",
-      "bytes": 20256,
-      "triangles": 228
+      "sha256": "8fa3e73a7d2702f640918c8a1b33a121345542851379a4b1e6ff011ca20b48e7",
+      "bytes": 20424,
+      "triangles": 228,
+      "material": "glass_coating"
     },
     "globe": {
-      "sha256": "fd3e6be7e8d3b07a788f7c2895f5d15895bc79b039d6b156a615d87b7ea7433f",
-      "bytes": 323668,
-      "triangles": 3840
+      "sha256": "070be5b0e1120e793a1b59840ba0b694fad83b5f0bae7b2f824108722169c109",
+      "bytes": 323832,
+      "triangles": 3840,
+      "material": "glass_coating"
     },
     "globe_low": {
-      "sha256": "c1b23ea097f366680c0edd01f3c0959db878bfb8d65e7cf8d112e6f3e0ac0fe7",
-      "bytes": 101904,
-      "triangles": 1200
+      "sha256": "d9df8aa93c9d9922845e98f76b0f1f40c91659b8768dfdc7ac79b2f5b46c0ccc",
+      "bytes": 102072,
+      "triangles": 1200,
+      "material": "glass_coating"
     },
     "orbit": {
-      "sha256": "1546932654802149745f15765b85ab7303587c4e820090595c866195477ffab3",
-      "bytes": 214128,
-      "triangles": 2536
+      "sha256": "44c732aa2ce79f2932c7e2a50315c5411e9911dabbb87fae31d9d66235fdff5c",
+      "bytes": 214296,
+      "triangles": 2536,
+      "material": "glass_coating"
     },
     "orbit_low": {
-      "sha256": "aa44fa149cc2f6674893c14363cb4526a5879496ff2e634433f4bbf62876218a",
-      "bytes": 44448,
-      "triangles": 516
+      "sha256": "c4dc9434791506fe9bdd3e0f27494ef665a870a1d8699542ee1d1a77a7c9c4ae",
+      "bytes": 44616,
+      "triangles": 516,
+      "material": "glass_coating"
     },
     "check": {
-      "sha256": "ea1ca6b0e3da575f801a6594db064f27521252223739100179d651554d4018f9",
-      "bytes": 6476,
-      "triangles": 64
+      "sha256": "29cf6ffc047598b6b7c7231ff5842b1e77c927520ad305985e2b1f4199adb141",
+      "bytes": 6496,
+      "triangles": 64,
+      "material": "ceramic"
     },
     "check_low": {
-      "sha256": "e21d21dd577463329d8fdd93e9a1448f9dc97714dd7f2fb475237869dbc265d4",
-      "bytes": 4464,
-      "triangles": 40
+      "sha256": "3500fa11db1103090f513c9d5a7d48fa24e55565ebb93f9997511488b176e066",
+      "bytes": 4484,
+      "triangles": 40,
+      "material": "ceramic"
     },
     "warning": {
-      "sha256": "9a0f5a40650034be1713ca8cce961fd371d5fc19d34bb3cd6bd3bdde14a88227",
-      "bytes": 6724,
-      "triangles": 68
+      "sha256": "81822419d7372319658020dccf6d1b161ed961562b241052f2ccdc1c95595643",
+      "bytes": 6744,
+      "triangles": 68,
+      "material": "ceramic"
     },
     "warning_low": {
-      "sha256": "c0ea30b604d7aaafcafb7014f7be148ac4ef53fecfc0714b2b057644000d1d0b",
-      "bytes": 5720,
-      "triangles": 56
+      "sha256": "c76bd37b38a8c63145292f6354712fd106bef7e68352bdeb261dabf9d495d2e9",
+      "bytes": 5740,
+      "triangles": 56,
+      "material": "ceramic"
     },
     "error": {
-      "sha256": "d45b61cb38d123857daa8a26d23c4fb7a36d5e62a99ad27f6674691f1a9c9e0f",
-      "bytes": 6720,
-      "triangles": 68
+      "sha256": "0a46a4f993936e9bff6cefae8d1979bf98e81d107aa411a7e2c7d26d1e7de623",
+      "bytes": 6740,
+      "triangles": 68,
+      "material": "ceramic"
     },
     "error_low": {
-      "sha256": "e5924378da58b4c6f6d35a338834c23940d081d23545262ac8212e66675fb74b",
-      "bytes": 5716,
-      "triangles": 56
+      "sha256": "2f048ca5e80c04c9c3940f02dc02bb0e5e6d5b64c58ed94829cc2797b3aca0b5",
+      "bytes": 5736,
+      "triangles": 56,
+      "material": "ceramic"
     },
     "settings": {
-      "sha256": "2bc9dd126796e1bb5d67d44e52d3ed83c2455245a75282d2c5ba6aabb6ef3ea0",
-      "bytes": 54812,
-      "triangles": 640
+      "sha256": "5117f2e403e718928486172adbaa729b697933197ae7f00f8f9ae9b737fa9427",
+      "bytes": 54836,
+      "triangles": 640,
+      "material": "metal"
     },
     "settings_low": {
-      "sha256": "7d738ede0c43f07a062cc16c1a19585a77f0947289efc9d5799eda64ea9823db",
-      "bytes": 24572,
-      "triangles": 280
+      "sha256": "e0aacd7f3d23c6abd54937fe31a892175440a6e46b0e618793fb83da4fbbec7d",
+      "bytes": 24596,
+      "triangles": 280,
+      "material": "metal"
     },
     "bookmark": {
-      "sha256": "f570a4eb241188ba768709b6b373cd2731ccc44510a09778c172c195f0daf928",
-      "bytes": 2364,
-      "triangles": 16
+      "sha256": "44d44ada4117d486522db274b63ab4b60e59a29dc33103af6c81ea1b9795eb3c",
+      "bytes": 2384,
+      "triangles": 16,
+      "material": "ceramic"
     },
     "bookmark_low": {
-      "sha256": "89ef72bf91fcb7260ce29bc9848014d937b25ea701907864f01178d8930e7146",
-      "bytes": 2368,
-      "triangles": 16
+      "sha256": "b576e56e4d365ddeedfde01c54a225d1f9f7a53f0bda1ae6a1f8dfe1ce0c7a44",
+      "bytes": 2388,
+      "triangles": 16,
+      "material": "ceramic"
     },
     "calendar": {
-      "sha256": "bfcbd6cb6a1cd43aa786e5591b04eb2bce6a6ab6a3006a6949da041e588c4b80",
-      "bytes": 23532,
-      "triangles": 268
+      "sha256": "a35265e62fd5ae9cb8c808d4815cf4aba0d49b802bd3a2a2ca6fc0c151f85535",
+      "bytes": 23556,
+      "triangles": 268,
+      "material": "metal"
     },
     "calendar_low": {
-      "sha256": "2ec9b95b97dc2569b13b51c590c9d1a390267710d09a0df8e0d77501c5ce6cf6",
-      "bytes": 18160,
-      "triangles": 204
+      "sha256": "18ee31eb34b1ab192bdf58c89210d4e62d7035b192eb3d8a8f4b26a1d3b78215",
+      "bytes": 18184,
+      "triangles": 204,
+      "material": "metal"
     },
     "stock": {
-      "sha256": "53fd0879d2741c25c6767ac19e565c10da966864ff26fbc2e9bacdd579c2892c",
-      "bytes": 49496,
-      "triangles": 576
+      "sha256": "56cbf0ca068e98d6a40e914024d40a36d5cc7ea636d24d0c3231d774c8bf176f",
+      "bytes": 49520,
+      "triangles": 576,
+      "material": "metal"
     },
     "stock_low": {
-      "sha256": "b0a809bcbe7a81ee52a9fe1cffa6cd24cd468a39cf5c34ba3c05653aa5b08b25",
-      "bytes": 17908,
-      "triangles": 200
+      "sha256": "50fba0498a8beb32eef1745788203cf641f00e413d01acac0617fd6324f53dce",
+      "bytes": 17936,
+      "triangles": 200,
+      "material": "metal"
     },
     "bond": {
-      "sha256": "a93eccf528b46bc3186d8683e18e6b609f2bddebf2f085ed936abf2661ce5df0",
-      "bytes": 45036,
-      "triangles": 524
+      "sha256": "25ff330c5e4ad2cbf548a745750735c74dd277a7180dcad67b1ff4bdc4a7eceb",
+      "bytes": 45064,
+      "triangles": 524,
+      "material": "metal"
     },
     "bond_low": {
-      "sha256": "8905fabb105930a6ac1f72006f03e5a6cf825b84dada4c620e3ed03611781a03",
-      "bytes": 15468,
-      "triangles": 172
+      "sha256": "7ab3a9e9c2d5039d863f4e6280816f8fd9357fad39274daf8778f6734842156d",
+      "bytes": 15492,
+      "triangles": 172,
+      "material": "metal"
     },
     "fund": {
-      "sha256": "6107f4ab14dc57d7d0eebb821d50537e385e76c5a6240cb78813ff0ca1136de9",
-      "bytes": 46044,
-      "triangles": 536
+      "sha256": "5b494189cc7e3c46c648976d62d77527a516f85b1f3e5a73dc7d8cd0e7bd50cb",
+      "bytes": 46072,
+      "triangles": 536,
+      "material": "metal"
     },
     "fund_low": {
-      "sha256": "8ebf707e19be3b9dbca6ec4ae6e86b9017e1459503403500bbaf63f6a7f14c37",
-      "bytes": 16476,
-      "triangles": 184
+      "sha256": "b4a9c977679a387f9a0e69f6aad694ec8ebd8ae4f08e341108bbbd619715a5a7",
+      "bytes": 16500,
+      "triangles": 184,
+      "material": "metal"
     },
     "currency": {
-      "sha256": "6ec18a70743eb8c982626c899e6198b44e2a81019238589e87990bf0791c9130",
-      "bytes": 49440,
-      "triangles": 576
+      "sha256": "ff99f8e78cb43e7f7dc69b0fc67111d2ffa0b61e0c316b5a4736db6095bbc2f0",
+      "bytes": 49464,
+      "triangles": 576,
+      "material": "metal"
     },
     "currency_low": {
-      "sha256": "c4ff55fbe18d19e76b9fccccf4aa60ce75ac4d8433b4ad7e1bbe206346170f41",
-      "bytes": 17852,
-      "triangles": 200
+      "sha256": "03be568e08d6a7f1bd47af266b7f0abffb77b1891d7b4ca747398eda26a31cf3",
+      "bytes": 17876,
+      "triangles": 200,
+      "material": "metal"
     },
     "monogram": {
-      "sha256": "b429c30854723f20a404f8106ca8785518e1fc787d9f75c63994370bad365892",
-      "bytes": 44124,
-      "triangles": 512
+      "sha256": "a7dbc538d6413d2309f3d084ae6024ec98b92be42bcb0a394ec4cfcfe5c7a6cd",
+      "bytes": 44148,
+      "triangles": 512,
+      "material": "metal"
     },
     "monogram_low": {
-      "sha256": "61b83a71e8cbaf00bdff960d20211294fb07bddff6583bfee3f2a124bbbf8047",
-      "bytes": 14552,
-      "triangles": 160
+      "sha256": "67321a1e845ae7bf118d75c492791da3ef2584e5a8e19dfe59973da01cb43261",
+      "bytes": 14580,
+      "triangles": 160,
+      "material": "metal"
     },
     "search": {
-      "sha256": "a33001ff10bc7ecfba8eb4ee79e04dfe2c325025fc10d3cc56437db6f7bb3e0e",
-      "bytes": 46804,
-      "triangles": 544
+      "sha256": "299f7086e38b627d166cc5bcd2b58f26ceeec40c201016586eff815f249f99c3",
+      "bytes": 46824,
+      "triangles": 544,
+      "material": "ceramic"
     },
     "search_low": {
-      "sha256": "acf4c436b44644425f97669bb5c25e956499536021ae80e0fc8f3458b0e2ca02",
-      "bytes": 16228,
-      "triangles": 180
+      "sha256": "7dac80f085df488e059349211f02e86a346b5f24896642802bad729685456c0e",
+      "bytes": 16248,
+      "triangles": 180,
+      "material": "ceramic"
     },
     "arrow": {
-      "sha256": "06b1f725adba52f4719c045f3685e1ca81ff64129a0307cd4dce0fc8ac0aa75e",
-      "bytes": 2684,
-      "triangles": 20
+      "sha256": "0c8837bdf326a272a6b3f702945310d3fbcb959968c053060d97c7013382b2f6",
+      "bytes": 2708,
+      "triangles": 20,
+      "material": "ceramic"
     },
     "arrow_low": {
-      "sha256": "5ba0611d652945e370d72dcf9691c2794b019ffe80e2b8839976a5bdae6cb4ad",
-      "bytes": 2688,
-      "triangles": 20
+      "sha256": "e9416bbd9f88a3d242cbde82f44423fe2839a8143572667a2a0a834fc60b63db",
+      "bytes": 2712,
+      "triangles": 20,
+      "material": "ceramic"
     },
     "back": {
-      "sha256": "c2b8215ca0eb54cac6cae476285505e6744cd5df07dddd73cff5e80dbd2354ec",
-      "bytes": 9132,
-      "triangles": 96
+      "sha256": "bc0682fab72654f3e41dd82c186e071cf77a78287541cbcf376e4127df026f8a",
+      "bytes": 9156,
+      "triangles": 96,
+      "material": "ceramic"
     },
     "back_low": {
-      "sha256": "f7523c9cc34ba4804f65e73d7c57e53f72895e24625f5194af1e9ab613cc55c8",
-      "bytes": 6096,
-      "triangles": 60
+      "sha256": "81aac803bd6d2868599fde5aa3017ae1fc7f4c23fdf50be756dc28bd004951b3",
+      "bytes": 6116,
+      "triangles": 60,
+      "material": "ceramic"
+    },
+    "forward": {
+      "sha256": "71647f760af3de489a5834fe5211e6cd86369ce3fb73ef0306f6f1dec4bbd7b9",
+      "bytes": 9156,
+      "triangles": 96,
+      "material": "ceramic"
+    },
+    "forward_low": {
+      "sha256": "e6b4010dbd13869062ba816b36d8349ccf415aa2cc0811ff81342fda0d8f77c6",
+      "bytes": 6120,
+      "triangles": 60,
+      "material": "ceramic"
     },
     "close": {
-      "sha256": "2d8ec0f33715b44cbedbc7a9510b00267166dc3411d038fa43c1638a87812314",
-      "bytes": 6472,
-      "triangles": 64
+      "sha256": "ca29e3efedcc24ff1536e2a2b8f4672e9e39706d8c5954b869587b970bbf6dbc",
+      "bytes": 6496,
+      "triangles": 64,
+      "material": "ceramic"
     },
     "close_low": {
-      "sha256": "ec55002cafa0b4c888149107f62a4080f9fdd4a6b75ad3d47cbe75e86aea0aa1",
-      "bytes": 4464,
-      "triangles": 40
+      "sha256": "508010e3af81fbdbd2d04170767bebb08ecf1f1c9fbd15f0f50f04f236c95b8e",
+      "bytes": 4484,
+      "triangles": 40,
+      "material": "ceramic"
     },
     "charts": {
-      "sha256": "7715662753890478d1d3f98756bfdd085ddb8febf272b6eeccd2889d9294880a",
-      "bytes": 4032,
-      "triangles": 36
+      "sha256": "bef28831e9abf60d323b2da57b12e1aa256a21e2f64de23e9aa1be44a4f20ea2",
+      "bytes": 4056,
+      "triangles": 36,
+      "material": "ceramic"
     },
     "charts_low": {
-      "sha256": "0b9b56705b9d322ca8ca334c51d4eb6b4d112200aebe7dfe0fa204a57cf61e26",
-      "bytes": 4036,
-      "triangles": 36
+      "sha256": "1dfcf6800e8cbd47a4b0ccc2e59d3b44dd3aa371f8b6ccec31b80cf74c034c91",
+      "bytes": 4060,
+      "triangles": 36,
+      "material": "ceramic"
     },
     "plus": {
-      "sha256": "c1782a054d9bfa04790a2782e6113ae2748da4400fcde91a096da086f2a18080",
-      "bytes": 6412,
-      "triangles": 64
+      "sha256": "5bfd3c96fa2ae7f5c6798be8b648985e19d5e23e21ad6beb40552d7e78d2312f",
+      "bytes": 6432,
+      "triangles": 64,
+      "material": "ceramic"
     },
     "plus_low": {
-      "sha256": "981a8eaf94c4579c2ca15cc1e320d6a8915d20b240336dd51138da292463107a",
-      "bytes": 4400,
-      "triangles": 40
+      "sha256": "a626ef204b81a9a7c66b381dc20adb799094db26167a0f9524a1dfac16076535",
+      "bytes": 4420,
+      "triangles": 40,
+      "material": "ceramic"
     },
     "minus": {
-      "sha256": "7d1560c320d5a0d0864ef6cc41672508a6d9cbcc8382deca839f4042ded5dfab",
-      "bytes": 3756,
-      "triangles": 32
+      "sha256": "c6a0c81d8af8540566dcfa2949a1b8e72b38b7c1384b90a289f78e42fb65dee3",
+      "bytes": 3776,
+      "triangles": 32,
+      "material": "ceramic"
     },
     "minus_low": {
-      "sha256": "222aa52df2a790ea5add7476d3b08fc08964d1b64b4ccfa02bc0a4f55d9c7927",
-      "bytes": 2732,
-      "triangles": 20
+      "sha256": "ac168c987026c6550de09dc1c15e7fc9b16a4e4c73712a45e8cd5f6d878b1e2d",
+      "bytes": 2752,
+      "triangles": 20,
+      "material": "ceramic"
     }
   }
 }

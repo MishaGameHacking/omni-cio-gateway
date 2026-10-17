@@ -247,6 +247,8 @@ public final class FrameInstrumentation extends Instrumentation {
         xml.startDocument("UTF-8", true);
         xml.startTag(null, "hierarchy");
         Rect display = windows.getMaximumWindowMetrics().getBounds();
+        attr(xml, "display-width", Integer.toString(display.width()));
+        attr(xml, "display-height", Integer.toString(display.height()));
         writeNode(xml, root, display, 0, new int[] {0});
         xml.endTag(null, "hierarchy");
         xml.endDocument();
@@ -291,6 +293,12 @@ public final class FrameInstrumentation extends Instrumentation {
                 "checked",
                 Boolean.toString(checkedState(node)));
         attr(xml, "checkable", Boolean.toString(node.isCheckable()));
+        attr(xml, "focusable", Boolean.toString(node.isFocusable()));
+        attr(xml, "focused", Boolean.toString(node.isFocused()));
+        attr(xml, "accessibility-focused", Boolean.toString(node.isAccessibilityFocused()));
+        attr(xml, "editable", Boolean.toString(node.isEditable()));
+        attr(xml, "selection-start", Integer.toString(node.getTextSelectionStart()));
+        attr(xml, "selection-end", Integer.toString(node.getTextSelectionEnd()));
         for (int index = 0; index < node.getChildCount(); index++) {
             AccessibilityNodeInfo child = node.getChild(index);
             if (child != null && child.isVisibleToUser()) {

@@ -10,6 +10,7 @@ import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 /** Display contract only. Production must receive a verified plan; no order is submitted here. */
 data class PlanAction(val id: String, val title: String, val account: String, val instrument: String,
@@ -34,7 +35,7 @@ fun ActionPlan(actions: List<PlanAction>?, onOpenBroker: (PlanAction) -> Unit = 
 
 @Composable
 private fun ActionPlanCard(action: PlanAction, openBroker: (PlanAction) -> Unit) {
-    var defer by remember { mutableStateOf(false) }
+    var defer by rememberSaveable(action.id) { mutableStateOf(false) }
     var reason by rememberSaveable(action.id) { mutableStateOf<String?>(null) }
     val expires = runCatching { Instant.parse(action.validUntil) }.getOrNull()
     val now by produceState(Instant.now(), action.id) {
@@ -61,9 +62,11 @@ private fun ActionPlanCard(action: PlanAction, openBroker: (PlanAction) -> Unit)
         }
         Text("Переход к брокеру не подтверждает исполнение. Состояние сделки должно поступить от брокера.", style = MaterialTheme.typography.bodySmall)
     }
-    if (defer) AlertDialog(onDismissRequest = { defer = false }, title = { Text("Почему откладываете?") },
-        text = { Column { listOf("Нужно подумать", "Недостаточно средств", "Не согласен с выводом").forEach { choice ->
+    if (defer) WorkspaceDialog("Почему откладываете?", { defer = false }) {
+        listOf("Нужно подумать", "Недостаточно средств", "Не согласен с выводом").forEach { choice ->
             TextButton(onClick = { reason = choice; defer = false }) { Text(choice) }
-        }; Text("Отметка сохраняется только в интерфейсе текущего плана.", style = MaterialTheme.typography.bodySmall) } },
-        confirmButton = { TextButton(onClick = { defer = false }) { Text("Отмена") } })
+        }
+        Text("Отметка сохраняется только в интерфейсе текущего плана.", style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { defer = false }) { Text("Отмена") }
+    }
 }

@@ -74,7 +74,7 @@ fun EvidenceLinks(evidence: List<JSONObject>, highlights: List<JSONObject> = emp
             details.text("currency", "").takeIf(String::isNotBlank)?.let { Text("Валюта: " + it, style = MaterialTheme.typography.bodySmall) }
             val url = details.text("url", "")
             if (runCatching { java.net.URI(url).let { it.scheme == "https" && it.host != null && it.userInfo == null } }.getOrDefault(false)) {
-                SpectrumSecondaryButton("Открыть первоисточник", { runCatching { uriHandler.openUri(url) } }, Modifier.fillMaxWidth())
+                SpectrumSecondaryButton("Открыть источник", { runCatching { uriHandler.openUri(url) } }, Modifier.fillMaxWidth())
             }
             if (!details.has("provider")) Text("Метаданные источника не сохранены в этом ответе. Идентификатор: " + source.text("source_id", source.text("id")), style = MaterialTheme.typography.bodySmall)
         }
@@ -128,12 +128,7 @@ fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -
     }
     val state = job?.text("state", "queued") ?: "queued"
     SpectrumCard(emphasized = true) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpatialIcon(if (state == "completed") "check" else if (state in terminalJobs) "risk" else "orbit", Modifier.size(40.dp),
-                state = if (state == "completed") SpatialState.Success else if (state in terminalJobs) SpatialState.Attention else SpatialState.Loading)
-            Column { Text(jobStateTitle(state), style = MaterialTheme.typography.titleMedium)
-                Text(jobStageTitle(job?.text("stage", "queued") ?: "queued"), style = MaterialTheme.typography.bodySmall) }
-        }
+        WorkspaceJobHeading(state, job?.text("stage", "queued") ?: "queued")
         job?.optString("updated_at")?.takeIf { it.isNotBlank() }?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (state == "uncertain") Text("Исход запроса к модели пока не подтверждён. Автоматического повторного запроса нет.")
@@ -154,6 +149,22 @@ fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -
             if (state == "cancelled" || state == "completed") scope.launch(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
             onClose()
         }, Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun WorkspaceJobHeading(state: String, stage: String) {
+    val (model, visual) = when {
+        state == "completed" -> "check" to SpatialState.Success
+        state in terminalJobs -> "risk" to SpatialState.Attention
+        else -> "orbit" to SpatialState.Loading
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SpatialIcon(model, Modifier.size(40.dp), state = visual)
+        Column {
+            Text(jobStateTitle(state), style = MaterialTheme.typography.titleMedium)
+            Text(jobStageTitle(stage), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

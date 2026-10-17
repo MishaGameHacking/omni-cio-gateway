@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import hashlib
 from pathlib import Path
 import time
@@ -15,12 +16,16 @@ def exercise_spatial(probe):
     from profile_ui_probe import node_bounds, DARK_BACKGROUND, LIGHT_BACKGROUND
     from persistent_ui import FrameReader
     from spatial_performance_evidence import memory_pss_kb, frame_timings
+    from kernel_page_size import PAGE_BYTES, system_image
 
     probe.command("shell", "settings", "put", "system", "font_scale", "1.0")
     startup = launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="spatial")
     platform = {"sdk": int(probe.command("shell", "getprop", "ro.build.version.sdk").strip()),
                 "abi": probe.command("shell", "getprop", "ro.product.cpu.abi").strip(),
-                "page_size_bytes": int(probe.command("shell", "getconf", "PAGESIZE").strip())}
+                "page_size_bytes": int(probe.command("shell", "getconf", "PAGE_SIZE").strip())}
+    platform["system_image"] = system_image(platform["sdk"])
+    if platform["abi"] != "x86_64" or platform["page_size_bytes"] != PAGE_BYTES[platform["sdk"]]:
+        raise AssertionError("The actual mesh runtime is not on the required Android kernel matrix")
     records = [{"scenario": "force-stopped-fixture-startup", **startup}]
 
     def metrics(windows=1):
@@ -200,7 +205,7 @@ def exercise_spatial(probe):
     probe.command("shell", "settings", "put", "system", "font_scale", "2.0")
     launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="spatial")
     large = metrics()
-    if large.get("font-scale") != 2.0:
+    if not math.isclose(large.get("font-scale", 0.0), 2.0, rel_tol=0.0, abs_tol=1e-6):
         raise AssertionError("Spatial 200% scenario did not apply the actual font scale")
     probe.reveal("Проверить нажатие", "workspace-content")
     probe.capture("spatial-large-font")
@@ -210,6 +215,12 @@ def exercise_spatial(probe):
     probe.tap("Закрыть окно 3D", "workspace-content")
     records.append({"scenario": "font-200-controls-and-dialog", "runtime": large})
     probe.command("shell", "settings", "put", "system", "font_scale", "1.0")
+
+    from spatial_policy_probe import predictive_back, system_policies
+
+    launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="spatial")
+    records.extend(system_policies(probe, metrics, settled))
+    records.append(predictive_back(probe, metrics))
 
     report = {"fixture": "debug_only", "screenshots": "actual_emulator_console",
               "gpu_frame_time_measured": False, "platform": platform, "checks": records}

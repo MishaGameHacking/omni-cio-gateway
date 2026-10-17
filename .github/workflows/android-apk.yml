@@ -37,7 +37,9 @@ jobs:
       queue: max
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 40
+    # Full API35 16KB/API36 upgrade + 52 business/font cases per API, native
+    # rendering and long-scroll gates. Per-command/assertion deadlines are unchanged.
+    timeout-minutes: 70
     # Applies before checkout cleans generated Kotlin class paths on Windows.
     # Keep clean checkout enabled; do not change the host's global Git config.
     env:

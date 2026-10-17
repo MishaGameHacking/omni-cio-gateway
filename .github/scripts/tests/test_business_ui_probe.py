@@ -17,9 +17,10 @@ def frame(route="risk", scenario="partial", *, requests="3", errors="0", transpo
 
 
 class BusinessUiProbeTests(unittest.TestCase):
-    def test_supported_matrix_has_twenty_two_distinct_cases(self):
-        self.assertEqual(len(business.CASES), 22)
-        self.assertEqual(len(set(business.CASES)), 22)
+    def test_supported_matrix_has_twenty_six_distinct_cases(self):
+        self.assertEqual(len(business.CASES), 26)
+        self.assertEqual(len(set(business.CASES)), 26)
+        self.assertEqual({scenario for route, scenario in business.CASES if route == "analysis"}, {"ready", "empty", "partial", "error"})
         self.assertEqual({route for route, state in business.CASES if state == "job"}, {"assistant", "plans"})
 
     def test_exact_identity_and_real_request_count_are_required(self):
@@ -34,8 +35,9 @@ class BusinessUiProbeTests(unittest.TestCase):
         for tree in (frame(errors="1"), frame(requests="-2"), frame(errors="unknown")):
             with self.assertRaises(AssertionError):
                 business.business_marker(tree, "risk", "partial")
+        unsupported = frame()
         with self.assertRaises(ValueError):
-            business.business_marker(frame(), "risk", "job")
+            business.business_marker(unsupported, "risk", "job")
 
 
 if __name__ == "__main__":

@@ -82,11 +82,17 @@ class DistributableApkWorkflowTests(unittest.TestCase):
     def test_both_supported_android_versions_run_full_ui(self):
         for api in (35, 36):
             self.assertIn(f'--api {api}', self.action)
-            self.assertIn(f'system-images;android-{api};google_apis;x86_64', self.action)
+            image = 'google_apis_ps16k' if api == 35 else 'google_apis'
+            self.assertIn(f'system-images;android-{api};{image};x86_64', self.action)
         validator = (ROOT / '.github/scripts/validate_distribution.py').read_text(encoding='utf-8')
         self.assertIn('[checked_installation(35), checked_installation(36)]', validator)
         self.assertIn('upgrade_required=True', validator)
+        self.assertIn('android_api=api', validator)
+        self.assertIn('require_runtime_16kb=True', validator)
         self.assertIn('if api in {35, 36} and os.getenv', self.installer)
+        self.assertIn('device("shell", "getconf", "PAGE_SIZE")', self.installer)
+        self.assertLess(self.installer.index('page_size = device'),
+                        self.installer.index('install("previous_clean_install", previous)'))
 
     def test_candidate_is_launched_before_and_after_clean_install(self):
         upgrade = self.installer.index('install("upgrade_to_candidate", apk, update=True)')

@@ -102,9 +102,13 @@ def _news_event(subject, payload, source):
     if role not in {'primary', 'repost', 'independent_report'}:
         raise EvidenceError('news_publication_role_invalid')
     primary = payload.get('primary_source')
-    if role in {'primary', 'repost'} and not isinstance(primary, dict):
-        raise EvidenceError('news_primary_source_required')
-    if primary is not None and not Source(**primary).valid(stamp(source.checked_at)):
+    if primary is None:
+        if role in {'primary', 'repost'}:
+            raise EvidenceError('news_primary_source_required')
+        return
+    if not isinstance(primary, dict):
+        raise EvidenceError('news_primary_source_invalid')
+    if not Source(**primary).valid(stamp(source.checked_at)):
         raise EvidenceError('news_primary_source_not_verified')
     if role == 'primary' and primary['url'] != source.url:
         raise EvidenceError('news_primary_source_does_not_match_publication')

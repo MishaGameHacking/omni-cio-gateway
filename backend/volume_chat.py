@@ -151,12 +151,22 @@ class MessageCreate(state.RequestId):
     tier: Literal["fast", "standard", "premium"] = "fast"
 
 
+HISTORY_TIMEZONE = "Europe/Moscow"
+
+
+def _history_resolution(span: timedelta) -> str:
+    if span <= timedelta(days=2):
+        return "intraday"
+    if span <= timedelta(days=32):
+        return "hour"
+    return "day"
+
+
 def _history_facts(user_id: int, snapshot: dict, account_ids: set[str], begin: datetime, finish: datetime) -> tuple[list[dict], dict]:
     """Choose actual stored chart observations, preserving the chart resolution."""
     if not account_ids:
         return [], {"available": False, "included_observations": 0, "selection_is_complete": True}
-    span = finish - begin
-    resolution = "intraday" if span <= timedelta(days=2) else "hour" if span <= timedelta(days=32) else "day"
+    resolution = _history_resolution(finish - begin)
     with closing(backend.connect()) as db:
         marks = ",".join("?" for _ in account_ids)
         rows = db.execute(f"""SELECT account_id,observed_at,value FROM portfolio_value_history
@@ -181,9 +191,9 @@ def _history_facts(user_id: int, snapshot: dict, account_ids: set[str], begin: d
                        "source_ids": [ref["id"]], "as_of": row["observed_at"], "source": ref,
                        "highlight": {"section": "history", "id": identifier, "account_id": row["account_id"],
                                      "date": row["observed_at"], "currency": snapshot["currency"], "resolution": resolution,
-                                     "start": begin.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat(),
-                                     "end": (finish - timedelta(microseconds=1)).astimezone(ZoneInfo("Europe/Moscow")).date().isoformat(),
-                                     "calendar_timezone": "Europe/Moscow"}})
+                                     "start": begin.astimezone(ZoneInfo(HISTORY_TIMEZONE)).date().isoformat(),
+                                     "end": (finish - timedelta(microseconds=1)).astimezone(ZoneInfo(HISTORY_TIMEZONE)).date().isoformat(),
+                                     "calendar_timezone": HISTORY_TIMEZONE}})
     return result, {"available": bool(result), "included_observations": len(result),
                     "observations_in_bounded_query": len(rows), "selection_is_complete": len(result) == len(rows),
                     "query_truncated": len(rows) > 1000, "resolution": resolution,
@@ -354,7 +364,7 @@ def ready(user_id: int, tier: AnalysisTier) -> tuple[GuardedAIClient, Any]:
 @router.post("/estimate", responses=HTTP_ERRORS)
 def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> dict:
     try:
-        client, route = ready(int(user["id"]), AnalysisTier(payload.tier))
+        _, route = ready(int(user["id"]), AnalysisTier(payload.tier))
         messages, packet = model_messages(user, payload.text, payload.context.model_dump(mode="json"), payload.thread_id)
         bound = len(json.dumps(messages, ensure_ascii=False, allow_nan=False).encode()) + route.input_allowance
         upper = token_cost(bound, MAX_OUTPUT, route.input_rate, route.output_rate)

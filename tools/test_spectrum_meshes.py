@@ -66,6 +66,34 @@ class MeshCatalogueTest(unittest.TestCase):
         self.assertTrue(edges)
         self.assertTrue(all(count == 2 for count in edges.values()))
 
+    def test_three_actual_pbr_families_preserve_native_readability_and_lod_identity(self):
+        manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())['models']
+        families = set()
+        for name, info in manifest.items():
+            document, _ = decode((catalogue.DEST / (name + '.glb')).read_bytes())
+            material = document['materials'][0]
+            family = info['material']; families.add(family)
+            self.assertEqual('OPAQUE', material['alphaMode'])
+            pbr = material['pbrMetallicRoughness']
+            self.assertEqual([1, 1, 1, 1], pbr['baseColorFactor'])
+            if family == 'metal':
+                self.assertGreater(pbr['metallicFactor'], .5)
+            else:
+                self.assertLess(pbr['metallicFactor'], .1)
+            if family == 'glass_coating':
+                self.assertIn('KHR_materials_clearcoat', document['extensionsUsed'])
+                coating = material['extensions']['KHR_materials_clearcoat']
+                self.assertGreater(coating['clearcoatFactor'], .9)
+                self.assertLess(coating['clearcoatRoughnessFactor'], pbr['roughnessFactor'])
+            else:
+                self.assertNotIn('extensions', material)
+            if not name.endswith('_low'):
+                low, _ = decode((catalogue.DEST / (name + '_low.glb')).read_bytes())
+                self.assertEqual(material, low['materials'][0])
+        self.assertEqual({'ceramic', 'metal', 'glass_coating'}, families)
+        for readable in ('surface', 'button', 'input', 'heading', 'bar', 'chip', 'dock'):
+            self.assertEqual('ceramic', manifest[readable]['material'])
+
     def test_low_detail_reduces_the_real_triangle_budget(self):
         manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())['models']
         normal = sum(manifest[name]['triangles'] for name in catalogue.NAMES)

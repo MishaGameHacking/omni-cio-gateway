@@ -2,7 +2,7 @@ package ru.omnicio.app.ui.profile
 
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
-import androidx.compose.material3.AlertDialog
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.consumeWindowInsets

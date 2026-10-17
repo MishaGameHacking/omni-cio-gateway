@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import json
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -37,49 +37,77 @@ except ImportError:
 router = APIRouter(prefix="/workspace", tags=["Materialized workspace"])
 
 
+def _position_identity(uid: str) -> tuple[dict | None, list]:
+    try:
+        identity = research_store.latest_verified(backend.connect, "issuer_identity", uid, datetime.now(timezone.utc))
+    except (ValueError, TypeError, KeyError):
+        identity = None
+    if not identity:
+        return None, []
+    try:
+        from .volume_contract import reviewed_source
+    except ImportError:
+        from volume_contract import reviewed_source
+    ref = reviewed_source(identity["source"], provider="Reviewed issuer register", method="issuer_identity", subject=uid)
+    return identity, [ref]
+
+
+def _position_metadata(raw: dict, position: dict) -> dict:
+    keys = {"sector": "sector", "country_of_risk": "countryOfRisk", "country_of_risk_name": "countryOfRiskName",
+            "asset_uid": "assetUid", "lot": "lot", "exchange": "exchange", "isin": "isin"}
+    return {**{name: raw.get(key) or position.get(key) for name, key in keys.items()}, "source": raw.get("_source")}
+
+
+def _workspace_position(account: dict, position: dict, raw: dict, ref: dict) -> tuple[dict, list]:
+    uid = position["id"]
+    identity, sources = _position_identity(uid)
+    if raw.get("_source"):
+        sources.append(raw["_source"])
+    row = {"instrument_uid": uid, "account_id": account["id"], "account_name": account.get("name"),
+           "title": raw.get("name") or position.get("title") or uid, "ticker": raw.get("ticker") or position.get("ticker"),
+           "instrument_type": position.get("instrumentType"), "quantity": text_number(decimal(position.get("quantity"))),
+           "value": money(position.get("currentValue")), "blocked": bool(position.get("blocked")),
+           "blocked_quantity": text_number(decimal(position.get("blockedQuantity"))), "source_ids": [ref["id"]],
+           "verified_identity": identity, "metadata": _position_metadata(raw, position)}
+    return row, sources
+
+
+def _capital(dashboard: dict, rows: list) -> dict:
+    cash = defaultdict(Decimal)
+    for row in rows:
+        if row["instrument_type"] == "cash" and row["value"]:
+            cash[row["value"]["currency"]] += decimal(row["value"])
+    return {"total": money(dashboard.get("totalValue")), "cash": [money(v, c) for c, v in sorted(cash.items())],
+            "blocked_positions_count": sum(p["blocked"] or (decimal(p.get("blocked_quantity")) or ZERO) != 0 for p in rows),
+            "unvalued_positions_count": sum(p["value"] is None for p in rows)}
+
+
+def _position_coverage(accounts: list) -> dict:
+    loading = [account["id"] for account in accounts if account.get("limitsLoading")]
+    virtual = sum(account.get("virtualPositionCount", len(account.get("virtualPositions", []))) for account in accounts)
+    reasons = []
+    if loading:
+        reasons.append("broker_limits_loading")
+    if virtual:
+        reasons.append("virtual_positions_not_valued")
+    return {"complete": not reasons, "incomplete_reasons": reasons, "loading_account_ids": loading, "virtual_position_count": virtual}
+
+
 @financial_context
 def normalize_snapshot(user: Any, dashboard: dict, metadata: dict | None = None) -> dict:
     currency, observed = dashboard["currency"], dashboard["asOf"]
-    metadata = metadata or {}
-    sources, rows, cash = [], [], defaultdict(Decimal)
-    for account in dashboard.get("accounts", []):
+    sources, rows = [], []
+    accounts = dashboard.get("accounts", [])
+    for account in accounts:
         ref = source(dashboard.get("source_method", "GetPortfolio/GetPositions"), account["id"], observed, currency=currency, unit="money")
         sources.append(ref)
         for position in account.get("positions", []):
-            uid = position["id"]
-            raw = metadata.get(uid) or {}
-            try:
-                identity = research_store.latest_verified(backend.connect, "issuer_identity", uid, datetime.now(timezone.utc))
-            except (ValueError, TypeError, KeyError):
-                identity = None
-            value = money(position.get("currentValue"))
-            meta_source = raw.get("_source")
-            if meta_source and not any(r["id"] == meta_source["id"] for r in sources):
-                sources.append(meta_source)
-            if identity:
-                try:
-                    from .volume_contract import reviewed_source
-                except ImportError:
-                    from volume_contract import reviewed_source
-                identity_source = reviewed_source(identity["source"], provider="Reviewed issuer register", method="issuer_identity", subject=uid)
-                if not any(r["id"] == identity_source["id"] for r in sources):
-                    sources.append(identity_source)
-            if position.get("instrumentType") == "cash" and value:
-                cash[value["currency"]] += decimal(value)
-            rows.append({"instrument_uid": uid, "account_id": account["id"], "account_name": account.get("name"),
-                         "title": raw.get("name") or position.get("title") or uid, "ticker": raw.get("ticker") or position.get("ticker"),
-                         "instrument_type": position.get("instrumentType"), "quantity": text_number(decimal(position.get("quantity"))),
-                         "value": value, "blocked": bool(position.get("blocked")), "blocked_quantity": text_number(decimal(position.get("blockedQuantity"))),
-                         "source_ids": [ref["id"]], "verified_identity": identity,
-                         "metadata": {"sector": raw.get("sector") or position.get("sector"), "country_of_risk": raw.get("countryOfRisk") or position.get("countryOfRisk"),
-                                      "country_of_risk_name": raw.get("countryOfRiskName") or position.get("countryOfRiskName"),
-                                      "asset_uid": raw.get("assetUid") or position.get("assetUid"), "lot": raw.get("lot") or position.get("lot"),
-                                      "exchange": raw.get("exchange") or position.get("exchange"), "isin": raw.get("isin") or position.get("isin"), "source": meta_source}})
-    return {"currency": currency, "as_of": observed, "positions": rows, "sources": sources,
-            "accounts": [{"id": a["id"], "name": a.get("name"), "value": money(a.get("totalValue"))} for a in dashboard.get("accounts", [])],
-            "capital": {"total": money(dashboard.get("totalValue")), "cash": [money(v, c) for c, v in sorted(cash.items())],
-                        "blocked_positions_count": sum(p["blocked"] or (decimal(p.get("blocked_quantity")) or ZERO) != 0 for p in rows),
-                        "unvalued_positions_count": sum(p["value"] is None for p in rows)}}
+            row, refs = _workspace_position(account, position, (metadata or {}).get(position["id"]) or {}, ref)
+            rows.append(row)
+            sources.extend(refs)
+    return {"currency": currency, "as_of": observed, "positions": rows, "sources": list({ref["id"]: ref for ref in sources}.values()),
+            "accounts": [{"id": a["id"], "name": a.get("name"), "value": money(a.get("totalValue"))} for a in accounts],
+            "capital": _capital(dashboard, rows), "position_coverage": _position_coverage(accounts)}
 
 
 def _balance_interval(user_id: int, accounts: list[str], currency: str, begin: datetime, finish: datetime) -> tuple[dict | None, dict | None]:
@@ -101,26 +129,32 @@ def _balance_interval(user_id: int, accounts: list[str], currency: str, begin: d
     return (complete[0], complete[-1]) if len(complete) >= 2 else (None, None)
 
 
-@financial_context
-def attribution(user: Any, snapshot: dict, operations: list[dict], complete: bool, begin: datetime, finish: datetime) -> dict:
-    currency = snapshot["currency"]
-    accounts = [a["id"] for a in snapshot["accounts"]]
-    opening, closing = _balance_interval(int(user["id"]), accounts, currency, begin, finish)
-    sums, unknown_cash_flow, seen = defaultdict(Decimal), False, set()
-    actual_begin = datetime.fromisoformat(opening["at"]) if opening else begin
-    actual_end = datetime.fromisoformat(closing["at"]) if closing else finish
+def _unique_flow_operations(operations: list[dict]) -> tuple[list, bool]:
+    by_key, conflicts = {}, set()
     for row in operations:
         key = (row["account_id"], row["id"])
-        if key in seen or row.get("state") != "OPERATION_STATE_EXECUTED":
+        if key in by_key and by_key[key] != row:
+            conflicts.add(key)
+        by_key[key] = row
+    return [row for key, row in by_key.items() if key not in conflicts], not conflicts
+
+
+def _attributed_flows(operations: list[dict], begin: datetime, finish: datetime, currency: str) -> tuple:
+    try:
+        from .volume_contract import timestamp
+    except ImportError:
+        from volume_contract import timestamp
+    unique, complete = _unique_flow_operations(operations)
+    sums, unknown_cash_flow = defaultdict(Decimal), False
+    for row in unique:
+        if row.get("state") != "OPERATION_STATE_EXECUTED":
             continue
-        seen.add(key)
-        when = row.get("date")
         try:
-            when = datetime.fromisoformat(when.replace("Z", "+00:00"))
-        except (TypeError, ValueError, AttributeError):
+            when = timestamp(row.get("date"))
+        except ValueError:
             complete = False
             continue
-        if not actual_begin < when <= actual_end:
+        if not begin < when <= finish:
             continue
         amount = money(row.get("payment"))
         category = row["category"]
@@ -128,8 +162,19 @@ def attribution(user: Any, snapshot: dict, operations: list[dict], complete: boo
             sums[category, amount["currency"]] += decimal(amount)
         if category in {"deposits", "withdrawals", "other"} and (amount is None or amount["currency"] != currency or category == "other"):
             unknown_cash_flow = True
+    return sums, complete and not unknown_cash_flow
+
+
+@financial_context
+def attribution(user: Any, snapshot: dict, operations: list[dict], complete: bool, begin: datetime, finish: datetime) -> dict:
+    currency = snapshot["currency"]
+    accounts = [a["id"] for a in snapshot["accounts"]]
+    opening, closing = _balance_interval(int(user["id"]), accounts, currency, begin, finish)
+    actual_begin = datetime.fromisoformat(opening["at"]) if opening else begin
+    actual_end = datetime.fromisoformat(closing["at"]) if closing else finish
+    sums, flows_known = _attributed_flows(operations, actual_begin, actual_end, currency)
     change = closing["value"] - opening["value"] if opening and closing else None
-    exact = complete and not unknown_cash_flow and change is not None
+    exact = complete and flows_known and change is not None
     external = sums["deposits", currency] + sums["withdrawals", currency] if exact else None
     return {"start": actual_begin.isoformat(), "end": actual_end.isoformat(),
             "requested_start": begin.isoformat(), "requested_end": finish.isoformat(),
@@ -142,8 +187,56 @@ def attribution(user: Any, snapshot: dict, operations: list[dict], complete: boo
                 if exact else "Для точного остатка нужны два синхронных снимка всех счетов и полная история внешних потоков в валюте оценки. Неизвестное не подменяется нулём."}
 
 
+def _payout_row(item: dict, position: dict, ref: dict, now: datetime) -> dict | None:
+    kind, uid = position["instrument_type"], position["instrument_uid"]
+    when = item.get("couponDate") if kind == "bond" else item.get("paymentDate")
+    if not when:
+        return None
+    per_unit = money(item.get("payOneBond") if kind == "bond" else item.get("dividendNet"))
+    record_date = item.get("fixDate") if kind == "bond" else item.get("recordDate")
+    unknown = not record_date or str(record_date)[:10] <= now.date().isoformat()
+    quantity = decimal(position.get("quantity"))
+    cancelled = str(item.get("dividendType", "")).lower() == "cancelled"
+    amount, status = None, "announced"
+    if cancelled:
+        status = "cancelled"
+    elif per_unit and quantity is not None and quantity > 0 and not unknown:
+        amount = money(decimal(per_unit) * quantity, per_unit["currency"])
+        status = "expected"
+    return {"id": digest({"uid": uid, "account": position["account_id"], "event": item}), "instrument_uid": uid,
+            "account_id": position["account_id"], "title": position["title"], "kind": "coupon" if kind == "bond" else "dividend",
+            "date": when, "record_date": record_date, "status": status, "amount": amount, "per_unit": per_unit,
+            "eligibility_unknown": unknown, "source_ids": [ref["id"]], "estimate_is_guaranteed": False}
+
+
+def _read_payouts(reader, uid: str, kind: str, now: datetime, stored: dict) -> dict | None:
+    if uid in stored:
+        return stored[uid]
+    method = "coupons" if kind == "bond" else "dividends"
+    try:
+        market.pace_instruments(reader.scope)
+        raw = reader.read(method, {"instrumentId": uid, "from": (now - timedelta(days=365)).isoformat(), "to": (now + timedelta(days=365)).isoformat()})
+    except HTTPException:
+        return None
+    stored[uid] = {"data": raw, "as_of": now_iso(), "method": method}
+    return stored[uid]
+
+
+def _instrument_payout_rows(held: list, raw: dict, now: datetime, ref: dict) -> tuple[list, bool]:
+    rows, complete = [], True
+    key = "events" if held[0]["instrument_type"] == "bond" else "dividends"
+    for item in raw["data"].get(key, []):
+        for position in held:
+            row = _payout_row(item, position, ref, now)
+            if row is None:
+                complete = False
+            else:
+                rows.append(row)
+    return rows, complete
+
+
 @financial_context
-def _payment_events(user: Any, snapshot: dict, metadata: dict, checkpoint: dict, progress) -> tuple[list[dict], list[dict], bool]:
+def _payment_events(user: Any, snapshot: dict, checkpoint: dict, progress) -> tuple[list[dict], list[dict], bool]:
     rows, sources, complete = [], [], True
     by_uid = defaultdict(list)
     for position in snapshot["positions"]:
@@ -154,38 +247,127 @@ def _payment_events(user: Any, snapshot: dict, metadata: dict, checkpoint: dict,
     with details.BrokerReader(user) as reader:
         for index, (uid, held) in enumerate(by_uid.items()):
             progress("collecting_payouts", checkpoint, completed=index, total=len(by_uid))
-            kind = held[0]["instrument_type"]
-            if uid not in stored:
-                method = "coupons" if kind == "bond" else "dividends"
-                try:
-                    market.pace_instruments(reader.scope)
-                    raw = reader.read(method, {"instrumentId": uid, "from": (now - timedelta(days=365)).isoformat(), "to": (now + timedelta(days=365)).isoformat()})
-                    stored[uid] = {"data": raw, "as_of": now_iso(), "method": method}
-                    progress("collecting_payouts", checkpoint, completed=index + 1, total=len(by_uid))
-                except HTTPException:
-                    complete = False
-                    continue
-            raw = stored[uid]
+            raw = _read_payouts(reader, uid, held[0]["instrument_type"], now, stored)
+            if raw is None:
+                complete = False
+                continue
+            progress("collecting_payouts", checkpoint, completed=index + 1, total=len(by_uid))
             ref = source(raw["method"], uid, raw["as_of"], ttl=3600)
+            instrument_rows, instrument_complete = _instrument_payout_rows(held, raw, now, ref)
+            rows.extend(instrument_rows)
             sources.append(ref)
-            for item in raw["data"].get("events" if kind == "bond" else "dividends", []):
-                when = item.get("couponDate") if kind == "bond" else item.get("paymentDate")
-                per_unit = money(item.get("payOneBond") if kind == "bond" else item.get("dividendNet"))
-                record_date = item.get("fixDate") if kind == "bond" else item.get("recordDate")
-                if not when:
-                    complete = False
-                    continue
-                cancelled = str(item.get("dividendType", "")).lower() == "cancelled"
-                for position in held:
-                    unknown = not record_date or str(record_date)[:10] <= now.date().isoformat()
-                    quantity = decimal(position.get("quantity"))
-                    amount = money(decimal(per_unit) * quantity, per_unit["currency"]) if per_unit and quantity is not None and quantity > 0 and not unknown and not cancelled else None
-                    status = "cancelled" if cancelled else "expected" if amount is not None else "announced"
-                    rows.append({"id": digest({"uid": uid, "account": position["account_id"], "event": item}), "instrument_uid": uid,
-                                 "account_id": position["account_id"], "title": position["title"], "kind": "coupon" if kind == "bond" else "dividend",
-                                 "date": when, "record_date": record_date, "status": status, "amount": amount, "per_unit": per_unit,
-                                 "eligibility_unknown": unknown, "source_ids": [ref["id"]], "estimate_is_guaranteed": False})
+            complete &= instrument_complete
     return rows, sources, complete
+
+
+def _collect_metadata(user: Any, dashboard: dict, checkpoint: dict, progress) -> tuple:
+    metadata = checkpoint.setdefault("metadata", {})
+    all_positions = [p for a in dashboard["accounts"] for p in a["positions"]]
+    market.portfolio_metadata(user, all_positions, metadata, progress, checkpoint)
+    # Every position is retained. Identity metadata is resumable rather than
+    # silently slicing a large portfolio at the first 100 instruments.
+    unique = {p["id"]: p for p in all_positions if p.get("instrumentType") != "cash"}
+    for index, uid in enumerate(unique):
+        if uid not in metadata:
+            progress("collecting_metadata", checkpoint, completed=index, total=len(unique))
+            try:
+                metadata[uid] = market.instrument(user, uid)
+            except HTTPException:
+                metadata[uid] = {"_unavailable": True}
+            progress("collecting_metadata", checkpoint, completed=index + 1, total=len(unique))
+    return metadata, len(all_positions), len(unique)
+
+
+def _merge_operation_page(saved: dict, items: list) -> None:
+    if not isinstance(items, list):
+        raise HTTPException(502, "operations_response_invalid")
+    seen = {item["id"]: item for item in saved["items"]}
+    for raw in items:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            raise HTTPException(502, "operation_identity_missing")
+        item = details.normalize_operation(raw)
+        if item["id"] in seen and seen[item["id"]] != item:
+            raise HTTPException(502, "operation_conflicting_observations")
+        if item["id"] not in seen:
+            saved["items"].append(item)
+            seen[item["id"]] = item
+
+
+def _collect_operation_pages(reader, account_id: str, saved: dict, begin: datetime, finish: datetime, checkpoint: dict, progress) -> None:
+    while not saved["complete"] and saved["pages"] < 200:
+        progress("collecting_operations", checkpoint, completed=saved["pages"], total=None)
+        raw = reader.read("operations", {"accountId": account_id, "from": begin.isoformat(), "to": finish.isoformat(), "limit": 1000,
+                                         "cursor": saved["cursor"], "withoutCommissions": False, "withoutTrades": False})
+        _merge_operation_page(saved, raw.get("items", []))
+        saved["pages"] += 1
+        saved["as_of"] = now_iso()
+        if not raw.get("hasNext"):
+            saved["complete"] = True
+        else:
+            cursor = str(raw.get("nextCursor") or "")
+            if not cursor or cursor == saved["cursor"]:
+                raise HTTPException(502, "operations_cursor_invalid")
+            saved["cursor"] = cursor
+        progress("collecting_operations", checkpoint, completed=saved["pages"], total=None)
+
+
+def _linked_operation(item: dict, account_id: str, ref: dict, held: set) -> dict:
+    uid = item.get("instrumentUid")
+    link = {"account_id": account_id, "instrument_uid": uid, "currently_held": (account_id, uid) in held} if uid else None
+    return {**item, "account_id": account_id, "source_ids": [ref["id"]], "position_ref": link}
+
+
+def _collect_operations(user: Any, snapshot: dict, begin: datetime, finish: datetime, checkpoint: dict, progress) -> tuple:
+    operations, operation_sources, operations_complete = [], [], True
+    stored_operations = checkpoint.setdefault("operations", {})
+    held = {(p["account_id"], p["instrument_uid"]) for p in snapshot["positions"]}
+    with details.BrokerReader(user) as reader:
+        for account in snapshot["accounts"]:
+            account_id = account["id"]
+            saved = stored_operations.setdefault(account_id, {"items": [], "cursor": "", "complete": False, "pages": 0})
+            _collect_operation_pages(reader, account_id, saved, begin, finish, checkpoint, progress)
+            operations_complete &= saved["complete"]
+            ref = source("GetOperationsByCursor", account_id, saved.get("as_of", snapshot["as_of"]), ttl=300)
+            operation_sources.append(ref)
+            operations.extend(_linked_operation(item, account_id, ref, held) for item in saved["items"])
+    return operations, operation_sources, operations_complete
+
+
+def _received_payout_events(operations: list) -> list:
+    payout_rows = []
+    for item in operations:
+        if item.get("state") == "OPERATION_STATE_EXECUTED" and item.get("category") in {"coupons", "dividends"}:
+            payout_rows.append({"id": "received:" + item["account_id"] + ":" + item["id"], "instrument_uid": item.get("instrumentUid"),
+                                "account_id": item["account_id"], "title": item["title"], "kind": "coupon" if item["category"] == "coupons" else "dividend",
+                                "date": item["date"], "status": "received", "amount": money(item.get("payment")), "per_unit": None,
+                                "eligibility_unknown": False, "source_ids": item["source_ids"], "operation_id": item["id"]})
+    return payout_rows
+
+
+def _collect_market_events(user: Any, checkpoint: dict, progress) -> None:
+    if "news" not in checkpoint:
+        checkpoint["news"] = safe_section(lambda: market.load_news(user), empty={"items": [], "complete": False})
+        progress("collecting_news", checkpoint)
+    if "calendar" not in checkpoint:
+        def calendar_envelope():
+            value = market.calendar(user)
+            return section(value, as_of=value["as_of"], sources=[value["source"]])
+        checkpoint["calendar"] = safe_section(calendar_envelope, empty={"exchanges": []})
+        progress("collecting_calendar", checkpoint)
+
+
+def _held_news(snapshot: dict, news: dict) -> list:
+    held = defaultdict(list)
+    for position in snapshot["positions"]:
+        held[position["instrument_uid"]].append(position)
+    events = []
+    for item in news.get("data", {}).get("items", []):
+        linked = [uid for uid in item.get("instrument_uids", []) if uid in held]
+        if linked:
+            events.append({**item, "kind": "news", "instrument_uids": linked, "relationship": "broker_link",
+                           "held_positions": [{"instrument_uid": uid, "account_id": p["account_id"], "value": p["value"]} for uid in linked for p in held[uid]],
+                           "impact_is_inference": True, "impact": None})
+    return events
 
 
 def collect(user: Any, payload: dict, checkpoint: dict, progress) -> dict:
@@ -200,92 +382,23 @@ def collect(user: Any, payload: dict, checkpoint: dict, progress) -> dict:
         checkpoint["dashboard"] = details.load_dashboard(user, currency)
         progress("capital_collected", checkpoint)
     dashboard = checkpoint["dashboard"]
-    metadata = checkpoint.setdefault("metadata", {})
-    all_positions = [p for a in dashboard["accounts"] for p in a["positions"]]
-    market.portfolio_metadata(user, all_positions, metadata, progress, checkpoint)
-    # Every position is retained. Identity metadata is resumable rather than
-    # silently slicing a large portfolio at the first 100 instruments.
-    unique = {p["id"]: p for p in all_positions if p.get("instrumentType") != "cash"}
-    for index, (uid, item) in enumerate(unique.items()):
-        if uid not in metadata:
-            progress("collecting_metadata", checkpoint, completed=index, total=len(unique))
-            try:
-                metadata[uid] = market.instrument(user, uid)
-            except HTTPException:
-                metadata[uid] = {"_unavailable": True}
-            progress("collecting_metadata", checkpoint, completed=index + 1, total=len(unique))
+    metadata, position_count, metadata_count = _collect_metadata(user, dashboard, checkpoint, progress)
     snapshot = normalize_snapshot(user, dashboard, metadata)
-    snapshot["snapshot_id"] = digest({"capital": snapshot["capital"], "as_of": snapshot["as_of"], "positions": snapshot["positions"]})
+    snapshot["snapshot_id"] = digest({key: snapshot[key] for key in ("capital", "as_of", "positions", "position_coverage")})
     finish = min(requested_finish, datetime.fromisoformat(snapshot["as_of"]))
-    operations, operation_sources, operations_complete = [], [], True
-    stored_operations = checkpoint.setdefault("operations", {})
-    with details.BrokerReader(user) as reader:
-        for account in snapshot["accounts"]:
-            account_id = account["id"]
-            saved = stored_operations.setdefault(account_id, {"items": [], "cursor": "", "complete": False, "pages": 0})
-            while not saved["complete"] and saved["pages"] < 200:
-                progress("collecting_operations", checkpoint, completed=saved["pages"], total=None)
-                raw = reader.read("operations", {"accountId": account_id, "from": begin.isoformat(), "to": finish.isoformat(), "limit": 1000,
-                                                  "cursor": saved["cursor"], "withoutCommissions": False, "withoutTrades": False})
-                if not isinstance(raw.get("items", []), list):
-                    raise HTTPException(502, "operations_response_invalid")
-                seen = {item.get("id") for item in saved["items"]}
-                for item in raw.get("items", []):
-                    if not isinstance(item, dict) or not item.get("id"):
-                        raise HTTPException(502, "operation_identity_missing")
-                    if item["id"] not in seen:
-                        saved["items"].append(details.normalize_operation(item))
-                        seen.add(item["id"])
-                saved["pages"] += 1
-                saved["as_of"] = now_iso()
-                if not raw.get("hasNext"):
-                    saved["complete"] = True
-                else:
-                    cursor = str(raw.get("nextCursor") or "")
-                    if not cursor or cursor == saved["cursor"]:
-                        raise HTTPException(502, "operations_cursor_invalid")
-                    saved["cursor"] = cursor
-                progress("collecting_operations", checkpoint, completed=saved["pages"], total=None)
-            operations_complete &= saved["complete"]
-            ref = source("GetOperationsByCursor", account_id, saved.get("as_of", snapshot["as_of"]), ttl=300)
-            operation_sources.append(ref)
-            for item in saved["items"]:
-                operations.append({**item, "account_id": account_id, "source_ids": [ref["id"]],
-                                   "position_ref": {"account_id": account_id, "instrument_uid": item.get("instrumentUid"),
-                                                    "currently_held": any(p["account_id"] == account_id and p["instrument_uid"] == item.get("instrumentUid") for p in snapshot["positions"])} if item.get("instrumentUid") else None})
-    payout_rows, payout_sources, payouts_complete = _payment_events(user, snapshot, metadata, checkpoint, progress)
-    for item in operations:
-        if item.get("state") == "OPERATION_STATE_EXECUTED" and item.get("category") in {"coupons", "dividends"}:
-            payout_rows.append({"id": "received:" + item["account_id"] + ":" + item["id"], "instrument_uid": item.get("instrumentUid"),
-                                "account_id": item["account_id"], "title": item["title"], "kind": "coupon" if item["category"] == "coupons" else "dividend",
-                                "date": item["date"], "status": "received", "amount": money(item.get("payment")), "per_unit": None,
-                                "eligibility_unknown": False, "source_ids": item["source_ids"], "operation_id": item["id"]})
-    if "news" not in checkpoint:
-        checkpoint["news"] = safe_section(lambda: market.load_news(user), empty={"items": [], "complete": False})
-        progress("collecting_news", checkpoint)
-    if "calendar" not in checkpoint:
-        def calendar_envelope():
-            value = market.calendar(user)
-            return section(value, as_of=value["as_of"], sources=[value["source"]])
-        checkpoint["calendar"] = safe_section(calendar_envelope, empty={"exchanges": []})
-        progress("collecting_calendar", checkpoint)
-    held = {p["instrument_uid"]: p for p in snapshot["positions"]}
-    events = []
-    for item in checkpoint["news"].get("data", {}).get("items", []):
-        linked = [uid for uid in item.get("instrument_uids", []) if uid in held]
-        if linked:
-            events.append({**item, "kind": "news", "instrument_uids": linked, "relationship": "broker_link",
-                           "held_positions": [{"instrument_uid": uid, "account_id": p["account_id"], "value": p["value"]} for uid in linked for p in snapshot["positions"] if p["instrument_uid"] == uid],
-                           "impact_is_inference": True, "impact": None})
+    operations, operation_sources, operations_complete = _collect_operations(user, snapshot, begin, finish, checkpoint, progress)
+    payout_rows, payout_sources, payouts_complete = _payment_events(user, snapshot, checkpoint, progress)
+    payout_rows.extend(_received_payout_events(operations))
+    _collect_market_events(user, checkpoint, progress)
     snapshot.update(attribution=attribution(user, snapshot, operations, operations_complete, begin, finish),
                     payouts={"items": sorted(payout_rows, key=lambda r: str(r.get("date")), reverse=True), "complete": payouts_complete and operations_complete,
                              "received_range": {"start": begin.isoformat(), "end": finish.isoformat()}, "announced_and_received_are_distinct": True},
                     operations={"items": operations, "complete": operations_complete, "start": begin.isoformat(), "end": finish.isoformat()},
-                    events={"items": events}, news=checkpoint["news"], calendar=checkpoint["calendar"])
+                    events={"items": _held_news(snapshot, checkpoint["news"])}, news=checkpoint["news"], calendar=checkpoint["calendar"])
     snapshot["sources"] += operation_sources + payout_sources + checkpoint["news"].get("sources", []) + checkpoint["calendar"].get("sources", [])
-    snapshot["collection"] = {"all_positions_retained": True, "total_positions": len(all_positions),
+    snapshot["collection"] = {"all_positions_retained": True, "total_positions": position_count,
                               "metadata_available": sum(not v.get("_unavailable") for v in metadata.values()),
-                              "metadata_total": len(unique), "finished_at": now_iso()}
+                              "metadata_total": metadata_count, "finished_at": now_iso()}
     progress("persisting", checkpoint)
     persist(user, snapshot)
     return {"snapshot_id": snapshot["snapshot_id"], "currency": currency, "as_of": snapshot["as_of"], "collection": snapshot["collection"]}
@@ -301,7 +414,8 @@ def persist(user: Any, snapshot: dict) -> None:
     rating_signature = volume_credit.signature(rating_observations)
     if snapshot.get("rating_signature") != rating_signature:
         snapshot["snapshot_id"] = digest({"positions": snapshot.get("positions", []), "capital": snapshot.get("capital"),
-                                          "as_of": snapshot["as_of"], "rating_signature": rating_signature})
+                                          "as_of": snapshot["as_of"], "position_coverage": snapshot.get("position_coverage"),
+                                          "rating_signature": rating_signature})
     snapshot["rating_signature"] = rating_signature
     snapshot["rating_observations"] = rating_observations
     snapshot["sources"] = list({r["id"]: r for r in snapshot.get("sources", []) +
@@ -418,7 +532,7 @@ def ai_data(user: Any) -> dict:
 
 @router.get("", responses=HTTP_ERRORS)
 def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None = None, end: date | None = None,
-              user: Any = Depends(backend.current_user)) -> dict:
+              *, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     snapshot = state.saved_snapshot(user, currency)
     observed = (snapshot or {}).get("as_of")
     stale = observed is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(observed)).total_seconds() > 900
@@ -451,7 +565,7 @@ def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None
 
 
 @router.get("/operations/{account_id}/{operation_id}/position", responses=HTTP_ERRORS)
-def operation_position(account_id: str, operation_id: str, user: Any = Depends(backend.current_user)) -> dict:
+def operation_position(account_id: str, operation_id: str, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     snapshot = state.saved_snapshot(user)
     operation = next((row for row in (snapshot or {}).get("operations", {}).get("items", []) if row["account_id"] == account_id and row["id"] == operation_id), None)
     if operation is None:

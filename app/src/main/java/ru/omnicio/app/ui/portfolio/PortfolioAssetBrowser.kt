@@ -1,5 +1,8 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+import ru.omnicio.app.ui.spectrum.SpectrumChoiceChip as FilterChip
+
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 
 import androidx.compose.foundation.layout.*
@@ -185,13 +188,13 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
         }
     }
     if (filtersOpen) AlertDialog(onDismissRequest = { filtersOpen = false }, title = { Text("Состав портфеля") }, text = {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { WorkspaceChoices("Счёт", listOf("Все счета") + snapshot.accounts.map { it.name }, snapshot.accounts.indexOfFirst { it.id == accountId } + 1) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            WorkspaceChoices("Счёт", listOf("Все счета") + snapshot.accounts.map { it.name }, snapshot.accounts.indexOfFirst { it.id == accountId } + 1) {
                 accountId = snapshot.accounts.getOrNull(it - 1)?.id
-            } }
-            item { WorkspaceChoices("Класс", labels, kinds.indexOf(kind).coerceAtLeast(0)) { kind = kinds[it] } }
-            item { WorkspaceChoices("Группировать", listOf("По счетам", "По названиям компаний", "По отраслям", "Проверенные эмитенты", "Проверенные группы"), group) { group = it; exposureId = null } }
-            item { WorkspaceChoices("Порядок", listOf("Сначала ограничения", "По стоимости", "По доле", "По названию"), order) { order = it } }
+            }
+            WorkspaceChoices("Класс", labels, kinds.indexOf(kind).coerceAtLeast(0)) { kind = kinds[it] }
+            WorkspaceChoices("Группировать", listOf("По счетам", "По названиям компаний", "По отраслям", "Проверенные эмитенты", "Проверенные группы"), group) { group = it; exposureId = null }
+            WorkspaceChoices("Порядок", listOf("Сначала ограничения", "По стоимости", "По доле", "По названию"), order) { order = it }
         }
     }, confirmButton = { TextButton(onClick = { filtersOpen = false }) { Text("Показать") } })
     if (saveFilter) AlertDialog(onDismissRequest = { saveFilter = false }, title = { Text("Сохранить условия") },
@@ -242,7 +245,7 @@ private fun LazyListScope.assetGroups(groups: Map<String, List<PortfolioRow>>, g
                             accountName = if (group == 0) null else row.account.name, selected = portfolioRowKey(row) in selected,
                             sharedKey = portfolioRowKey(row)) { onPosition(row.account.id, row.position) }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f))
+                    Spacer(Modifier.height(4.dp))
                 }
             }
 }

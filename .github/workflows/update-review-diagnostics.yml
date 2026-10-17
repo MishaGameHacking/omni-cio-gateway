@@ -42,7 +42,7 @@ jobs:
               const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo,check_run_id:check.id,per_page:100});
               for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({pr:number,path:a.path,line:a.start_line,title:a.title,message:a.message}));
               const endpoint = new URL('https://sonarcloud.io/api/issues/search');
-              endpoint.search = new URLSearchParams({componentKeys:project,pullRequest:String(number),resolved:'false',types:'VULNERABILITY',ps:'100'}).toString();
+              endpoint.search = new URLSearchParams({componentKeys:project,pullRequest:String(number),resolved:'false',types:'BUG,VULNERABILITY',ps:'100'}).toString();
               const headers = {Accept:'application/json'};
               if (process.env.SONAR_READ_TOKEN) headers.Authorization = 'Bearer '+process.env.SONAR_READ_TOKEN;
               try {
@@ -60,8 +60,8 @@ jobs:
                   continue;
                 }
                 for (const issue of result.issues||[]) {
-                  const security = (issue.impacts||[]).filter(i=>i.softwareQuality==='SECURITY');
-                  if (issue.type==='VULNERABILITY'||security.length) core.info('SECURITY_REVIEW_FINDING='+JSON.stringify({pr:number,head:pr.head.sha,key:issue.key,rule:issue.rule,type:issue.type,security,component:issue.component,line:issue.line,message:issue.message}));
+                  const impacts = (issue.impacts||[]).filter(i=>['SECURITY','RELIABILITY'].includes(i.softwareQuality));
+                  if (['BUG','VULNERABILITY'].includes(issue.type)||impacts.length) core.info('QUALITY_REVIEW_FINDING='+JSON.stringify({pr:number,head:pr.head.sha,key:issue.key,rule:issue.rule,type:issue.type,impacts,component:issue.component,line:issue.line,message:issue.message}));
                 }
                 core.info('SONAR_READ_PAGE='+JSON.stringify({pr:number,paging:result.paging,total:result.total,issues:(result.issues||[]).length}));
               } catch (error) {

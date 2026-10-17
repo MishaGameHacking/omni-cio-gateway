@@ -358,6 +358,8 @@ def get_tinvest_portfolio(
                             else None
                         ),
                         "positions": _portfolio_positions(portfolio, positions),
+                        "limitsLoading": bool(positions.get("limitsLoadingInProgress")),
+                        "virtualPositionCount": len(portfolio.get("virtualPositions", [])),
                     }
                 )
     except (RuntimeError, ssl.SSLError):

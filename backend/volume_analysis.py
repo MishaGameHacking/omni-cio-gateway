@@ -62,6 +62,32 @@ def capture_in(db, user_id: int, card_id: str) -> None:
     db.execute("DELETE FROM workspace_analysis_facts WHERE user_id=? AND card_id NOT IN (SELECT id FROM insight_cards WHERE user_id=?)", (user_id, user_id))
 
 
+def _fact_state(before: dict | None, after: dict | None) -> str:
+    if before is None:
+        return "added"
+    if after is None:
+        return "removed"
+    if before["value"] == after["value"]:
+        return "unchanged"
+    return "changed"
+
+
+def _fact_change(identifier: str, before: dict | None, after: dict | None) -> dict:
+    observation = after if after is not None else before
+    if observation is None:
+        raise ValueError("fact_comparison_requires_an_observation")
+    provenance_changed = before is not None and after is not None and (
+        before["source_ids"] != after["source_ids"] or before["as_of"] != after["as_of"])
+    return {"id": identifier, "state": _fact_state(before, after), "before": before, "after": after,
+            "source_ids": observation["source_ids"], "provenance_changed": provenance_changed}
+
+
+def _indexed_facts(row) -> dict:
+    if row is None:
+        return {}
+    return {fact["id"]: fact for fact in json.loads(zlib.decompress(row["facts_blob"]))}
+
+
 def comparison(user_id: int, current_card: str | None, previous_card: str | None, *, offset: int = 0, limit: int = 20) -> dict:
     if current_card is None:
         return {"available": False, "reason": "analysis_history_empty", "items": [], "counts": {}}
@@ -70,17 +96,13 @@ def comparison(user_id: int, current_card: str | None, previous_card: str | None
         previous = db.execute("SELECT * FROM workspace_analysis_facts WHERE user_id=? AND card_id=?", (user_id, previous_card)).fetchone() if previous_card else None
     if current is None or previous_card is not None and previous is None:
         return {"available": False, "reason": "legacy_card_without_structured_fact_snapshot", "items": [], "counts": {}}
-    now = {r["id"]: r for r in json.loads(zlib.decompress(current["facts_blob"]))}
-    old = {r["id"]: r for r in json.loads(zlib.decompress(previous["facts_blob"]))} if previous else {}
+    now, old = _indexed_facts(current), _indexed_facts(previous)
     items = []
     counts = {"added": 0, "removed": 0, "changed": 0, "unchanged": 0}
     for identifier in sorted(now.keys() | old.keys()):
-        before, after = old.get(identifier), now.get(identifier)
-        status = "added" if before is None else "removed" if after is None else "unchanged" if before["value"] == after["value"] else "changed"
-        counts[status] += 1
-        items.append({"id": identifier, "state": status, "before": before, "after": after,
-                      "source_ids": (after or before)["source_ids"],
-                      "provenance_changed": before is not None and after is not None and (before["source_ids"] != after["source_ids"] or before["as_of"] != after["as_of"])})
+        item = _fact_change(identifier, old.get(identifier), now.get(identifier))
+        counts[item["state"]] += 1
+        items.append(item)
     # Changes are first, while unchanged facts remain available by pagination.
     items.sort(key=lambda item: ({"added": 0, "changed": 1, "removed": 2, "unchanged": 3}[item["state"]], item["id"]))
     selected = items[offset:offset + limit]

@@ -45,7 +45,6 @@ fun rememberSpatialHapticFeedback(): (SpatialHaptic) -> Unit {
                 SpatialHaptic.Confirmed -> HapticFeedbackConstants.CONFIRM
                 SpatialHaptic.Rejected -> HapticFeedbackConstants.REJECT
             })
-            Unit
         }
     }
 }

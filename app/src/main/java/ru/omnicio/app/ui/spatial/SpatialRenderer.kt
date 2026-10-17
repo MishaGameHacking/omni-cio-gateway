@@ -80,6 +80,10 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
     internal val submittedFrameCount: Long get() = frames
     private var skipped = 0L
     private var thermal = power?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+    internal val thermalStatus: Int get() = thermal
+    internal val systemMotionEnabled: Boolean get() = ValueAnimator.areAnimatorsEnabled()
+    internal val powerSaveMode: Boolean get() = power?.isPowerSaveMode == true
+    private val durationScaleListener = ValueAnimator.DurationScaleChangeListener { invalidate() }
     private val thermalListener = PowerManager.OnThermalStatusChangedListener { status ->
         thermal = status; invalidate()
     }
@@ -146,6 +150,7 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
             destroyNative()
         }
         power?.addThermalStatusListener(context.mainExecutor,thermalListener)
+        ValueAnimator.registerDurationScaleChangeListener(durationScaleListener)
         context.registerReceiver(powerReceiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED), Context.RECEIVER_NOT_EXPORTED)
     }
 
@@ -180,7 +185,8 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
         var taken=false
         fun release() { taken=false }
     }
-    internal inner class AssetPool(val asset: FilamentAsset) {
+    private data class MeshSource(val bytes: ByteArray, val material: SpatialMaterial)
+    internal inner class AssetPool(val asset: FilamentAsset, val material: SpatialMaterial) {
         val leases=mutableListOf<Lease>()
         var usedFirst=false
         fun acquire(): Lease {
@@ -211,10 +217,10 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
         loading.add(key)
         scope.launch {
             try {
-                val bytes=withContext(Dispatchers.IO) {
+                val source=withContext(Dispatchers.IO) {
                     when(asset) {
-                        is SpatialAsset.Glyph -> SpatialGlyphs.mesh(asset.letter)
-                        is SpatialAsset.Wedge -> SpatialGeometry.wedge(asset,key.low)
+                        is SpatialAsset.Glyph -> MeshSource(SpatialGlyphs.mesh(asset.letter), SpatialMaterial.Ceramic)
+                        is SpatialAsset.Wedge -> MeshSource(SpatialGeometry.wedge(asset,key.low), SpatialMaterial.Ceramic)
                         is SpatialAsset.Catalogue -> {
                             require(asset.name.matches(Regex("[a-z_]+")))
                             val name=asset.name+if (key.low) "_low" else ""
@@ -225,14 +231,14 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
                             require(data.size==expected.getInt("bytes"))
                             val hash=MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it.toInt() and 255) }
                             require(hash==expected.getString("sha256")) { "Catalogue digest mismatch" }
-                            data
+                            MeshSource(data, SpatialMaterial.fromCatalogue(expected.getString("material")))
                         }
                     }
                 }
                 if (!closed) {
-                    val model=requireNotNull(loader?.createAsset(ByteBuffer.wrap(bytes)))
+                    val model=requireNotNull(loader?.createAsset(ByteBuffer.wrap(source.bytes)))
                     requireNotNull(resources).loadResources(model)
-                    pools[key]=AssetPool(model)
+                    pools[key]=AssetPool(model, source.material)
                     trimWedges()
                 }
             } catch (cancelled: CancellationException) {
@@ -303,6 +309,7 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
         if (!closing || windows.isNotEmpty() || closed) return
         closed=true;scope.cancel();choreographer.removeFrameCallback(this)
         power?.removeThermalStatusListener(thermalListener)
+        ValueAnimator.unregisterDurationScaleChangeListener(durationScaleListener)
         context.unregisterReceiver(powerReceiver)
         pools.values.forEach(::destroyPool);pools.clear()
         destroyNative()
@@ -482,7 +489,17 @@ internal class SpatialRenderWindow(
                     mesh.color=color;mesh.selected=selected
                 }
                 if(mesh.opaque!=owner.opaque){
-                    mesh.lease.materials.forEach { it.setParameter("roughnessFactor",if(owner.opaque).62f else .38f) }
+                    val preset = mesh.lease.pool.material
+                    val appearance = preset.appearance(owner.opaque)
+                    mesh.lease.materials.forEach {
+                        it.setParameter("roughnessFactor", appearance.roughness)
+                        it.setParameter("metallicFactor", appearance.metallic)
+                        if (preset.clearCoat > 0f) {
+                            // Filament 1.72.1 gltfio AssetLoader parameter spelling.
+                            it.setParameter("clearCoatFactor", appearance.clearCoat)
+                            it.setParameter("clearCoatRoughnessFactor", preset.clearCoatRoughness)
+                        }
+                    }
                     mesh.opaque=owner.opaque
                 }
                 val clip=if(from!=null&&fraction<1f)Rect(0f,0f,width.toFloat(),height.toFloat()) else clipping

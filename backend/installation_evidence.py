@@ -7,6 +7,15 @@ from __future__ import annotations
 
 import re
 
+CURRENT_UI_SUITE = 'spectrum-3d-100-v1'
+BUSINESS_CASE_IDS = frozenset(
+    f'{route}/{scenario}@{font}'
+    for route in ('risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis')
+    for scenario in ('ready', 'empty', 'partial', 'error', 'job')
+    if scenario != 'job' or route in ('assistant', 'plans')
+    for font in (1, 2)
+)
+
 
 class InstallationEvidenceError(ValueError):
     """An incomplete, ambiguous or wrong-artifact transcript cannot publish."""
@@ -30,6 +39,20 @@ def _results(raw: object) -> dict[str, dict]:
             raise InstallationEvidenceError('ambiguous_installation_test')
         indexed[name] = result
     return indexed
+
+
+def validate_business_receipt(record: object, fixture_digest: str) -> int:
+    """Require each completed case/font pair, bound to the installed debug APK."""
+    if not isinstance(record, dict) or record.get('ui_suite') != CURRENT_UI_SUITE:
+        raise InstallationEvidenceError('current_ui_suite_evidence_required')
+    cases = record.get('business_cases')
+    if type(record.get('business_case_count')) is not int or record['business_case_count'] != len(BUSINESS_CASE_IDS) \
+            or not isinstance(cases, list) or len(cases) != len(BUSINESS_CASE_IDS) \
+            or not all(isinstance(case, str) for case in cases) or set(cases) != BUSINESS_CASE_IDS:
+        raise InstallationEvidenceError('business_ui_matrix_incomplete')
+    if _digest(record.get('fixture_apk_sha256')) != _digest(fixture_digest):
+        raise InstallationEvidenceError('business_ui_artifact_mismatch')
+    return len(cases)
 
 
 def _one_emulator(run: dict, digest: str) -> dict:
@@ -56,15 +79,33 @@ def _one_emulator(run: dict, digest: str) -> dict:
         raise InstallationEvidenceError('upgrade_reinstalled_same_artifact')
     if not run['profile_ui_required'] or not {'debug_ui_fixture_install', 'profile_ui'} <= records.keys():
         raise InstallationEvidenceError('profile_ui_evidence_missing')
-    return {
+    checked = {
         'clean_install': True,
         'upgrade': performed_upgrade,
         'upgrade_launch': performed_upgrade,
         'launch': True,
     }
+    profile = records['profile_ui']
+    if 'ui_suite' in profile:
+        checked['business_case_count'] = validate_business_receipt(
+            profile, records['debug_ui_fixture_install'].get('apk_sha256'))
+    if 'kernel_page_size' in records:
+        kernel = records['kernel_page_size']
+        image = f"system-images;android-{api};{'google_apis_ps16k' if api == 35 else 'google_apis'};x86_64"
+        expected_bytes = 16_384 if api == 35 else 4_096
+        if type(kernel.get('android_api')) is not int or kernel['android_api'] != api \
+                or kernel.get('abi') != 'x86_64' or kernel.get('system_image') != image \
+                or type(kernel.get('page_size_bytes')) is not int or kernel['page_size_bytes'] != expected_bytes \
+                or kernel.get('command') != 'getconf PAGE_SIZE':
+            raise InstallationEvidenceError('invalid_kernel_page_size_evidence')
+        if _digest(kernel.get('apk_sha256')) != digest:
+            raise InstallationEvidenceError('installation_artifact_mismatch')
+        checked.update(page_size_bytes=expected_bytes, system_image=image,
+                       runtime_16kb=expected_bytes == 16_384)
+    return checked
 
 
-def from_ci_reports(installations: object, apk_sha256: str) -> dict:
+def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_16kb: bool = False) -> dict:
     """Reduce checked transcripts; preserve old API36 releases for verified recovery."""
     digest = _digest(apk_sha256)
     if not isinstance(installations, list) or len(installations) not in (1, 2):
@@ -79,4 +120,11 @@ def from_ci_reports(installations: object, apk_sha256: str) -> dict:
         result[str(api)] = _one_emulator(run, digest)
     if "36" not in result:
         raise InstallationEvidenceError("android_16_evidence_required")
+    if require_runtime_16kb:
+        for api, size in (('35', 16_384), ('36', 4_096)):
+            checked = result.get(api, {})
+            if checked.get('page_size_bytes') != size or checked.get('upgrade') is not True \
+                    or checked.get('upgrade_launch') is not True \
+                    or checked.get('business_case_count') != len(BUSINESS_CASE_IDS):
+                raise InstallationEvidenceError('android_runtime_page_size_evidence_required')
     return result

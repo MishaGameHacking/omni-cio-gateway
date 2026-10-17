@@ -5,6 +5,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
@@ -147,16 +148,22 @@ internal fun HomeGoalProgress(workspace: JSONObject?) {
 @Composable
 internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWorkspaceController) {
     val user = LocalWorkspaceSession.current.userId
-    var baseline by remember(user) { mutableStateOf<JSONObject?>(null) }
-    var baselineDate by remember(user) { mutableStateOf<String?>(null) }
-    var initialized by remember(user) { mutableStateOf(false) }
+    // Save only the visit identity across recreation. The financial baseline is
+    // resolved from the encrypted store, not serialized into Activity state.
+    var baselineVisit by rememberSaveable(user) { mutableStateOf<String?>(null) }
+    var initialized by rememberSaveable(user) { mutableStateOf(false) }
     LaunchedEffect(personal.loaded, user) {
         if (personal.loaded && !initialized) {
-            baseline = personal.data.optJSONObject("current_snapshot")
-            baselineDate = personal.data.optionalText("current_visit")
+            baselineVisit = personal.data.optionalText("current_visit")
             initialized = true
             personal.checkpointVisit(homeSnapshotCapture(snapshot))
         }
+    }
+    val baseline = when (baselineVisit) {
+        null -> null
+        personal.data.optionalText("current_visit") -> personal.data.optJSONObject("current_snapshot")
+        personal.data.optionalText("previous_visit") -> personal.data.optJSONObject("previous_snapshot")
+        else -> null
     }
     val current = homeSnapshotCapture(snapshot)
     val oldRows = baseline?.records("positions").orEmpty().associateBy { it.optString("key") }
@@ -175,9 +182,10 @@ internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWo
     SpectrumCard {
         Text("С прошлого посещения", style = MaterialTheme.typography.titleLarge)
         if (!initialized) Text("Читаем сохранённую точку сравнения…")
-        else if (baseline == null) Text("Первая точка сравнения сохранена. При следующем посещении появятся фактические изменения.")
+        else if (baselineVisit == null) Text("Первая точка сравнения сохранена. При следующем посещении появятся фактические изменения.")
+        else if (baseline == null) Text("Исходная точка сравнения недоступна. Текущий снимок не подставлен вместо прежнего.")
         else {
-            Notice("Сравниваем снимки ${baseline?.optionalText("as_of") ?: baselineDate ?: "без времени"} и ${snapshot.asOf ?: "без времени"}.")
+            Notice("Сравниваем снимки ${baseline.optionalText("as_of") ?: baselineVisit ?: "без времени"} и ${snapshot.asOf ?: "без времени"}.")
             val before = baseline?.optionalText("total")?.toBigDecimalOrNull()
             val sameCurrency = baseline?.optionalText("currency") == snapshot.totalValue.currency
             if (before != null && sameCurrency) DataRow("Изменение общей оценки", PrivateValue(
