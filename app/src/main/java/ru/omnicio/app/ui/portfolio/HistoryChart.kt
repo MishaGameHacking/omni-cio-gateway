@@ -76,6 +76,7 @@ internal fun HistoryChart(
     HistoryStatistics(bar?.points ?: model.source.coordinates.map { it.point }, bar?.title(), currency)
     DetailFold("Подробнее о графике") {
         Notice("Один столбец — ${model.interval}. Высота показывает последний сохранённый баланс за интервал. Шкала начинается от нуля; отрицательные значения направлены вниз.")
+        Notice("Точки у нулевой линии отмечают нулевые и очень малые суммы. Точное значение доступно по нажатию.")
         Notice("Стоимость меняется и при пополнениях или выводах. Её изменение не равно инвестиционной прибыли. Пустой интервал означает отсутствие наблюдений.")
         DataRow("Диапазон шкалы", "${decimalText(model.source.low)} — ${decimalText(model.source.high)} ${currencySymbol(currency)}")
         markers.forEach { Notice("${dateText(it.date)} · ${it.label}") }
@@ -144,7 +145,9 @@ private fun BarCanvas(model: HistoryBars, selected: Int, currency: String, choos
                 val fraction = if (span.signum() == 0) model.source.zero else model.source.high.subtract(close.value).divide(span, MathContext.DECIMAL64).toFloat()
                 val y = top + fraction * plotHeight
                 val color = if (i == selected) accent else palette.blue
-                if (close.value.signum() == 0) drawCircle(color, 2.dp.toPx(), Offset(x, zeroY))
+                // A tiny non-zero balance must remain discoverable without
+                // inflating its bar height and misrepresenting the money scale.
+                if (kotlin.math.abs(zeroY - y) < 1.dp.toPx()) drawCircle(color, 2.dp.toPx(), Offset(x, y))
                 else drawRoundRect(Brush.verticalGradient(listOf(color, palette.violet.copy(alpha = .65f))),
                     Offset(x - width / 2, minOf(y, zeroY)), Size(width, kotlin.math.abs(zeroY - y)), CornerRadius(3.dp.toPx()))
             }

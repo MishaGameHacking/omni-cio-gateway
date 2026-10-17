@@ -32,7 +32,13 @@ internal fun WorkspaceVisualProbe(onBack: () -> Unit) {
                 if (section == 1) item {
                     BalanceVisibilityButton()
                     HistoryChart((1..17).filter { it != 8 }.map { day ->
-                        HistoryPoint("2026-10-${day.toString().padStart(2, '0')}T10:00:00Z", BigDecimal(4000 + day * 30))
+                        val value = when (day) {
+                            1 -> BigDecimal("0.08")
+                            2 -> BigDecimal.ZERO
+                            3 -> BigDecimal("-20")
+                            else -> BigDecimal(4000 + day * 30)
+                        }
+                        HistoryPoint("2026-10-${day.toString().padStart(2, '0')}T10:00:00Z", value)
                     } + HistoryPoint("2026-10-17T11:00:00Z", BigDecimal("4480")), "RUB")
 
                 }
