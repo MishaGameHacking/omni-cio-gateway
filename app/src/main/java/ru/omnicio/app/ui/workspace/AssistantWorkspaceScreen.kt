@@ -19,22 +19,22 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     onActions: () -> Unit, onStrategy: () -> Unit) {
     var draft by rememberSaveable { mutableStateOf("") }
     var saved by rememberSaveable { mutableStateOf(false) }
-    WorkspaceDetailPage("Ассистент", "Ваше рабочее пространство", onBack) { padding ->
+    WorkspaceDetailPage("Ассистент", "Ваше рабочее пространство", onBack, SpectrumSymbol.Analyst) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
+            LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 item {
                     SpectrumCard(emphasized = true) {
-                        SpectrumAnalystAvatar(AnalystAvatarMood.Waiting, Modifier.size(88.dp),
-                            motionAllowed = LocalSpectrumMotionPreference.current.enabled)
-                        Text("С чего начнём?", style = MaterialTheme.typography.headlineSmall)
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            SpectrumAnalystAvatar(AnalystAvatarMood.Waiting, Modifier.size(64.dp),
+                                motionAllowed = LocalSpectrumMotionPreference.current.enabled)
+                            Text("С чего начнём?", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                        }
                         Text("Откройте данные или сохраните вопрос для будущего диалога.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                item { WorkspaceLink("Мой портфель", "Счета, активы и результат", SpectrumSymbol.Portfolio, onPortfolio) }
-                item { WorkspaceLink("Что делать сейчас", "Доступные результаты анализа", SpectrumSymbol.Goal, onActions) }
-                item { WorkspaceLink("Мои правила", "Риск, горизонт и резерв", SpectrumSymbol.Allocation, onStrategy) }
                 if (saved) item {
                     SpectrumCard {
                         Text("Черновик вопроса", style = MaterialTheme.typography.titleMedium)
@@ -43,16 +43,20 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            }
-            Surface(color = LocalSpectrumPalette.current.card) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(draft, { draft = it.take(4000); saved = false },
-                        modifier = Modifier.fillMaxWidth(), label = { Text("Ваш вопрос") },
-                        placeholder = { Text("Например, объясни изменения портфеля") }, maxLines = 4)
-                    SpectrumPrimaryButton("Сохранить черновик", { saved = true }, Modifier.fillMaxWidth(), draft.isNotBlank())
-                    Text("Ответы появятся после подключения чата. Вопрос хранится только в текущем сеансе.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                item(key = "composer") {
+                    SpectrumCard {
+                            OutlinedTextField(draft, { draft = it.take(4000); saved = false },
+                                modifier = Modifier.fillMaxWidth(), label = { Text("Ваш вопрос") },
+                                placeholder = { Text("Например, объясни изменения портфеля") }, maxLines = 4)
+                            SpectrumPrimaryButton("Сохранить черновик", { saved = true }, Modifier.fillMaxWidth(), draft.isNotBlank())
+                            Text("Ответы появятся после подключения чата. Вопрос хранится только в текущем сеансе.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
+                item { WorkspaceSection("Быстрый переход") }
+                item { WorkspaceLink("Мой портфель", "Счета, активы и результат", SpectrumSymbol.Portfolio, onPortfolio) }
+                item { WorkspaceLink("Что делать сейчас", "Доступные результаты анализа", SpectrumSymbol.Goal, onActions) }
+                item { WorkspaceLink("Мои правила", "Риск, горизонт и резерв", SpectrumSymbol.Allocation, onStrategy) }
             }
         }
     }

@@ -86,7 +86,7 @@ fun EducationScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     SpectrumSecondaryButton(
-                        text = "Вернуться на главную",
+                        text = "Назад",
                         onClick = onBack,
                         modifier = Modifier.fillMaxWidth().testTag("education-back"),
                     )

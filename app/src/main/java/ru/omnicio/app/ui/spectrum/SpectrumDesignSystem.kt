@@ -108,7 +108,9 @@ fun SpectrumBackground(modifier: Modifier = Modifier, content: @Composable BoxSc
                     Offset(((index * 73) % 101) / 100f * size.width, ((index * 41 + 17) % 97) / 100f * size.height))
             }
         }
-        content()
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.widthIn(max = 840.dp).fillMaxSize(), content = content)
+        }
     }
 }
 

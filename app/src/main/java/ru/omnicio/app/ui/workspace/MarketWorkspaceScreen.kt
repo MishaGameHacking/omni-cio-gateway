@@ -17,6 +17,7 @@ import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 @Composable
 fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfolio: () -> Unit) {
     var section by rememberSaveable { mutableIntStateOf(0) }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val positions = snapshot?.accounts?.flatMap { it.positions }.orEmpty()
     val groups = positions.groupBy {
@@ -26,19 +27,30 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
             "cash", "currency" -> "Деньги и валюта"; else -> "Другие инструменты"
         }
     }.toList().sortedByDescending { it.second.size }
-    WorkspaceDetailPage("Обзор рынка", "Через призму вашего портфеля", onBack) { padding ->
+    WorkspaceDetailPage("Обзор рынка", "Через призму вашего портфеля", onBack, SpectrumSymbol.Market) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item { SpectrumCard(emphasized = true) {
-                SpectrumLiveFeatureIcon(SpectrumLiveFeature.WorldMarkets, Modifier.size(72.dp),
-                    motionAllowed = LocalSpectrumMotionPreference.current.enabled)
-                Text("Ваши инструменты", style = MaterialTheme.typography.headlineSmall)
-                Text("Сейчас здесь состав полученного портфеля. Каталог доступных покупок ещё не подключён.",
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SpectrumLiveFeatureIcon(SpectrumLiveFeature.WorldMarkets, Modifier.size(44.dp),
+                        motionAllowed = LocalSpectrumMotionPreference.current.enabled)
+                    Text("Ваши инструменты", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                }
+                Text("Состав портфеля. Каталог покупок ещё не подключён.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
             item { SpectrumTabs(listOf("Отрасли", "Классы"), section, { section = it }) }
             groups.forEach { (title, rows) -> item(key = title) {
-                WorkspaceLink(title, "Позиций в счетах: ${rows.size}", SpectrumSymbol.Market, onPortfolio)
+                SpectrumCard(onClick = { expanded = if (expanded == title) null else title }) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text("Позиций в счетах: ${rows.size} · ${if (expanded == title) "свернуть" else "показать"}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (expanded == title) {
+                        rows.take(20).forEach { Text(it.title, style = MaterialTheme.typography.bodyMedium) }
+                        SpectrumSecondaryButton("Открыть позиции в портфеле", onPortfolio, Modifier.fillMaxWidth())
+                    }
+                }
             } }
             if (groups.isEmpty()) item { SpectrumCard { Text("Подключите счёт, чтобы увидеть состав портфеля.") } }
             item { SpectrumCard {

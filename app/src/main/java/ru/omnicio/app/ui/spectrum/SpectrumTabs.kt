@@ -36,15 +36,19 @@ fun SpectrumTabs(
     val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
     val measurer = rememberTextMeasurer()
     val measured = labels.map { measurer.measure(AnnotatedString(it), style, softWrap = false, maxLines = 1).size }
-    val labelWidth = with(density) { measured.maxOf { it.width }.toDp() }
+    val minimumWidths = measured.map { with(density) { it.width.toDp() + 16.dp }.coerceAtLeast(48.dp) }
     val height = with(density) { measured.maxOf { it.height }.toDp() + 24.dp }.coerceAtLeast(52.dp)
     val gap = 6.dp
     val scroll = rememberScrollState()
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val width = maxOf(((maxWidth - gap * (labels.size - 1)) / labels.size).coerceAtLeast(0.dp), labelWidth + 24.dp)
-        val step = with(density) { (width + gap).roundToPx() }
-        LaunchedEffect(selected, step, scroll.maxValue) {
-            scroll.scrollTo((selected.coerceIn(labels.indices) * step).coerceIn(0, scroll.maxValue))
+        val available = (maxWidth - gap * (labels.size - 1)).coerceAtLeast(0.dp)
+        val extra = ((available - minimumWidths.reduce { total, width -> total + width }) / labels.size).coerceAtLeast(0.dp)
+        val widths = minimumWidths.map { it + extra }
+        val selectedOffset = with(density) {
+            widths.take(selected.coerceIn(labels.indices)).fold(0.dp) { total, width -> total + width + gap }.roundToPx()
+        }
+        LaunchedEffect(selectedOffset, scroll.maxValue) {
+            scroll.scrollTo(selectedOffset.coerceIn(0, scroll.maxValue))
         }
         Row(
             Modifier.fillMaxWidth().height(height).horizontalScroll(scroll).selectableGroup(),
@@ -54,7 +58,7 @@ fun SpectrumTabs(
                 val chosen = index == selected
                 Box(
                     modifier = Modifier
-                        .width(width)
+                        .width(widths[index])
                         .height(height)
                         .clip(RoundedCornerShape(16.dp))
                         .background(
@@ -64,7 +68,7 @@ fun SpectrumTabs(
                             ),
                         )
                         .selectable(chosen, role = Role.Tab, onClick = { onSelect(index) })
-                        .padding(horizontal = 10.dp),
+                        .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -79,3 +83,4 @@ fun SpectrumTabs(
         }
     }
 }
+

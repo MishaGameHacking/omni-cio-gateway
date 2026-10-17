@@ -16,11 +16,11 @@ class EducationNavigationTests(unittest.TestCase):
 
     def test_back_action_is_outside_catalog_and_calls_real_navigation(self):
         fixed, catalog = self.source.split('key(category)', 1)
-        self.assertIn('text = "Вернуться на главную"', fixed)
+        self.assertIn('text = "Назад"', fixed)
         self.assertIn('onClick = onBack', fixed)
         self.assertIn('.testTag("education-back")', fixed)
         self.assertNotIn('item(key = "back-home")', catalog)
-        self.assertEqual(self.source.count('text = "Вернуться на главную"'), 1)
+        self.assertEqual(self.source.count('text = "Назад"'), 1)
 
     def test_descriptive_header_scrolls_instead_of_consuming_large_font_viewport(self):
         catalog = self.source.split('LazyColumn(', 1)[1]
@@ -46,3 +46,4 @@ class EducationNavigationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

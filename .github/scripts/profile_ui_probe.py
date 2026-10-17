@@ -16,7 +16,7 @@ CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 INFO_LABEL = "О приложении"
 EDUCATION_LABEL = "Обучение"
-BACK_FROM_EDUCATION = "Вернуться на главную"
+BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
 LIGHT_BACKGROUND = "fff5f8ff"
@@ -279,18 +279,12 @@ class ProfileProbe:
         self.tap_node(target)
 
     def tab(self, label):
-        from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab
+        from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab, settled_tab
 
         resource_id = TAB_IDS[label]
         direction = "start" if label == SETTINGS_LABEL else "end"
-        self.tap_node(
-            reveal_tab(
-                self.tree,
-                self._semantic_scroll_callback("profile-tabs", direction),
-                resource_id,
-                direction,
-            )
-        )
+        reveal_tab(self.tree, self._semantic_scroll_callback("profile-tabs", direction), resource_id, direction)
+        self.tap_node(settled_tab(self.tree, resource_id))
         return self.wait_for(
             lambda: selected_tab(self.tree(), resource_id),
             "Profile tab selection not confirmed: " + resource_id,
@@ -378,7 +372,7 @@ class ProfileProbe:
             start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
                                       "--es", "spectrum_screen", screen))
             evidence = {}
-            self.wait_for(lambda: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
+            self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
                           "Workspace screen is not resumed")
             self.find(label)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")

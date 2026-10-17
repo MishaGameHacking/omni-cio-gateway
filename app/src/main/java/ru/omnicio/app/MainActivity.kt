@@ -66,6 +66,16 @@ private enum class AppScreen {
     Assistant,
     Strategies,
     Market,
+    NotificationSettings,
+}
+
+private fun nextBackStack(current: AppScreen, destination: AppScreen, history: List<String>): ArrayList<String> {
+    val roots = setOf(AppScreen.Home, AppScreen.Portfolio, AppScreen.Recommendations, AppScreen.Risk, AppScreen.Profile)
+    return when {
+        destination in roots -> arrayListOf()
+        history.lastOrNull() == destination.name -> ArrayList(history.dropLast(1))
+        else -> ArrayList(history + current.name)
+    }
 }
 
 private sealed interface AuthUiState {
@@ -299,10 +309,9 @@ private fun AnalystAiApp(
                                 AuthUiState.SignedOut(errorMessage = result.message)
                             }
                         } else {
-                            withContext(Dispatchers.IO) {
-                                backStack = arrayListOf()
-                sessionStore.clear()
-                            }
+                            backStack = arrayListOf()
+                            screenName = AppScreen.Home.name
+                            withContext(Dispatchers.IO) { sessionStore.clear() }
                             AuthUiState.SignedOut()
                         }
                     }
@@ -349,6 +358,10 @@ private fun AnalystAiApp(
     )
 
     AnalystTheme {
+        CompositionLocalProvider(LocalWorkspaceBack provides {
+            screenName = backStack.lastOrNull() ?: AppScreen.Home.name
+            backStack = ArrayList(backStack.dropLast(1))
+        }) {
         AnalystAppContent(
             authState = authState,
             authError = authError,
@@ -363,12 +376,7 @@ private fun AnalystAiApp(
             screenshotsBlocked = screenshotsBlocked,
             onScreenChange = { destination ->
                 if (destination != screen) {
-                    val roots = setOf(AppScreen.Home, AppScreen.Portfolio, AppScreen.Recommendations, AppScreen.Risk, AppScreen.Profile)
-                    backStack = when {
-                        destination in roots -> arrayListOf()
-                        backStack.lastOrNull() == destination.name -> ArrayList(backStack.dropLast(1))
-                        else -> ArrayList(backStack + screen.name)
-                    }
+                    backStack = nextBackStack(screen, destination, backStack)
                     screenName = destination.name
                 }
             },
@@ -390,6 +398,7 @@ private fun AnalystAiApp(
                 authState = AuthUiState.SignedOut()
             },
         )
+        }
     }
 }
 
@@ -470,7 +479,7 @@ private fun SignedInAppContent(
     val navigateToTab: (AnalystTab) -> Unit = { tab ->
         onScreenChange(tab.toAppScreen())
     }
-    val openHome = { onScreenChange(AppScreen.Home) }
+    val goBack = LocalWorkspaceBack.current
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
 
@@ -574,7 +583,7 @@ private fun SignedInAppContent(
 
             AppScreen.Education -> {
                 EducationScreen(
-                    onBack = openHome,
+                    onBack = goBack,
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                 )
@@ -583,24 +592,26 @@ private fun SignedInAppContent(
             AppScreen.AnalysisSettings -> {
                 AnalysisProfileSettingsScreen(
                     accessToken = session.accessToken,
-                    onBack = openProfile,
+                    onBack = goBack,
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                 )
             }
 
-            AppScreen.Appearance -> AppearanceScreen(openProfile)
-            AppScreen.Assistant -> AssistantWorkspaceScreen(openHome, openPortfolio,
+            AppScreen.NotificationSettings -> AnalysisProfileSettingsScreen(session.accessToken, goBack,
+                openPortfolio, openProfile, initialSection = 1)
+            AppScreen.Appearance -> AppearanceScreen(goBack)
+            AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio,
                 { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.AnalysisSettings) })
-            AppScreen.Strategies -> StrategyWorkspaceScreen(session.user.telegramId, openPortfolio,
+            AppScreen.Strategies -> StrategyWorkspaceScreen(session.user.telegramId, goBack,
                 { onScreenChange(AppScreen.AnalysisSettings) })
-            AppScreen.Market -> MarketWorkspaceScreen(portfolioState, openHome, openPortfolio)
+            AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
 
             AppScreen.TApi -> {
                 TApiScreen(
                     accessToken = session.accessToken,
                     tApiConfigured = tApiConfigured,
-                    onBack = openProfile,
+                    onBack = goBack,
                     onConnectionChanged = onTApiConfiguredChange,
                 )
             }

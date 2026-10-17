@@ -154,7 +154,9 @@ fun ProfileScreen(
                                 )
                             }
                             item(key = "notification-preferences") {
-                                WorkspaceLink("Уведомления", "Предупреждения и обзоры", SpectrumSymbol.Notifications, onOpenAnalysisSettings)
+                                WorkspaceLink("Уведомления", "Предупреждения и обзоры", SpectrumSymbol.Notifications) {
+                                    workspace(WorkspaceRoute.NotificationSettings)
+                                }
                             }
                             item(key = "assistant-workspace") {
                                 WorkspaceLink("Ассистент", "Портфель, действия и диалог", SpectrumSymbol.Analyst) {

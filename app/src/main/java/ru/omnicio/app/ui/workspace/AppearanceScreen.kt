@@ -62,6 +62,7 @@ fun AppearanceScreen(onBack: () -> Unit) {
 
 @Composable
 fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
+    symbol: SpectrumSymbol = SpectrumSymbol.Allocation,
     content: @Composable (PaddingValues) -> Unit) {
     SpectrumBackground(Modifier.fillMaxSize()) {
         Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -69,7 +70,7 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
             topBar = {
                 Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
                     TextButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp)) { Text("‹ Назад") }
-                    SpectrumPageHeader(title, subtitle, SpectrumSymbol.Allocation,
+                    SpectrumPageHeader(title, subtitle, symbol,
                         Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp))
                 }
             }, content = content)

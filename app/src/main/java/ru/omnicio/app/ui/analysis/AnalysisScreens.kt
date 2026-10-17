@@ -410,6 +410,7 @@ fun AnalysisProfileSettingsScreen(
     onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
+    initialSection: Int = 0,
 ) {
     key(accessToken) {
         AnalysisProfileContent(
@@ -418,6 +419,7 @@ fun AnalysisProfileSettingsScreen(
             onPortfolioClick = onPortfolioClick,
             onProfileClick = onProfileClick,
             modifier = modifier,
+            initialSection = initialSection,
         )
     }
 }
@@ -429,7 +431,9 @@ private fun AnalysisProfileContent(
     onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier,
+    initialSection: Int,
 ) {
+    var section by rememberSaveable { mutableIntStateOf(initialSection.coerceIn(0, 2)) }
     val client = remember { AnalysisBackendClient() }
     var draft by remember { mutableStateOf<AnalysisProfile?>(null) }
     var status by remember { mutableStateOf<AnalysisStatus?>(null) }
@@ -487,8 +491,9 @@ private fun AnalysisProfileContent(
             problem?.let { item { ErrorCard(it, { reload++ }, enabled = !loading) } }
             val profile = draft
             if (profile != null && !loading) {
-                item { MonitoringStatus(status) }
-                profileControls(profile, enabled = pendingSave == null) { draft = it }
+                item { SpectrumTabs(listOf("Правила", "Уведомления", "Наблюдение"), section, { section = it }) }
+                if (section == 2) item { MonitoringStatus(status) }
+                profileControls(profile, section, enabled = pendingSave == null) { draft = it }
                 message?.let { text ->
                     item {
                         StatusCard(
@@ -568,9 +573,11 @@ private fun MonitoringStatus(status: AnalysisStatus?) {
 
 private fun LazyListScope.profileControls(
     profile: AnalysisProfile,
+    section: Int,
     enabled: Boolean,
     onChange: (AnalysisProfile) -> Unit,
 ) {
+    if (section == 0) {
     item {
         ProfileChoiceCard(
             "Уровень риска",
@@ -619,6 +626,8 @@ private fun LazyListScope.profileControls(
             onChange(profile.copy(minCashPercent = it))
         }
     }
+    }
+    if (section == 1) {
     item {
         SwitchCard("Критические предупреждения", profile.notifyCritical, enabled) {
             onChange(profile.copy(notifyCritical = it))
@@ -629,5 +638,5 @@ private fun LazyListScope.profileControls(
             onChange(profile.copy(notifyBriefs = it))
         }
     }
+    }
 }
-

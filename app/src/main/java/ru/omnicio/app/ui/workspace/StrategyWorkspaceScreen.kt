@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
 fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: () -> Unit) {
     val context = LocalContext.current
     val store = remember(userId) { context.applicationContext.getSharedPreferences("strategy_draft_$userId", 0) }
-    var draft by remember(userId) { mutableStateOf(StrategyDraft(
+    var draft by rememberSaveable(userId, stateSaver = StrategyDraftSaver) { mutableStateOf(StrategyDraft(
         goal = store.getInt("goal", 0).coerceIn(0, 2), horizon = store.getInt("horizon", 2).coerceIn(0, 2),
         market = store.getInt("market", 0).coerceIn(0, 1), qualification = store.getInt("qualification", 0).coerceIn(0, 1),
         reserve = store.getInt("reserve", 10).coerceIn(0, 50), companyLimit = store.getInt("company", 5).coerceIn(1, 15),
@@ -29,17 +29,15 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
     var section by rememberSaveable { mutableIntStateOf(0) }
     var saved by rememberSaveable { mutableStateOf(false) }
     val change: (StrategyDraft) -> Unit = { draft = it; saved = false }
-    WorkspaceDetailPage("Мои стратегии", "Правила долгосрочного капитала", onBack) { padding ->
+    WorkspaceDetailPage("Мои стратегии", "Правила долгосрочного капитала", onBack, SpectrumSymbol.Goal) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             SpectrumTabs(listOf("Цель", "Отбор", "Доли", "Доход"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                item { SpectrumCard(emphasized = true) {
+                item { SpectrumCard {
                     SpectrumBadge("Черновик · не применяется")
-                    Text("Будущая стратегия", style = MaterialTheme.typography.titleLarge)
-                    Text("Вы можете настроить и сохранить предпочтения. Расчёт по этим правилам ещё не подключён.",
+                    Text("Расчёт по этим правилам ещё не подключён.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SpectrumSecondaryButton("Действующий инвестиционный профиль", onCurrentRules, Modifier.fillMaxWidth())
                 } }
                 when (section) {
                     0 -> {
@@ -79,6 +77,7 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                         .putStringSet("ratings", draft.ratings).apply()
                     saved = true
                 }, Modifier.fillMaxWidth(), enabled = draft.ratings.isNotEmpty()) }
+                item { SpectrumSecondaryButton("Действующий инвестиционный профиль", onCurrentRules, Modifier.fillMaxWidth()) }
             }
         }
     }
