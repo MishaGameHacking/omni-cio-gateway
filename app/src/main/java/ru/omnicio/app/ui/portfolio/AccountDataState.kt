@@ -102,22 +102,15 @@ internal data class PortfolioPeriod(val start: String?, val end: String?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod) -> Unit) {
-    var selected by rememberSaveable { mutableIntStateOf(5) }
     var calendar by remember { mutableStateOf(false) }
     val today = LocalDate.now(Moscow)
+    val starts = listOf(today, today.minusMonths(1).plusDays(1), today.minusMonths(6).plusDays(1),
+        today.minusYears(1).plusDays(1), today.withDayOfYear(1), null)
+    val selected = if (period.end != null) 6 else starts.indexOfFirst { it?.toString() == period.start }.let { if (it < 0) 6 else it }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         ChoiceRow(listOf("День", "Месяц", "6 мес", "12 мес", "С начала года", "Всё время", "Период"), selected) { index ->
             if (index == 6) calendar = true else {
-                selected = index
-                val start = when (index) {
-                    0 -> today
-                    1 -> today.minusMonths(1).plusDays(1)
-                    2 -> today.minusMonths(6).plusDays(1)
-                    3 -> today.minusYears(1).plusDays(1)
-                    4 -> today.withDayOfYear(1)
-                    else -> null
-                }
-                onChange(PortfolioPeriod(start?.toString(), null))
+                onChange(PortfolioPeriod(starts[index]?.toString(), null))
             }
         }
         if (selected == 6) Notice("${period.start} — ${period.end}")
@@ -141,7 +134,7 @@ internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod)
                         if (first != null && last != null) {
                             onChange(PortfolioPeriod(Instant.ofEpochMilli(first).atZone(ZoneOffset.UTC).toLocalDate().toString(),
                                 Instant.ofEpochMilli(last).atZone(ZoneOffset.UTC).toLocalDate().toString()))
-                            selected = 6; calendar = false
+                            calendar = false
                         }
                     }) { Text("Применить") }
             }, dismissButton = { TextButton(onClick = { calendar = false }) { Text("Отмена") } }) {

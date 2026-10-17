@@ -262,7 +262,20 @@ class ProfileProbe:
         area="profile-content",
         direction="end",
     ):
-        self.tap_node(self.reveal_resource(resource_id, area, direction))
+        from profile_scroll import reveal_resource_in_list, settled_resource
+
+        target = reveal_resource_in_list(
+            self.tree,
+            self._semantic_scroll_callback(area, direction),
+            resource_id,
+            resource_id=area,
+            direction=direction,
+            layout_timeout=12,
+            for_tap=True,
+        )
+        if target is None:
+            raise AssertionError("Button list is not visible: " + area)
+        self.tap_node(settled_resource(self.tree, resource_id, area))
 
     def tap_profile_content(self, text):
         from profile_scroll import reveal_in_list
@@ -519,6 +532,7 @@ class ProfileProbe:
         self.reveal(FIRST_LESSON, area)
         self.capture(screenshot)
         self.tap_resource(FIRST_LESSON_TOGGLE, area)
+        self.find("Свернуть урок: " + FIRST_LESSON)
         self.reveal("• Запишите цель и дату, когда деньги могут понадобиться.", area)
         self.tap("Старт", area)
         self.find(FIRST_LESSON)
@@ -544,7 +558,8 @@ class ProfileProbe:
                       "Large-font chart screen is not resumed")
         self.tap_visible("График")
         chart = self.reveal_resource("history-bars", "workspace-content")
-        self.tap_node(chart)
+        left, top, right, bottom = node_bounds(chart)
+        self.command("shell", "input", "tap", str(right - (right - left) // 34), str((top + bottom) // 2))
         self.reveal("Изменение стоимости", "workspace-content")
         self.reveal("Минимум / максимум", "workspace-content")
         self.capture("bars-large-font")

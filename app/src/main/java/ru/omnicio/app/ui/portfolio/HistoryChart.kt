@@ -170,10 +170,16 @@ private fun BarNavigation(model: HistoryBars, selected: Int, choose: (Int) -> Un
 private fun HistoryStatistics(points: List<HistoryPoint>, title: String?, currency: String) {
     Text(title ?: "За показанный период", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     if (points.isEmpty()) { Notice("За этот интервал снимков нет. Это не нулевой баланс."); return }
+    if (points.size == 1) {
+        Notice("Один снимок · ${dateText(points.single().date)}. Для сравнения нужен следующий снимок.")
+        return
+    }
     val change = historyChange(points)
     DataRow("Изменение стоимости", change?.let { (if (it.signum() > 0) "+" else "") + decimalText(it) + " " + currencySymbol(currency) } ?: "Один снимок")
-    DataRow("Минимум / максимум", "${decimalText(points.minOf { it.value })} / ${decimalText(points.maxOf { it.value })} ${currencySymbol(currency)}")
-    Notice("По ${points.size} сохранённым наблюдениям · ${dateText(points.last().date)}")
+    val low = points.minOf { it.value }
+    val high = points.maxOf { it.value }
+    if (low.compareTo(high) != 0) DataRow("Минимум / максимум", "${decimalText(low)} / ${decimalText(high)} ${currencySymbol(currency)}")
+    Notice("Снимков: ${points.size} · ${dateText(points.last().date)}")
 }
 
 @Composable

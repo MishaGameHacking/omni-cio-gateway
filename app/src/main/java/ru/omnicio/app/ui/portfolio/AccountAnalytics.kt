@@ -83,7 +83,7 @@ internal fun CashFlowSummary(data: JSONObject) {
     val primary = setOf("deposits", "withdrawals", "dividends", "coupons")
     val visible = rows.filter { it.optString("category") in primary }
     visible.forEach { row -> DataRow(categoryTitle(row.optString("category")), row.money("amount").moneyText()) }
-    if (rows.isEmpty()) Notice(if (data.optBoolean("complete")) "За этот период денежных операций нет." else "В полученной части операций нет денежных сумм.")
+    if (rows.isEmpty()) Notice(if (data.optBoolean("complete")) "Ненулевых итоговых сумм за этот период нет." else "В полученной части нет ненулевых итоговых сумм.")
     val other = rows.filter { it.optString("category") !in primary }
     if (other.isNotEmpty()) DetailFold("Расходы, оборот и другие операции") {
         other.forEach { row -> DataRow(categoryTitle(row.optString("category")), row.money("amount").moneyText()) }
