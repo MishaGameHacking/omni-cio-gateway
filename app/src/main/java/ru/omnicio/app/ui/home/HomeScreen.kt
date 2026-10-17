@@ -26,57 +26,36 @@ import ru.omnicio.app.ui.workspace.*
 fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: PortfolioCurrency,
     refreshing: Boolean, refreshError: String?, lastUpdatedMillis: Long?, onCurrencyClick: () -> Unit,
     onOpenPortfolio: () -> Unit, onOpenRecommendations: () -> Unit, onOpenRisk: () -> Unit,
-    onOpenMessages: () -> Unit, onOpenEducation: () -> Unit, onOpenProfile: () -> Unit,
-    modifier: Modifier = Modifier) {
+    onOpenMessages: () -> Unit, onOpenProfile: () -> Unit,
+    modifier: Modifier = Modifier, onConnect: () -> Unit = onOpenProfile,
+    onOpenPayments: () -> Unit = onOpenPortfolio) {
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
-    val open = LocalWorkspaceNavigator.current
+    val waiting = state == PortfolioUiState.Loading || state == PortfolioUiState.ApiConnected
     val prefs = LocalWorkspacePreferences.current.value
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = { AnalystBottomBar(AnalystTab.Home, onOpenPortfolio, onOpenProfile) }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
-                contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item(key = "brand-header") { HomeHeader(user, onOpenMessages) }
                 item(key = "portfolio-hero") {
                     CapitalHero(state, snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis,
-                        prefs.hideHomeBalance, onCurrencyClick, onOpenProfile)
+                        prefs.hideHomeBalance, onCurrencyClick, onConnect)
                 }
-                item(key = "capabilities") {
-                    HomeQuickActions({ open(WorkspaceRoute.Assistant) }, { open(WorkspaceRoute.Strategies) },
-                        { open(WorkspaceRoute.Market) })
+                item(key = "assistant") { HomeNextStep(state, snapshot, refreshError, waiting, onConnect, onOpenRisk, onOpenRecommendations) }
+                if (!snapshot?.warnings.isNullOrEmpty()) {
+                    item(key = "attention") { SpectrumCard {
+                        Text("Требует внимания", style = MaterialTheme.typography.titleMedium)
+                        snapshot!!.warnings.take(2).forEach { Text(it) }
+                        if (snapshot.warnings.size > 2) DetailFold("Все ограничения (${snapshot.warnings.size})") { snapshot.warnings.drop(2).forEach { Text(it) } }
+                    } }
                 }
-                item(key = "assistant") {
-                    SpectrumCard(emphasized = true, onClick = onOpenRecommendations) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SpectrumAnalystAvatar(
-                                mood = when {
-                                    refreshError != null || snapshot?.warnings?.isNotEmpty() == true -> AnalystAvatarMood.Attention
-                                    snapshot == null -> AnalystAvatarMood.Waiting
-                                    else -> AnalystAvatarMood.Ready
-                                },
-                                motionAllowed = LocalSpectrumMotionPreference.current.enabled,
-                                modifier = Modifier.size(64.dp).testTag("spectrum-ai-analyst"))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Следующий шаг", style = MaterialTheme.typography.titleLarge)
-                                Text(if (snapshot == null) "Подключите счёт, чтобы начать" else "Проверьте доступные действия",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                        SpectrumPrimaryButton(if (snapshot == null) "Подключить портфель" else "Открыть действия",
-                            if (snapshot == null) onOpenProfile else onOpenRecommendations, Modifier.fillMaxWidth())
-                    }
-                }
+                item(key = "monitoring") { ObservationSummary(onOpenRisk) }
+                item(key = "capabilities") { HomeQuickActions(onOpenPortfolio, onOpenPayments) }
                 if (snapshot != null && prefs.homeStructure) {
                     item(key = "allocation") { AllocationOverview(snapshot, onOpenPortfolio) }
                 }
-                if (!snapshot?.warnings.isNullOrEmpty()) {
-                    item(key = "attention") { WorkspaceLink("Обратите внимание", snapshot!!.warnings.first(), SpectrumSymbol.Risk, onOpenRisk) }
-                }
-                item(key = "education") {
-                    TextButton(onClick = onOpenEducation, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Text("Разобраться в инвестициях")
-                    }
-                }
+
             }
         }
     }
@@ -92,10 +71,12 @@ private fun HomeHeader(user: AnalystUser, onMessagesClick: () -> Unit) {
                 style = MaterialTheme.typography.labelLarge, color = LocalSpectrumPalette.current.cyan)
             Text("Ваш капитал", style = MaterialTheme.typography.headlineMedium)
         }
+        BadgedBox(badge = { AttentionBadge() }) {
         IconButton(onClick = onMessagesClick, modifier = Modifier.size(48.dp)
             .semantics { contentDescription = "Уведомления" }) {
             SpectrumLiveFeatureIcon(SpectrumLiveFeature.Notifications, Modifier.size(34.dp),
-                motionAllowed = LocalSpectrumMotionPreference.current.enabled)
+                motionAllowed = false)
+        }
         }
     }
 }
@@ -118,10 +99,13 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Всего в портфеле", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = onCurrency, modifier = Modifier.heightIn(min = 48.dp)) { Text("${currency.name} ↻") }
+                TextButton(onClick = onCurrency, modifier = Modifier.heightIn(min = 48.dp)) { Text("${currency.name} ▾") }
             }
             Text(if (hidden) "••• •••" else snapshot.totalValue.moneyText(),
                 style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            BalanceVisibilityButton()
+            if (snapshot.totalValue.currency != currency.name) Text("Показана предыдущая оценка в ${snapshot.totalValue.currency}. Запрошена ${currency.name}.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!hidden) {
                 SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
                 Text("Текущий результат брокера", style = MaterialTheme.typography.bodySmall,
@@ -129,7 +113,7 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f))
             val observed = snapshot.asOf ?: updated?.let { java.time.Instant.ofEpochMilli(it).toString() }
-            Text("${dateText(observed)}${if (refreshing) " · обновляем" else ""}",
+            Text("Данные: ${relativeObservation(observed)}${if (refreshing) " · обновляем" else ""}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (error != null) SpectrumBadge("Сохранённые данные · обновление не удалось", accent = MaterialTheme.colorScheme.error)
         }
@@ -138,21 +122,51 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
 
 @Composable
 private fun AllocationOverview(snapshot: PortfolioSnapshot, onOpenPortfolio: () -> Unit) {
-    SpectrumCard(onClick = onOpenPortfolio) {
+    SpectrumCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Распределение", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            Text("›", style = MaterialTheme.typography.titleLarge, color = LocalSpectrumPalette.current.cyan)
+            TextButton(onClick = onOpenPortfolio) { Text("Подробнее ›") }
         }
         val valid = snapshot.allocations.all { it.sharePercent.toBigDecimal().signum() >= 0 } &&
             snapshot.allocations.sumOf { it.sharePercent.toBigDecimal() } <= java.math.BigDecimal("100.1")
+        if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("Структура скрыта"); return@SpectrumCard }
         if (snapshot.allocations.isEmpty()) Text("Структура пока не получена")
         val palette = LocalSpectrumPalette.current
         val colors = listOf(palette.cyan, palette.violet, palette.amber, palette.blue, palette.rose)
-        snapshot.allocations.sortedByDescending { it.sharePercent.toBigDecimal() }.take(5).forEachIndexed { index, item ->
+        val sorted = snapshot.allocations.sortedByDescending { it.sharePercent.toBigDecimal() }
+        val visible = sorted.take(3)
+        visible.forEachIndexed { index, item ->
             DataRow(item.title, item.sharePercent.percentText())
             if (valid) SpectrumProgressBar(item.sharePercent.toBigDecimal().toFloat() / 100f, accent = colors[index])
+        }
+        if (sorted.size > 3) DetailFold("Остальные категории (${sorted.size - 3})") {
+            sorted.drop(3).forEach { DataRow(it.title, it.sharePercent.percentText()) }
         }
         Text("Счетов: ${snapshot.accounts.size}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun HomeNextStep(state: PortfolioUiState, snapshot: PortfolioSnapshot?, refreshError: String?, waiting: Boolean,
+    onConnect: () -> Unit, onOpenRisk: () -> Unit, onOpenRecommendations: () -> Unit) {
+                    SpectrumCard(emphasized = true) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            SpectrumAnalystAvatar(
+                                mood = when {
+                                    refreshError != null || snapshot?.warnings?.isNotEmpty() == true -> AnalystAvatarMood.Attention
+                                    snapshot == null -> AnalystAvatarMood.Waiting
+                                    else -> AnalystAvatarMood.Ready
+                                },
+                                motionAllowed = LocalSpectrumMotionPreference.current.enabled,
+                                modifier = Modifier.size(64.dp).testTag("spectrum-ai-analyst"))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Следующий шаг", style = MaterialTheme.typography.titleLarge)
+                                Text(when { waiting -> "Получаем данные счёта"; state is PortfolioUiState.Error -> "Проверьте доступ к данным"; snapshot == null -> "Подключите счёт, чтобы начать"; snapshot.warnings.isNotEmpty() -> "Проверьте ограничения данных ниже"; else -> "Ознакомьтесь с последним анализом" },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        SpectrumPrimaryButton(if (waiting) "Получаем данные…" else if (state is PortfolioUiState.Error) "Проверить подключение" else if (snapshot == null) "Подключить портфель" else if (snapshot.warnings.isNotEmpty()) "Посмотреть риски" else "Посмотреть анализ",
+                            if (snapshot == null) onConnect else if (snapshot.warnings.isNotEmpty()) onOpenRisk else onOpenRecommendations, Modifier.fillMaxWidth(), enabled = !waiting)
+                    }
 }

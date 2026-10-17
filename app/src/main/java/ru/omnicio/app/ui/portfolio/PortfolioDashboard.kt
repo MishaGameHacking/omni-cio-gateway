@@ -35,21 +35,21 @@ internal fun PortfolioDashboard(
     selectedSection: Int,
     onSelectSection: (Int) -> Unit,
     listState: LazyListState,
-    onCurrencyClick: () -> Unit,
     onProfileClick: () -> Unit,
     onOpenAccount: (PortfolioAccount) -> Unit,
     onOpenSection: (Int) -> Unit,
     onPositionClick: (String, PortfolioPosition) -> Unit,
     modifier: Modifier = Modifier,
+    assetQuery: String = "", assetSector: String? = null, assetKind: String? = null,
 ) {
     val openWorkspace = LocalWorkspaceNavigator.current
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     Column(modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         SpectrumPageHeader(
             title = "Портфель",
-            subtitle = "Состав, счета и движение капитала",
+            subtitle = "Счета и активы",
             symbol = SpectrumSymbol.Portfolio,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
         SpectrumTabs(
             listOf("Структура", "Активы", "Динамика"),
@@ -57,24 +57,36 @@ internal fun PortfolioDashboard(
             onSelectSection,
             Modifier.padding(horizontal = 20.dp).testTag("portfolio-sections"),
         )
+        if (snapshot != null) {
+            Text("Данные: ${relativeObservation(snapshot.asOf)}${if (refreshing) " · обновляем" else ""}",
+                Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (refreshError != null) Text("Сохранённые данные · $refreshError", Modifier.padding(horizontal = 20.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (snapshot.totalValue.currency != selectedCurrency.name) Text("Показана оценка в ${snapshot.totalValue.currency}; запрошена ${selectedCurrency.name}.",
+                Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+        }
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
-            PortfolioHistorySection(snapshot.accounts, accessToken, onCurrencyClick, Modifier.weight(1f))
+            PortfolioHistorySection(snapshot.accounts, accessToken, Modifier.weight(1f))
         } else if (selectedSection == 1 && snapshot != null) {
-            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f))
+            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind)
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"),
                 state = listState,
                 contentPadding = PaddingValues(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(workspaceGap),
             ) {
                 if (snapshot == null) {
                     item(key = "connection") { PortfolioConnectionCard(state, onProfileClick) }
                 } else {
                     item(key = "balance") {
-                        PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick, onOpenSection)
+                        PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onOpenSection)
                     }
                     if (selectedSection == 0) {
+                        item(key = "sectors") { WorkspaceLink("Отрасли и классы", "Состав ваших вложений", SpectrumSymbol.Market) {
+                            openWorkspace(WorkspaceRoute.Market)
+                        } }
                         item(key = "allocation") {
                             SpectrumCard {
                                 SectionHeading("Баланс активов")
@@ -87,7 +99,7 @@ internal fun PortfolioDashboard(
                         }
                         item(key = "strategy") {
                             SpectrumActionTile(
-                                title = "Мои стратегии",
+                                title = "Моя стратегия",
                                 subtitle = "Цель, отбор, доли и доход",
                                 symbol = SpectrumSymbol.Goal,
                                 onClick = { openWorkspace(WorkspaceRoute.Strategies) },
@@ -132,7 +144,6 @@ private fun PortfolioBalanceCard(
     refreshing: Boolean,
     error: String?,
     lastUpdatedMillis: Long?,
-    onCurrency: () -> Unit,
     onOpenSection: (Int) -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
@@ -141,7 +152,7 @@ private fun PortfolioBalanceCard(
         Text("Общий капитал", color = palette.cyan, style = MaterialTheme.typography.labelLarge)
         Text(
             snapshot.totalValue.moneyText(),
-            modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency),
+            modifier = Modifier,
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -149,8 +160,9 @@ private fun PortfolioBalanceCard(
             SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
             Notice("Текущий результат брокера")
         }
+        CurrencyChoice(selectedCurrency.name)
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
-        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Валюта оценки: ${selectedCurrency.name} · нажмите сумму, чтобы сменить")
+        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Оценка брокера в ${selectedCurrency.name}")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val enabled = snapshot.accounts.isNotEmpty()
             if (portfolioStackedLayout(maxWidth.value, fontScale)) {
@@ -217,7 +229,6 @@ private fun PortfolioConnectionCard(state: PortfolioUiState, onProfile: () -> Un
 private fun PortfolioHistorySection(
     accounts: List<PortfolioAccount>,
     accessToken: String,
-    onCurrency: () -> Unit,
     modifier: Modifier,
 ) {
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -231,7 +242,7 @@ private fun PortfolioHistorySection(
         } else {
             // Existing authenticated analytics, with its real snapshot history,
             // period controls, loading/errors and incomplete-data warnings.
-            AccountAnalytics(accessToken, account, onCurrency)
+            AccountAnalytics(accessToken, account, historyOnly = true)
         }
     }
 }

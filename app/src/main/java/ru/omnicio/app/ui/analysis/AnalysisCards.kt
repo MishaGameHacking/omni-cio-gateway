@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import ru.omnicio.app.data.analysis.AnalysisIdea
 import ru.omnicio.app.data.analysis.InsightCard
+import ru.omnicio.app.ui.workspace.PrivateValue
+import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
@@ -43,6 +45,7 @@ internal fun AnalysisScaffold(
     onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
+    showBottomBar: Boolean = true,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     SpectrumBackground(modifier.fillMaxSize()) {
@@ -66,7 +69,7 @@ internal fun AnalysisScaffold(
                 )
             },
             bottomBar = {
-                AnalystBottomBar(
+                if (showBottomBar) AnalystBottomBar(
                     selected = selected,
                     onPortfolioClick = onPortfolioClick,
                     onProfileClick = onProfileClick,
@@ -83,6 +86,7 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
     val critical = entries.count { it.severity == "critical" }
     val warning = entries.count { it.severity == "warning" }
     val watch = entries.count { it.severity == "watch" }
+    val main = entries.minByOrNull { when (it.severity) { "critical" -> 0; "warning" -> 1; "watch" -> 2; else -> 3 } }
     val highest = when {
         critical > 0 -> "Критический сигнал"
         warning > 0 -> "Требует внимания"
@@ -103,16 +107,17 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
         ) {
             SpectrumIcon(
                 symbol = SpectrumSymbol.Risk,
-                modifier = Modifier.size(66.dp),
+                modifier = Modifier.size(36.dp),
                 selected = true,
                 tile = true,
                 motionAllowed = false,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("Состояние наблюдения", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(main?.title ?: "Состояние наблюдения", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 SpectrumBadge(highest, accent = accent)
             }
         }
+        main?.let { Text(PrivateValue(it.summary), style = MaterialTheme.typography.bodyMedium) }
         Text(
             "Сигналы сервера. Отсутствие сообщений не означает отсутствие риска.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -203,8 +208,8 @@ internal fun InsightCardView(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
-        Text(card.summary, style = MaterialTheme.typography.bodyLarge)
-        card.actions.forEach { Text("• $it", style = MaterialTheme.typography.bodyLarge) }
+        Text(PrivateValue(card.summary), style = MaterialTheme.typography.bodyLarge)
+        card.actions.forEach { Text(PrivateValue("• $it"), style = MaterialTheme.typography.bodyLarge) }
         if (card.uncertainties.isNotEmpty()) {
             Text("Ограничения вывода", fontWeight = FontWeight.SemiBold)
             card.uncertainties.forEach {
@@ -240,7 +245,7 @@ private fun EvidenceDetails(card: InsightCard) {
     }
     if (expanded) {
         card.evidence.forEach { source ->
-            Text(source.fact.ifBlank { "Описание факта не получено." }, style = MaterialTheme.typography.bodyMedium)
+            Text(PrivateValue(source.fact.ifBlank { "Описание факта не получено." }), style = MaterialTheme.typography.bodyMedium)
             Text(
                 "Источник: ${source.sourceId.ifBlank { "не указан" }} · ${analysisTime(source.asOf) ?: "время неизвестно"}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -252,6 +257,7 @@ private fun EvidenceDetails(card: InsightCard) {
 
 @Composable
 internal fun IdeaCard(idea: AnalysisIdea) {
+    if (LocalWorkspacePreferences.current.value.hideHomeBalance) { StatusCard("Распределение", "Финансовые подробности скрыты."); return }
     val palette = LocalSpectrumPalette.current
     val current = (idea.currentPercent / 100.0).toFloat().coerceIn(0f, 1f)
     val target = (idea.targetPercent / 100.0).toFloat().coerceIn(0f, 1f)

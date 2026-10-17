@@ -18,7 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 
 /** Navigation only. Neither link nor clipboard creates a broker order. */
 @Composable
-fun BrokerInstrumentActions(assetClass: String, ticker: String?, isin: String?) {
+fun BrokerInstrumentActions(assetClass: String, ticker: String?, isin: String?, compact: Boolean = false, copyOnly: Boolean = false) {
     val context = LocalContext.current
     var fallback by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -26,7 +26,7 @@ fun BrokerInstrumentActions(assetClass: String, ticker: String?, isin: String?) 
     val validTicker = ticker?.takeIf { Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,39}").matches(it) && !it.contains("..") }
     val uri = if (section != null && validTicker != null) Uri.parse("https://www.tbank.ru/invest/$section/$validTicker/") else null
     Column {
-        if (uri != null) {
+        if (uri != null && !copyOnly) {
             Button(modifier = Modifier.fillMaxWidth(), onClick = {
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -36,12 +36,12 @@ fun BrokerInstrumentActions(assetClass: String, ticker: String?, isin: String?) 
             }) { Text("Открыть в Т‑Инвестициях") }
         }
         val searchText = listOfNotNull(validTicker, isin?.takeIf { Regex("[A-Z]{2}[A-Z0-9]{10}").matches(it) }).joinToString(" · ")
-        if (searchText.isNotBlank()) {
+        if (searchText.isNotBlank() && !compact) {
             TextButton(onClick = {
                 context.getSystemService(Context.CLIPBOARD_SERVICE).let { it as ClipboardManager }
                     .setPrimaryClip(ClipData.newPlainText("Инструмент", searchText))
                 message = "Тикер и ISIN скопированы для поиска у брокера."
-            }) { Text("Скопировать: $searchText") }
+            }) { Text("Скопировать тикер и ISIN") }
         }
         message?.let { Text(it) }
     }

@@ -1,7 +1,11 @@
 package ru.omnicio.app
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Column
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import ru.omnicio.app.ui.workspace.*
@@ -22,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +41,10 @@ import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
+import ru.omnicio.app.ui.LocalWideNavigation
+import ru.omnicio.app.ui.AnalystSideRail
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.LocalAnalystTabNavigator
 import ru.omnicio.app.ui.analysis.AnalysisProfileSettingsScreen
@@ -79,7 +88,7 @@ private fun nextBackStack(current: AppScreen, destination: AppScreen, history: L
 }
 
 private sealed interface AuthUiState {
-    data object Loading : AuthUiState
+    data class Loading(val stage: String = "Проверяем сохранённый сеанс…") : AuthUiState
     data class SignedOut(val errorMessage: String? = null) : AuthUiState
     data class SignedIn(
         val accessToken: String,
@@ -171,7 +180,7 @@ class MainActivity : ComponentActivity() {
             "telegram_expired" -> "Время авторизации истекло. Попробуйте войти снова."
             "telegram_unavailable" -> "Telegram временно недоступен. Попробуйте позже."
             "telegram_exchange_failed" ->
-                "Telegram отклонил обмен кода. Проверьте настройки Login Widget."
+                "Не удалось завершить вход. Повторите попытку; если ошибка останется, обратитесь за помощью."
             "telegram_invalid_token" -> "Не удалось подтвердить данные Telegram."
             "telegram_invalid_response" -> "Telegram вернул некорректный ответ."
             "private_access_full" ->
@@ -226,7 +235,7 @@ private fun AnalystAiApp(
     val legacyTInvestStore = remember(context) { TInvestTokenStore(context) }
     val backend = remember { AnalystBackendClient() }
 
-    var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading) }
+    var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading()) }
     var initialSessionChecked by remember { mutableStateOf(false) }
     var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
     var backStack by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
@@ -238,6 +247,7 @@ private fun AnalystAiApp(
         runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Home)
     }
     var tApiConfigured by remember { mutableStateOf(false) }
+    var brokerConnection by remember { mutableStateOf(BrokerConnectionState.Checking) }
     var portfolioCurrencyName by rememberSaveable {
         mutableStateOf(PortfolioCurrency.RUB.name)
     }
@@ -253,7 +263,7 @@ private fun AnalystAiApp(
         val code = authCode?.takeIf { it.isNotBlank() }
         if (code != null) {
             initialSessionChecked = true
-            authState = AuthUiState.Loading
+            authState = AuthUiState.Loading("Подтверждаем вход через Telegram…")
             when (val result = withContext(Dispatchers.IO) {
                 backend.exchangeTelegramCode(code)
             }) {
@@ -324,31 +334,10 @@ private fun AnalystAiApp(
     val signedIn = authState as? AuthUiState.SignedIn
     LaunchedEffect(signedIn?.accessToken) {
         val session = signedIn ?: return@LaunchedEffect
-        val status = withContext(Dispatchers.IO) {
-            backend.fetchTInvestStatus(session.accessToken)
-        }
-
-        var connected = (status as? BackendResult.Success)?.value ?: false
-        if (!connected) {
-            val legacyToken = withContext(Dispatchers.IO) {
-                legacyTInvestStore.load()
-            }
-            if (!legacyToken.isNullOrBlank()) {
-                val migration = withContext(Dispatchers.IO) {
-                    backend.saveTInvestToken(
-                        accessToken = session.accessToken,
-                        token = legacyToken,
-                    )
-                }
-                if (migration is BackendResult.Success) {
-                    withContext(Dispatchers.IO) {
-                        legacyTInvestStore.clear()
-                    }
-                    connected = true
-                }
-            }
-        }
-        tApiConfigured = connected
+        brokerConnection = BrokerConnectionState.Checking
+        val connection = restoreBrokerConnection(backend, session.accessToken, legacyTInvestStore)
+        tApiConfigured = connection.first
+        brokerConnection = connection.second
     }
 
     val livePortfolio = rememberLivePortfolio(
@@ -358,7 +347,7 @@ private fun AnalystAiApp(
     )
 
     AnalystTheme {
-        CompositionLocalProvider(LocalWorkspaceBack provides {
+        CompositionLocalProvider(LocalBrokerConnection provides brokerConnection, LocalWorkspaceBack provides {
             screenName = backStack.lastOrNull() ?: AppScreen.Home.name
             backStack = ArrayList(backStack.dropLast(1))
         }) {
@@ -367,7 +356,11 @@ private fun AnalystAiApp(
             authError = authError,
             onStartTelegramLogin = onStartTelegramLogin,
             screen = screen,
-            portfolioState = livePortfolio.state,
+            portfolioState = when (brokerConnection) {
+                BrokerConnectionState.Checking -> PortfolioUiState.Loading
+                BrokerConnectionState.Unknown -> PortfolioUiState.Error("Не удалось проверить подключение. Откройте подключение в профиле и повторите проверку.")
+                else -> livePortfolio.state
+            },
             portfolioRefreshing = livePortfolio.refreshing,
             portfolioError = livePortfolio.error,
             portfolioLastSuccessMillis = livePortfolio.lastSuccessMillis,
@@ -385,6 +378,7 @@ private fun AnalystAiApp(
             },
             onTApiConfiguredChange = { configured ->
                 tApiConfigured = configured
+                brokerConnection = if (configured) BrokerConnectionState.Connected else BrokerConnectionState.Missing
             },
             onScreenshotsBlockedChange = { blocked ->
                 screenshotsBlocked = blocked
@@ -422,9 +416,10 @@ private fun AnalystAppContent(
     onLogout: () -> Unit,
 ) {
     when (val current = authState) {
-        AuthUiState.Loading -> {
+        is AuthUiState.Loading -> {
             TelegramLoginScreen(
                 loading = true,
+                loadingLabel = authState.stage,
                 errorMessage = authError,
                 onLoginClick = onStartTelegramLogin,
             )
@@ -476,6 +471,8 @@ private fun SignedInAppContent(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
+    var currencyPicker by remember { mutableStateOf(false) }
+    var portfolioDestination by remember { mutableStateOf<PortfolioDestination?>(null) }
     val navigateToTab: (AnalystTab) -> Unit = { tab ->
         onScreenChange(tab.toAppScreen())
     }
@@ -487,8 +484,23 @@ private fun SignedInAppContent(
     val holder = rememberSaveableStateHolder()
     val motion = LocalSpectrumMotionPreference.current.enabled && android.animation.ValueAnimator.areAnimatorsEnabled()
     CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab,
-        LocalWorkspaceNavigator provides navigateWorkspace) {
-        Crossfade(screen, animationSpec = tween(if (motion) 180 else 0), label = "workspace-navigation") { destination ->
+        LocalWorkspaceNavigator provides navigateWorkspace,
+        LocalWorkspaceSession provides WorkspaceSession(session.accessToken, session.user.telegramId),
+        LocalCurrencyChoice provides onCurrencyChange,
+        LocalPortfolioDestination provides { target -> portfolioDestination = target; openPortfolio() }) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 840.dp
+        CompositionLocalProvider(LocalWideNavigation provides wide) {
+        Row(Modifier.fillMaxSize()) {
+        if (wide) AnalystSideRail(when (screen) {
+            AppScreen.Home -> AnalystTab.Home; AppScreen.Portfolio, AppScreen.Market -> AnalystTab.Portfolio
+            AppScreen.Recommendations -> AnalystTab.Actions; AppScreen.Risk -> AnalystTab.Risk
+            else -> AnalystTab.Profile
+        }, navigateToTab)
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+        AnimatedContent(screen, transitionSpec = {
+            workspaceTransition(initialState, targetState, motion)
+        }, label = "workspace-navigation") { destination ->
         holder.SaveableStateProvider(destination.name) {
         when (destination) {
             AppScreen.Home -> {
@@ -500,7 +512,7 @@ private fun SignedInAppContent(
                     lastUpdatedMillis = portfolioLastSuccessMillis,
                     selectedCurrency = portfolioCurrency,
                     onCurrencyClick = {
-                        onCurrencyChange(portfolioCurrency.next())
+                        currencyPicker = true
                     },
                     onOpenPortfolio = openPortfolio,
                     onOpenRecommendations = {
@@ -512,10 +524,9 @@ private fun SignedInAppContent(
                     onOpenMessages = {
                         onScreenChange(AppScreen.Messages)
                     },
-                    onOpenEducation = {
-                        onScreenChange(AppScreen.Education)
-                    },
                     onOpenProfile = openProfile,
+                    onConnect = { onScreenChange(AppScreen.TApi) },
+                    onOpenPayments = { portfolioDestination = PortfolioDestination(section = 4); openPortfolio() },
                 )
             }
 
@@ -527,10 +538,10 @@ private fun SignedInAppContent(
                     refreshError = portfolioError,
                     lastUpdatedMillis = portfolioLastSuccessMillis,
                     selectedCurrency = portfolioCurrency,
-                    onCurrencyClick = {
-                        onCurrencyChange(portfolioCurrency.next())
-                    },
                     onProfileClick = openProfile,
+                    onConnect = { onScreenChange(AppScreen.TApi) },
+                    destination = portfolioDestination,
+                    onDestinationConsumed = { portfolioDestination = null },
                 )
             }
 
@@ -540,7 +551,7 @@ private fun SignedInAppContent(
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                     onOpenProfileSettings = {
-                        onScreenChange(AppScreen.AnalysisSettings)
+                        onScreenChange(AppScreen.Strategies)
                     },
                 )
             }
@@ -571,9 +582,6 @@ private fun SignedInAppContent(
                     onOpenTApi = {
                         onScreenChange(AppScreen.TApi)
                     },
-                    onOpenAnalysisSettings = {
-                        onScreenChange(AppScreen.AnalysisSettings)
-                    },
                     onOpenEducation = {
                         onScreenChange(AppScreen.Education)
                     },
@@ -602,7 +610,7 @@ private fun SignedInAppContent(
                 openPortfolio, openProfile, initialSection = 1)
             AppScreen.Appearance -> AppearanceScreen(goBack)
             AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio,
-                { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.AnalysisSettings) })
+                { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.Strategies) })
             AppScreen.Strategies -> StrategyWorkspaceScreen(session.user.telegramId, goBack,
                 { onScreenChange(AppScreen.AnalysisSettings) })
             AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
@@ -613,11 +621,20 @@ private fun SignedInAppContent(
                     tApiConfigured = tApiConfigured,
                     onBack = goBack,
                     onConnectionChanged = onTApiConfiguredChange,
+                    onOpenPortfolio = openPortfolio,
                 )
             }
         }
         }
         }
+        }
+        }
+        }
+        }
+        if (currencyPicker) AlertDialog(onDismissRequest = { currencyPicker = false }, title = { Text("Валюта оценки") },
+            text = { Column { PortfolioCurrency.entries.forEach { choice ->
+                TextButton(onClick = { onCurrencyChange(choice); currencyPicker = false }) { Text(choice.name) }
+            } } }, confirmButton = { TextButton(onClick = { currencyPicker = false }) { Text("Закрыть") } })
     }
 }
 
@@ -641,3 +658,43 @@ private fun AnalystAiAppPreview() {
     }
 }
 
+
+private suspend fun restoreBrokerConnection(backend: AnalystBackendClient, accessToken: String,
+    legacyTInvestStore: TInvestTokenStore): Pair<Boolean, BrokerConnectionState> {
+        val status = withContext(Dispatchers.IO) {
+            backend.fetchTInvestStatus(accessToken)
+        }
+
+        var connected = (status as? BackendResult.Success)?.value ?: false
+        if (status is BackendResult.Success && !connected) {
+            val legacyToken = withContext(Dispatchers.IO) {
+                legacyTInvestStore.load()
+            }
+            if (!legacyToken.isNullOrBlank()) {
+                val migration = withContext(Dispatchers.IO) {
+                    backend.saveTInvestToken(
+                        accessToken = accessToken,
+                        token = legacyToken,
+                    )
+                }
+                if (migration is BackendResult.Success) {
+                    withContext(Dispatchers.IO) {
+                        legacyTInvestStore.clear()
+                    }
+                    connected = true
+                }
+            }
+        }
+        return connected to if (connected) BrokerConnectionState.Connected else if (status is BackendResult.Failure) BrokerConnectionState.Unknown else BrokerConnectionState.Missing
+}
+
+private fun workspaceTransition(initialState: AppScreen, targetState: AppScreen, motion: Boolean): ContentTransform {
+            val roots = setOf(AppScreen.Home, AppScreen.Portfolio, AppScreen.Recommendations, AppScreen.Risk, AppScreen.Profile)
+            val duration = if (motion) 180 else 0
+            return if (initialState in roots && targetState in roots) fadeIn(tween(duration)) togetherWith fadeOut(tween(duration))
+            else {
+                val direction = if (targetState in roots) -1 else 1
+                (slideInHorizontally(tween(duration)) { it / 8 * direction } + fadeIn(tween(duration))) togetherWith
+                    (slideOutHorizontally(tween(duration)) { -it / 8 * direction } + fadeOut(tween(duration)))
+            }
+}

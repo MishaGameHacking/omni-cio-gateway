@@ -13,13 +13,15 @@ import androidx.compose.ui.window.DialogProperties
 import java.time.Instant
 import ru.omnicio.app.data.analysis.InsightCard
 import ru.omnicio.app.ui.spectrum.*
-import ru.omnicio.app.ui.workspace.WorkspaceDetailPage
+import ru.omnicio.app.ui.workspace.*
 
 @Composable
-internal fun InsightPreview(card: InsightCard, open: () -> Unit) {
+internal fun InsightPreview(card: InsightCard, now: Instant = Instant.now(), open: () -> Unit) {
     SpectrumCard(Modifier.fillMaxWidth(), emphasized = !card.isRead, onClick = open) {
+        SpectrumBadge(when (card.severity) { "critical" -> "Критично"; "warning" -> "Требует внимания"; "watch" -> "Наблюдение"; else -> "Информация" })
+        Text(insightValidity(card.createdAt, card.validUntil, now), style = MaterialTheme.typography.bodySmall)
         Text(card.title, style = MaterialTheme.typography.titleMedium)
-        Text(card.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+        Text(PrivateValue(card.summary), style = MaterialTheme.typography.bodyMedium, maxLines = 2,
             overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(listOfNotNull(if (!card.isRead) "Новое" else null, analysisTime(card.createdAt)).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall, color = LocalSpectrumPalette.current.cyan)
@@ -38,20 +40,16 @@ internal fun InsightDetails(card: InsightCard, now: Instant, readEnabled: Boolea
     }
 }
 
+internal fun insightActive(card: InsightCard, now: Instant): Boolean =
+    runCatching { Instant.parse(card.validUntil).isAfter(now) }.getOrDefault(true)
+
 @Composable
 internal fun RiskCoverageCard() {
-    var detail by remember { mutableStateOf(false) }
-    SpectrumCard(onClick = { detail = true }) {
+    SpectrumCard {
         Text("Полнота оценки", style = MaterialTheme.typography.titleMedium)
-        Text("Комплексная оценка ещё не рассчитана", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Посмотреть направления проверки ›", color = LocalSpectrumPalette.current.cyan,
-            style = MaterialTheme.typography.bodyMedium)
+        Text("Подтверждены только факты в полученных сигналах. Комплексная оценка не рассчитана.")
+        listOf("Кредитное качество", "Компании и отрасли", "Ликвидность", "Ставка и сроки", "Инфляция и валюта", "Доступность активов").forEach { category ->
+            DetailFold(category) { Text("Оценка не получена. Показатель и объяснение появятся после расчёта этого направления.") }
+        }
     }
-    if (detail) AlertDialog(onDismissRequest = { detail = false }, title = { Text("Что будет оцениваться") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf("Кредитное качество", "Компании и отрасли", "Ликвидность", "Ставка и сроки", "Инфляция и валюта", "Доступность активов").forEach {
-                Text("$it — оценка не получена")
-            }
-            Text("Стадия портфеля и прогресс появятся после расчёта стратегии. Отсутствие сигнала не означает защиту от риска.")
-        } }, confirmButton = { TextButton(onClick = { detail = false }) { Text("Понятно") } })
 }

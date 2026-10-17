@@ -40,7 +40,7 @@ import ru.omnicio.app.data.research.*
 
 /** Parent Ideas list owns scrolling; pages bound the number of eagerly composed cards. */
 @Composable
-fun PortfolioResearchPanel(accessToken: String) {
+fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, showRefresh: Boolean = true, refreshKey: Int = 0) {
     val client = remember { ResearchClient() }
     val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false) }
@@ -53,7 +53,7 @@ fun PortfolioResearchPanel(accessToken: String) {
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    LaunchedEffect(accessToken, active, retry) {
+    LaunchedEffect(accessToken, active, retry, refreshKey) {
         if (!active || accessToken.isBlank()) return@LaunchedEffect
         try {
             while (isActive) {
@@ -81,11 +81,22 @@ fun PortfolioResearchPanel(accessToken: String) {
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         if (state.stale) Text("Показан предыдущий результат. Новая проверка не выполнена; выводы могли устареть.", fontWeight = FontWeight.SemiBold)
-        TextButton(onClick = { retry++ }, enabled = active && !state.loading && accessToken.isNotBlank(),
+        if (state.loading && state.data == null) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (showRefresh) TextButton(onClick = { retry++ }, enabled = active && !state.loading && accessToken.isNotBlank(),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text(if (state.loading) "Проверяем данные…" else "Повторить проверку бумаг")
         }
-        state.data?.let { ResearchSnapshot(it, accessToken) }
+        if (ru.omnicio.app.ui.workspace.LocalWorkspacePreferences.current.value.hideHomeBalance) {
+            Text("Подробности скрыты режимом приватности.")
+        } else state.data?.let { payload ->
+            if (instrumentId == null) ResearchSnapshot(payload, accessToken)
+            else {
+                val cards = payload.optJSONArray("cards") ?: JSONArray()
+                val match = (0 until cards.length()).mapNotNull { cards.optJSONObject(it) }
+                    .firstOrNull { it.text("instrument_uid") == instrumentId }
+                if (match == null) Text("По этой бумаге проверенные сведения пока не получены.") else ResearchCard(match)
+            }
+        }
     }
 }
 
@@ -174,6 +185,7 @@ private fun ResearchCard(card: JSONObject) {
             Text(card.text("name") ?: "Инструмент", style = MaterialTheme.typography.titleMedium)
             Text(listOfNotNull(card.text("ticker"), card.text("isin"), card.text("class_code")).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
             Text(card.text("explanation") ?: "Данных недостаточно.")
+            ru.omnicio.app.ui.workspace.DetailFold("Рейтинг, отчётность и события") {
             val credit = card.optJSONObject("credit")
             val ratings = credit?.optJSONArray("ratings") ?: JSONArray()
             for (i in 0 until ratings.length()) {
@@ -193,6 +205,7 @@ private fun ResearchCard(card: JSONObject) {
                 Text("${item.text("source") ?: "Брокер"} · ${researchTime(item.text("published_at")) ?: "время неизвестно"}", style = MaterialTheme.typography.bodySmall)
             }
             if (news.length() > 0) Text("Заголовок — повод проверить событие, а не команда торговать.", style = MaterialTheme.typography.bodySmall)
+            }
             InstrumentActions(card.text("instrument_url"), card.text("search_hint") ?: card.text("name") ?: "")
         }
     }

@@ -21,9 +21,9 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         start = source.index('private fun IdeasContent(')
         end = source.index('fun AnalysisProfileSettingsScreen(', start)
         ideas = source[start:end]
-        self.assertEqual(ideas.count('PortfolioResearchPanel(token)'), 1)
+        self.assertEqual(ideas.count('PortfolioResearchPanel(token, showRefresh = false, refreshKey = reload)'), 1)
         self.assertIn('item(key = "portfolio-research")', ideas)
-        self.assertLess(ideas.index('PortfolioResearchPanel(token)'), ideas.index('state.value?.let'))
+        self.assertLess(ideas.index('PortfolioResearchPanel(token, showRefresh = false, refreshKey = reload)'), ideas.index('state.value?.let'))
         self.assertIn('PortfolioResearchPanel', source[:start])
 
     def test_research_client_joins_existing_version_gate(self):
@@ -76,7 +76,7 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         self.assertNotIn('publish_moscow_release.sh', workflow)
         # Version code 31 belongs to the published 0.7.6 upgrade baseline.
         # Any changed APK bytes must use a strictly newer identity.
-        self.assertIn('report.version_code <= 31', publication)
+        self.assertIn('report.version_code <= 32', publication)
 
 
 if __name__ == '__main__':

@@ -124,7 +124,7 @@ fun SpectrumCard(
     val palette = LocalSpectrumPalette.current
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val prefs = LocalWorkspacePreferences.current.value
-    val shape = RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(if (prefs.density == InterfaceDensity.COMPACT) 18.dp else 24.dp)
     val interaction = if (onClick == null) Modifier else Modifier.clip(shape).clickable(role = Role.Button, onClick = onClick)
     Card(
         modifier = modifier.then(interaction),
@@ -139,14 +139,14 @@ fun SpectrumCard(
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         border = BorderStroke(1.dp, Brush.linearGradient(listOf(
-            palette.cyan.copy(alpha = if (emphasized) 0.42f else 0.09f),
-            palette.blue.copy(alpha = if (emphasized) 0.24f else 0.08f),
-            palette.violet.copy(alpha = if (emphasized) 0.42f else 0.09f),
-            palette.rose.copy(alpha = if (emphasized) 0.18f else 0.06f),
+            palette.cyan.copy(alpha = if (emphasized) 0.30f else 0.03f),
+            palette.blue.copy(alpha = if (emphasized) 0.18f else 0.03f),
+            palette.violet.copy(alpha = if (emphasized) 0.30f else 0.03f),
+            palette.rose.copy(alpha = if (emphasized) 0.12f else 0.03f),
         ))),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (prefs.depth) 3.dp else 0.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (prefs.depth && emphasized) 2.dp else 0.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(if (prefs.density == InterfaceDensity.COMPACT) 14.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+        Column(Modifier.fillMaxWidth().padding(if (prefs.density == InterfaceDensity.COMPACT) 12.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (prefs.density == InterfaceDensity.COMPACT) 8.dp else 10.dp), content = content)
     }
 }
 

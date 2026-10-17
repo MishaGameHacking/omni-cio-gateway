@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "android-apk.yml"
 ACTION = ROOT / ".github" / "actions" / "check-apk" / "action.yml"
 INSTALLER = ROOT / ".github" / "scripts" / "test_apk_installation.py"
-REFERENCE_DIGEST = "0bb5e481f035218084b797e667c5850f9cb4b2c44ddca49a118bc61d7fe6306d"
+REFERENCE_DIGEST = "b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31"
 
 
 class DistributableApkWorkflowTests(unittest.TestCase):
@@ -22,8 +22,8 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn('RUN_PROFILE_UI_TESTS: "1"', self.workflow)
 
     def test_workflow_pins_the_real_installed_reference_apk(self):
-        self.assertIn("Analyst-AI-0.7.6-preview-feb08a7.apk", self.workflow)
-        self.assertIn("android-preview-feb08a704e889644772c38808eebbc2d1edbb81f", self.workflow)
+        self.assertIn("Analyst-AI-0.8.0-preview-7fe22f3.apk", self.workflow)
+        self.assertIn("android-preview-7fe22f35b07bd2fc92b5860e23418214333b8a21", self.workflow)
         self.assertIn(REFERENCE_DIGEST, self.workflow)
         self.assertIn("core.exportVariable('PREVIOUS_APK'", self.workflow)
         self.assertNotIn("Analyst-AI-0.5.1-preview", self.workflow)
@@ -65,7 +65,7 @@ class DistributableApkWorkflowTests(unittest.TestCase):
             "contains(github.event.head_commit.message, '[publish-apk]')",
             release_block,
         )
-        self.assertIn("report.version_code <= 31", release_block)
+        self.assertIn("report.version_code <= 32", release_block)
         self.assertIn("hash !== report.sha256", release_block)
 
     def test_validation_source_changes_retrigger_main_apk(self):

@@ -1,5 +1,8 @@
 package ru.omnicio.app.ui.analysis
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
@@ -16,7 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.saveable.rememberSaveable
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
-import ru.omnicio.app.ui.workspace.WorkspaceLink
+import ru.omnicio.app.ui.workspace.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -191,11 +194,11 @@ private fun InsightScreen(
                 .padding(padding)
                 .consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(workspaceGap),
         ) {
             item(key = "filters") {
-                SpectrumTabs(if (selected == AnalystTab.Risk) listOf("Обзор", "Сигналы")
-                    else listOf("Новые", "Все", "Прочитано"), section, { section = it })
+                SpectrumTabs(if (selected == AnalystTab.Risk) listOf("Обзор", "Активные", "История")
+                    else listOf("Внимание", "Информация", "История"), section, { section = it })
             }
             item(key = "refresh") {
                 SpectrumSecondaryButton(
@@ -213,20 +216,19 @@ private fun InsightScreen(
             if (entries != null) {
                 val riskOverview = selected == AnalystTab.Risk && section == 0
                 if (riskOverview) {
-                    item(key = "overview") { RiskOverviewCard(entries) }
+                    item(key = "overview") { RiskOverviewCard(entries.filter { insightActive(it, now) }) }
                     item(key = "coverage") { RiskCoverageCard() }
                     item(key = "open-signals") {
-                        WorkspaceLink("Сигналы", "Получено: ${entries.size}", SpectrumSymbol.Risk) { section = 1 }
+                        WorkspaceLink("Активные сигналы", "Актуальность проверяется отдельно от прочтения", SpectrumSymbol.Risk) { section = 1 }
                     }
                 } else {
-                    val visible = if (selected == AnalystTab.Risk || section == 1) entries
-                        else entries.filter { if (section == 0) !it.isRead else it.isRead }
+                    val visible = visibleInsights(entries, selected, section, now)
                     when {
                         entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size -> {
                             item(key = "invalid") { ErrorCard("Не удалось проверить список событий.", { reload++ }) }
                         }
                         visible.isEmpty() -> item(key = "empty") { StatusCard(emptyTitle, emptyText) }
-                        else -> items(visible, key = { it.id }) { card -> InsightPreview(card) { selectedId = card.id } }
+                        else -> items(visible, key = { it.id }) { card -> InsightPreview(card, now) { selectedId = card.id } }
                     }
                 }
             }
@@ -302,7 +304,7 @@ private fun IdeasContent(
     modifier: Modifier,
 ) {
     val client = remember { AnalysisBackendClient() }
-    var reload by remember { mutableIntStateOf(0) }
+    var reload by remember { mutableIntStateOf(1) }
     var refreshing by remember { mutableStateOf(false) }
     var refreshMessage by remember { mutableStateOf<String?>(null) }
     val state by rememberAnalysisData(token, reload, client::fetchIdeas)
@@ -322,14 +324,14 @@ private fun IdeasContent(
                 .padding(padding)
                 .consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(workspaceGap),
         ) {
             item(key = "action-sections") {
                 SpectrumTabs(listOf("План", "Анализ"), section, { section = it })
             }
             if (section == 0) {
                 item(key = "execution-readiness") {
-                    StatusCard("План сделок ещё не подключён", "Пока доступны обзоры портфеля. Точные покупки, продажи и суммы появятся после подключения расчёта действий.")
+                    ActionPlan(actions = null)
                 }
                 item(key = "open-analysis") {
                     SpectrumPrimaryButton("Посмотреть анализ", { section = 1 }, Modifier.fillMaxWidth())
@@ -348,7 +350,7 @@ private fun IdeasContent(
                 }
             }
             loadStatus(state) { reload++ }
-            item(key = "portfolio-research") { PortfolioResearchPanel(token) }
+            item(key = "portfolio-research") { PortfolioResearchPanel(token, showRefresh = false, refreshKey = reload) }
             state.value?.let { payload ->
                 item(key = "state") {
                     StatusCard(
@@ -376,14 +378,7 @@ private fun IdeasContent(
                         )
                     }
                 }
-                item(key = "reload-results") {
-                    SpectrumSecondaryButton(
-                        text = "Обновить результаты",
-                        onClick = { reload++ },
-                        enabled = !state.loading,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+
             }
             }
         }
@@ -435,6 +430,8 @@ private fun AnalysisProfileContent(
 ) {
     var section by rememberSaveable { mutableIntStateOf(initialSection.coerceIn(0, 2)) }
     val client = remember { AnalysisBackendClient() }
+    var baseline by remember { mutableStateOf<AnalysisProfile?>(null) }
+    var leaving by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<AnalysisProfile?>(null) }
     var status by remember { mutableStateOf<AnalysisStatus?>(null) }
     var pendingSave by remember { mutableStateOf<AnalysisProfile?>(null) }
@@ -443,13 +440,16 @@ private fun AnalysisProfileContent(
     var message by remember { mutableStateOf<String?>(null) }
     var saveFailed by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
+    val dirty = draft != null && draft != baseline
+    val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
+    BackHandler(onBack = leave)
     LaunchedEffect(reload) {
         loading = true
         problem = null
         status = null
         try {
             when (val result = withContext(Dispatchers.IO) { client.fetchProfile(token) }) {
-                is BackendResult.Success -> draft = result.value
+                is BackendResult.Success -> { draft = result.value; baseline = result.value }
                 is BackendResult.Failure -> {
                     problem = result.message
                     draft = null
@@ -471,6 +471,7 @@ private fun AnalysisProfileContent(
         onPortfolioClick = onPortfolioClick,
         onProfileClick = onProfileClick,
         modifier = modifier,
+        showBottomBar = false,
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -478,12 +479,12 @@ private fun AnalysisProfileContent(
                 .padding(padding)
                 .consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(workspaceGap),
         ) {
             item(key = "back") {
                 SpectrumSecondaryButton(
                     text = "Назад",
-                    onClick = onBack,
+                    onClick = leave,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -493,6 +494,7 @@ private fun AnalysisProfileContent(
             if (profile != null && !loading) {
                 item { SpectrumTabs(listOf("Правила", "Уведомления", "Наблюдение"), section, { section = it }) }
                 if (section == 2) item { MonitoringStatus(status) }
+                if (section == 1) item { NotificationDeliveryDraft() }
                 profileControls(profile, section, enabled = pendingSave == null) { draft = it }
                 message?.let { text ->
                     item {
@@ -514,11 +516,12 @@ private fun AnalysisProfileContent(
                         )
                     }
                 }
+                if (dirty) item { Text("Есть несохранённые изменения. Они применятся к следующим проверкам после сохранения.") }
                 item(key = "save") {
                     SpectrumPrimaryButton(
                         text = if (pendingSave != null) "Сохраняем…" else "Сохранить профиль",
                         onClick = { pendingSave = profile },
-                        enabled = pendingSave == null && valid,
+                        enabled = pendingSave == null && valid && dirty,
                         modifier = Modifier.fillMaxWidth(),
                         symbol = SpectrumSymbol.Analyst,
                     )
@@ -526,6 +529,11 @@ private fun AnalysisProfileContent(
             }
         }
     }
+    if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("Есть несохранённые изменения") },
+        text = { Text("Вернитесь к настройкам и сохраните профиль либо выйдите без изменений.") },
+        confirmButton = { TextButton(onClick = { leaving = false }) { Text("Продолжить настройку") } },
+        dismissButton = { TextButton(enabled = pendingSave == null, onClick = onBack) { Text("Не сохранять") } })
+
     LaunchedEffect(pendingSave) {
         val submitted = pendingSave ?: return@LaunchedEffect
         message = null
@@ -534,6 +542,7 @@ private fun AnalysisProfileContent(
             when (val result = withContext(Dispatchers.IO) { client.saveProfile(token, submitted) }) {
                 is BackendResult.Success -> {
                     draft = result.value
+                    baseline = result.value
                     message = "Профиль сохранён и будет применён к следующим проверкам."
                 }
                 is BackendResult.Failure -> {
@@ -640,3 +649,14 @@ private fun LazyListScope.profileControls(
     }
     }
 }
+
+internal fun visibleInsights(entries: List<InsightCard>, selected: AnalystTab, section: Int, now: Instant): List<InsightCard> =
+    entries.filter { card ->
+        val active = insightActive(card, now)
+        if (selected == AnalystTab.Risk) { if (section == 1) active else !active }
+        else when (section) {
+            0 -> active && !card.isRead && card.severity in setOf("critical", "warning")
+            1 -> active && !card.isRead && card.severity !in setOf("critical", "warning")
+            else -> card.isRead || !active
+        }
+    }.sortedWith(compareBy<InsightCard> { when (it.severity) { "critical" -> 0; "warning" -> 1; else -> 2 } }.thenByDescending { it.createdAt })

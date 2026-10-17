@@ -14,6 +14,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,7 +59,6 @@ fun ProfileScreen(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onPortfolioClick: () -> Unit,
     onOpenTApi: () -> Unit,
-    onOpenAnalysisSettings: () -> Unit,
     onOpenEducation: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
@@ -65,10 +66,8 @@ fun ProfileScreen(
     val workspace = LocalWorkspaceNavigator.current
     var section by rememberSaveable { mutableIntStateOf(0) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
-    val theme = LocalThemePreference.current
-    val motion = LocalSpectrumMotionPreference.current
     val contentState = rememberLazyListState()
-    LaunchedEffect(section) { contentState.scrollToItem(0) }
+    val sectionScope = rememberCoroutineScope()
 
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(
@@ -99,7 +98,7 @@ fun ProfileScreen(
                 // The fixed rail is above the scrolling body in both drawing
                 // and accessibility occlusion order, including after dialogs.
                 Column(Modifier.fillMaxWidth().zIndex(1f).clipToBounds().padding(horizontal = 20.dp)) {
-                    ProfileSectionTabs(section) { section = it }
+                    ProfileSectionTabs(section) { section = it; sectionScope.launch { contentState.scrollToItem(0) } }
                 }
                 LazyColumn(
                     modifier = Modifier
@@ -114,31 +113,9 @@ fun ProfileScreen(
                     when (section) {
                         0 -> {
                             item(key = "appearance-workspace") {
-                                WorkspaceLink("Внешний вид", "Цвет, плотность, глубина и главный экран", SpectrumSymbol.Allocation) {
+                                WorkspaceLink("Оформление", "Тема, плотность, движение и приватность", SpectrumSymbol.Allocation) {
                                     workspace(WorkspaceRoute.Appearance)
                                 }
-                            }
-                            item(key = "theme") {
-                                ProfileAction(
-                                    title = "Оформление",
-                                    subtitle = theme.mode.title,
-                                    spectrum = SpectrumSymbol.Allocation,
-                                ) {
-                                    dialog = "theme"
-                                }
-                            }
-                            item(key = "motion") {
-                                ProfileToggle(
-                                    title = "Анимация",
-                                    subtitle = if (motion.enabled) {
-                                        "Движение включено"
-                                    } else {
-                                        "Иконки остаются статичными"
-                                    },
-                                    symbol = SpectrumSymbol.Analyst,
-                                    checked = motion.enabled,
-                                    onChange = motion.select,
-                                )
                             }
                             item(key = "screenshots") {
                                 ProfileToggle(
@@ -159,7 +136,7 @@ fun ProfileScreen(
                                 }
                             }
                             item(key = "assistant-workspace") {
-                                WorkspaceLink("Ассистент", "Портфель, действия и диалог", SpectrumSymbol.Analyst) {
+                                WorkspaceLink("Ассистент", "Портфель, действия и объяснения", SpectrumSymbol.Analyst) {
                                     workspace(WorkspaceRoute.Assistant)
                                 }
                             }
@@ -177,7 +154,7 @@ fun ProfileScreen(
                         1 -> {
                             item(key = "profile-overview") { ProfileIdentityCard(user, tApiConfigured) }
                             item(key = "strategies") {
-                                WorkspaceLink("Мои стратегии", "Цель, отбор, доли и поступления", SpectrumSymbol.Goal) {
+                                WorkspaceLink("Моя стратегия", "Цель, отбор, доли и поступления", SpectrumSymbol.Goal) {
                                     workspace(WorkspaceRoute.Strategies)
                                 }
                             }
@@ -190,16 +167,8 @@ fun ProfileScreen(
                                         "Подключить данные вашего брокерского счёта"
                                     },
                                     spectrum = SpectrumSymbol.Sources,
-                                    badge = if (tApiConfigured) "Подключено" else "Не подключено",
+                                    badge = LocalBrokerConnection.current?.title ?: if (tApiConfigured) "Подключено" else "Не подключено",
                                     onClick = onOpenTApi,
-                                )
-                            }
-                            item(key = "investment-profile") {
-                                ProfileAction(
-                                    title = "Инвестиционный профиль",
-                                    subtitle = "Риск, горизонт, резерв и ограничения",
-                                    spectrum = SpectrumSymbol.Analyst,
-                                    onClick = onOpenAnalysisSettings,
                                 )
                             }
                             item(key = "portfolio") {
@@ -215,7 +184,7 @@ fun ProfileScreen(
                                     title = user.name?.takeIf(String::isNotBlank) ?: "Аккаунт Telegram",
                                     subtitle = listOfNotNull(
                                         user.username?.let { "@$it" },
-                                        "ID ${user.telegramId}",
+
                                     ).joinToString(" · "),
                                     spectrum = SpectrumSymbol.Messages,
                                 ) {
@@ -268,38 +237,6 @@ fun ProfileScreen(
     }
 
     when (dialog) {
-        "theme" -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("Оформление") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ThemeMode.entries.forEach { mode ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .selectable(
-                                    selected = theme.mode == mode,
-                                    role = Role.RadioButton,
-                                    onClick = {
-                                        theme.select(mode)
-                                        dialog = null
-                                    },
-                                )
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = theme.mode == mode, onClick = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text(mode.title)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { dialog = null }) { Text("Закрыть") }
-            },
-        )
-
         "security" -> InformationDialog(
             title = "Безопасность",
             text = "Токен T‑Invest передаётся по HTTPS и хранится зашифрованным на сервере Analyst AI, отдельно от APK. Используйте read-only токен.\n\nСеанс на устройстве хранится зашифрованным; серверный срок действия — 30 дней. После удаления приложения нужно войти снова.\n\nAnalyst AI не выставляет торговые поручения. Запрет скриншотов включается только вами. Для отзыва доступа удалите токен в T‑Инвестициях и отключите T‑API здесь.",
@@ -366,12 +303,12 @@ private fun ProfileIdentityCard(user: AnalystUser, tApiConfigured: Boolean) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    user.username?.let { "@$it" } ?: "Telegram ID ${user.telegramId}",
+                    user.username?.let { "@$it" } ?: "Вход через Telegram",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 SpectrumBadge(
-                    text = if (tApiConfigured) "Портфель подключён" else "T‑API не подключён",
+                    text = LocalBrokerConnection.current?.title ?: if (tApiConfigured) "Портфель подключён" else "T‑API не подключён",
                     accent = if (tApiConfigured) palette.emerald else palette.amber,
                 )
             }
@@ -488,7 +425,7 @@ private fun InformationDialog(title: String, text: String, close: () -> Unit) {
 private fun accountSubtitle(user: AnalystUser): String {
     val identity = user.name?.takeIf(String::isNotBlank)
         ?: user.username?.let { "@$it" }
-        ?: "Telegram ID ${user.telegramId}"
+        ?: "Вход через Telegram"
     return identity
 }
 

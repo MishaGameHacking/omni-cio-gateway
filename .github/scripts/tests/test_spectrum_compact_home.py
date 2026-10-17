@@ -9,24 +9,22 @@ PROFILE = ROOT / "app/src/main/java/ru/omnicio/app/ui/profile/ProfileSectionTabs
 
 
 class CompactHomeTests(unittest.TestCase):
-    def test_quick_actions_precede_the_analyst_without_another_large_heading(self):
+    def test_next_step_and_attention_precede_secondary_shortcuts(self):
         source = (HOME / "HomeScreen.kt").read_text(encoding="utf-8")
         order = re.findall(r'item\(key = "([\w-]+)"\)', source)
-        self.assertEqual(order[:4], ["brand-header", "portfolio-hero", "capabilities", "assistant"])
+        self.assertEqual(order[:4], ["brand-header", "portfolio-hero", "assistant", "attention"])
         self.assertNotIn("heightIn(max = 150.dp)", source)
         self.assertNotIn("SpectrumMetricPill", source)
         self.assertIn("onClick = onCurrency", source)
 
     def test_workspace_shortcuts_keep_real_navigation_callbacks(self):
         source = (HOME / "HomeQuickActions.kt").read_text(encoding="utf-8")
-        for callback in ("onAssistant", "onStrategies", "onMarket"):
-            self.assertIn(callback + ")", source)
-        for live_feature in ("Assistant", "Recommendations", "WorldMarkets"):
-            self.assertIn("SpectrumLiveFeature." + live_feature, source)
-        self.assertIn("SpectrumLiveFeatureIcon(", source)
+        for callback in ("onAssets", "onPayments"):
+            self.assertIn(callback, source)
+        self.assertNotIn("SpectrumLiveFeatureIcon(", source)
         self.assertIn("fontScale >= 1.4f", source)
         self.assertIn("widthDp < 260f", source)
-        self.assertIn("Modifier.size(52.dp)", source)
+        self.assertIn("else 2", source)
 
     def test_profile_semantics_preserve_full_cell_state_and_activation(self):
         source = PROFILE.read_text(encoding="utf-8")

@@ -25,6 +25,8 @@ import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.ui.education.EducationScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
+import ru.omnicio.app.ui.workspace.*
+import androidx.compose.runtime.CompositionLocalProvider
 
 /** Debug-only UI fixture. No network calls or authentication bypass in preview. */
 class ProfileUiProbeActivity : ComponentActivity() {
@@ -33,7 +35,9 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market") } ?: "profile"
+        val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100") } ?: "profile"
+        if (screen == "strategy") getSharedPreferences("strategy_draft_synthetic-ui-test", 0).edit().clear().apply()
+        check(runWorkspaceUxChecks() == 24)
         check(runInstrumentLinkRegressions() == 15)
         val researchChecks = runResearchPresentationChecks()
         val refreshChecks = runRefreshStateRegressionChecks()
@@ -55,6 +59,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
                 val background = MaterialTheme.colorScheme.background.toArgb().toUInt().toString(16)
                 val foreground = LocalContentColor.current.toArgb().toUInt().toString(16)
                 var screenshotsBlocked by remember { mutableStateOf(false) }
+                var appearanceOpen by remember { mutableStateOf(false) }
                 var educationOpen by remember { mutableStateOf(false) }
                 val readinessMarker = "probe-screen:$screen;probe-background:$background;probe-foreground:$foreground;probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true"
                 Box(
@@ -62,7 +67,9 @@ class ProfileUiProbeActivity : ComponentActivity() {
                         .fillMaxSize()
                         .semantics { contentDescription = readinessMarker },
                 ) {
-                    if (screen != "profile") {
+                    CompositionLocalProvider(LocalWorkspaceNavigator provides { if (it == WorkspaceRoute.Appearance) appearanceOpen = true }) {
+                    if (appearanceOpen) AppearanceScreen { appearanceOpen = false }
+                    else if (screen != "profile") {
                         SpectrumDashboardProbe(screen)
                     } else if (educationOpen) {
                         EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
@@ -71,11 +78,12 @@ class ProfileUiProbeActivity : ComponentActivity() {
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
                             tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
                             onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                            onPortfolioClick = {}, onOpenTApi = {}, onOpenAnalysisSettings = {},
+                            onPortfolioClick = {}, onOpenTApi = {},
                             onOpenEducation = { educationOpen = true }, onLogout = {},
                         )
                     }
 
+                    }
                     // Complex dashboards may contribute many accessibility nodes.
                     // Keep one tiny, independent debug-only node so readiness is
                     // not inferred from an old tree or lost by semantics merging.

@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +21,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.*
+import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
@@ -35,22 +37,41 @@ fun PortfolioScreen(
     state: PortfolioUiState,
     onProfileClick: () -> Unit,
     selectedCurrency: PortfolioCurrency = PortfolioCurrency.RUB,
-    onCurrencyClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     accessToken: String = "",
     refreshing: Boolean = false,
     refreshError: String? = null,
     lastUpdatedMillis: Long? = null,
+    onConnect: () -> Unit = onProfileClick,
+    destination: PortfolioDestination? = null,
+    onDestinationConsumed: () -> Unit = {},
 ) {
     var accountId by rememberSaveable { mutableStateOf<String?>(null) }
     var section by rememberSaveable { mutableIntStateOf(0) }
-    var overviewSection by rememberSaveable { mutableIntStateOf(0) }
+    var overviewSection by rememberSaveable { mutableIntStateOf(1) }
+    var assetQuery by rememberSaveable { mutableStateOf("") }
+    var assetSector by rememberSaveable { mutableStateOf<String?>(null) }
+    var assetKind by rememberSaveable { mutableStateOf<String?>(null) }
     var selectForSection by remember { mutableStateOf<Int?>(null) }
     var positionDetails by remember(accessToken) { mutableStateOf<PositionSelection?>(null) }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
     val listState = rememberLazyListState()
-    LaunchedEffect(overviewSection) { listState.scrollToItem(0) }
+    val listScope = rememberCoroutineScope()
+    LaunchedEffect(destination, snapshot?.accounts?.map { it.id }) {
+        destination?.let { target ->
+            if (target.section > 2) {
+                val accounts = snapshot?.accounts ?: return@LaunchedEffect
+                if (target.accountId == null && accounts.size > 1) selectForSection = target.section
+                else { accountId = target.accountId ?: accounts.firstOrNull()?.id; section = target.section }
+            } else {
+                overviewSection = target.section; accountId = target.accountId
+                if (target.accountId != null) section = target.section
+                assetQuery = target.query; assetSector = target.sector; assetKind = target.kind
+            }
+            onDestinationConsumed()
+        }
+    }
     BackHandler(accountId != null) { accountId = null; section = 0 }
 
     SpectrumBackground(modifier.fillMaxSize()) {
@@ -61,9 +82,9 @@ fun PortfolioScreen(
             bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
         ) { insets ->
             if (account != null) {
-                AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
+                AccountScreen(account, accessToken, section, { section = it },
                     { accountId = null; section = 0 }, snapshot.asOf, refreshError,
-                    Modifier.padding(insets).consumeWindowInsets(insets))
+                    Modifier.padding(insets).consumeWindowInsets(insets), snapshot.accounts, { accountId = it })
             } else {
                 PortfolioDashboard(
                     state = state,
@@ -73,10 +94,10 @@ fun PortfolioScreen(
                     lastUpdatedMillis = lastUpdatedMillis,
                     accessToken = accessToken,
                     selectedSection = overviewSection,
-                    onSelectSection = { overviewSection = it },
+                    onSelectSection = { overviewSection = it; listScope.launch { listState.scrollToItem(0) } },
                     listState = listState,
-                    onCurrencyClick = onCurrencyClick,
-                    onProfileClick = onProfileClick,
+                    onProfileClick = onConnect,
+                    assetQuery = assetQuery, assetSector = assetSector, assetKind = assetKind,
                     onOpenAccount = { accountId = it.id; section = 0 },
                     onOpenSection = { target ->
                         if (snapshot?.accounts?.size == 1) {
@@ -106,7 +127,7 @@ private fun LivePositionDetails(selection: PositionSelection?, accounts: List<Po
     val position = resolveSelectedPosition(selection, accounts, PortfolioAccount::id,
         { account, virtual -> if (virtual) account.virtualPositions else account.positions }, PortfolioPosition::id)
     if (position != null) {
-        PositionDetails(position, close)
+        PositionDetails(position, close, accounts?.firstOrNull { it.id == selection.accountId }?.name)
     } else {
         AlertDialog(onDismissRequest = close, containerColor = LocalSpectrumPalette.current.card,
             title = { Text("Данные позиции изменились") },
@@ -137,32 +158,34 @@ private fun ReturnSummaryRow(title: String, amount: MoneyAmount?, percent: ApiDe
 @Composable
 private fun AccountScreen(
     account: PortfolioAccount, token: String, section: Int, onSection: (Int) -> Unit,
-    onCurrency: () -> Unit, onBack: () -> Unit, asOf: String?, error: String?, modifier: Modifier,
+    onBack: () -> Unit, asOf: String?, error: String?, modifier: Modifier,
+    accounts: List<PortfolioAccount>, onAccount: (String) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("‹ Назад") }
-            Text(account.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            AccountSelector(accounts, account.id, onAccount, Modifier.weight(1f))
         }
         Box(Modifier.padding(horizontal = 20.dp)) { ChoiceRow(listOf("Обзор", OperationsTitle, "Заявки", AnalyticsTitle, "Выплаты"), section, onSection) }
         when (section) {
             1 -> AccountOperations(token, account)
             2 -> AccountOrders(token, account)
-            3 -> AccountAnalytics(token, account, onCurrency)
+            3 -> AccountAnalytics(token, account)
             4 -> AccountPayments(token, account)
-            else -> AccountOverview(account, onCurrency, onSection, asOf, error)
+            else -> AccountOverview(account, onSection, asOf, error)
         }
     }
 }
 
 @Composable
-private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, onSection: (Int) -> Unit, asOf: String?, error: String?) {
+private fun AccountOverview(account: PortfolioAccount, onSection: (Int) -> Unit, asOf: String?, error: String?) {
     var selected by remember(account.id) { mutableStateOf<PositionSelection?>(null) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "value") {
             SpectrumCard(emphasized = true) {
                 Text("Капитал счёта", color = LocalSpectrumPalette.current.cyan, style = MaterialTheme.typography.labelLarge)
-                Text(account.totalValue.moneyText(), Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency),
+                CurrencyChoice(account.totalValue.currency)
+                Text(account.totalValue.moneyText(),
                     fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineLarge)
                 DataRow("Текущая доходность брокера", account.expectedYieldPercent.percentText())
                 ReturnSummaryRow("За день", account.dailyYieldAmount, account.dailyYieldPercent)
@@ -177,19 +200,18 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
         }
         item { SectionHeading("Активы и деньги") }
         items(account.positions, key = { "position:${it.id}" }) { position ->
-            SpectrumCard { PositionLine(position) { selected = PositionSelection(account.id, position.id) } }
+            PositionLine(position, total = account.totalValue) { selected = PositionSelection(account.id, position.id) }
         }
         if (account.positions.isEmpty()) item { Notice("Позиции отсутствуют") }
-        if (account.virtualPositions.isNotEmpty()) {
-            item { SectionHeading("Виртуальные позиции") }
-            items(account.virtualPositions, key = { "virtual:${it.id}" }) { position ->
-                SpectrumCard { PositionLine(position) { selected = PositionSelection(account.id, position.id, virtual = true) } }
+        if (account.virtualPositions.isNotEmpty()) item { DetailFold("Виртуальные позиции (${account.virtualPositions.size})") {
+            account.virtualPositions.forEach { position ->
+                PositionLine(position, total = account.totalValue) { selected = PositionSelection(account.id, position.id, virtual = true) }
             }
-        }
+        } }
         item { CompactCard { SectionHeading("Баланс активов"); AccountStructure(account) } }
         item {
             CompactCard {
-                SectionHeading("Сведения о счёте")
+                DetailFold("Сведения о счёте") {
                 DataRow("Название", account.name)
                 DataRow("Идентификатор", account.id)
                 DataRow("Открыт", dateText(account.openedAt, "dd.MM.yyyy"))
@@ -199,6 +221,7 @@ private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, o
                     else -> "Брокерский счёт"
                 })
                 Notice("Доступ только для чтения. Пополнение, вывод и торговые поручения выполняются в приложении брокера.")
+                }
             }
         }
     }

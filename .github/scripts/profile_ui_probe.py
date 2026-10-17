@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
+WORKSPACE_BACK = "‹ Назад"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 INFO_LABEL = "О приложении"
@@ -98,7 +99,7 @@ class ProfileProbe:
         established console transport; it still must produce a complete PNG.
         A fresh directory prevents reusing a previous frame. Errors remain fatal.
         """
-        if re.fullmatch(r"[a-z-]+", name) is None:
+        if re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name) is None:
             raise ValueError("Invalid screenshot label")
         root = Path(__file__).resolve().parents[2]
         directory = root / "app/build/outputs/apk/preview/ui-screens"
@@ -362,36 +363,66 @@ class ProfileProbe:
             if screen == "portfolio":
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
+                from profile_scroll import visible_resource
+                search = self.wait_for(lambda: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
+                self.tap_node(search)
+                self.command("shell", "input", "text", "NO_SUCH_ASSET")
+                self.command("shell", "input", "keyevent", "BACK")
+                self.find("Ничего не найдено")
+                self.tap_visible("Сбросить")
+                self.find("Денежные средства")
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def workspace(self):
         from profile_launch import profile_frame, start_status
-        for screen, label in (("appearance", "Оформление"), ("strategy", "Мои стратегии"),
-                              ("assistant", "Ассистент"), ("market", "Обзор рынка")):
+        for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
+                              ("assistant", "Ассистент"), ("market", "Отрасли и классы"), ("ux100", "Проверка UX100")):
             self.command("shell", "am", "force-stop", PACKAGE)
             start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
                                       "--es", "spectrum_screen", screen))
-            evidence = {}
-            self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
-                          "Workspace screen is not resumed")
+            evidence = {"expected_screen": screen}
+            try:
+                self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
+                              "Workspace screen is not resumed")
+            except Exception:
+                print("WORKSPACE_READINESS_DIAGNOSTIC=" + json.dumps(evidence, ensure_ascii=True), flush=True)
+                raise
             self.find(label)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
             self.capture("workspace-" + screen)
             if screen == "strategy":
                 self.tap_visible("Отбор")
                 self.reveal("Кредитные рейтинги", "workspace-content")
-                self.reveal("BBB-", "workspace-content")
+                self.reveal("Минимум: BBB- ▾", "workspace-content")
                 self.capture("workspace-ratings")
                 self.tap_visible("Доход")
+                self.reveal("Пополнять резерв", "workspace-content")
+                self.tap("Пополнять резерв", "workspace-content")
                 self.reveal("Сохранить черновик", "workspace-content")
                 self.tap("Сохранить черновик", "workspace-content")
                 self.find("Черновик сохранён")
+            elif screen == "ux100":
+                self.reveal("Отложить", "workspace-content")
+                self.tap("Отложить", "workspace-content")
+                self.tap_visible("Нужно подумать")
+                self.find("Отложено: Нужно подумать · изменить")
+                self.tap_visible("График")
+                self.capture("ux100-chart")
+                self.tap("Скрыть суммы", "workspace-content", direction="start")
+                self.find("График скрыт режимом приватности.")
+                self.tap("Показать суммы", "workspace-content", direction="start")
+                self.tap_visible("Изменения")
+                self.find("Влияние изменений")
+                self.capture("ux100-impact")
+                self.tap_visible("События")
+                self.tap("Обновления события (2)", "workspace-content")
+                self.find("Уточнение источника")
             elif screen == "appearance":
                 self.reveal("Движение", "workspace-content")
                 self.tap("Движение", "workspace-content")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
-            self.tap_visible("‹ Назад")
+            self.tap_visible(WORKSPACE_BACK)
             self.find("Ваш капитал")
         self.command("shell", "am", "force-stop", PACKAGE)
 
@@ -411,11 +442,13 @@ class ProfileProbe:
         # Spectrum starts dark; light/system remain explicit user choices.
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.tap_visible("Светлая")
+        self.tap("Светлая", "workspace-content")
+        self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
-        self.tap_visible("Тёмная")
+        self.tap("Тёмная", "workspace-content")
+        self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
@@ -423,11 +456,13 @@ class ProfileProbe:
         self.palette(DARK_BACKGROUND)
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap_visible("Светлая")
+        self.tap("Светлая", "workspace-content")
+        self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
-        self.tap_visible("Как в системе")
+        self.tap("Как в системе", "workspace-content")
+        self.tap_visible(WORKSPACE_BACK)
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
         self.capture("system-dark")
