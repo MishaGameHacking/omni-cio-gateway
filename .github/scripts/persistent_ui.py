@@ -30,6 +30,7 @@ SCROLL_LIST_CODES = {
     "education-content": 2,
     "portfolio-content": 3,
     "profile-tabs": 4,
+    "workspace-content": 5,
 }
 
 
@@ -291,3 +292,4 @@ def frame_session(device):
         raise
     finally:
         cleanup_session(device, connection, port, sys.exc_info()[1])
+

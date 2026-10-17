@@ -6,7 +6,7 @@ only exact, counted substitutions before execution:
 * four child-process environment prefixes use ``env`` so Bash does not try to
   reassign readonly variables in the current shell;
 * every audited 0.6.0 artifact and policy read-back marker is replaced with the
-  exact, immutable, emulator-verified 0.7.5 release identity.
+  exact, immutable, emulator-verified 0.7.6 release identity.
 
 Any missing, duplicated, or changed source marker aborts before cloud access.
 """
@@ -47,45 +47,45 @@ PREFIX_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 # The policy assertions appear twice: once on the server itself and once through
 # the public HTTPS hostname. Both must validate the same release identity.
 RELEASE_REPLACEMENTS: tuple[tuple[str, str, int], ...] = (
-    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="30"', 1),
+    ('readonly VERSION_CODE="23"', 'readonly VERSION_CODE="31"', 1),
     (
         'readonly VERSION_NAME="0.6.0-preview"',
-        'readonly VERSION_NAME="0.7.5-preview"',
+        'readonly VERSION_NAME="0.7.6-preview"',
         1,
     ),
     (
         'readonly APK_SHA256="31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
-        'readonly APK_SHA256="739fb8b16865a742118ca1930bc2488a28c3cf807a23c20628df9ebb7ca75bcb"',
+        'readonly APK_SHA256="0bb5e481f035218084b797e667c5850f9cb4b2c44ddca49a118bc61d7fe6306d"',
         1,
     ),
     ('readonly APK_BYTES="4100464"', 'readonly APK_BYTES="4167540"', 1),
     ('readonly MIN_SDK="33"', 'readonly MIN_SDK="36"', 1),
-    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792181989"', 1),
+    ('readonly PUBLISHED_AT="1792031738"', 'readonly PUBLISHED_AT="1792214870"', 1),
     (
         '"notes": "Проверенная версия Analyst AI 0.6.0-preview. Исправлен серверный канал проверки версии.",',
-        '"notes": "Проверенная версия Analyst AI 0.7.5-preview. Независимое серверное наблюдение и статус свежести данных. Android 16 и новее.",',
+        '"notes": "Проверенная версия Analyst AI 0.7.6-preview. Главная без панели «Живые возможности»: быстрые переходы и полезные данные портфеля. Android 16 и новее.",',
         1,
     ),
-    ('assert payload["version_code"] == 23', 'assert payload["version_code"] == 30', 2),
+    ('assert payload["version_code"] == 23', 'assert payload["version_code"] == 31', 2),
     (
         'assert payload["minimum_version_code"] == 23',
-        'assert payload["minimum_version_code"] == 30',
+        'assert payload["minimum_version_code"] == 31',
         2,
     ),
     (
         'assert payload["version_name"] == "0.6.0-preview"',
-        'assert payload["version_name"] == "0.7.5-preview"',
+        'assert payload["version_name"] == "0.7.6-preview"',
         2,
     ),
     (
         'assert payload["apk_sha256"] == "31a04b49a03e7ac407092d095a6fbf5a736618850a9ea0765a22ab9e814a4b74"',
-        'assert payload["apk_sha256"] == "739fb8b16865a742118ca1930bc2488a28c3cf807a23c20628df9ebb7ca75bcb"',
+        'assert payload["apk_sha256"] == "0bb5e481f035218084b797e667c5850f9cb4b2c44ddca49a118bc61d7fe6306d"',
         2,
     ),
     ('assert payload["apk_bytes"] == 4100464', 'assert payload["apk_bytes"] == 4167540', 2),
     (
         '# clients. Enforcement can be activated only after the owner verifies 0.6.0.',
-        '# clients. Enforcement can be activated only after the owner verifies 0.7.5.',
+        '# clients. Enforcement can be activated only after the owner verifies 0.7.6.',
         1,
     ),
 )
@@ -143,7 +143,7 @@ def validate_child_environment_prefixes(patched: str) -> None:
 
 
 def validate_release_identity(patched: str) -> None:
-    """Confirm that only the requested 0.7.5 identity is staged."""
+    """Confirm that only the requested 0.7.6 identity is staged."""
     for old, new, expected in RELEASE_REPLACEMENTS:
         if old in patched or patched.count(new) != expected:
             raise RuntimeError(
@@ -153,7 +153,7 @@ def validate_release_identity(patched: str) -> None:
 
 
 def patched_source() -> str:
-    """Return a syntax-preserving script for the exact 0.7.5 release."""
+    """Return a syntax-preserving script for the exact 0.7.6 release."""
     source = apply_release_identity(SOURCE.read_text(encoding="utf-8"))
     patched, counts = apply_child_environment_prefixes(source)
     require_expected_prefix_counts(counts)
@@ -214,3 +214,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

@@ -34,8 +34,8 @@ def _composite(foreground: str, background: str, alpha: float) -> str:
 class SpectrumContrastTests(unittest.TestCase):
     def test_badge_text_has_normal_text_contrast_in_dark_and_light_palettes(self):
         palettes = (
-            ('F4F4F5', '071A2A', ('36E0FF', '4C8DFF', '8A5CFF', 'FF4FA3', '19E6A2', 'FFC857')),
-            ('191A1D', 'FFFFFF', ('007C91', '205FCF', '6E43C8', 'A92A70', '007D63', '8A5A00')),
+            ('F4F7FF', '121D2B', ('70E0D2', '4C8DFF', '8A5CFF', 'FF4FA3', '19E6A2', 'FFC857')),
+            ('101722', 'FFFFFF', ('007C91', '205FCF', '6E43C8', 'A92A70', '007D63', '8A5A00')),
         )
         for text, card, accents in palettes:
             for accent in accents:
@@ -45,9 +45,9 @@ class SpectrumContrastTests(unittest.TestCase):
 
     def test_primary_actions_meet_normal_text_contrast(self):
         pairs = (
-            ('FFFFFF', '0077A8'),
-            ('FFFFFF', '296DCE'),
-            ('001F26', '59E0FF'),
+            ('FFFFFF', '3158D5'),
+            ('FFFFFF', '5036DA'),
+            ('FFFFFF', '7136BF'),
         )
         for text, background in pairs:
             with self.subTest(text=text, background=background):
@@ -56,3 +56,4 @@ class SpectrumContrastTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

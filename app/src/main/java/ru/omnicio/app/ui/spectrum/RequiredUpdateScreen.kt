@@ -17,7 +17,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +31,7 @@ import ru.omnicio.app.ui.updates.UpdateGateUi
 /** Spectrum renders the shared gate; it cannot download, install, or unblock content. */
 @Composable
 fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
+    var details by rememberSaveable { mutableStateOf(false) }
     val motion = LocalSpectrumMotionPreference.current
     val updateRequired = state.decision == ReleaseDecision.UPDATE_REQUIRED
     SpectrumUpdateBackdrop(
@@ -107,9 +109,6 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                     }
                 }
             }
-            item(key = "update-process") {
-                UpdateProcessSummary()
-            }
             if (updateRequired) {
                 item(key = "update-action") {
                     SpectrumPrimaryButton(
@@ -123,7 +122,13 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                     )
                 }
             }
-            item(key = "update-source") {
+            item(key = "update-process-toggle") {
+                TextButton(onClick = { details = !details }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(if (details) "Скрыть подробности" else "Как проходит обновление")
+                }
+            }
+            if (details) item(key = "update-process") { UpdateProcessSummary() }
+            if (details) item(key = "update-source") {
                 Text(
                     "APK загружается с московского сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
                     style = MaterialTheme.typography.bodyLarge,
@@ -132,7 +137,7 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
             }
             item(key = "update-android-confirmation") {
                 Text(
-                    "Android может попросить разрешение на установку и открыть системное подтверждение. После установки при необходимости нажмите «Открыть».",
+                    "Подтвердите установку в окне Android. После обновления нажмите «Открыть».",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -198,3 +203,4 @@ private fun UpdateProcessStep(number: String, title: String, explanation: String
         }
     }
 }
+

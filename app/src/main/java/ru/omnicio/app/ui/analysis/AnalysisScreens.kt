@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.saveable.rememberSaveable
+import ru.omnicio.app.ui.spectrum.SpectrumTabs
+import ru.omnicio.app.ui.workspace.WorkspaceLink
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -106,8 +109,8 @@ fun InsightFeedScreen(
         InsightScreen(
             token = accessToken,
             selected = AnalystTab.Home,
-            title = "Сообщения",
-            subtitle = "Важные выводы Analyst AI без свободного чата",
+            title = "Уведомления",
+            subtitle = "Важное для вашего портфеля",
             symbol = SpectrumSymbol.Messages,
             emptyTitle = "Важных сообщений пока нет",
             emptyText = "Система сообщит об изменении состава портфеля, риске или завершённом обзоре.",
@@ -138,7 +141,7 @@ fun PulseScreen(
             token = accessToken,
             selected = AnalystTab.Risk,
             title = "Риски",
-            subtitle = "Сводка сигналов, утренние и вечерние проверки",
+            subtitle = "Внимание к капиталу",
             symbol = SpectrumSymbol.Risk,
             emptyTitle = "Новых сигналов риска нет",
             emptyText = "Это не означает отсутствие риска. Следующая проверка появится после существенного изменения данных.",
@@ -169,6 +172,8 @@ private fun InsightScreen(
     var reload by remember { mutableIntStateOf(0) }
     val state by rememberAnalysisData(token, reload, fetch)
     var pendingRead by remember { mutableStateOf<InsightCard?>(null) }
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var section by rememberSaveable { mutableIntStateOf(0) }
     var readError by remember { mutableStateOf<String?>(null) }
     val now = rememberAnalysisClock()
     AnalysisScaffold(
@@ -188,9 +193,13 @@ private fun InsightScreen(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            item(key = "filters") {
+                SpectrumTabs(if (selected == AnalystTab.Risk) listOf("Обзор", "Сигналы")
+                    else listOf("Новые", "Все", "Прочитано"), section, { section = it })
+            }
             item(key = "refresh") {
                 SpectrumSecondaryButton(
-                    text = if (state.loading) "Обновляем…" else "Обновить ленту",
+                    text = if (state.loading) "Обновляем…" else "Проверить обновления",
                     onClick = { reload++ },
                     enabled = !state.loading && pendingRead == null,
                     modifier = Modifier.fillMaxWidth(),
@@ -202,35 +211,29 @@ private fun InsightScreen(
             }
             val entries = state.value
             if (entries != null) {
-                item(key = "overview") {
-                    if (selected == AnalystTab.Risk) {
-                        RiskOverviewCard(entries)
-                    } else {
-                        MessageOverviewCard(entries)
+                val riskOverview = selected == AnalystTab.Risk && section == 0
+                if (riskOverview) {
+                    item(key = "overview") { RiskOverviewCard(entries) }
+                    item(key = "coverage") { RiskCoverageCard() }
+                    item(key = "open-signals") {
+                        WorkspaceLink("Сигналы", "Получено: ${entries.size}", SpectrumSymbol.Risk) { section = 1 }
                     }
-                }
-                when {
-                    entries.isEmpty() -> item(key = "empty") { StatusCard(emptyTitle, emptyText) }
-                    entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size -> {
-                        item(key = "invalid") {
-                            ErrorCard(
-                                "Идентификаторы сообщений противоречивы. Лента не подменена частичным результатом.",
-                                { reload++ },
-                            )
+                } else {
+                    val visible = if (selected == AnalystTab.Risk || section == 1) entries
+                        else entries.filter { if (section == 0) !it.isRead else it.isRead }
+                    when {
+                        entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size -> {
+                            item(key = "invalid") { ErrorCard("Не удалось проверить список событий.", { reload++ }) }
                         }
-                    }
-                    else -> items(entries, key = { it.id }) { card ->
-                        InsightCardView(
-                            card = card,
-                            now = now,
-                            readEnabled = pendingRead == null,
-                        ) {
-                            pendingRead = card
-                        }
+                        visible.isEmpty() -> item(key = "empty") { StatusCard(emptyTitle, emptyText) }
+                        else -> items(visible, key = { it.id }) { card -> InsightPreview(card) { selectedId = card.id } }
                     }
                 }
             }
         }
+    }
+    state.value?.firstOrNull { it.id == selectedId }?.let { card ->
+        InsightDetails(card, now, pendingRead == null, { pendingRead = card }, { selectedId = null })
     }
     LaunchedEffect(pendingRead?.id) {
         val card = pendingRead ?: return@LaunchedEffect
@@ -303,10 +306,11 @@ private fun IdeasContent(
     var refreshing by remember { mutableStateOf(false) }
     var refreshMessage by remember { mutableStateOf<String?>(null) }
     val state by rememberAnalysisData(token, reload, client::fetchIdeas)
+    var section by rememberSaveable { mutableIntStateOf(0) }
     AnalysisScaffold(
-        selected = AnalystTab.Home,
-        title = "Рекомендации",
-        subtitle = "Персональные направления диверсификации, а не торговые команды",
+        selected = AnalystTab.Actions,
+        title = "Действия",
+        subtitle = "Один понятный следующий шаг",
         symbol = SpectrumSymbol.Ideas,
         onPortfolioClick = onPortfolioClick,
         onProfileClick = onProfileClick,
@@ -320,11 +324,23 @@ private fun IdeasContent(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            item(key = "action-sections") {
+                SpectrumTabs(listOf("План", "Анализ"), section, { section = it })
+            }
+            if (section == 0) {
+                item(key = "execution-readiness") {
+                    StatusCard("План сделок ещё не подключён", "Пока доступны обзоры портфеля. Точные покупки, продажи и суммы появятся после подключения расчёта действий.")
+                }
+                item(key = "open-analysis") {
+                    SpectrumPrimaryButton("Посмотреть анализ", { section = 1 }, Modifier.fillMaxWidth())
+                }
+            }
+            if (section == 1) {
             item(key = "refresh-analysis") {
                 ActionCard(
                     title = "Обновить портфель и анализ",
                     text = refreshMessage
-                        ?: "Запрос передаётся серверу. Платная модель нужна не для каждого обновления: решение принимает серверный контроль изменений и бюджета.",
+                        ?: "Получите свежий обзор по данным вашего портфеля.",
                     buttonText = if (refreshing) "Отправляем…" else "Обновить",
                     enabled = !refreshing,
                 ) {
@@ -369,6 +385,7 @@ private fun IdeasContent(
                     )
                 }
             }
+            }
         }
     }
     LaunchedEffect(refreshing) {
@@ -393,6 +410,7 @@ fun AnalysisProfileSettingsScreen(
     onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
+    initialSection: Int = 0,
 ) {
     key(accessToken) {
         AnalysisProfileContent(
@@ -401,6 +419,7 @@ fun AnalysisProfileSettingsScreen(
             onPortfolioClick = onPortfolioClick,
             onProfileClick = onProfileClick,
             modifier = modifier,
+            initialSection = initialSection,
         )
     }
 }
@@ -412,7 +431,9 @@ private fun AnalysisProfileContent(
     onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier,
+    initialSection: Int,
 ) {
+    var section by rememberSaveable { mutableIntStateOf(initialSection.coerceIn(0, 2)) }
     val client = remember { AnalysisBackendClient() }
     var draft by remember { mutableStateOf<AnalysisProfile?>(null) }
     var status by remember { mutableStateOf<AnalysisStatus?>(null) }
@@ -445,7 +466,7 @@ private fun AnalysisProfileContent(
     AnalysisScaffold(
         selected = AnalystTab.Profile,
         title = "Инвестиционный профиль",
-        subtitle = "Ограничения применяются алгоритмами до обращения к ИИ",
+        subtitle = "Действующие настройки анализа",
         symbol = SpectrumSymbol.Profile,
         onPortfolioClick = onPortfolioClick,
         onProfileClick = onProfileClick,
@@ -470,8 +491,9 @@ private fun AnalysisProfileContent(
             problem?.let { item { ErrorCard(it, { reload++ }, enabled = !loading) } }
             val profile = draft
             if (profile != null && !loading) {
-                item { MonitoringStatus(status) }
-                profileControls(profile, enabled = pendingSave == null) { draft = it }
+                item { SpectrumTabs(listOf("Правила", "Уведомления", "Наблюдение"), section, { section = it }) }
+                if (section == 2) item { MonitoringStatus(status) }
+                profileControls(profile, section, enabled = pendingSave == null) { draft = it }
                 message?.let { text ->
                     item {
                         StatusCard(
@@ -551,9 +573,11 @@ private fun MonitoringStatus(status: AnalysisStatus?) {
 
 private fun LazyListScope.profileControls(
     profile: AnalysisProfile,
+    section: Int,
     enabled: Boolean,
     onChange: (AnalysisProfile) -> Unit,
 ) {
+    if (section == 0) {
     item {
         ProfileChoiceCard(
             "Уровень риска",
@@ -602,6 +626,8 @@ private fun LazyListScope.profileControls(
             onChange(profile.copy(minCashPercent = it))
         }
     }
+    }
+    if (section == 1) {
     item {
         SwitchCard("Критические предупреждения", profile.notifyCritical, enabled) {
             onChange(profile.copy(notifyCritical = it))
@@ -611,5 +637,6 @@ private fun LazyListScope.profileControls(
         SwitchCard("Утренний и вечерний обзор", profile.notifyBriefs, enabled) {
             onChange(profile.copy(notifyBriefs = it))
         }
+    }
     }
 }

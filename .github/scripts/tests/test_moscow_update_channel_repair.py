@@ -8,11 +8,11 @@ SCRIPT = ROOT / ".github/scripts/repair_moscow_update_channel.sh"
 RUNNER = ROOT / ".github/scripts/run_moscow_update_channel_repair.py"
 WORKFLOW = ROOT / ".github/workflows/repair-moscow-update-channel.yml"
 
-RELEASE_COMMIT = "bb6638fab2188c718ccad4d8dd7b3ed76b34fdc8"
+RELEASE_COMMIT = "feb08a704e889644772c38808eebbc2d1edbb81f"
 RELEASE_TAG = f"android-preview-{RELEASE_COMMIT}"
-RELEASE_APK_NAME = "Analyst-AI-0.7.5-preview-bb6638f.apk"
-RELEASE_APK_SHA256 = "739fb8b16865a742118ca1930bc2488a28c3cf807a23c20628df9ebb7ca75bcb"
-RELEASE_REPORT_SHA256 = "c418629e207ec62159352a44bd78bc8400a55e17052b9fcff11e94aa8ea2ffad"
+RELEASE_APK_NAME = "Analyst-AI-0.7.6-preview-feb08a7.apk"
+RELEASE_APK_SHA256 = "0bb5e481f035218084b797e667c5850f9cb4b2c44ddca49a118bc61d7fe6306d"
+RELEASE_REPORT_SHA256 = "994ce504596530ef5e9564edcb82d56302411c5302b3bcb29a9efe46d6a9fe7f"
 CERTIFICATE_SHA256 = "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
 
 
@@ -41,15 +41,15 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
         self.assertNotIn('request("POST", "/servers",', self.patched)
         self.assertNotIn("create_server", self.patched.lower())
 
-    def test_only_exact_verified_075_release_can_be_published(self):
+    def test_only_exact_verified_076_release_can_be_published(self):
         for value in (
-            'VERSION_CODE="30"',
-            'VERSION_NAME="0.7.5-preview"',
+            'VERSION_CODE="31"',
+            'VERSION_NAME="0.7.6-preview"',
             f'APK_SHA256="{RELEASE_APK_SHA256}"',
             'APK_BYTES="4167540"',
             f'CERTIFICATE_SHA256="{CERTIFICATE_SHA256}"',
             'MIN_SDK="36"',
-            'PUBLISHED_AT="1792181989"',
+            'PUBLISHED_AT="1792214870"',
             'report.get("device_install_test") != "passed_on_emulators_not_a_physical_phone"',
             'report.get("signature_v2") is not True',
         ):
@@ -74,14 +74,14 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
             'assert payload["apk_bytes"] == 4151124',
         ):
             self.assertNotIn(stale, self.patched)
-        self.assertIn("Независимое серверное наблюдение", self.patched)
-        self.assertIn("статус свежести данных", self.patched)
+        self.assertIn("Главная без панели «Живые возможности»", self.patched)
+        self.assertIn("полезные данные портфеля", self.patched)
 
-    def test_local_and_public_policy_readback_expect_the_same_075_identity(self):
+    def test_local_and_public_policy_readback_expect_the_same_076_identity(self):
         expected_twice = (
-            'assert payload["version_code"] == 30',
-            'assert payload["minimum_version_code"] == 30',
-            'assert payload["version_name"] == "0.7.5-preview"',
+            'assert payload["version_code"] == 31',
+            'assert payload["minimum_version_code"] == 31',
+            'assert payload["version_name"] == "0.7.6-preview"',
             f'assert payload["apk_sha256"] == "{RELEASE_APK_SHA256}"',
             'assert payload["apk_bytes"] == 4167540',
         )
@@ -171,3 +171,4 @@ class MoscowUpdateChannelRepairTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

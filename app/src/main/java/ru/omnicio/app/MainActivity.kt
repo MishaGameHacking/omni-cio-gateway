@@ -1,5 +1,11 @@
 package ru.omnicio.app
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -56,6 +62,20 @@ private enum class AppScreen {
     Education,
     AnalysisSettings,
     TApi,
+    Appearance,
+    Assistant,
+    Strategies,
+    Market,
+    NotificationSettings,
+}
+
+private fun nextBackStack(current: AppScreen, destination: AppScreen, history: List<String>): ArrayList<String> {
+    val roots = setOf(AppScreen.Home, AppScreen.Portfolio, AppScreen.Recommendations, AppScreen.Risk, AppScreen.Profile)
+    return when {
+        destination in roots -> arrayListOf()
+        history.lastOrNull() == destination.name -> ArrayList(history.dropLast(1))
+        else -> ArrayList(history + current.name)
+    }
 }
 
 private sealed interface AuthUiState {
@@ -209,6 +229,11 @@ private fun AnalystAiApp(
     var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading) }
     var initialSessionChecked by remember { mutableStateOf(false) }
     var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
+    var backStack by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    BackHandler(screenName != AppScreen.Home.name) {
+        screenName = backStack.lastOrNull() ?: AppScreen.Home.name
+        backStack = ArrayList(backStack.dropLast(1))
+    }
     val screen = remember(screenName) {
         runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Home)
     }
@@ -284,9 +309,9 @@ private fun AnalystAiApp(
                                 AuthUiState.SignedOut(errorMessage = result.message)
                             }
                         } else {
-                            withContext(Dispatchers.IO) {
-                                sessionStore.clear()
-                            }
+                            backStack = arrayListOf()
+                            screenName = AppScreen.Home.name
+                            withContext(Dispatchers.IO) { sessionStore.clear() }
                             AuthUiState.SignedOut()
                         }
                     }
@@ -333,6 +358,10 @@ private fun AnalystAiApp(
     )
 
     AnalystTheme {
+        CompositionLocalProvider(LocalWorkspaceBack provides {
+            screenName = backStack.lastOrNull() ?: AppScreen.Home.name
+            backStack = ArrayList(backStack.dropLast(1))
+        }) {
         AnalystAppContent(
             authState = authState,
             authError = authError,
@@ -346,7 +375,10 @@ private fun AnalystAiApp(
             tApiConfigured = tApiConfigured,
             screenshotsBlocked = screenshotsBlocked,
             onScreenChange = { destination ->
-                screenName = destination.name
+                if (destination != screen) {
+                    backStack = nextBackStack(screen, destination, backStack)
+                    screenName = destination.name
+                }
             },
             onCurrencyChange = { currency ->
                 portfolioCurrencyName = currency.name
@@ -359,12 +391,14 @@ private fun AnalystAiApp(
                 onScreenshotsBlockedChange(blocked)
             },
             onLogout = {
+                backStack = arrayListOf()
                 sessionStore.clear()
                 screenName = AppScreen.Home.name
                 tApiConfigured = false
                 authState = AuthUiState.SignedOut()
             },
         )
+        }
     }
 }
 
@@ -445,12 +479,18 @@ private fun SignedInAppContent(
     val navigateToTab: (AnalystTab) -> Unit = { tab ->
         onScreenChange(tab.toAppScreen())
     }
-    val openHome = { onScreenChange(AppScreen.Home) }
+    val goBack = LocalWorkspaceBack.current
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
 
-    CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab) {
-        when (screen) {
+    val navigateWorkspace: (WorkspaceRoute) -> Unit = { route -> onScreenChange(AppScreen.valueOf(route.name)) }
+    val holder = rememberSaveableStateHolder()
+    val motion = LocalSpectrumMotionPreference.current.enabled && android.animation.ValueAnimator.areAnimatorsEnabled()
+    CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab,
+        LocalWorkspaceNavigator provides navigateWorkspace) {
+        Crossfade(screen, animationSpec = tween(if (motion) 180 else 0), label = "workspace-navigation") { destination ->
+        holder.SaveableStateProvider(destination.name) {
+        when (destination) {
             AppScreen.Home -> {
                 HomeScreen(
                     user = session.user,
@@ -543,7 +583,7 @@ private fun SignedInAppContent(
 
             AppScreen.Education -> {
                 EducationScreen(
-                    onBack = openHome,
+                    onBack = goBack,
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                 )
@@ -552,25 +592,37 @@ private fun SignedInAppContent(
             AppScreen.AnalysisSettings -> {
                 AnalysisProfileSettingsScreen(
                     accessToken = session.accessToken,
-                    onBack = openProfile,
+                    onBack = goBack,
                     onPortfolioClick = openPortfolio,
                     onProfileClick = openProfile,
                 )
             }
 
+            AppScreen.NotificationSettings -> AnalysisProfileSettingsScreen(session.accessToken, goBack,
+                openPortfolio, openProfile, initialSection = 1)
+            AppScreen.Appearance -> AppearanceScreen(goBack)
+            AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio,
+                { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.AnalysisSettings) })
+            AppScreen.Strategies -> StrategyWorkspaceScreen(session.user.telegramId, goBack,
+                { onScreenChange(AppScreen.AnalysisSettings) })
+            AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
+
             AppScreen.TApi -> {
                 TApiScreen(
                     accessToken = session.accessToken,
                     tApiConfigured = tApiConfigured,
-                    onBack = openProfile,
+                    onBack = goBack,
                     onConnectionChanged = onTApiConfiguredChange,
                 )
             }
+        }
+        }
         }
     }
 }
 
 private fun AnalystTab.toAppScreen(): AppScreen = when (this) {
+    AnalystTab.Actions -> AppScreen.Recommendations
     AnalystTab.Home -> AppScreen.Home
     AnalystTab.Portfolio -> AppScreen.Portfolio
     AnalystTab.Risk -> AppScreen.Risk
@@ -588,3 +640,4 @@ private fun AnalystAiAppPreview() {
         )
     }
 }
+

@@ -140,7 +140,7 @@ jobs:
         run: |
           call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
-      - name: Download installed 0.7.5 APK for exact upgrade compatibility test
+      - name: Download installed 0.7.6 APK for exact upgrade compatibility test
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
@@ -148,12 +148,12 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-bb6638fab2188c718ccad4d8dd7b3ed76b34fdc8'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.7.5-preview-bb6638f.apk');
-            if (!asset) throw new Error('0.7.5 reference APK missing');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-feb08a704e889644772c38808eebbc2d1edbb81f'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.7.6-preview-feb08a7.apk');
+            if (!asset) throw new Error('0.7.6 reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
-            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '739fb8b16865a742118ca1930bc2488a28c3cf807a23c20628df9ebb7ca75bcb') throw new Error('0.7.5 reference APK checksum mismatch');
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '0bb5e481f035218084b797e667c5850f9cb4b2c44ddca49a118bc61d7fe6306d') throw new Error('0.7.6 reference APK checksum mismatch');
             const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);
@@ -172,7 +172,7 @@ jobs:
             const crypto = require('crypto');
             const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
             const base = path.join(root, 'app/build/outputs/apk/preview');
-            const shots = ['spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
+            const shots = ['workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
             const names = ['apk-verification.json', 'install-api-36/install-results.json', ...shots.map(n => `ui-screens/${n}.png`)];
             const records = [];
             for (const name of names) {

@@ -113,3 +113,32 @@ def reveal_tab(read_tree, swipe, resource_id: str, direction: str):
         else:
             swipe(*gesture)
     raise AssertionError("Tab scroll did not finish")
+
+
+
+def settled_tab(read_tree, resource_id: str, max_frames: int = 20):
+    """Wait for three equal fresh bounds before a coordinate tap after scrolling.
+
+    Compose's accessibility scroll action returns before its animation settles.
+    A visible intermediate rectangle is not a reliable coordinate target. This
+    only stabilizes geometry: the caller still taps once and must confirm the
+    exact selected tab. Unreachable/continuously moving targets remain failures.
+    """
+    if resource_id not in TAB_IDS.values() or not 3 <= max_frames <= 30:
+        raise ValueError("Unknown tab or invalid frame limit")
+    previous = None
+    stable = 0
+    for _ in range(max_frames):
+        target = tappable_tab(read_tree(), resource_id)
+        bounds = target.get("bounds") if target is not None else None
+        if bounds is None:
+            stable = 0
+        elif bounds == previous:
+            stable += 1
+        else:
+            stable = 1
+        if stable >= 3:
+            return target
+        previous = bounds
+        time.sleep(0.1)
+    raise AssertionError("Profile tab geometry did not settle: " + resource_id)

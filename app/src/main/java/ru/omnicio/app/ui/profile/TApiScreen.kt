@@ -1,5 +1,9 @@
 package ru.omnicio.app.ui.profile
 
+import ru.omnicio.app.ui.spectrum.*
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,8 +56,6 @@ private sealed interface TokenUiStatus {
     data class Error(val message: String) : TokenUiStatus
 }
 
-private val TApiBackground: Color
-    @Composable get() = MaterialTheme.colorScheme.background
 private val TApiCard: Color
     @Composable get() = MaterialTheme.colorScheme.surface
 private val TApiMuted: Color
@@ -176,14 +178,15 @@ private fun TApiContent(
     onOpenDocs: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SpectrumBackground(modifier.fillMaxSize()) {
     Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = TApiBackground,
+        modifier = Modifier.fillMaxSize().imePadding(),
+        containerColor = Color.Transparent,
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding).consumeWindowInsets(innerPadding),
             contentPadding = PaddingValues(
                 start = 20.dp,
                 top = 18.dp,
@@ -213,6 +216,7 @@ private fun TApiContent(
             item { TokenSecurityCard() }
         }
     }
+    }
 }
 
 @Composable
@@ -221,23 +225,23 @@ private fun TApiHeader(onBack: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onBack) {
+        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(
-                text = "‹",
-                fontSize = 34.sp,
-                lineHeight = 34.sp,
+                text = "‹ Назад",
+                fontSize = 16.sp,
+                lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
-        Column {
+        Column(Modifier.weight(1f)) {
             Text(
-                text = "T‑API",
-                fontSize = 32.sp,
-                lineHeight = 38.sp,
+                text = "Подключение",
+                fontSize = 26.sp,
+                lineHeight = 32.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Подключение T‑Invest API",
+                text = "Счёт Т-Инвестиций",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -273,7 +277,7 @@ private fun TokenInputCard(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Используйте read-only токен. После проверки он привязывается к вашему Telegram ID и хранится зашифрованно на сервере Analyst AI.",
+                text = "Вставьте токен только для чтения. Торговый доступ не нужен.",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -461,3 +465,4 @@ private fun StatusCard(status: TokenUiStatus) {
 
 private const val TOKEN_DOCS_URL =
     "https://developer.tbank.ru/invest/intro/intro/token"
+

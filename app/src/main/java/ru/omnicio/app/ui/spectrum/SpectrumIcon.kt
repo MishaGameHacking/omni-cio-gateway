@@ -1,5 +1,6 @@
 package ru.omnicio.app.ui.spectrum
 
+import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 import android.animation.ValueAnimator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
@@ -88,6 +89,8 @@ fun SpectrumIcon(
     } else {
         listOf(Color(0xFF006C78), Color(0xFF326FC8), Color(0xFF6E4EAD), Color(0xFFA6367A))
     }
+    val depth = LocalWorkspacePreferences.current.value.depth
+    val palette = LocalSpectrumPalette.current
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val shape = remember(symbol) { spectrumPath(symbol) }
     Canvas(modifier) {
@@ -110,9 +113,14 @@ fun SpectrumIcon(
                 )
             }
             val brush: Brush = if (selected || tile) {
-                Brush.linearGradient(colors, start = Offset(24f, 24f), end = Offset(101f, 106f))
+                Brush.linearGradient(listOf(palette.cyan, palette.blue, palette.violet), start = Offset(24f, 24f), end = Offset(101f, 106f))
             } else {
                 SolidColor(muted)
+            }
+            if (depth && (selected || tile)) {
+                withTransform({ translate(left = 1.5f, top = 3f) }) {
+                    drawPath(shape, palette.violet.copy(alpha = .16f), style = Stroke(8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
             }
             drawPath(
                 shape,
@@ -204,3 +212,4 @@ private fun spectrumPath(symbol: SpectrumSymbol): Path = Path().apply {
         }
     }
 }
+

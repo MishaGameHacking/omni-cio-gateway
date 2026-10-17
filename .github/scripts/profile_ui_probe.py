@@ -16,11 +16,11 @@ CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 INFO_LABEL = "О приложении"
 EDUCATION_LABEL = "Обучение"
-BACK_FROM_EDUCATION = "Вернуться на главную"
+BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
 LIGHT_BACKGROUND = "fff5f8ff"
-DARK_BACKGROUND = "ff020a16"
+DARK_BACKGROUND = "ff090e18"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -279,18 +279,12 @@ class ProfileProbe:
         self.tap_node(target)
 
     def tab(self, label):
-        from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab
+        from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab, settled_tab
 
         resource_id = TAB_IDS[label]
         direction = "start" if label == SETTINGS_LABEL else "end"
-        self.tap_node(
-            reveal_tab(
-                self.tree,
-                self._semantic_scroll_callback("profile-tabs", direction),
-                resource_id,
-                direction,
-            )
-        )
+        reveal_tab(self.tree, self._semantic_scroll_callback("profile-tabs", direction), resource_id, direction)
+        self.tap_node(settled_tab(self.tree, resource_id))
         return self.wait_for(
             lambda: selected_tab(self.tree(), resource_id),
             "Profile tab selection not confirmed: " + resource_id,
@@ -362,12 +356,43 @@ class ProfileProbe:
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
-            self.find_all(("Главная", "Портфель", "Риски", "Обучение", "Профиль"))
-            self.find("Analyst AI" if screen == "home" else "Мой портфель")
+            self.find_all(("Капитал", "Портфель", "Действия", "Риски", "Профиль"))
+            self.find("Analyst AI" if screen == "home" else "Портфель")
             self.capture("spectrum-" + screen)
             if screen == "portfolio":
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
+        self.command("shell", "am", "force-stop", PACKAGE)
+
+    def workspace(self):
+        from profile_launch import profile_frame, start_status
+        for screen, label in (("appearance", "Оформление"), ("strategy", "Мои стратегии"),
+                              ("assistant", "Ассистент"), ("market", "Обзор рынка")):
+            self.command("shell", "am", "force-stop", PACKAGE)
+            start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
+                                      "--es", "spectrum_screen", screen))
+            evidence = {}
+            self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
+                          "Workspace screen is not resumed")
+            self.find(label)
+            self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
+            self.capture("workspace-" + screen)
+            if screen == "strategy":
+                self.tap_visible("Отбор")
+                self.reveal("Кредитные рейтинги", "workspace-content")
+                self.reveal("BBB-", "workspace-content")
+                self.capture("workspace-ratings")
+                self.tap_visible("Доход")
+                self.reveal("Сохранить черновик", "workspace-content")
+                self.tap("Сохранить черновик", "workspace-content")
+                self.find("Черновик сохранён")
+            elif screen == "appearance":
+                self.reveal("Движение", "workspace-content")
+                self.tap("Движение", "workspace-content")
+                self.reveal("Вернуть оформление по умолчанию", "workspace-content")
+                self.tap("Вернуть оформление по умолчанию", "workspace-content")
+            self.tap_visible("‹ Назад")
+            self.find("Ваш капитал")
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def profile_preflight(self):
@@ -500,6 +525,7 @@ def exercise_checks(device, read_tree) -> None:
     try:
         stages = (
             ("spectrum-dashboards", probe.dashboards),
+            ("workspace-interactions", probe.workspace),
             ("profile-preflight", probe.profile_preflight),
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
@@ -528,3 +554,4 @@ def exercise_checks(device, read_tree) -> None:
             original_night,
             sys.exc_info()[1],
         )
+

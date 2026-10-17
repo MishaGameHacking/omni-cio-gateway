@@ -48,12 +48,12 @@ class UnifiedUpdateContractTests(unittest.TestCase):
     def test_spectrum_primary_navigation_and_internal_destinations(self):
         main = self.source('MainActivity.kt')
         bar = self.source('ui/AnalystBottomBar.kt')
-        for tab in ('Home', 'Portfolio', 'Risk', 'Education', 'Profile'):
+        for tab in ('Home', 'Portfolio', 'Actions', 'Risk', 'Profile'):
             self.assertIn('AnalystTab.' + tab, main)
             self.assertIn('AnalystTab.' + tab, bar)
         for screen in ('Recommendations', 'Messages'):
             self.assertIn('AppScreen.' + screen, main)
-        for label in ('Главная', 'Портфель', 'Риски', 'Обучение', 'Профиль'):
+        for label in ('Капитал', 'Портфель', 'Действия', 'Риски', 'Профиль'):
             self.assertIn('"' + label + '"', bar)
         self.assertNotIn('AnalystTab.Ideas', main)
         self.assertNotIn('AnalystTab.Pulse', main)
@@ -117,3 +117,4 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

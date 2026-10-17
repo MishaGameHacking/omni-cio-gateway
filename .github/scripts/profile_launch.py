@@ -44,7 +44,7 @@ def profile_resumed(output: str) -> bool:
 def ready_marker(tree, expected_screen: str | None = None):
     required = {MARKER}
     if expected_screen is not None:
-        if expected_screen not in {"profile", "home", "portfolio"}:
+        if expected_screen not in {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market"}:
             raise ValueError("Unknown fixture screen")
         required.add("probe-screen:" + expected_screen)
     for node in tree.iter("node"):

@@ -5,7 +5,8 @@ import unittest
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from profile_tab_checks import assert_horizontal_geometry, content_label, selected_tab, tappable_tab, reveal_tab
+from profile_tab_checks import assert_horizontal_geometry, content_label, selected_tab, tappable_tab, reveal_tab, settled_tab
+from unittest.mock import patch
 
 PACKAGE = "ru.omnicio.app.debug"
 
@@ -108,6 +109,25 @@ class TabViewportTests(unittest.TestCase):
         self.assertEqual(len(gestures), 1)
         self.assertTrue(20 < gestures[0][2] < gestures[0][0] < 300)
 
+    @patch("profile_tab_checks.time.sleep")
+    def test_moving_tab_waits_for_three_stable_fresh_frames(self, _sleep):
+        frames = iter([self.frame(bounds) for bounds in (
+            "[240,160][368,212]", "[200,160][328,212]", "[172,160][300,212]",
+            "[172,160][300,212]", "[172,160][300,212]",
+        )])
+        target = settled_tab(lambda: next(frames), "profile-tab-2")
+        self.assertEqual(target.get("bounds"), "[172,160][300,212]")
+
+    @patch("profile_tab_checks.time.sleep")
+    def test_unsettled_or_foreign_tab_never_becomes_click_evidence(self, _sleep):
+        frames = iter([self.frame(bounds) for bounds in (
+            "[240,160][368,212]", "[200,160][328,212]", "[172,160][300,212]",
+        )])
+        with self.assertRaisesRegex(AssertionError, "did not settle"):
+            settled_tab(lambda: next(frames), "profile-tab-2", max_frames=3)
+        with self.assertRaises(AssertionError):
+            settled_tab(lambda: self.frame("[172,160][300,212]", "other.app"), "profile-tab-2", max_frames=3)
+
     def test_foreign_and_unreachable_still_fail(self):
         with self.assertRaises(AssertionError):
             reveal_tab(lambda: self.frame("[172,160][300,212]", "other.app"), lambda *args: None, "profile-tab-2", "end")
@@ -115,3 +135,4 @@ class TabViewportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

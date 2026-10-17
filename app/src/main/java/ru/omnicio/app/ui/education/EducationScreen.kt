@@ -86,7 +86,7 @@ fun EducationScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     SpectrumSecondaryButton(
-                        text = "Вернуться на главную",
+                        text = "Назад",
                         onClick = onBack,
                         modifier = Modifier.fillMaxWidth().testTag("education-back"),
                     )
@@ -106,7 +106,7 @@ fun EducationScreen(
                             item(key = "education-header") {
                                 SpectrumPageHeader(
                                     title = "Обучение",
-                                    subtitle = "Инвестиции простыми словами — от первого шага до проверки источников",
+                                    subtitle = "Понятно о деньгах и риске",
                                     symbol = SpectrumSymbol.Education,
                                 )
                             }
@@ -260,7 +260,7 @@ private fun LessonCard(
         ) {
             Text(action)
         }
-        if (motion.enabled) {
+        if (motion.enabled && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             AnimatedVisibility(visible = expanded) { LessonBody(lesson) }
         } else if (expanded) {
             LessonBody(lesson)
@@ -304,3 +304,4 @@ private fun LessonBody(lesson: EducationLesson) {
         }
     }
 }
+
