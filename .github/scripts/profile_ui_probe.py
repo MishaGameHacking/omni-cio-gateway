@@ -380,9 +380,13 @@ class ProfileProbe:
             self.command("shell", "am", "force-stop", PACKAGE)
             start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
                                       "--es", "spectrum_screen", screen))
-            evidence = {}
-            self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
-                          "Workspace screen is not resumed")
+            evidence = {"expected_screen": screen}
+            try:
+                self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
+                              "Workspace screen is not resumed")
+            except Exception:
+                print("WORKSPACE_READINESS_DIAGNOSTIC=" + json.dumps(evidence, ensure_ascii=True), flush=True)
+                raise
             self.find(label)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
             self.capture("workspace-" + screen)

@@ -101,6 +101,8 @@ class ProfileLaunchTests(unittest.TestCase):
         self.assertIsNotNone(
             ready_marker(tree(screen="probe-screen:home"), "home")
         )
+        self.assertIsNotNone(ready_marker(tree(screen="probe-screen:ux100"), "ux100"))
+        self.assertIsNone(ready_marker(tree(screen="probe-screen:market"), "ux100"))
         invalid_screen_tree = tree()
         with self.assertRaises(ValueError):
             ready_marker(invalid_screen_tree, "unknown")
@@ -256,6 +258,32 @@ class ProfileLaunchTests(unittest.TestCase):
         self.assertIsNone(launch.profile_frame(command, anr_tree, evidence))
         self.assertEqual(evidence["system_ui_anr_recovery"]["action"], "wait")
         self.assertNotIn("foreground_after", evidence)
+
+    def test_confirmed_external_messages_anr_can_be_stopped(self):
+        layer = "Application Not Responding: com.google.android.apps.messaging#307"
+        command = Mock(side_effect=["", layer, ""])
+        evidence = {}
+        self.assertTrue(launch.recover_confirmed_messaging_anr(command, anr_tree(), evidence))
+        self.assertEqual(command.call_args_list[-1].args,
+                         ("shell", "am", "force-stop", "com.google.android.apps.messaging"))
+        self.assertEqual(evidence["emulator_app_anr_recovery"]["action"], "force-stop")
+
+    def test_app_under_test_and_unrecognized_anrs_never_recover(self):
+        for layer in (
+            "Application Not Responding: " + PACKAGE,
+            "Application Not Responding: com.google.android.apps.messaging.other#2",
+            "Application Not Responding: com.google.android.apps.messaging#2\nApplication Not Responding: " + PACKAGE,
+            "ordinary layers",
+        ):
+            with self.subTest(layer=layer):
+                command = Mock(side_effect=["", layer])
+                self.assertFalse(launch.recover_confirmed_messaging_anr(command, anr_tree(), {}))
+                self.assertEqual(command.call_count, 2)
+
+    def test_external_anr_requires_system_owned_dialog(self):
+        command = Mock()
+        self.assertFalse(launch.recover_confirmed_messaging_anr(command, anr_tree(package=PACKAGE), {}))
+        command.assert_not_called()
 
 
 if __name__ == "__main__":

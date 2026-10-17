@@ -47,9 +47,9 @@ internal fun PortfolioDashboard(
     Column(modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         SpectrumPageHeader(
             title = "Портфель",
-            subtitle = "Состав, счета и движение капитала",
+            subtitle = "Счета и активы",
             symbol = SpectrumSymbol.Portfolio,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
         SpectrumTabs(
             listOf("Структура", "Активы", "Динамика"),
@@ -57,6 +57,15 @@ internal fun PortfolioDashboard(
             onSelectSection,
             Modifier.padding(horizontal = 20.dp).testTag("portfolio-sections"),
         )
+        if (snapshot != null) {
+            Text("Данные: ${relativeObservation(snapshot.asOf)}${if (refreshing) " · обновляем" else ""}",
+                Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (refreshError != null) Text("Сохранённые данные · $refreshError", Modifier.padding(horizontal = 20.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (snapshot.totalValue.currency != selectedCurrency.name) Text("Показана оценка в ${snapshot.totalValue.currency}; запрошена ${selectedCurrency.name}.",
+                Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+        }
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
             PortfolioHistorySection(snapshot.accounts, accessToken, Modifier.weight(1f))
         } else if (selectedSection == 1 && snapshot != null) {

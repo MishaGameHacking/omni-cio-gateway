@@ -104,6 +104,8 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
             Text(if (hidden) "••• •••" else snapshot.totalValue.moneyText(),
                 style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             BalanceVisibilityButton()
+            if (snapshot.totalValue.currency != currency.name) Text("Показана предыдущая оценка в ${snapshot.totalValue.currency}. Запрошена ${currency.name}.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!hidden) {
                 SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
                 Text("Текущий результат брокера", style = MaterialTheme.typography.bodySmall,

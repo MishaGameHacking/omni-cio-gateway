@@ -66,6 +66,7 @@ fun PortfolioScreen(
                 else { accountId = target.accountId ?: accounts.firstOrNull()?.id; section = target.section }
             } else {
                 overviewSection = target.section; accountId = target.accountId
+                if (target.accountId != null) section = target.section
                 assetQuery = target.query; assetSector = target.sector; assetKind = target.kind
             }
             onDestinationConsumed()

@@ -38,9 +38,9 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     val palette = LocalSpectrumPalette.current
     val tabs = listOf(AnalystTab.Home, AnalystTab.Portfolio, AnalystTab.Actions, AnalystTab.Risk, AnalystTab.Profile)
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.background.copy(alpha = .98f)) {
-        Box(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.navigationBarsPadding().padding(horizontal = 4.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
             Row(Modifier.widthIn(max = 720.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
-                .background(palette.card).padding(5.dp).selectableGroup()) {
+                .background(palette.card).padding(4.dp).selectableGroup()) {
                 tabs.forEach { tab ->
                     val active = tab == selected || (selected == AnalystTab.Education && tab == AnalystTab.Profile)
                     Column(Modifier.weight(1f).heightIn(min = 62.dp).clip(RoundedCornerShape(21.dp))
@@ -54,7 +54,7 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
                                 else -> Unit
                             }
                             navigate(tab)
-                        }).padding(horizontal = 1.dp, vertical = 7.dp),
+                        }).padding(vertical = 7.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         SpectrumIcon(tab.symbol(), Modifier.size(24.dp), selected = active, tile = false,
                             motionAllowed = false)

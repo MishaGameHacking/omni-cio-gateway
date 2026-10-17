@@ -18,6 +18,7 @@ SYSTEM_UI_ANR = "Application Not Responding: com.android.systemui"
 SYSTEM_PACKAGES = {"android", "com.android.systemui"}
 SYSTEM_UI_WAIT_IDS = {"android:id/aerr_wait", "aerr_wait"}
 SYSTEM_UI_WAIT_LABELS = {"Wait", "Подождать"}
+EMULATOR_MESSAGING_PACKAGE = "com.google.android.apps.messaging"
 
 
 def start_status(output: str) -> str:
@@ -44,7 +45,7 @@ def profile_resumed(output: str) -> bool:
 def ready_marker(tree, expected_screen: str | None = None):
     required = {MARKER}
     if expected_screen is not None:
-        if expected_screen not in {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market"}:
+        if expected_screen not in {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100"}:
             raise ValueError("Unknown fixture screen")
         required.add("probe-screen:" + expected_screen)
     for node in tree.iter("node"):
@@ -131,6 +132,27 @@ def foreground_observation(output: str) -> list[str]:
     return [line[:320] for line in islice(lines, 8)]
 
 
+def recover_confirmed_messaging_anr(command, tree, evidence) -> bool:
+    """Stop only the unrelated preinstalled Messages app on the CI emulator.
+
+    Run 39024348578 was blocked by this exact external ANR overlay. An
+    app-under-test ANR must still fail; normal readiness is checked again after
+    recovery, and no application assertion is skipped.
+    """
+    if system_ui_wait_action(tree) is None:
+        return False
+    diagnostics = command("shell", "dumpsys", "window", "windows") + "\n" + command(
+        "shell", "dumpsys", "SurfaceFlinger", "--list")
+    pattern = r"Application Not Responding: ([a-zA-Z0-9_.]+)(?=[#\s)]|$)"
+    packages = set(re.findall(pattern, diagnostics))
+    if packages != {EMULATOR_MESSAGING_PACKAGE}:
+        return False
+    evidence["emulator_app_anr_recovery"] = {"package": EMULATOR_MESSAGING_PACKAGE, "action": "force-stop"}
+    print("EMULATOR_APP_ANR_RECOVERY=" + EMULATOR_MESSAGING_PACKAGE, flush=True)
+    command("shell", "am", "force-stop", EMULATOR_MESSAGING_PACKAGE)
+    return True
+
+
 def frame_observation(tree) -> dict:
     nodes = list(tree.iter("node"))
     markers = []
@@ -157,7 +179,8 @@ def profile_frame(command, read_tree, evidence, expected_screen: str | None = No
         # A confirmed Android System UI ANR may cover the already-resumed debug
         # fixture. Dismiss only its exact system-owned Wait action, then let the
         # caller perform the normal foreground/marker checks again.
-        dismiss_confirmed_system_ui_anr(command, tree, evidence)
+        if not dismiss_confirmed_system_ui_anr(command, tree, evidence):
+            recover_confirmed_messaging_anr(command, tree, evidence)
         return None
     # A crash or focus change during the UI dump must not count as ready.
     evidence["stage"] = "foreground-after-tree"

@@ -40,14 +40,14 @@ private fun ActionPlanCard(action: PlanAction, openBroker: (PlanAction) -> Unit)
     val now by produceState(Instant.now(), action.id) {
         while (isActive) { value = Instant.now(); delay(30_000) }
     }
-    val expired = expires == null || !expires.isAfter(now)
+    val expired = action.status == PlanActionStatus.Proposed && (expires == null || !expires.isAfter(now))
     SpectrumCard(emphasized = action.status == PlanActionStatus.Proposed && !expired) {
         SpectrumBadge(if (expired) "Срок актуальности истёк" else action.status.title)
         Text(action.title, style = MaterialTheme.typography.titleLarge)
         Text("${action.instrument} · ${action.account}")
         Text(PrivateValue("${action.quantity} · ${action.amount}"), style = MaterialTheme.typography.titleMedium)
         Text(action.reason)
-        Text("Действует до ${action.validUntil}", style = MaterialTheme.typography.bodySmall)
+        Text("Срок предложения: ${action.validUntil}", style = MaterialTheme.typography.bodySmall)
         DetailFold("Почему и что изменится") {
             Text("Сейчас: ${PrivateValue(action.before)}")
             Text("После: ${PrivateValue(action.after)}")
