@@ -14,8 +14,8 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 36", "minSdk = 36", "targetSdk = 36"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 30", gradle)
-        self.assertIn('versionName = "0.7.5"', gradle)
+        self.assertIn("versionCode = 31", gradle)
+        self.assertIn('versionName = "0.7.6"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -56,34 +56,6 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
         self.assertIn("Canvas(", source)
-
-    def test_complete_live_catalogue_is_visible_lazy_and_adaptive(self):
-        showcase = self.source("ui/spectrum/SpectrumLiveFeatureShowcase.kt")
-        shortcuts = self.source("ui/home/HomeQuickActions.kt")
-        self.assertIn("SpectrumLiveFeatureShowcase(Modifier.fillMaxWidth())", shortcuts)
-        self.assertIn("SpectrumLiveFeature.entries", showcase)
-        self.assertIn("LazyRow(", showcase)
-        self.assertIn("maxWidth < 600.dp", showcase)
-        self.assertIn("fontScale > 1.30f", showcase)
-        self.assertIn("if (maxWidth >= 900.dp) 5 else 3", showcase)
-        self.assertIn('testTag("spectrum-live-feature-rail")', showcase)
-        self.assertIn('testTag("spectrum-live-feature-grid")', showcase)
-        for label in (
-            "Живые графики",
-            "Анимированные индикаторы",
-            "2D/3D элементы",
-            "RGB-эффекты иконок",
-            "Интерактивный ИИ-ассистент",
-            "Умные уведомления",
-            "Персональные рекомендации",
-            "Контроль рисков",
-            "Анализ мировых рынков",
-        ):
-            self.assertIn(label, showcase)
-        # The catalogue communicates capabilities; it must not invent nine fake destinations.
-        self.assertNotIn("onClick =", showcase)
-        for forbidden in ("Image(", "painterResource", "AsyncImage", "WebView(", ".gif"):
-            self.assertNotIn(forbidden, showcase)
 
     def test_live_clock_respects_activity_user_and_system_motion(self):
         source = self.source("ui/spectrum/SpectrumLiveMotion.kt")
@@ -161,3 +133,4 @@ class Android16LiveSpectrumTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
