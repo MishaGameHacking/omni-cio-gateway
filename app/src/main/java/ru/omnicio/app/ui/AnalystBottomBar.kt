@@ -1,176 +1,84 @@
 package ru.omnicio.app.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
-import ru.omnicio.app.ui.spectrum.SpectrumIcon
-import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
+import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 
-enum class AnalystTab {
-    Home,
-    Portfolio,
-    Risk,
-    Education,
-    Profile,
-}
-
+enum class AnalystTab { Home, Portfolio, Actions, Risk, Education, Profile }
 val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
 
+/** Five destinations, with secondary tools one level away. Labels never rely on colour alone. */
 @Composable
-fun AnalystBottomBar(
-    selected: AnalystTab,
-    onPortfolioClick: () -> Unit,
-    onProfileClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
+    onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
     val navigate = LocalAnalystTabNavigator.current
+    val haptic = LocalHapticFeedback.current
+    val prefs = LocalWorkspacePreferences.current.value
     val palette = LocalSpectrumPalette.current
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shadowElevation = 18.dp,
-    ) {
-        Box {
-            Canvas(Modifier.fillMaxWidth()) {
-                drawRect(
-                    brush = Brush.horizontalGradient(
-                        listOf(
-                            palette.cyan.copy(alpha = 0.30f),
-                            palette.blue.copy(alpha = 0.16f),
-                            palette.violet.copy(alpha = 0.30f),
-                            palette.rose.copy(alpha = 0.12f),
-                        ),
-                    ),
-                    size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()),
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 5.dp, vertical = 7.dp),
-            ) {
-                AnalystTab.entries.forEach { tab ->
-                    BottomBarItem(
-                        modifier = Modifier.weight(1f),
-                        tab = tab,
-                        selected = selected == tab,
-                        onClick = {
+    val tabs = listOf(AnalystTab.Home, AnalystTab.Portfolio, AnalystTab.Actions, AnalystTab.Risk, AnalystTab.Profile)
+    Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.background.copy(alpha = .98f)) {
+        Box(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+            Row(Modifier.widthIn(max = 720.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
+                .background(palette.card).padding(5.dp).selectableGroup()) {
+                tabs.forEach { tab ->
+                    val active = tab == selected || (selected == AnalystTab.Education && tab == AnalystTab.Profile)
+                    Column(Modifier.weight(1f).heightIn(min = 62.dp).clip(RoundedCornerShape(21.dp))
+                        .background(if (active) Brush.linearGradient(listOf(palette.cyan.copy(alpha = .17f), palette.violet.copy(alpha = .13f)))
+                            else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .selectable(active, role = Role.Tab, onClick = {
+                            if (prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             when (tab) {
                                 AnalystTab.Portfolio -> onPortfolioClick()
                                 AnalystTab.Profile -> onProfileClick()
                                 else -> Unit
                             }
                             navigate(tab)
-                        },
-                    )
+                        }).padding(horizontal = 1.dp, vertical = 7.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        SpectrumIcon(tab.symbol(), Modifier.size(28.dp), selected = active, tile = false,
+                            motionAllowed = LocalSpectrumMotionPreference.current.enabled)
+                        Text(tab.label(), Modifier.fillMaxWidth(), fontSize = 11.sp, lineHeight = 14.sp,
+                            textAlign = TextAlign.Center, softWrap = true,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
     }
 }
 
-@Composable
-private fun BottomBarItem(
-    tab: AnalystTab,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val palette = LocalSpectrumPalette.current
-    val motion = LocalSpectrumMotionPreference.current
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val selectedBrush = Brush.linearGradient(
-        colors = listOf(
-            palette.cyan.copy(alpha = 0.18f),
-            palette.blue.copy(alpha = 0.12f),
-            palette.violet.copy(alpha = 0.22f),
-            palette.rose.copy(alpha = 0.10f),
-        ),
-    )
-    TextButton(
-        modifier = modifier.heightIn(min = 72.dp),
-        onClick = onClick,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(
-                    if (selected) {
-                        selectedBrush
-                    } else {
-                        Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                    },
-                )
-                .padding(horizontal = 1.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            SpectrumIcon(
-                symbol = tab.symbol(),
-                selected = selected,
-                tile = false,
-                motionAllowed = motion.enabled,
-                modifier = Modifier.size(if (selected) 29.dp else 27.dp),
-            )
-            Text(
-                text = tab.label(),
-                modifier = Modifier.fillMaxWidth(),
-                color = contentColor,
-                fontSize = 11.sp,
-                lineHeight = 14.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            )
-        }
-    }
-}
-
-private fun AnalystTab.label(): String = when (this) {
-    AnalystTab.Home -> "Главная"
+private fun AnalystTab.label() = when (this) {
+    AnalystTab.Home -> "Капитал"
     AnalystTab.Portfolio -> "Портфель"
+    AnalystTab.Actions -> "Действия"
     AnalystTab.Risk -> "Риски"
     AnalystTab.Education -> "Обучение"
     AnalystTab.Profile -> "Профиль"
 }
-
-private fun AnalystTab.symbol(): SpectrumSymbol = when (this) {
+private fun AnalystTab.symbol() = when (this) {
     AnalystTab.Home -> SpectrumSymbol.Home
     AnalystTab.Portfolio -> SpectrumSymbol.Portfolio
+    AnalystTab.Actions -> SpectrumSymbol.Goal
     AnalystTab.Risk -> SpectrumSymbol.Risk
     AnalystTab.Education -> SpectrumSymbol.Education
     AnalystTab.Profile -> SpectrumSymbol.Profile

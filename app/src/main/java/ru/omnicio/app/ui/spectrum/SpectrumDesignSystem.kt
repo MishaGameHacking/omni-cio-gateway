@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.spectrum
 
+import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
+import ru.omnicio.app.ui.workspace.InterfaceDensity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -48,11 +50,11 @@ data class SpectrumPalette(
 )
 
 val DarkSpectrumPalette = SpectrumPalette(
-    backgroundTop = Color(0xFF020A16),
-    backgroundBottom = Color(0xFF07192B),
-    card = Color(0xFF071A2A),
-    cardStrong = Color(0xFF0B2940),
-    cyan = Color(0xFF36E0FF),
+    backgroundTop = Color(0xFF090E18),
+    backgroundBottom = Color(0xFF111827),
+    card = Color(0xFF121D2B),
+    cardStrong = Color(0xFF192A3B),
+    cyan = Color(0xFF70E0D2),
     blue = Color(0xFF4C8DFF),
     violet = Color(0xFF8A5CFF),
     rose = Color(0xFFFF4FA3),
@@ -87,21 +89,21 @@ fun SpectrumBackground(modifier: Modifier = Modifier, content: @Composable BoxSc
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val starColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.11f)
     Box(modifier.background(Brush.verticalGradient(
-        if (dark) listOf(palette.backgroundTop, Color(0xFF03111F), palette.backgroundBottom, palette.backgroundTop)
+        if (dark) listOf(palette.backgroundTop, Color(0xFF0C1420), palette.backgroundBottom, palette.backgroundTop)
         else listOf(palette.backgroundTop, palette.backgroundBottom, Color(0xFFF8FAFF)),
     ))) {
         Canvas(Modifier.fillMaxSize()) {
             if (size.minDimension <= 0f) return@Canvas
             val radius = size.minDimension
             val glows = listOf(
-                Triple(Offset(size.width * 0.92f, size.height * 0.06f), 0.82f, palette.violet.copy(alpha = if (dark) 0.22f else 0.09f)),
-                Triple(Offset(size.width * 0.02f, size.height * 0.74f), 0.72f, palette.cyan.copy(alpha = if (dark) 0.16f else 0.07f)),
+                Triple(Offset(size.width * 0.92f, size.height * 0.06f), 0.82f, palette.violet.copy(alpha = if (dark) 0.11f else 0.06f)),
+                Triple(Offset(size.width * 0.02f, size.height * 0.74f), 0.72f, palette.cyan.copy(alpha = if (dark) 0.08f else 0.04f)),
                 Triple(Offset(size.width * 0.70f, size.height * 0.62f), 0.55f, palette.rose.copy(alpha = if (dark) 0.08f else 0.035f)),
             )
             glows.forEach { (center, factor, color) ->
                 drawCircle(Brush.radialGradient(listOf(color, Color.Transparent), center, radius * factor), radius * factor, center)
             }
-            if (dark) repeat(24) { index ->
+            if (dark) repeat(8) { index ->
                 drawCircle(starColor, if (index % 5 == 0) 1.8f else 1f,
                     Offset(((index * 73) % 101) / 100f * size.width, ((index * 41 + 17) % 97) / 100f * size.height))
             }
@@ -119,7 +121,8 @@ fun SpectrumCard(
 ) {
     val palette = LocalSpectrumPalette.current
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val shape = RoundedCornerShape(24.dp)
+    val prefs = LocalWorkspacePreferences.current.value
+    val shape = RoundedCornerShape(28.dp)
     val interaction = if (onClick == null) Modifier else Modifier.clip(shape).clickable(role = Role.Button, onClick = onClick)
     Card(
         modifier = modifier.then(interaction),
@@ -134,14 +137,14 @@ fun SpectrumCard(
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         border = BorderStroke(1.dp, Brush.linearGradient(listOf(
-            palette.cyan.copy(alpha = if (emphasized) 0.72f else 0.28f),
-            palette.blue.copy(alpha = if (emphasized) 0.46f else 0.18f),
-            palette.violet.copy(alpha = if (emphasized) 0.72f else 0.28f),
-            palette.rose.copy(alpha = if (emphasized) 0.40f else 0.12f),
+            palette.cyan.copy(alpha = if (emphasized) 0.42f else 0.09f),
+            palette.blue.copy(alpha = if (emphasized) 0.24f else 0.08f),
+            palette.violet.copy(alpha = if (emphasized) 0.42f else 0.09f),
+            palette.rose.copy(alpha = if (emphasized) 0.18f else 0.06f),
         ))),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (dark) 0.dp else 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (prefs.depth) 3.dp else 0.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+        Column(Modifier.fillMaxWidth().padding(if (prefs.density == InterfaceDensity.COMPACT) 14.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
     }
 }
 
@@ -160,15 +163,15 @@ fun SpectrumPageHeader(
     subtitle: String,
     symbol: SpectrumSymbol,
     modifier: Modifier = Modifier,
-    eyebrow: String = "Analyst AI",
+    @Suppress("UNUSED_PARAMETER") eyebrow: String = "Analyst AI",
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SpectrumIcon(symbol, Modifier.size(48.dp), selected = true, tile = true, motionAllowed = false)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(eyebrow, color = LocalSpectrumPalette.current.cyan, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            if (subtitle.isNotBlank()) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium)
         }
+        SpectrumIcon(symbol, Modifier.size(44.dp), selected = true, tile = true, motionAllowed = false)
     }
 }
 
@@ -314,3 +317,4 @@ fun SpectrumBrandOrb(modifier: Modifier = Modifier, compact: Boolean = false) {
         }
     }
 }
+

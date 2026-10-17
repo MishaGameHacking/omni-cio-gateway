@@ -31,17 +31,7 @@ internal fun rememberSpectrumLivePhase(
     durationMillis: Int,
 ): Animatable<Float, AnimationVector1D> {
     require(durationMillis > 0)
-    val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
-    var active by remember(lifecycle) {
-        mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false)
-    }
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, _ ->
-            active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false
-        }
-        lifecycle?.addObserver(observer)
-        onDispose { lifecycle?.removeObserver(observer) }
-    }
+    val active = rememberSpectrumActive()
 
     val phase = remember { Animatable(0f) }
     val enabled = motionAllowed && active && ValueAnimator.areAnimatorsEnabled()
@@ -58,4 +48,36 @@ internal fun rememberSpectrumLivePhase(
         }
     }
     return phase
+}
+
+
+/** One finite reveal when real chart data changes; values and geometry remain unchanged. */
+@Composable
+internal fun rememberSpectrumReveal(dataKey: Any, motionAllowed: Boolean): Animatable<Float, AnimationVector1D> {
+    val active = rememberSpectrumActive()
+    val phase = remember { Animatable(1f) }
+    LaunchedEffect(dataKey, motionAllowed, active) {
+        if (motionAllowed && active && ValueAnimator.areAnimatorsEnabled()) {
+            phase.snapTo(0f)
+            phase.animateTo(1f, tween(420))
+        } else phase.snapTo(1f)
+    }
+    return phase
+}
+
+@Composable
+private fun rememberSpectrumActive(): Boolean {
+    val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
+    var active by remember(lifecycle) {
+        mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false)
+    }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ ->
+            active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+
+    return active
 }

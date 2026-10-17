@@ -35,21 +35,19 @@ private data class HomeAction(
     val open: () -> Unit,
 )
 
-/** Adaptive shortcuts to the user's portfolio, actions, risks and messages. */
+/** Adaptive shortcuts to the assistant, strategies and accessible market overview. */
 @Composable
 internal fun HomeQuickActions(
-    onPortfolio: () -> Unit,
-    onRecommendations: () -> Unit,
-    onRisk: () -> Unit,
-    onMessages: () -> Unit,
+    onAssistant: () -> Unit,
+    onStrategies: () -> Unit,
+    onMarket: () -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
     val largeFont = LocalDensity.current.fontScale >= 1.4f
     val actions = listOf(
-        HomeAction("Портфель", SpectrumLiveFeature.Charts, palette.blue, onPortfolio),
-        HomeAction("Идеи AI", SpectrumLiveFeature.Recommendations, palette.violet, onRecommendations),
-        HomeAction("Риски", SpectrumLiveFeature.RiskControl, palette.rose, onRisk),
-        HomeAction("Сообщения", SpectrumLiveFeature.Notifications, palette.cyan, onMessages),
+        HomeAction("Ассистент", SpectrumLiveFeature.Assistant, palette.cyan, onAssistant),
+        HomeAction("Стратегии", SpectrumLiveFeature.Recommendations, palette.violet, onStrategies),
+        HomeAction("Обзор рынка", SpectrumLiveFeature.WorldMarkets, palette.blue, onMarket),
     )
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -68,7 +66,7 @@ internal fun HomeQuickActions(
 }
 
 internal fun homeActionColumns(widthDp: Float, largeFont: Boolean): Int =
-    if (largeFont || widthDp < 260f) 2 else 4
+    if (largeFont || widthDp < 260f) 1 else 3
 
 @Composable
 private fun ActionCell(action: HomeAction, modifier: Modifier) {
@@ -87,10 +85,10 @@ private fun ActionCell(action: HomeAction, modifier: Modifier) {
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Surface(
-            Modifier.size(56.dp),
+            Modifier.size(52.dp),
             shape = RoundedCornerShape(18.dp),
             color = palette.cardStrong,
-            border = BorderStroke(1.dp, action.accent.copy(alpha = 0.6f)),
+            border = BorderStroke(1.dp, action.accent.copy(alpha = 0.2f)),
         ) {
             SpectrumLiveFeatureIcon(
                 feature = action.liveFeature,

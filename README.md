@@ -1,5 +1,7 @@
 # Analyst AI — Android и Timeweb backend
 
+**В разработке: 0.8.0-preview · Workspace (F01.2).** Полный редизайн по указанию владельца от 17.10.2026. [Карта экранов](docs/WORKSPACE_UI.md) · [готово и осталось](docs/PLAN_STATUS.md). Публикация нового APK и доставка будут отмечены только после проверки.
+
 Kotlin / Jetpack Compose. Android 16+ (`minSdk/compileSdk/targetSdk 36`).
 Текущая опубликованная preview-линия: **0.7.5-preview / versionCode 30**. Открывайте корень проекта в Android Studio.
 

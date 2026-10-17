@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.ui.AnalystBottomBar
@@ -61,6 +62,7 @@ fun ProfileScreen(
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val workspace = LocalWorkspaceNavigator.current
     var section by rememberSaveable { mutableIntStateOf(0) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     val theme = LocalThemePreference.current
@@ -111,13 +113,15 @@ fun ProfileScreen(
                 ) {
                     when (section) {
                         0 -> {
-                            item(key = "profile-overview") {
-                                ProfileIdentityCard(user = user, tApiConfigured = tApiConfigured)
+                            item(key = "appearance-workspace") {
+                                WorkspaceLink("Внешний вид", "Цвет, плотность, глубина и главный экран", SpectrumSymbol.Allocation) {
+                                    workspace(WorkspaceRoute.Appearance)
+                                }
                             }
                             item(key = "theme") {
                                 ProfileAction(
                                     title = "Оформление",
-                                    subtitle = "${theme.mode.title} · фирменная Spectrum-тема",
+                                    subtitle = theme.mode.title,
                                     spectrum = SpectrumSymbol.Allocation,
                                 ) {
                                     dialog = "theme"
@@ -125,9 +129,9 @@ fun ProfileScreen(
                             }
                             item(key = "motion") {
                                 ProfileToggle(
-                                    title = "Живые RGB‑эффекты",
+                                    title = "Анимация",
                                     subtitle = if (motion.enabled) {
-                                        "Короткая анимация иконок включена"
+                                        "Движение включено"
                                     } else {
                                         "Иконки остаются статичными"
                                     },
@@ -149,10 +153,18 @@ fun ProfileScreen(
                                     onChange = onScreenshotsBlockedChange,
                                 )
                             }
+                            item(key = "notification-preferences") {
+                                WorkspaceLink("Уведомления", "Предупреждения и обзоры", SpectrumSymbol.Notifications, onOpenAnalysisSettings)
+                            }
+                            item(key = "assistant-workspace") {
+                                WorkspaceLink("Ассистент", "Портфель, действия и диалог", SpectrumSymbol.Analyst) {
+                                    workspace(WorkspaceRoute.Assistant)
+                                }
+                            }
                             item(key = "security") {
                                 ProfileAction(
                                     title = "Безопасность",
-                                    subtitle = "Сеанс, хранение токенов и доступ к данным",
+                                    subtitle = "Вход и доступ к портфелю",
                                     spectrum = SpectrumSymbol.Risk,
                                 ) {
                                     dialog = "security"
@@ -161,11 +173,17 @@ fun ProfileScreen(
                         }
 
                         1 -> {
+                            item(key = "profile-overview") { ProfileIdentityCard(user, tApiConfigured) }
+                            item(key = "strategies") {
+                                WorkspaceLink("Мои стратегии", "Цель, отбор, доли и поступления", SpectrumSymbol.Goal) {
+                                    workspace(WorkspaceRoute.Strategies)
+                                }
+                            }
                             item(key = "tapi") {
                                 ProfileAction(
                                     title = "Подключение T‑API",
                                     subtitle = if (tApiConfigured) {
-                                        "Подключено · проверить или заменить read‑only токен"
+                                        "Подключено · проверить доступ"
                                     } else {
                                         "Подключить данные вашего брокерского счёта"
                                     },
@@ -334,7 +352,7 @@ private fun ProfileIdentityCard(user: AnalystUser, tApiConfigured: Boolean) {
         ) {
             SpectrumIcon(
                 symbol = SpectrumSymbol.Analyst,
-                modifier = Modifier.size(66.dp),
+                modifier = Modifier.size(48.dp),
                 selected = true,
                 tile = true,
                 motionAllowed = false,
@@ -423,7 +441,7 @@ private fun ProfileAction(
         ) {
             SpectrumIcon(
                 spectrum,
-                Modifier.size(50.dp),
+                Modifier.size(40.dp),
                 tile = true,
                 selected = true,
                 motionAllowed = motion.enabled,
@@ -469,5 +487,6 @@ private fun accountSubtitle(user: AnalystUser): String {
     val identity = user.name?.takeIf(String::isNotBlank)
         ?: user.username?.let { "@$it" }
         ?: "Telegram ID ${user.telegramId}"
-    return "$identity · настройки и подключения"
+    return identity
 }
+

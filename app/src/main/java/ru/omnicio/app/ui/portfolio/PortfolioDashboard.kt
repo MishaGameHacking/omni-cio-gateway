@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.*
+import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.*
 
 /** Production portfolio presenter. No synthetic balances, goals or chart points. */
@@ -41,11 +42,12 @@ internal fun PortfolioDashboard(
     onPositionClick: (String, PortfolioPosition) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val openWorkspace = LocalWorkspaceNavigator.current
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     Column(modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         SpectrumPageHeader(
-            title = "Мой портфель",
-            subtitle = "Капитал под вашим контролем",
+            title = "Портфель",
+            subtitle = "Состав, счета и движение капитала",
             symbol = SpectrumSymbol.Portfolio,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
         )
@@ -57,6 +59,8 @@ internal fun PortfolioDashboard(
         )
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
             PortfolioHistorySection(snapshot.accounts, accessToken, onCurrencyClick, Modifier.weight(1f))
+        } else if (selectedSection == 1 && snapshot != null) {
+            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f))
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"),
@@ -83,10 +87,10 @@ internal fun PortfolioDashboard(
                         }
                         item(key = "strategy") {
                             SpectrumActionTile(
-                                title = "Моя стратегия",
-                                subtitle = "Настройте горизонт, резерв и допустимый риск в профиле",
+                                title = "Мои стратегии",
+                                subtitle = "Цель, отбор, доли и доход",
                                 symbol = SpectrumSymbol.Goal,
-                                onClick = onProfileClick,
+                                onClick = { openWorkspace(WorkspaceRoute.Strategies) },
                             )
                         }
                     } else {
@@ -143,10 +147,10 @@ private fun PortfolioBalanceCard(
         )
         if (snapshot.expectedYieldAmount != null || snapshot.expectedYieldPercent != null) {
             SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
-            Notice("Текущий результат по данным брокера, не прогноз доходности")
+            Notice("Текущий результат брокера")
         }
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
-        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Коснитесь суммы: ₽ → $ → €")
+        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Валюта оценки: ${selectedCurrency.name} · нажмите сумму, чтобы сменить")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val enabled = snapshot.accounts.isNotEmpty()
             if (portfolioStackedLayout(maxWidth.value, fontScale)) {
@@ -231,3 +235,4 @@ private fun PortfolioHistorySection(
         }
     }
 }
+

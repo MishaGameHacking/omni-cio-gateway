@@ -13,6 +13,7 @@ SCROLL_AXES = {
     "profile-content": "vertical",
     "education-content": "vertical",
     "portfolio-content": "vertical",
+    "workspace-content": "vertical",
     "profile-tabs": "horizontal",
 }
 LIST_IDS = frozenset(SCROLL_AXES)
@@ -235,3 +236,4 @@ def reveal_in_profile(
         resource_id="profile-content",
         max_swipes=max_swipes,
     )
+

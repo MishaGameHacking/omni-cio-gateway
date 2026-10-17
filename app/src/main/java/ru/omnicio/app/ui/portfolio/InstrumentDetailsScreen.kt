@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import ru.omnicio.app.ui.spectrum.SpectrumTabs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,6 +22,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumBackground
 /** Displays the live position supplied by LivePositionDetails, never a stored copy. */
 @Composable
 internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> Unit) {
+    var section by rememberSaveable(position.id) { mutableIntStateOf(0) }
     val labels = instrumentDetailLabels(position.instrumentType, position.currentNkd != null)
     Dialog(onDismissRequest = close,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -33,9 +36,10 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium)
                     }
+                    SpectrumTabs(listOf("Позиция", "Условия", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
                     LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(20.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        item(key = "position-summary") {
+                        if (section == 0) item(key = "position-summary") {
                             CompactCard {
                                 Text(position.title, style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold)
@@ -47,7 +51,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                                 DataRow("За день", position.dailyYieldAmount.moneyText(true))
                             }
                         }
-                        item(key = "position-prices") {
+                        if (section == 1) item(key = "position-prices") {
                             CompactCard {
                                 SectionHeading("Цена и ограничения")
                                 DataRow("Текущая цена за единицу", position.currentPrice.moneyText())
@@ -59,7 +63,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                                 Notice("Отсутствие отметки о блокировке не подтверждает, что торги сейчас доступны.")
                             }
                         }
-                        item(key = "instrument-identifiers") {
+                        if (section == 2) item(key = "instrument-identifiers") {
                             CompactCard {
                                 SectionHeading("Как найти инструмент")
                                 SelectionContainer {
@@ -72,9 +76,11 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                                         DataRow("Идентификатор", position.id)
                                     }
                                 }
-                                BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
                                 Notice("Переход открывает карточку брокера, а не создаёт заявку. Проверьте название, тикер и ISIN перед сделкой.")
                             }
+                        }
+                        item(key = "broker-action") {
+                            BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin)
                         }
                         item(key = "data-limitations") {
                             Notice("«—» означает, что значение не получено или не может быть корректно рассчитано. Цены и результаты показаны в валютах API, количество не переводится в лоты. Это сведения о позиции, не обещание дохода и не полный анализ компании.")
@@ -85,3 +91,4 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
         }
     }
 }
+

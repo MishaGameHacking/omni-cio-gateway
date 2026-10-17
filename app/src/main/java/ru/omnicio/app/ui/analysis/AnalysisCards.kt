@@ -94,7 +94,7 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
         critical > 0 -> MaterialTheme.colorScheme.error
         warning > 0 -> palette.amber
         watch > 0 -> palette.violet
-        else -> palette.emerald
+        else -> palette.blue
     }
     SpectrumCard(emphasized = true) {
         Row(
@@ -109,12 +109,12 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
                 motionAllowed = false,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("Сводка рисков", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Состояние наблюдения", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 SpectrumBadge(highest, accent = accent)
             }
         }
         Text(
-            "Показываем только зафиксированные сервером сигналы. Отсутствие сообщений не означает отсутствие инвестиционного риска.",
+            "Сигналы сервера. Отсутствие сообщений не означает отсутствие риска.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -268,7 +268,7 @@ internal fun IdeaCard(idea: AnalysisIdea) {
                 motionAllowed = false,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                SpectrumBadge("Направление, не торговая команда", accent = palette.violet)
+                SpectrumBadge("Обзор распределения", accent = palette.violet)
                 Text(idea.assetClass, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
         }
@@ -414,3 +414,4 @@ internal fun SwitchCard(
         }
     }
 }
+

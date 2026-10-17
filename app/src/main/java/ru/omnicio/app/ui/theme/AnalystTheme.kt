@@ -26,6 +26,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.DarkSpectrumPalette
 import ru.omnicio.app.ui.spectrum.LightSpectrumPalette
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
@@ -71,20 +72,20 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF36E0FF),
+    primary = Color(0xFF70E0D2),
     onPrimary = Color(0xFF001E29),
     secondary = Color(0xFFAF99FF),
     onSecondary = Color(0xFF1F0D50),
     tertiary = Color(0xFF19E6A2),
     onTertiary = Color(0xFF002B21),
-    background = Color(0xFF020A16),
+    background = Color(0xFF090E18),
     onBackground = Color(0xFFF4F7FF),
-    surface = Color(0xFF071A2A),
+    surface = Color(0xFF121D2B),
     onSurface = Color(0xFFF4F7FF),
     surfaceVariant = Color(0xFF10283C),
     onSurfaceVariant = Color(0xFFB8C2D2),
-    surfaceContainer = Color(0xFF071A2A),
-    surfaceContainerHigh = Color(0xFF0B2940),
+    surfaceContainer = Color(0xFF121D2B),
+    surfaceContainerHigh = Color(0xFF192A3B),
     outline = Color(0xFF8FA1B8),
     outlineVariant = Color(0xFF254158),
     secondaryContainer = Color(0xFF201949),
@@ -96,8 +97,8 @@ private val AnalystTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 54.sp,
-        lineHeight = 58.sp,
+        fontSize = 46.sp,
+        lineHeight = 52.sp,
         letterSpacing = (-1.2).sp,
     ),
     headlineLarge = TextStyle(
@@ -110,7 +111,7 @@ private val AnalystTypography = Typography(
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
+        fontSize = 26.sp,
         lineHeight = 33.sp,
     ),
     titleLarge = TextStyle(
@@ -134,7 +135,7 @@ private val AnalystTypography = Typography(
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
+        fontSize = 16.sp,
         lineHeight = 22.sp,
     ),
     bodySmall = TextStyle(
@@ -146,7 +147,7 @@ private val AnalystTypography = Typography(
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 15.sp,
+        fontSize = 16.sp,
         lineHeight = 20.sp,
     ),
     labelMedium = TextStyle(
@@ -165,6 +166,11 @@ private val AnalystTypography = Typography(
 
 @Composable
 fun AnalystTheme(content: @Composable () -> Unit) {
+    WorkspacePreferencesProvider { AnalystThemeContent(content) }
+}
+
+@Composable
+private fun AnalystThemeContent(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val activity = LocalActivity.current
     val preferences = remember(context) {
@@ -210,7 +216,8 @@ fun AnalystTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalThemePreference provides themePreference,
         LocalSpectrumMotionPreference provides motionPreference,
-        LocalSpectrumPalette provides if (dark) DarkSpectrumPalette else LightSpectrumPalette,
+        LocalSpectrumPalette provides workspacePalette(if (dark) DarkSpectrumPalette else LightSpectrumPalette,
+            LocalWorkspacePreferences.current.value.accent, dark),
     ) {
         MaterialTheme(
             colorScheme = if (dark) DarkColors else LightColors,
@@ -224,4 +231,13 @@ fun AnalystTheme(content: @Composable () -> Unit) {
             )
         }
     }
+}
+
+
+private fun workspacePalette(base: ru.omnicio.app.ui.spectrum.SpectrumPalette, accent: AccentStyle, dark: Boolean) = when (accent) {
+    AccentStyle.AURORA -> base
+    AccentStyle.OCEAN -> base.copy(cyan = if (dark) Color(0xFF69D8FF) else Color(0xFF006D8F),
+        violet = if (dark) Color(0xFF68A6FF) else Color(0xFF345CB4))
+    AccentStyle.IRIS -> base.copy(cyan = if (dark) Color(0xFFC4AEFF) else Color(0xFF6B43AD),
+        violet = if (dark) Color(0xFFEF9CC6) else Color(0xFF9E3970))
 }

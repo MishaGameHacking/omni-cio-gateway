@@ -1,5 +1,8 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.rememberSpectrumReveal
+import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -237,6 +240,7 @@ internal fun HistoryChart(points: List<HistoryPoint>, currency: String) {
         return
     }
     val data = geometry.coordinates
+    val reveal = rememberSpectrumReveal(points, LocalSpectrumMotionPreference.current.enabled)
     val accent = LocalSpectrumPalette.current.cyan
     val outline = MaterialTheme.colorScheme.outlineVariant
     Text(decimalText(data.last().point.value) + " " + currencySymbol(currency), fontWeight = FontWeight.Bold)
@@ -256,10 +260,12 @@ internal fun HistoryChart(points: List<HistoryPoint>, currency: String) {
                 if (index == 0) moveTo(x, y) else lineTo(x, y)
             }
         }
+        clipRect(right = size.width * reveal.value) {
         drawPath(curve, accent.copy(alpha = 0.12f), style = Stroke(8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(curve, accent, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         val last = data.last()
         drawCircle(accent, 3.dp.toPx(), Offset(inset + last.x * innerWidth, inset + last.y * innerHeight))
+        }
     }
     DataRow(dateText(data.first().point.date, "dd.MM.yy HH:mm"), dateText(data.last().point.date, "dd.MM.yy HH:mm"))
     Notice("Линия соединяет фактически сохранённые снимки, не восстанавливает историю до подключения. Пополнения и выводы также изменяют стоимость портфеля.")
@@ -283,3 +289,4 @@ private fun HistoryValues(data: List<HistoryCoordinate>, currency: String) {
         TextButton(onClick = { page = window.page + 1 }, enabled = window.page + 1 < window.pages, modifier = Modifier.weight(1f)) { Text("Следующие") }
     }
 }
+

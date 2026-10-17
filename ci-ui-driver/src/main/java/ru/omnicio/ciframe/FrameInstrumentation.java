@@ -46,10 +46,12 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int LIST_EDUCATION = 2;
     private static final int LIST_PORTFOLIO = 3;
     private static final int LIST_PROFILE_TABS = 4;
+    private static final int LIST_WORKSPACE = 5;
     private static final String PROFILE_LIST = "profile-content";
     private static final String EDUCATION_LIST = "education-content";
     private static final String PORTFOLIO_LIST = "portfolio-content";
     private static final String PROFILE_TABS = "profile-tabs";
+    private static final String WORKSPACE_LIST = "workspace-content";
 
     private String socketName;
     private byte[] token;
@@ -205,6 +207,7 @@ public final class FrameInstrumentation extends Instrumentation {
             case LIST_EDUCATION -> EDUCATION_LIST;
             case LIST_PORTFOLIO -> PORTFOLIO_LIST;
             case LIST_PROFILE_TABS -> PROFILE_TABS;
+            case LIST_WORKSPACE -> WORKSPACE_LIST;
             default -> null;
         };
     }
@@ -335,3 +338,4 @@ public final class FrameInstrumentation extends Instrumentation {
         xml.attribute(null, name, text);
     }
 }
+
