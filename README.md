@@ -1,17 +1,16 @@
 # Analyst AI — Android и Timeweb backend
 
-**[Выпущен 0.8.0-preview / 32 — Workspace](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-7fe22f35b07bd2fc92b5860e23418214333b8a21).** Android 16 и новее.
+**[Опубликован 0.9.0-preview / 33 — UX100](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344).** Android 16 и новее.
 
-F01.2: новая навигация, переработанные экраны, нативные анимации и настройки оформления.
-Тот же APK доставлен на Timeweb; версия и SHA-256 подтверждены через публичный канал.
+F01.3: интерфейсная часть 100 UX-доработок — компактный портфель, поиск, фильтры, графики, стратегия, приватность и понятные состояния.
+Доставка 0.9.0 на Timeweb ещё не подтверждена; канал пока содержит 0.8.0.
 
-[Скачать APK](https://176.98.178.81.sslip.io/client/apk/Analyst-AI-32-b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31.apk?package_name=ru.omnicio.app.debug) · [Что изменилось](docs/releases/0.8.0.md) · [Карта экранов](docs/WORKSPACE_UI.md) · [Готово и осталось](docs/PLAN_STATUS.md).
+[Скачать APK из GitHub Release](https://github.com/MishaGameHacking/omni-cio-gateway/releases/download/android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344/Analyst-AI-0.9.0-preview-a957e62.apk) · [Что изменилось](docs/releases/0.9.0.md) · [Все 100 пунктов](docs/UX100.md) · [Готово и осталось](docs/PLAN_STATUS.md).
 
-[Проверка доставки](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39016326972).
-Прежние package и сертификат сохранены. Установка на физическом телефоне ещё не подтверждена.
+[Проверка и публикация](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39027844102). Прежние package и сертификат сохранены. Физический телефон ещё не проверен.
 
 Kotlin / Jetpack Compose. Android 16+ (`minSdk/compileSdk/targetSdk 36`).
-Текущая опубликованная preview-линия: **0.8.0-preview / versionCode 32**. Открывайте корень проекта в Android Studio.
+Текущая опубликованная preview-линия: **0.9.0-preview / versionCode 33**. Открывайте корень проекта в Android Studio.
 
 <a id="development-plan"></a>
 
@@ -196,6 +195,6 @@ CI проверяет темы и профиль через синтетичес
 - `docs/ANDROID16_LIVE_UI_SPEC.md`.
 
 
-### В разработке: 0.9.0 / UX100
+### Опубликован: 0.9.0 / UX100
 
-Новая итерация интерфейса по 100 пунктам аудита: компактный портфель, поиск, фильтры, единая стратегия, приватность и понятные состояния. [Карта реализации](docs/UX100.md). Публикация и канал обновления будут отмечены после проверок.
+Новая итерация интерфейса по 100 пунктам аудита: компактный портфель, поиск, фильтры, единая стратегия, приватность и понятные состояния. [Карта реализации](docs/UX100.md). APK опубликован и проверен; доставка в канал обновления пока ожидается.

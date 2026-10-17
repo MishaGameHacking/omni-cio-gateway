@@ -407,6 +407,8 @@ class ProfileProbe:
                 self.tap_visible("Нужно подумать")
                 self.find("Отложено: Нужно подумать · изменить")
                 self.tap_visible("График")
+                self.reveal("Скрыть суммы", "workspace-content", direction="start")
+                self.find("Диапазон шкалы")
                 self.capture("ux100-chart")
                 self.tap("Скрыть суммы", "workspace-content", direction="start")
                 self.find("График скрыт режимом приватности.")
