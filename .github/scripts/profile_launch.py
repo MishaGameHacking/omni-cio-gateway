@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import time
 
 PACKAGE = "ru.omnicio.app.debug"
@@ -19,6 +20,7 @@ SYSTEM_PACKAGES = {"android", "com.android.systemui"}
 SYSTEM_UI_WAIT_IDS = {"android:id/aerr_wait", "aerr_wait"}
 SYSTEM_UI_WAIT_LABELS = {"Wait", "Подождать"}
 EMULATOR_MESSAGING_PACKAGE = "com.google.android.apps.messaging"
+FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100"}
 
 
 def start_status(output: str) -> str:
@@ -45,7 +47,7 @@ def profile_resumed(output: str) -> bool:
 def ready_marker(tree, expected_screen: str | None = None):
     required = {MARKER}
     if expected_screen is not None:
-        if expected_screen not in {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100"}:
+        if expected_screen not in FIXTURE_SCREENS:
             raise ValueError("Unknown fixture screen")
         required.add("probe-screen:" + expected_screen)
     for node in tree.iter("node"):
@@ -189,33 +191,33 @@ def profile_frame(command, read_tree, evidence, expected_screen: str | None = No
     return node if profile_resumed(after) else None
 
 
-def launch_profile(command, read_tree, wait_for) -> None:
+def launch_profile(command, read_tree, wait_for, *, expected_screen: str = "profile") -> None:
+    if expected_screen not in FIXTURE_SCREENS:
+        raise ValueError("Unknown fixture screen")
     started = time.monotonic()
-    evidence = {"stage": "launch", "expected_screen": "profile"}
+    evidence = {"stage": "launch", "expected_screen": expected_screen}
     try:
         # Always create a new fixture Activity with an explicit profile intent.
         # Reusing the previous dashboard Activity can preserve a modal window or
         # an old screen extra and make a generic readiness marker misleading.
         command("shell", "am", "force-stop", PACKAGE)
-        status = start_status(
-            command(
-                "shell",
-                "am",
-                "start",
-                "-W",
-                "-n",
-                ACTIVITY,
-                "--es",
-                "spectrum_screen",
-                "profile",
-            )
-        )
+        try:
+            status = start_status(command(
+                "shell", "am", "start", "-W", "-n", ACTIVITY,
+                "--es", "spectrum_screen", expected_screen,
+            ))
+        except subprocess.TimeoutExpired:
+            # On the fresh API36 AVD (run 39035275698) the host adb deadline
+            # expired during am start -W. A timeout is not launch evidence:
+            # still require the exact resumed Activity and fresh screen marker
+            # within the existing bounded readiness wait. No relaunch or skip.
+            status = "command-timeout"
         evidence["start_status"] = status
-        if status == "timeout":
-            print("PROFILE_LAUNCH_WAIT=activity-manager-timeout;checking-visible-frame", flush=True)
+        if status in {"timeout", "command-timeout"}:
+            print(f"PROFILE_LAUNCH_WAIT={status};checking-visible-frame", flush=True)
 
         def read():
-            return profile_frame(command, read_tree, evidence, expected_screen="profile")
+            return profile_frame(command, read_tree, evidence, expected_screen=expected_screen)
 
         if wait_for(read, "Profile fixture is not resumed with a completed visible regression marker") is None:
             raise AssertionError("Profile readiness was not established")

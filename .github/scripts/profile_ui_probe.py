@@ -341,35 +341,12 @@ class ProfileProbe:
         assert_horizontal_geometry(peer, target)
 
     def dashboards(self):
-        from profile_launch import profile_frame, start_status
+        from profile_launch import launch_profile
 
         self.command("shell", "settings", "put", "system", "font_scale", "1.0")
         self.command("shell", "cmd", "uimode", "night", "yes")
         for screen in ("home", "portfolio"):
-            self.command("shell", "am", "force-stop", PACKAGE)
-            start_status(
-                self.command(
-                    "shell",
-                    "am",
-                    "start",
-                    "-W",
-                    "-n",
-                    ACTIVITY,
-                    "--es",
-                    "spectrum_screen",
-                    screen,
-                )
-            )
-            evidence = {}
-            self.wait_for(
-                lambda evidence=evidence: profile_frame(
-                    self.command,
-                    self.tree,
-                    evidence,
-                    expected_screen=screen,
-                ),
-                "Dashboard is not resumed and ready",
-            )
+            launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
@@ -390,19 +367,10 @@ class ProfileProbe:
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def workspace(self):
-        from profile_launch import profile_frame, start_status
+        from profile_launch import launch_profile
         for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
                               ("assistant", "Ассистент"), ("market", "Отрасли и классы"), ("ux100", "Проверка UX100")):
-            self.command("shell", "am", "force-stop", PACKAGE)
-            start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
-                                      "--es", "spectrum_screen", screen))
-            evidence = {"expected_screen": screen}
-            try:
-                self.wait_for(lambda screen=screen, evidence=evidence: profile_frame(self.command, self.tree, evidence, expected_screen=screen),
-                              "Workspace screen is not resumed")
-            except Exception:
-                print("WORKSPACE_READINESS_DIAGNOSTIC=" + json.dumps(evidence, ensure_ascii=True), flush=True)
-                raise
+            launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)
             self.find(label)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
             self.capture("workspace-" + screen)
@@ -552,13 +520,8 @@ class ProfileProbe:
         self.capture("large-font")
         self.education("education-large-font")
 
-        from profile_launch import profile_frame, start_status
-        self.command("shell", "am", "force-stop", PACKAGE)
-        start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
-                                  "--es", "spectrum_screen", "ux100"))
-        evidence = {"expected_screen": "ux100"}
-        self.wait_for(lambda: profile_frame(self.command, self.tree, evidence, expected_screen="ux100"),
-                      "Large-font chart screen is not resumed")
+        from profile_launch import launch_profile
+        launch_profile(self.command, self.tree, self.wait_for, expected_screen="ux100")
         self.tap_visible("График")
         chart = self.resource_tap_target("history-bars", "workspace-content")
         left, top, right, bottom = node_bounds(chart)
