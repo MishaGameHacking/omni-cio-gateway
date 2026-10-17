@@ -2,6 +2,11 @@
 
 Date: 2026-10-15
 
+**Historical incident record.** The diagnostics and repair design below describe
+the 15 October incident. Current release/deployment evidence and remaining
+configuration checks belong in [PLAN_STATUS](../PLAN_STATUS.md); the active
+update/auth runtime is described in [UPDATE_RUNTIME_UNIFICATION](../UPDATE_RUNTIME_UNIFICATION.md).
+
 ## User-visible symptom
 
 Android successfully opened the Telegram confirmation flow, but the callback returned

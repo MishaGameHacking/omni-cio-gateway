@@ -1,9 +1,41 @@
 # Analyst AI — investment education curriculum
 
-Date: 2026-10-13. This is a product/content specification, not personal investment advice.
-The two owner-provided `share.google` redirects could not be fetched, so their text was not
-copied, summarized or silently reconstructed. The curriculum below is original and was checked
-against official educational material linked at the end.
+Content specification created **2026-10-13**; implementation and navigation
+reviewed **2026-10-17**. This is original educational content, not personal
+investment advice. The two owner-provided `share.google` redirects were unreadable
+in the original research session, so their text was not copied, summarized or
+reconstructed. The source map below preserves that research provenance.
+
+The approved [MASTER_PLAN.md](MASTER_PLAN.md) keeps the existing Education
+section but pauses its expansion. Updating this document does not authorize
+new lessons, quizzes, progress tracking or model-backed teaching. Current
+release and device evidence belongs in [PLAN_STATUS.md](PLAN_STATUS.md).
+
+## Current native catalogue
+
+Open **«Профиль → О приложении → Обучение»**. The screen uses category filters,
+expandable lessons, a fixed accessible Back action and official source links.
+Selected category and expanded lesson use `rememberSaveable`; there is no
+learning-completion record, account progress or knowledge-check engine.
+
+The current [EducationCatalog.kt](../app/src/main/java/ru/omnicio/app/ui/education/EducationCatalog.kt)
+contains nine lessons:
+
+| ID | Lesson |
+| --- | --- |
+| `start-plan` | Сначала цель, срок и резерв |
+| `market-mechanics` | Как устроена сделка на бирже |
+| `asset-types` | Акции, облигации, фонды и деньги |
+| `diversification` | Диверсификация без иллюзий |
+| `credit-ratings` | Кредитный рейтинг: полезный сигнал, не гарантия |
+| `news-impact` | Как новости двигают рынок |
+| `statements` | Финансовая отчётность простыми словами |
+| `behavior` | Психология инвестора и пауза перед решением |
+| `fraud-and-hype` | Мошенничество, хайп и обещания без риска |
+
+[EducationScreen.kt](../app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt)
+is native Compose content. It does not fetch a user's portfolio, call a model,
+place an order or treat lesson completion as proof of suitability.
 
 ## Learning outcome
 
@@ -15,7 +47,7 @@ A beginner should be able to answer five questions before pressing a broker butt
 4. Which facts and expectations support the decision, and how current are they?
 5. What would make me do nothing, wait, reduce the amount or review the decision?
 
-## Course sequence
+## Content topics
 
 ### 1. Personal foundation
 
@@ -96,16 +128,23 @@ The app should distinguish:
 - never send passwords, one-time codes, seed phrases or API tokens;
 - show a short “pause checklist” before high-risk/complex-instrument actions.
 
-## Product improvements derived from the research
+## Implementation boundaries and deferred ideas
 
-1. **Education hub:** implemented first native version with filters and expandable lessons.
-2. **Contextual lesson:** a risk/recommendation card can link to the exact lesson explaining its term.
-3. **News impact map:** Pulse should show the mechanism and portfolio exposure, not a sentiment badge alone.
-4. **Source quality:** official issuer/regulator/exchange source first; secondary analysis explicitly labelled.
-5. **Plain-language mode:** lead with ruble impact and one sentence; math, assumptions and sources expand below.
-6. **Knowledge checks:** future non-graded questions after lessons; no gamified pressure to trade.
-7. **Progress storage:** future local/account progress must not affect portfolio analysis or model risk score.
-8. **Safety separation:** learning completion never unlocks trading permissions or implies suitability.
+The topics above are content-design guidance, not a claim that all described
+news-card fields or interactions are implemented in production. Psychology is
+represented by the separate `behavior` lesson in the current nine-lesson catalogue.
+
+| Area | Current status |
+| --- | --- |
+| Education hub | Native filters, expandable lessons and source links exist. |
+| Contextual lesson from a risk/action card | A general deep-link mechanism to an exact lesson is not implemented. |
+| News impact map | The full source-to-portfolio causal map remains F13. The old «Пульс» navigation name is historical; current routes are documented in WORKSPACE_UI. |
+| Source quality and plain language | Content and presentation requirements; they do not prove live-source validation or completion of every research-card field. |
+| Knowledge checks and learning progress | Not implemented; expansion remains paused by the approved plan. Saving the selected filter is not a completion record. |
+| Learning versus investment permissions | Lessons grant no trading rights and provide no automated suitability determination. |
+
+Current navigation: [WORKSPACE_UI.md](WORKSPACE_UI.md). Current portfolio-research
+limits: [RISK_REBALANCING.md](RISK_REBALANCING.md).
 
 ## Source map
 

@@ -1,5 +1,10 @@
 # Evidence-backed portfolio research
 
+Source review: **2026-10-17**. This is the current implementation contract for
+F04/F06/F08–F14/F17/F21, not a completion claim for the investment plan.
+See [MASTER_PLAN.md](MASTER_PLAN.md) for the approved target and
+[PLAN_STATUS.md](PLAN_STATUS.md) for code, release, delivery and device evidence.
+
 ## Product contract
 
 Personalized understandable assistance is not autonomous order execution or a
@@ -9,15 +14,24 @@ broker or reviewed evidence. Synthetic prices and ratings exist ONLY in tests.
 
 ## Implemented paths and limits
 
-- GET /analysis/research: authenticated, identity/token-scoped five-minute cache.
-  Uses the existing read-only portfolio reader, bounded GetAssetFundamentals
+- GET /analysis/research: authenticated, identity/token-scoped five-minute cache,
+  also bound to profile digest, evidence revision and freshness boundaries. A
+  concurrent profile/evidence change or crossed time boundary rejects the stale
+  result. Uses the existing read-only portfolio reader, bounded GetAssetFundamentals
   (at most 100 asset IDs) and News (100 latest items). News matches instrument UID,
   not ambiguous names. Only short headlines/source/time, not full articles.
   This is not a complete global-news feed: pagination/backfill/provider contracts
   and macro/sector propagation are not implemented.
-- The Ideas panel shows security facts, missing coverage, ordinary-language
-  explanations and broker-view/search buttons. Collection refreshes in foreground;
-  it is not yet a separate background research job. Existing AI scheduler unchanged.
+- The native **«Действия → Анализ»** section shows security facts, missing
+  coverage, explanations and broker-view/search buttons. Per-instrument research
+  is also reachable from portfolio instrument details. Collection runs on a
+  client request; it is not yet a separate background research job. F11.1's
+  independent portfolio-monitoring scheduler does not make this research
+  collector autonomous.
+- `collect_research` still selects the first 100 aggregated positions. Responses
+  expose examined/total counts; incomplete valuation prevents a whole-portfolio
+  historical risk result. This limit remains open under F11/F21 and must not be
+  presented as a full pass over 2000 positions.
 - Configured user limits only. Default profiles are not user agreement. assetUid,
   instrument name and brand are NOT treated as verified issuer/group identifiers.
 - Append-only, content-addressed imports of issuer identity, agency ratings,
@@ -29,7 +43,11 @@ broker or reviewed evidence. Synthetic prices and ratings exist ONLY in tests.
 
 ## Ratings and statements
 
-ACRA (RU) and Expert RA ru... national long-term scales retain agency and scope.
+`credit_evidence.py` currently supports ACRA (RU) and Expert RA ru... national
+long-term scales, retaining agency and scope. NKR and NRA remain missing; the
+approved four-agency AAA–BBB- product rule is tracked separately in F04/F09.
+A displayed rating is not proof that the complete purchase-admission policy is
+implemented.
 International scales and structured-finance ratings are not coerced into them.
 Latest action wins, including withdrawal. Issuer rating does not become a bond
 rating, particularly for subordinated debt. Different agency opinions are not
@@ -50,6 +68,10 @@ publication calendar, not a report's contents.
 
 ## Mathematics actually implemented
 
+The live research path calls `risk_math.py` when verified inputs are complete.
+`portfolio_risk.py` and `risk_preview.py` also contain separate calculation and
+preview helpers; their presence does not expose a complete planner through the API.
+
 - Same-date adjusted simple total returns, minimum 120 common sessions. Reject
   missing dates, NaN, unadjusted close series or different currencies. No fabricated
   zero returns/holiday filling.
@@ -68,10 +90,11 @@ publication calendar, not a report's contents.
 
 ## Rebalancing plan: NOT integrated
 
-A separate local whole-lot cash-first planning draft was written and tested, but
-writing backend/rebalance.py was blocked by the tool. That file is NOT part of this
-repository change; no substitute or alternate upload was used. Its 20 isolated
-tests are not counted as CI tests of this branch.
+`portfolio_risk.py` contains `reduction_plan` and `preview_one_lot_buy` helpers.
+They are not a production portfolio optimizer and are not wired as an executable
+plan in `/analysis/research`. There is no `backend/rebalance.py` in the current
+tree. Earlier notes about an isolated draft and its 20 local tests are historical
+work-session evidence, not tests or a delivered module in this repository.
 
 New-security catalog, user target-policy review, real transaction-cost/tax checks,
 settlement rules and the production recommendation planner remain unfinished.
@@ -87,7 +110,8 @@ Only official HTTPS instrument-page patterns: /invest/stocks/{ticker}/,
 both are shown. Funds can have a trailing @. ISIN may be a bond fallback, but
 existence of every generated individual URL is not guaranteed.
 
-Android attempts ACTION_VIEW targeted to ru.tinkoff.investing, the package in the
+The research-card action in `PortfolioResearchPanel.kt` attempts ACTION_VIEW
+targeted to ru.tinkoff.investing, the package in the
 bank's official RuStore listing. When absent or the version cannot handle that
 URL, show an explanation and offer the official page and copyable ticker/ISIN/name.
 No private scheme, order quantity, access token, account ID or trading action is
@@ -98,17 +122,31 @@ never presses Buy/Sell or confirms a trade.
 
 ## Validation / rollout
 
-Normal backend, Android and quality checks must pass before merge. Existing
-Moscow server, authentication, keys and paused deployment remain unchanged. No
-new servers, model calls, trading writes or agency subscriptions were ordered.
-A client connected to an old server gets an explicit unavailable message for this
-endpoint. Source integration is not deployment or proof of live broker inference.
+Normal backend, Android and quality checks must pass before merge. The ordinary
+Timeweb deployment workflow remains paused; verified Moscow updates use the
+separate workflows recorded in [PLAN_STATUS.md](PLAN_STATUS.md). Documentation
+review does not prove paid inference, a provider subscription or live evidence
+coverage. A client connected to a server without this endpoint gets an explicit
+unavailable message.
+
+Implementation sources: [research route](../backend/portfolio_research.py),
+[evidence store](../backend/research_store.py),
+[credit evidence](../backend/credit_evidence.py), [risk math](../backend/risk_math.py),
+[planning helpers](../backend/portfolio_risk.py),
+[Android research panel](../app/src/main/java/ru/omnicio/app/ui/research/PortfolioResearchPanel.kt).
+
+Current Android support is Android 15+ (`minSdk=35`, compile/target 36); the
+installation and upgrade evidence requirements are in
+[APK_INSTALLATION.md](APK_INSTALLATION.md). Emulator verification does not prove
+the broker-card handoff or a self-update on the owner's phone.
 
 Remaining: real licensed agency/report imports, issuer/group identity and fund
 look-through, full adjusted histories, global/macro/sector evidence, walk-forward
 validation and stress coverage, a reviewed candidate strategy and rebalance plan,
-production rollout, device/broker-app tests and compliance review before public
-personalized advice. A disclaimer is not a compliance implementation.
+verified live-source operation and device/broker-app tests. The approved product
+is limited to five invited accounts; applicability of the rules for personal
+investment instructions and data processing is an open F23 requirement before
+expanding access. A disclaimer is not a compliance implementation.
 
 ## Primary references checked 2026-10-13
 
