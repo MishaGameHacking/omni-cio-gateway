@@ -72,10 +72,11 @@ fun WorkspaceEmpty(title: String, detail: String, action: String? = null, onActi
 }
 
 @Composable
-fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit) {
+fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol: SpectrumSymbol? = null) {
     Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
         .padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("‹ Назад") }
+        if (symbol != null) SpectrumIcon(symbol, Modifier.size(24.dp), motionAllowed = false)
         Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall,

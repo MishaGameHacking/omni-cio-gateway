@@ -37,7 +37,6 @@ fun PortfolioScreen(
     state: PortfolioUiState,
     onProfileClick: () -> Unit,
     selectedCurrency: PortfolioCurrency = PortfolioCurrency.RUB,
-    onCurrencyClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     accessToken: String = "",
     refreshing: Boolean = false,
@@ -59,11 +58,12 @@ fun PortfolioScreen(
     val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
     val listState = rememberLazyListState()
     val listScope = rememberCoroutineScope()
-    LaunchedEffect(destination) {
+    LaunchedEffect(destination, snapshot?.accounts?.map { it.id }) {
         destination?.let { target ->
             if (target.section > 2) {
-                accountId = target.accountId ?: snapshot?.accounts?.firstOrNull()?.id
-                section = target.section
+                val accounts = snapshot?.accounts ?: return@LaunchedEffect
+                if (target.accountId == null && accounts.size > 1) selectForSection = target.section
+                else { accountId = target.accountId ?: accounts.firstOrNull()?.id; section = target.section }
             } else {
                 overviewSection = target.section; accountId = target.accountId
                 assetQuery = target.query; assetSector = target.sector; assetKind = target.kind
@@ -81,7 +81,7 @@ fun PortfolioScreen(
             bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
         ) { insets ->
             if (account != null) {
-                AccountScreen(account, accessToken, section, { section = it }, onCurrencyClick,
+                AccountScreen(account, accessToken, section, { section = it },
                     { accountId = null; section = 0 }, snapshot.asOf, refreshError,
                     Modifier.padding(insets).consumeWindowInsets(insets), snapshot.accounts, { accountId = it })
             } else {
@@ -95,7 +95,6 @@ fun PortfolioScreen(
                     selectedSection = overviewSection,
                     onSelectSection = { overviewSection = it; listScope.launch { listState.scrollToItem(0) } },
                     listState = listState,
-                    onCurrencyClick = onCurrencyClick,
                     onProfileClick = onConnect,
                     assetQuery = assetQuery, assetSector = assetSector, assetKind = assetKind,
                     onOpenAccount = { accountId = it.id; section = 0 },
@@ -158,7 +157,7 @@ private fun ReturnSummaryRow(title: String, amount: MoneyAmount?, percent: ApiDe
 @Composable
 private fun AccountScreen(
     account: PortfolioAccount, token: String, section: Int, onSection: (Int) -> Unit,
-    onCurrency: () -> Unit, onBack: () -> Unit, asOf: String?, error: String?, modifier: Modifier,
+    onBack: () -> Unit, asOf: String?, error: String?, modifier: Modifier,
     accounts: List<PortfolioAccount>, onAccount: (String) -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
@@ -170,17 +169,17 @@ private fun AccountScreen(
         when (section) {
             1 -> AccountOperations(token, account)
             2 -> AccountOrders(token, account)
-            3 -> AccountAnalytics(token, account, onCurrency)
+            3 -> AccountAnalytics(token, account)
             4 -> AccountPayments(token, account)
-            else -> AccountOverview(account, onCurrency, onSection, asOf, error)
+            else -> AccountOverview(account, onSection, asOf, error)
         }
     }
 }
 
 @Composable
-private fun AccountOverview(account: PortfolioAccount, onCurrency: () -> Unit, onSection: (Int) -> Unit, asOf: String?, error: String?) {
+private fun AccountOverview(account: PortfolioAccount, onSection: (Int) -> Unit, asOf: String?, error: String?) {
     var selected by remember(account.id) { mutableStateOf<PositionSelection?>(null) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "value") {
             SpectrumCard(emphasized = true) {
                 Text("Капитал счёта", color = LocalSpectrumPalette.current.cyan, style = MaterialTheme.typography.labelLarge)

@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +38,7 @@ internal fun sortedPortfolioRows(rows: List<PortfolioRow>, order: Int, currency:
 internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (String, PortfolioPosition) -> Unit,
     modifier: Modifier = Modifier, initialQuery: String = "", initialSector: String? = null,
     initialKind: String? = null, selectedAccount: String? = null) {
+    var accountId by rememberSaveable(selectedAccount) { mutableStateOf(selectedAccount) }
     var query by rememberSaveable(initialQuery) { mutableStateOf(initialQuery) }
     var kind by rememberSaveable(initialKind) { mutableStateOf(initialKind ?: "all") }
     var sector by rememberSaveable(initialSector) { mutableStateOf(initialSector) }
@@ -46,14 +48,10 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     var showRestricted by rememberSaveable { mutableStateOf(false) }
     var showCash by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val kinds = listOf("all", "bond", "share", "etf", "cash")
-    val labels = listOf("Все", "Облигации", "Акции", "Фонды", "Деньги")
-    val rows = remember(snapshot, query, kind, sector, order, selectedAccount) {
-        val all = snapshot.accounts.filter { selectedAccount == null || it.id == selectedAccount }.flatMap { account ->
-            account.positions.map { PortfolioRow(account, it) }
-        }.filter { matchingPosition(it.position, query) && (sector == null || it.position.sector == sector) &&
-            (kind == "all" || it.position.instrumentType == kind || (kind == "cash" && it.position.instrumentType == "currency")) }
-        sortedPortfolioRows(all, order, snapshot.totalValue.currency)
+    val kinds = listOf("all", "bond", "share", "etf", "cash", "other")
+    val labels = listOf("Все", "Облигации", "Акции", "Фонды", "Деньги", "Прочие")
+    val rows = remember(snapshot, query, kind, sector, order, accountId) {
+        portfolioRows(snapshot, query, kind, sector, order, accountId)
     }
     val restricted = rows.filter { it.position.blocked }
     val cash = rows.filter { it.position.instrumentType in setOf("cash", "currency") && !it.position.blocked }
@@ -63,17 +61,17 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
         2 -> row.position.sector?.takeIf(String::isNotBlank) ?: "Отрасль не указана"
         else -> row.account.name
     } }
-    val changed = query.isNotBlank() || kind != "all" || sector != null || group != 0 || order != 0
+    val changed = accountId != null || query.isNotBlank() || kind != "all" || sector != null || group != 0 || order != 0
     Column(modifier.fillMaxWidth()) {
         OutlinedTextField(query, { query = it }, label = { Text("Название, тикер или ISIN") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("portfolio-search"))
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { filtersOpen = true }) { Text("Фильтры и порядок") }
             Text("${rows.size}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-            if (changed) TextButton(onClick = { query = ""; kind = "all"; sector = null; group = 0; order = 0 }) { Text("Сбросить") }
+            if (changed) TextButton(onClick = { query = ""; kind = "all"; sector = null; group = 0; order = 0; accountId = null }) { Text("Сбросить") }
         }
-        if (kind != "all" || sector != null || group != 0 || order != 0) Text(
-            listOfNotNull(labels[kinds.indexOf(kind).coerceAtLeast(0)], sector,
+        if (accountId != null || kind != "all" || sector != null || group != 0 || order != 0) Text(
+            listOfNotNull(snapshot.accounts.firstOrNull { it.id == accountId }?.name, labels[kinds.indexOf(kind).coerceAtLeast(0)], sector?.let { if (it == "__unknown__") "Отрасль не указана" else it },
                 listOf("По счетам", "По названиям компаний", "По отраслям")[group],
                 listOf("Сначала ограничения", "По стоимости", "По доле", "По названию")[order]).joinToString(" · "),
             Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
@@ -91,23 +89,42 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
                     PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name) { onPosition(row.account.id, row.position) }
                 }
             }
-            if (cash.isNotEmpty()) {
-                item { SpectrumCard {
-                    Text("Денежные средства", style = MaterialTheme.typography.titleMedium)
-                    cash.mapNotNull { it.position.currentValue }.groupBy { it.currency }.forEach { (currency, values) ->
-                        DataRow(currency, decimalText(values.sumOf { it.value.toBigDecimal() }) + " " + currencySymbol(currency))
-                    }
-                    Text("Это остатки; доступность для покупки и вывода проверяется отдельно.", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { showCash = !showCash }) { Text(if (showCash) "Скрыть остатки по счетам" else "Остатки по счетам") }
-                } }
-                if (showCash) items(cash, key = { "cash:${it.account.id}:${it.position.id}" }) { row ->
-                    PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name) { onPosition(row.account.id, row.position) }
-                }
-            }
+            cashRows(cash, snapshot, showCash, { showCash = !showCash }, onPosition)
             if (group == 1) item { Notice("Названия получены от брокера. Проверенные группы связанных эмитентов ещё не подключены.") }
             if (order in 1..2 && rows.any { it.position.currentValue?.currency != snapshot.totalValue.currency }) item {
                 Notice("Сначала — оценки в ${snapshot.totalValue.currency}. Несопоставимые валюты и неизвестные значения расположены ниже.")
             }
+            assetGroups(groups, group, snapshot, onPosition)
+            if (snapshot.accounts.any { it.virtualPositions.isNotEmpty() }) item { DetailFold("Виртуальные позиции") {
+                val destination = LocalPortfolioDestination.current
+                snapshot.accounts.filter { it.virtualPositions.isNotEmpty() }.forEach { account ->
+                    TextButton(onClick = { destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("${account.name} · ${account.virtualPositions.size}") }
+                }
+            } }
+        }
+    }
+    if (filtersOpen) AlertDialog(onDismissRequest = { filtersOpen = false }, title = { Text("Состав портфеля") }, text = {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { WorkspaceChoices("Счёт", listOf("Все счета") + snapshot.accounts.map { it.name }, snapshot.accounts.indexOfFirst { it.id == accountId } + 1) {
+                accountId = snapshot.accounts.getOrNull(it - 1)?.id
+            } }
+            item { WorkspaceChoices("Класс", labels, kinds.indexOf(kind).coerceAtLeast(0)) { kind = kinds[it] } }
+            item { WorkspaceChoices("Группировать", listOf("По счетам", "По компаниям", "По отраслям"), group) { group = it } }
+            item { WorkspaceChoices("Порядок", listOf("Сначала ограничения", "По стоимости", "По доле", "По названию"), order) { order = it } }
+        }
+    }, confirmButton = { TextButton(onClick = { filtersOpen = false }) { Text("Показать") } })
+}
+
+internal fun portfolioRows(snapshot: PortfolioSnapshot, query: String, kind: String, sector: String?, order: Int, selectedAccount: String?): List<PortfolioRow> {
+    val all = snapshot.accounts.filter { selectedAccount == null || it.id == selectedAccount }.flatMap { account ->
+        account.positions.map { PortfolioRow(account, it) }
+    }.filter { matchingPosition(it.position, query) && matchingSector(it.position.sector, sector) &&
+        matchingKind(it.position.instrumentType, kind) }
+    return sortedPortfolioRows(all, order, snapshot.totalValue.currency)
+}
+
+private fun LazyListScope.assetGroups(groups: Map<String, List<PortfolioRow>>, group: Int,
+    snapshot: PortfolioSnapshot, onPosition: (String, PortfolioPosition) -> Unit) {
             groups.forEach { (label, entries) ->
                 item(key = "heading:$label") {
                     SectionHeading(label)
@@ -125,19 +142,33 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f))
                 }
             }
-            if (snapshot.accounts.any { it.virtualPositions.isNotEmpty() }) item { DetailFold("Виртуальные позиции") {
-                val destination = LocalPortfolioDestination.current
-                snapshot.accounts.filter { it.virtualPositions.isNotEmpty() }.forEach { account ->
-                    TextButton(onClick = { destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("${account.name} · ${account.virtualPositions.size}") }
+}
+
+private fun LazyListScope.cashRows(cash: List<PortfolioRow>, snapshot: PortfolioSnapshot,
+    showCash: Boolean, onToggle: () -> Unit, onPosition: (String, PortfolioPosition) -> Unit) {
+            if (cash.isNotEmpty()) {
+                item { SpectrumCard {
+                    Text("Денежные средства", style = MaterialTheme.typography.titleMedium)
+                    cash.mapNotNull { it.position.currentValue }.groupBy { it.currency }.forEach { (currency, values) ->
+                        DataRow(currency, decimalText(values.sumOf { it.value.toBigDecimal() }) + " " + currencySymbol(currency))
+                    }
+                    Text("Это остатки; доступность для покупки и вывода проверяется отдельно.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onToggle) { Text(if (showCash) "Скрыть остатки по счетам" else "Остатки по счетам") }
+                } }
+                if (showCash) items(cash, key = { "cash:${it.account.id}:${it.position.id}" }) { row ->
+                    PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name) { onPosition(row.account.id, row.position) }
                 }
-            } }
-        }
-    }
-    if (filtersOpen) AlertDialog(onDismissRequest = { filtersOpen = false }, title = { Text("Состав портфеля") }, text = {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { WorkspaceChoices("Класс", labels, kinds.indexOf(kind).coerceAtLeast(0)) { kind = kinds[it] } }
-            item { WorkspaceChoices("Группировать", listOf("По счетам", "По компаниям", "По отраслям"), group) { group = it } }
-            item { WorkspaceChoices("Порядок", listOf("Сначала ограничения", "По стоимости", "По доле", "По названию"), order) { order = it } }
-        }
-    }, confirmButton = { TextButton(onClick = { filtersOpen = false }) { Text("Показать") } })
+            }
+}
+
+internal fun matchingSector(value: String?, filter: String?): Boolean = when (filter) {
+    null -> true
+    "__unknown__" -> value.isNullOrBlank()
+    else -> value == filter
+}
+internal fun matchingKind(value: String, filter: String): Boolean = when (filter) {
+    "all" -> true
+    "cash" -> value in setOf("cash", "currency")
+    "other" -> value !in setOf("bond", "share", "etf", "cash", "currency")
+    else -> value == filter
 }

@@ -52,21 +52,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                             DataRow("Заблокировано", position.blockedQuantity.quantityText())
                         } }
                         if (section == 0) {
-                            item(key = "position-summary") { SpectrumCard {
-                                Text(position.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                Notice(labels.type)
-                                DataRow("Стоимость позиции", position.currentValue.moneyText())
-                                DataRow(labels.quantity, position.quantity.quantityText())
-                                DataRow("Цена за единицу", position.currentPrice.moneyText())
-                                DataRow("Средняя цена", position.averagePrice.moneyText())
-                                labels.accrued?.let { DataRow(it, position.currentNkd.moneyText()) }
-                                SignedAmount(position.expectedYieldAmount, position.expectedYieldPercent)
-                                DetailFold("Результат за день и условия") {
-                                    DataRow("За день", position.dailyYieldAmount.moneyText(true))
-                                    Notice("Цена и количество показаны в единицах брокера. Количество — в штуках, не в лотах.")
-                                    if (!position.blocked) Notice("Ограничение не отмечено. Это не подтверждение доступности торгов.")
-                                }
-                            } }
+                            item(key = "position-summary") { InstrumentPositionSummary(position) }
                             item(key = "strategy-check") { WorkspaceEmpty("Соответствие стратегии",
                                 "Проверка действующих правил для этой бумаги ещё не подключена. Заключение не получено.") }
                             if (position.instrumentType == "bond") item { DetailFold("Погашение и ближайший купон") {
@@ -81,7 +67,41 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                             else PortfolioResearchPanel(session.token, instrumentId = position.id, showRefresh = false)
                             ContextQuestion(position.id)
                         }
-                        if (section == 2) item(key = "instrument-identifiers") { SpectrumCard {
+                        if (section == 2) item(key = "instrument-identifiers") { InstrumentPassport(position) }
+                    }
+                }
+                }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstrumentPositionSummary(position: PortfolioPosition) {
+    val labels = instrumentDetailLabels(position.instrumentType, position.currentNkd != null)
+    SpectrumCard {
+
+                                Text(position.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Notice(labels.type)
+                                DataRow("Стоимость позиции", position.currentValue.moneyText())
+                                DataRow(labels.quantity, position.quantity.quantityText())
+                                DataRow("Цена за единицу", position.currentPrice.moneyText())
+                                DataRow("Средняя цена", position.averagePrice.moneyText())
+                                labels.accrued?.let { DataRow(it, position.currentNkd.moneyText()) }
+                                SignedAmount(position.expectedYieldAmount, position.expectedYieldPercent)
+                                DetailFold("Результат за день и условия") {
+                                    DataRow("За день", position.dailyYieldAmount.moneyText(true))
+                                    Notice("Цена и количество показаны в единицах брокера. Количество — в штуках, не в лотах.")
+                                    if (!position.blocked) Notice("Ограничение не отмечено. Это не подтверждение доступности торгов.")
+                                }
+                                }
+}
+
+@Composable
+private fun InstrumentPassport(position: PortfolioPosition) {
+    SpectrumCard {
+
                             Text("Паспорт инструмента", style = MaterialTheme.typography.titleLarge)
                             SelectionContainer { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 DataRow("Тикер", position.ticker ?: "—")
@@ -93,12 +113,5 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                             } }
                             BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin, copyOnly = true)
                             Notice("Перед сделкой сверьте название и ISIN у брокера.")
-                        } }
-                    }
-                }
-                }
-                }
-            }
-        }
-    }
+                            }
 }

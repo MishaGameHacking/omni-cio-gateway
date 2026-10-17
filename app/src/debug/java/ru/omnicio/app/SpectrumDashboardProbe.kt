@@ -68,7 +68,7 @@ internal fun SpectrumDashboardProbe(screen: String) {
                     state = state, selectedCurrency = PortfolioCurrency.RUB,
                     refreshing = false, refreshError = null, lastUpdatedMillis = null,
                     onCurrencyClick = {}, onOpenPortfolio = {}, onOpenRecommendations = {},
-                    onOpenRisk = {}, onOpenMessages = {}, onOpenEducation = {}, onOpenProfile = {},
+                    onOpenRisk = {}, onOpenMessages = {}, onOpenProfile = {},
                 )
             }
             else -> {

@@ -63,7 +63,7 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         self.assertIn("ValueAnimator.areAnimatorsEnabled()", source)
         self.assertIn("motionAllowed && active", source)
         self.assertIn("LaunchedEffect(enabled, durationMillis)", source)
-        self.assertIn("while (true)", source)
+        self.assertIn("repeat(2)", source)
 
     def test_home_uses_real_state_for_avatar_and_live_shortcuts(self):
         home = self.source("ui/home/HomeScreen.kt")

@@ -59,7 +59,6 @@ fun ProfileScreen(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onPortfolioClick: () -> Unit,
     onOpenTApi: () -> Unit,
-    onOpenAnalysisSettings: () -> Unit,
     onOpenEducation: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
@@ -67,7 +66,6 @@ fun ProfileScreen(
     val workspace = LocalWorkspaceNavigator.current
     var section by rememberSaveable { mutableIntStateOf(0) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
-        val motion = LocalSpectrumMotionPreference.current
     val contentState = rememberLazyListState()
     val sectionScope = rememberCoroutineScope()
 

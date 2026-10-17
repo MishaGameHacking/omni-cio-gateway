@@ -35,7 +35,6 @@ internal fun PortfolioDashboard(
     selectedSection: Int,
     onSelectSection: (Int) -> Unit,
     listState: LazyListState,
-    onCurrencyClick: () -> Unit,
     onProfileClick: () -> Unit,
     onOpenAccount: (PortfolioAccount) -> Unit,
     onOpenSection: (Int) -> Unit,
@@ -59,7 +58,7 @@ internal fun PortfolioDashboard(
             Modifier.padding(horizontal = 20.dp).testTag("portfolio-sections"),
         )
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
-            PortfolioHistorySection(snapshot.accounts, accessToken, onCurrencyClick, Modifier.weight(1f))
+            PortfolioHistorySection(snapshot.accounts, accessToken, Modifier.weight(1f))
         } else if (selectedSection == 1 && snapshot != null) {
             PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind)
         } else {
@@ -67,13 +66,13 @@ internal fun PortfolioDashboard(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"),
                 state = listState,
                 contentPadding = PaddingValues(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(workspaceGap),
             ) {
                 if (snapshot == null) {
                     item(key = "connection") { PortfolioConnectionCard(state, onProfileClick) }
                 } else {
                     item(key = "balance") {
-                        PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick, onOpenSection)
+                        PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onOpenSection)
                     }
                     if (selectedSection == 0) {
                         item(key = "sectors") { WorkspaceLink("Отрасли и классы", "Состав ваших вложений", SpectrumSymbol.Market) {
@@ -136,7 +135,6 @@ private fun PortfolioBalanceCard(
     refreshing: Boolean,
     error: String?,
     lastUpdatedMillis: Long?,
-    onCurrency: () -> Unit,
     onOpenSection: (Int) -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
@@ -222,7 +220,6 @@ private fun PortfolioConnectionCard(state: PortfolioUiState, onProfile: () -> Un
 private fun PortfolioHistorySection(
     accounts: List<PortfolioAccount>,
     accessToken: String,
-    onCurrency: () -> Unit,
     modifier: Modifier,
 ) {
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -236,7 +233,7 @@ private fun PortfolioHistorySection(
         } else {
             // Existing authenticated analytics, with its real snapshot history,
             // period controls, loading/errors and incomplete-data warnings.
-            AccountAnalytics(accessToken, account, onCurrency, historyOnly = true)
+            AccountAnalytics(accessToken, account, historyOnly = true)
         }
     }
 }

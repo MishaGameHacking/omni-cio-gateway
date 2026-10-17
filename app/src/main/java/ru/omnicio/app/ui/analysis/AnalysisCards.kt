@@ -86,6 +86,7 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
     val critical = entries.count { it.severity == "critical" }
     val warning = entries.count { it.severity == "warning" }
     val watch = entries.count { it.severity == "watch" }
+    val main = entries.minByOrNull { when (it.severity) { "critical" -> 0; "warning" -> 1; "watch" -> 2; else -> 3 } }
     val highest = when {
         critical > 0 -> "Критический сигнал"
         warning > 0 -> "Требует внимания"
@@ -106,16 +107,17 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
         ) {
             SpectrumIcon(
                 symbol = SpectrumSymbol.Risk,
-                modifier = Modifier.size(66.dp),
+                modifier = Modifier.size(36.dp),
                 selected = true,
                 tile = true,
                 motionAllowed = false,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("Состояние наблюдения", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(main?.title ?: "Состояние наблюдения", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 SpectrumBadge(highest, accent = accent)
             }
         }
+        main?.let { Text(PrivateValue(it.summary), style = MaterialTheme.typography.bodyMedium) }
         Text(
             "Сигналы сервера. Отсутствие сообщений не означает отсутствие риска.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,

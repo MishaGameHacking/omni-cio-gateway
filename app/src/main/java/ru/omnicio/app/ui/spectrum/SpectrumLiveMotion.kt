@@ -38,7 +38,7 @@ internal fun rememberSpectrumLivePhase(
     LaunchedEffect(enabled, durationMillis) {
         phase.snapTo(0f)
         if (enabled) {
-            while (true) {
+            repeat(2) {
                 phase.animateTo(
                     targetValue = 1f,
                     animationSpec = tween(durationMillis = durationMillis, easing = LinearEasing),
@@ -50,20 +50,6 @@ internal fun rememberSpectrumLivePhase(
     return phase
 }
 
-
-/** One finite reveal when real chart data changes; values and geometry remain unchanged. */
-@Composable
-internal fun rememberSpectrumReveal(dataKey: Any, motionAllowed: Boolean): Animatable<Float, AnimationVector1D> {
-    val active = rememberSpectrumActive()
-    val phase = remember { Animatable(1f) }
-    LaunchedEffect(motionAllowed, active) {
-        if (motionAllowed && active && ValueAnimator.areAnimatorsEnabled()) {
-            phase.snapTo(0f)
-            phase.animateTo(1f, tween(420))
-        } else phase.snapTo(1f)
-    }
-    return phase
-}
 
 @Composable
 private fun rememberSpectrumActive(): Boolean {

@@ -18,14 +18,14 @@ import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.*
 
 @Composable
-internal fun AccountAnalytics(token: String, account: PortfolioAccount, onCurrency: () -> Unit, historyOnly: Boolean = false) {
+internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false) {
     var start by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
     var end by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
     var chartMode by rememberSaveable(account.id) { mutableIntStateOf(0) }
     val period = PortfolioPeriod(start, end)
     val request = rememberAccountData(token, account.id, "analytics",
         period.parameters() + ("currency" to account.totalValue.currency), interval = 60_000)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "history") {
             CompactCard {
                 SpectrumTabs(listOf("Стоимость", "Доход"), chartMode, { chartMode = it })
@@ -36,7 +36,10 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, onCurren
                     val history = data.objects("history").mapNotNull { point ->
                         point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
                     }
-                    if (chartMode == 0) HistoryChart(history, data.optString("currency"))
+                    if (chartMode == 0) HistoryChart(history, data.optString("currency"), data.objects("cashFlowMarkers").mapNotNull { marker ->
+                        val date = marker.nullableText("date"); val label = marker.nullableText("label")
+                        if (date != null && label != null) HistoryMarker(date, label) else null
+                    })
                     else WorkspaceEmpty("Доход за период", "Расчёт с учётом пополнений, выводов и расходов ещё не подключён. Стоимость доступна в соседней вкладке.")
                     if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
                 }

@@ -210,7 +210,7 @@ jobs:
             const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
             const title = `Analyst AI ${version}`;
             const releaseNotes = fs.readFileSync('docs/releases/0.9.0.md', 'utf8').trim();
-            if (!releaseNotes.includes('0.8.0') || !releaseNotes.includes('F01.3')) throw new Error('Release notes do not identify this update');
+            if (!releaseNotes.includes('0.9.0') || !releaseNotes.includes('F01.3')) throw new Error('Release notes do not identify this update');
             const body = [
               releaseNotes,
               'Signed, non-debuggable preview APK. Android 16+ only; application ID ru.omnicio.app.debug.',

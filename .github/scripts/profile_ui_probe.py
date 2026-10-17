@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
+WORKSPACE_BACK = "‹ Назад"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 INFO_LABEL = "О приложении"
@@ -362,7 +363,9 @@ class ProfileProbe:
             if screen == "portfolio":
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
-                self.tap_resource("portfolio-search", "workspace-probe")
+                from profile_scroll import visible_resource
+                search = self.wait_for(lambda: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
+                self.tap_node(search)
                 self.command("shell", "input", "text", "NO_SUCH_ASSET")
                 self.command("shell", "input", "keyevent", "BACK")
                 self.find("Ничего не найдено")
@@ -415,7 +418,7 @@ class ProfileProbe:
                 self.tap("Движение", "workspace-content")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
-            self.tap_visible("‹ Назад")
+            self.tap_visible(WORKSPACE_BACK)
             self.find("Ваш капитал")
         self.command("shell", "am", "force-stop", PACKAGE)
 
@@ -436,12 +439,12 @@ class ProfileProbe:
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
         self.tap("Светлая", "workspace-content")
-        self.tap_visible("‹ Назад")
+        self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
         self.tap("Тёмная", "workspace-content")
-        self.tap_visible("‹ Назад")
+        self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
@@ -450,12 +453,12 @@ class ProfileProbe:
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
         self.tap("Светлая", "workspace-content")
-        self.tap_visible("‹ Назад")
+        self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
         self.tap("Как в системе", "workspace-content")
-        self.tap_visible("‹ Назад")
+        self.tap_visible(WORKSPACE_BACK)
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
         self.capture("system-dark")

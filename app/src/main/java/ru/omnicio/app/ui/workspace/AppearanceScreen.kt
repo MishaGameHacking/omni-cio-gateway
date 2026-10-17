@@ -20,7 +20,7 @@ fun AppearanceScreen(onBack: () -> Unit) {
     val motion = LocalSpectrumMotionPreference.current
     WorkspaceDetailPage("Оформление", "Ваш ритм и пространство", onBack) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item {
                 SpectrumCard(emphasized = true) {
                     Text("Analyst AI", style = MaterialTheme.typography.headlineMedium)
@@ -68,7 +68,7 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
         Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
-                WorkspaceHeader(title, subtitle, onBack)
+                WorkspaceHeader(title, subtitle, onBack, symbol)
             }, content = content)
     }
 }

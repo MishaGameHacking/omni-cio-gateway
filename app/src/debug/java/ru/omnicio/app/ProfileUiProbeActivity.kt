@@ -36,7 +36,8 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
         val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100") } ?: "profile"
-        check(runWorkspaceUxChecks() == 19)
+        if (screen == "strategy") getSharedPreferences("strategy_draft_synthetic-ui-test", 0).edit().clear().apply()
+        check(runWorkspaceUxChecks() == 24)
         check(runInstrumentLinkRegressions() == 15)
         val researchChecks = runResearchPresentationChecks()
         val refreshChecks = runRefreshStateRegressionChecks()
@@ -77,7 +78,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
                             tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
                             onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                            onPortfolioClick = {}, onOpenTApi = {}, onOpenAnalysisSettings = {},
+                            onPortfolioClick = {}, onOpenTApi = {},
                             onOpenEducation = { educationOpen = true }, onLogout = {},
                         )
                     }

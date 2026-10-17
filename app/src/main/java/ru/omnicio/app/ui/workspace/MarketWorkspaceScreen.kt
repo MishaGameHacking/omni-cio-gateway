@@ -30,7 +30,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
     }.toList().sortedByDescending { it.second.size }
     WorkspaceDetailPage("Отрасли и классы", "Ваши вложения", onBack, SpectrumSymbol.Market) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { SpectrumCard(emphasized = true) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -50,17 +50,12 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
                     if (expanded == title) {
                         rows.take(5).forEach { Text(it.title, style = MaterialTheme.typography.bodyMedium) }
                         if (rows.size > 5) Text("Ещё ${rows.size - 5} · полный список в портфеле")
-                        SpectrumSecondaryButton("Все позиции группы", { openPortfolio(PortfolioDestination(sector = if (section == 0) rows.first().sector else null, kind = if (section == 1) rows.first().instrumentType else null)) }, Modifier.fillMaxWidth())
+                        SpectrumSecondaryButton("Все позиции группы", { openPortfolio(PortfolioDestination(sector = if (section == 0) rows.first().sector?.takeIf(String::isNotBlank) ?: "__unknown__" else null, kind = if (section == 1) marketKind(rows.first().instrumentType) else null)) }, Modifier.fillMaxWidth())
                     }
                 }
             } }
             if (groups.isEmpty()) item {
-                when (state) {
-                    PortfolioUiState.Loading, PortfolioUiState.ApiConnected -> WorkspaceEmpty("Получаем позиции", "Данные ещё загружаются.", loading = true)
-                    is PortfolioUiState.Error -> WorkspaceEmpty("Не удалось обновить", state.message, "Открыть портфель", onPortfolio)
-                    PortfolioUiState.NotConnected -> WorkspaceEmpty("Подключите счёт", "После подключения здесь появится состав ваших вложений.", "Подключение", onPortfolio)
-                    is PortfolioUiState.Ready -> WorkspaceEmpty("Позиций пока нет", "В полученных счетах нет позиций для группировки.")
-                }
+                MarketEmptyState(state, onPortfolio)
             }
             item { SpectrumCard {
                 Text("Доступ к покупке", style = MaterialTheme.typography.titleMedium)
@@ -71,4 +66,20 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
             } }
         }
     }
+}
+
+@Composable
+private fun MarketEmptyState(state: PortfolioUiState, onPortfolio: () -> Unit) {
+                when (state) {
+                    PortfolioUiState.Loading, PortfolioUiState.ApiConnected -> WorkspaceEmpty("Получаем позиции", "Данные ещё загружаются.", loading = true)
+                    is PortfolioUiState.Error -> WorkspaceEmpty("Не удалось обновить", state.message, "Открыть портфель", onPortfolio)
+                    PortfolioUiState.NotConnected -> WorkspaceEmpty("Подключите счёт", "После подключения здесь появится состав ваших вложений.", "Подключение", onPortfolio)
+                    is PortfolioUiState.Ready -> WorkspaceEmpty("Позиций пока нет", "В полученных счетах нет позиций для группировки.")
+                }
+}
+
+private fun marketKind(value: String): String = when (value) {
+    "bond", "share", "etf" -> value
+    "cash", "currency" -> "cash"
+    else -> "other"
 }

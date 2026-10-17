@@ -7,6 +7,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import ru.omnicio.app.ui.spectrum.*
 
 /** Display contract only. Production must receive a verified plan; no order is submitted here. */
@@ -35,7 +37,10 @@ private fun ActionPlanCard(action: PlanAction, openBroker: (PlanAction) -> Unit)
     var defer by remember { mutableStateOf(false) }
     var reason by rememberSaveable(action.id) { mutableStateOf<String?>(null) }
     val expires = runCatching { Instant.parse(action.validUntil) }.getOrNull()
-    val expired = expires == null || !expires.isAfter(Instant.now())
+    val now by produceState(Instant.now(), action.id) {
+        while (isActive) { value = Instant.now(); delay(30_000) }
+    }
+    val expired = expires == null || !expires.isAfter(now)
     SpectrumCard(emphasized = action.status == PlanActionStatus.Proposed && !expired) {
         SpectrumBadge(if (expired) "Срок актуальности истёк" else action.status.title)
         Text(action.title, style = MaterialTheme.typography.titleLarge)
@@ -50,7 +55,7 @@ private fun ActionPlanCard(action: PlanAction, openBroker: (PlanAction) -> Unit)
             action.limitations.forEach { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         if (action.status == PlanActionStatus.Proposed && !expired) {
-            SpectrumPrimaryButton("Проверить в приложении брокера", { openBroker(action) }, Modifier.fillMaxWidth())
+            SpectrumPrimaryButton("Проверить в приложении брокера", { if (expires?.isAfter(Instant.now()) == true) openBroker(action) }, Modifier.fillMaxWidth())
             TextButton(onClick = { defer = true }) { Text(if (reason == null) "Отложить" else "Отложено: $reason · изменить") }
             if (reason != null) TextButton(onClick = { reason = null }) { Text("Вернуть в план") }
         }

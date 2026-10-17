@@ -194,7 +194,7 @@ private fun InsightScreen(
                 .padding(padding)
                 .consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(workspaceGap),
         ) {
             item(key = "filters") {
                 SpectrumTabs(if (selected == AnalystTab.Risk) listOf("Обзор", "Активные", "История")
@@ -222,15 +222,7 @@ private fun InsightScreen(
                         WorkspaceLink("Активные сигналы", "Актуальность проверяется отдельно от прочтения", SpectrumSymbol.Risk) { section = 1 }
                     }
                 } else {
-                    val visible = entries.filter { card ->
-                        val active = insightActive(card, now)
-                        if (selected == AnalystTab.Risk) { if (section == 1) active else !active }
-                        else when (section) {
-                            0 -> active && !card.isRead && card.severity in setOf("critical", "warning")
-                            1 -> active && !card.isRead && card.severity !in setOf("critical", "warning")
-                            else -> card.isRead || !active
-                        }
-                    }.sortedWith(compareBy<InsightCard> { when (it.severity) { "critical" -> 0; "warning" -> 1; else -> 2 } }.thenByDescending { it.createdAt })
+                    val visible = visibleInsights(entries, selected, section, now)
                     when {
                         entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size -> {
                             item(key = "invalid") { ErrorCard("Не удалось проверить список событий.", { reload++ }) }
@@ -332,7 +324,7 @@ private fun IdeasContent(
                 .padding(padding)
                 .consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(workspaceGap),
         ) {
             item(key = "action-sections") {
                 SpectrumTabs(listOf("План", "Анализ"), section, { section = it })
@@ -487,7 +479,7 @@ private fun AnalysisProfileContent(
                 .padding(padding)
                 .consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(workspaceGap),
         ) {
             item(key = "back") {
                 SpectrumSecondaryButton(
@@ -657,3 +649,14 @@ private fun LazyListScope.profileControls(
     }
     }
 }
+
+internal fun visibleInsights(entries: List<InsightCard>, selected: AnalystTab, section: Int, now: Instant): List<InsightCard> =
+    entries.filter { card ->
+        val active = insightActive(card, now)
+        if (selected == AnalystTab.Risk) { if (section == 1) active else !active }
+        else when (section) {
+            0 -> active && !card.isRead && card.severity in setOf("critical", "warning")
+            1 -> active && !card.isRead && card.severity !in setOf("critical", "warning")
+            else -> card.isRead || !active
+        }
+    }.sortedWith(compareBy<InsightCard> { when (it.severity) { "critical" -> 0; "warning" -> 1; else -> 2 } }.thenByDescending { it.createdAt })

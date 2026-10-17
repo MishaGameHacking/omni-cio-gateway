@@ -335,32 +335,9 @@ private fun AnalystAiApp(
     LaunchedEffect(signedIn?.accessToken) {
         val session = signedIn ?: return@LaunchedEffect
         brokerConnection = BrokerConnectionState.Checking
-        val status = withContext(Dispatchers.IO) {
-            backend.fetchTInvestStatus(session.accessToken)
-        }
-
-        var connected = (status as? BackendResult.Success)?.value ?: false
-        if (status is BackendResult.Success && !connected) {
-            val legacyToken = withContext(Dispatchers.IO) {
-                legacyTInvestStore.load()
-            }
-            if (!legacyToken.isNullOrBlank()) {
-                val migration = withContext(Dispatchers.IO) {
-                    backend.saveTInvestToken(
-                        accessToken = session.accessToken,
-                        token = legacyToken,
-                    )
-                }
-                if (migration is BackendResult.Success) {
-                    withContext(Dispatchers.IO) {
-                        legacyTInvestStore.clear()
-                    }
-                    connected = true
-                }
-            }
-        }
-        tApiConfigured = connected
-        brokerConnection = if (connected) BrokerConnectionState.Connected else if (status is BackendResult.Failure) BrokerConnectionState.Unknown else BrokerConnectionState.Missing
+        val connection = restoreBrokerConnection(backend, session.accessToken, legacyTInvestStore)
+        tApiConfigured = connection.first
+        brokerConnection = connection.second
     }
 
     val livePortfolio = rememberLivePortfolio(
@@ -522,14 +499,7 @@ private fun SignedInAppContent(
         }, navigateToTab)
         Box(Modifier.weight(1f).fillMaxHeight()) {
         AnimatedContent(screen, transitionSpec = {
-            val roots = setOf(AppScreen.Home, AppScreen.Portfolio, AppScreen.Recommendations, AppScreen.Risk, AppScreen.Profile)
-            val duration = if (motion) 180 else 0
-            if (initialState in roots && targetState in roots) fadeIn(tween(duration)) togetherWith fadeOut(tween(duration))
-            else {
-                val direction = if (targetState in roots) -1 else 1
-                (slideInHorizontally(tween(duration)) { it / 8 * direction } + fadeIn(tween(duration))) togetherWith
-                    (slideOutHorizontally(tween(duration)) { -it / 8 * direction } + fadeOut(tween(duration)))
-            }
+            workspaceTransition(initialState, targetState, motion)
         }, label = "workspace-navigation") { destination ->
         holder.SaveableStateProvider(destination.name) {
         when (destination) {
@@ -554,9 +524,6 @@ private fun SignedInAppContent(
                     onOpenMessages = {
                         onScreenChange(AppScreen.Messages)
                     },
-                    onOpenEducation = {
-                        onScreenChange(AppScreen.Education)
-                    },
                     onOpenProfile = openProfile,
                     onConnect = { onScreenChange(AppScreen.TApi) },
                     onOpenPayments = { portfolioDestination = PortfolioDestination(section = 4); openPortfolio() },
@@ -571,9 +538,6 @@ private fun SignedInAppContent(
                     refreshError = portfolioError,
                     lastUpdatedMillis = portfolioLastSuccessMillis,
                     selectedCurrency = portfolioCurrency,
-                    onCurrencyClick = {
-                        currencyPicker = true
-                    },
                     onProfileClick = openProfile,
                     onConnect = { onScreenChange(AppScreen.TApi) },
                     destination = portfolioDestination,
@@ -617,9 +581,6 @@ private fun SignedInAppContent(
                     onPortfolioClick = openPortfolio,
                     onOpenTApi = {
                         onScreenChange(AppScreen.TApi)
-                    },
-                    onOpenAnalysisSettings = {
-                        onScreenChange(AppScreen.AnalysisSettings)
                     },
                     onOpenEducation = {
                         onScreenChange(AppScreen.Education)
@@ -697,3 +658,43 @@ private fun AnalystAiAppPreview() {
     }
 }
 
+
+private suspend fun restoreBrokerConnection(backend: AnalystBackendClient, accessToken: String,
+    legacyTInvestStore: TInvestTokenStore): Pair<Boolean, BrokerConnectionState> {
+        val status = withContext(Dispatchers.IO) {
+            backend.fetchTInvestStatus(accessToken)
+        }
+
+        var connected = (status as? BackendResult.Success)?.value ?: false
+        if (status is BackendResult.Success && !connected) {
+            val legacyToken = withContext(Dispatchers.IO) {
+                legacyTInvestStore.load()
+            }
+            if (!legacyToken.isNullOrBlank()) {
+                val migration = withContext(Dispatchers.IO) {
+                    backend.saveTInvestToken(
+                        accessToken = accessToken,
+                        token = legacyToken,
+                    )
+                }
+                if (migration is BackendResult.Success) {
+                    withContext(Dispatchers.IO) {
+                        legacyTInvestStore.clear()
+                    }
+                    connected = true
+                }
+            }
+        }
+        return connected to if (connected) BrokerConnectionState.Connected else if (status is BackendResult.Failure) BrokerConnectionState.Unknown else BrokerConnectionState.Missing
+}
+
+private fun workspaceTransition(initialState: AppScreen, targetState: AppScreen, motion: Boolean): ContentTransform {
+            val roots = setOf(AppScreen.Home, AppScreen.Portfolio, AppScreen.Recommendations, AppScreen.Risk, AppScreen.Profile)
+            val duration = if (motion) 180 else 0
+            return if (initialState in roots && targetState in roots) fadeIn(tween(duration)) togetherWith fadeOut(tween(duration))
+            else {
+                val direction = if (targetState in roots) -1 else 1
+                (slideInHorizontally(tween(duration)) { it / 8 * direction } + fadeIn(tween(duration))) togetherWith
+                    (slideOutHorizontally(tween(duration)) { -it / 8 * direction } + fadeOut(tween(duration)))
+            }
+}

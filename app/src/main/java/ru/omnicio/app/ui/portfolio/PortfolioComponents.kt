@@ -1,6 +1,5 @@
 package ru.omnicio.app.ui.portfolio
 
-import ru.omnicio.app.ui.spectrum.rememberSpectrumReveal
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.Canvas
@@ -32,6 +31,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -284,7 +285,12 @@ internal fun HistoryChart(points: List<HistoryPoint>, currency: String, markers:
         listOf(geometry.high, geometry.high.add(geometry.low).divide(BigDecimal("2")), geometry.low).forEach { Text(decimalText(it), style = MaterialTheme.typography.labelSmall) }
     }
     Canvas(Modifier.weight(1f).height(180.dp)
-        .semantics { contentDescription = "Стоимость портфеля. ${data.size} снимков. Выбран ${dateText(current.point.date)}: ${decimalText(current.point.value)} $currency. Точные значения доступны под графиком." }
+        .semantics { contentDescription = "Стоимость портфеля. ${data.size} снимков. Выбран ${dateText(current.point.date)}: ${decimalText(current.point.value)} $currency. Точные значения доступны под графиком."
+            customActions = listOf(
+                CustomAccessibilityAction("Предыдущая точка") { selected = (pointIndex - 1).coerceAtLeast(0); true },
+                CustomAccessibilityAction("Следующая точка") { selected = (pointIndex + 1).coerceAtMost(data.lastIndex); true },
+            )
+        }
         .pointerInput(data) { detectTapGestures { point -> selected = data.indices.minBy { kotlin.math.abs(data[it].x * size.width - point.x) } } }
         .pointerInput(data) { detectDragGestures { change, _ ->
             change.consume()

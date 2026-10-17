@@ -36,5 +36,10 @@ internal fun runWorkspaceUxChecks(): Int {
     check(relativeObservation("2026-10-16T23:50:00Z", now) == "10 мин назад")
     check(relativeObservation("broken", now) == "время не получено")
     check(relativeObservation("2026-10-18T00:00:00Z", now) == "время требует проверки")
-    return 19
+    check(matchingSector(null, "__unknown__"))
+    check(!matchingSector("finance", "__unknown__"))
+    check(matchingKind("currency", "cash"))
+    check(matchingKind("futures", "other"))
+    check(!matchingKind("bond", "other"))
+    return 24
 }

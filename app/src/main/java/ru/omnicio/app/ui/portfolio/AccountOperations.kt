@@ -132,7 +132,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
 @Composable
 internal fun AccountOrders(token: String, account: PortfolioAccount) {
     val request = rememberAccountData(token, account.id, "orders", interval = 15_000)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item { AccountDataNotice(request); Notice("Только просмотр. Изменение и отмена заявок — в приложении брокера.") }
         request.json?.let { data ->
             listOf("orders" to "Активные заявки", "stopOrders" to "Стоп-заявки").forEach { (field, title) ->

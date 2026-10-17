@@ -65,21 +65,7 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                             Text("Доступность проверяется у брокера. Заблокированные активы не становятся доступными от выбора настройки.") } }
                         item { SpectrumCard { Text("Статус инвестора", style = MaterialTheme.typography.titleMedium)
                             Text("Не подтверждён брокером. Приложение не может изменить квалификацию.") } }
-                        item { SpectrumCard {
-                            Text("Кредитные рейтинги", style = MaterialTheme.typography.titleLarge)
-                            var thresholdOpen by remember { mutableStateOf(false) }
-                            val threshold = RatingChoices.indexOfLast { it in draft.ratings }.coerceAtLeast(0)
-                            TextButton(onClick = { thresholdOpen = true }) { Text("Минимум: ${RatingChoices[threshold]} ▾") }
-                            if (thresholdOpen) AlertDialog(onDismissRequest = { thresholdOpen = false }, title = { Text("Минимальный рейтинг") },
-                                text = { Column { RatingChoices.forEachIndexed { index, rating ->
-                                    TextButton(onClick = { draft = draft.copy(ratings = RatingChoices.take(index + 1).toSet()); thresholdOpen = false }) { Text(rating) }
-                                } } }, confirmButton = { TextButton(onClick = { thresholdOpen = false }) { Text("Закрыть") } })
-                            DetailFold("Исключения (${RatingChoices.take(threshold + 1).count { it !in draft.ratings }})") {
-                                RatingChoices.take(threshold + 1).forEach { rating -> WorkspaceToggle(rating, "Включать в отбор", rating in draft.ratings) { enabled ->
-                                    draft = draft.copy(ratings = if (enabled) draft.ratings + rating else draft.ratings - rating)
-                                } }
-                            }
-                        } }
+                        item { RatingDraftControl(draft.ratings) { draft = draft.copy(ratings = it) } }
                     }
                     2 -> {
                         item { DraftSlider("Денежный резерв", "Деньги для ближайших потребностей; меньше средств участвует в инвестициях.", draft.reserve, 0f..50f) { draft = draft.copy(reserve = it) } }
@@ -103,10 +89,11 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
             }
         }
     }
-    if (leaving) AlertDialog(onDismissRequest = { leaving = false; openActiveAfterLeave = false }, title = { Text("Сохранить изменения?") },
-        text = { Text("Несохранённые изменения черновика будут потеряны.") },
-        confirmButton = { TextButton(enabled = draft.ratings.isNotEmpty(), onClick = { save(); leaving = false; if (openActiveAfterLeave) onCurrentRules() else onBack() }) { Text("Сохранить и выйти") } },
-        dismissButton = { TextButton(onClick = { draft = baseline; leaving = false; if (openActiveAfterLeave) onCurrentRules() else onBack() }) { Text("Не сохранять") } })
+    val finish = if (openActiveAfterLeave) onCurrentRules else onBack
+    if (leaving) DraftLeaveDialog(draft.ratings.isNotEmpty(),
+        onStay = { leaving = false; openActiveAfterLeave = false },
+        onSave = { save(); leaving = false; finish() },
+        onDiscard = { draft = baseline; leaving = false; finish() })
 }
 
 internal fun strategyChanges(before: StrategyDraft, after: StrategyDraft): List<String> = buildList {
@@ -135,4 +122,31 @@ private fun DraftSlider(title: String, description: String, value: Int, range: C
         Slider(value.toFloat(), { onChange(it.roundToInt()) }, valueRange = range, steps = (range.endInclusive - range.start).toInt() - 1)
         Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+@Composable
+private fun DraftLeaveDialog(valid: Boolean, onStay: () -> Unit, onSave: () -> Unit, onDiscard: () -> Unit) {
+    AlertDialog(onDismissRequest = onStay, title = { Text("Сохранить изменения?") },
+        text = { Text("Несохранённые изменения черновика будут потеряны.") },
+        confirmButton = { TextButton(enabled = valid, onClick = onSave) { Text("Сохранить и выйти") } },
+        dismissButton = { TextButton(onClick = onDiscard) { Text("Не сохранять") } })
+}
+
+@Composable
+private fun RatingDraftControl(ratings: Set<String>, onChange: (Set<String>) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val threshold = RatingChoices.indexOfLast { it in ratings }.coerceAtLeast(0)
+    SpectrumCard {
+        Text("Кредитные рейтинги", style = MaterialTheme.typography.titleLarge)
+        TextButton(onClick = { open = true }) { Text("Минимум: ${RatingChoices[threshold]} ▾") }
+        DetailFold("Исключения (${RatingChoices.take(threshold + 1).count { it !in ratings }})") {
+            RatingChoices.take(threshold + 1).forEach { rating -> WorkspaceToggle(rating, "Включать в отбор", rating in ratings) { enabled ->
+                onChange(if (enabled) ratings + rating else ratings - rating)
+            } }
+        }
+    }
+    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Минимальный рейтинг") },
+        text = { Column { RatingChoices.forEachIndexed { index, rating ->
+            TextButton(onClick = { onChange(RatingChoices.take(index + 1).toSet()); open = false }) { Text(rating) }
+        } } }, confirmButton = { TextButton(onClick = { open = false }) { Text("Закрыть") } })
 }

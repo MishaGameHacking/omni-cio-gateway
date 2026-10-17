@@ -186,7 +186,13 @@ jobs:
                 core.info(`VERIFICATION_REPORT ${name} ${JSON.stringify(JSON.parse(bytes.toString('utf8')))}`);
               }
               const blob = (await github.rest.git.createBlob({...context.repo, encoding:'base64', content:bytes.toString('base64')})).data;
-              records.push({name, blob_sha:blob.sha, sha256, bytes:bytes.length});
+              let preview_base64_blob_sha = null;
+              if (name.endsWith('.png')) {
+                // The review connector reads UTF-8 blobs; retain exact PNG bytes in a readable envelope.
+                const preview = (await github.rest.git.createBlob({...context.repo, encoding:'utf-8', content:bytes.toString('base64')})).data;
+                preview_base64_blob_sha = preview.sha;
+              }
+              records.push({name, blob_sha:blob.sha, preview_base64_blob_sha, sha256, bytes:bytes.length});
             }
             core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request.head.sha, run:context.runId, records}));
             await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
