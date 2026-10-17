@@ -8,13 +8,13 @@ import re
 import sqlite3
 
 try:
-    from .credit_evidence import EvidenceError, Rating, Source, Statement, stamp
+    from .credit_evidence import EvidenceError, Rating, Source, Statement, stamp, validated_statement_data
     from .risk_math import aligned_returns
     from .evidence_order import latest_unambiguous
     from .evidence_history import HistoryUnavailable, read_history
     from .evidence_revision import initialize_revision, read_revision, RevisionUnavailable
 except ImportError:
-    from credit_evidence import EvidenceError, Rating, Source, Statement, stamp
+    from credit_evidence import EvidenceError, Rating, Source, Statement, stamp, validated_statement_data
     from risk_math import aligned_returns
     from evidence_order import latest_unambiguous
     from evidence_history import HistoryUnavailable, read_history
@@ -66,6 +66,10 @@ def _statement(subject, payload, source):
         raise EvidenceError('statement_subject_mismatch')
     if type(statement.audited) is not bool or not isinstance(statement.values, dict):
         raise EvidenceError('invalid_statement_shape')
+    start, end = stamp(statement.period_start), stamp(statement.period_end)
+    if start >= end or end > stamp(source.published_at):
+        raise EvidenceError('invalid_statement_period')
+    validated_statement_data(statement)
 
 
 def _identity(subject, payload, _source):
@@ -118,12 +122,8 @@ VALIDATORS = {'rating': _rating, 'statement': _statement, 'issuer_identity': _id
               'news_event': _news_event}
 
 
-def import_record(connect, *, kind: str, subject: str, payload: dict, at: datetime | None = None) -> str:
-    """Import reviewed facts from an operator-side connector, never from Android.
-
-    Source timestamps are source claims. imported_at additionally records when
-    this installation first received the fact, for point-in-time replay.
-    """
+def prepare_record(*, kind: str, subject: str, payload: dict, at: datetime | None = None) -> tuple:
+    """Validate and encode a reviewed record without opening a database."""
     now = at if at is not None else datetime.now(timezone.utc)
     _key(kind, subject)
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
@@ -146,12 +146,41 @@ def import_record(connect, *, kind: str, subject: str, payload: dict, at: dateti
     if len(encoded) > 600_000:
         raise EvidenceError('research_record_too_large')
     digest = hashlib.sha256((kind + ':' + subject + ':' + serialized).encode()).hexdigest()
+    return digest, kind, subject, serialized, now.astimezone(timezone.utc).isoformat()
+
+
+def import_record(connect, *, kind: str, subject: str, payload: dict, at: datetime | None = None) -> str:
+    """Import reviewed facts from an operator-side connector, never from Android.
+
+    Source timestamps are source claims. imported_at additionally records when
+    this installation first received the fact, for point-in-time replay.
+    """
+    prepared = prepare_record(kind=kind, subject=subject, payload=payload, at=at)
     with closing(connect()) as db:
         initialize(db)
         db.execute('INSERT OR IGNORE INTO research_evidence_v1 VALUES (?,?,?,?,?)',
-                   (digest, kind, subject, serialized, now.astimezone(timezone.utc).isoformat()))
+                   prepared)
         db.commit()
-    return digest
+    return prepared[0]
+
+
+def import_batch(connect, records: list[dict], *, at: datetime | None = None) -> dict:
+    """Validate the entire bundle, then insert all new records atomically.
+
+    Repeated records keep their first imported_at and do not increment the
+    evidence revision. No existing user, fact, source claim or secret is edited.
+    """
+    now = at if at is not None else datetime.now(timezone.utc)
+    prepared = [prepare_record(**record, at=now) for record in records]
+    inserted = 0
+    with closing(connect()) as db:
+        initialize(db)
+        with db:
+            db.execute('BEGIN IMMEDIATE')
+            for row in prepared:
+                inserted += db.execute('INSERT OR IGNORE INTO research_evidence_v1 VALUES (?,?,?,?,?)', row).rowcount
+    return {'record_count': len(prepared), 'inserted_count': inserted,
+            'unchanged_count': len(prepared) - inserted, 'digests': [row[0] for row in prepared]}
 
 
 def records(connect, kind: str, subject: str, *, at: datetime | None = None) -> list[dict]:

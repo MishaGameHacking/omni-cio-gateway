@@ -18,7 +18,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import Field
 
 try:
-    from . import app as backend, volume_jobs as jobs, volume_state as state
+    from . import app as backend, volume_jobs as jobs, volume_state as state, volume_impact as impact
     from .ai_budget import transaction, token_cost
     from .ai_guarded_client import GuardedAIClient, GuardError
     from .ai_policy import AnalysisTier
@@ -27,6 +27,7 @@ except ImportError:
     import app as backend
     import volume_jobs as jobs
     import volume_state as state
+    import volume_impact as impact
     from ai_budget import transaction, token_cost
     from ai_guarded_client import GuardedAIClient, GuardError
     from ai_policy import AnalysisTier
@@ -134,6 +135,7 @@ class Context(state.StrictModel):
     mode: Literal["general", "portfolio", "instrument"] = "general"
     instrument_uid: str | None = Field(default=None, max_length=160)
     account_id: str | None = Field(default=None, max_length=160)
+    event_id: str | None = Field(default=None, min_length=1, max_length=200)
     start: date | None = None
     end: date | None = None
 
@@ -312,12 +314,16 @@ def fact_packet(user: Any, context: dict) -> dict:
         refs_by_id[item["source"]["id"]] = item["source"]
         facts.append({k: item[k] for k in ("id", "value", "source_ids", "as_of")})
         highlights.append(item["highlight"])
+    impact_context = impact.prepare(user, snapshot, context, selected)
+    if impact_context is not None:
+        facts.extend(impact_context["facts"])
+        refs_by_id.update({ref["id"]: ref for ref in impact_context["sources"]})
     requested_range = {"start": begin.isoformat(), "end": finish.isoformat(), "coverage_complete": complete,
                        "requested_end": requested_finish.isoformat(), "snapshot_bounds_end": True}
     used_refs = {identifier for fact in facts for identifier in fact["source_ids"]}
     return {"as_of": snapshot["as_of"], "snapshot_id": snapshot["snapshot_id"], "facts": facts, "allowed_highlights": highlights,
             "tools_used": ["materialized_portfolio", "verified_exposure_rules", "broker_linked_news"],
-            "sources": [refs_by_id[key] for key in sorted(used_refs) if key in refs_by_id],
+            "sources": [refs_by_id[key] for key in sorted(used_refs) if key in refs_by_id], "impact_context": impact_context,
             "coverage": {"total_positions": len(all_positions), "scoped_positions": len(scoped_positions), "included_positions": len(selected), "selection_is_complete": len(selected) == len(scoped_positions),
                          "account_scope": "selected_owned_account" if account_id else "all_owned_accounts", "requested_range": requested_range,
                          "instrument_scope": context.get("instrument_uid") if context["mode"] == "instrument" else None,
@@ -344,10 +350,14 @@ def model_messages(user: Any, text: str, context: dict, thread_id: str | None = 
             history.pop()
     # Navigation metadata is bound by the server for the user's device. Account
     # IDs and source subject IDs are unnecessary for the paid model call.
-    model_packet = {key: value for key, value in packet.items() if key not in {"sources", "allowed_highlights"}}
+    model_packet = {key: value for key, value in packet.items() if key not in {"sources", "allowed_highlights", "impact_context"}}
     model_packet["allowed_highlights"] = [{"section": h["section"], "id": h["id"]} for h in packet["allowed_highlights"]]
+    instructions = SYSTEM
+    if packet.get("impact_context") is not None:
+        model_packet["impact_request"] = packet["impact_context"]["model_request"]
+        instructions += impact.MODEL_INSTRUCTION
     contents = {"question": text, "context": model_packet, "recent_conversation": history}
-    messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": state.encode(contents)}]
+    messages = [{"role": "system", "content": instructions}, {"role": "user", "content": state.encode(contents)}]
     if len(json.dumps(messages, ensure_ascii=False).encode()) > 110_000:
         raise HTTPException(422, "chat_context_too_large")
     return messages, packet
@@ -445,11 +455,13 @@ def validate_response(raw: dict, packet: dict) -> dict:
         if item["type"] == "open_instrument" and item.get("id") not in allowed_uids:
             raise GuardError("ai_chat_action_not_in_context")
         actions.append({"type": item["type"], "id": str(item.get("id") or "")[:160], "requires_navigation_only": True})
+    impact_hypothesis = impact.validate(raw.get("impact_hypothesis"), packet)
     return {"text": answer, "claims": claims, "evidence": evidence, "highlights": highlights,
             "uncertainties": uncertainties, "actions": actions,
             "facts": packet["facts"], "sources": packet.get("sources", []), "coverage": packet.get("coverage", {}),
             "context_as_of": packet["as_of"], "tools_used": packet["tools_used"],
-            "snapshot_id": packet["snapshot_id"], "financial_values_are_source_records": True}
+            "snapshot_id": packet["snapshot_id"], "financial_values_are_source_records": True,
+            "impact_hypothesis": impact_hypothesis}
 
 
 def run_message(user: Any, job: dict, payload: dict) -> dict:

@@ -20,12 +20,13 @@ import ru.omnicio.app.BuildConfig
 @Composable
 fun DevicesWorkspaceScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/devices")
-    var chosen by remember { mutableStateOf<JSONObject?>(null) }
+    var chosenId by rememberSaveable(LocalWorkspaceSession.current.userId) { mutableStateOf<String?>(null) }
+    val chosen = resource.data?.records("items")?.firstOrNull { it.text("id") == chosenId }
     val reauthenticate = LocalReauthenticate.current
     val action = rememberWorkspaceAction { result ->
         if (result.optBoolean("revoked")) {
             if (chosen?.optBoolean("current") == true) reauthenticate()
-            chosen = null; resource.refresh()
+            chosenId = null; resource.refresh()
         }
     }
     WorkspaceDetailPage("Устройства", "Подтверждённые сервером сеансы", onBack, SpectrumSymbol.Profile) { padding ->
@@ -38,16 +39,16 @@ fun DevicesWorkspaceScreen(onBack: () -> Unit) {
                     if (device.optBoolean("current")) SpectrumBadge("Текущее устройство")
                     Text("Последняя активность: " + localMoment(device.text("last_seen_at", "")))
                     Text("Сеанс до " + localMoment(device.text("expires_at", "")), style = MaterialTheme.typography.bodySmall)
-                    SpectrumSecondaryButton("Завершить этот сеанс", { chosen = device }, Modifier.fillMaxWidth(), !action.busy)
+                    SpectrumSecondaryButton("Завершить этот сеанс", { chosenId = device.text("id") }, Modifier.fillMaxWidth(), !action.busy)
                 }
             }
         }
     }
-    chosen?.let { device -> WorkspaceDialog("Завершить сеанс?", { if (!action.busy) chosen = null }) {
+    chosen?.let { device -> WorkspaceDialog("Завершить сеанс?", { if (!action.busy) chosenId = null }) {
         Text(device.text("label", "Выбранное устройство") + " должно будет войти через Telegram заново. Сервер подтвердит отзыв доступа.")
         SpectrumPrimaryButton("Завершить сеанс", { action.perform("/workspace/devices/" + VolumeWorkspaceClient.encode(device.text("id")), method = "DELETE") },
             Modifier.fillMaxWidth(), !action.busy)
-        SpectrumSecondaryButton("Оставить", { chosen = null }, Modifier.fillMaxWidth(), !action.busy)
+        SpectrumSecondaryButton("Оставить", { chosenId = null }, Modifier.fillMaxWidth(), !action.busy)
         WorkspaceActionState(action)
     } }
 }
@@ -55,15 +56,19 @@ fun DevicesWorkspaceScreen(onBack: () -> Unit) {
 @Composable
 fun GoalsWorkspaceScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/goals")
-    var editing by remember { mutableStateOf<JSONObject?>(null) }
+    val userId = LocalWorkspaceSession.current.userId
+    var editingId by rememberSaveable(userId) { mutableStateOf<String?>(null) }
     var open by rememberSaveable { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf<JSONObject?>(null) }
-    val action = rememberWorkspaceAction { open = false; deleting = null; resource.refresh() }
+    var deletingId by rememberSaveable(userId) { mutableStateOf<String?>(null) }
+    val goals = resource.data?.records("items").orEmpty()
+    val editing = goals.firstOrNull { it.text("id") == editingId }
+    val deleting = goals.firstOrNull { it.text("id") == deletingId }
+    val action = rememberWorkspaceAction { open = false; editingId = null; deletingId = null; resource.refresh() }
     WorkspaceDetailPage("Цели и резерв", "Подтверждённый капитал и ваши планы", onBack, SpectrumSymbol.Goal) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource); WorkspaceActionState(action) }
-            item { SpectrumPrimaryButton("Добавить цель", { editing = null; open = true }, Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Goal) }
+            item { SpectrumPrimaryButton("Добавить цель", { editingId = null; open = true }, Modifier.fillMaxWidth(), !action.busy, symbol = SpectrumSymbol.Goal) }
             items(resource.data?.records("items").orEmpty(), key = { it.text("id") }) { goal ->
                 SpectrumCard(emphasized = true) {
                     Text(goal.text("title"), style = MaterialTheme.typography.titleLarge)
@@ -73,38 +78,48 @@ fun GoalsWorkspaceScreen(onBack: () -> Unit) {
                     Text("Резерв: " + PrivateValue(moneyText(goal.optJSONObject("reserve"))))
                     Text("Оценка: " + localMoment(goal.text("as_of", "ещё не получена")), style = MaterialTheme.typography.bodySmall)
                     Text("Прогресс учитывает полученный капитал после резерва. Будущие выплаты и прибыль не прибавляются.", style = MaterialTheme.typography.bodySmall)
-                    SpectrumSecondaryButton("Изменить цель", { editing = goal; open = true }, Modifier.fillMaxWidth())
-                    SpectrumSecondaryButton("Удалить цель", { deleting = goal }, Modifier.fillMaxWidth())
+                    SpectrumSecondaryButton("Изменить цель", { editingId = goal.text("id"); open = true }, Modifier.fillMaxWidth(), !action.busy)
+                    SpectrumSecondaryButton("Удалить цель", { deletingId = goal.text("id") }, Modifier.fillMaxWidth(), !action.busy)
                 }
             }
             if (resource.data?.records("items")?.isEmpty() == true) item { WorkspaceEmpty("Выберите первую цель", "Укажите свою сумму и резерв. Приложение покажет прогресс по фактическому капиталу в этой валюте.") }
         }
     }
-    if (open) GoalEditor(editing, { open = false }, action)
-    deleting?.let { goal -> WorkspaceDialog("Удалить цель?", { deleting = null }) {
+    if (open && (editingId == null || editing != null)) GoalEditor(editing, { open = false }, action)
+    if (open && editingId != null && editing == null && resource.data != null && !resource.busy) {
+        WorkspaceDialog("Цель больше недоступна", { open = false }) {
+            Text("Выбранная цель отсутствует в текущем ответе сервера. Сохранение не создаст вместо неё новую цель.")
+            SpectrumSecondaryButton("К списку целей", { open = false }, Modifier.fillMaxWidth())
+        }
+    }
+    deleting?.let { goal -> WorkspaceDialog("Удалить цель?", { if (!action.busy) deletingId = null }) {
         Text(goal.text("title"))
         SpectrumPrimaryButton("Удалить", { action.perform("/workspace/goals/" + VolumeWorkspaceClient.encode(goal.text("id")), method = "DELETE") },
             Modifier.fillMaxWidth(), !action.busy)
-        SpectrumSecondaryButton("Оставить", { deleting = null }, Modifier.fillMaxWidth())
+        SpectrumSecondaryButton("Оставить", { deletingId = null }, Modifier.fillMaxWidth(), !action.busy)
         WorkspaceActionState(action)
     } }
 }
 
 @Composable
 private fun GoalEditor(existing: JSONObject?, close: () -> Unit, action: WorkspaceAction) {
-    var title by remember(existing) { mutableStateOf(existing?.text("title", "") ?: "") }
-    var amount by remember(existing) { mutableStateOf(existing?.optJSONObject("target")?.text("amount", "") ?: "") }
-    var reserve by remember(existing) { mutableStateOf(existing?.optJSONObject("reserve")?.text("amount", "0") ?: "0") }
-    var currency by remember(existing) { mutableIntStateOf(listOf("RUB", "USD", "EUR").indexOf(existing?.optJSONObject("target")?.text("currency", "RUB") ?: "RUB").coerceAtLeast(0)) }
+    val goalId = existing?.text("id", "")
+    var title by rememberSaveable(goalId) { mutableStateOf(existing?.text("title", "") ?: "") }
+    var amount by rememberSaveable(goalId) { mutableStateOf(existing?.optJSONObject("target")?.text("amount", "") ?: "") }
+    var reserve by rememberSaveable(goalId) { mutableStateOf(existing?.optJSONObject("reserve")?.text("amount", "0") ?: "0") }
+    var currency by rememberSaveable(goalId) { mutableIntStateOf(listOf("RUB", "USD", "EUR").indexOf(existing?.optJSONObject("target")?.text("currency", "RUB") ?: "RUB").coerceAtLeast(0)) }
+    val requestId = rememberSaveable(goalId) { UUID.randomUUID().toString() }
     val valid = title.isNotBlank() && amount.toBigDecimalOrNull()?.signum() == 1 && reserve.toBigDecimalOrNull()?.signum()?.let { it >= 0 } == true
-    WorkspaceDialog(if (existing == null) "Новая цель" else "Изменить цель", close) {
-        WorkspaceTextInput(title, { title = it.take(100) }, "Название", Modifier.fillMaxWidth())
-        WorkspaceTextInput(amount, { amount = it.replace(',', '.').take(18) }, "Целевая сумма", Modifier.fillMaxWidth(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        WorkspaceTextInput(reserve, { reserve = it.replace(',', '.').take(18) }, "Сохранить в резерве", Modifier.fillMaxWidth(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        WorkspaceChoices("Валюта", listOf("RUB", "USD", "EUR"), currency) { currency = it }
+    WorkspaceDialog(if (existing == null) "Новая цель" else "Изменить цель", { if (!action.busy) close() }) {
+        WorkspaceTextInput(title, { title = it.take(100) }, "Название", Modifier.fillMaxWidth(), enabled = !action.busy)
+        WorkspaceTextInput(amount, { amount = it.replace(',', '.').take(18) }, "Целевая сумма", Modifier.fillMaxWidth(),
+            enabled = !action.busy, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        WorkspaceTextInput(reserve, { reserve = it.replace(',', '.').take(18) }, "Сохранить в резерве", Modifier.fillMaxWidth(),
+            enabled = !action.busy, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        WorkspaceChoices("Валюта", listOf("RUB", "USD", "EUR"), currency) { if (!action.busy) currency = it }
         SpectrumPrimaryButton("Сохранить цель", {
             val selected = listOf("RUB", "USD", "EUR")[currency]
-            action.perform("/workspace/goals", JSONObject().put("request_id", UUID.randomUUID().toString()).put("id", existing?.optString("id") ?: JSONObject.NULL)
+            action.perform("/workspace/goals", JSONObject().put("request_id", requestId).put("id", existing?.optString("id") ?: JSONObject.NULL)
                 .put("title", title.trim()).put("target", JSONObject().put("amount", amount).put("currency", selected))
                 .put("reserve", JSONObject().put("amount", reserve).put("currency", selected)))
         }, Modifier.fillMaxWidth(), valid && !action.busy)

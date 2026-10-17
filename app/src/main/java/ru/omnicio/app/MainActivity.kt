@@ -543,7 +543,8 @@ private fun SignedInAppContent(
     var chatTitle by rememberSaveable(session.user.telegramId) { mutableStateOf("Мой портфель") }
     val json = remember(chatJson) { JSONObject(chatJson) }
     val chatContext = ChatContext(json.text("mode", "portfolio"), json.optString("instrument_uid").takeIf { it.isNotBlank() && it != "null" }, chatTitle,
-        json.optString("account_id").takeIf { it.isNotBlank() && it != "null" }, json.optString("start").takeIf { it.isNotBlank() && it != "null" }, json.optString("end").takeIf { it.isNotBlank() && it != "null" })
+        json.optString("account_id").takeIf { it.isNotBlank() && it != "null" }, json.optString("start").takeIf { it.isNotBlank() && it != "null" }, json.optString("end").takeIf { it.isNotBlank() && it != "null" },
+        json.optString("event_id").takeIf { it.isNotBlank() && it != "null" })
     val reauthenticate = LocalReauthenticate.current
     val workspace = rememberWorkspaceRuntime(WorkspaceSession(session.accessToken, session.user.telegramId), tApiConfigured, portfolioCurrency, reauthenticate)
     val refresh: () -> Unit = { onPortfolioRefresh(); workspace.refresh() }

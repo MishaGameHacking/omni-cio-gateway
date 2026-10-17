@@ -55,6 +55,21 @@ class WorkspaceFinancialSemanticsTest {
         assertFalse(sameHistoryInstant("2026-10-01T12:00:00Z", "2026-10-01"))
     }
 
+    @Test fun barAndTableSelectionShareTheExactClosingObservationWithoutSubstitutingMissingEvidence() {
+        val earlier = HistoryPoint("2026-10-01T10:00:00Z", BigDecimal("101.25"))
+        val close = HistoryPoint("2026-10-01T18:00:00Z", BigDecimal("901.75"))
+        val later = HistoryPoint("2026-10-03T18:00:00Z", BigDecimal("500.00"))
+        val daily = historyBars(listOf(earlier, close, later), "day")!!
+        assertEquals(close, historySelectedObservation(daily, 0, null))
+        assertEquals(earlier, historySelectedObservation(daily, 0, "2026-10-01T13:00:00+03:00"))
+        assertNull(historySelectedObservation(daily, 0, "2026-10-01T11:00:00Z"))
+        assertNull(historySelectedObservation(daily, 1, null))
+        assertNull(historySelectedObservation(daily, -1, null))
+        val monthly = historyBars(listOf(earlier, close, later), "month")!!
+        assertEquals(later, historySelectedObservation(monthly, 0, null))
+        assertEquals(earlier, historySelectedObservation(monthly, 0, earlier.date))
+    }
+
     @Test fun restoredRangeDatesStayInsideTheSelectedBucketsAfterGroupingChanges() {
         val points = listOf(history("2026-10-01", "100"), history("2026-10-31", "105"))
         val start = LocalDate.parse("2026-10-13")
@@ -119,6 +134,22 @@ class WorkspaceFinancialSemanticsTest {
         assertNotNull(comparableQuotePeriod(listOf(series(unit = "percent_of_nominal", currency = null), series("b", unit = "percent_of_nominal", currency = null))))
     }
 
+    @Test fun aConflictOnlyInAnAdditionalFundamentalFieldRemainsVisibleAlongsideNamedMetrics() {
+        val named = setOf("revenueTtm", "netIncomeTtm", "freeCashFlowTtm", "netDebtToEbitda", "currentRatioMrq")
+        val first: Map<String, Any?> = named.associateWith { "12.5" } + mapOf(
+            "currency" to "RUB", "fiscalPeriodEndDate" to "2026-06-30T00:00:00Z",
+            "ebitdaTtm" to "20.000000001", "unconfirmedExtra" to null)
+        val second = first + ("ebitdaTtm" to "40.000000001")
+        val firstVisible = additionalConflictFields(first, named)
+        val secondVisible = additionalConflictFields(second, named)
+        assertEquals(setOf("ebitdaTtm", "unconfirmedExtra"), firstVisible.keys)
+        assertEquals("20.000000001", firstVisible["ebitdaTtm"])
+        assertEquals("40.000000001", secondVisible["ebitdaTtm"])
+        assertNotEquals(firstVisible, secondVisible)
+        assertTrue(firstVisible.containsKey("unconfirmedExtra"))
+        assertNull(firstVisible["unconfirmedExtra"])
+    }
+
     @Test fun unavailableOrInsufficientCommonObservationsNeverProduceAComparison() {
         assertNull(comparableQuotePeriod(listOf(series(), series("b", state = "unavailable"))))
         assertNull(comparableQuotePeriod(listOf(series(), series("b", candles = listOf(candle(1, "100"), candle(2, "105", false))))))
@@ -139,6 +170,17 @@ class WorkspaceFinancialSemanticsTest {
         assertNull(resolve(listOf(account("account-a", emptyList()), account("account-b", listOf(latest)))))
         assertNull(resolve(listOf(account("account-a", listOf(latest, latest)))))
         assertNull(resolve(listOf(account("account-a", listOf(latest)), account("account-a", listOf(latest)))))
+    }
+
+    @Test fun restoredPaymentIdentityCannotMatchAnotherUserAccountOrCalendarEvent() {
+        val selected = paymentSelectionKey("user-a", "account-a", "paper", "coupon", "2026-11-01", "2026-10-20")
+        assertNotNull(selected)
+        assertNotEquals(selected, paymentSelectionKey("user-b", "account-a", "paper", "coupon", "2026-11-01", "2026-10-20"))
+        assertNotEquals(selected, paymentSelectionKey("user-a", "account-b", "paper", "coupon", "2026-11-01", "2026-10-20"))
+        assertNotEquals(selected, paymentSelectionKey("user-a", "account-a", "paper", "coupon", "2026-12-01", "2026-10-20"))
+        assertNotEquals(selected, paymentSelectionKey("user-a", "account-a", "paper", "dividend", "2026-11-01", "2026-10-20"))
+        assertNotNull(paymentSelectionKey("user-a", "account-a", "paper", "coupon", null, null))
+        assertNull(paymentSelectionKey("user-a", "account-a", null, "coupon", null, null))
     }
 
     @Test fun equalValuationsSortByStableIdentityAndForeignCurrencyIsNotRankedAsRubles() {

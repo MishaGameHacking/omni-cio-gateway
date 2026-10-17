@@ -5,6 +5,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -133,6 +135,17 @@ private object PersonalWorkspaceRevision {
     fun state(user: String) = revisions.getOrPut(user) { mutableIntStateOf(0) }
 }
 
+/** Short local writes survive leaving the presenter or rotating the Activity.
+ * Encryption still checks user revocation at every write, including logout races. */
+private object PersonalWorkspaceWrites {
+    fun launch(write: suspend () -> Unit) {
+        val lifetime = SupervisorJob()
+        CoroutineScope(lifetime + Dispatchers.Main.immediate).launch {
+            try { write() } finally { lifetime.cancel() }
+        }
+    }
+}
+
 @Composable
 fun rememberPersonalWorkspace(): PersonalWorkspaceController {
     val context = LocalContext.current
@@ -143,7 +156,7 @@ fun rememberPersonalWorkspace(): PersonalWorkspaceController {
     var loaded by remember(user) { mutableStateOf(false) }
     var busy by remember(user) { mutableStateOf(false) }
     var error by remember(user) { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    val scope = PersonalWorkspaceWrites
     LaunchedEffect(user, revision.value) {
         loaded = false
         try {

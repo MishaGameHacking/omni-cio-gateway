@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import java.net.URI
 import org.json.JSONObject
@@ -16,9 +17,12 @@ import ru.omnicio.app.data.market.*
 import ru.omnicio.app.ui.spectrum.SpectrumCard
 import ru.omnicio.app.ui.workspace.DetailFold
 import ru.omnicio.app.ui.workspace.PrivateValue
+import ru.omnicio.app.ui.workspace.ChatContext
+import ru.omnicio.app.ui.workspace.LocalAskAnalyst
+import ru.omnicio.app.ui.workspace.LocalWorkspaceSession
 
 @Composable
-internal fun DossierNewsPanel(payload: JSONObject, select: (String) -> Unit) {
+internal fun DossierNewsPanel(payload: JSONObject, select: (String) -> Unit, onNavigate: () -> Unit = {}) {
     val items = payload.sectionData("news")?.records("items").orEmpty()
     val sources = dossierSources(payload, "news")
     SpectrumCard {
@@ -28,18 +32,38 @@ internal fun DossierNewsPanel(payload: JSONObject, select: (String) -> Unit) {
         // Grouping and publication roles are validated by the server against exact
         // publication identities/content. Headlines are never merged on the device.
         items.forEach { event -> key(dossierRecordKey("news", event)) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().testTag("dossier-news-${event.optString("id")}"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(event.optionalText("title") ?: "Публикация", style = MaterialTheme.typography.titleMedium)
                 Text(dateText(event.optionalText("published_at")), style = MaterialTheme.typography.bodySmall)
                 event.optionalText("summary")?.let { Text(PrivateValue(it)) }
                 DossierNewsIdentity(event)
                 DossierNewsEvidence(event, sources)
-                TextButton(onClick = { select(dossierRecordKey("news", event)) }) { Text("Факт → компания → моя позиция") }
+                TextButton(onClick = { select(dossierRecordKey("news", event)) },
+                    modifier = Modifier.testTag("dossier-fact-news-${event.optString("id")}")) { Text("Факт → компания → моя позиция") }
+                DossierEventImpactAction(payload.optionalText("instrument_uid"), event, onNavigate)
             }
         } }
         val events = payload.sectionData("events")?.records("items").orEmpty()
         if (events.isNotEmpty()) WorkspaceEvents(events, dossierSources(payload, "events"))
     }
+}
+
+/** This opens an editable question. Only explicit chat submission can estimate or call a model. */
+@Composable
+internal fun DossierEventImpactAction(uid: String?, event: JSONObject, onNavigate: () -> Unit) {
+    val eventId = event.optionalText("id") ?: return
+    if (uid.isNullOrBlank()) return
+    val ask = LocalAskAnalyst.current
+    val session = LocalWorkspaceSession.current
+    TextButton(onClick = {
+        onNavigate()
+        ask(ChatContext(mode = "instrument", instrumentUid = uid,
+            title = event.optionalText("title") ?: "Возможное влияние события", eventId = eventId))
+    }, enabled = session.token.isNotBlank(), modifier = Modifier.testTag("dossier-impact-$eventId")) {
+        Text("Разобрать возможное влияние")
+    }
+    Text("Вопрос откроется с этой публикацией и выбранной бумагой. Аналитическая гипотеза будет отделена от подтверждённых фактов.",
+        style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

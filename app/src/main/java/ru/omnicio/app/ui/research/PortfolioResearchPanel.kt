@@ -41,7 +41,7 @@ import ru.omnicio.app.data.research.*
 /** Parent Ideas list owns scrolling; pages bound the number of eagerly composed cards. */
 @Composable
 fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, showRefresh: Boolean = true, refreshKey: Int = 0) {
-    val client = remember { ResearchClient() }
+    val client = ru.omnicio.app.data.workspace.LocalPortfolioReadSource.current
     val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false) }
     var state by remember(accessToken) { mutableStateOf(ResearchLoadState<JSONObject>()) }
@@ -53,12 +53,12 @@ fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, sh
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    LaunchedEffect(accessToken, active, retry, refreshKey) {
+    LaunchedEffect(client, accessToken, active, retry, refreshKey) {
         if (!active || accessToken.isBlank()) return@LaunchedEffect
         try {
             while (isActive) {
                 state = state.start()
-                when (val result = withContext(Dispatchers.IO) { client.read(accessToken) }) {
+                when (val result = withContext(Dispatchers.IO) { client.research(accessToken) }) {
                     is BackendResult.Success -> {
                         if (!validSnapshot(result.value)) {
                             state = state.failure("Ответ проверки имеет неверный формат. Повторите запрос позже.", false)

@@ -48,11 +48,15 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int LIST_PORTFOLIO = 3;
     private static final int LIST_PROFILE_TABS = 4;
     private static final int LIST_WORKSPACE = 5;
+    private static final int LIST_DOSSIER_TABS = 6;
+    private static final int LIST_QUOTES_INTERVALS = 7;
     private static final String PROFILE_LIST = "profile-content";
     private static final String EDUCATION_LIST = "education-content";
     private static final String PORTFOLIO_LIST = "portfolio-content";
     private static final String PROFILE_TABS = "profile-tabs";
     private static final String WORKSPACE_LIST = "workspace-content";
+    private static final String DOSSIER_TABS = "dossier-tabs";
+    private static final String QUOTES_INTERVALS = "quotes-intervals";
 
     private String socketName;
     private byte[] token;
@@ -209,6 +213,8 @@ public final class FrameInstrumentation extends Instrumentation {
             case LIST_PORTFOLIO -> PORTFOLIO_LIST;
             case LIST_PROFILE_TABS -> PROFILE_TABS;
             case LIST_WORKSPACE -> WORKSPACE_LIST;
+            case LIST_DOSSIER_TABS -> DOSSIER_TABS;
+            case LIST_QUOTES_INTERVALS -> QUOTES_INTERVALS;
             default -> null;
         };
     }

@@ -25,7 +25,7 @@ def exercise_spatial(probe):
                 "page_size_bytes": int(probe.command("shell", "getconf", "PAGE_SIZE").strip())}
     platform["system_image"] = system_image(platform["sdk"])
     if platform["abi"] != "x86_64" or platform["page_size_bytes"] != PAGE_BYTES[platform["sdk"]]:
-        raise AssertionError("The actual mesh runtime is not on the required Android kernel matrix")
+        raise AssertionError("The mesh runtime does not match the required Android userspace page-size matrix")
     records = [{"scenario": "force-stopped-fixture-startup", **startup}]
 
     def metrics(windows=1):

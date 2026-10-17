@@ -13,6 +13,8 @@ import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -23,7 +25,6 @@ import org.json.JSONObject
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.market.*
 import ru.omnicio.app.data.portfolio.*
-import ru.omnicio.app.data.research.ResearchClient
 import ru.omnicio.app.data.workspace.*
 import ru.omnicio.app.ui.portfolio.*
 import ru.omnicio.app.ui.research.ResearchSnapshot
@@ -82,16 +83,17 @@ private data class DiscoveryResearch(val json: JSONObject?, val loading: Boolean
 @Composable
 private fun rememberDiscoveryResearch(): DiscoveryResearch {
     val session = LocalWorkspaceSession.current
+    val client = LocalPortfolioReadSource.current
     val foreground = workspaceForeground()
     var revision by remember(session.userId) { mutableIntStateOf(0) }
     var data by remember(session.userId) { mutableStateOf<JSONObject?>(null) }
     var error by remember(session.userId) { mutableStateOf<String?>(null) }
     var loading by remember(session.userId) { mutableStateOf(false) }
-    LaunchedEffect(session.token, foreground, LocalWorkspaceRefreshKey.current, revision) {
+    LaunchedEffect(client, session.token, foreground, LocalWorkspaceRefreshKey.current, revision) {
         if (session.token.isBlank() || !foreground) return@LaunchedEffect
         loading = true
         try {
-            when (val result = withContext(Dispatchers.IO) { ResearchClient().read(session.token) }) {
+            when (val result = withContext(Dispatchers.IO) { client.research(session.token) }) {
                 is BackendResult.Success -> { data = result.value; error = null }
                 is BackendResult.Failure -> error = result.message
             }
@@ -182,7 +184,7 @@ private fun DiscoveryResultList(results: DiscoveryResults, snapshot: PortfolioSn
     query: String, category: Int, shown: Int, moreAssets: () -> Unit, more: () -> Unit, modifier: Modifier) {
     val navigate = LocalWorkspaceNavigator.current
     val destination = LocalPortfolioDestination.current
-    LazyColumn(modifier.fillMaxWidth().testTag("discovery-content"), contentPadding = PaddingValues(20.dp),
+    LazyColumn(modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "scope") {
             Text("Поиск охватывает подключённый портфель, полученные события и материалы этого аккаунта.", style = MaterialTheme.typography.bodySmall)
@@ -203,11 +205,12 @@ private fun DiscoveryResultList(results: DiscoveryResults, snapshot: PortfolioSn
 private fun LazyListScope.discoveryAssets(assets: List<PortfolioRow>, total: MoneyAmount?, selection: DiscoverySelection,
     limit: Int, more: () -> Unit) {
     item(key = "asset-title") { SectionHeading("Активы · ${assets.size}") }
-    items(assets.take(limit), key = { "asset:${portfolioRowKey(it)}" }) { row -> SpectrumCard {
+    items(assets.take(limit), key = { "asset:${portfolioRowKey(it)}" }) { row -> SpectrumCard(Modifier.testTag("discovery-asset-${portfolioRowKey(row)}")) {
         val rowKey = portfolioRowKey(row)
         PositionLine(row.position, total, row.account.name, sharedKey = rowKey) { selection.positionKey = rowKey }
         val selected = rowKey in selection.chosenKeys
-        TextButton(onClick = { selection.toggleComparison(rowKey) }, enabled = selected || selection.chosenKeys.size < 3) {
+        TextButton(onClick = { selection.toggleComparison(rowKey) }, enabled = selected || selection.chosenKeys.size < 3,
+            modifier = Modifier.testTag("discovery-compare-$rowKey")) {
             Text(if (selected) "Убрать из сравнения" else "Добавить к сравнению")
         }
     } }
@@ -244,7 +247,7 @@ private fun LazyListScope.discoveryResearch(results: DiscoveryResults, request: 
         DiscoveryResearchNotice(request)
     }
     items(results.archives.take(if (compact) 3 else shown), key = { "archive:${it.id}" }) { archive ->
-        SpectrumCard(onClick = { selection.archiveId = archive.id }) {
+        SpectrumCard(Modifier.testTag("discovery-archive-${archive.id}"), onClick = { selection.archiveId = archive.id }) {
             Text(archive.title, style = MaterialTheme.typography.titleMedium)
             Text("Сохранённый снимок · ${dateText(archive.observedAt)}", style = MaterialTheme.typography.bodySmall)
             Text(archive.source, style = MaterialTheme.typography.bodySmall)
@@ -252,7 +255,7 @@ private fun LazyListScope.discoveryResearch(results: DiscoveryResults, request: 
         }
     }
     items(results.cards.take(if (compact) 3 else shown), key = { "research:${researchCardKey(it)}" }) { card ->
-        SpectrumCard(onClick = { selection.researchKey = researchCardKey(card) }) {
+        SpectrumCard(Modifier.testTag("discovery-research-${researchCardKey(card)}"), onClick = { selection.researchKey = researchCardKey(card) }) {
             Text(card.optionalText("name") ?: "Разбор инструмента", style = MaterialTheme.typography.titleMedium)
             Text("Последний анализ · ${dateText(request.json?.optionalText("as_of"))}", style = MaterialTheme.typography.bodySmall)
             Text(PrivateValue(card.optionalText("explanation") ?: "Откройте разбор"))
@@ -319,7 +322,8 @@ private fun DiscoveryResearchDialog(selectedKey: String, request: DiscoveryResea
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         SpatialWindow(Modifier.fillMaxSize()) {
             SpectrumBackground(Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentPadding = PaddingValues(20.dp),
+                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+                    .windowInsetsPadding(WindowInsets.safeDrawing), contentPadding = PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                     item { TextButton(onClick = close) { Text("Закрыть разбор") }; DiscoveryResearchNotice(request) }
                     item {
@@ -363,7 +367,8 @@ private fun DiscoveryDossier(uid: String, close: () -> Unit) {
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         SpatialWindow(Modifier.fillMaxSize()) {
             SpectrumBackground(Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentPadding = PaddingValues(20.dp),
+                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+                    .windowInsetsPadding(WindowInsets.safeDrawing), contentPadding = PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                     item { TextButton(onClick = close) { Text("Закрыть досье") }; WorkspaceRequestNotice(request) }
                     request.json?.let { payload -> item {

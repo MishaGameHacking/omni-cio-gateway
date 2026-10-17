@@ -5,6 +5,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -23,7 +26,8 @@ internal fun AssetComparisonDialog(rows: List<PortfolioRow>, observedAt: String?
         SpectrumBackground(Modifier.fillMaxSize()) {
             Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = { WorkspaceHeader("Сравнение", "Одни поля · одна дата наблюдения", close) }) { padding ->
-                LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
+                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+                    .padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                     item { SpectrumCard {
                         Text("Источник: T‑Invest · ${dateText(observedAt)}", style = MaterialTheme.typography.bodySmall)

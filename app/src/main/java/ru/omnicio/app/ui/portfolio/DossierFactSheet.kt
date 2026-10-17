@@ -9,6 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import ru.omnicio.app.data.market.*
@@ -22,13 +25,17 @@ internal fun DossierFactSheet(payload: JSONObject, fact: DossierFact, close: () 
     var step by rememberSaveable(fact.key) { mutableIntStateOf(0) }
     ModalBottomSheet(onDismissRequest = close, dragHandle = null) {
         SpatialWindow(Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp),
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }
+                .testTag("workspace-content").navigationBarsPadding().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 Text("Контекст факта", style = MaterialTheme.typography.headlineSmall)
                 SpectrumTabs(listOf("Факт", "Компания", "Мои позиции"), step, { step = it })
                 when (step) {
                     0 -> {
                         DossierFactRecord(payload, fact)
+                        if (fact.kind == DossierFactKind.News) DossierEventImpactAction(payload.optionalText("instrument_uid"), fact.row) {
+                            close(); onNavigate()
+                        }
                         TextButton(onClick = { step = 1 }) { Text("Перейти к компании") }
                     }
                     1 -> {

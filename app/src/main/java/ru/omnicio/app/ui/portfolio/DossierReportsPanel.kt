@@ -14,6 +14,7 @@ import org.json.JSONObject
 import ru.omnicio.app.data.market.*
 import ru.omnicio.app.ui.spectrum.SpectrumCard
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
+import ru.omnicio.app.ui.spectrum.LocalSpectrumTabScrollTag
 import ru.omnicio.app.ui.workspace.DetailFold
 import java.time.Instant
 import java.time.LocalDate
@@ -65,7 +66,9 @@ internal fun DossierReportsPanel(payload: JSONObject) {
         WorkspaceSectionNotice(section, "Проверенные даты отчётов не получены.")
         Text("Объявленные даты и опубликованные документы показаны раздельно. Наступление даты не подтверждает выход отчёта.",
             style = MaterialTheme.typography.bodySmall)
-        SpectrumTabs(listOf("Все", "Объявлены", "Опубликованы"), filter, { filter = it })
+        CompositionLocalProvider(LocalSpectrumTabScrollTag provides "dossier-tabs") {
+            SpectrumTabs(listOf("Все", "Объявлены", "Опубликованы"), filter, { filter = it })
+        }
         ReportMonthControls(month) { monthText = it?.toString() }
         if (visible.isEmpty()) Text("Для выбранного месяца и статуса подтверждённых записей не получено.")
         visible.forEach { report -> key(dossierRecordKey("report", report)) {

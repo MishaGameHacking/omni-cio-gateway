@@ -1,7 +1,7 @@
 """Synthetic CI records. These tests do NOT perform an Android installation."""
 from copy import deepcopy
 import unittest
-from backend.installation_evidence import BUSINESS_CASE_IDS, CURRENT_UI_SUITE, InstallationEvidenceError, from_ci_reports
+from backend.installation_evidence import BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, CURRENT_UI_SUITE, InstallationEvidenceError, from_ci_reports
 
 CANDIDATE = 'a' * 64
 PREVIOUS = 'b' * 64
@@ -51,7 +51,9 @@ def runtime_reports():
         next(row for row in run['results'] if row['test'] == 'debug_ui_fixture_install')['apk_sha256'] = UI_FIXTURE
         next(row for row in run['results'] if row['test'] == 'profile_ui').update(
             ui_suite=CURRENT_UI_SUITE, business_case_count=len(BUSINESS_CASE_IDS),
-            business_cases=sorted(BUSINESS_CASE_IDS), fixture_apk_sha256=UI_FIXTURE)
+            business_cases=sorted(BUSINESS_CASE_IDS),
+            portfolio_case_count=len(PORTFOLIO_CASE_IDS), portfolio_cases=sorted(PORTFOLIO_CASE_IDS),
+            fixture_apk_sha256=UI_FIXTURE)
         run['results'].append({'test': 'kernel_page_size', 'success': True,
                                'android_api': api, 'abi': 'x86_64',
                                'system_image': f'system-images;android-{api};{tag};x86_64',
@@ -238,6 +240,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(checked['36']['runtime_16kb'])
         self.assertEqual(52, checked['35']['business_case_count'])
         self.assertEqual(52, checked['36']['business_case_count'])
+        self.assertEqual(14, checked['35']['portfolio_case_count'])
+        self.assertEqual(14, checked['36']['portfolio_case_count'])
         # Historical transcripts remain usable for recovery, never a new 3D release.
         for old in (reports(), [android15_report(), *reports()]):
             from_ci_reports(old, CANDIDATE)
@@ -285,11 +289,37 @@ class EvidenceTests(unittest.TestCase):
             profile['business_cases'][-1] = profile['business_cases'][0]
             with self.assertRaises(InstallationEvidenceError):
                 from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
-            for field in ('ui_suite', 'business_case_count', 'business_cases', 'fixture_apk_sha256'):
+            for field in ('ui_suite', 'business_case_count', 'business_cases',
+                          'portfolio_case_count', 'portfolio_cases', 'fixture_apk_sha256'):
                 data = runtime_reports()
                 del next(row for row in data[api]['results'] if row['test'] == 'profile_ui')[field]
                 with self.subTest(api=api, missing=field), self.assertRaises(InstallationEvidenceError):
                     from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
+
+    def test_portfolio_receipt_requires_both_fonts_and_exact_missing_instant_scenario(self):
+        self.assertEqual(14, len(PORTFOLIO_CASE_IDS))
+        self.assertEqual({'history/ready@1', 'history/ready@2', 'history/partial@1', 'history/partial@2'},
+                         {case for case in PORTFOLIO_CASE_IDS if case.startswith('history/')})
+        for field, value in (('portfolio_case_count', 7), ('portfolio_case_count', 14.0),
+                             ('portfolio_case_count', True), ('portfolio_cases', sorted(PORTFOLIO_CASE_IDS)[:-1]),
+                             ('portfolio_cases', '14'), ('portfolio_cases', sorted(BUSINESS_CASE_IDS)[:14])):
+            for index in (0, 1):
+                data = runtime_reports()
+                next(row for row in data[index]['results'] if row['test'] == 'profile_ui')[field] = value
+                with self.subTest(api=index, field=field, value=value), self.assertRaises(InstallationEvidenceError):
+                    from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
+
+    def test_repeated_portfolio_case_or_old_suite_never_substitutes_for_new_production_screens(self):
+        for index in (0, 1):
+            data = runtime_reports()
+            profile = next(row for row in data[index]['results'] if row['test'] == 'profile_ui')
+            profile['portfolio_cases'][-1] = profile['portfolio_cases'][0]
+            with self.assertRaises(InstallationEvidenceError):
+                from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
+            data = runtime_reports()
+            next(row for row in data[index]['results'] if row['test'] == 'profile_ui')['ui_suite'] = 'spectrum-3d-100-v1'
+            with self.assertRaises(InstallationEvidenceError):
+                from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
 
 
 if __name__ == '__main__':

@@ -132,7 +132,9 @@ def record_profile_check(device, results, exercise) -> None:
     results.append(result)
     try:
         receipt = exercise(device)
-        if not isinstance(receipt, dict) or set(receipt) != {"ui_suite", "business_case_count", "business_cases"}:
+        if not isinstance(receipt, dict) or set(receipt) != {
+            "ui_suite", "business_case_count", "business_cases", "portfolio_case_count", "portfolio_cases",
+        }:
             raise ValueError("Profile UI did not return its completed runtime matrix")
         fixtures = [row for row in results if row.get("test") == "debug_ui_fixture_install" and row.get("success") is True]
         if len(fixtures) != 1:
@@ -417,6 +419,11 @@ def run_attempt(
                 "-no-audio",
                 "-no-snapshot",
                 "-no-boot-anim",
+                # Fix the disposable device's local zone for the actual calendar
+                # UTC/Moscow date-boundary checks; never inherit the runner host.
+                # developer.android.com/studio/run/emulator-commandline#common
+                "-timezone",
+                "Etc/UTC",
                 "-gpu",
                 "swiftshader",
                 "-feature",

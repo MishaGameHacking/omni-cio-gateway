@@ -1,6 +1,8 @@
 package ru.omnicio.app.ui.portfolio
 
-import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.SpectrumTextButton
+import ru.omnicio.app.ui.workspace.WorkspaceDialog
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -14,13 +16,13 @@ internal fun AccountSelector(accounts: List<PortfolioAccount>, selectedId: Strin
     modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
-        TextButton(onClick = { expanded = true }, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text((accounts.firstOrNull { it.id == selectedId }?.name ?: "Выберите счёт") + " ▾")
-        }
-        DropdownMenu(expanded, { expanded = false }) {
-            accounts.forEach { account -> DropdownMenuItem(text = { Text(account.name) }, onClick = {
+        SpectrumTextButton(accounts.firstOrNull { it.id == selectedId }?.name ?: "Выберите счёт", { expanded = true },
+            symbol = SpectrumSymbol.Expand)
+        if (expanded) WorkspaceDialog("Выберите счёт", { expanded = false }) {
+            accounts.forEach { account -> SpectrumTextButton(account.name, {
                 onSelect(account.id); expanded = false
-            }) }
+            }, Modifier.fillMaxWidth(), symbol = if (account.id == selectedId) SpectrumSymbol.Check else SpectrumSymbol.Portfolio) }
+            SpectrumTextButton("Закрыть", { expanded = false }, Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Close)
         }
     }
 }

@@ -121,7 +121,7 @@ class InstallationReportTests(unittest.TestCase):
 
     def test_current_matrix_requires_actual_kernel_measurement(self):
         from kernel_page_size import measured_record
-        from backend.installation_evidence import BUSINESS_CASE_IDS, CURRENT_UI_SUITE
+        from backend.installation_evidence import BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, CURRENT_UI_SUITE
         for api, size in ((35, 16384), (36, 4096)):
             rows = report(module.BASE_TESTS, module.UPGRADE_TESTS, module.PROFILE_TESTS)
             with self.assertRaises(ValueError):
@@ -130,6 +130,7 @@ class InstallationReportTests(unittest.TestCase):
             next(row for row in rows if row["test"] == "debug_ui_fixture_install")["apk_sha256"] = "c" * 64
             next(row for row in rows if row["test"] == "profile_ui").update(
                 ui_suite=CURRENT_UI_SUITE, business_case_count=52, business_cases=sorted(BUSINESS_CASE_IDS),
+                portfolio_case_count=14, portfolio_cases=sorted(PORTFOLIO_CASE_IDS),
                 fixture_apk_sha256="c" * 64)
             module.validate_results(rows, upgrade_required=True, profile_required=True, android_api=api)
             rows[-1]["page_size_bytes"] = 4096 if api == 35 else 16384

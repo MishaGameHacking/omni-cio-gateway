@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import re
 import time
+from chat_recovery_ui_probe import chat_counters
 
 ROUTES = ("risk", "assistant", "plans", "strategy", "notifications", "analysis")
 CASES = tuple((route, scenario) for route in ROUTES
@@ -43,7 +44,8 @@ def business_marker(tree, route, scenario):
             raise AssertionError("The real screen submitted an invalid fixture contract")
         if int(parts["requests"]) > 0:
             return {"route": route, "scenario": scenario, "requests": int(parts["requests"]),
-                    "contract_errors": 0, "navigation": parts.get("navigation", "none")}
+                    "contract_errors": 0, "navigation": parts.get("navigation", "none"),
+                    **chat_counters(parts, int(parts["requests"]), scenario)}
     return None
 
 
@@ -54,6 +56,8 @@ def exercise_business(probe):
     from spatial_frame_evidence import ready_spatial_metrics
     from native_input_evidence import rotate_focused_draft
     from analysis_ui_probe import exercise_analysis
+    from impact_ui_probe import exercise_impact
+    from chat_recovery_ui_probe import exercise_chat_recovery
 
     reader = getattr(probe.read_tree, "__self__", None)
     if not isinstance(reader, FrameReader):
@@ -85,6 +89,8 @@ def exercise_business(probe):
         before = observed()
         checks = []
         draft_rotation = None
+        impact_screenshot = None
+        chat_recovery = None
         if scenario == "error":
             probe.reveal("Не удалось обновить", "workspace-content")
             probe.reveal(ERROR, "workspace-content")
@@ -96,7 +102,7 @@ def exercise_business(probe):
             checks.extend(("explicit-source-error", "retry-real-request"))
         elif scenario == "job":
             probe.tap("Сохранённые задания · 1", "workspace-content")
-            probe.tap_node(reveal_prefix("Диалог · " if route == "assistant" else "Сверка операций · "))
+            probe.tap_resource("recover-request-synthetic-request", "workspace-content")
             probe.reveal("Исход требует сверки", "workspace-content", direction="start")
             probe.reveal(UNCERTAIN, "workspace-content")
             if matching_node(probe.tree(), "Повторить разрешённую задачу") is not None:
@@ -208,6 +214,8 @@ def exercise_business(probe):
                     probe.reveal("Требует проверки: СИНТЕТИЧЕСКИЙ тест отсутствующего рейтинга", "workspace-content")
                     checks.append("uncertainty-visible")
                 else:
+                    impact_screenshot = "business-assistant-impact" + ("-font-200" if math.isclose(font_scale, 2.0) else "")
+                    checks.extend(exercise_impact(probe, observed, impact_screenshot))
                     probe.tap("Показать синтетическую позицию", "workspace-content")
                     probe.wait_for(lambda observe=observed: (value if (value := observe())["navigation"] == "instrument:synthetic-stock::" else None), "Position evidence opened a different destination")
                     probe.tap("Показать синтетическую дату", "workspace-content")
@@ -218,11 +226,9 @@ def exercise_business(probe):
                     draft_rotation = rotate_focused_draft(probe, "UIprobe", rotation_name)
                     checks.extend(("unsent-draft-survives-rotation", "native-input-focus-and-caret-retained"))
                     probe.command("shell", "input", "keyevent", "BACK")
-                    baseline = observed()["requests"]
-                    probe.tap_visible("Отправить")
-                    probe.reveal("UIprobe", "workspace-content")
-                    probe.wait_for(lambda observe=observed, minimum=baseline + 3: (value if (value := observe())["requests"] >= minimum else None), "Chat did not execute estimate/send/read contracts")
-                    checks.extend(("exact-position-and-date-destinations", "native-chat-input", "estimate-and-send-contract"))
+                    chat_recovery = exercise_chat_recovery(probe, observed)
+                    checks.extend(("exact-position-and-date-destinations", "native-chat-input", "estimate-and-send-contract",
+                                   "lost-response-blocks-repeat", "same-request-get-recovery-without-remount"))
         actual = observed()
         renderer = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Business screen did not render its genuine meshes")
         if not math.isclose(renderer.get("font-scale", 0.0), font_scale, rel_tol=0.0, abs_tol=1e-6):
@@ -231,6 +237,8 @@ def exercise_business(probe):
         probe.capture(name)
         records.append({"case": route + "/" + scenario, "font_scale": font_scale, "before": before, "after": actual,
                         "checks": checks, "native_input_rotation": draft_rotation,
+                        "chat_recovery": chat_recovery,
+                        "impact_screenshot": impact_screenshot + ".png" if impact_screenshot else None,
                         "renderer": renderer, "screenshot": name + ".png"})
         print("BUSINESS_UI_CASE_PASSED=" + route + "/" + scenario + ";font=" + str(font_scale), flush=True)
 

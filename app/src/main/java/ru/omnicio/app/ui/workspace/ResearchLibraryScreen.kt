@@ -12,6 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import ru.omnicio.app.data.market.*
@@ -65,7 +68,8 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
         selectedId?.let { archive = personal.store.archive(it); archiveLoaded = true }
     }
     WorkspaceDetailPage("Сохранённое", "Исследования с датой и источниками", { if (selectedId != null) selectedId = null else onBack() }, SpectrumSymbol.Sources) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
+        LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+            .padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             if (!personal.loaded) item { SpectrumLoadingIndicator(description = "Читаем сохранённые исследования") }
             personal.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = personal.retry) { Text("Повторить чтение") } } }

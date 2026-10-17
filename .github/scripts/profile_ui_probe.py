@@ -67,7 +67,7 @@ def semantic_scroll_direction(
     x2: int,
     y2: int,
 ) -> str:
-    if area == "profile-tabs":
+    if area in {"profile-tabs", "dossier-tabs", "quotes-intervals"}:
         return _horizontal_scroll_direction(x1, y1, x2, y2)
     return _vertical_scroll_direction(x1, y1, x2, y2)
 
@@ -376,6 +376,11 @@ class ProfileProbe:
         report = exercise_business(self)
         self.business_cases = [row["case"] + "@" + format(row["font_scale"], "g") for row in report["cases"]]
 
+    def portfolio(self):
+        from portfolio_ui_probe import exercise_portfolio
+        report = exercise_portfolio(self)
+        self.portfolio_cases = [row["case"] + "@" + format(row["font_scale"], "g") for row in report["cases"]]
+
     def workspace(self):
         from profile_launch import launch_profile
         for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
@@ -387,7 +392,7 @@ class ProfileProbe:
             if screen == "strategy":
                 self.tap_visible("Отбор")
                 self.reveal("Кредитные рейтинги", "workspace-content")
-                self.reveal("Минимум: BBB- ▾", "workspace-content")
+                self.reveal("Минимум: BBB-", "workspace-content")
                 self.capture("workspace-ratings")
                 self.tap_visible("Доход")
                 self.reveal("Пополнять резерв", "workspace-content")
@@ -590,6 +595,7 @@ def exercise_checks(device, read_tree) -> dict:
         stages = (
             ("spatial-renderer", probe.spatial),
             ("business-26-cases", probe.business),
+            ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),
             ("workspace-interactions", probe.workspace),
             ("profile-preflight", probe.profile_preflight),
@@ -609,8 +615,9 @@ def exercise_checks(device, read_tree) -> dict:
             "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
-        return {"ui_suite": "spectrum-3d-100-v1", "business_case_count": len(probe.business_cases),
-                "business_cases": probe.business_cases}
+        return {"ui_suite": "spectrum-3d-100-v2", "business_case_count": len(probe.business_cases),
+                "business_cases": probe.business_cases, "portfolio_case_count": len(probe.portfolio_cases),
+                "portfolio_cases": probe.portfolio_cases}
     finally:
         from profile_snapshot import restore_device_settings
 

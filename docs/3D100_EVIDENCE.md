@@ -7,13 +7,16 @@
 
 ## Подтверждённое состояние этого среза
 
-- Серверные проверки текущего исходного среза: **779 pytest-тестов и 305 под-тестов** локально; зависимости для разработки отделены от production.
-- Проверки Android/релизных Python-сценариев: **404 теста**, один прежний SDK smoke пропущен локально; отдельно **29** проверок installation evidence, **11** проверок native alignment и **7** проверок геометрии/материалов.
-- В каталоге **90 GLB**, **2 376 648 байт**. Генератор воспроизводит каталог локально; Windows-проверка нового среза ещё ожидается.
-- Предыдущий локальный Android-срез `985819884169e0f28d7554930ba82b748961b10c`: debug/preview/release, оба lint и **16 JVM-тестов** прошли. Следующий срез содержит дополнительные проверки материала, направляющих, точных дат и календаря; результаты полного прогона будут записаны отдельно.
-- GitHub Android CI прежнего среза прошёл сборку и lint, затем остановился **до эмуляторов** на сравнении Windows short/long path в тесте. Исправлены ожидания теста; ограничения доверенных путей сохранены.
-- Новый код ещё не имеет подтверждённых кадров 3D на API 35/36. Подготовлены реальные 52 сочетания бизнес-сценария и шрифта на каждую API, отдельные проверки ввода, отмены Back, системной анимации, температуры и длительной прокрутки.
-- Отчёт публикации версии 35 обязан подтвердить фактические **16 КБ** на API 35, все установочные/обновляющие сценарии и digest установленного APK. Старый отчёт версии 34 не подходит для новой публикации.
+- Ветка реализации: **0.11.0 / 35**, [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880). Установленной линией остаётся **0.10.0 / 34** до отдельной проверки выпуска и канала.
+- Последний завершённый GitHub Android прогон [`4e23256`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/4e23256206e8a170fde8a0f41e14ac4f9b88e661) прошёл debug/preview/release, JVM, lint и 11 native-alignment тестов на Windows. Он остановился **до эмулятора** на окончаниях строк generated catalogue. Все 90 GLB совпали побайтно. [Android CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39066830616).
+- Sonar этого же точного SHA завершился успешно. [Backend CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39066830597) прошёл 779 тестов и остановился на незакрытом SQLite-файле одного теста в Windows. Закрытие соединений исправлено; production зависимости сохранены.
+- Завершённый локальный серверный срез: **811 pytest-тестов и 337 под-тестов**; после точечного Windows-исправления дополнительно прошли 28 затронутых тестов и 5 под-тестов. Это не результат нового GitHub SHA.
+- Проверки Android/релизных Python-сценариев: **427 тестов**, один прежний SDK smoke пропущен локально; отдельный запуск installation evidence — **31 тест и 55 под-тестов**. Все 11 native-alignment тестов прошли также в Windows CI предыдущего SHA.
+- В каталоге **90 GLB**, **2 376 648 байт**. **8** проверок mesh/материалов, включая настоящий Git checkout с core.autocrlf=true, прошли локально. `.gitattributes` сохраняет canonical LF для catalogue и бинарные GLB; byte-for-byte gate не ослаблен.
+- Финальный локальный Android-срез с исправлениями выбора, контекстных действий и неизвестного исхода отправки прошёл **28 JVM-тестов**, сборку debug APK, сборку отдельного UI-driver и lint debug за **3 минуты 13 секунд**. Проверены неизменные SHA256 всех 313 файлов снимка сборки. Ранее все три APK и lint debug/preview прошли на предыдущем локальном срезе; финальные preview/release остаются обязательной проверкой нового GitHub SHA.
+- Подготовлены **52 business и 14 portfolio сочетаний сценария и шрифта на каждую API**. Они проверяют production-компоненты, настоящие нажатия/ввод/GET/переходы, включая события, досье, историю, OHLC, календарь, географию и сохранение оформления. Написанный handler ещё не обозначает успешный запуск на Android.
+- Receipt `spectrum-3d-100-v2` требует точные выполненные case/font IDs и SHA256 установленного debug APK. Новая публикация не принимает прежний v1 receipt или отчёт версии 34.
+- Для API 35 требуется **getconf PAGE_SIZE=16384** в официальном x86_64 ps16k-образе; для API 36 — **4096**. x86_64 ps16k — официальная среда проверки поведения 16 КБ, а не доказательство запуска на физическом ARM-устройстве с 16-КБ ядром.
 
 Точный SHA, GitHub checks, APK, сервер и канал сверяются в [PLAN_STATUS](PLAN_STATUS.md).
 Физический TalkBack, ощущение тактильного отклика, нагрев и расход батареи не подтверждаются по эмулятору.
@@ -29,15 +32,16 @@
 
 **Единые материалы.** Настоящие меши с керамикой, стеклом и металлом, согласованные состояния.
 
-Код: [SpatialMaterial.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialMaterial.kt), [SpatialRenderer.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialRenderer.kt), [generate_spectrum_meshes.py](../tools/generate_spectrum_meshes.py), [catalogue.json](../app/src/main/assets/spectrum3d/catalogue.json).
+Код: [SpatialMaterial.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialMaterial.kt), [SpatialRenderer.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialRenderer.kt), [generate_spectrum_meshes.py](../tools/generate_spectrum_meshes.py), [catalogue.json](../app/src/main/assets/spectrum3d/catalogue.json), [.gitattributes](../.gitattributes).
 
 Проверки:
 
 - [test_spectrum_meshes.py](../tools/test_spectrum_meshes.py) — `MeshCatalogueTest.test_three_actual_pbr_families_preserve_native_readability_and_lod_identity`.
 - [SpatialMaterialTest.kt](../app/src/test/java/ru/omnicio/app/ui/spatial/SpatialMaterialTest.kt).
 - [spatial_ui_probe.py](../.github/scripts/spatial_ui_probe.py).
+- [test_spectrum_meshes.py](../tools/test_spectrum_meshes.py) — `MeshCatalogueTest.test_windows_git_checkout_preserves_generated_catalogue_and_glb_bytes`.
 
-**3D-ядро:** Три настоящих PBR-пресета: керамика, металл, диэлектрическое покрытие KHR_materials_clearcoat. Все поверхности непрозрачны; рефракция не заявлена. GLB-проверки прошли; визуальный результат и новая JVM-проверка ожидают CI.
+**3D-ядро:** Три настоящих PBR-пресета: керамика, металл, диэлектрическое покрытие KHR_materials_clearcoat. Поверхности непрозрачны; рефракция не заявлена. 8 локальных mesh-проверок включают реальный Git checkout с core.autocrlf=true; 90 GLB совпали в предыдущем Windows CI, LF каталога закреплён .gitattributes. Новый полный runtime и растровый контраст ожидают CI.
 
 ## 3D002
 
@@ -96,15 +100,18 @@
 
 **Управление.** Кнопки, переключатели и поля объёмны; курсор, IME и выделение нативные.
 
-Код: [SpectrumDesignSystem.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt), [SpectrumSelectionControls.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt), [SpectrumTextButton.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt), [SpectrumTextField.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt), [SpectrumRangeSlider.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt), [SpatialComponents.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt).
+Код: [SpectrumDesignSystem.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt), [SpectrumSelectionControls.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt), [SpectrumTextButton.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt), [SpectrumTextField.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt), [SpectrumRangeSlider.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt), [SpatialComponents.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt), [SpectrumAlertDialog.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAlertDialog.kt), [BrokerInstrumentActions.kt](../app/src/main/java/ru/omnicio/app/ui/instruments/BrokerInstrumentActions.kt), [StrategyWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/StrategyWorkspaceScreen.kt), [NotificationDeliveryDraft.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/NotificationDeliveryDraft.kt), [ObservationSummary.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ObservationSummary.kt), [PlaceholderTabScreen.kt](../app/src/main/java/ru/omnicio/app/ui/PlaceholderTabScreen.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt).
 
 Проверки:
 
 - [spatial_ui_probe.py](../.github/scripts/spatial_ui_probe.py).
 - [native_input_evidence.py](../.github/scripts/native_input_evidence.py).
 - [test_native_input_evidence.py](../.github/scripts/tests/test_native_input_evidence.py).
+- [portfolio_preferences_probe.py](../.github/scripts/portfolio_preferences_probe.py).
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py).
+- [test_portfolio_controls_evidence.py](../.github/scripts/tests/test_portfolio_controls_evidence.py).
 
-**3D-ядро:** Меши оформляют нативные кнопки, переключатели и поля; IME, фокус, курсор и выделение остаются Android. Parser guards прошли; действующие click/toggle/caret сценарии ещё ожидают эмулятор.
+**3D-ядро:** Кнопки, поля, одиночный/двойной slider, переключатели, диалоги и badges оформлены настоящими мешами; последние Material3-вызовы заменены Spectrum alias. Декоративные Expand/Back/Forward стали GLB; смысловые стрелки в тексте сохранены. IME, focus/caret, selection, роли и значения остаются нативными Android. 48dp/font200/control runtime включён, ещё не доказан эмулятором.
 
 ## 3D007
 
@@ -125,14 +132,17 @@
 
 **Состояния.** Loading, empty, offline, error и update соответствуют фактическому состоянию.
 
-Код: [SpectrumLoadingIndicator.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumLoadingIndicator.kt), [SpectrumUpdateVisuals.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumUpdateVisuals.kt), [RequiredUpdateScreen.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/RequiredUpdateScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt).
+Код: [SpectrumLoadingIndicator.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumLoadingIndicator.kt), [SpectrumUpdateVisuals.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumUpdateVisuals.kt), [RequiredUpdateScreen.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/RequiredUpdateScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [PortfolioProbeTransport.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeTransport.kt).
 
 Проверки:
 
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py).
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py).
+- [portfolio_ui_probe.py](../.github/scripts/portfolio_ui_probe.py).
+- [chat_recovery_ui_probe.py](../.github/scripts/chat_recovery_ui_probe.py).
+- [test_chat_recovery_ui_probe.py](../.github/scripts/tests/test_chat_recovery_ui_probe.py).
 
-**3D-ядро:** Loading/empty/partial/error/update связаны с фактическим client state. 26 сценариев × 2 шрифта исполняют реальные production-компоненты с явно синтетическим transport; выполнение на эмуляторе пока не подтверждено.
+**3D-ядро:** Loading/empty/partial/error/update и неопределённый исход отправки связаны с фактическим client state. 52 business + 14 portfolio case/font используют production-компоненты и явно синтетические transports без network fallback. Existing assistant/ready проверяет потерянный ответ после одного принятого POST и GET того же UUID; native disabled Send проверяется после показанной ошибки. Фактический runtime ещё ожидается.
 
 ## 3D009
 
@@ -186,7 +196,7 @@
 
 **3D-ядро:** Основной portfolio row/detail использует SharedTransitionLayout и один SpatialObject key; renderer передаёт одну entity/material lease. Другие отдельные окна не объявлены бесшовным shared-переходом. Точный переход пока не доказан runtime-кадрами.
 
-**Android:** JVM identity passed publish-2. SpatialObject получает одинаковый accountId:UID в строке и встроенных деталях; передача entity и отмена жеста требуют отдельного renderer/device evidence.
+**Интерфейс:** JVM identity passed publish-2. SpatialObject получает одинаковый accountId:UID в строке и встроенных деталях; передача entity и отмена жеста требуют отдельного renderer/device evidence.
 
 ## 3D013
 
@@ -205,21 +215,25 @@
 
 **Контекстные действия.** Доступная большому пальцу панель: сравнение, события, риски.
 
-Код: [InstrumentDetailsScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDetailsScreen.kt), [AssetComparisonScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AssetComparisonScreen.kt).
+Код: [InstrumentDetailsScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDetailsScreen.kt), [AssetComparisonScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AssetComparisonScreen.kt), [InstrumentContextActions.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentContextActions.kt), [PortfolioProbeData.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeData.kt), [PortfolioProbeTransport.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeTransport.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. Нижняя контекстная панель открывает исследование, события, риски; сравнение доступно из выбора 2–3 активов. Навигация сохраняет UID/account.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
+
+**Интерфейс:** Рабочая нижняя кнопка открывает SpatialWindow panel: сравнение с 1–2 другими актуальными UID/account на существующем AssetComparisonDialog, события/отчётность того же UID и реальные /workspace/risks?currency=... с фильтром concentrations/events по instrument_uids. Неизвестные источники не названы безопасными; доля группы подписана как групповая. Брокерская ссылка сохранена внутри панели. Runtime assertions добавляются в прежний dossier/ready; emulator pass нового среза ещё не получен.
 
 ## 3D015
 
 **Общий поиск.** Счета, активы, выплаты, разделы, исследования и настройки.
 
-Код: [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt).
+Код: [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [PortfolioProbeTransport.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeTransport.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. DiscoveryResults/DiscoverySelection: счета, активы, выплаты, архив, текущие исследования, страницы/настройки, watchlist. Сохраняются ID и запрос, не устаревший JSONObject.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_discovery`.
+
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Настоящий ввод запроса и переходы к точным account:UID, выплате, одной карточке исследования, зашифрованному архиву и watchlist. Источники запрашивает production DI; fixture не вызывает сеть. Поиск всех страниц и всех настроек отдельно не проверен.
 
 ## 3D016
 
@@ -227,9 +241,11 @@
 
 Код: [PortfolioComponents.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioComponents.kt), [PortfolioQuickPreview.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioQuickPreview.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. PositionLine long press и обычная Кратко открывают одну шторку SpatialWindow; ключ выбранной позиции переживает rotation.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. PositionLine long press и обычная Кратко открывают одну шторку SpatialWindow; ключ выбранной позиции переживает rotation.
 
 ## 3D017
 
@@ -241,13 +257,13 @@
 
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py) — `dashboards/home (smoke only)`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. HomeScreen различает порог, загрузку, ошибку, новые/неизменившиеся реальные значения по fingerprint. Smoke не проверяет все ответы брокера.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. HomeScreen различает порог, загрузку, ошибку, новые/неизменившиеся реальные значения по fingerprint. Smoke не проверяет все ответы брокера.
 
 ## 3D018
 
 **Адаптация окна.** Фокус и выбранные данные сохраняются при повороте и изменении окна.
 
-Код: [SpectrumTextField.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [FrameInstrumentation.java](../ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java), [PortfolioScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioScreen.kt), [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [AppearanceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt).
+Код: [SpectrumTextField.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [FrameInstrumentation.java](../ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java), [PortfolioScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioScreen.kt), [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [AppearanceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt), [PersonalWorkspaceScreens.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [AccountAnalytics.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountAnalytics.kt), [SpectrumAlertDialog.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAlertDialog.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt).
 
 Проверки:
 
@@ -257,10 +273,14 @@
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py).
 - [native_input_evidence.py](../.github/scripts/native_input_evidence.py) — `rotate_focused_draft`.
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `assistant/ready font=1.0,2.0`.
+- [portfolio_preferences_probe.py](../.github/scripts/portfolio_preferences_probe.py) — `exercise_appearance`.
+- [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `restoredPaymentIdentityCannotMatchAnotherUserAccountOrCalendarEvent`.
 
 **3D-ядро:** Сохранение фокуса/UTF-16 caret и черновика проверяется реальным поворотом Activity на обоих шрифтах; отдельный renderer case сохраняет input/toggle/counter. Parser прошёл, runtime ещё нет; все варианты split-screen не заявлены.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Нативный ввод/курсор/фокус и saveable ID/date/draft. Runner проверяет rotation несохранённого Assistant draft; это не доказательство всех диалогов, split screen и всех сочетаний IME.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Assistant проверяет несохранённый native draft, focus/caret и rotation. Appearance проверяет rotation предпросмотра, cancel, apply и process restart. Root Goals/Devices теперь сохраняют ID выбранной записи; GoalEditor сохраняет поля/request_id и не превращает недоступную существующую цель в новую. Отдельного runtime Goals/Devices, split screen и всех IME нет. AccountPayments сохраняет только ключ user/account/UID/kind/date/recordDate, после rotation разрешает запись из текущего ответа; стоимость не входит в идентификатор. Отсутствующий/неоднозначный результат открывает явное состояние вместо другой выплаты. Детали используют SpectrumAlertDialog/SpatialWindow. Новый JVM regression ещё ожидает следующую immutable сборку; отдельного payment emulator assertion пока нет.
+
+**Сквозная проверка:** WorkspaceTextInput использует общий SpectrumTextField с нативным фокусом, курсором и сохранением выбора при повороте. Goals/Devices сохраняют ID, редактор цели — поля и request_id. Исчезнувшая цель не превращается в новую. Отдельного пройденного runtime создания/редактирования цели пока нет.
 
 ## 3D019
 
@@ -268,19 +288,23 @@
 
 Код: [PersonalWorkspaceScreens.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt), [WorkspaceUi.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceUi.kt), [MainActivity.kt](../app/src/main/java/ru/omnicio/app/MainActivity.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. Root: recent route cards и encrypted navigation; мои экраны передают UID/account/operation/date interval. Отдельной проверки стека от этого scope нет.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. Root: recent route cards и encrypted navigation; мои экраны передают UID/account/operation/date interval. Отдельной проверки стека от этого scope нет.
 
 ## 3D020
 
 **Исследования.** Название, актив, период, источник, заметка и явное устаревание при открытии.
 
-Код: [ResearchLibraryScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt), [PersonalWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PersonalWorkspaceStore.kt), [EncryptedWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/EncryptedWorkspaceStore.kt).
+Код: [ResearchLibraryScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt), [PersonalWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PersonalWorkspaceStore.kt), [EncryptedWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/EncryptedWorkspaceStore.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. SaveResearchButton/ArchiveContent: название, UID, период, источник, время, заметка, сохранённый payload и явная давность. Архив не выдаётся за текущую цену.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_discovery`.
+
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Discovery открывает реально зашифрованный seed-архив с периодом, источником, временем и заметкой. Запись и чтение выполняет PersonalWorkspaceStore; короткая запись живёт до своего завершения, без постоянного scope/Activity retention, logout блокирует её через encrypted store. Runtime сценарий чтения seed не доказывает создание нового архива или запись при process death.
 
 ## 3D021
 
@@ -295,7 +319,7 @@
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `DashboardApiTests::test_recorded_history_is_user_and_currency_scoped`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_other_user_and_reconnected_broker_do_not_read_previous_snapshot`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. InteractiveBalance вызывает root RUB→USD→EUR с реальной оценкой брокера; три валютных ответа smoke ещё не проверяет.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. InteractiveBalance вызывает root RUB→USD→EUR с реальной оценкой брокера; три валютных ответа smoke ещё не проверяет.
 
 **Сервер:** Брокерская оценка и снимки разделены по пользователю, подключению и RUB/USD/EUR. Валюта не пересчитывается выдуманным курсом; сам жест переключения проверяется на Android.
 
@@ -305,9 +329,13 @@
 
 Код: [HomeScreen.kt](../app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. InteractiveBalance показывает только выбранную уже скрытую сумму на время удержания, сбрасывает reveal при release/cancel, не меняет privacy preference.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. InteractiveBalance показывает только выбранную уже скрытую сумму на время удержания, сбрасывает reveal при release/cancel, не меняет privacy preference.
+
+**Сервер:** Android: временное раскрытие одной суммы до отпускания. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D023
 
@@ -322,7 +350,7 @@
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_bond_missing_accrued_not_invented`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_futures_are_not_valued_like_shares`.
 
-**Android:** Отдельного runtime-case пока нет. CapitalComposition: каждое наблюдаемое вложение попадает ровно в одну группу; частичная блокировка честно обозначает ограниченную позицию целиком, не вымышленную доступную к выводу сумму.
+**Интерфейс:** Отдельного runtime-case пока нет. CapitalComposition: каждое наблюдаемое вложение попадает ровно в одну группу; частичная блокировка честно обозначает ограниченную позицию целиком, не вымышленную доступную к выводу сумму.
 
 **Сервер:** read_account/normalize_position и normalize_snapshot сохраняют реальные денежные остатки, блокировки и неизвестную оценку. GetPositions сам по себе не доказывает доступную к выводу сумму.
 
@@ -338,7 +366,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_attribution_does_not_invent_unobservable_fx_or_incomplete_flow_remainders`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_operation_collection_rejects_conflicting_source_rows_without_replacing_snapshot`.
 
-**Android:** Отдельного runtime-case пока нет. HomeAttribution: подтверждённые opening/closing/external flows/residual. FX явно неизвестен, если его не разложил источник; остаток не называется прибылью.
+**Интерфейс:** Отдельного runtime-case пока нет. HomeAttribution: подтверждённые opening/closing/external flows/residual. FX явно неизвестен, если его не разложил источник; остаток не называется прибылью.
 
 **Сервер:** Точный остаток возможен только с двумя синхронными снимками всех счетов и полной историей внешних потоков в валюте оценки. FX-компонента неизвестна; residual не называется доходностью.
 
@@ -353,7 +381,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_structured_fact_versions_compare_actual_values_and_keep_unchanged`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_missing_risk_basis_is_not_recorded_as_resolved`.
 
-**Android:** Отдельного runtime-case пока нет. ChangesSinceVisit: encrypted baseline по visit ID/валюте; rotation сохраняет только ID. Отсутствующий прежний снимок не заменяется текущим.
+**Интерфейс:** Отдельного runtime-case пока нет. ChangesSinceVisit: encrypted baseline по visit ID/валюте; rotation сохраняет только ID. Отсутствующий прежний снимок не заменяется текущим.
 
 **Сервер:** Сервер хранит подтверждённые снимки, события и версии фактов; момент последнего визита и сравнение интерфейса с ним принадлежат Android. Эти тесты подтверждают факты/события, а не пользовательский lastVisit.
 
@@ -367,7 +395,9 @@
 
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py) — `dashboards/home (smoke only)`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. CapitalHero сворачивается, sticky header сохраняет сумму/валюту. Отдельного collapse/restore assertion пока нет.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. CapitalHero сворачивается, sticky header сохраняет сумму/валюту. Отдельного collapse/restore assertion пока нет.
+
+**Сервер:** Android: сворачивание главного блока с сохранением компактной суммы. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D027
 
@@ -375,25 +405,30 @@
 
 Код: [DashboardOrderEditor.kt](../app/src/main/java/ru/omnicio/app/ui/home/DashboardOrderEditor.kt), [HomeScreen.kt](../app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt), [PersonalWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PersonalWorkspaceStore.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. DashboardOrderEditor/moveDashboardCard: drag preview, save, cancel, undo, Up/Down; saveable draft. Финансовое внимание остаётся перед shortcuts/what-new.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. DashboardOrderEditor/moveDashboardCard: drag preview, save, cancel, undo, Up/Down; saveable draft. Финансовое внимание остаётся перед shortcuts/what-new.
+
+**Сервер:** Android: перестановка, предпросмотр, сохранение и отмена модулей главной. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D028
 
 **Лента выплат.** Объявленные, ожидаемые и полученные выплаты с подтверждением источника.
 
-Код: [HomeWorkspaceSections.kt](../app/src/main/java/ru/omnicio/app/ui/home/HomeWorkspaceSections.kt), [AccountAnalytics.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountAnalytics.kt), [volume_workspace.py](../backend/volume_workspace.py), [portfolio_details.py](../backend/portfolio_details.py).
+Код: [HomeWorkspaceSections.kt](../app/src/main/java/ru/omnicio/app/ui/home/HomeWorkspaceSections.kt), [AccountAnalytics.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountAnalytics.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [volume_workspace.py](../backend/volume_workspace.py), [portfolio_details.py](../backend/portfolio_details.py).
 
 Проверки:
 
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_discovery`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_collected_payouts_and_operation_links_keep_actual_status_account_and_source`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_dividend_past_record_date_not_guaranteed`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_unknown_payment_date_is_not_faked`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_cancelled_dividends_excluded`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_bond_record_date_used_for_entitlement`.
 
-**Android:** Отдельного runtime-case пока нет. HomePayoutTimeline/AccountPayments: настоящие announced/expected/received, дата/UID/account/source. Право на будущую выплату и налоги не домысливаются.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. PAYOUT поиск раскрывает настоящую production карточку выплаты и неизвестное право на реестр. Home/AccountPayments используют серверные announced/expected/received и account/UID/source; все состояния выплат отдельно на устройстве не проверены.
 
 **Сервер:** announced/expected/received различаются. Expected условен по текущему количеству до даты фиксации; право после фиксации не выводится из нынешнего владения. Received требует исполненной операции и её источника.
 
@@ -407,9 +442,11 @@
 
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_goal_uses_actual_same_currency_capital_and_reserved_amount`.
 
-**Android:** Отдельного runtime-case пока нет. HomeGoalProgress использует target/reserve/current от сервера; root goal editor. Будущая прибыль и возможность вывода не предполагаются.
+**Интерфейс:** Code/backend mapping: HomeGoalProgress использует target/reserve/current сервера. Root GoalsWorkspaceScreen сохраняет editingId/deletingId, GoalEditor сохраняет поля и request_id; удалённая/недоступная цель не подменяется созданием новой. Будущая прибыль и доступность вывода не предполагаются. Dedicated Goals rotation/save emulator flow отсутствует.
 
 **Сервер:** Прогресс цели использует наблюдаемый капитал за вычетом явно заданного резерва в той же валюте. Будущая прибыль и прогнозная дата достижения не добавляются.
+
+**Сквозная проверка:** Цель и удаление выбираются по сохранённому ID из свежего серверного ответа. Поля редактора и request_id сохраняются при повороте; повторное нажатие во время записи заблокировано. Серверные проверки целей приведены отдельно, проверка этих Android-переходов на эмуляторе ещё не выполнена.
 
 ## 3D030
 
@@ -417,9 +454,13 @@
 
 Код: [EncryptedWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/EncryptedWorkspaceStore.kt), [PersonalWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PersonalWorkspaceStore.kt), [MainActivity.kt](../app/src/main/java/ru/omnicio/app/MainActivity.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. AES-GCM Keystore, AtomicFile, user-hash, noBackup; deactivateUser блокирует новые записи после logout. Root offline snapshot показывает as-of; исследований чужого пользователя нет. Instrumented logout/process-death evidence отсутствует.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. AES-GCM Keystore, AtomicFile, user-hash, noBackup; deactivateUser блокирует новые записи после logout. Root offline snapshot показывает as-of; исследований чужого пользователя нет. Instrumented logout/process-death evidence отсутствует.
+
+**Сервер:** Android: зашифрованный локальный снимок, холодный запуск без сети и границы свежести. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D031
 
@@ -434,7 +475,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_verified_issuer_group_identity_is_used_without_ticker_guessing`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_incomplete_broker_positions_cannot_resolve_risk_or_claim_complete_scenario`.
 
-**Android:** JVM geometry passed publish-2. SpatialRing с реальными долями, ортопроекцией, angle hit и native legend→filter; точный pick/filter device-flow ещё не проверен.
+**Интерфейс:** JVM geometry passed publish-2. SpatialRing с реальными долями, ортопроекцией, angle hit и native legend→filter; точный pick/filter device-flow ещё не проверен.
 
 **Сервер:** Сервер отдаёт структуру с точными суммами, идентификаторами и покрытием. Нажатие на сегмент и фильтр позиций реализованы на Android; неизвестная оценка не заменяется нулём.
 
@@ -442,15 +483,16 @@
 
 **Компании и группы.** Агрегация по проверенным отношениям, без догадок по названию.
 
-Код: [VerifiedExposurePanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/VerifiedExposurePanel.kt), [PortfolioAssetBrowser.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioAssetBrowser.kt), [volume_state.py](../backend/volume_state.py), [volume_workspace.py](../backend/volume_workspace.py), [research_store.py](../backend/research_store.py), [credit_evidence.py](../backend/credit_evidence.py).
+Код: [VerifiedExposurePanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/VerifiedExposurePanel.kt), [PortfolioAssetBrowser.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioAssetBrowser.kt), [volume_state.py](../backend/volume_state.py), [volume_workspace.py](../backend/volume_workspace.py), [research_store.py](../backend/research_store.py), [credit_evidence.py](../backend/credit_evidence.py), [research_import.py](../backend/research_import.py), [RESEARCH_IMPORT.md](../backend/RESEARCH_IMPORT.md).
 
 Проверки:
 
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_verified_issuer_group_identity_is_used_without_ticker_guessing`.
+- [test_research_import.py](../backend/tests/test_research_import.py) — `test_operator_import_is_atomic_idempotent_and_preserves_users_and_first_availability`.
 
-**Android:** Отдельного runtime-case пока нет. VerifiedExposurePanel получает проверенные issuer/group IDs и source IDs. Группировка по названиям подписана отдельно и не выдаётся за подтверждённое владение.
+**Интерфейс:** Отдельного runtime-case пока нет. VerifiedExposurePanel получает проверенные issuer/group IDs и source IDs. Группировка по названиям подписана отдельно и не выдаётся за подтверждённое владение.
 
-**Сервер:** Агрегация компаний/групп использует проверенные issuer_identity с действительным Source, включая счета пользователя. Сходство названий или тикеров не создаёт связь; без источника часть остаётся неизвестной.
+**Сервер:** Агрегация компаний/групп использует проверенные issuer_identity с действительным Source, включая счета пользователя. Сходство названий или тикеров не создаёт связь; без источника часть остаётся неизвестной. Штатный CLI принимает уже проверенный оператором пакет, проверяет его до записи и применяет атомарно; наличие команды не подтверждает фактическое production-покрытие или автоматический сбор внешних документов.
 
 ## 3D033
 
@@ -463,33 +505,40 @@
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `equalValuationsSortByStableIdentityAndForeignCurrencyIsNotRankedAsRubles`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `selectedPositionResolvesTheCurrentAccountAndRefusesAmbiguousOrRemovedRows`.
 
-**Android:** JVM passed publish-2. Stable account:UID keys, animateItem и текущее разрешение объекта. Сам переход между группами ещё требует device capture.
+**Интерфейс:** JVM passed publish-2. Stable account:UID keys, animateItem и текущее разрешение объекта. Сам переход между группами ещё требует device capture.
+
+**Сервер:** Android: сохранение идентичности и отслеживаемое перемещение строк при перегруппировке. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D034
 
 **Сравнение.** 2–3 инструмента: сопоставимые единицы, периоды и свежесть.
 
-Код: [AssetComparisonScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AssetComparisonScreen.kt), [CommonPeriodComparison.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/CommonPeriodComparison.kt), [MarketModels.kt](../app/src/main/java/ru/omnicio/app/data/market/MarketModels.kt).
+Код: [AssetComparisonScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AssetComparisonScreen.kt), [CommonPeriodComparison.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/CommonPeriodComparison.kt), [MarketModels.kt](../app/src/main/java/ru/omnicio/app/data/market/MarketModels.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `comparisonUsesOnlySharedCompleteClosings`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `priceUnitsCurrenciesAndIntervalsMustBeVerifiedAndCompatible`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `unavailableOrInsufficientCommonObservationsNeverProduceAComparison`.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_discovery`.
 
-**Android:** JVM passed publish-2. 2–3 серии сравниваются только по общим полным закрытиям, одинаковым проверенным unit/currency/interval; недостаток/несовместимость блокируют результат. Полный UI flow пока без device pass.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. JVM совместимости и общих завершённых закрытий прошли publish-2. Discovery выбирает два разных UID с точным account:UID, открывает реальное сравнение. CommonPeriodComparison делает отдельные GET на одном периоде, валюта/единица/interval должны совпадать; обе начальные даты теперь Europe/Moscow. Фактические endpoint receipts появятся только после выполнения сценария.
+
+**Сервер:** Android: сравнение двух–трёх досье с показом валют, единиц, периодов и свежести; сами разделы досье описаны в пунктах 051–055. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D035
 
 **Все счета.** Один инструмент раскрывается по всем счетам пользователя.
 
-Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [ResearchLibraryScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt), [volume_market.py](../backend/volume_market.py), [volume_state.py](../backend/volume_state.py).
+Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [ResearchLibraryScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [volume_market.py](../backend/volume_market.py), [volume_state.py](../backend/volume_state.py).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `selectedPositionResolvesTheCurrentAccountAndRefusesAmbiguousOrRemovedRows`.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_discovery`.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
 
-**Android:** JVM identity passed publish-2. DossierHoldingsPanel и сохранённые/watch действия раскрывают все счета; нет произвольного first-account. Dossier API/device flow ещё не проверен.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Один UID существует на двух счетах. Watch открывает оба holding; dossier fact→issuer→позиция выбирает конкретный счёт B и проверяет destination(account,UID). JVM разрешения текущей позиции прошёл publish-2. Это не проверка всех брокерских типов счёта.
 
 **Сервер:** load_dossier возвращает holdings отдельно по account_id/account_name для instrument_uid. Суммы разных валют не объединяются. Отдельного backend-теста сценария одной бумаги на нескольких счетах в текущем наборе нет; экран подтверждается Android evidence.
 
@@ -499,9 +548,13 @@
 
 Код: [PortfolioQuickPreview.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioQuickPreview.kt), [PortfolioAssetBrowser.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioAssetBrowser.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt), [PersonalWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PersonalWorkspaceStore.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. WatchPositionAction/batch требуют reason/note и хранят UID. Причина видна в поиске; это ещё не подписка на автоматическую доставку событий.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_discovery`.
+
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Проверяется сохранённая причина наблюдения и переход к holdings на всех счетах. Добавление/изменение/удаление watch reason реализовано в production store; отдельного runtime записи причины пока нет.
+
+**Сервер:** Android: локальный список наблюдения с явно сохранённой причиной. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D037
 
@@ -509,9 +562,13 @@
 
 Код: [PortfolioAssetBrowser.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioAssetBrowser.kt), [PersonalWorkspaceStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PersonalWorkspaceStore.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. SavedPortfolioFilter: имя, query, account, class, sector, group/order, watch/exposure; явное применение и удаление.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. SavedPortfolioFilter: имя, query, account, class, sector, group/order, watch/exposure; явное применение и удаление.
+
+**Сервер:** Android: именованные фильтры, условия и группировки. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D038
 
@@ -523,7 +580,9 @@
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `equalValuationsSortByStableIdentityAndForeignCurrencyIsNotRankedAsRubles`.
 
-**Android:** JVM passed publish-2. Значения обновляются по стабильным ключам, frozen order меняется только явным действием. Чужая/неизвестная валюта не ранжируется как RUB. Refresh interaction pending.
+**Интерфейс:** JVM passed publish-2. Значения обновляются по стабильным ключам, frozen order меняется только явным действием. Чужая/неизвестная валюта не ранжируется как RUB. Refresh interaction pending.
+
+**Сервер:** Android: сохранение порядка читаемой таблицы до явного применения новой сортировки. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D039
 
@@ -531,9 +590,13 @@
 
 Код: [PortfolioAssetBrowser.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioAssetBrowser.kt), [AssetComparisonScreen.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AssetComparisonScreen.kt), [DiscoveryWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. Tray показывает состав/количество, суммы раздельно по валютам, missing valuations/shares; сохранение исследования, watch-reason и compare 2–3. Межвалютной суммы нет.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. Tray показывает состав/количество, суммы раздельно по валютам, missing valuations/shares; сохранение исследования, watch-reason и compare 2–3. Межвалютной суммы нет.
+
+**Сервер:** Android: множественный выбор, итог сопоставимых сумм и действия исследования/сравнения. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D040
 
@@ -546,7 +609,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_collected_payouts_and_operation_links_keep_actual_status_account_and_source`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_operation_collection_rejects_conflicting_source_rows_without_replacing_snapshot`.
 
-**Android:** Отдельного runtime-case пока нет. Exact operationId/date/account, автопоиск по страницам до подтверждённого ID, ограничение10k с объяснением неполноты; переход в UID-позицию/историю. Не поиск похожей строки.
+**Интерфейс:** Отдельного runtime-case пока нет. Exact operationId/date/account, автопоиск по страницам до подтверждённого ID, ограничение10k с объяснением неполноты; переход в UID-позицию/историю. Не поиск похожей строки.
 
 **Сервер:** Связь операции со счётом и позицией идёт по брокерскому instrumentUid. Чужой пользователь/счёт не получает запись; закрытая позиция не становится текущим владением. Противоречащий дубль не проходит сбор.
 
@@ -554,18 +617,19 @@
 
 **История в 3D.** Реальные меши столбиков, единая глубина, нули, отрицательные значения и пропуски.
 
-Код: [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [HistoryBars.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryBars.kt), [SpatialComponents.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt), [SpatialChartGuides.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt), [portfolio_details.py](../backend/portfolio_details.py), [volume_contract.py](../backend/volume_contract.py).
+Код: [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [HistoryBars.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryBars.kt), [SpatialComponents.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt), [SpatialChartGuides.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [portfolio_details.py](../backend/portfolio_details.py), [volume_contract.py](../backend/volume_contract.py).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `dailyHistoryKeepsAnUnobservedDateSelectableWithoutInventingZero`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `monthlyBalanceUsesTheLastObservationRatherThanAddingBalances`.
 - [SpatialChartGeometryTest.kt](../app/src/test/java/ru/omnicio/app/ui/spatial/SpatialChartGeometryTest.kt).
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_history`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `DashboardApiTests::test_analytics_does_not_invent_prior_history`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `DashboardApiTests::test_recorded_history_is_user_and_currency_scoped`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `ValueTests::test_missing_value_is_not_zero`.
 
-**Android:** Финансовые JVM/initial geometry passed publish-2. Mesh bars, реальные нули/отрицательные значения, null gaps. Последний Canvas удалён; новые mesh guides ожидают следующую compile/runtime проверку.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. 3D mesh bars/guides, реальные нули/отрицательные значения, null gaps. History ready выбирает zero/negative/missing через реальные bounds; partial отличает точный отсутствующий Instant от другого дневного значения. Финансовые/initial geometry JVM прошли publish-2; новые проверки среза подтверждаются отдельной immutable сборкой.
 
 **Сервер:** История содержит реальные сохранённые наблюдения стоимости счёта, отдельно от котировочных свечей. Меши, глубина, отрицательные значения и выбор столбика проверяются на Android.
 
@@ -579,7 +643,9 @@
 
 - [SpatialChartGeometryTest.kt](../app/src/test/java/ru/omnicio/app/ui/spatial/SpatialChartGeometryTest.kt).
 
-**Android:** JVM geometry passed publish-2. Выбор меняет только Z/material, не финансовую высоту. Native/renderer device evidence остаётся у renderer agent.
+**Интерфейс:** JVM geometry passed publish-2. Выбор меняет только Z/material, не финансовую высоту. Native/renderer device evidence остаётся у renderer agent.
+
+**Сервер:** Android: выделение столбика по оси Z без изменения денежной высоты. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D043
 
@@ -591,8 +657,11 @@
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `aSelectedCalendarDateRemainsInsideItsDayWeekAndMonthBuckets`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `anEvidenceInstantResolvesTheObservationAndNeverAnotherBalanceOnTheSameDay`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_history`.
 
-**Android:** Date-bucket JVM passed publish-2; exact-Instant assertion NEW/pending. Выбранная дата сохраняется при day/week/month; точное исходное Instant отдельно в таблице, не последнее наблюдение суток.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Saveable selected date и exact source Instant отделены от aggregation day/week/month. Source history_resolution передаётся неизменным; JVM bucket и exact-observation проверки перечислены отдельно. Новый runtime доказывает дневной выбор/точный Instant, но не все переключения группировки.
+
+**Сервер:** Android: сохранение выбранной даты при смене периода. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D044
 
@@ -605,7 +674,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_attribution_uses_synchronized_boundaries_and_excludes_duplicate_external_flows`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_attribution_does_not_invent_unobservable_fx_or_incomplete_flow_remainders`.
 
-**Android:** Отдельного runtime-case пока нет. AccountPeriodComparison запрашивает оба настоящих интервала; opening/closing/change/flows раздельны. Изменение капитала не называется доходностью.
+**Интерфейс:** Отдельного runtime-case пока нет. AccountPeriodComparison запрашивает оба настоящих интервала; opening/closing/change/flows раздельны. Изменение капитала не называется доходностью.
 
 **Сервер:** Сопоставляются две реальные оценки. Изменение капитала включает внешние потоки и переоценку; отсутствующая синхронная граница не заменяется предположением.
 
@@ -613,14 +682,17 @@
 
 **Диапазон.** Два ограничителя и точные даты; запрос после завершения выбора.
 
-Код: [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [HistoryBars.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryBars.kt), [AccountAnalytics.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountAnalytics.kt), [AccountDataState.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt), [SpectrumRangeSlider.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt).
+Код: [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [HistoryBars.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryBars.kt), [AccountAnalytics.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountAnalytics.kt), [AccountDataState.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt), [SpectrumRangeSlider.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `restoredRangeDatesStayInsideTheSelectedBucketsAfterGroupingChanges`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `rangeDatesOutsideTheReceivedSeriesClampWithoutInventingObservations`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_history`.
 
-**Android:** NEW JVM assertions pending. Два native thumb с mesh, saveable drafts точных дат, календарь, onFinish→settled interval fetch. Drag-кадры не делают сетевые запросы. Двухручечный gesture/accessibility runtime-case ещё отсутствует.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Два native RangeSlider thumb с настоящими mesh, точные draft даты. Скрипт двигает обе ручки по наблюдаемым native bounds, считывает изменённые даты и требует точный analytics GET после показа статистики. Drag не заявляется доказанным до emulator pass. Сохранение диапазона при группировке покрыто отдельными JVM assertions.
+
+**Сервер:** Android: два ограничителя диапазона и отправка запроса после завершения выбора. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D046
 
@@ -631,8 +703,11 @@
 Проверки:
 
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py) — `workspace/ux100 history selection (not magnifier gesture)`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_quotes`.
 
-**Android:** Runtime-сценарий написан только для обычного выбора history; подтверждённого device pass пока нет. History magnifier сохраняет исходную шкалу; OHLC magnifier имеет явно подписанную локальную шкалу цены и собственные min/max. Точные числа и кнопочные альтернативы доступны; отдельный magnifier runtime-case ещё нужен.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Quotes hour даёт 40 реальных строк синтетического источника, открывает настоящую лупу и проверяет явную локальную шкалу и точный OHLC. History magnifier сохраняет общую исходную шкалу; отдельного его runtime раскрытия нет.
+
+**Сервер:** Android: лупа и крупное отображение плотного графика. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D047
 
@@ -644,10 +719,11 @@
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `dailyHistoryKeepsAnUnobservedDateSelectableWithoutInventingZero`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `conflictingValuesAtTheSameInstantStopHistoryEvenWithDifferentOffsets`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_history`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `DashboardApiTests::test_analytics_does_not_invent_prior_history`.
 - [test_portfolio_details.py](../backend/tests/test_portfolio_details.py) — `DashboardApiTests::test_recorded_history_is_user_and_currency_scoped`.
 
-**Android:** JVM passed publish-2. Пропущенные даты остаются null/selectable с явной неизвестностью; zero только реальный. Конфликт значений одного Instant останавливает серию.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. History выбирает календарный пропуск: «Нет наблюдений», без подстановки нуля. Другие выбранные интервалы содержат настоящий ноль/отрицательное значение. partial требует отсутствие точного Instant, не заменяя его позже полученным балансом того же дня.
 
 **Сервер:** Сервер не интерполирует отсутствующую историю и не записывает пропуск как ноль. Причина конкретного отсутствия может быть неизвестна; выбираемая дата и пояснение проверяются на Android.
 
@@ -655,15 +731,16 @@
 
 **Свечи.** Настоящие OHLC брокера, отдельно от истории баланса, с правильными единицами.
 
-Код: [InstrumentQuotesPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt), [MarketModels.kt](../app/src/main/java/ru/omnicio/app/data/market/MarketModels.kt), [WorkspaceClient.kt](../app/src/main/java/ru/omnicio/app/data/market/WorkspaceClient.kt), [volume_market.py](../backend/volume_market.py), [volume_contract.py](../backend/volume_contract.py).
+Код: [InstrumentQuotesPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt), [MarketModels.kt](../app/src/main/java/ru/omnicio/app/data/market/MarketModels.kt), [WorkspaceClient.kt](../app/src/main/java/ru/omnicio/app/data/market/WorkspaceClient.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [PortfolioProbeTransport.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeTransport.kt), [volume_market.py](../backend/volume_market.py), [volume_contract.py](../backend/volume_contract.py).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `priceUnitsCurrenciesAndIntervalsMustBeVerifiedAndCompatible`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `unavailableOrInsufficientCommonObservationsNeverProduceAComparison`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_quotes`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_actual_ohlc_units_missing_intervals_and_conflict_validation`.
 
-**Android:** JVM passed publish-2. Реальные candles API, exact decimals O/H/L/C/time/volume/source, quote-currency/%номинала/futures points; native таблица полной точности. Реальных authenticated broker/device OHLC evidence пока нет.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Production GetCandles read path с точными start/end/interval, day/week/month/hour, bond %номинала без валютной подмены. Первая week ошибка503 сохраняет старый явно подписанный период; повторный GET200 даёт новую выборку. Exact decimals/volume/incomplete свеча проверяются по native тексту. Реальный брокер в fixture не вызывается.
 
 **Сервер:** GetCandles содержит настоящие OHLC, volume_lots и is_complete. Облигации измеряются в процентах номинала, фьючерсы — в пунктах; это не история баланса. Пустые интервалы не заполняются.
 
@@ -679,7 +756,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_news_does_not_infer_original_or_same_event_from_equal_headlines`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_collected_payouts_and_operation_links_keep_actual_status_account_and_source`.
 
-**Android:** Отдельного runtime-case пока нет. Выбираемые реальные даты/источники events; совпадение события и цены не выдается за причинность. Нет придуманных дат или исполнения.
+**Интерфейс:** Отдельного runtime-case пока нет. Выбираемые реальные даты/источники events; совпадение события и цены не выдается за причинность. Нет придуманных дат или исполнения.
 
 **Сервер:** Маркеры используют фактические даты выплат, планов отчётности и новостей со своими источниками. Совпадение даты с движением цены не доказывает причинное влияние.
 
@@ -693,8 +770,13 @@
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `anEvidenceInstantResolvesTheObservationAndNeverAnotherBalanceOnTheSameDay`.
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py) — `workspace/ux100 history selection`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_history`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_quotes`.
+- [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `barAndTableSelectionShareTheExactClosingObservationWithoutSubstitutingMissingEvidence`.
 
-**Android:** Exact-Instant JVM NEW/pending. Таблица/bar и candle/table используют общий выбор; текущий runner выбирает дату/reset, но ещё не доказывает все двусторонние связи.
+**Интерфейс:** Производственный выбор столбика теперь связывает таблицу с точным closing observation выбранного интервала; выбор строки сохраняет собственный Instant при смене day/week/month. Явная отсутствующая AI-точка не подменяется closing balance, gap не получает числового выделения. JVM включает две разные записи одного дня, смену группировки, неизвестный Instant и пропуск; новый тест ожидает immutable run. Existing history/ready runtime расширяется обратным bar→table assertion, quotes уже связывает selected candle с native таблицей; emulator pass этого среза ещё не получен.
+
+**Сервер:** Android: двусторонний выбор одного фактического наблюдения в таблице и графике. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D051
 
@@ -704,11 +786,12 @@
 
 Проверки:
 
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_broker_fundamental_zero_is_absent_while_negative_value_is_real`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_report_calendar_uses_one_instrument_and_never_infers_publication`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_reviewed_rating_change_updates_risk_history_sources_and_coverage`.
 
-**Android:** Отдельного runtime-case пока нет. Общий UID/account для позиции, рейтингов, котировок, research, payouts/events. Объект заново разрешается в текущем снимке.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Одна новость открывает настоящий DossierFactSheet и сохраняет fact ID при переходе к issuer и holdings. Исходный UID общий для dossier/ratings/metrics/reports/news; отдельного UI cross-check всех секций между разными UID нет.
 
 **Сервер:** load_dossier соединяет паспорт, holdings и независимо обозначенные разделы источников. Тесты проверяют финансовые/рейтинговые/отчётные разделы; полнота данных зависит от брокера и проверенных записей, live-провайдеры ими не подтверждены.
 
@@ -716,29 +799,32 @@
 
 **Паспорт рейтинга.** Агентство, шкала, объект, дата и история; выпуск отличается от эмитента.
 
-Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [volume_market.py](../backend/volume_market.py), [volume_credit.py](../backend/volume_credit.py), [credit_evidence.py](../backend/credit_evidence.py), [research_store.py](../backend/research_store.py).
+Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierRatingsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierRatingsPanel.kt), [PortfolioProbeData.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeData.kt), [volume_market.py](../backend/volume_market.py), [volume_credit.py](../backend/volume_credit.py), [credit_evidence.py](../backend/credit_evidence.py), [research_store.py](../backend/research_store.py), [research_import.py](../backend/research_import.py), [RESEARCH_IMPORT.md](../backend/RESEARCH_IMPORT.md).
 
 Проверки:
 
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_reviewed_rating_change_updates_risk_history_sources_and_coverage`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_supported_national_rating_notations_are_kept_per_agency`.
+- [test_research_import.py](../backend/tests/test_research_import.py) — `test_operator_import_is_atomic_idempotent_and_preserves_users_and_first_availability`.
 
-**Android:** Отдельного runtime-case пока нет. DossierRatingsPanel/DossierRatingRecord: agency, scale, subject issue/issuer+ID, grade/status/outlook, sources/history. Отсутствие рейтинга не безопасность.
+**Интерфейс:** История читает реальное поле rating.source.published_at, сортирует по моменту публикации и для каждого источника сохраняет agency/scale/grade/subject_kind/subject_id/status/outlook. Выпуск и эмитент явно различаются. Raw reviewed Source.checked_at переводится в наблюдаемое время без выдуманной даты. Dossier fixture использует source-only даты и две реальные формы history issue/issuer; текущие UI assertions дополняются внутри прежнего case, emulator pass ещё не получен.
 
-**Сервер:** Рейтинг содержит агентство, национальную шкалу, объект, статус, даты и историю; выпуск не смешивается с эмитентом. Актуальное доказательство требует действующих reviewed records, включая отдельные шкалы НКР/НРА.
+**Сервер:** Рейтинг содержит агентство, национальную шкалу, объект, статус, даты и историю; выпуск не смешивается с эмитентом. Актуальное доказательство требует действующих reviewed records, включая отдельные шкалы НКР/НРА. Штатный CLI принимает уже проверенный оператором пакет, проверяет его до записи и применяет атомарно; наличие команды не подтверждает фактическое production-покрытие или автоматический сбор внешних документов.
 
 ## 3D053
 
 **Происхождение чисел.** Значимые показатели содержат источник, единицы, период и дату получения.
 
-Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [ResearchLibraryScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt), [volume_contract.py](../backend/volume_contract.py), [volume_market.py](../backend/volume_market.py), [portfolio_research.py](../backend/portfolio_research.py).
+Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [ResearchLibraryScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt), [SourceDataUi.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/SourceDataUi.kt), [volume_contract.py](../backend/volume_contract.py), [volume_market.py](../backend/volume_market.py), [portfolio_research.py](../backend/portfolio_research.py).
 
 Проверки:
 
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_broker_fundamental_zero_is_absent_while_negative_value_is_real`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_fundamental_conflicts_preserve_basis_and_do_not_turn_missing_zero_into_money`.
 
-**Android:** Отдельного runtime-case пока нет. DossierMetricsPanel/SourceProvenance раскрывают единицы, валюту, период и даты; broker_zero_means_unavailable не показан как ноль. Native quote values без округления.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. В досье нулевой sentinel источника отображается как отсутствие метрики. SourceProvenance показывает provider/method/observed/published/unit/subject; HTTPS URL открывается реальной кнопкой с URI guard и локальной ошибкой. Published report source URL попадает в observed receipt; реакция реального внешнего браузера этим не подтверждается.
 
 **Сервер:** Метрики сохраняют Source, валюту, единицы, период и дату получения. Официальный ноль GetAssetFundamentals означает отсутствие данных. Брокерские показатели не объявляются аудированной отчётностью.
 
@@ -746,14 +832,16 @@
 
 **Конфликты.** Различия определений, валют и периодов видимы без ложного объединения.
 
-Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [CommonPeriodComparison.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/CommonPeriodComparison.kt), [volume_market.py](../backend/volume_market.py), [volume_contract.py](../backend/volume_contract.py).
+Код: [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [CommonPeriodComparison.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/CommonPeriodComparison.kt), [DossierMetricConflicts.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierMetricConflicts.kt), [PortfolioProbeData.kt](../app/src/debug/java/ru/omnicio/app/PortfolioProbeData.kt), [volume_market.py](../backend/volume_market.py), [volume_contract.py](../backend/volume_contract.py).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `priceUnitsCurrenciesAndIntervalsMustBeVerifiedAndCompatible`.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
+- [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `aConflictOnlyInAnAdditionalFundamentalFieldRemainsVisibleAlongsideNamedMetrics`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_fundamental_conflicts_preserve_basis_and_do_not_turn_missing_zero_into_money`.
 
-**Android:** JVM units passed publish-2. DossierMetricConflicts показывает независимые values/period/source IDs, без ложного объединения. UI конфликтов ещё не device-verified.
+**Интерфейс:** Рендерер конфликтов читает точный backend observations[].value object + metrics[]: отдельные значения, unit, currency, period, source_id и причина несовместимости. Missing sentinel остаётся неизвестным. Fixture больше не подменяет контракт строкой: 12.5 RUB за2026-06-30 и8.25 USD за2025-06-30, неизвестная выручка null. Общий итог не синтезируется. Assertions входят в прежний dossier/ready; emulator pass этого среза ещё не получен. Дополнительные поля observations.value, отсутствующие среди metrics.id, также видимы: например конфликт только ebitdaTtm. Для них единицы явно не подтверждены, валюта наблюдения автоматически не применяется; null не становится нулём. Новый meaningful JVM сохранения такого расхождения добавлен и ожидает итоговой сборки.
 
 **Сервер:** Конфликтующие наблюдения остаются раздельными; сравнивается основание периода/валюты. Неизвестный ноль не превращается в денежный факт, записи другого assetUid исключаются.
 
@@ -761,60 +849,73 @@
 
 **Календарь отчётов.** Планы публикаций отличаются от уже полученных документов.
 
-Код: [DossierReportsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierReportsPanel.kt), [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [volume_market.py](../backend/volume_market.py), [research_store.py](../backend/research_store.py), [credit_evidence.py](../backend/credit_evidence.py).
+Код: [DossierReportsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierReportsPanel.kt), [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [SourceDataUi.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/SourceDataUi.kt), [volume_market.py](../backend/volume_market.py), [research_store.py](../backend/research_store.py), [credit_evidence.py](../backend/credit_evidence.py), [research_import.py](../backend/research_import.py), [RESEARCH_IMPORT.md](../backend/RESEARCH_IMPORT.md).
 
 Проверки:
 
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `reportPublicationRequiresASeparateDatedSourceAndHonorsAnExplicitUnconfirmedFlag`.
 - [WorkspaceFinancialSemanticsTest.kt](../app/src/test/java/ru/omnicio/app/ui/portfolio/WorkspaceFinancialSemanticsTest.kt) — `reportDatesUseMoscowCalendarForInstantsAndPreserveSourceCalendarDates`.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_report_calendar_uses_one_instrument_and_never_infers_publication`.
+- [test_research_import.py](../backend/tests/test_research_import.py) — `test_operator_import_is_atomic_idempotent_and_preserves_users_and_first_availability`.
+- [test_research_import.py](../backend/tests/test_research_import.py) — `test_import_rejects_invalid_bundle_before_any_fact_is_written`.
 
-**Android:** NEW JVM pending. Месяц/status/calendar, source period и created-time отдельно. Прошедшая объявленная дата не становится опубликованным отчётом; published требует отдельного датированного источника. Календарь по конкретному инструменту, не всем бумагам сразу.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Все даты/месяц и объявленные/опубликованные разделены. Прошедшее scheduled не становится published; published требует отдельный датированный source и период документа. Runtime проверяет источник и фильтры, JVM date/publication assertions перечислены отдельно. Календарь только конкретного инструмента.
 
-**Сервер:** GetAssetReports запрашивается с одним instrumentId. Прошедшая дата плана не подтверждает публикацию; published требует проверенного документа и датированного Source. Автоматического получения всех отчётов эмитентов не заявлено.
+**Сервер:** GetAssetReports запрашивается с одним instrumentId. Прошедшая дата плана не подтверждает публикацию; published требует проверенного документа и датированного Source. Автоматического получения всех отчётов эмитентов не заявлено. Штатный CLI принимает уже проверенный оператором пакет, проверяет его до записи и применяет атомарно; наличие команды не подтверждает фактическое production-покрытие или автоматический сбор внешних документов. Период, код валюты, названия и конечные числовые значения проверяются общим кодом; отдельные поля масштаба единиц и консолидации в прежней схеме Statement отсутствуют и требуют проверки оператором.
 
 ## 3D056
 
 **Новости.** Дедупликация события с различением первоисточника и повторов.
 
-Код: [DossierNewsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierNewsPanel.kt), [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [volume_news.py](../backend/volume_news.py), [volume_market.py](../backend/volume_market.py), [research_store.py](../backend/research_store.py).
+Код: [DossierNewsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierNewsPanel.kt), [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [volume_news.py](../backend/volume_news.py), [volume_market.py](../backend/volume_market.py), [research_store.py](../backend/research_store.py), [research_import.py](../backend/research_import.py), [RESEARCH_IMPORT.md](../backend/RESEARCH_IMPORT.md).
 
 Проверки:
 
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_news_does_not_infer_original_or_same_event_from_equal_headlines`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_reviewed_news_links_bind_exact_observations_and_expose_original_repost`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_news_review_rejects_missing_or_malformed_primary_source`.
+- [test_research_import.py](../backend/tests/test_research_import.py) — `test_operator_import_is_atomic_idempotent_and_preserves_users_and_first_availability`.
 
-**Android:** Отдельного runtime-case пока нет. Нет клиентского объединения headline. Backend verified-event/deduplication управляет группировкой; primary/repost требуют reviewed evidence; primary_sources отдельно. Непроверенная идентичность/роль явно неизвестна.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Две публикации с одинаковым заголовком сохраняют разные event IDs. Проверяются verified event, reviewed primary/repost, открытие точного первичного URL и явная неизвестность второй роли. Серверные проверки hash/point-in-time/news identity находятся в backend mapping.
 
-**Сервер:** Брокерский News не предоставляет первоисточник/репост/URL как доказательство. Роль и event identity назначаются только по reviewed записи, связанной с точным отпечатком публикации; иначе unknown. Равного заголовка для объединения недостаточно.
+**Сервер:** Брокерский News не предоставляет первоисточник/репост/URL как доказательство. Роль и event identity назначаются только по reviewed записи, связанной с точным отпечатком публикации; иначе unknown. Равного заголовка для объединения недостаточно. Штатный CLI принимает уже проверенный оператором пакет, проверяет его до записи и применяет атомарно; наличие команды не подтверждает фактическое production-покрытие или автоматический сбор внешних документов.
 
 ## 3D057
 
 **Событие и портфель.** Факт, канал влияния, компания и позиция; гипотеза подписана отдельно.
 
-Код: [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [DossierNewsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierNewsPanel.kt), [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [volume_workspace.py](../backend/volume_workspace.py), [volume_monitor.py](../backend/volume_monitor.py), [volume_market.py](../backend/volume_market.py), [volume_news.py](../backend/volume_news.py).
+Код: [DossierFactSheet.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt), [DossierNewsPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/DossierNewsPanel.kt), [InstrumentDossierPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt), [WorkspaceData.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceData.kt), [ImpactHypothesisPanel.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ImpactHypothesisPanel.kt), [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [volume_impact.py](../backend/volume_impact.py), [volume_chat.py](../backend/volume_chat.py), [volume_jobs.py](../backend/volume_jobs.py), [volume_market.py](../backend/volume_market.py), [volume_news.py](../backend/volume_news.py), [research_store.py](../backend/research_store.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [ai_budget.py](../backend/ai_budget.py), [ChatContextEditor.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt), [MainActivity.kt](../app/src/main/java/ru/omnicio/app/MainActivity.kt).
 
 Проверки:
 
-- [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_verified_issuer_group_identity_is_used_without_ticker_guessing`.
-- [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_reviewed_news_links_bind_exact_observations_and_expose_original_repost`.
+- [portfolio_research_probe.py](../.github/scripts/portfolio_research_probe.py) — `exercise_dossier`.
+- [impact_ui_probe.py](../.github/scripts/impact_ui_probe.py) — `exercise_impact`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_event_hypothesis_binds_owned_event_company_positions_and_actual_sources`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_event_hypothesis_reuses_dossier_cache_and_rejects_foreign_scope_before_loading`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_hypothesis_requires_complete_chain_and_rejects_unverified_output`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_unknown_company_and_primary_source_are_not_fabricated`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_real_guarded_event_hypothesis_is_charged_once_and_recovered`.
 
-**Android:** Отдельного runtime-case пока нет. Факт→компания→мои позиции хранит fact key и показывает все счета. Issuer identity только с reviewed source. Неизвестный канал влияния/причина не дорисованы.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Fact→verified issuer→точная позиция на счёте B. «Разобрать возможное влияние» передаёт event_id+instrument_uid в настоящий Assistant и только заполняет вопрос, без POST/платного вызова. Existing business-assistant/ready раскрывает production ImpactHypothesisPanel: server metadata chain, возможный механизм, предпосылки, неопределённость, источники, computed impact=null. Ответ явно назван гипотезой. Backend guarded paid path проверяется отдельно, не synthetic UI.
 
-**Сервер:** News→instrument подтверждается брокерской UID-связью, holdings принадлежат пользователю, эмитент требует verified identity. Эти тесты подтверждают компоненты доказательств. Экономический канал влияния код не устанавливает: impact=null, гипотеза обозначена отдельно.
+**Сервер:** Явный запрос чата с event_id строит отдельную качественную гипотезу: проверенное отнесение события к инструменту, reviewed company identity при наличии, реальные позиции владельца, условный механизм, предпосылки и неопределённость. Событие/компания/позиции/источники выводятся сервером из allowlist, а не из ответов модели; каждый канал требует существующую цепочку fact_ids. Guarded job/ledger и прежний request_id обеспечивают recovery без повторного вызова. Численный ценовой эффект не рассчитан, поручение не создаётся; отсутствие компании или первоисточника обозначено. Fixtures подтверждают код, а не текущие документы/настройку провайдера production; проверка ссылок не доказывает истинность свободного текста модели.
+
+**Сквозная проверка:** event_id сохраняется в зашифрованном контексте и передаётся только с тем же UID. Можно снять событие или подставить вопрос без отправки. Панель отдельно показывает серверные событие/компанию/позицию, гипотезу, предпосылки, неопределённость и источники; свободный текст модели маскируется при скрытии сумм. Численный денежный эффект не рассчитывается. Вызов проходит обычный estimate/send/ledger, без дополнительного запроса из отрисовки.
 
 ## 3D058
 
 **География.** Глобус с явно выбранной проверенной осью и доступным списком.
 
-Код: [GeographyWorkspacePanel.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/GeographyWorkspacePanel.kt), [MarketWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt), [SpatialGeography.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialGeography.kt), [CountryCoordinates.kt](../app/src/main/java/ru/omnicio/app/data/market/CountryCoordinates.kt), [volume_state.py](../backend/volume_state.py), [volume_workspace.py](../backend/volume_workspace.py), [volume_market.py](../backend/volume_market.py).
+Код: [GeographyWorkspacePanel.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/GeographyWorkspacePanel.kt), [MarketWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt), [SpatialGeography.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialGeography.kt), [CountryCoordinates.kt](../app/src/main/java/ru/omnicio/app/data/market/CountryCoordinates.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [volume_state.py](../backend/volume_state.py), [volume_workspace.py](../backend/volume_workspace.py), [volume_market.py](../backend/volume_market.py).
 
 Проверки:
 
 - [SpatialGeographyGeometryTest.kt](../app/src/test/java/ru/omnicio/app/ui/spatial/SpatialGeographyGeometryTest.kt).
+- [portfolio_market_probe.py](../.github/scripts/portfolio_market_probe.py) — `exercise_markets`.
 
-**Android:** 3 projection JVM passed publish-2. Ось country-of-risk брокера, реальный globe+native список/filter. Google DSPL anchors — ориентиры страны, не локация эмитента; неизвестные остаются в списке. Device pick/filter pending.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Broker country-of-risk, genuine globe и native список. Два известных географических ориентира, unknown code остаётся без метки. Выбор страны→позиция на конкретном счёте проверяет destination. 3 projection JVM прошли publish-2. Координаты — ориентир страны, не расположение компании; жест вращения и физическое устройство не заявляются.
 
 **Сервер:** Ось country использует countryOfRisk/countryOfRiskName из брокерского справочника; это страна риска, а не регистрация, биржа или география выручки. Неизвестная страна остаётся неизвестной. Отдельной backend-регрессии самой оси country нет; география проверяется Android evidence.
 
@@ -822,13 +923,14 @@
 
 **Торговый календарь.** Подтверждённые сессии, местное и московское время.
 
-Код: [TradingCalendarPanel.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/TradingCalendarPanel.kt), [MarketWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt), [WorkspaceClient.kt](../app/src/main/java/ru/omnicio/app/data/market/WorkspaceClient.kt), [volume_market.py](../backend/volume_market.py), [volume_notifications.py](../backend/volume_notifications.py), [volume_monitor.py](../backend/volume_monitor.py).
+Код: [TradingCalendarPanel.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/TradingCalendarPanel.kt), [MarketWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt), [WorkspaceClient.kt](../app/src/main/java/ru/omnicio/app/data/market/WorkspaceClient.kt), [PortfolioReadSource.kt](../app/src/main/java/ru/omnicio/app/data/workspace/PortfolioReadSource.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt), [volume_market.py](../backend/volume_market.py), [volume_notifications.py](../backend/volume_notifications.py), [volume_monitor.py](../backend/volume_monitor.py).
 
 Проверки:
 
+- [portfolio_market_probe.py](../.github/scripts/portfolio_market_probe.py) — `exercise_markets`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_monitor_trigger_uses_previous_real_observation_and_preserves_slot_decision`.
 
-**Android:** Отдельного runtime-case пока нет. Реальные7дней биржевого расписания, Moscow+device local одновременно. Сессия площадки не подтверждает доступность конкретной бумаги.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Production /workspace/markets/calendar без параметров и реальный refresh. UTC sourceinstants проверяются в двух подписях Moscow/device=Etc/UTC, включая переход через полночь. Торговый/неторговый/unknown день и отсутствующее время аукциона раздельны. Сессия площадки не подтверждает торговый статус конкретной бумаги.
 
 **Сервер:** TradingSchedules и GetTradingStatus сохраняют реальные сессии/доступность; UTC отображается Android в местном и московском времени. Тест подтверждает календарное основание мониторинга, а не живой доступ к бирже; общий календарь не гарантирует сделку по инструменту.
 
@@ -843,7 +945,7 @@
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `plans/ready,partial`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_manual_broker_handoff_does_not_claim_execution_and_requires_operation_association`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Root broker-return refresh/reconcile. Fixture доказывает только synthetic расчёт/operation binding/incomplete-source UI, не внешнее открытие брокера и не сделку.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Root broker-return refresh/reconcile. Fixture доказывает только synthetic расчёт/operation binding/incomplete-source UI, не внешнее открытие брокера и не сделку.
 
 **Сервер:** Открытие брокера не подтверждает исполнение. Сверка read-only; пользователь явно связывает подходящие исполненные операции, а исправления источника пересматривают partial/done.
 
@@ -863,7 +965,7 @@
 
 **3D-ядро:** Настоящая модель avatar с объёмным state badge; состояние соответствует клиенту, не выдуманному прогрессу ИИ. Все assistant ready/empty/partial/error/job случаи включены; узнаваемость и чтение требуют кадров.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Production Assistant composable с реальными mesh и синтетическим transport. Нет платного запроса модели или реального брокерского счёта.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Production Assistant composable с реальными mesh и синтетическим transport. Нет платного запроса модели или реального брокерского счёта.
 
 **Сервер:** Ассистент получает реальные состояния задания/модели; ожидание, готовность и ошибка не имитируются таймером. Объёмная модель и анимация этих состояний принадлежат Android.
 
@@ -880,7 +982,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_skipped_monitor_check_is_exposed_without_a_paid_analysis_record`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_monitor_trigger_uses_previous_real_observation_and_preserves_slot_decision`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Saved/skip slots, check-source, report marker, diff facts, cooldown/budget/empty/error. Все данные synthetic. Exact navigation marker не открывает сам Reports/Portfolio target.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Saved/skip slots, check-source, report marker, diff facts, cooldown/budget/empty/error. Все данные synthetic. Exact navigation marker не открывает сам Reports/Portfolio target.
 
 **Сервер:** Отдельно сохраняются реальные checks, утренний/вечерний slot decision, причины пропуска и следующий график. История возникает только после действительного server check; старые пропуски не сочиняются.
 
@@ -896,7 +998,7 @@
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `analysis/ready,empty,partial,error`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_monitor_trigger_uses_previous_real_observation_and_preserves_slot_decision`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Saved/skip slots, check-source, report marker, diff facts, cooldown/budget/empty/error. Все данные synthetic. Exact navigation marker не открывает сам Reports/Portfolio target.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Saved/skip slots, check-source, report marker, diff facts, cooldown/budget/empty/error. Все данные synthetic. Exact navigation marker не открывает сам Reports/Portfolio target.
 
 **Сервер:** Причина внеплановой проверки связана с предыдущим автономным наблюдением, конкретными изменениями/рисками и Source. GET истории не запускает новый брокерский fanout.
 
@@ -912,7 +1014,7 @@
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `analysis/ready,empty,partial,error`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_structured_fact_versions_compare_actual_values_and_keep_unchanged`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Saved/skip slots, check-source, report marker, diff facts, cooldown/budget/empty/error. Все данные synthetic. Exact navigation marker не открывает сам Reports/Portfolio target.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Saved/skip slots, check-source, report marker, diff facts, cooldown/budget/empty/error. Все данные synthetic. Exact navigation marker не открывает сам Reports/Portfolio target.
 
 **Сервер:** Факты сравниваются по устойчивому ID: added/removed/changed/unchanged, отдельно provenance_changed. Для legacy-карточки без facts_blob точная фактографическая сверка недоступна; равенство текста её не заменяет.
 
@@ -920,7 +1022,7 @@
 
 **Рабочий чат.** Реальная модель через guarded gateway и ограниченные собственным пользователем инструменты.
 
-Код: [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_chat.py](../backend/volume_chat.py), [volume_jobs.py](../backend/volume_jobs.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [ai_budget.py](../backend/ai_budget.py).
+Код: [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_chat.py](../backend/volume_chat.py), [volume_jobs.py](../backend/volume_jobs.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [ai_budget.py](../backend/ai_budget.py), [volume_impact.py](../backend/volume_impact.py), [ChatContextEditor.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt), [WorkspaceData.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceData.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [JobCheckpointStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/JobCheckpointStore.kt).
 
 Проверки:
 
@@ -928,10 +1030,14 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_real_guarded_chat_is_charged_once_and_recovered_by_request`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_scoped_chat_rejects_other_accounts`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_chat_cursor_paginates_identical_timestamps_and_is_bound_to_user_thread`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_real_guarded_event_hypothesis_is_charged_once_and_recovered`.
+- [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `assistant/ready,assistant/job`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Fake estimate/send/poll/read проверяет запросы/ввод; не доказывает production LLM quality, реальную цену или изоляцию инструментов.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Fake estimate/send/poll/read проверяет запросы/ввод; не доказывает production LLM quality, реальную цену или изоляцию инструментов.
 
-**Сервер:** Настоящий guarded gateway получает ограниченный собственными счетами/периодом пакет фактов. Request ID восстанавливает запрос без дублирования. Для рабочего подключения нужны действующие настройки gateway/моделей и разрешение внешней обработки; эти тесты используют HTTP mock.
+**Сервер:** Настоящий guarded gateway получает ограниченный собственными счетами/периодом пакет фактов. Request ID восстанавливает запрос без дублирования. Для рабочего подключения нужны действующие настройки gateway/моделей и разрешение внешней обработки; эти тесты используют HTTP mock. Контекст конкретного события дополнен явно подписанной impact_hypothesis с проверенными ссылками и условными каналами; модель не подтверждает причинную связь или численный финансовый эффект.
+
+**Сквозная проверка:** Оценка расхода использует неизменяемые вопрос, диалог, уровень и контекст; поздняя оценка не отправляет изменённый вопрос. Перед dispatch зашифрованно сохраняются request_id и точный payload. Неизвестный исход блокирует новую отправку и обновляет recovery без remount; GET ищет прежний ID. После подтверждённого отсутствия задания допустим только явный повтор того же ID/payload; автоматического повторения нет. Сохраняется совместимость старых checkpoints без body, для них доступно только получение состояния. Runtime lost-response и все процессы Android должны подтвердиться следующим прогоном.
 
 ## 3D066
 
@@ -947,7 +1053,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_chat_scope_sources_real_history_and_allowlisted_navigation`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_scoped_chat_rejects_other_accounts`.
 
-**Android:** Identity JVM passed; exact Instant NEW/pending. Fake navigator проверяет IDs, target не рисует. Start/end/history_resolution передаются, source frequency отделена от visual day/week/month.
+**Интерфейс:** Identity JVM passed; exact Instant NEW/pending. Fake navigator проверяет IDs, target не рисует. Start/end/history_resolution передаются, source frequency отделена от visual day/week/month.
 
 **Сервер:** Ответ допускает только серверные allowlisted ссылки на позиции, реальные операции и сохранённые history observations. История содержит точный timestamp, Moscow calendar bounds и resolution; несуществующий столбик не подставляется.
 
@@ -955,7 +1061,7 @@
 
 **Доказательства.** Источники конкретного утверждения и явная неопределённость.
 
-Код: [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_chat.py](../backend/volume_chat.py), [volume_contract.py](../backend/volume_contract.py), [ai_guarded_client.py](../backend/ai_guarded_client.py).
+Код: [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_chat.py](../backend/volume_chat.py), [volume_contract.py](../backend/volume_contract.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [volume_impact.py](../backend/volume_impact.py).
 
 Проверки:
 
@@ -963,16 +1069,17 @@
 - [analysis_ui_probe.py](../.github/scripts/analysis_ui_probe.py) — `exercise_analysis`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_chat_scope_sources_real_history_and_allowlisted_navigation`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_real_guarded_chat_is_charged_once_and_recovered_by_request`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_real_guarded_event_hypothesis_is_charged_once_and_recovered`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Явные uncertainty/missing rating и собственные sources проверки. Достоверность настоящего серверного ответа требует backend evidence.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Явные uncertainty/missing rating и собственные sources проверки. Достоверность настоящего серверного ответа требует backend evidence.
 
-**Сервер:** Claims связываются с допустимыми facts/source IDs, проверенными metadata target, Source records и coverage. Формальная привязка не доказывает истинность каждого свободного предложения модели; неопределённость и гипотезы остаются явными.
+**Сервер:** Claims связываются с допустимыми facts/source IDs, проверенными metadata target, Source records и coverage. Формальная привязка не доказывает истинность каждого свободного предложения модели; неопределённость и гипотезы остаются явными. Контекст конкретного события дополнен явно подписанной impact_hypothesis с проверенными ссылками и условными каналами; модель не подтверждает причинную связь или численный финансовый эффект.
 
 ## 3D068
 
 **Стоимость ИИ.** Фактический расход и проверенная оценка до глубокого задания; неизвестная цена не выдумывается.
 
-Код: [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_chat.py](../backend/volume_chat.py), [volume_workspace.py](../backend/volume_workspace.py), [ai_budget.py](../backend/ai_budget.py), [ai_guarded_client.py](../backend/ai_guarded_client.py).
+Код: [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_chat.py](../backend/volume_chat.py), [volume_workspace.py](../backend/volume_workspace.py), [ai_budget.py](../backend/ai_budget.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [ChatContextEditor.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt), [WorkspaceData.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceData.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [JobCheckpointStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/JobCheckpointStore.kt).
 
 Проверки:
 
@@ -982,10 +1089,13 @@
 - [test_ai_controls.py](../backend/tests/test_ai_controls.py) — `GuardedClientTests::test_expired_prices_do_not_allow_a_free_estimate`.
 - [test_ai_controls.py](../backend/tests/test_ai_controls.py) — `GuardedClientTests::test_missing_usage_keeps_full_reservation`.
 - [test_ai_controls.py](../backend/tests/test_ai_controls.py) — `GuardedClientTests::test_timeout_has_no_free_retry`.
+- [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `assistant/ready,assistant/job`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Fixture требует estimate перед enqueue/read. Не подтверждает реальную provider price/expense.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Fixture требует estimate перед enqueue/read. Не подтверждает реальную provider price/expense.
 
 **Сервер:** Расход берётся из денежного ledger, оценка — из действующего закреплённого тарифа модели. Неизвестная цена/usage не равны нулю; предварительный потолок не объявляется точным счётом.
+
+**Сквозная проверка:** Оценка расхода использует неизменяемые вопрос, диалог, уровень и контекст; поздняя оценка не отправляет изменённый вопрос. Перед dispatch зашифрованно сохраняются request_id и точный payload. Неизвестный исход блокирует новую отправку и обновляет recovery без remount; GET ищет прежний ID. После подтверждённого отсутствия задания допустим только явный повтор того же ID/payload; автоматического повторения нет. Сохраняется совместимость старых checkpoints без body, для них доступно только получение состояния. Runtime lost-response и все процессы Android должны подтвердиться следующим прогоном.
 
 ## 3D069
 
@@ -999,7 +1109,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_manual_broker_handoff_does_not_claim_execution_and_requires_operation_association`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_manual_plan_request_recovery_survives_a_later_position_change`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Production calculation/partial quantities/operation bind по synthetic source. Ни одна торговая заявка не отправляется.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Production calculation/partial quantities/operation bind по synthetic source. Ни одна торговая заявка не отправляется.
 
 **Сервер:** Пользовательский план проверяет удерживаемую позицию и целые лоты; открытие ссылки не подтверждает исполнение, partial/done требуют связанных текущих операций, новая стратегия переводит план в obsolete. Это не общий оптимизатор F09; стоимость по снимку не является исполнимой котировкой или рассчитанной комиссией.
 
@@ -1007,7 +1117,7 @@
 
 **Отмена задания.** Запрос отмены, подтверждение, продолжение и безопасное получение без двойной оплаты.
 
-Код: [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [JobCheckpointStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/JobCheckpointStore.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_jobs.py](../backend/volume_jobs.py), [volume_chat.py](../backend/volume_chat.py), [ai_jobs.py](../backend/ai_jobs.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [ai_budget.py](../backend/ai_budget.py).
+Код: [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [JobCheckpointStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/JobCheckpointStore.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_jobs.py](../backend/volume_jobs.py), [volume_chat.py](../backend/volume_chat.py), [ai_jobs.py](../backend/ai_jobs.py), [ai_guarded_client.py](../backend/ai_guarded_client.py), [ai_budget.py](../backend/ai_budget.py), [ChatContextEditor.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt), [WorkspaceData.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceData.kt).
 
 Проверки:
 
@@ -1017,10 +1127,14 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_cancelled_worker_cannot_commit_and_paid_expiry_cannot_retry`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_ambiguous_chat_timeout_cannot_repeat_or_fake_an_answer`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_guarded_cancellation_before_send_refunds_known_unsent_only`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_scheduler_recovers_expired_collection_without_a_client_request_but_never_repeats_paid_work`.
+- [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `assistant/ready,assistant/job`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Сохранённый unknown job восстанавливается без unsafe repeat. Все cancellation races и process-death ещё не покрыты.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Сохранённый unknown job восстанавливается без unsafe repeat. Все cancellation races и process-death ещё не покрыты.
 
-**Сервер:** Запрос отмены отличается от подтверждённого результата. Сбор продолжает подтверждённый checkpoint; неоднозначный оплаченный запрос не повторяется. Устаревший владелец задания не может зафиксировать результат.
+**Сервер:** Запрос отмены отличается от подтверждённого результата. Сбор продолжает подтверждённый checkpoint; неоднозначный оплаченный запрос не повторяется. Устаревший владелец задания не может зафиксировать результат. Планировщик восстанавливает expired running leases перед поиском queued заданий даже без запросов телефона; paid_started остаётся uncertain и автоматически не повторяется.
+
+**Сквозная проверка:** Оценка расхода использует неизменяемые вопрос, диалог, уровень и контекст; поздняя оценка не отправляет изменённый вопрос. Перед dispatch зашифрованно сохраняются request_id и точный payload. Неизвестный исход блокирует новую отправку и обновляет recovery без remount; GET ищет прежний ID. После подтверждённого отсутствия задания допустим только явный повтор того же ID/payload; автоматического повторения нет. Сохраняется совместимость старых checkpoints без body, для них доступно только получение состояния. Runtime lost-response и все процессы Android должны подтвердиться следующим прогоном.
 
 ## 3D071
 
@@ -1034,7 +1148,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_strategy_confirmation_is_cas_idempotent_and_applied_to_monitor`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_strategy_preview_detects_snapshot_change_and_rollback_creates_new_version`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Версионированный preview до confirm, incomplete блокирует применение. Fake transport rejects config+rollback одновременно.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Версионированный preview до confirm, incomplete блокирует применение. Fake transport rejects config+rollback одновременно.
 
 **Сервер:** Preview привязан к версии и свежему снимку, имеет срок действия; confirm проверяет CAS и подключение. Подтверждённые правила действительно читает monitor. Preview не выполняет сделок и не доказывает withdrawable cash.
 
@@ -1050,7 +1164,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_strategy_preview_detects_snapshot_change_and_rollback_creates_new_version`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_strategy_confirmation_is_cas_idempotent_and_applied_to_monitor`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Rollback проходит новый preview и создаёт новую подтверждённую версию. Production concurrency — backend tests.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Rollback проходит новый preview и создаёт новую подтверждённую версию. Production concurrency — backend tests.
 
 **Сервер:** История неизменяемых версий сохраняется. Возврат создаёт новую версию через заново проверенный preview; прежние данные и версии не перезаписываются.
 
@@ -1067,7 +1181,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_reviewed_rating_change_updates_risk_history_sources_and_coverage`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_incomplete_broker_positions_cannot_resolve_risk_or_claim_complete_scenario`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Native known/total positions и missing coverage; coverage не вероятность потери, unknown share не ноль.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Native known/total positions и missing coverage; coverage не вероятность потери, unknown share не ноль.
 
 **Сервер:** Покрытие относится к position/issuer/group/sector/currency/country/ratings/trading/liquidity и актуальности источника. Полная вероятность дефолта/процентного риска не заявляется; загрузка лимитов и виртуальные позиции делают покрытие неполным.
 
@@ -1084,7 +1198,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_strategy_confirmation_is_cas_idempotent_and_applied_to_monitor`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_missing_risk_basis_is_not_recorded_as_resolved`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Лимит превышен отличается от отсутствующей доли/лимита. Verified issuer/group source проверяется backend отдельно.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Лимит превышен отличается от отсутствующей доли/лимита. Verified issuer/group source проверяется backend отдельно.
 
 **Сервер:** Концентрации сравниваются с действительными подтверждёнными лимитами. Компания/группа требует проверенной связи; неизвестная доля или оценка не означает безопасную концентрацию.
 
@@ -1102,7 +1216,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_compared_scenarios_share_one_real_baseline_without_forecast`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_incomplete_broker_positions_cannot_resolve_risk_or_claim_complete_scenario`.
 
-**Android:** Отдельного runtime-case пока нет. Transport валидирует 2–4 сценария одного snapshot/currency; текущий business runner ещё не проходит UI сравнения стрессов.
+**Интерфейс:** Отдельного runtime-case пока нет. Transport валидирует 2–4 сценария одного snapshot/currency; текущий business runner ещё не проходит UI сравнения стрессов.
 
 **Сервер:** Две–четыре пользовательские гипотезы используют один фактический baseline. Линейная переоценка не является прогнозом/FX/деривативной моделью; пересекающиеся shocks отклоняются, неполное покрытие не получает estimated_after.
 
@@ -1117,7 +1231,7 @@
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `risk/ready`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_risk_check_freezes_owned_evidence_and_survives_a_closed_position`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Создание checklist и native unchecked→server-confirmed checked. Проверенный пункт не означает сделку.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Создание checklist и native unchecked→server-confirmed checked. Проверенный пункт не означает сделку.
 
 **Сервер:** План проверки замораживает owned событие, снимок, позиции, Source и подтверждённую стратегию. Закрытая позднее позиция остаётся в историческом основании. Выполненная проверка не означает финансовую сделку.
 
@@ -1134,7 +1248,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_reviewed_rating_change_updates_risk_history_sources_and_coverage`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_incomplete_broker_positions_cannot_resolve_risk_or_claim_complete_scenario`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Stale rating не показывается как устранённый риск; другие варианты событий остаются за backend тестами.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Stale rating не показывается как устранённый риск; другие варианты событий остаются за backend тестами.
 
 **Сервер:** История хранит наблюдённое превышение/изменение/устранение/устаревание и основание. Утрата оценки или источника ведёт к stale, а не ложному resolved.
 
@@ -1150,7 +1264,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_notification_quiet_hours_and_read_ack_without_claim`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_notification_preferences_are_applied_to_monitor_and_preview_sends_nothing`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Только event list pending/presented/read и exact ack. Не проверены WorkManager, quiet-hours, Android permission и реальная доставка.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Только event list pending/presented/read и exact ack. Не проверены WorkManager, quiet-hours, Android permission и реальная доставка.
 
 **Сервер:** Правила timezone/quiet hours/version применяются сервером; outbox сохраняется с событием. Claimed не равно доставке, presented/read требуют клиентского подтверждения. Канал app_poll допускает задержки Android, мгновенный push не обещается.
 
@@ -1164,7 +1278,9 @@
 
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `notifications/ready`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Root overlay сохраняет контекст; fixture проверяет read ack, но не выбранную history date до/после overlay.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Root overlay сохраняет контекст; fixture проверяет read ack, но не выбранную history date до/после overlay.
+
+**Сервер:** Android: панель события с сохранением текущего экрана, выбранного столбика и позиции прокрутки. Серверное подтверждение этого взаимодействия не заявляется.
 
 ## 3D080
 
@@ -1177,7 +1293,7 @@
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_notification_preferences_are_applied_to_monitor_and_preview_sends_nothing`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_notification_quiet_hours_and_read_ack_without_claim`.
 
-**Android:** Отдельного runtime-case пока нет. Rule retrospective preview root/backend owned; отдельного production visual-case этого workflow пока нет.
+**Интерфейс:** Отдельного runtime-case пока нет. Rule retrospective preview root/backend owned; отдельного production visual-case этого workflow пока нет.
 
 **Сервер:** Предпросмотр применяет новые правила к сохранённым фактическим событиям пользователя и ничего не отправляет. Это ретроспектива имеющегося периода, а не обещание будущей доставки.
 
@@ -1193,9 +1309,9 @@
 - [test_telegram_login.py](../backend/tests/test_telegram_login.py) — `TelegramLoginTests::test_expired_token_is_rejected`.
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_one_time_login_exchange_is_atomic_and_legacy_sessions_survive`.
 
-**Android:** Отдельного runtime-case пока нет. Реальные состояния opening/waiting/expired/cancelled/exchanged/error. Нужен auth/browser-return runtime, fixture вход не подменяет.
+**Интерфейс:** Отдельного runtime-case пока нет. Реальные состояния opening/waiting/expired/cancelled/exchanged/error. Нужен auth/browser-return runtime, fixture вход не подменяет.
 
-**Интеграция:** Серверные тесты подтверждают одноразовый код, истечение, подпись и конкурентный обмен. Они не доказывают прохождение пользователем реального браузера Telegram.
+**Сквозная проверка:** Серверные тесты подтверждают одноразовый код, истечение, подпись и конкурентный обмен. Они не доказывают прохождение пользователем реального браузера Telegram.
 
 ## 3D082
 
@@ -1207,9 +1323,9 @@
 
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_one_time_login_exchange_is_atomic_and_legacy_sessions_survive`.
 
-**Android:** Отдельного runtime-case пока нет. WorkspaceClient→SessionExpiry(status,token); root восстанавливает encrypted route только подтверждённому same user. IDs/period/frequency saveable, rotation не считается auth-expiry тестом.
+**Интерфейс:** Отдельного runtime-case пока нет. WorkspaceClient→SessionExpiry(status,token); root восстанавливает encrypted route только подтверждённому same user. IDs/period/frequency saveable, rotation не считается auth-expiry тестом.
 
-**Интеграция:** Вход и чтение сохранённого состояния привязаны к подтверждённому Telegram ID; смена пользователя пересоздаёт область SignedInAppContent. Проверка серверной сессии не заменяет проверку восстановления Android после истечения входа.
+**Сквозная проверка:** Вход и чтение сохранённого состояния привязаны к подтверждённому Telegram ID; смена пользователя пересоздаёт область SignedInAppContent. Проверка серверной сессии не заменяет проверку восстановления Android после истечения входа.
 
 ## 3D083
 
@@ -1223,9 +1339,9 @@
 - [test_tinvest_token.py](../backend/tests/test_tinvest_token.py) — `TInvestTokenTests::test_tinvest_errors_do_not_destroy_previously_saved_token`.
 - [test_tinvest_token.py](../backend/tests/test_tinvest_token.py) — `TInvestTokenTests::test_rejected_tinvest_token_is_not_confused_with_session_expiry`.
 
-**Android:** Отдельного runtime-case пока нет. ConnectionStages соответствуют actual checking/saving/removing/configured/error без fake %. Подэтапы прав/счетов/портфеля только при подтверждении backend.
+**Интерфейс:** Отдельного runtime-case пока нет. ConnectionStages соответствуют actual checking/saving/removing/configured/error без fake %. Подэтапы прав/счетов/портфеля только при подтверждении backend.
 
-**Интеграция:** Проверяются read-only GetAccounts, шифрование токена, различение ошибок брокера/сессии и сохранение прежнего подключения при ошибке. Реальный брокерский токен в тестах не используется.
+**Сквозная проверка:** Проверяются read-only GetAccounts, шифрование токена, различение ошибок брокера/сессии и сохранение прежнего подключения при ошибке. Реальный брокерский токен в тестах не используется.
 
 ## 3D084
 
@@ -1237,25 +1353,27 @@
 
 - [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_one_time_login_exchange_is_atomic_and_legacy_sessions_survive`.
 
-**Android:** Отдельного runtime-case пока нет. Root devices/session list/revocation после ответа сервера; dedicated fixture в моём scope нет.
+**Интерфейс:** Code/backend mapping: выбранный device ID теперь rememberSaveable(userId) и разрешается из текущего серверного ответа; ревокация считается завершённой только после подтверждения. UI не держит устаревший JSONObject сеанса. Dedicated runtime devices/revoke/rotation flow отсутствует; fixture авторизацию не подменяет.
 
-**Интеграция:** Список включает текущую и прежнюю сессии. Чужой пользователь не отзывает сеанс; отзыв владельцем действительно удаляет токен. Проверяется серверный результат, а не только текст успешного уведомления.
+**Сквозная проверка:** Список включает текущую и прежнюю сессии. Чужой пользователь не отзывает сеанс; отзыв владельцем действительно удаляет токен. Проверяется серверный результат, а не только текст успешного уведомления. Android сохраняет выбранный ID при повороте и заново разрешает его в текущем списке; кнопки подтверждения отключены до ответа сервера.
 
 ## 3D085
 
 **Предпросмотр оформления.** Настоящий UI показывает материалы, глубину и движение до сохранения.
 
-Код: [AppearanceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt), [SpatialMaterial.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialMaterial.kt), [SpatialScene.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt), [WorkspaceVisualProbe.kt](../app/src/debug/java/ru/omnicio/app/WorkspaceVisualProbe.kt).
+Код: [AppearanceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt), [SpatialMaterial.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialMaterial.kt), [SpatialScene.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt), [WorkspaceVisualProbe.kt](../app/src/debug/java/ru/omnicio/app/WorkspaceVisualProbe.kt), [PortfolioWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt).
 
 Проверки:
 
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py).
 - [SpatialMaterialTest.kt](../app/src/test/java/ru/omnicio/app/ui/spatial/SpatialMaterialTest.kt).
 - [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py) — `workspace/appearance`.
+- [profile_ui_probe.py](../.github/scripts/profile_ui_probe.py) — `themes`.
+- [portfolio_preferences_probe.py](../.github/scripts/portfolio_preferences_probe.py) — `exercise_appearance`.
 
 **3D-ядро:** Предпросмотр использует рабочие компоненты, тему и mesh-параметры до сохранения. Полная проверка persistence и внешнего вида на новой сборке ещё не выполнена.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Настоящий UI preview с saveable theme/preferences draft, Apply/Cancel/back. Старый runner только motion/reset/back; полный persistence assertion пока отсутствует.
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Existing profile themes проверяет light/dark/system, preview/back cancel, apply, restart и системный night switch. Дополнительный portfolio appearance не дублирует themes: accent/density/motion/brightLight, native checked/selected, renderer Off, process restart, preview cancel и rotation. Запись остаётся в production SharedPreferences.
 
 ## 3D086
 
@@ -1270,35 +1388,44 @@
 
 **3D-ядро:** Матовый режим сохраняет геометрию, уменьшает металл/блеск, повышает roughness и снимает clearcoat. Настоящий яркий солнечный свет и восприятие на физическом телефоне не измерены.
 
-**Android:** Отдельного runtime-case пока нет. Bright light включает реальные opaque/high-contrast материалы, сохраняя объём. Читаемость при ярком физическом свете эмулятором не подтверждена.
+**Интерфейс:** Отдельного runtime-case пока нет. Bright light включает реальные opaque/high-contrast материалы, сохраняя объём. Читаемость при ярком физическом свете эмулятором не подтверждена.
 
 ## 3D087
 
 **Восстановление операции.** Возврат к подтверждённой стадии, без повтора неизвестного платного запроса.
 
-Код: [JobCheckpointStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/JobCheckpointStore.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt).
+Код: [JobCheckpointStore.kt](../app/src/main/java/ru/omnicio/app/data/workspace/JobCheckpointStore.kt), [WorkspacePanels.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt), [BusinessWorkspaceProbe.kt](../app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt), [volume_jobs.py](../backend/volume_jobs.py), [volume_workspace.py](../backend/volume_workspace.py), [AssistantWorkspaceScreen.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt), [ChatContextEditor.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt), [WorkspaceData.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceData.kt).
 
 Проверки:
 
 - [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `assistant/job,plans/job`.
+- [test_volume_impact.py](../backend/tests/test_volume_impact.py) — `test_scheduler_recovers_expired_collection_without_a_client_request_but_never_repeats_paid_work`.
+- [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_checkpoint_retry_and_queue_selection_do_not_starve_other_users`.
+- [test_volume_workspace.py](../backend/tests/test_volume_workspace.py) — `test_cancelled_worker_cannot_commit_and_paid_expiry_cannot_retry`.
+- [business_ui_probe.py](../.github/scripts/business_ui_probe.py) — `assistant/ready,assistant/job`.
 
-**Android:** Runtime-сценарий написан; подтверждённого device pass пока нет. Encrypted checkpoint/unknown outcome; enqueue не повторяется автоматически. Симулированный сервер переживает Activity recreation, не доказывает process-death.
+**Интерфейс:** Runtime-сценарий написан; подтверждённого device pass пока нет. Encrypted checkpoint/unknown outcome; enqueue не повторяется автоматически. Симулированный сервер переживает Activity recreation, не доказывает process-death.
+
+**Сервер:** Планировщик сначала проверяет истёкшие leases, затем выбирает queued задания: сбор возобновляется с подтверждённого checkpoint без запроса телефона. paid_started переводится в uncertain и не повторяется автоматически. Это серверное восстановление операции; зашифрованный Android request_id/body и UI recovery проверяются отдельным клиентским сценарием.
+
+**Сквозная проверка:** Оценка расхода использует неизменяемые вопрос, диалог, уровень и контекст; поздняя оценка не отправляет изменённый вопрос. Перед dispatch зашифрованно сохраняются request_id и точный payload. Неизвестный исход блокирует новую отправку и обновляет recovery без remount; GET ищет прежний ID. После подтверждённого отсутствия задания допустим только явный повтор того же ID/payload; автоматического повторения нет. Сохраняется совместимость старых checkpoints без body, для них доступно только получение состояния. Runtime lost-response и все процессы Android должны подтвердиться следующим прогоном.
 
 ## 3D088
 
 **Обновление ресурсов.** Модели и материалы версионированы вместе с APK; контекст обновления сохранён.
 
-Код: [generate_spectrum_meshes.py](../tools/generate_spectrum_meshes.py), [catalogue.json](../app/src/main/assets/spectrum3d/catalogue.json), [SpatialRenderer.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialRenderer.kt), [RequiredUpdateScreen.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/RequiredUpdateScreen.kt), [MainActivity.kt](../app/src/main/java/ru/omnicio/app/MainActivity.kt), [build.gradle.kts](../app/build.gradle.kts), [SpatialComponents.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt).
+Код: [generate_spectrum_meshes.py](../tools/generate_spectrum_meshes.py), [catalogue.json](../app/src/main/assets/spectrum3d/catalogue.json), [SpatialRenderer.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialRenderer.kt), [RequiredUpdateScreen.kt](../app/src/main/java/ru/omnicio/app/ui/spectrum/RequiredUpdateScreen.kt), [.gitattributes](../.gitattributes), [MainActivity.kt](../app/src/main/java/ru/omnicio/app/MainActivity.kt), [build.gradle.kts](../app/build.gradle.kts), [SpatialComponents.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt).
 
 Проверки:
 
 - [test_spectrum_meshes.py](../tools/test_spectrum_meshes.py).
 - [verify_apk.py](../.github/scripts/verify_apk.py).
 - [test_apk_installation.py](../.github/scripts/test_apk_installation.py).
+- [test_spectrum_meshes.py](../tools/test_spectrum_meshes.py) — `MeshCatalogueTest.test_windows_git_checkout_preserves_generated_catalogue_and_glb_bytes`.
 
-**3D-ядро:** Каталог v1 содержит SHA256/bytes/triangles/material; loader проверяет GLB до gltfio. Канонические float32 и +0 обеспечивают воспроизводимость; Linux и libm-perturbation tests прошли, настоящий Windows --check нового head ещё ожидается.
+**3D-ядро:** Версионированный каталог содержит SHA256/bytes/triangles/material; loader проверяет GLB до gltfio. Канонические float32, +0 и локальная perturbation-проверка устраняют libm-разброс. 90 GLB совпали в предыдущем Windows CI; оставшийся CRLF каталога воспроизведён настоящим Git core.autocrlf=true и исправлен явным eol=lf, GLB -text. 8 локальных mesh tests и --check прошли; новый Windows gate ещё ожидается.
 
-**Android:** Отдельного runtime-case пока нет. Root/renderer bundled versioned assets и обязательное обновление; мои экраны сохраняют безопасные route IDs. Device update-install из моего scope отсутствует.
+**Интерфейс:** Отдельного runtime-case пока нет. Root/renderer bundled versioned assets и обязательное обновление; мои экраны сохраняют безопасные route IDs. Device update-install из моего scope отсутствует.
 
 ## 3D089
 
@@ -1306,9 +1433,11 @@
 
 Код: [HomeScreen.kt](../app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt), [PersonalWorkspaceScreens.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. Home version-keyed Что нового в0.11→NewFeatures и Больше не показывать. Карточка после финансового attention, не вместо главного действия.
+- Отдельный выполненный сценарий не подтверждён; границы описаны ниже.
+
+**Интерфейс:** Отдельного runtime-case пока нет. Home version-keyed Что нового в0.11→NewFeatures и Больше не показывать. Карточка после финансового attention, не вместо главного действия.
 
 ## 3D090
 
@@ -1316,9 +1445,12 @@
 
 Код: [PersonalWorkspaceScreens.kt](../app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt), [HomeScreen.kt](../app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt), [DashboardOrderEditor.kt](../app/src/main/java/ru/omnicio/app/ui/home/DashboardOrderEditor.kt), [PortfolioQuickPreview.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioQuickPreview.kt), [HistoryChart.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt), [InstrumentQuotesPanel.kt](../app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt).
 
-Отдельный сценарий для этого пункта ещё не выполнен; приёмка остаётся открытой.
+Проверки:
 
-**Android:** Отдельного runtime-case пока нет. Persisted WorkspaceGestureHint: currency/hold, preview, drag, range и magnifiers. Обычные кнопки, exact dates/list доступны; first-use/dismiss device evidence пока нет.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_history`.
+- [portfolio_chart_probe.py](../.github/scripts/portfolio_chart_probe.py) — `exercise_quotes`.
+
+**Интерфейс:** Сценарий production UI написан для font=1.0 и 2.0; подтверждённого emulator pass этого среза пока нет. Range и quotes magnifier проходят настоящие жесты/кнопки; WorkspaceGestureHint сохраняет dismiss по gesture ID. Новый runtime не доказывает весь first-use/dismiss цикл каждого hint, long-press и drag-order. У каждого такого действия сохранена обычная кнопка/даты/native список.
 
 ## 3D091
 
@@ -1444,7 +1576,7 @@
 
 **Совместимость.** Surface/lifecycle/restart/rotation/update, Android15+, native16KB и честная граница физической проверки.
 
-Код: [SpatialScene.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt), [SpatialRenderer.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialRenderer.kt), [check_native_alignment.py](../tools/check_native_alignment.py), [action.yml](../.github/actions/check-apk/action.yml), [installation_evidence.py](../backend/installation_evidence.py), [release_publication.py](../backend/release_publication.py), [deploy-moscow-telegram-auth.yml](../.github/workflows/deploy-moscow-telegram-auth.yml), [deploy_moscow_telegram_browser_auth.py](../.github/scripts/deploy_moscow_telegram_browser_auth.py), [deploy_moscow_telegram_browser_auth_remote.sh](../.github/scripts/deploy_moscow_telegram_browser_auth_remote.sh).
+Код: [SpatialScene.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt), [SpatialRenderer.kt](../app/src/main/java/ru/omnicio/app/ui/spatial/SpatialRenderer.kt), [check_native_alignment.py](../tools/check_native_alignment.py), [action.yml](../.github/actions/check-apk/action.yml), [installation_evidence.py](../backend/installation_evidence.py), [android-ci.yml](../.github/workflows/android-ci.yml), [installation_report.py](../.github/scripts/installation_report.py), [profile_launch.py](../.github/scripts/profile_launch.py), [business_ui_probe.py](../.github/scripts/business_ui_probe.py), [portfolio_ui_probe.py](../.github/scripts/portfolio_ui_probe.py), [release_publication.py](../backend/release_publication.py), [deploy-moscow-telegram-auth.yml](../.github/workflows/deploy-moscow-telegram-auth.yml), [deploy_moscow_telegram_browser_auth.py](../.github/scripts/deploy_moscow_telegram_browser_auth.py), [deploy_moscow_telegram_browser_auth_remote.sh](../.github/scripts/deploy_moscow_telegram_browser_auth_remote.sh).
 
 Проверки:
 
@@ -1453,6 +1585,10 @@
 - [test_apk_installation.py](../.github/scripts/test_apk_installation.py).
 - [spatial_ui_probe.py](../.github/scripts/spatial_ui_probe.py).
 - [test_installation_evidence.py](../backend/tests/test_installation_evidence.py).
+- [test_release_runtime_publication.py](../backend/tests/test_release_runtime_publication.py).
+- [portfolio_frame_evidence.py](../.github/scripts/portfolio_frame_evidence.py).
+- [test_portfolio_frame_evidence.py](../.github/scripts/tests/test_portfolio_frame_evidence.py).
+- [test_kernel_page_size.py](../.github/scripts/tests/test_kernel_page_size.py).
 - [test_release_runtime_publication.py](../backend/tests/test_release_runtime_publication.py) — `test_version34_transcript_remains_publishable_without_runtime_page_measurement`.
 - [test_release_runtime_publication.py](../backend/tests/test_release_runtime_publication.py) — `test_version35_requires_and_accepts_both_exact_runtime_installations`.
 - [test_release_runtime_publication.py](../backend/tests/test_release_runtime_publication.py) — `test_runtime_evidence_failure_preserves_previously_published_version`.
@@ -1461,12 +1597,13 @@
 - [test_installation_evidence.py](../backend/tests/test_installation_evidence.py) — `EvidenceTests::test_kernel_measurement_is_bound_to_exact_platform_and_candidate`.
 - [test_installation_evidence.py](../backend/tests/test_installation_evidence.py) — `EvidenceTests::test_new_release_requires_all_six_routes_and_both_native_font_sizes`.
 - [test_installation_evidence.py](../backend/tests/test_installation_evidence.py) — `EvidenceTests::test_duplicate_case_or_missing_receipt_cannot_replace_a_full_run`.
+- [test_installation_evidence.py](../backend/tests/test_installation_evidence.py) — `EvidenceTests::test_portfolio_receipt_requires_both_fonts_and_exact_missing_instant_scenario`.
+- [test_installation_evidence.py](../backend/tests/test_installation_evidence.py) — `EvidenceTests::test_repeated_portfolio_case_or_old_suite_never_substitutes_for_new_production_screens`.
 - [test_deploy_moscow_telegram_auth.py](../backend/tests/test_deploy_moscow_telegram_auth.py) — `TelegramAuthDeploymentTests::test_staged_preflight_initializes_workspace_and_preserves_existing_user`.
 - [test_deploy_moscow_telegram_auth.py](../backend/tests/test_deploy_moscow_telegram_auth.py) — `TelegramAuthDeploymentTests::test_workspace_probe_requires_authentication_for_every_read_route`.
 
-**3D-ядро:** API35 official google_apis_ps16k требует getconf PAGE_SIZE=16384; API36=4096. ОбеAPI требуют clean+0.10upgrade+launch+полные52UIcase/font, привязанные кdebugAPK. Static PT_LOAD/ZIP не заменяют запуск. Lifecycle/rotation/window gates включены, runtime16KB ещё не выполнен.
+**3D-ядро:** API35 official google_apis_ps16k требует измеренное getconf PAGE_SIZE=16384 в Android userspace (x86 kernel остаётся 4К); API36=4096. Обе API требуют clean install + upgrade с0.10 + запуск и полный receipt spectrum-3d-100-v2: 52 business +14 portfolio case/font, связанные с SHA256 отдельного debug fixture APK. PT_LOAD/ZIP не заменяют запуск. Lifecycle/rotation/window gates включены; runtime16К пока не выполнен, физический ARM не заявляется.
 
-**Сервер:** Публикация versionCode ≥ 35 требует transcripts API 35/16384 и API 36/4096 с измерением, точным APK, clean/upgrade/launch/profile; на каждой API нужен receipt всех 52 business case/font IDs набора spectrum-3d-100-v1, связанный с установленным debug UI fixture. Legacy v34 совместим. Это проверка CI evidence, не самостоятельное доказательство установки на физическом телефоне; Surface/lifecycle/renderer проверяет Android.
+**Сервер:** Публикация versionCode ≥ 35 требует transcripts API 35/16384 и API 36/4096 с измерением, точным APK, clean/upgrade/launch/profile; на каждой API нужен receipt всех 52 business и 14 portfolio case/font IDs набора spectrum-3d-100-v2, связанный с установленным debug UI fixture. Legacy v34 совместим. Это проверка CI evidence, не самостоятельное доказательство установки на физическом телефоне; Surface/lifecycle/renderer проверяет Android.
 
-**Интеграция:** Развёртывание сначала инициализирует все таблицы в отдельной базе без scheduler, проверяет сохранение записей и требует авторизацию на новых маршрутах. Подтверждение фактической установки сервера и канала будет записано после выполнения workflow.
-
+**Сквозная проверка:** Развёртывание сначала инициализирует все таблицы в отдельной базе без scheduler, проверяет сохранение записей и требует авторизацию на новых маршрутах. Подтверждение фактической установки сервера и канала будет записано после выполнения workflow.

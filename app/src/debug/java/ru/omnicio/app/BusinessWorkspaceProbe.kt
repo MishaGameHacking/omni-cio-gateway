@@ -58,7 +58,8 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
         mode = value.getString("mode"), instrumentUid = value.optString("instrument_uid").takeUnless { it.isBlank() || it == "null" },
         title = value.getString("title"), accountId = value.optString("account_id").takeUnless { it.isBlank() || it == "null" },
         start = value.optString("start").takeUnless { it.isBlank() || it == "null" },
-        end = value.optString("end").takeUnless { it.isBlank() || it == "null" }) } }
+        end = value.optString("end").takeUnless { it.isBlank() || it == "null" },
+        eventId = value.optString("event_id").takeUnless { it.isBlank() || it == "null" }) } }
     LaunchedEffect(userId) {
         withContext(Dispatchers.IO) {
             val cache = EncryptedWorkspaceStore(context)
@@ -69,7 +70,9 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
         }
         initialized = true
     }
-    val marker = "business-probe:$initialRoute/$scenario;transport:synthetic;requests:${trace.requests};contract-errors:${trace.errors.size};navigation:$navigation"
+    val marker = "business-probe:$initialRoute/$scenario;transport:synthetic;requests:${trace.requests};contract-errors:${trace.errors.size};navigation:$navigation" +
+        ";message-posts:${trace.messagePosts};message-request-id:${trace.messageRequestId ?: "none"}" +
+        ";by-request-gets:${trace.byRequestGets};recovered-request-id:${trace.recoveredRequestId ?: "none"}"
     Column(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).statusBarsPadding().padding(6.dp)
             .testTag("business-probe-marker").semantics { contentDescription = marker }) {
@@ -150,7 +153,14 @@ private fun probePortfolio(): PortfolioSnapshot {
         listOf(PortfolioAccount(PROBE_ACCOUNT, "Синтетический счёт", money(100_000), null, positions)), emptyList(), PROBE_AS_OF)
 }
 
-private data class ProbeTrace(val requests: Int = 0, val errors: List<String> = emptyList())
+private data class ProbeTrace(
+    val requests: Int = 0,
+    val errors: List<String> = emptyList(),
+    val messagePosts: Int = 0,
+    val messageRequestId: String? = null,
+    val byRequestGets: Int = 0,
+    val recoveredRequestId: String? = null,
+)
 
 /** Keep the simulated server consistent across Activity recreation, like HTTPS would be. */
 private object BusinessProbeSessions {
@@ -170,6 +180,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     private var config = strategyConfig()
     private var preview: JSONObject? = null
     private var sequence = 0
+    private var lastChatEstimate: JSONObject? = null
     private val messages: MutableList<JSONObject> = if (scenario == "empty") mutableListOf() else mutableListOf(
         jObject("id" to "synthetic-question", "role" to "user", "text" to "Что подтверждено в этом тестовом портфеле?", "created_at" to PROBE_AS_OF),
         assistantMessage("synthetic-answer"),
@@ -315,15 +326,35 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
                 method == "GET" && endpoint == "/workspace/chat/threads/$PROBE_THREAD/messages" -> ok(jObject("items" to JSONArray(messages), "has_more" to false))
                 method == "POST" && endpoint == "/workspace/chat/estimate" -> {
                     require(body?.getString("text")?.isNotBlank() == true)
+                    require(body.getString("thread_id") == PROBE_THREAD && body.getString("tier") in setOf("fast", "standard", "premium"))
+                    require(body.getJSONObject("context").getString("mode") in setOf("general", "portfolio", "instrument"))
+                    lastChatEstimate = JSONObject(body.toString())
                     ok(jObject("available" to true, "estimated_upper_bound" to probeMoney("0.01"), "synthetic" to true))
                 }
                 method == "POST" && endpoint == "/workspace/chat/threads/$PROBE_THREAD/messages" -> {
+                    val requestId = body?.optString("request_id").orEmpty()
+                    trace.value = trace.value.copy(messagePosts = trace.value.messagePosts + 1, messageRequestId = requestId)
                     require(body?.getString("text")?.isNotBlank() == true && body.getJSONObject("context").getString("mode") in setOf("general", "portfolio", "instrument"))
+                    require(UUID.fromString(requestId).toString() == requestId)
+                    val estimated = checkNotNull(lastChatEstimate) { "Message requires a preceding exact cost estimate" }
+                    require(estimated.getString("text") == body.getString("text") && estimated.getString("tier") == body.getString("tier") &&
+                        estimated.getJSONObject("context").toString() == body.getJSONObject("context").toString())
+                    if (scenario == "ready" && trace.value.messagePosts != 1) return invalid("A lost chat response must not issue a second message POST")
                     messages.add(jObject("id" to "synthetic-user-${++sequence}", "role" to "user", "text" to body.getString("text"), "created_at" to PROBE_AS_OF))
-                    messages.add(assistantMessage("synthetic-answer-$sequence")); enqueue(body)
+                    messages.add(assistantMessage("synthetic-answer-$sequence"))
+                    val accepted = enqueue(body)
+                    // The simulated server has accepted this exact request. Only
+                    // its response is lost; recovery must read the existing job.
+                    if (scenario == "ready" && accepted.data != null) VolumeReply(
+                        error = "СИНТЕТИЧЕСКАЯ потеря ответа после принятия запроса. Сверьте сохранённый идентификатор.",
+                        code = "synthetic_lost_response", ambiguous = true)
+                    else accepted
                 }
                 method == "GET" && endpoint.startsWith("/workspace/jobs/by-request/") -> {
-                    val id = requestJobs[endpoint.substringAfterLast('/')] ?: return VolumeReply(status = 404, error = "Тестовое задание не найдено.")
+                    val requestId = endpoint.substringAfterLast('/')
+                    trace.value = trace.value.copy(byRequestGets = trace.value.byRequestGets + 1)
+                    val id = requestJobs[requestId] ?: return VolumeReply(status = 404, error = "Тестовое задание не найдено.")
+                    trace.value = trace.value.copy(recoveredRequestId = requestId)
                     ok(jObject("job_id" to id))
                 }
                 method == "GET" && endpoint.startsWith("/workspace/jobs/") -> {
@@ -456,5 +487,25 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
         "facts" to jArray(jObject("id" to "synthetic-fact", "as_of" to PROBE_AS_OF, "source_ids" to jArray(PROBE_SOURCE),
             "value" to jObject("share_percent" to if (scenario == "partial") null else "70", "limit_percent" to "60"))),
         "sources" to jArray(probeSource()), "uncertainties" to if (scenario == "partial") jArray("СИНТЕТИЧЕСКИЙ тест отсутствующего рейтинга") else JSONArray(),
+        "impact_hypothesis" to if (scenario == "ready" && id == "synthetic-answer") impactHypothesis() else null,
         "actions" to jArray(jObject("type" to "open_risks", "id" to "synthetic-issuer", "label" to "Открыть тестовую концентрацию")))
+
+    /** The UI receives server-owned facts separately from the explicitly hypothetical channel. */
+    private fun impactHypothesis() = jObject("kind" to "hypothesis",
+        "label" to "Гипотеза влияния ИИ — не подтверждённый факт",
+        "event" to jObject("id" to "event:synthetic-impact-event", "title" to "СИНТЕТИЧЕСКОЕ событие влияния",
+            "published_at" to PROBE_AS_OF, "fact_id" to "synthetic-event-fact", "event_identity_verified" to true, "source_ids" to jArray(PROBE_SOURCE)),
+        "companies" to jArray(jObject("instrument_uid" to PROBE_STOCK, "issuer_id" to "synthetic-issuer",
+            "issuer_name" to "СИНТЕТИЧЕСКИЙ эмитент гипотезы", "identity_state" to "verified",
+            "fact_id" to "synthetic-company-fact", "source_ids" to jArray(PROBE_SOURCE))),
+        "positions" to jArray(jObject("instrument_uid" to PROBE_STOCK, "account_id" to PROBE_ACCOUNT,
+            "account_name" to "Синтетический счёт", "quantity" to "70", "value" to probeMoney("70000"),
+            "as_of" to PROBE_AS_OF, "fact_id" to "synthetic-position-fact", "source_ids" to jArray(PROBE_SOURCE))),
+        "channels" to jArray(jObject("mechanism" to "СИНТЕТИЧЕСКИЙ канал: издержки компании могут измениться",
+            "direction" to "unknown", "horizon" to "unclear", "uncertainty" to "СИНТЕТИЧЕСКАЯ неопределённость: величина изменения не подтверждена",
+            "assumptions" to jArray("СИНТЕТИЧЕСКОЕ допущение: компания использует затронутый ресурс"),
+            "fact_ids" to jArray("synthetic-event-fact", "synthetic-company-fact", "synthetic-position-fact"), "source_ids" to jArray(PROBE_SOURCE))),
+        "limitations" to jArray("СИНТЕТИЧЕСКИЙ пример: численное влияние не рассчитано"),
+        "sources" to jArray(probeSource()), "snapshot_id" to "synthetic-snapshot", "as_of" to PROBE_AS_OF,
+        "computed_financial_impact" to null)
 }

@@ -1,4 +1,8 @@
-"""The actual booted kernel, not ELF alignment, proves the runtime page size."""
+"""Measure Android userspace page size with getconf, separately from ELF alignment.
+
+The experimental x86_64 ps16k image exposes a 16 KB userspace on a 4 KB kernel.
+The stable evidence ID is retained; it does not claim a physical ARM kernel test.
+"""
 from __future__ import annotations
 
 import re
@@ -22,9 +26,9 @@ def measured_record(api: int, stdout: str, apk_sha256: str) -> dict:
     image = system_image(api)
     value = stdout.strip()
     if value != str(PAGE_BYTES[api]):
-        raise ValueError(f"Android API {api} kernel must report {PAGE_BYTES[api]} bytes; got {value!r}")
+        raise ValueError(f"Android API {api} runtime page size must report {PAGE_BYTES[api]} bytes; got {value!r}")
     if re.fullmatch(r"[a-f0-9]{64}", apk_sha256) is None:
-        raise ValueError("Kernel runtime evidence requires the tested APK digest")
+        raise ValueError("Measured runtime page-size evidence requires the tested APK digest")
     return {"test": TEST_NAME, "success": True, "android_api": api, "abi": "x86_64",
             "system_image": image, "page_size_bytes": int(value), "command": COMMAND,
             "apk_sha256": apk_sha256}
@@ -39,4 +43,4 @@ def validate_record(record: dict, api: int) -> None:
             or record.get("command") != COMMAND \
             or not isinstance(record.get("apk_sha256"), str) \
             or re.fullmatch(r"[a-f0-9]{64}", record["apk_sha256"]) is None:
-        raise ValueError("Missing or inconsistent measured kernel page-size evidence")
+        raise ValueError("Missing or inconsistent measured runtime page-size evidence")

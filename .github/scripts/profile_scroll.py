@@ -15,6 +15,8 @@ SCROLL_AXES = {
     "portfolio-content": "vertical",
     "workspace-content": "vertical",
     "profile-tabs": "horizontal",
+    "dossier-tabs": "horizontal",
+    "quotes-intervals": "horizontal",
 }
 LIST_IDS = frozenset(SCROLL_AXES)
 

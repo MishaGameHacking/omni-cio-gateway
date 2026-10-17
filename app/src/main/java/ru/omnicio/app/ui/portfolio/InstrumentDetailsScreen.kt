@@ -7,6 +7,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -39,7 +42,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                 topBar = { WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close) },
                 bottomBar = { ru.omnicio.app.ui.spatial.SpatialSurface(kind = ru.omnicio.app.ui.spatial.SpatialSurfaceKind.Dock, color = MaterialTheme.colorScheme.background) {
                     Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin, compact = true)
+                        InstrumentContextActions(position, accountId) { section = 2 }
                     }
                 } }) { insets ->
                 BoxWithConstraints(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
@@ -62,7 +65,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                         }
                     }
                     SpectrumTabs(listOf("Позиция", "Котировки", "Досье", "Исследование", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
-                    LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(20.dp),
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
                         verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                         if (position.blocked) item(key = "restriction") { SpectrumCard(emphasized = true) {
                             Text("Есть ограничения у брокера", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)

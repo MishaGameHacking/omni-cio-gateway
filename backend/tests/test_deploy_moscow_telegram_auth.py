@@ -1,6 +1,7 @@
 """Fail-closed checks for the exact Moscow Telegram-auth deployment."""
 from __future__ import annotations
 
+from contextlib import closing
 import importlib.util
 import os
 from pathlib import Path
@@ -53,12 +54,12 @@ class TelegramAuthDeploymentTests(unittest.TestCase):
                 AI_EXTERNAL_PROCESSING_APPROVED="false",
             )
             subprocess.run([sys.executable, "-c", preflight], env=environment, check=True, timeout=30)
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db:
                 db.execute("INSERT INTO users(telegram_sub,telegram_id,created_at,updated_at) VALUES ('preflight-user','1',1,1)")
                 db.execute("INSERT INTO workspace_records VALUES (1,'note','owned','{}',1,1,1)")
                 db.commit()
             subprocess.run([sys.executable, "-c", preflight], env=environment, check=True, timeout=30)
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db:
                 self.assertEqual(db.execute("SELECT telegram_sub FROM users").fetchone()[0], "preflight-user")
                 self.assertEqual(db.execute("SELECT id FROM workspace_records WHERE user_id=1").fetchone()[0], "owned")
                 self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")

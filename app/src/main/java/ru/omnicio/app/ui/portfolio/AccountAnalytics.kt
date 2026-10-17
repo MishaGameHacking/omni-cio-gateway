@@ -12,6 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,7 +60,8 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
     val events = workspace?.sectionData("events")?.records("items").orEmpty().filter { event ->
         event.stringList("instrument_uids").any { uid -> account.positions.any { it.id == uid } } || event.optionalText("account_id") == account.id
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+    LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+        contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "history") {
             CompactCard {
                 CurrencyChoice(account.totalValue.currency)
@@ -138,7 +142,10 @@ internal fun CashFlowSummary(data: JSONObject) {
 internal fun AccountPayments(token: String, account: PortfolioAccount) {
     val request = rememberAccountData(token, account.id, "payments", interval = 60_000)
     val payments = request.json?.objects("items") ?: emptyList()
-    var selected by remember { mutableStateOf<JSONObject?>(null) }
+    val user = LocalWorkspaceSession.current.userId
+    var selectedKey by rememberSaveable(user, account.id) { mutableStateOf<String?>(null) }
+    val matches = payments.filter { paymentSelectionKey(it, user, account.id) == selectedKey && selectedKey != null }
+    val selected = matches.singleOrNull()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(key = "intro") {
             CompactCard {
@@ -171,7 +178,7 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
             }
         }
         items(payments) { row ->
-            SpectrumCard(onClick = { selected = row }) {
+            SpectrumCard(onClick = { selectedKey = paymentSelectionKey(row, user, account.id) }) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     val uid = row.optString("instrumentUid")
                     val name = account.positions.firstOrNull { it.id == uid }?.title ?: row.optString("title")
@@ -185,13 +192,33 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
             }
         }
     }
-    selected?.let { row -> AlertDialog(onDismissRequest = { selected = null }, title = { Text("Условия выплаты") },
+    selected?.let { row -> AlertDialog(onDismissRequest = { selectedKey = null }, title = { Text("Условия выплаты") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            AccountDataNotice(request)
+            Text(account.positions.firstOrNull { it.id == row.optionalText("instrumentUid") }?.title ?: row.optString("title"))
+            DataRow("Дата события", dateText(row.optionalText("date"), "dd.MM.yyyy"))
             DataRow("Дата реестра", dateText(row.nullableText("recordDate"), "dd.MM.yyyy"))
             DataRow("На бумагу", row.money("perUnit").moneyText())
             Notice("Источником является календарь брокера. Будущие сделки, расчёты, изменения корпоративного события и налоги могут изменить фактическое поступление.")
-        } }, confirmButton = { TextButton(onClick = { selected = null }) { Text("Закрыть") } }) }
+        } }, confirmButton = { TextButton(onClick = { selectedKey = null }) { Text("Закрыть") } }) }
+    if (selectedKey != null && selected == null) WorkspaceDialog("Условия выплаты", { selectedKey = null }) {
+        when {
+            request.json == null && request.error == null -> SpectrumLoadingIndicator(description = "Восстанавливаем выбранную выплату из ответа брокера")
+            request.json == null -> Text(request.error ?: "Ответ календаря не получен.")
+            matches.size > 1 -> Text("В ответе несколько событий с одинаковыми идентификаторами и датами. Одно из них не выбирается произвольно.")
+            else -> Text("Выбранная выплата отсутствует в текущем календаре или её даты изменились. Сведения другой выплаты не подставляются.")
+        }
+        SpectrumSecondaryButton("К календарю", { selectedKey = null }, Modifier.fillMaxWidth())
+    }
 }
+
+/** The broker calendar has no universal event ID: keep its identity fields, never amounts or a stale row. */
+private fun paymentSelectionKey(row: JSONObject, user: String, account: String): String? = paymentSelectionKey(
+    user, account, row.optionalText("instrumentUid"), row.optionalText("kind"), row.optionalText("date"), row.optionalText("recordDate"))
+
+internal fun paymentSelectionKey(user: String, account: String, uid: String?, kind: String?, date: String?, record: String?): String? =
+    if (uid.isNullOrBlank() || kind.isNullOrBlank()) null
+    else listOf(user, account, uid, kind, date.orEmpty(), record.orEmpty()).joinToString("") { "${it.length}:$it" }
 
 @Composable
 private fun PaymentBars(points: List<HistoryPoint>, currency: String) {

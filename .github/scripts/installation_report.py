@@ -19,8 +19,8 @@ def validate_current_ui(profile: dict, fixture: dict) -> None:
     checkout = str(Path(__file__).resolve().parents[2])
     if checkout not in sys.path:
         sys.path.insert(0, checkout)
-    from backend.installation_evidence import validate_business_receipt
-    validate_business_receipt(profile, fixture.get("apk_sha256"))
+    from backend.installation_evidence import validate_ui_receipt
+    validate_ui_receipt(profile, fixture.get("apk_sha256"))
 
 
 def validate_results(results: object, *, upgrade_required: bool, profile_required: bool,

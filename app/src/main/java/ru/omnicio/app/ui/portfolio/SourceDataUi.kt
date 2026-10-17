@@ -5,9 +5,14 @@ import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import java.net.URI
 import org.json.JSONObject
 import org.json.JSONArray
 import ru.omnicio.app.data.market.*
@@ -29,8 +34,31 @@ fun SourceProvenance(sources: List<JSONObject>, sourceIds: List<String>? = null,
                 Text("Срок актуальности источника истёк. Сверьте свежую публикацию.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             source.optionalText("subject_id")?.let { Text("Объект: $it", style = MaterialTheme.typography.bodySmall) }
             source.optionalText("unit")?.let { Text("Единица: $it", style = MaterialTheme.typography.bodySmall) }
-            source.optionalText("url")?.takeIf { it.startsWith("https://") }?.let { SelectionContainer { Text(it, style = MaterialTheme.typography.bodySmall) } }
+            source.optionalText("url")?.let { SourceLocation(it) }
         }
+    }
+}
+
+@Composable
+private fun SourceLocation(url: String) {
+    val uri = remember(url) { runCatching { URI(url) }.getOrNull() }
+    val canOpen = uri?.scheme.equals("https", ignoreCase = true) &&
+        !uri?.host.isNullOrBlank() && uri?.userInfo == null
+    val uriHandler = LocalUriHandler.current
+    var openFailed by remember(url) { mutableStateOf(false) }
+    SelectionContainer { Text(url, style = MaterialTheme.typography.bodySmall) }
+    if (canOpen) {
+        TextButton(onClick = { openFailed = runCatching { uriHandler.openUri(url) }.isFailure }) {
+            Text("Открыть источник")
+        }
+    }
+    if (openFailed) {
+        Text(
+            "Не удалось открыть источник. Скопируйте ссылку или повторите попытку.",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
     }
 }
 

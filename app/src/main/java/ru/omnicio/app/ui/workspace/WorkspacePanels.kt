@@ -5,8 +5,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -26,15 +24,8 @@ import ru.omnicio.app.ui.spectrum.*
 fun WorkspaceTextInput(value: String, onChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, singleLine: Boolean = true, error: Boolean = false,
     enabled: Boolean = true, keyboard: KeyboardOptions = KeyboardOptions.Default) {
-    var focused by remember { mutableStateOf(false) }
-    SpatialField(modifier, focused, error, enabled) {
-        TextField(value, onChange, Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
-            label = { Text(label) }, singleLine = singleLine, maxLines = if (singleLine) 1 else 6,
-            isError = error, enabled = enabled, keyboardOptions = keyboard,
-            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
-    }
+    SpectrumTextField(value, onChange, modifier, enabled = enabled, label = { Text(label) },
+        singleLine = singleLine, maxLines = if (singleLine) 1 else 6, isError = error, keyboardOptions = keyboard)
 }
 
 @Composable

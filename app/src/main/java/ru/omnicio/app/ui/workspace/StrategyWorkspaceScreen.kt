@@ -1,6 +1,9 @@
 package ru.omnicio.app.ui.workspace
 
-import androidx.activity.compose.BackHandler
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
+import ru.omnicio.app.ui.spectrum.SpectrumSlider as Slider
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,9 +58,9 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                 item { SpectrumCard {
                     SpectrumBadge("Черновик · не применяется")
                     Text("Шаг ${section + 1} из 4. Сохраняется на устройстве. Расчёт по этим правилам ещё не подключён.")
-                    TextButton(onClick = { if (dirty) { openActiveAfterLeave = true; leaving = true } else onCurrentRules() }) {
-                        Text("Действующие правила анализа ›")
-                    }
+                    SpectrumTextButton("Действующие правила анализа",
+                        onClick = { if (dirty) { openActiveAfterLeave = true; leaving = true } else onCurrentRules() },
+                        symbol = SpectrumSymbol.Forward)
                 } }
                 when (section) {
                     0 -> {
@@ -120,8 +123,8 @@ private fun DraftSlider(title: String, description: String, value: Int, range: C
     val valid = parsed != null && parsed.toFloat() in range
     SpectrumCard {
         Text(title, style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(text, { next -> text = next.take(3); next.toIntOrNull()?.takeIf { it.toFloat() in range }?.let(onChange) },
-            label = { Text("Проценты") }, suffix = { Text("%") }, isError = !valid, singleLine = true,
+        SpectrumTextField(text, { next -> text = next.take(3); next.toIntOrNull()?.takeIf { it.toFloat() in range }?.let(onChange) },
+            label = { Text("Проценты") }, trailingIcon = { Text("%") }, isError = !valid, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         if (!valid) Text("От ${range.start.toInt()} до ${range.endInclusive.toInt()}%", color = MaterialTheme.colorScheme.error)
         Slider(value.toFloat(), { onChange(it.roundToInt()) }, valueRange = range, steps = (range.endInclusive - range.start).toInt() - 1)
@@ -143,7 +146,7 @@ private fun RatingDraftControl(ratings: Set<String>, onChange: (Set<String>) -> 
     val threshold = RatingChoices.indexOfLast { it in ratings }.coerceAtLeast(0)
     SpectrumCard {
         Text("Кредитные рейтинги", style = MaterialTheme.typography.titleLarge)
-        TextButton(onClick = { open = true }) { Text("Минимум: ${RatingChoices[threshold]} ▾") }
+        SpectrumTextButton("Минимум: ${RatingChoices[threshold]}", onClick = { open = true }, symbol = SpectrumSymbol.Expand)
         DetailFold("Исключения (${RatingChoices.take(threshold + 1).count { it !in ratings }})") {
             RatingChoices.take(threshold + 1).forEach { rating -> WorkspaceToggle(rating, "Включать в отбор", rating in ratings) { enabled ->
                 onChange(if (enabled) ratings + rating else ratings - rating)

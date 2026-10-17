@@ -63,6 +63,7 @@ internal fun HistoryChart(
     val anchor = selectedStart?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     val selected = model.bars.indexOfFirst { anchor != null && !anchor.isBefore(it.start) && !anchor.isAfter(it.end) }
     val bar = model.bars.getOrNull(selected)
+    val selectedPoint = historySelectedObservation(model, selected, selectedObservation)
     var rangeStart by rememberSaveable(selectionKey) { mutableStateOf<String?>(null) }
     var rangeEnd by rememberSaveable(selectionKey) { mutableStateOf<String?>(null) }
     val selectedRange = if (rangeStart != null && rangeEnd != null) PortfolioPeriod(rangeStart, rangeEnd) else null
@@ -81,7 +82,7 @@ internal fun HistoryChart(
         fontWeight = FontWeight.SemiBold)
     Notice("Последний снимок · ${dateText(latest.date)}")
     selectedObservation?.let { timestamp ->
-        val exact = model.source.coordinates.firstOrNull { sameHistoryInstant(it.point.date, timestamp) }?.point
+        val exact = selectedPoint
         Text("Точное наблюдение по ссылке", style = MaterialTheme.typography.titleMedium)
         Text(dateText(timestamp, "dd.MM.yyyy HH:mm:ss"), style = MaterialTheme.typography.bodyMedium)
         if (exact != null) DataRow("Зафиксированный баланс", "${exact.value.toPlainString()} ${currencySymbol(currency)}")
@@ -131,7 +132,7 @@ internal fun HistoryChart(
         Notice("Стоимость меняется и при пополнениях или выводах. Её изменение не равно инвестиционной прибыли. Пустой интервал означает отсутствие наблюдений.")
         DataRow("Диапазон шкалы", "${decimalText(model.source.low)} — ${decimalText(model.source.high)} ${currencySymbol(currency)}")
         markers.forEach { Notice("${dateText(it.date)} · ${it.label}") }
-        HistoryValues(model.source.coordinates, currency, selectedStart, selectedObservation) { date ->
+        HistoryValues(model.source.coordinates, currency, selectedStart, selectedPoint?.date) { date ->
             selectedStart = java.time.Instant.parse(date).atZone(Moscow).toLocalDate().toString()
             selectedObservation = java.time.Instant.parse(date).toString(); rangeStart = null; rangeEnd = null
         }
@@ -270,4 +271,9 @@ private fun HistoryValues(data: List<HistoryCoordinate>, currency: String, selec
 internal fun sameHistoryInstant(first: String, second: String): Boolean = runCatching {
     java.time.Instant.parse(first) == java.time.Instant.parse(second)
 }.getOrDefault(false)
+
+/** A bar selects its actual closing observation; an explicit missing Instant never falls back to that close. */
+internal fun historySelectedObservation(model: HistoryBars, selectedBar: Int, requestedInstant: String?): HistoryPoint? =
+    if (requestedInstant != null) model.source.coordinates.firstOrNull { sameHistoryInstant(it.point.date, requestedInstant) }?.point
+    else model.bars.getOrNull(selectedBar)?.close
 

@@ -5,6 +5,8 @@ import json
 import math
 import pathlib
 import struct
+import subprocess
+import tempfile
 import unittest
 from contextlib import ExitStack
 from unittest.mock import patch
@@ -26,6 +28,34 @@ def decode(payload):
 
 
 class MeshCatalogueTest(unittest.TestCase):
+    def test_windows_git_checkout_preserves_generated_catalogue_and_glb_bytes(self):
+        """Exercise real Git autocrlf conversion, not a mocked Windows flag."""
+        root = pathlib.Path(__file__).resolve().parents[1]
+        relative = pathlib.Path('app/src/main/assets/spectrum3d')
+        paths = [relative / 'catalogue.json', relative / 'brand.glb']
+        original = {path: (root / path).read_bytes() for path in paths}
+        with tempfile.TemporaryDirectory(prefix='spectrum-checkout-') as folder:
+            checkout = pathlib.Path(folder)
+            def git(*arguments):
+                return subprocess.run(['git', '-c', 'core.autocrlf=true', *arguments], cwd=checkout,
+                                      check=True, capture_output=True, timeout=15)
+            git('init', '--quiet')
+            (checkout / relative).mkdir(parents=True)
+            for path, payload in original.items():
+                (checkout / path).write_bytes(payload)
+            git('add', '--', *(path.as_posix() for path in paths))
+            (checkout / paths[0]).unlink()
+            git('checkout-index', '--force', '--all')
+            # Reproduce the prior failure: unpinned JSON gains Windows CRLF.
+            self.assertEqual(original[paths[0]].replace(b'\n', b'\r\n'), (checkout / paths[0]).read_bytes())
+            (checkout / '.gitattributes').write_bytes((root / '.gitattributes').read_bytes())
+            git('add', '--', '.gitattributes')
+            for path in paths:
+                (checkout / path).unlink()
+            git('checkout-index', '--force', '--all')
+            for path in paths:
+                self.assertEqual(original[path], (checkout / path).read_bytes(), str(path))
+
     def test_every_distributed_asset_has_finite_volume_normals_and_verified_digest(self):
         manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())
         self.assertEqual(1, manifest['version'])

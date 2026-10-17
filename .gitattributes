@@ -1,0 +1,4 @@
+# Generated assets are verified byte-for-byte on Linux and Windows. Preserve
+# canonical LF JSON even when the developer/runner enables core.autocrlf.
+/app/src/main/assets/spectrum3d/catalogue.json text eol=lf
+/app/src/main/assets/spectrum3d/*.glb -text

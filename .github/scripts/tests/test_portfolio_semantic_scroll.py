@@ -97,6 +97,14 @@ class SemanticActionTests(unittest.TestCase):
                         [action_request(1, resource_id, direction)],
                     )
 
+    def test_nested_dossier_tabs_have_a_distinct_horizontal_target(self):
+        self.assertEqual(6, frames.SCROLL_LIST_CODES["dossier-tabs"])
+        self.assertNotEqual(frames.SCROLL_LIST_CODES["profile-tabs"], frames.SCROLL_LIST_CODES["dossier-tabs"])
+        self.assertEqual("end", profile.semantic_scroll_direction("dossier-tabs", 300, 200, 100, 200))
+        self.assertEqual("start", profile.semantic_scroll_direction("dossier-tabs", 100, 200, 300, 200))
+        with self.assertRaises(ValueError):
+            profile.semantic_scroll_direction("dossier-tabs", 100, 200, 100, 400)
+
     def test_unknown_list_or_direction_sends_nothing(self):
         for resource_id, direction in (
             ("other-list", "end"),
@@ -213,6 +221,7 @@ class SemanticActionTests(unittest.TestCase):
             'EDUCATION_LIST = "education-content"',
             'PORTFOLIO_LIST = "portfolio-content"',
             'PROFILE_TABS = "profile-tabs"',
+            'DOSSIER_TABS = "dossier-tabs"',
             'APP_PACKAGE = "ru.omnicio.app.debug"',
             "matches.size() != 1",
             "node.isVisibleToUser()",

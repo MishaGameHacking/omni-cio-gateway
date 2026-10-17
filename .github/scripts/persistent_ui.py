@@ -31,6 +31,8 @@ SCROLL_LIST_CODES = {
     "portfolio-content": 3,
     "profile-tabs": 4,
     "workspace-content": 5,
+    "dossier-tabs": 6,
+    "quotes-intervals": 7,
 }
 
 

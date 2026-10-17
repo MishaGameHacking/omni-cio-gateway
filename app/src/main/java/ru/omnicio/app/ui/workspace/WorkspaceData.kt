@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -16,6 +17,8 @@ import java.text.NumberFormat
 import java.util.Locale
 import java.util.UUID
 import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
+import ru.omnicio.app.data.workspace.JobCheckpointPreparation
+import ru.omnicio.app.data.workspace.JobCheckpointStore
 import ru.omnicio.app.data.workspace.VolumeReply
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spatial.SpatialHaptic
@@ -30,9 +33,10 @@ data class EvidenceTarget(val section: String, val id: String, val date: String?
 val LocalEvidenceNavigator = staticCompositionLocalOf<(EvidenceTarget) -> Unit> { {} }
 val LocalOpenAnalysisReport = staticCompositionLocalOf<(String?) -> Unit> { {} }
 data class ChatContext(val mode: String = "portfolio", val instrumentUid: String? = null, val title: String = "Мой портфель",
-    val accountId: String? = null, val start: String? = null, val end: String? = null) {
+    val accountId: String? = null, val start: String? = null, val end: String? = null, val eventId: String? = null) {
     fun json(): JSONObject = JSONObject().put("mode", mode).put("instrument_uid", instrumentUid ?: JSONObject.NULL)
         .put("account_id", accountId ?: JSONObject.NULL).put("start", start ?: JSONObject.NULL).put("end", end ?: JSONObject.NULL)
+        .put("event_id", eventId ?: JSONObject.NULL)
 }
 val LocalChatContext = staticCompositionLocalOf { ChatContext() }
 val LocalAskAnalyst = staticCompositionLocalOf<(ChatContext) -> Unit> { {} }
@@ -85,15 +89,46 @@ class WorkspaceAction(
         userInitiated: Boolean = true) = execute(path, body, method, job, userInitiated)
 }
 
+data class WorkspaceRequestFailure(val reply: VolumeReply, val requestId: String?, val requiresRecovery: Boolean)
+data class WorkspaceCheckpoints(val items: List<JSONObject>, val loading: Boolean, val error: String?, val revision: Long, val refresh: () -> Unit)
+
+/** The first read is gated, and durable writes refresh every mounted recovery panel. */
+@Composable
+fun rememberJobCheckpoints(): WorkspaceCheckpoints {
+    val session = LocalWorkspaceSession.current
+    val context = LocalContext.current
+    val storage = remember(context) { JobCheckpointStore(context) }
+    val revision by JobCheckpointStore.revision.collectAsState()
+    var retry by remember(session.userId) { mutableIntStateOf(0) }
+    var items by remember(session.userId) { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var loading by remember(session.userId) { mutableStateOf(true) }
+    var observedRevision by remember(session.userId) { mutableLongStateOf(-1L) }
+    var error by remember(session.userId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(session.userId, session.token, revision, retry) {
+        loading = true
+        try {
+            items = withContext(Dispatchers.IO) { storage.list(session.userId) }
+            observedRevision = revision
+            error = null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { error = "Не удалось прочитать сохранённые запросы. Отправка временно заблокирована; повторите проверку." }
+        finally { loading = false }
+    }
+    return WorkspaceCheckpoints(items, loading || observedRevision != revision, error, observedRevision) { retry++ }
+}
+
 /** A paid request ID is persisted BEFORE dispatch; a timeout can only recover that request. */
 @Composable
-fun rememberWorkspaceAction(onSuccess: (JSONObject) -> Unit): WorkspaceAction {
+fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
+    onFailure: (WorkspaceRequestFailure) -> Unit = {}, onSuccess: (JSONObject) -> Unit): WorkspaceAction {
     val session = LocalWorkspaceSession.current
     val context = LocalContext.current
     val client = LocalWorkspaceTransport.current
-    val checkpoints = remember(context) { ru.omnicio.app.data.workspace.JobCheckpointStore(context) }
+    val checkpoints = remember(context) { JobCheckpointStore(context) }
     val scope = rememberCoroutineScope()
     val callback by rememberUpdatedState(onSuccess)
+    val preparedCallback by rememberUpdatedState(onPrepared)
+    val failedCallback by rememberUpdatedState(onFailure)
     val feedback = rememberSpatialHapticFeedback()
     val reauthenticate = LocalReauthenticate.current
     var busy by remember(session.userId) { mutableStateOf(false) }
@@ -104,29 +139,58 @@ fun rememberWorkspaceAction(onSuccess: (JSONObject) -> Unit): WorkspaceAction {
         if (!busy && session.token.isNotBlank()) {
             busy = true; error = null; ambiguous = false
             scope.launch {
+                var checkpoint: String? = null
+                var prepared = JobCheckpointPreparation(false)
                 try {
                     val requestBody = body?.let { JSONObject(it.toString()) } ?: if (method == "GET" || method == "DELETE") null else JSONObject()
                     if (tracked && requestBody?.has("request_id") != true) requestBody?.put("request_id", UUID.randomUUID().toString())
-                    val checkpoint = requestBody?.optString("request_id")?.takeIf { tracked && it.isNotBlank() }
-                    val persisted = checkpoint == null || withContext(Dispatchers.IO) {
-                        checkpoints.save(session.userId, checkpoint, path)
+                    checkpoint = requestBody?.optString("request_id")?.takeIf { tracked && it.isNotBlank() }
+                    val requestId = checkpoint
+                    prepared = if (requestId == null) JobCheckpointPreparation(true) else withContext(Dispatchers.IO) {
+                        checkpoints.prepare(session.userId, requestId, path, requestBody)
                     }
-                    if (!persisted) {
-                        error = "Не удалось сохранить задание на устройстве. Запрос не отправлен."
+                    if (!prepared.persisted) {
+                        error = "Не удалось сохранить задание на устройстве. Сверьте сохранённые запросы; новый запрос не отправлен."
                         if (userInitiated) feedback(SpatialHaptic.Rejected)
+                        failedCallback(WorkspaceRequestFailure(VolumeReply(error = error, code = "checkpoint_not_saved"), requestId, false))
                         return@launch
                     }
+                    if (requestId != null) preparedCallback(requestId)
                     val reply = withContext(Dispatchers.IO) { client.request(session.token, path, method, requestBody) }
                     if (reply.signedOut) reauthenticate()
                     error = reply.error; ambiguous = reply.ambiguous
                     reportActionFeedback(reply, feedback, method, userInitiated)
-                    reply.data?.let { result ->
-                        if (checkpoint != null) withContext(Dispatchers.IO) {
-                            checkpoints.save(session.userId, checkpoint, path, result.optString("job_id").takeIf(String::isNotBlank))
+                    val result = reply.data
+                    if (result != null) {
+                        if (requestId != null) {
+                            val jobId = result.optString("job_id").takeIf { it.isNotBlank() && it != "null" }
+                            val saved = jobId != null && withContext(Dispatchers.IO) {
+                                checkpoints.save(session.userId, requestId, path, jobId)
+                            }
+                            if (!saved) {
+                                error = "Подтверждение задания не сохранено. Сверьте сохранённый запрос перед продолжением."
+                                ambiguous = true
+                                failedCallback(WorkspaceRequestFailure(reply.copy(data = null, error = error, ambiguous = true), requestId, true))
+                                return@launch
+                            }
                         }
                         callback(result)
                         if (method != "GET") invalidate()
+                    } else {
+                        // Only a fresh request with a definite pre-enqueue rejection may be discarded.
+                        // A prior ambiguous dispatch remains recoverable even if a later retry is rejected.
+                        val rejectedBeforeEnqueue = requestId != null && prepared.isNew && JobCheckpointStore.isChatPath(path) &&
+                            !reply.ambiguous && reply.status in 400..499 && reply.code != "request_id_payload_conflict"
+                        val removed = rejectedBeforeEnqueue && withContext(Dispatchers.IO) {
+                            checkpoints.removeRequest(session.userId, checkNotNull(requestId))
+                        }
+                        failedCallback(WorkspaceRequestFailure(reply, requestId, requestId != null && !removed))
                     }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) {
+                    ambiguous = checkpoint != null && prepared.persisted
+                    error = if (ambiguous) "Исход запроса не подтверждён. Сверьте сохранённое задание." else "Не удалось выполнить запрос. Попробуйте позже."
+                    failedCallback(WorkspaceRequestFailure(VolumeReply(error = error, ambiguous = ambiguous), checkpoint, ambiguous))
                 } finally { busy = false }
             }
         }

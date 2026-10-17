@@ -207,7 +207,7 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Всего в портфеле", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = onCurrency, modifier = Modifier.heightIn(min = 48.dp)) { Text("${currency.name} ▾") }
+                SpectrumTextButton(currency.name, onCurrency, symbol = SpectrumSymbol.Expand)
             }
             InteractiveBalance(snapshot.totalValue, hidden, onCurrency)
             BalanceVisibilityButton()
@@ -252,7 +252,7 @@ private fun AllocationOverview(snapshot: PortfolioSnapshot, onOpenPortfolio: () 
     SpectrumCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Распределение", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = onOpenPortfolio) { Text("Подробнее ›") }
+            SpectrumTextButton("Подробнее", onOpenPortfolio, symbol = SpectrumSymbol.Forward)
         }
         if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("Структура скрыта"); return@SpectrumCard }
         AssetStructure(snapshot.allocations, snapshot.totalValue)

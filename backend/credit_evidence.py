@@ -256,6 +256,13 @@ def _statement_basis(statement: Statement) -> tuple[str, str, str]:
     return sector, standard, currency
 
 
+def validated_statement_data(statement: Statement) -> tuple[str, str, str, dict[str, Decimal]]:
+    """Validate imported or analysed values against the same numeric basis."""
+    sector, standard, currency = _statement_basis(statement)
+    values = {key: amount(value) for key, value in statement.values.items()}
+    return sector, standard, currency, values
+
+
 def _ratio(numerator: Decimal, denominator: Decimal) -> str:
     try:
         # A server worker must not inherit the arithmetic settings of a caller.
@@ -304,8 +311,7 @@ def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datet
     start, end = stamp(statement.period_start), stamp(statement.period_end)
     if start >= end or end > stamp(statement.source.published_at) or (at - end).days > 550:
         return {'state': 'stale', 'ratios': {}, 'messages': ['Отчётный период не подходит для текущей оценки.']}
-    sector, standard, currency = _statement_basis(statement)
-    values = {key: amount(value) for key, value in statement.values.items()}
+    sector, standard, currency, values = validated_statement_data(statement)
     if sector in {'financial', 'financials', 'finance', 'banks', 'insurance'}:
         return {'state': 'sector_model_required', 'ratios': {},
                 'messages': ['Для банка или страховой компании нужна отдельная проверка капитала и резервов.'],

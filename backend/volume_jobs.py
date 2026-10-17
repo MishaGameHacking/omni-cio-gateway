@@ -273,6 +273,10 @@ def run_job(identifier: str | None = None) -> None:
 
 
 def drain(limit: int = 5) -> None:
+    # A restart can leave only expired running rows. Recover those leases before
+    # checking for queued work, even when no client is polling the workspace.
+    with transaction(backend.connect) as db:
+        _expire(db, int(time.time()))
     for _ in range(limit):
         with closing(backend.connect()) as db:
             row = db.execute("SELECT id FROM workspace_jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").fetchone()

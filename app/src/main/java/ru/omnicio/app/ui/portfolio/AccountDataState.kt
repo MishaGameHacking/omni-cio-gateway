@@ -23,7 +23,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import ru.omnicio.app.data.backend.BackendResult
-import ru.omnicio.app.data.portfolio.PortfolioDataClient
+import ru.omnicio.app.data.workspace.LocalPortfolioReadSource
 import ru.omnicio.app.data.portfolio.RefreshBackoff
 import ru.omnicio.app.data.portfolio.RefreshSnapshot
 
@@ -50,8 +50,8 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
     var request by remember(token, accountId, section, dataScope) {
         mutableStateOf(RefreshSnapshot<Map<String, String>, JSONObject>())
     }
-    val client = remember { PortfolioDataClient() }
-    LaunchedEffect(token, accountId, section, query, active, interval) {
+    val client = LocalPortfolioReadSource.current
+    LaunchedEffect(client, token, accountId, section, query, active, interval) {
         if (!active || token.isBlank()) return@LaunchedEffect
         val backoff = RefreshBackoff(interval)
         while (isActive) {
@@ -59,7 +59,7 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
             val id = request.requestId
             val waitMillis: Long
             try {
-                when (val result = withContext(Dispatchers.IO) { client.details(token, accountId, section, query) }) {
+                when (val result = withContext(Dispatchers.IO) { client.account(token, accountId, section, query) }) {
                     is BackendResult.Success -> {
                         request = request.succeed(id, result.value, System.currentTimeMillis())
                         waitMillis = backoff.success()

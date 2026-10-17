@@ -266,14 +266,7 @@ private fun TApiHeader(onBack: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(
-                text = "‹ Назад",
-                fontSize = 16.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        SpectrumTextButton("Назад", onBack, symbol = SpectrumSymbol.Back)
         Column(Modifier.weight(1f)) {
             Text(
                 text = "Подключение",

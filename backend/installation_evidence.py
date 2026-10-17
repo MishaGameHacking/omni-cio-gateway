@@ -7,12 +7,21 @@ from __future__ import annotations
 
 import re
 
-CURRENT_UI_SUITE = 'spectrum-3d-100-v1'
+CURRENT_UI_SUITE = 'spectrum-3d-100-v2'
 BUSINESS_CASE_IDS = frozenset(
     f'{route}/{scenario}@{font}'
     for route in ('risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis')
     for scenario in ('ready', 'empty', 'partial', 'error', 'job')
     if scenario != 'job' or route in ('assistant', 'plans')
+    for font in (1, 2)
+)
+PORTFOLIO_CASE_IDS = frozenset(
+    f'{route}/{scenario}@{font}'
+    for route, scenario in (
+        ('discovery', 'ready'), ('dossier', 'ready'),
+        ('history', 'ready'), ('history', 'partial'),
+        ('quotes', 'ready'), ('markets', 'ready'), ('appearance', 'ready'),
+    )
     for font in (1, 2)
 )
 
@@ -41,18 +50,27 @@ def _results(raw: object) -> dict[str, dict]:
     return indexed
 
 
-def validate_business_receipt(record: object, fixture_digest: str) -> int:
-    """Require each completed case/font pair, bound to the installed debug APK."""
+def _case_receipt(record: dict, group: str, expected: frozenset[str]) -> int:
+    cases = record.get(group + '_cases')
+    count = record.get(group + '_case_count')
+    if type(count) is not int or count != len(expected) \
+            or not isinstance(cases, list) or len(cases) != len(expected) \
+            or not all(isinstance(case, str) for case in cases) or set(cases) != expected:
+        raise InstallationEvidenceError(group + '_ui_matrix_incomplete')
+    return len(cases)
+
+
+def validate_ui_receipt(record: object, fixture_digest: str) -> dict[str, int]:
+    """Require both completed case/font matrices bound to the installed debug APK."""
     if not isinstance(record, dict) or record.get('ui_suite') != CURRENT_UI_SUITE:
         raise InstallationEvidenceError('current_ui_suite_evidence_required')
-    cases = record.get('business_cases')
-    if type(record.get('business_case_count')) is not int or record['business_case_count'] != len(BUSINESS_CASE_IDS) \
-            or not isinstance(cases, list) or len(cases) != len(BUSINESS_CASE_IDS) \
-            or not all(isinstance(case, str) for case in cases) or set(cases) != BUSINESS_CASE_IDS:
-        raise InstallationEvidenceError('business_ui_matrix_incomplete')
+    counts = {
+        'business_case_count': _case_receipt(record, 'business', BUSINESS_CASE_IDS),
+        'portfolio_case_count': _case_receipt(record, 'portfolio', PORTFOLIO_CASE_IDS),
+    }
     if _digest(record.get('fixture_apk_sha256')) != _digest(fixture_digest):
-        raise InstallationEvidenceError('business_ui_artifact_mismatch')
-    return len(cases)
+        raise InstallationEvidenceError('ui_artifact_mismatch')
+    return counts
 
 
 def _one_emulator(run: dict, digest: str) -> dict:
@@ -87,8 +105,8 @@ def _one_emulator(run: dict, digest: str) -> dict:
     }
     profile = records['profile_ui']
     if 'ui_suite' in profile:
-        checked['business_case_count'] = validate_business_receipt(
-            profile, records['debug_ui_fixture_install'].get('apk_sha256'))
+        checked.update(validate_ui_receipt(
+            profile, records['debug_ui_fixture_install'].get('apk_sha256')))
     if 'kernel_page_size' in records:
         kernel = records['kernel_page_size']
         image = f"system-images;android-{api};{'google_apis_ps16k' if api == 35 else 'google_apis'};x86_64"
@@ -125,6 +143,7 @@ def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_1
             checked = result.get(api, {})
             if checked.get('page_size_bytes') != size or checked.get('upgrade') is not True \
                     or checked.get('upgrade_launch') is not True \
-                    or checked.get('business_case_count') != len(BUSINESS_CASE_IDS):
+                    or checked.get('business_case_count') != len(BUSINESS_CASE_IDS) \
+                    or checked.get('portfolio_case_count') != len(PORTFOLIO_CASE_IDS):
                 raise InstallationEvidenceError('android_runtime_page_size_evidence_required')
     return result

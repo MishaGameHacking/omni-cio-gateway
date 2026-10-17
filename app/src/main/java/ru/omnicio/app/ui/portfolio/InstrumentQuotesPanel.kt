@@ -38,10 +38,12 @@ internal fun InstrumentQuotesPanel(position: PortfolioPosition, accountId: Strin
             start = next.start ?: today.minusYears(5).toString(); end = next.end ?: today.toString()
             if (interval == "hour" && ChronoUnit.DAYS.between(LocalDate.parse(start), LocalDate.parse(end)) > 89) interval = "day"
         }
-        ChoiceRow(listOf("Час", "День", "Неделя", "Месяц"), listOf("hour", "day", "week", "month").indexOf(interval)) { index ->
-            interval = listOf("hour", "day", "week", "month")[index]
-            if (interval == "hour" && ChronoUnit.DAYS.between(LocalDate.parse(start), LocalDate.parse(end)) > 89)
-                start = LocalDate.parse(end).minusDays(89).toString()
+        CompositionLocalProvider(ru.omnicio.app.ui.spectrum.LocalSpectrumTabScrollTag provides "quotes-intervals") {
+            ChoiceRow(listOf("Час", "День", "Неделя", "Месяц"), listOf("hour", "day", "week", "month").indexOf(interval)) { index ->
+                interval = listOf("hour", "day", "week", "month")[index]
+                if (interval == "hour" && ChronoUnit.DAYS.between(LocalDate.parse(start), LocalDate.parse(end)) > 89)
+                    start = LocalDate.parse(end).minusDays(89).toString()
+            }
         }
         WorkspaceRequestNotice(request)
         val parsed = remember(request.json, position.id) { request.json?.let { runCatching { parseCandles(it, position.id) } } }

@@ -19,6 +19,7 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var start by rememberSaveable { mutableStateOf(current.start.orEmpty()) }
     var end by rememberSaveable { mutableStateOf(current.end.orEmpty()) }
+    var keepEvent by rememberSaveable(current.eventId) { mutableStateOf(current.eventId != null) }
     val accounts = portfolio?.accounts.orEmpty()
     val positions = accounts.filter { accountId == null || it.id == accountId }.flatMap { it.positions }.distinctBy { it.id }
     val selected = positions.firstOrNull { it.id == instrument }
@@ -37,6 +38,10 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
                     found.take(20).forEach { position -> SpectrumSecondaryButton(position.title, { instrument = position.id }, Modifier.fillMaxWidth()) }
                     if (found.size > 20) Text("Уточните поиск, чтобы выбрать из остальных инструментов.")
                 }
+                if (keepEvent && instrument == current.instrumentUid && current.eventId != null) {
+                    Text("Контекст включает выбранную публикацию из досье.", style = MaterialTheme.typography.bodySmall)
+                    SpectrumSecondaryButton("Убрать событие из контекста", { keepEvent = false }, Modifier.fillMaxWidth())
+                }
             }
             DetailFold("Период операций", initiallyOpen = start.isNotBlank()) {
                 WorkspaceTextInput(start, { start = it.take(10) }, "С · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
@@ -49,9 +54,10 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
             val base = if (mode == 0) "Общий вопрос" else if (mode == 2) selected?.title.orEmpty() else accounts.firstOrNull { it.id == accountId }?.name ?: "Мой портфель"
             val title = base + if (mode != 0 && start.isNotBlank()) " · " + start + " — " + end else ""
             select(ChatContext(listOf("general", "portfolio", "instrument")[mode], if (mode == 2) instrument else null, title,
-                if (mode == 0) null else accountId, start.takeIf { mode != 0 && it.isNotBlank() }, end.takeIf { mode != 0 && it.isNotBlank() }))
+                if (mode == 0) null else accountId, start.takeIf { mode != 0 && it.isNotBlank() }, end.takeIf { mode != 0 && it.isNotBlank() },
+                current.eventId.takeIf { keepEvent && mode == 2 && instrument == current.instrumentUid }))
             onClose()
-        }, Modifier.fillMaxWidth(), validRange && (mode != 2 || selected != null))
+        }, Modifier.fillMaxWidth(), (mode == 0 || validRange) && (mode != 2 || selected != null))
         SpectrumSecondaryButton("Вернуться", onClose, Modifier.fillMaxWidth())
     }
 }

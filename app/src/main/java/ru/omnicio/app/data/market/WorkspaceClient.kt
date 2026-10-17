@@ -11,6 +11,7 @@ import org.json.JSONObject
 import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.updates.ClientVersion
+import ru.omnicio.app.data.workspace.LocalPortfolioReadSource
 import ru.omnicio.app.ui.workspace.LocalWorkspaceSession
 import java.net.URI
 import java.net.URLEncoder
@@ -82,18 +83,18 @@ fun rememberWorkspaceRequest(path: String = "/workspace", parameters: Map<String
     var error by remember(token, path) { mutableStateOf<String?>(null) }
     var attempt by remember(token, path) { mutableIntStateOf(0) }
     var generation by remember(token, path) { mutableIntStateOf(0) }
-    val client = remember { WorkspaceClient() }
+    val client = LocalPortfolioReadSource.current
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, _ -> active = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == true }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    LaunchedEffect(token, path, parameters, attempt, active, refreshKey) {
+    LaunchedEffect(client, token, path, parameters, attempt, active, refreshKey) {
         val requestId = ++generation
         if (!active || token.isBlank()) { loading = false; return@LaunchedEffect }
         loading = true; error = null
         try {
-            val result = withContext(Dispatchers.IO) { client.read(token, path, parameters) }
+            val result = withContext(Dispatchers.IO) { client.workspace(token, path, parameters) }
             if (requestId == generation) when (result) {
                 is BackendResult.Success -> { json = result.value; displayed = parameters.toMap() }
                 is BackendResult.Failure -> error = result.message

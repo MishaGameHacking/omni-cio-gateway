@@ -15,9 +15,10 @@ SPEC.loader.exec_module(installation)
 
 class EmulatorFailureTests(unittest.TestCase):
     def test_success_requires_completed_exercise(self):
-        from backend.installation_evidence import BUSINESS_CASE_IDS, CURRENT_UI_SUITE
+        from backend.installation_evidence import BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, CURRENT_UI_SUITE
         fixture = {"test": "debug_ui_fixture_install", "success": True, "apk_sha256": "c" * 64}
-        receipt = {"ui_suite": CURRENT_UI_SUITE, "business_case_count": 52, "business_cases": sorted(BUSINESS_CASE_IDS)}
+        receipt = {"ui_suite": CURRENT_UI_SUITE, "business_case_count": 52, "business_cases": sorted(BUSINESS_CASE_IDS),
+                   "portfolio_case_count": 14, "portfolio_cases": sorted(PORTFOLIO_CASE_IDS)}
         results = [fixture]
         device = Mock()
 

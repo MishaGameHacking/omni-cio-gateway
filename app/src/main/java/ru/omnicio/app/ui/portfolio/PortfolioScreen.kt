@@ -40,6 +40,8 @@ import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 import ru.omnicio.app.ui.spectrum.SpectrumBackground
 import ru.omnicio.app.ui.spectrum.SpectrumCard
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.SpectrumTextButton
 
 private const val OperationsTitle = "Операции"
 private const val AnalyticsTitle = "Аналитика"
@@ -253,7 +255,7 @@ private fun AccountScreen(
 ) {
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) { Text("‹ Назад") }
+            SpectrumTextButton("Назад", onBack, symbol = SpectrumSymbol.Back)
             AccountSelector(accounts, account.id, onAccount, Modifier.weight(1f))
         }
         Box(Modifier.padding(horizontal = 20.dp)) { ChoiceRow(listOf("Обзор", OperationsTitle, "Заявки", AnalyticsTitle, "Выплаты"), section, onSection) }

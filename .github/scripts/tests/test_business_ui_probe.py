@@ -1,9 +1,11 @@
 """Offline fixture-identity guards; device observations are produced only by CI."""
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 SPEC = importlib.util.spec_from_file_location("business_ui_probe", Path(__file__).resolve().parents[1] / "business_ui_probe.py")
 business = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(business)
@@ -12,7 +14,8 @@ SPEC.loader.exec_module(business)
 def frame(route="risk", scenario="partial", *, requests="3", errors="0", transport="synthetic", package="ru.omnicio.app.debug"):
     tree = ET.Element("hierarchy")
     ET.SubElement(tree, "node", {"package": package, "visible-to-user": "true", "content-desc":
-        f"business-probe:{route}/{scenario};transport:{transport};requests:{requests};contract-errors:{errors};navigation:instrument:synthetic-stock::"})
+        f"business-probe:{route}/{scenario};transport:{transport};requests:{requests};contract-errors:{errors};navigation:instrument:synthetic-stock::"
+        ";message-posts:0;message-request-id:none;by-request-gets:0;recovered-request-id:none"})
     return tree
 
 

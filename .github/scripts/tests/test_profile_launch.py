@@ -58,6 +58,43 @@ RESUMED = "topResumedActivity=ActivityRecord{123 u0 " + ACTIVITY + " t12}"
 
 
 class ProfileLaunchTests(unittest.TestCase):
+    def test_portfolio_launch_requires_exact_production_route_and_scenario(self):
+        ready = tree(screen="probe-screen:portfolio-history;probe-scenario:partial")
+        self.assertIsNotNone(ready_marker(ready, "portfolio-history", "partial"))
+        self.assertIsNone(ready_marker(ready, "portfolio-history", "ready"))
+        self.assertIsNone(ready_marker(ready, "portfolio-dossier", "ready"))
+        command = Mock(side_effect=["", "Status: ok", RESUMED, RESUMED])
+        launch_profile(command, lambda: ready, lambda read, message: read(), expected_screen="portfolio-history", scenario="partial")
+        self.assertEqual(command.call_args_list[1].args[-6:], ("--es", "spectrum_screen", "portfolio-history", "--es", "spectrum_scenario", "partial"))
+
+    def test_unsupported_portfolio_route_scenario_fails_before_adb(self):
+        for screen, scenario in (("portfolio-discovery", "partial"), ("portfolio-dossier", "error"),
+                                 ("portfolio-history", "job"), ("portfolio-quotes", "empty"),
+                                 ("portfolio-markets", "partial"), ("portfolio-appearance", "partial")):
+            command = Mock()
+            with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):
+                launch_profile(command, Mock(), Mock(), expected_screen=screen, scenario=scenario)
+            command.assert_not_called()
+
+    def test_portfolio_persistence_relaunch_requires_exact_run_identity(self):
+        run_id = "a" * 32
+        ready = tree(screen="probe-screen:portfolio-appearance;probe-scenario:ready;probe-run:" + run_id)
+        self.assertIsNotNone(ready_marker(ready, "portfolio-appearance", "ready", run_id))
+        self.assertIsNone(ready_marker(ready, "portfolio-appearance", "ready", "b" * 32))
+        command = Mock(side_effect=["", "Status: ok", RESUMED, RESUMED])
+        launch_profile(command, lambda: ready, lambda read, message: read(),
+                       expected_screen="portfolio-appearance", scenario="ready", run_id=run_id)
+        self.assertEqual(command.call_args_list[1].args[-3:], ("--es", "spectrum_probe_run", run_id))
+
+    def test_unknown_or_unsafe_fixture_run_is_rejected_before_any_command(self):
+        for screen, run_id in (("profile", "a" * 32), ("business-risk", "a" * 32),
+                               ("portfolio-history", "../user"), ("portfolio-history", "a" * 33),
+                               ("portfolio-history", "A" * 32), ("portfolio-history", 123)):
+            command = Mock()
+            with self.subTest(screen=screen, run_id=run_id), self.assertRaises(ValueError):
+                launch_profile(command, Mock(), Mock(), expected_screen=screen, run_id=run_id)
+            command.assert_not_called()
+
     def test_business_launch_requires_exact_screen_and_scenario(self):
         ready = tree(screen="probe-screen:business-risk;probe-scenario:partial")
         self.assertIsNotNone(ready_marker(ready, "business-risk", "partial"))

@@ -7,6 +7,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import org.json.JSONObject
 import ru.omnicio.app.data.market.*
 import ru.omnicio.app.data.market.records
@@ -61,7 +63,7 @@ internal fun InstrumentDossierContent(payload: JSONObject, onNavigate: () -> Uni
         DossierRatingsPanel(payload)
         DossierMetricsPanel(payload, select)
         DossierReportsPanel(payload)
-        DossierNewsPanel(payload, select)
+        DossierNewsPanel(payload, select, onNavigate)
     }
     if (selectedFact != null) DossierFactSheet(payload, selectedFact, { selectedFactKey = null }, onNavigate)
     else if (selectedFactKey != null) WorkspaceDialog("Факт изменился", { selectedFactKey = null }) {
@@ -99,40 +101,11 @@ internal fun DossierHoldingsPanel(payload: JSONObject, onNavigate: () -> Unit, p
                 onNavigate()
                 destination(PortfolioDestination(accountId = accountId, section = if (positionLinks) 1 else 0,
                     query = if (positionLinks) payload.optString("instrument_uid") else ""))
-            }, enabled = accountId != null) { Text(if (positionLinks) "Открыть текущую позицию" else "Открыть счёт") }
+            }, enabled = accountId != null, modifier = Modifier.testTag("dossier-holding-$accountId")) {
+                Text(if (positionLinks) "Открыть текущую позицию" else "Открыть счёт")
+            }
         }
     }
-}
-
-@Composable
-private fun DossierRatingsPanel(payload: JSONObject) {
-    val section = payload.section("ratings")
-    val data = section?.optJSONObject("data")
-    SpectrumCard {
-        Text("Паспорт рейтинга", style = MaterialTheme.typography.titleLarge)
-        WorkspaceSectionNotice(section, "Рейтинг для этой бумаги не подтверждён источником.")
-        data?.records("items").orEmpty().forEach { rating -> DossierRatingRecord(rating) }
-        data?.stringList("warnings").orEmpty().forEach { Text(it) }
-        val history = data?.records("history").orEmpty()
-        if (history.isNotEmpty()) DetailFold("Как менялся рейтинг") { history.forEach { row ->
-            DataRow(dateText(row.optionalText("published_at") ?: row.optionalText("date")),
-                "${row.optionalText("agency") ?: ""} · ${row.optionalText("grade") ?: DOSSIER_UNAVAILABLE}")
-        } }
-    }
-}
-
-@Composable
-private fun DossierRatingRecord(rating: JSONObject) {
-    Text("${rating.optionalText("agency") ?: "Агентство не указано"} · ${rating.optionalText("grade") ?: "Оценка не получена"}",
-        style = MaterialTheme.typography.titleMedium)
-    DataRow("Шкала", rating.optionalText("scale") ?: "Не указана")
-    DataRow("Объект", when (rating.optionalText("subject_kind")) {
-        "issue" -> "Выпуск"; "issuer", "company" -> "Компания"; else -> "Не подтверждён"
-    })
-    rating.optionalText("subject_id")?.let { DataRow("Идентификатор объекта", it) }
-    DataRow("Статус", rating.optionalText("status") ?: "Не получен")
-    DataRow("Прогноз", rating.optionalText("outlook") ?: "Не опубликован")
-    rating.optJSONObject("source")?.let { SourceProvenance(listOf(it), title = "Публикация и актуальность рейтинга") }
 }
 
 @Composable
@@ -157,20 +130,3 @@ private fun DossierMetricsPanel(payload: JSONObject, select: (String) -> Unit) {
     }
 }
 
-@Composable
-private fun DossierMetricConflicts(conflicts: List<JSONObject>, sources: List<JSONObject>) {
-    if (conflicts.isEmpty()) return
-    DetailFold("Расхождения источников (${conflicts.size})", initiallyOpen = true) {
-        conflicts.forEach { conflict ->
-            Text(conflict.optionalText("label") ?: conflict.optionalText("metric") ?: "Источники расходятся",
-                style = MaterialTheme.typography.titleMedium)
-            conflict.records("observations").forEach { observation ->
-                DataRow(observation.optionalText("source_id") ?: "Источник", PrivateValue(observation.optionalText("value") ?: DOSSIER_UNAVAILABLE))
-                observation.optionalText("period")?.let { Text(it) }
-            }
-            conflict.optionalText("reason")?.let { Text(it) }
-            Text("Расхождение не разрешено автоматически. Сверьте период, единицы и публикации.", style = MaterialTheme.typography.bodySmall)
-            SourceProvenance(sources, conflict.stringList("source_ids"))
-        }
-    }
-}

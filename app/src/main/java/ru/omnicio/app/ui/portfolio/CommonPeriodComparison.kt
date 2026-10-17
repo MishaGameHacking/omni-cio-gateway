@@ -34,8 +34,8 @@ internal fun comparableQuotePeriod(series: List<CandleSnapshot>): ComparableQuot
 @Composable
 internal fun CommonPeriodComparison(rows: List<PortfolioRow>) {
     val instruments = rows.distinctBy { it.position.id }
-    var start by rememberSaveable { mutableStateOf<String?>(LocalDate.now().minusMonths(1).toString()) }
-    var end by rememberSaveable { mutableStateOf<String?>(LocalDate.now().toString()) }
+    var start by rememberSaveable { mutableStateOf<String?>(LocalDate.now(Moscow).minusMonths(1).toString()) }
+    var end by rememberSaveable { mutableStateOf<String?>(LocalDate.now(Moscow).toString()) }
     val period = PortfolioPeriod(start, end)
     SpectrumCard {
         Text("Сравнить один рыночный период", style = MaterialTheme.typography.titleLarge)

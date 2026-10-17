@@ -25,6 +25,8 @@ import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spectrum.SpectrumTextButton
 
 internal val OperationCategories = listOf("all" to "Все", "trades" to "Сделки", "fees" to "Комиссии", "tax" to "Налоги",
     "margin" to "Вармаржа", "redemptions" to "Погашения", "income" to "Дивиденды и купоны",
@@ -78,7 +80,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
             PeriodControls(period) { start = it.start; end = it.end }
             val primary = listOf(0, 1, 6, 7)
             SpectrumTabs(listOf("Все", "Сделки", "Доход", "Пополнения"), primary.indexOf(category), { category = primary[it] })
-            TextButton(onClick = { filterOpen = true }) { Text("Фильтр: ${OperationCategories[category].second} ▾") }
+            SpectrumTextButton("Фильтр: ${OperationCategories[category].second}", { filterOpen = true }, symbol = SpectrumSymbol.Expand)
             AccountDataNotice(request)
         }
         operationRows(visible, account) { chosenId = it }
@@ -159,13 +161,14 @@ private fun OperationTargetDialog(id: String, accountName: String, request: Acco
 @Composable
 private fun OperationPageRequest(token: String, accountId: String, period: PortfolioPeriod, cursor: String,
     onPage: (JSONObject, String) -> Unit, onError: (String) -> Unit) {
+    val client = ru.omnicio.app.data.workspace.LocalPortfolioReadSource.current
     val foreground = workspaceForeground()
     val receive by rememberUpdatedState(onPage)
     val failure by rememberUpdatedState(onError)
-    LaunchedEffect(token, accountId, period, cursor, foreground) {
+    LaunchedEffect(client, token, accountId, period, cursor, foreground) {
         if (!foreground || token.isBlank()) return@LaunchedEffect
         when (val response = withContext(Dispatchers.IO) {
-            PortfolioDataClient().details(token, accountId, "operations", period.parameters() + ("cursor" to cursor))
+            client.account(token, accountId, "operations", period.parameters() + ("cursor" to cursor))
         }) {
             is BackendResult.Success -> receive(response.value, cursor)
             is BackendResult.Failure -> failure(response.message)
