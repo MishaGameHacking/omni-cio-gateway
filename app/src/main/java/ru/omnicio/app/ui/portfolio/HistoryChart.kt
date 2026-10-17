@@ -160,12 +160,12 @@ private fun BarNavigation(model: HistoryBars, selected: Int, choose: (Int) -> Un
     val index = if (selected < 0) model.bars.lastIndex else selected
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { choose(index - 1) }, enabled = index > 0,
-            modifier = Modifier.semantics { contentDescription = "Предыдущий столбец" }) { Text("‹", style = MaterialTheme.typography.headlineSmall) }
-        TextButton(onClick = reset, enabled = selected >= 0, modifier = Modifier.weight(1f)) {
+            modifier = Modifier.testTag("history-selection-previous").semantics { contentDescription = "Предыдущий столбец" }) { Text("‹", style = MaterialTheme.typography.headlineSmall) }
+        TextButton(onClick = reset, enabled = selected >= 0, modifier = Modifier.weight(1f).testTag("history-selection-reset")) {
             Text(if (selected < 0) "Весь период" else "Сбросить выбор")
         }
         IconButton(onClick = { choose(index + 1) }, enabled = index < model.bars.lastIndex,
-            modifier = Modifier.semantics { contentDescription = "Следующий столбец" }) { Text("›", style = MaterialTheme.typography.headlineSmall) }
+            modifier = Modifier.testTag("history-selection-next").semantics { contentDescription = "Следующий столбец" }) { Text("›", style = MaterialTheme.typography.headlineSmall) }
     }
 }
 
