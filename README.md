@@ -1,6 +1,14 @@
 # Analyst AI — Android и Timeweb backend
 
-**[Опубликован 0.8.0-preview / 32 — Workspace](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-7fe22f35b07bd2fc92b5860e23418214333b8a21).** Полный визуальный этап F01.2: новая навигация, экраны и настройки. Доставка этого APK на Timeweb выполняется; до её подтверждения серверный канал остаётся 0.7.5. [Карта экранов](docs/WORKSPACE_UI.md) · [готово и осталось](docs/PLAN_STATUS.md).
+**[Выпущен 0.8.0-preview / 32 — Workspace](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-7fe22f35b07bd2fc92b5860e23418214333b8a21).** Android 16 и новее.
+
+F01.2: новая навигация, переработанные экраны, нативные анимации и настройки оформления.
+Тот же APK доставлен на Timeweb; версия и SHA-256 подтверждены через публичный канал.
+
+[Скачать APK](https://176.98.178.81.sslip.io/client/apk/Analyst-AI-32-b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31.apk?package_name=ru.omnicio.app.debug) · [Что изменилось](docs/releases/0.8.0.md) · [Карта экранов](docs/WORKSPACE_UI.md) · [Готово и осталось](docs/PLAN_STATUS.md).
+
+[Проверка доставки](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39016326972).
+Прежние package и сертификат сохранены. Установка на физическом телефоне ещё не подтверждена.
 
 Kotlin / Jetpack Compose. Android 16+ (`minSdk/compileSdk/targetSdk 36`).
 Текущая опубликованная preview-линия: **0.8.0-preview / versionCode 32**. Открывайте корень проекта в Android Studio.
