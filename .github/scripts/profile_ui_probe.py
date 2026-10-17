@@ -256,7 +256,7 @@ class ProfileProbe:
         )
         self.tap_node(target)
 
-    def tap_resource(
+    def resource_tap_target(
         self,
         resource_id,
         area="profile-content",
@@ -275,7 +275,10 @@ class ProfileProbe:
         )
         if target is None:
             raise AssertionError("Button list is not visible: " + area)
-        self.tap_node(settled_resource(self.tree, resource_id, area))
+        return settled_resource(self.tree, resource_id, area)
+
+    def tap_resource(self, resource_id, area="profile-content", direction="end"):
+        self.tap_node(self.resource_tap_target(resource_id, area, direction))
 
     def tap_profile_content(self, text):
         from profile_scroll import reveal_in_list
@@ -423,7 +426,7 @@ class ProfileProbe:
                 self.reveal("Скрыть суммы", "workspace-content", direction="start")
                 self.reveal_resource("history-bars", "workspace-content")
                 self.capture("ux100-chart")
-                chart = self.reveal_resource("history-bars", "workspace-content")
+                chart = self.resource_tap_target("history-bars", "workspace-content")
                 left, top, right, bottom = node_bounds(chart)
                 self.command("shell", "input", "tap", str(left + (right - left) // 34), str((top + bottom) // 2))
                 self.find("Выбранный интервал: 2026-10-01 — 2026-10-01")
@@ -557,14 +560,15 @@ class ProfileProbe:
         self.wait_for(lambda: profile_frame(self.command, self.tree, evidence, expected_screen="ux100"),
                       "Large-font chart screen is not resumed")
         self.tap_visible("График")
-        chart = self.reveal_resource("history-bars", "workspace-content")
+        chart = self.resource_tap_target("history-bars", "workspace-content")
         left, top, right, bottom = node_bounds(chart)
         self.command("shell", "input", "tap", str(right - (right - left) // 34), str((top + bottom) // 2))
+        self.reveal("Выбранный интервал: 2026-10-17 — 2026-10-17", "workspace-content", direction="start")
         self.reveal("Изменение стоимости", "workspace-content")
         self.reveal("Минимум / максимум", "workspace-content")
         self.capture("bars-large-font")
         self.tap("Сбросить выбор", "workspace-content", direction="start")
-        self.find("За показанный период")
+        self.reveal("За показанный период", "workspace-content")
 
 
 def night_setting(output: str) -> str:

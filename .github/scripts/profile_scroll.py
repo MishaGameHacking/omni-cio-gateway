@@ -60,16 +60,17 @@ def visible_resource(tree: ET.Element, resource_id: str) -> ET.Element | None:
 
 
 def tappable_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Element | None:
-    """Clip a button to its list viewport before using its tap coordinates.
+    """Clip a target to its list viewport before using its tap coordinates.
 
     Compose can report a child's logical bounds while most of the button is
-    still below the clipped list. A visible node alone is not a safe tap target.
+    still below the clipped list. Canvas pointer-input targets need not expose
+    clickable=true, so the caller must assert the resulting interaction state.
     """
     target = visible_resource(tree, target_id)
     viewport = _scroll_area(tree, list_id)
     if target is None or viewport is None:
         return None
-    if target.get("clickable") != "true" or target.get("enabled") == "false":
+    if target.get("enabled") == "false":
         return None
     left, top, right, bottom = _bounds(target)
     x1, y1, x2, y2 = viewport
