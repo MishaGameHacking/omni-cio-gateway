@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 import ru.omnicio.app.ui.spectrum.SpectrumLiveFeature
 import ru.omnicio.app.ui.spectrum.SpectrumLiveFeatureIcon
-import ru.omnicio.app.ui.spectrum.SpectrumLiveFeatureShowcase
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
 private data class HomeAction(
@@ -36,7 +35,7 @@ private data class HomeAction(
     val open: () -> Unit,
 )
 
-/** Primary destinations followed by the complete native live-element catalogue. */
+/** Adaptive shortcuts to the user's portfolio, actions, risks and messages. */
 @Composable
 internal fun HomeQuickActions(
     onPortfolio: () -> Unit,
@@ -53,24 +52,18 @@ internal fun HomeQuickActions(
         HomeAction("Сообщения", SpectrumLiveFeature.Notifications, palette.cyan, onMessages),
     )
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val columns = homeActionColumns(maxWidth.value, largeFont)
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                actions.chunked(columns).forEach { row ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        row.forEach { action -> ActionCell(action, Modifier.weight(1f)) }
-                    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = homeActionColumns(maxWidth.value, largeFont)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            actions.chunked(columns).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    row.forEach { action -> ActionCell(action, Modifier.weight(1f)) }
                 }
             }
         }
-        SpectrumLiveFeatureShowcase(Modifier.fillMaxWidth())
     }
 }
 
@@ -116,3 +109,4 @@ private fun ActionCell(action: HomeAction, modifier: Modifier) {
         )
     }
 }
+

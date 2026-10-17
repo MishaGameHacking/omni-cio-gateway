@@ -12,8 +12,8 @@ android {
         minSdk = 36
         targetSdk = 36
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 30
-        versionName = "0.7.5"
+        versionCode = 31
+        versionName = "0.7.6"
     }
 
     buildTypes {
@@ -68,3 +68,4 @@ dependencies {
 
     debugImplementation(libs.compose.ui.tooling)
 }
+

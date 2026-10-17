@@ -44,11 +44,11 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
         self.assertIsNotNone(version)
-        self.assertEqual(int(version.group(1)), 30)
+        self.assertEqual(int(version.group(1)), 31)
         for sdk in ("compileSdk = 36", "minSdk = 36", "targetSdk = 36"):
             self.assertIn(sdk, gradle)
-        self.assertIn('versionName = "0.7.5"', gradle)
-        self.assertNotIn('versionName = "0.7.4"', gradle)
+        self.assertIn('versionName = "0.7.6"', gradle)
+        self.assertNotIn('versionName = "0.7.5"', gradle)
         self.assertIn('applicationId = "ru.omnicio.app"', gradle)
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
         self.assertIn('isDebuggable = false', gradle)
@@ -68,3 +68,4 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

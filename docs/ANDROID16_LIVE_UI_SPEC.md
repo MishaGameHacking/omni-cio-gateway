@@ -41,6 +41,18 @@ Each family has a distinct motion language:
 
 ## Motion lifecycle and accessibility
 
+### Home content — OWNER clarification, 2026-10-17
+
+The Home screen must not render a showcase of implementation capabilities.
+Remove the entire “Живые возможности” card, its technical subtitle, Android badge
+and catalogue of animated tiles. The analyst card follows the four real shortcuts.
+The nine native visual families remain available inside functional UI elements;
+their existence does not require a separate user-facing catalogue. This replaces
+the former catalogue-visibility requirement and its source test. Real navigation,
+data integrity, lifecycle, accessibility, build and emulator gates still apply.
+
+### Runtime behavior
+
 - A repeating animation may run only while its composable is visible, its Activity is at least `STARTED`, the user has enabled Spectrum motion, and Android animators are enabled.
 - Leaving the screen must cancel the animation coroutine. Do not leave hidden timers, decoders, or render loops running.
 - Read animated values during draw or graphics-layer phases. Avoid recomposing a whole screen at frame rate.
@@ -75,3 +87,4 @@ Every candidate must pass:
 - launch and UI checks on API 36;
 - large-font and narrow-screen checks;
 - Sonar/quality checks and backend tests applicable to the exact head.
+
