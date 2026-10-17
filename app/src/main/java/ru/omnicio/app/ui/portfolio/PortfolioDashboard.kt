@@ -41,6 +41,7 @@ internal fun PortfolioDashboard(
     onOpenSection: (Int) -> Unit,
     onPositionClick: (String, PortfolioPosition) -> Unit,
     modifier: Modifier = Modifier,
+    assetQuery: String = "", assetSector: String? = null, assetKind: String? = null,
 ) {
     val openWorkspace = LocalWorkspaceNavigator.current
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
@@ -60,7 +61,7 @@ internal fun PortfolioDashboard(
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
             PortfolioHistorySection(snapshot.accounts, accessToken, onCurrencyClick, Modifier.weight(1f))
         } else if (selectedSection == 1 && snapshot != null) {
-            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f))
+            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind)
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"),
@@ -75,6 +76,9 @@ internal fun PortfolioDashboard(
                         PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onCurrencyClick, onOpenSection)
                     }
                     if (selectedSection == 0) {
+                        item(key = "sectors") { WorkspaceLink("Отрасли и классы", "Состав ваших вложений", SpectrumSymbol.Market) {
+                            openWorkspace(WorkspaceRoute.Market)
+                        } }
                         item(key = "allocation") {
                             SpectrumCard {
                                 SectionHeading("Баланс активов")
@@ -87,7 +91,7 @@ internal fun PortfolioDashboard(
                         }
                         item(key = "strategy") {
                             SpectrumActionTile(
-                                title = "Мои стратегии",
+                                title = "Моя стратегия",
                                 subtitle = "Цель, отбор, доли и доход",
                                 symbol = SpectrumSymbol.Goal,
                                 onClick = { openWorkspace(WorkspaceRoute.Strategies) },
@@ -141,7 +145,7 @@ private fun PortfolioBalanceCard(
         Text("Общий капитал", color = palette.cyan, style = MaterialTheme.typography.labelLarge)
         Text(
             snapshot.totalValue.moneyText(),
-            modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onCurrency),
+            modifier = Modifier,
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -149,8 +153,9 @@ private fun PortfolioBalanceCard(
             SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
             Notice("Текущий результат брокера")
         }
+        CurrencyChoice(selectedCurrency.name)
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
-        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Валюта оценки: ${selectedCurrency.name} · нажмите сумму, чтобы сменить")
+        Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Оценка брокера в ${selectedCurrency.name}")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val enabled = snapshot.accounts.isNotEmpty()
             if (portfolioStackedLayout(maxWidth.value, fontScale)) {
@@ -231,7 +236,7 @@ private fun PortfolioHistorySection(
         } else {
             // Existing authenticated analytics, with its real snapshot history,
             // period controls, loading/errors and incomplete-data warnings.
-            AccountAnalytics(accessToken, account, onCurrency)
+            AccountAnalytics(accessToken, account, onCurrency, historyOnly = true)
         }
     }
 }

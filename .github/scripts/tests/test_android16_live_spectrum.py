@@ -14,8 +14,8 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 36", "minSdk = 36", "targetSdk = 36"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 32", gradle)
-        self.assertIn('versionName = "0.8.0"', gradle)
+        self.assertIn("versionCode = 33", gradle)
+        self.assertIn('versionName = "0.9.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -76,13 +76,9 @@ class Android16LiveSpectrumTests(unittest.TestCase):
             "snapshot?.warnings?.isNotEmpty()",
         ):
             self.assertIn(token, home)
-        for token in (
-            "SpectrumLiveFeature.Assistant",
-            "SpectrumLiveFeature.Recommendations",
-            "SpectrumLiveFeature.WorldMarkets",
-            "SpectrumLiveFeatureIcon(",
-        ):
+        for token in ("onAssets", "onPayments", "Мои активы", "Выплаты"):
             self.assertIn(token, shortcuts)
+        self.assertNotIn("SpectrumLiveFeatureIcon(", shortcuts)
         for invented in ("model is running", "AI score", "guaranteed return"):
             self.assertNotIn(invented, home.lower())
 

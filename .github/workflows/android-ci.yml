@@ -140,7 +140,7 @@ jobs:
         run: |
           call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
-      - name: Download installed 0.7.6 APK for exact upgrade compatibility test
+      - name: Download installed 0.8.0 APK for exact upgrade compatibility test
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
@@ -148,12 +148,12 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const crypto = require('crypto');
-            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-feb08a704e889644772c38808eebbc2d1edbb81f'})).data;
-            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.7.6-preview-feb08a7.apk');
-            if (!asset) throw new Error('0.7.6 reference APK missing');
+            const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-7fe22f35b07bd2fc92b5860e23418214333b8a21'})).data;
+            const asset = release.assets.find(a => a.name === 'Analyst-AI-0.8.0-preview-7fe22f3.apk');
+            if (!asset) throw new Error('0.8.0 reference APK missing');
             const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
             const bytes = Buffer.from(response.data);
-            if (crypto.createHash('sha256').update(bytes).digest('hex') !== '0bb5e481f035218084b797e667c5850f9cb4b2c44ddca49a118bc61d7fe6306d') throw new Error('0.7.6 reference APK checksum mismatch');
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== 'b275ed6d4961bc713ae1b767edb4cfc147982d5476610d1e4dd3419b931cda31') throw new Error('0.8.0 reference APK checksum mismatch');
             const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
             fs.writeFileSync(dest, bytes);
             core.exportVariable('PREVIOUS_APK', dest);

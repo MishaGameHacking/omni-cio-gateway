@@ -14,53 +14,61 @@ import androidx.compose.ui.unit.sp
 import java.math.BigDecimal
 import org.json.JSONObject
 import ru.omnicio.app.data.portfolio.*
+import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.spectrum.*
 
 @Composable
-internal fun AccountAnalytics(token: String, account: PortfolioAccount, onCurrency: () -> Unit) {
+internal fun AccountAnalytics(token: String, account: PortfolioAccount, onCurrency: () -> Unit, historyOnly: Boolean = false) {
     var start by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
     var end by rememberSaveable(account.id) { mutableStateOf<String?>(null) }
+    var chartMode by rememberSaveable(account.id) { mutableIntStateOf(0) }
     val period = PortfolioPeriod(start, end)
     val request = rememberAccountData(token, account.id, "analytics",
         period.parameters() + ("currency" to account.totalValue.currency), interval = 60_000)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item(key = "history") {
             CompactCard {
-                SectionHeading("Аналитика")
-                Text(account.totalValue.moneyText(), Modifier.clickable(onClick = onCurrency), fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Notice("Текущая стоимость · нажмите для смены валюты")
+                SpectrumTabs(listOf("Стоимость", "Доход"), chartMode, { chartMode = it })
+                CurrencyChoice(account.totalValue.currency)
                 PeriodControls(period) { start = it.start; end = it.end }
                 AccountDataNotice(request)
                 request.json?.let { data ->
                     val history = data.objects("history").mapNotNull { point ->
                         point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
                     }
-                    HistoryChart(history, data.optString("currency"))
+                    if (chartMode == 0) HistoryChart(history, data.optString("currency"))
+                    else WorkspaceEmpty("Доход за период", "Расчёт с учётом пополнений, выводов и расходов ещё не подключён. Стоимость доступна в соседней вкладке.")
                     if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
                 }
             }
         }
-        item(key = "cashflow") {
+        if (!historyOnly) item(key = "cashflow") {
             CompactCard {
                 SectionHeading("Доходы и движение денег")
                 val data = request.json
-                DataRow("Общий инвестиционный доход за период", "Пока не рассчитан")
-                Notice("Общий доход нельзя получить сложением пополнений, продаж и выплат. Для полного результата нужна корректная история стоимости и денежных потоков.")
+                Notice("Денежные потоки за выбранный период. Инвестиционный результат рассчитывается отдельно.")
                 if (data != null) {
                     if (!data.optBoolean("complete")) Notice("Внимание: обработана только часть операций. Суммы ниже неполные; сузьте период.")
                     val rows = data.objects("summary")
                     if (rows.isEmpty()) Notice("За выбранный период учтённых денежных операций нет.")
-                    val order = listOf("dividends", "coupons", "deposits", "withdrawals", "fees", "tax", "trades", "redemptions", "margin", "other")
-                    order.forEach { category ->
-                        rows.filter { it.optString("category") == category }.forEach { row ->
-                            DataRow(if (category == "trades") "Оборот сделок" else categoryTitle(category), row.money("amount").moneyText())
-                        }
+                    val groups = listOf("Внесено / выведено" to setOf("deposits", "withdrawals"),
+                        "Инвестиционные поступления" to setOf("dividends", "coupons", "redemptions"),
+                        "Расходы" to setOf("fees", "tax"), "Оборот и прочее" to setOf("trades", "margin", "other"))
+                    groups.forEach { (title, categories) -> DetailFold(title) {
+                        val values = rows.filter { it.optString("category") in categories }
+                        if (values.isEmpty()) Notice("В полученной выборке нет операций этой группы.")
+                        values.forEach { row -> DataRow(categoryTitle(row.optString("category")), row.money("amount").moneyText()) }
+                    } }
+                    val known = groups.flatMap { it.second }.toSet()
+                    rows.filter { it.optString("category") !in known }.forEach { row ->
+                        DataRow("Прочие поступления / списания", row.money("amount").moneyText())
                     }
                     Notice("${data.optInt("operationCount")} операций в расчёте. Суммы в исходных валютах, без неподтверждённого пересчёта.")
                     Notice(data.optString("note"))
                 }
             }
         }
-        item(key = "open-positions") {
+        if (!historyOnly) item(key = "open-positions") {
             CompactCard {
                 SectionHeading("Открытые позиции")
                 DataRow("Дневной результат счёта", account.dailyYieldAmount.moneyText(true))
@@ -73,7 +81,7 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, onCurren
                 Notice("Результат открытых позиций не равен доходу за всю историю счёта. Неоценённые позиции не включены в сумму.")
             }
         }
-        item(key = "structure") { CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) } }
+        if (!historyOnly) item(key = "structure") { CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) } }
     }
 }
 
@@ -107,7 +115,7 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
                             .mapValues { (_, rows) -> rows.sumOf { it.second.value.toBigDecimal() } }.toSortedMap()
                         val points = totals.map { HistoryPoint(it.key + "-01T00:00:00Z", it.value) }
                         if (points.size > 1) PaymentBars(points, currency)
-                        totals.forEach { (month, amount) -> DataRow(month, decimalText(amount) + " " + currencySymbol(currency)) }
+                        DetailFold("Точные суммы по месяцам · $currency") { totals.forEach { (month, amount) -> DataRow(month, decimalText(amount) + " " + currencySymbol(currency)) } }
                     }
                     Notice("Только события с известной суммой и датой выплаты; это оценка по текущему количеству, а не гарантированный доход.")
                 }
@@ -138,6 +146,7 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
 
 @Composable
 private fun PaymentBars(points: List<HistoryPoint>, currency: String) {
+    if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Notice("Суммы скрыты"); return }
     val color = MaterialTheme.colorScheme.primary
     val max = points.maxOf { it.value }.takeIf { it > BigDecimal.ZERO } ?: BigDecimal.ONE
     androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(80.dp)) {
@@ -148,5 +157,6 @@ private fun PaymentBars(points: List<HistoryPoint>, currency: String) {
                 androidx.compose.ui.geometry.Size((step - 4.dp.toPx()).coerceAtLeast(1f), height))
         }
     }
-    Notice("Валюта: $currency")
+    DataRow(points.first().date.take(7), points.last().date.take(7))
+    Notice("Оценка выплат · $currency · максимум ${decimalText(max)}")
 }

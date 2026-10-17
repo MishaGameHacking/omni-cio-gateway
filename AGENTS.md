@@ -117,7 +117,7 @@ OWNER разрешил заново спроектировать все экра
 - Routine data collection, calculations, caching and risk thresholds must run without LLMs.
 - For proactive investment analysis, use the balanced `fast` / `standard` / `premium` gate in `backend/ai_policy.py`; no material change means no background model call. Explicit chat tasks use their own permissions and budget; this background gate must not prevent normal conversation.
 - Timeweb AI Gateway model IDs and API keys are server configuration, never APK constants.
-- Portfolio display currency cycles RUB -> USD -> EUR by tapping the total; request that currency from T-Invest rather than inventing local FX conversion.
+- Portfolio display currency uses an explicit RUB / USD / EUR picker; request that currency from T-Invest rather than inventing local FX conversion.
 
 ## Spectrum design canon
 
@@ -137,3 +137,7 @@ OWNER разрешил заново спроектировать все экра
 - Обучение объясняет механику и риск простым языком, с официальными источниками и без обещаний доходности. Источники не копировать целиком; хранить собственный текст и ссылки для углубления.
 - Рабочее приложение никогда не показывает синтетические балансы, рейтинги, доходности или «лучшие активы» без явной маркировки. Макеты и preview обязаны отличаться от реальных пользовательских данных.
 
+
+## OWNER 17.10.2026 — F01.3 / UX100
+
+OWNER approved implementing the 100 UX audit recommendations in a new version, limited to native interface design and user interactions. Preserve existing authenticated read-only functions. New plan, strategy-effect, risk, delivery and chat algorithms remain future work. Mark drafts as local and inactive; do not show synthetic recommendations in production. UX scope, source mapping and data dependencies are tracked in docs/UX100.md. Release candidate: 0.9.0 / 33; use the published 0.8.0 / 32 as the upgrade baseline. Publish only after all checks pass for the exact head.

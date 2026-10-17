@@ -24,12 +24,14 @@ import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 
 enum class AnalystTab { Home, Portfolio, Actions, Risk, Education, Profile }
+val LocalWideNavigation = staticCompositionLocalOf { false }
 val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
 
 /** Five destinations, with secondary tools one level away. Labels never rely on colour alone. */
 @Composable
 fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
+    if (LocalWideNavigation.current) return
     val navigate = LocalAnalystTabNavigator.current
     val haptic = LocalHapticFeedback.current
     val prefs = LocalWorkspacePreferences.current.value
@@ -54,9 +56,9 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
                             navigate(tab)
                         }).padding(horizontal = 1.dp, vertical = 7.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        SpectrumIcon(tab.symbol(), Modifier.size(28.dp), selected = active, tile = false,
-                            motionAllowed = LocalSpectrumMotionPreference.current.enabled)
-                        Text(tab.label(), Modifier.fillMaxWidth(), fontSize = 11.sp, lineHeight = 14.sp,
+                        SpectrumIcon(tab.symbol(), Modifier.size(24.dp), selected = active, tile = false,
+                            motionAllowed = false)
+                        Text(tab.label(), Modifier.fillMaxWidth(), fontSize = 13.sp, lineHeight = 17.sp,
                             textAlign = TextAlign.Center, softWrap = true,
                             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -82,4 +84,14 @@ private fun AnalystTab.symbol() = when (this) {
     AnalystTab.Risk -> SpectrumSymbol.Risk
     AnalystTab.Education -> SpectrumSymbol.Education
     AnalystTab.Profile -> SpectrumSymbol.Profile
+}
+
+@Composable
+fun AnalystSideRail(selected: AnalystTab, navigate: (AnalystTab) -> Unit) {
+    NavigationRail(modifier = Modifier.fillMaxHeight().width(104.dp).statusBarsPadding(), containerColor = MaterialTheme.colorScheme.background) {
+        listOf(AnalystTab.Home, AnalystTab.Portfolio, AnalystTab.Actions, AnalystTab.Risk, AnalystTab.Profile).forEach { tab ->
+            NavigationRailItem(selected = tab == selected, onClick = { navigate(tab) },
+                icon = { SpectrumIcon(tab.symbol(), Modifier.size(24.dp), motionAllowed = false) }, label = { Text(tab.label()) })
+        }
+    }
 }

@@ -17,7 +17,7 @@ import ru.omnicio.app.ui.spectrum.*
 fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick: () -> Unit) {
     SpectrumCard(Modifier.fillMaxWidth(), onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpectrumIcon(symbol, Modifier.size(40.dp), selected = true)
+            SpectrumIcon(symbol, Modifier.size(32.dp), selected = false, motionAllowed = false)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyMedium,

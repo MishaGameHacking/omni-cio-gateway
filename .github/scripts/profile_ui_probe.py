@@ -366,8 +366,8 @@ class ProfileProbe:
 
     def workspace(self):
         from profile_launch import profile_frame, start_status
-        for screen, label in (("appearance", "Оформление"), ("strategy", "Мои стратегии"),
-                              ("assistant", "Ассистент"), ("market", "Обзор рынка")):
+        for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
+                              ("assistant", "Ассистент"), ("market", "Отрасли и классы")):
             self.command("shell", "am", "force-stop", PACKAGE)
             start_status(self.command("shell", "am", "start", "-W", "-n", ACTIVITY,
                                       "--es", "spectrum_screen", screen))
@@ -380,9 +380,11 @@ class ProfileProbe:
             if screen == "strategy":
                 self.tap_visible("Отбор")
                 self.reveal("Кредитные рейтинги", "workspace-content")
-                self.reveal("BBB-", "workspace-content")
+                self.reveal("Минимум: BBB- ▾", "workspace-content")
                 self.capture("workspace-ratings")
                 self.tap_visible("Доход")
+                self.reveal("Пополнять резерв", "workspace-content")
+                self.tap("Пополнять резерв", "workspace-content")
                 self.reveal("Сохранить черновик", "workspace-content")
                 self.tap("Сохранить черновик", "workspace-content")
                 self.find("Черновик сохранён")
@@ -411,11 +413,13 @@ class ProfileProbe:
         # Spectrum starts dark; light/system remain explicit user choices.
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.tap_visible("Светлая")
+        self.tap("Светлая", "workspace-content")
+        self.tap_visible("‹ Назад")
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
-        self.tap_visible("Тёмная")
+        self.tap("Тёмная", "workspace-content")
+        self.tap_visible("‹ Назад")
         self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
         self.command("shell", "am", "force-stop", PACKAGE)
@@ -423,11 +427,13 @@ class ProfileProbe:
         self.palette(DARK_BACKGROUND)
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap_visible("Светлая")
+        self.tap("Светлая", "workspace-content")
+        self.tap_visible("‹ Назад")
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
-        self.tap_visible("Как в системе")
+        self.tap("Как в системе", "workspace-content")
+        self.tap_visible("‹ Назад")
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
         self.capture("system-dark")

@@ -46,7 +46,7 @@ fun AppearanceScreen(onBack: () -> Unit) {
             } }
             item { WorkspaceSection("Главный экран") }
             item { SpectrumCard {
-                WorkspaceToggle("Скрывать сумму", "Только на главном экране; остальные разделы показывают значения", prefs.hideHomeBalance) {
+                WorkspaceToggle("Скрывать сумму", "Во всех финансовых разделах, графиках и подробностях", prefs.hideHomeBalance) {
                     controller.update(prefs.copy(hideHomeBalance = it))
                 }
                 WorkspaceToggle("Структура капитала", "Краткое распределение на главном экране", prefs.homeStructure) {
@@ -68,11 +68,7 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
         Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
-                Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-                    TextButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp)) { Text("‹ Назад") }
-                    SpectrumPageHeader(title, subtitle, symbol,
-                        Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp))
-                }
+                WorkspaceHeader(title, subtitle, onBack)
             }, content = content)
     }
 }

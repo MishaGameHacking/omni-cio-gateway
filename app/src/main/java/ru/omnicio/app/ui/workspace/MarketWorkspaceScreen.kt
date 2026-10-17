@@ -18,6 +18,7 @@ import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfolio: () -> Unit) {
     var section by rememberSaveable { mutableIntStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    val openPortfolio = LocalPortfolioDestination.current
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val positions = snapshot?.accounts?.flatMap { it.positions }.orEmpty()
     val groups = positions.groupBy {
@@ -27,7 +28,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
             "cash", "currency" -> "Деньги и валюта"; else -> "Другие инструменты"
         }
     }.toList().sortedByDescending { it.second.size }
-    WorkspaceDetailPage("Обзор рынка", "Через призму вашего портфеля", onBack, SpectrumSymbol.Market) { padding ->
+    WorkspaceDetailPage("Отрасли и классы", "Ваши вложения", onBack, SpectrumSymbol.Market) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item { SpectrumCard(emphasized = true) {
@@ -37,7 +38,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
                         motionAllowed = LocalSpectrumMotionPreference.current.enabled)
                     Text("Ваши инструменты", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                 }
-                Text("Состав портфеля. Каталог покупок ещё не подключён.",
+                Text("Распределение имеющихся позиций по данным брокера.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
             item { SpectrumTabs(listOf("Отрасли", "Классы"), section, { section = it }) }
@@ -47,12 +48,20 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
                     Text("Позиций в счетах: ${rows.size} · ${if (expanded == title) "свернуть" else "показать"}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (expanded == title) {
-                        rows.take(20).forEach { Text(it.title, style = MaterialTheme.typography.bodyMedium) }
-                        SpectrumSecondaryButton("Открыть позиции в портфеле", onPortfolio, Modifier.fillMaxWidth())
+                        rows.take(5).forEach { Text(it.title, style = MaterialTheme.typography.bodyMedium) }
+                        if (rows.size > 5) Text("Ещё ${rows.size - 5} · полный список в портфеле")
+                        SpectrumSecondaryButton("Все позиции группы", { openPortfolio(PortfolioDestination(sector = if (section == 0) rows.first().sector else null, kind = if (section == 1) rows.first().instrumentType else null)) }, Modifier.fillMaxWidth())
                     }
                 }
             } }
-            if (groups.isEmpty()) item { SpectrumCard { Text("Подключите счёт, чтобы увидеть состав портфеля.") } }
+            if (groups.isEmpty()) item {
+                when (state) {
+                    PortfolioUiState.Loading, PortfolioUiState.ApiConnected -> WorkspaceEmpty("Получаем позиции", "Данные ещё загружаются.", loading = true)
+                    is PortfolioUiState.Error -> WorkspaceEmpty("Не удалось обновить", state.message, "Открыть портфель", onPortfolio)
+                    PortfolioUiState.NotConnected -> WorkspaceEmpty("Подключите счёт", "После подключения здесь появится состав ваших вложений.", "Подключение", onPortfolio)
+                    is PortfolioUiState.Ready -> WorkspaceEmpty("Позиций пока нет", "В полученных счетах нет позиций для группировки.")
+                }
+            }
             item { SpectrumCard {
                 Text("Доступ к покупке", style = MaterialTheme.typography.titleMedium)
                 Text("Определяется брокером для конкретного счёта и бумаги. Наличие бумаги в портфеле само по себе не подтверждает доступ к новой покупке.",

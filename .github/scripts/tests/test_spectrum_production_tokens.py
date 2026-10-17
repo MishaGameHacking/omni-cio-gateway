@@ -34,7 +34,7 @@ class SpectrumProductionTokens(unittest.TestCase):
         self.assertIn('resolveSelectedPosition(', screen)
         self.assertNotIn('AccountPreviewCard(', screen)
         self.assertIn('listOf("Структура", "Активы", "Динамика")', dashboard)
-        self.assertIn('AccountAnalytics(accessToken, account, onCurrency)', dashboard)
+        self.assertIn('AccountAnalytics(accessToken, account, onCurrency, historyOnly = true)', dashboard)
         self.assertIn('AssetStructure(snapshot.allocations, snapshot.totalValue)', dashboard)
         self.assertNotIn('PortfolioSnapshot(', dashboard)
 

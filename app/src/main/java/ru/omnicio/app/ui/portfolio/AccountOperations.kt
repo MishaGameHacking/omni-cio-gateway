@@ -16,6 +16,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.portfolio.*
+import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.spectrum.SpectrumTabs
 
 internal val OperationCategories = listOf("all" to "Все", "trades" to "Сделки", "fees" to "Комиссии", "tax" to "Налоги",
     "margin" to "Вармаржа", "redemptions" to "Погашения", "income" to "Дивиденды и купоны",
@@ -44,13 +46,16 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
             if (!loadedOlder) next = data.optString("nextCursor").takeIf { data.optBoolean("hasNext") && it.isNotBlank() }
         }
     }
+    var filterOpen by remember { mutableStateOf(false) }
     val key = OperationCategories[category].first
     val visible = items.filter { key == "all" || it.optString("category") == key ||
         (key == "income" && it.optString("category") in setOf("dividends", "coupons")) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(key = "range") {
             PeriodControls(period) { start = it.start; end = it.end }
-            ChoiceRow(OperationCategories.map { it.second }, category) { category = it }
+            val primary = listOf(0, 1, 6, 7)
+            SpectrumTabs(listOf("Все", "Сделки", "Доход", "Пополнения"), primary.indexOf(category), { category = primary[it] })
+            TextButton(onClick = { filterOpen = true }) { Text("Фильтр: ${OperationCategories[category].second} ▾") }
             AccountDataNotice(request)
         }
         var previousDay = ""
@@ -66,7 +71,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
                         Column(Modifier.weight(1f)) {
                             Text(operation.optString("title").ifBlank { categoryTitle(operation.optString("category")) }, fontWeight = FontWeight.Medium)
                             Notice(account.name)
-                            if (operation.optString("state") != "OPERATION_STATE_EXECUTED") Notice("${operation.optString("state")}")
+                            if (operation.optString("state") != "OPERATION_STATE_EXECUTED") Notice(operationStateLabel(operation.optString("state")))
                         }
                         SignedAmount(operation.money("payment"))
                     }
@@ -100,6 +105,10 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
         }
         if (items.size >= 10_000 && next != null) item { Notice("Показаны первые 10 000 операций. Сузьте период, чтобы увидеть оставшиеся.") }
     }
+    if (filterOpen) AlertDialog(onDismissRequest = { filterOpen = false }, title = { Text("Категория операций") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) { OperationCategories.forEachIndexed { index, entry ->
+            TextButton(onClick = { category = index; filterOpen = false }) { Text(entry.second) }
+        } } }, confirmButton = { TextButton(onClick = { filterOpen = false }) { Text("Закрыть") } })
     chosen?.let { operation ->
         AlertDialog(onDismissRequest = { chosen = null }, title = { Text(operation.optString("title")) },
             text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -109,9 +118,12 @@ internal fun AccountOperations(token: String, account: PortfolioAccount) {
                 DataRow("Количество", operation.nullableText("quantity") ?: "—")
                 DataRow("Комиссия", operation.money("commission").moneyText())
                 DataRow("Результат операции", operation.money("yield").moneyText(true))
-                DataRow("Тип API", operation.optString("type"))
-                DataRow("Статус API", operation.optString("state"))
-                DataRow("ID", operation.optString("id"))
+                DataRow("Статус", operationStateLabel(operation.optString("state")))
+                DetailFold("Технические сведения") {
+                    DataRow("Тип API", operation.optString("type"))
+                    DataRow("Статус API", operation.optString("state"))
+                    DataRow("ID", operation.optString("id"))
+                }
                 Notice(operation.nullableText("description") ?: "")
             } }, confirmButton = { TextButton(onClick = { chosen = null }) { Text("Закрыть") } })
     }
@@ -167,6 +179,19 @@ private fun OrderCard(row: JSONObject, stop: Boolean, account: PortfolioAccount)
         DataRow("Цена", brokerMoney(row.optJSONObject(if (stop) "price" else "initialSecurityPrice")).moneyText())
         if (stop) DataRow("Стоп-цена", brokerMoney(row.optJSONObject("stopPrice")).moneyText())
         DataRow("Создана", dateText(row.nullableText(if (stop) "createDate" else "orderDate")))
-        DataRow("Статус / тип API", row.optString(if (stop) "orderType" else "executionReportStatus"))
+        DataRow("Статус", operationStateLabel(row.optString(if (stop) "orderType" else "executionReportStatus")))
+        DetailFold("Технические сведения") { Text(row.optString(if (stop) "orderType" else "executionReportStatus")) }
     }
+}
+
+internal fun operationStateLabel(value: String): String = when (value) {
+    "OPERATION_STATE_EXECUTED", "EXECUTION_REPORT_STATUS_FILL" -> "Исполнено"
+    "OPERATION_STATE_CANCELED", "EXECUTION_REPORT_STATUS_CANCELLED" -> "Отменено"
+    "OPERATION_STATE_PROGRESS", "EXECUTION_REPORT_STATUS_NEW" -> "В обработке"
+    "EXECUTION_REPORT_STATUS_PARTIALLYFILL" -> "Частично исполнено"
+    "EXECUTION_REPORT_STATUS_REJECTED" -> "Отклонено"
+    "STOP_ORDER_TYPE_TAKE_PROFIT" -> "Тейк-профит"
+    "STOP_ORDER_TYPE_STOP_LOSS" -> "Стоп-лосс"
+    "STOP_ORDER_TYPE_STOP_LIMIT" -> "Стоп-лимит"
+    else -> "Статус уточняется · код в подробностях"
 }

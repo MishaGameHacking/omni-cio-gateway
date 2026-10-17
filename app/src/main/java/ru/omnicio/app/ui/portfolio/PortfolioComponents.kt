@@ -4,6 +4,12 @@ import ru.omnicio.app.ui.spectrum.rememberSpectrumReveal
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.saveable.rememberSaveable
+import ru.omnicio.app.ui.workspace.*
+import java.time.Duration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -55,7 +61,9 @@ internal fun decimalText(number: BigDecimal, scale: Int = 2): String = NumberFor
 internal fun currencySymbol(currency: String): String = when (currency.uppercase(Locale.ROOT)) {
     "RUB" -> "₽"; "USD" -> "$"; "EUR" -> "€"; else -> currency.uppercase(Locale.ROOT)
 }
+@Composable
 internal fun MoneyAmount?.moneyText(signed: Boolean = false): String {
+    if (ru.omnicio.app.ui.workspace.LocalWorkspacePreferences.current.value.hideHomeBalance) return "•••"
     if (this == null) return "—"
     val number = value.toBigDecimal()
     return (if (signed && number.signum() > 0) "+" else "") + decimalText(number) + " " + currencySymbol(currency)
@@ -73,6 +81,7 @@ internal fun brokerMoney(json: JSONObject?): MoneyAmount? = json?.let {
 
 @Composable
 internal fun SignedAmount(amount: MoneyAmount?, percent: ApiDecimal? = null) {
+    if (ru.omnicio.app.ui.workspace.LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("•••"); return }
     val sign = amount?.value?.toBigDecimal()?.signum() ?: percent?.toBigDecimal()?.signum() ?: 0
     val colors = MaterialTheme.colorScheme
     val tint = when {
@@ -98,13 +107,13 @@ internal fun DataRow(title: String, value: String, modifier: Modifier = Modifier
         if (portfolioStackedLayout(maxWidth.value, fontScale)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                Text(value, style = MaterialTheme.typography.bodyMedium)
+                Text(ru.omnicio.app.ui.workspace.PrivateValue(value), style = MaterialTheme.typography.bodyMedium)
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                 Text(title, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium)
-                Text(value, modifier = Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium)
+                Text(ru.omnicio.app.ui.workspace.PrivateValue(value), modifier = Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -127,10 +136,10 @@ internal fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> 
 }
 
 @Composable
-internal fun PositionLine(position: PortfolioPosition, onClick: () -> Unit) {
+internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = null, accountName: String? = null, onClick: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     Surface(onClick = onClick, color = Color.Transparent, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) {}) {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             val stacked = portfolioStackedLayout(maxWidth.value, fontScale)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -142,11 +151,12 @@ internal fun PositionLine(position: PortfolioPosition, onClick: () -> Unit) {
                         "share" -> SpectrumSymbol.Market
                         else -> SpectrumSymbol.Portfolio
                     }
-                    SpectrumIcon(symbol, Modifier.size(46.dp), selected = true, tile = true)
+                    SpectrumIcon(symbol, Modifier.size(30.dp), selected = false, tile = false, motionAllowed = false)
                     PositionIdentity(position, Modifier.weight(1f), stacked)
-                    if (!stacked) PositionAmounts(position, Modifier.widthIn(max = 132.dp))
+                    if (!stacked) PositionAmounts(position, Modifier.widthIn(max = 132.dp), total)
                 }
-                if (stacked) PositionAmounts(position, Modifier.fillMaxWidth())
+                if (accountName != null) Text(accountName, style = MaterialTheme.typography.bodySmall)
+                if (stacked) PositionAmounts(position, Modifier.fillMaxWidth(), total)
             }
         }
     }
@@ -159,27 +169,32 @@ private fun PositionIdentity(position: PortfolioPosition, modifier: Modifier, ex
             style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
         Text(buildString {
             if (position.instrumentType != "cash") position.ticker?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
-            position.quantity?.let { append(it.quantityText()); append(if (position.instrumentType == "cash") " ${position.ticker.orEmpty()}" else " шт.") }
+
             if (position.blocked) append(" · Заблокировано")
         }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun PositionAmounts(position: PortfolioPosition, modifier: Modifier) {
+private fun PositionAmounts(position: PortfolioPosition, modifier: Modifier, total: MoneyAmount?) {
     Column(modifier, horizontalAlignment = Alignment.End) {
         Text(position.currentValue.moneyText(), fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
-        position.expectedYieldAmount?.let { SignedAmount(it) }
+        val value = position.currentValue
+        if (value != null && total != null && value.currency == total.currency && total.value.toBigDecimal().signum() > 0 && value.value.toBigDecimal().signum() >= 0) {
+            val share = value.value.toBigDecimal().multiply(BigDecimal(100)).divide(total.value.toBigDecimal(), 1, java.math.RoundingMode.HALF_UP)
+            Text(ru.omnicio.app.ui.workspace.PrivateValue("${decimalText(share, 1)}% портфеля"), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
 @Composable
-internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit) {
-    InstrumentDetailsScreen(position, close)
+internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit, accountName: String? = null) {
+    InstrumentDetailsScreen(position, close, accountName)
 }
 
 @Composable
 internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: String) {
+    if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Notice("Структура скрыта режимом приватности."); return }
     val fractions = remember(slices) { portfolioFractions(slices) }
     if (fractions == null) {
         Notice("Нет сопоставимых данных для диаграммы. Некорректные доли не исключаются молча.")
@@ -187,6 +202,13 @@ internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: S
     }
     val spectrum = LocalSpectrumPalette.current
     val palette = listOf(spectrum.blue, spectrum.emerald, spectrum.violet, spectrum.amber, spectrum.rose, spectrum.cyan)
+    if (fractions.size > 6) {
+        fractions.sortedByDescending { it.fraction }.forEachIndexed { index, item ->
+            DataRow(item.title, "${decimalText(BigDecimal.valueOf(item.fraction * 100))}%")
+            ru.omnicio.app.ui.spectrum.SpectrumProgressBar(item.fraction.toFloat(), accent = palette[index % palette.size])
+        }
+        return
+    }
     val remainder = MaterialTheme.colorScheme.surfaceVariant
     val largeText = LocalDensity.current.fontScale >= 1.5f
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -228,47 +250,80 @@ private fun StructureCaption(center: String, caption: String, modifier: Modifier
     }
 }
 
+internal data class HistoryMarker(val date: String, val label: String)
+
 @Composable
-internal fun HistoryChart(points: List<HistoryPoint>, currency: String) {
+internal fun HistoryChart(points: List<HistoryPoint>, currency: String, markers: List<HistoryMarker> = emptyList()) {
+    if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Notice("График скрыт режимом приватности."); return }
     if (points.size < 2) {
-        Notice(if (points.isEmpty()) "За этот период пока нет сохранённых снимков стоимости." else "Получен первый снимок. График появится после следующего измерения.")
+        Notice(if (points.isEmpty()) "За этот период пока нет сохранённых снимков стоимости." else "Первый снимок сохранён. График появится после следующего измерения.")
         return
     }
     val geometry = remember(points) { portfolioHistory(points) }
     if (geometry == null) {
-        Notice("Историю нельзя корректно отобразить: проверьте даты, повторные наблюдения и числовые данные. Пропуски не заменены нулями.")
+        Notice("История содержит несовместимые значения. Повторите загрузку; пропуски не заменяются нулями.")
         return
     }
     val data = geometry.coordinates
-    val reveal = rememberSpectrumReveal(points, LocalSpectrumMotionPreference.current.enabled)
+    var selected by rememberSaveable(currency) { mutableIntStateOf(-1) }
+    val pointIndex = if (selected < 0) data.lastIndex else selected.coerceIn(data.indices)
+    val current = data[pointIndex]
     val accent = LocalSpectrumPalette.current.cyan
     val outline = MaterialTheme.colorScheme.outlineVariant
-    Text(decimalText(data.last().point.value) + " " + currencySymbol(currency), fontWeight = FontWeight.Bold)
-    Canvas(Modifier.fillMaxWidth().height(180.dp).semantics {
-        contentDescription = "Стоимость портфеля: ${data.size} сохранённых снимков T-Invest. Значения доступны под графиком."
-    }) {
+    val dates = remember(data) { data.map { Instant.parse(it.point.date) } }
+    val gaps = remember(dates) {
+        val intervals = dates.zipWithNext { first, last -> Duration.between(first, last).seconds }
+        val typical = intervals.sorted()[intervals.size / 2]
+        intervals.map { it > maxOf(1800L, typical * 3) }
+    }
+    Text(decimalText(current.point.value) + " " + currencySymbol(currency), style = MaterialTheme.typography.headlineSmall)
+    Text(dateText(current.point.date), style = MaterialTheme.typography.bodySmall)
+    DataRow("Диапазон шкалы", "${decimalText(geometry.low)} — ${decimalText(geometry.high)} ${currencySymbol(currency)}")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.height(180.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        listOf(geometry.high, geometry.high.add(geometry.low).divide(BigDecimal("2")), geometry.low).forEach { Text(decimalText(it), style = MaterialTheme.typography.labelSmall) }
+    }
+    Canvas(Modifier.weight(1f).height(180.dp)
+        .semantics { contentDescription = "Стоимость портфеля. ${data.size} снимков. Выбран ${dateText(current.point.date)}: ${decimalText(current.point.value)} $currency. Точные значения доступны под графиком." }
+        .pointerInput(data) { detectTapGestures { point -> selected = data.indices.minBy { kotlin.math.abs(data[it].x * size.width - point.x) } } }
+        .pointerInput(data) { detectDragGestures { change, _ ->
+            change.consume()
+            selected = data.indices.minBy { kotlin.math.abs(data[it].x * size.width - change.position.x) }
+        } }) {
         val inset = 5.dp.toPx()
-        if (size.width <= inset * 2 || size.height <= inset * 2) return@Canvas
-        val innerWidth = size.width - inset * 2
-        val innerHeight = size.height - inset * 2
-        val zero = inset + geometry.zero * innerHeight
-        drawLine(outline, Offset(inset, zero), Offset(size.width - inset, zero), 1.dp.toPx())
-        val curve = Path().apply {
-            data.forEachIndexed { index, coordinate ->
-                val x = inset + coordinate.x * innerWidth
-                val y = inset + coordinate.y * innerHeight
-                if (index == 0) moveTo(x, y) else lineTo(x, y)
+        val innerWidth = (size.width - inset * 2).coerceAtLeast(1f)
+        val innerHeight = (size.height - inset * 2).coerceAtLeast(1f)
+        for (level in 0..2) {
+            val y = inset + innerHeight * level / 2
+            drawLine(outline.copy(alpha = .4f), Offset(inset, y), Offset(size.width - inset, y), 1.dp.toPx())
+        }
+        val curve = Path()
+        data.forEachIndexed { index, coordinate ->
+            val x = inset + coordinate.x * innerWidth
+            val y = inset + coordinate.y * innerHeight
+            if (index == 0 || gaps[index - 1]) curve.moveTo(x, y) else curve.lineTo(x, y)
+        }
+        markers.forEach { marker ->
+            val instant = runCatching { Instant.parse(marker.date) }.getOrNull()
+            if (instant != null && instant in dates.first()..dates.last()) {
+                val part = Duration.between(dates.first(), instant).toMillis().toDouble() / Duration.between(dates.first(), dates.last()).toMillis()
+                val markerX = inset + part.toFloat() * innerWidth
+                drawCircle(accent, 3.dp.toPx(), Offset(markerX, size.height - inset))
             }
         }
-        clipRect(right = size.width * reveal.value) {
-        drawPath(curve, accent.copy(alpha = 0.12f), style = Stroke(8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(curve, accent, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        val last = data.last()
-        drawCircle(accent, 3.dp.toPx(), Offset(inset + last.x * innerWidth, inset + last.y * innerHeight))
-        }
+        val x = inset + current.x * innerWidth
+        drawLine(outline, Offset(x, inset), Offset(x, size.height - inset), 1.dp.toPx())
+        drawCircle(accent, 4.dp.toPx(), Offset(x, inset + current.y * innerHeight))
     }
-    DataRow(dateText(data.first().point.date, "dd.MM.yy HH:mm"), dateText(data.last().point.date, "dd.MM.yy HH:mm"))
-    Notice("Линия соединяет фактически сохранённые снимки, не восстанавливает историю до подключения. Пополнения и выводы также изменяют стоимость портфеля.")
+    }
+    DataRow(dateText(data.first().point.date, "dd.MM.yy"), dateText(data.last().point.date, "dd.MM.yy"))
+    if (gaps.any { it }) Notice("Разрывы линии — длительные промежутки между сохранёнными наблюдениями.")
+    markers.filter { marker -> runCatching { Instant.parse(marker.date) in dates.first()..dates.last() }.getOrDefault(false) }
+        .forEach { marker -> Text("${dateText(marker.date)} · ${marker.label}", style = MaterialTheme.typography.bodySmall) }
+    DetailFold("Как читать график") {
+        Notice("Показана стоимость по сохранённым снимкам. Пополнения и выводы меняют стоимость; это не график инвестиционной прибыли.")
+    }
     HistoryValues(data, currency)
 }
 

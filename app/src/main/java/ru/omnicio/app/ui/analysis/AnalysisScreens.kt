@@ -16,7 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.saveable.rememberSaveable
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
-import ru.omnicio.app.ui.workspace.WorkspaceLink
+import ru.omnicio.app.ui.workspace.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -194,8 +194,8 @@ private fun InsightScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(key = "filters") {
-                SpectrumTabs(if (selected == AnalystTab.Risk) listOf("Обзор", "Сигналы")
-                    else listOf("Новые", "Все", "Прочитано"), section, { section = it })
+                SpectrumTabs(if (selected == AnalystTab.Risk) listOf("Обзор", "Активные", "История")
+                    else listOf("Внимание", "Информация", "История"), section, { section = it })
             }
             item(key = "refresh") {
                 SpectrumSecondaryButton(
@@ -213,20 +213,27 @@ private fun InsightScreen(
             if (entries != null) {
                 val riskOverview = selected == AnalystTab.Risk && section == 0
                 if (riskOverview) {
-                    item(key = "overview") { RiskOverviewCard(entries) }
+                    item(key = "overview") { RiskOverviewCard(entries.filter { insightActive(it, now) }) }
                     item(key = "coverage") { RiskCoverageCard() }
                     item(key = "open-signals") {
-                        WorkspaceLink("Сигналы", "Получено: ${entries.size}", SpectrumSymbol.Risk) { section = 1 }
+                        WorkspaceLink("Активные сигналы", "Актуальность проверяется отдельно от прочтения", SpectrumSymbol.Risk) { section = 1 }
                     }
                 } else {
-                    val visible = if (selected == AnalystTab.Risk || section == 1) entries
-                        else entries.filter { if (section == 0) !it.isRead else it.isRead }
+                    val visible = entries.filter { card ->
+                        val active = insightActive(card, now)
+                        if (selected == AnalystTab.Risk) { if (section == 1) active else !active }
+                        else when (section) {
+                            0 -> active && !card.isRead && card.severity in setOf("critical", "warning")
+                            1 -> active && !card.isRead && card.severity !in setOf("critical", "warning")
+                            else -> card.isRead || !active
+                        }
+                    }.sortedWith(compareBy<InsightCard> { when (it.severity) { "critical" -> 0; "warning" -> 1; else -> 2 } }.thenByDescending { it.createdAt })
                     when {
                         entries.any { it.id.isBlank() } || entries.map { it.id }.toSet().size != entries.size -> {
                             item(key = "invalid") { ErrorCard("Не удалось проверить список событий.", { reload++ }) }
                         }
                         visible.isEmpty() -> item(key = "empty") { StatusCard(emptyTitle, emptyText) }
-                        else -> items(visible, key = { it.id }) { card -> InsightPreview(card) { selectedId = card.id } }
+                        else -> items(visible, key = { it.id }) { card -> InsightPreview(card, now) { selectedId = card.id } }
                     }
                 }
             }
@@ -302,7 +309,7 @@ private fun IdeasContent(
     modifier: Modifier,
 ) {
     val client = remember { AnalysisBackendClient() }
-    var reload by remember { mutableIntStateOf(0) }
+    var reload by remember { mutableIntStateOf(1) }
     var refreshing by remember { mutableStateOf(false) }
     var refreshMessage by remember { mutableStateOf<String?>(null) }
     val state by rememberAnalysisData(token, reload, client::fetchIdeas)
@@ -329,7 +336,7 @@ private fun IdeasContent(
             }
             if (section == 0) {
                 item(key = "execution-readiness") {
-                    StatusCard("План сделок ещё не подключён", "Пока доступны обзоры портфеля. Точные покупки, продажи и суммы появятся после подключения расчёта действий.")
+                    ActionPlan(actions = null)
                 }
                 item(key = "open-analysis") {
                     SpectrumPrimaryButton("Посмотреть анализ", { section = 1 }, Modifier.fillMaxWidth())
@@ -348,7 +355,7 @@ private fun IdeasContent(
                 }
             }
             loadStatus(state) { reload++ }
-            item(key = "portfolio-research") { PortfolioResearchPanel(token) }
+            item(key = "portfolio-research") { PortfolioResearchPanel(token, showRefresh = false, refreshKey = reload) }
             state.value?.let { payload ->
                 item(key = "state") {
                     StatusCard(
@@ -376,14 +383,7 @@ private fun IdeasContent(
                         )
                     }
                 }
-                item(key = "reload-results") {
-                    SpectrumSecondaryButton(
-                        text = "Обновить результаты",
-                        onClick = { reload++ },
-                        enabled = !state.loading,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+
             }
             }
         }
@@ -493,6 +493,7 @@ private fun AnalysisProfileContent(
             if (profile != null && !loading) {
                 item { SpectrumTabs(listOf("Правила", "Уведомления", "Наблюдение"), section, { section = it }) }
                 if (section == 2) item { MonitoringStatus(status) }
+                if (section == 1) item { NotificationDeliveryDraft() }
                 profileControls(profile, section, enabled = pendingSave == null) { draft = it }
                 message?.let { text ->
                     item {

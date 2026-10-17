@@ -1,6 +1,8 @@
 package ru.omnicio.app.ui.profile
 
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.workspace.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -73,9 +75,11 @@ fun TApiScreen(
     onBack: () -> Unit,
     onConnectionChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenPortfolio: () -> Unit = onBack,
 ) {
     BackHandler(onBack = onBack)
 
+    val connection = LocalBrokerConnection.current
     val uriHandler = LocalUriHandler.current
     val backend = remember { AnalystBackendClient() }
     val scope = rememberCoroutineScope()
@@ -83,9 +87,14 @@ fun TApiScreen(
     var tokenInput by remember { mutableStateOf("") }
     var showToken by remember { mutableStateOf(false) }
     var docsError by remember { mutableStateOf<String?>(null) }
-    var status by remember(tApiConfigured) {
+    var status by remember(tApiConfigured, connection) {
         mutableStateOf<TokenUiStatus>(
-            if (tApiConfigured) TokenUiStatus.Connected else TokenUiStatus.Missing,
+            when {
+                tApiConfigured -> TokenUiStatus.Connected
+                connection == BrokerConnectionState.Checking -> TokenUiStatus.Checking
+                connection == BrokerConnectionState.Unknown -> TokenUiStatus.Error("Статус не получен. Проверьте сеть или повторно подключите read-only токен.")
+                else -> TokenUiStatus.Missing
+            },
         )
     }
 
@@ -114,6 +123,7 @@ fun TApiScreen(
 
     TApiContent(
         modifier = modifier,
+        onOpenPortfolio = onOpenPortfolio,
         status = status,
         tokenInput = tokenInput,
         showToken = showToken,
@@ -165,6 +175,7 @@ fun TApiScreen(
 
 @Composable
 private fun TApiContent(
+    onOpenPortfolio: () -> Unit,
     status: TokenUiStatus,
     tokenInput: String,
     showToken: Boolean,
@@ -178,6 +189,7 @@ private fun TApiContent(
     onOpenDocs: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var confirmDisconnect by remember { mutableStateOf(false) }
     SpectrumBackground(modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize().imePadding(),
@@ -196,8 +208,11 @@ private fun TApiContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { TApiHeader(onBack = onBack) }
+            item { Text(if (tApiConfigured) "1. Вход ✓  ·  2. Счёт ✓  ·  3. Портфель" else "1. Вход ✓  ·  2. Подключение счёта  ·  3. Портфель", style = MaterialTheme.typography.bodySmall) }
             item { StatusCard(status = status) }
+            if (tApiConfigured) item { SpectrumPrimaryButton("Открыть портфель", onOpenPortfolio, Modifier.fillMaxWidth()) }
             item {
+                DetailFold(if (tApiConfigured) "Управление подключением" else "Токен доступа", initiallyOpen = !tApiConfigured) {
                 TokenInputCard(
                     status = status,
                     tokenInput = tokenInput,
@@ -206,17 +221,22 @@ private fun TApiContent(
                     onTokenInputChange = onTokenInputChange,
                     onToggleTokenVisibility = onToggleTokenVisibility,
                     onVerify = onVerify,
-                    onRemove = onRemove,
+                    onRemove = { confirmDisconnect = true },
                 )
             }
-            item { TokenDocsCard(onOpenDocs = onOpenDocs) }
+            }
+            if (!tApiConfigured) item { TokenDocsCard(onOpenDocs = onOpenDocs) }
             docsError?.let { message ->
                 item { DocsErrorCard(message) }
             }
-            item { TokenSecurityCard() }
+            item { DetailFold("О безопасности подключения") { TokenSecurityCard() } }
         }
     }
     }
+    if (confirmDisconnect) AlertDialog(onDismissRequest = { confirmDisconnect = false }, title = { Text("Отключить счёт?") },
+        text = { Text("Новые данные и наблюдение за портфелем перестанут поступать. Доступ к аккаунту приложения сохранится.") },
+        confirmButton = { TextButton(onClick = { confirmDisconnect = false; onRemove() }) { Text("Отключить") } },
+        dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Оставить подключённым") } })
 }
 
 @Composable

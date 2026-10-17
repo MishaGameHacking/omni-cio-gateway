@@ -56,7 +56,7 @@ internal fun rememberSpectrumLivePhase(
 internal fun rememberSpectrumReveal(dataKey: Any, motionAllowed: Boolean): Animatable<Float, AnimationVector1D> {
     val active = rememberSpectrumActive()
     val phase = remember { Animatable(1f) }
-    LaunchedEffect(dataKey, motionAllowed, active) {
+    LaunchedEffect(motionAllowed, active) {
         if (motionAllowed && active && ValueAnimator.areAnimatorsEnabled()) {
             phase.snapTo(0f)
             phase.animateTo(1f, tween(420))
