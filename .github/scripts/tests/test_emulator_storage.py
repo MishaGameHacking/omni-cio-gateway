@@ -50,6 +50,20 @@ class EmulatorStorageTests(unittest.TestCase):
             self.configure(DATA_BYTES + HEADROOM_BYTES - 1)
         self.assertEqual(self.config.read_text(encoding="utf-8"), self.original)
 
+    def test_official_directory_layout_does_not_require_userdata_img(self):
+        self.source.unlink()
+        data = self.source.parent / "data"
+        data.mkdir()
+        (data / "empty_data_disk").write_bytes(b"")
+        self.configure(DATA_BYTES + HEADROOM_BYTES)
+        self.assertIn(f"disk.dataPartition.size={DATA_BYTES}\n", self.config.read_text(encoding="utf-8"))
+
+    def test_missing_initial_source_is_not_silently_replaced(self):
+        self.source.unlink()
+        with self.assertRaisesRegex(RuntimeError, "Official userdata source is missing"):
+            self.configure(DATA_BYTES + HEADROOM_BYTES)
+        self.assertEqual(self.config.read_text(encoding="utf-8"), self.original)
+
     def test_cleanup_retains_report_and_other_attempt(self):
         report = self.attempt / "install-results.json"
         report.write_text("[]", encoding="utf-8")

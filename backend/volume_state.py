@@ -501,13 +501,21 @@ def save_goal(payload: GoalWrite, user: Any = Depends(backend.current_user)) -> 
     target, reserve = decimal(payload.target.amount), decimal(payload.reserve.amount)
     if target is None or target <= 0 or reserve is None or reserve < 0 or payload.target.currency != payload.reserve.currency:
         raise HTTPException(422, "goal_amounts_invalid")
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(422, "goal_title_empty")
     request, user_id = payload.model_dump(), int(user["id"])
     with transaction(backend.connect) as db:
         prior = receipt(db, user_id, payload.request_id, "goal", request)
         if prior:
             return prior
         identifier = require_id(payload.id) if payload.id else uuid.uuid4().hex
-        result = {"id": identifier, "title": payload.title.strip(), "target": money(target, payload.target.currency), "reserve": money(reserve, payload.reserve.currency)}
+        if payload.id and not db.execute(
+            "SELECT 1 FROM workspace_records WHERE user_id=? AND kind='goal' AND id=?",
+            (user_id, identifier),
+        ).fetchone():
+            raise HTTPException(404, "goal_not_found")
+        result = {"id": identifier, "title": title, "target": money(target, payload.target.currency), "reserve": money(reserve, payload.reserve.currency)}
         record(db, user_id, "goal", identifier, result)
         remember(db, user_id, payload.request_id, "goal", request, result)
     return result

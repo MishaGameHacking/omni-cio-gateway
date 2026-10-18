@@ -398,6 +398,10 @@ class ProfileProbe:
                 exercise_position_preview(self)
         self.command("shell", "am", "force-stop", PACKAGE)
 
+    def goal_workflow(self):
+        from goal_workflow_probe import exercise_goal_workflow
+        exercise_goal_workflow(self)
+
     def balance_privacy(self):
         from balance_privacy_probe import exercise_balance_privacy
         exercise_balance_privacy(self)
@@ -635,6 +639,7 @@ def exercise_checks(device, read_tree) -> dict:
             ("spatial-renderer", probe.spatial),
             ("session-context", probe.session_context),
             ("balance-privacy", probe.balance_privacy),
+            ("goal-workflow", probe.goal_workflow),
             ("business-26-cases", probe.business),
             ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),

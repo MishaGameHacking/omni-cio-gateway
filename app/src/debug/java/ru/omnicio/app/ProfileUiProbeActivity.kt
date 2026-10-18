@@ -36,7 +36,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy") +
+        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor") +
             businessProbeRoutes.map { "business-$it" } + portfolioProbeRoutes.map { "portfolio-$it" }
         val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in allowedScreens } ?: "profile"
         val scenario = intent.getStringExtra("spectrum_scenario")?.takeIf { it in businessProbeScenarios } ?: "ready"
@@ -79,6 +79,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
                         screen == "spatial" -> SpatialRendererProbe()
                         screen == "session-context" -> SessionContextProbe()
                         screen == "balance-privacy" -> BalancePrivacyProbe()
+                        screen == "goal-editor" -> GoalWorkflowProbe { finish() }
                         screen.startsWith("business-") -> BusinessWorkspaceProbe(screen, scenario, onBack = { finish() })
                         screen.startsWith("portfolio-") -> PortfolioWorkspaceProbe(screen, scenario, onBack = { finish() })
                         screen != "profile" -> SpectrumDashboardProbe(screen)

@@ -11,16 +11,38 @@ HEADROOM_BYTES = 2048 * MIB
 DATA_KEY = "disk.dataPartition.size"
 
 
+def _initial_data_bytes(image_dir: Path, sdk: Path) -> tuple[str, int]:
+    if not image_dir.resolve().is_relative_to(sdk.resolve()):
+        raise RuntimeError("System image escapes the selected SDK")
+    source = image_dir / "userdata.img"
+    if source.is_file():
+        if not source.resolve().is_relative_to(image_dir.resolve()):
+            raise RuntimeError("Initial userdata image escapes its system image")
+        return "userdata.img", source.stat().st_size
+    # Official modern images may provide data/ instead of a prebuilt filesystem.
+    # The emulator's createUserData builds ext4 from that directory itself.
+    directory = image_dir / "data"
+    if directory.is_dir() and directory.resolve().is_relative_to(image_dir.resolve()):
+        size = 0
+        for path in directory.rglob("*"):
+            if not path.resolve().is_relative_to(image_dir.resolve()):
+                raise RuntimeError("Initial userdata entry escapes its system image")
+            if path.is_file():
+                size += path.stat().st_size
+        return "data-directory", size
+    entries = sorted(path.name for path in image_dir.iterdir()) if image_dir.is_dir() else []
+    raise RuntimeError("Official userdata source is missing; system image entries: " + ", ".join(entries[:40]))
+
+
 def configure_userdata(avd: Path, sdk: Path, image: str) -> None:
-    source = sdk.joinpath(*image.split(";"), "userdata.img")
-    if not source.is_file() or not source.resolve().is_relative_to(sdk.resolve()):
-        raise RuntimeError("Official userdata image is missing or outside the selected SDK")
+    layout, initial = _initial_data_bytes(sdk.joinpath(*image.split(";")), sdk)
     # Never shrink an official initial image. Four GiB is ample for the APKs,
     # Google services and synthetic fixtures; RAM and kernel page size are separate.
-    initial = source.stat().st_size
-    size = max(DATA_BYTES, ((initial + MIB - 1) // MIB) * MIB)
+    # A source directory needs filesystem metadata space in addition to its files.
+    minimum = initial + (HEADROOM_BYTES if layout == "data-directory" else 0)
+    size = max(DATA_BYTES, ((minimum + MIB - 1) // MIB) * MIB)
     available = shutil.disk_usage(avd).free
-    print("EMULATOR_STORAGE=" + json.dumps({"initial_image_bytes": initial,
+    print("EMULATOR_STORAGE=" + json.dumps({"initial_layout": layout, "initial_image_bytes": initial,
           "data_partition_bytes": size, "free_bytes": available,
           "required_with_headroom_bytes": size + HEADROOM_BYTES}), flush=True)
     if available < size + HEADROOM_BYTES:

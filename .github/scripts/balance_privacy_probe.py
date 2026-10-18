@@ -10,6 +10,7 @@ import re
 from profile_ui_probe import node_bounds
 
 PACKAGE = "ru.omnicio.app.debug"
+MASKED_AMOUNT = "••••••"
 
 
 def balance_text(tree, resource):
@@ -56,10 +57,10 @@ def exercise_balance_privacy(probe):
         metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Privacy fixture did not render")
         if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0.0, abs_tol=1e-6):
             raise AssertionError("Privacy fixture has a different actual font scale")
-        _both(probe, "••••••", "••••••")
+        _both(probe, MASKED_AMOUNT, MASKED_AMOUNT)
         suffix = "-font-200" if math.isclose(scale, 2.0) else ""
-        _hold(probe, "private-first", "1000,00₽", "••••••", "UP", "balance-private-first" + suffix)
-        _hold(probe, "private-second", "2000,00₽", "••••••", "CANCEL", "balance-private-second" + suffix)
+        _hold(probe, "private-first", "1000,00₽", MASKED_AMOUNT, "UP", "balance-private-first" + suffix)
+        _hold(probe, "private-second", "2000,00₽", MASKED_AMOUNT, "CANCEL", "balance-private-second" + suffix)
         records.append({"font_scale": scale, "only_held_value_revealed": True,
                         "release_hides": True, "cancel_hides": True, "long_press_does_not_cycle_currency": True})
     root = Path(__file__).resolve().parents[2]

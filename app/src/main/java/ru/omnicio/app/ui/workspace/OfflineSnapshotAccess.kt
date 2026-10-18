@@ -23,12 +23,14 @@ fun OfflineSnapshotAccess(gate: UpdateGateUi) {
     var cached by remember { mutableStateOf<OfflinePortfolio?>(null) }
     var open by rememberSaveable { mutableStateOf(false) }
     val permitted = gate.decision == null && gate.error != null && !gate.checking && !blocked
-    LaunchedEffect(permitted) {
+    LaunchedEffect(permitted, gate.decision, blocked) {
         cached = if (permitted) SessionTransitions.run {
             val session = AuthSessionStore(context)
             if (session.loadAccessToken() == null) null else session.loadCachedUser()?.telegramId?.let { OfflinePortfolioStore(context).read(it) }
         } else null
-        if (!permitted) open = false
+        // Rotation starts another policy check. Hide cached data during it, but
+        // retain the user's request to reopen if the result is still offline.
+        if (gate.decision != null || blocked) open = false
     }
     if (permitted && cached != null) SpectrumSecondaryButton("Посмотреть последний сохранённый снимок", { open = true }, Modifier.fillMaxWidth())
     if (open) cached?.let { snapshot -> WorkspaceDialog("Сохранённый снимок", { open = false }) {
