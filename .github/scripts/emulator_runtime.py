@@ -7,6 +7,7 @@ import subprocess
 
 from kernel_page_size import system_image
 
+SOURCE_PROPERTIES = "source.properties"
 RUNTIME_PROPERTIES = (
     "ro.build.fingerprint",
     "ro.build.version.sdk",
@@ -25,11 +26,15 @@ def _package_revision(path: Path) -> dict:
         if len(content) > 65536:
             raise ValueError("SDK package metadata exceeds diagnostic limit")
         text = content.decode("utf-8-sig")
-        revisions = re.findall(r"^Pkg\.Revision\s*=\s*([^\r\n]+)$", text, re.MULTILINE)
-        if len(revisions) != 1 or re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,3}", revisions[0].strip()) is None:
+        revisions = []
+        for line in text.splitlines():
+            key, separator, value = line.partition("=")
+            if separator and key.strip() == "Pkg.Revision":
+                revisions.append(value.strip())
+        if len(revisions) != 1 or re.fullmatch(r"\d+(?:\.\d+){0,3}", revisions[0], re.ASCII) is None:
             raise ValueError("SDK package revision is missing or ambiguous")
-        return {"revision": revisions[0].strip()}
-    except (OSError, UnicodeError, ValueError) as error:
+        return {"revision": revisions[0]}
+    except (OSError, ValueError) as error:
         return {"unavailable": type(error).__name__}
 
 
@@ -39,9 +44,9 @@ def snapshot_runtime_environment(device, sdk: Path, api: int) -> dict:
     report = {
         "system_image": image,
         "sdk_packages": {
-            "emulator": _package_revision(sdk / "emulator" / "source.properties"),
-            "platform-tools": _package_revision(sdk / "platform-tools" / "source.properties"),
-            "system-image": _package_revision(sdk.joinpath(*image.split(";"), "source.properties")),
+            "emulator": _package_revision(sdk / "emulator" / SOURCE_PROPERTIES),
+            "platform-tools": _package_revision(sdk / "platform-tools" / SOURCE_PROPERTIES),
+            "system-image": _package_revision(sdk.joinpath(*image.split(";"), SOURCE_PROPERTIES)),
         },
     }
     try:
@@ -50,7 +55,12 @@ def snapshot_runtime_environment(device, sdk: Path, api: int) -> dict:
             report["properties_unavailable"] = "getprop failed"
         else:
             parsed = {}
-            for key, value in re.findall(r"^\[([^\]\r\n]+)\]: \[([^\]\r\n]*)\]\s*$", response.stdout, re.MULTILINE):
+            for line in response.stdout.splitlines():
+                if not line.startswith("[") or not line.endswith("]"):
+                    continue
+                key, separator, value = line[1:-1].partition("]: [")
+                if not separator:
+                    continue
                 if key in RUNTIME_PROPERTIES:
                     if key in parsed:
                         raise ValueError("Runtime property is ambiguous")

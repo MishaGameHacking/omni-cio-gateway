@@ -50,6 +50,13 @@ class EmulatorRuntimeTests(unittest.TestCase):
                 self.assertEqual(result["sdk_packages"]["emulator"], {"unavailable": "ValueError"})
                 self.assertEqual(result["sdk_packages"]["system-image"], {"unavailable": "FileNotFoundError"})
 
+    def test_windows_source_properties_preserve_revision(self):
+        self.write_package("emulator", "")
+        (self.sdk / "emulator/source.properties").write_bytes(b"Pkg.Desc=Android Emulator\r\nPkg.Revision=36.4.5\r\n")
+        device = Mock(return_value=Mock(returncode=0, stdout=""))
+        result = snapshot_runtime_environment(device, self.sdk, 35)
+        self.assertEqual(result["sdk_packages"]["emulator"], {"revision": "36.4.5"})
+
     def test_duplicate_runtime_property_does_not_report_arbitrary_value(self):
         device = Mock(return_value=Mock(returncode=0, stdout=(
             "[dalvik.vm.usejit]: [true]\n[dalvik.vm.usejit]: [false]\n")))
@@ -69,6 +76,7 @@ class EmulatorRuntimeTests(unittest.TestCase):
     def test_proven_transport_loss_is_preserved_for_complete_avd_retry(self):
         error = OSError("owned emulator disappeared")
         error.emulator_transport_lost = True
+        device = Mock(side_effect=error)
         with self.assertRaises(OSError) as raised:
-            snapshot_runtime_environment(Mock(side_effect=error), self.sdk, 35)
+            snapshot_runtime_environment(device, self.sdk, 35)
         self.assertIs(raised.exception, error)

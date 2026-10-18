@@ -124,7 +124,7 @@ class _SpatialSession:
             raise AssertionError("Spatial app process is no longer running; inspect native crash diagnostics") from error
         if not value:
             raise AssertionError("Spatial app process is no longer running; inspect native crash diagnostics")
-        if re.fullmatch(r"[1-9][0-9]*", value) is None:
+        if re.fullmatch(r"[1-9]\d*", value, re.ASCII) is None:
             raise AssertionError("Spatial app process identity is ambiguous")
         return value
 
