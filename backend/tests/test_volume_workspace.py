@@ -617,7 +617,7 @@ def test_ambiguous_chat_timeout_cannot_repeat_or_fake_an_answer(fixture):
     calls = model_fixture(fixture, timeout=True)
     thread = chat.create_thread(chat.ThreadCreate(request_id="timeout-thread-id"), user=fixture["user"])["thread_id"]
     endpoint = "/workspace/chat/threads/" + thread + "/messages"
-    body = {"request_id": "timeout-chat-request", "text": "Explain", "tier": "fast"}
+    body = {"request_id": "timeout-chat-request", "text": "Explain my portfolio balance", "tier": "fast"}
     job = fixture["client"].post(endpoint, json=body).json()
     outcome = jobs.get_job(int(fixture["user"]["id"]), job["job_id"])
     assert outcome["state"] == "uncertain"

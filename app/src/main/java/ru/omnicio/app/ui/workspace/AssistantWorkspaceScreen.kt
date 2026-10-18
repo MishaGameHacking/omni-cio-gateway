@@ -346,6 +346,10 @@ private fun routeQuote(value: JSONObject?): ChatRouteQuote {
         value?.optBoolean("requires_cost_confirmation") == true, ceiling, value?.optString("route_id").orEmpty())
 }
 
+private const val CHAT_DEPTH_BRIEF = "Кратко"
+private const val CHAT_DEPTH_DETAIL = "Подробно"
+private const val CHAT_DEPTH_DEEP = "Глубокий разбор"
+
 @Composable
 private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
     val quote = routeQuote(value)
@@ -353,7 +357,7 @@ private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
         Text(if (quote.usable) "Оценка расхода" else "Вопрос не отправлен", style = MaterialTheme.typography.titleMedium)
         if (quote.usable) {
             Text(PrivateValue(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Стоимость не подтверждена"))
-            val depth = when (quote.selectedTier) { "fast" -> "Кратко"; "standard" -> "Подробно"; else -> "Глубокий разбор" }
+            val depth = when (quote.selectedTier) { "fast" -> CHAT_DEPTH_BRIEF; "standard" -> CHAT_DEPTH_DETAIL; else -> CHAT_DEPTH_DEEP }
             Text("Выбрано сервером: " + depth, style = MaterialTheme.typography.bodySmall)
             Text("Оценка ограничивает расход: при смене маршрута или увеличении суммы сервер запросит новую проверку.", style = MaterialTheme.typography.bodySmall)
             if (quote.needsConfirmation(quote.selectedTier)) Text("Глубокий запрос будет отправлен только после отдельного подтверждения кнопкой ниже.")
@@ -373,8 +377,8 @@ private fun AssistantComposer(question: String, tier: Int, loading: Boolean, nee
     SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                     if (loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
                     else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
-                    DetailFold("Глубина ответа: " + listOf("Авто", "Кратко", "Подробно", "Глубокий разбор")[tier]) {
-                        WorkspaceChoices("Выбор модели", listOf("Авто", "Кратко", "Подробно", "Глубокий разбор"), tier) { if (!busy) onTier(it) }
+                    DetailFold("Глубина ответа: " + listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP)[tier]) {
+                        WorkspaceChoices("Выбор модели", listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP), tier) { if (!busy) onTier(it) }
                     }
                     WorkspaceTextInput(question, onQuestion, "Ваш вопрос", singleLine = false,
                         modifier = Modifier.fillMaxWidth(), enabled = !busy)

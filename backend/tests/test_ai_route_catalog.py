@@ -28,8 +28,9 @@ def test_eight_evaluated_candidates_and_task_eligibility():
     rows = [row("MODEL_" + str(i)) for i in range(8)]
     candidates = approved_candidates("standard", environment(rows), now=NOW)
     assert len(candidates) == 8
+    env = environment(rows)
     with pytest.raises(CatalogError, match="ai_no_approved_route_for_task"):
-        approved_candidates("premium", environment(rows), now=NOW)
+        approved_candidates("premium", env, now=NOW)
 
 
 def test_capacity_includes_input_and_output():
@@ -57,14 +58,16 @@ def test_capacity_includes_input_and_output():
     ({"extra": "not-allowed"}, "schema_invalid"),
 ])
 def test_fail_closed_metadata(changes, error):
+    env = environment([row(**changes)])
     with pytest.raises(CatalogError, match=error):
-        approved_candidates("fast", environment([row(**changes)]), now=NOW)
+        approved_candidates("fast", env, now=NOW)
 
 
 @pytest.mark.parametrize("label", ["../TOKEN", "x", "MODEL TOKEN", "A" * 33])
 def test_label_cannot_select_arbitrary_configuration(label):
+    env = environment([row(label)])
     with pytest.raises(CatalogError, match="label_invalid"):
-        approved_candidates("fast", environment([row(label)]), now=NOW)
+        approved_candidates("fast", env, now=NOW)
 
 
 def test_model_cannot_reuse_another_models_evaluation():
@@ -74,7 +77,7 @@ def test_model_cannot_reuse_another_models_evaluation():
         approved_candidates("fast", env, now=NOW)
 
 
-@pytest.mark.parametrize("raw", ["{", "{}", "[]", "null", "[null]", '[{"label":"A","label":"B"}]', "[" + "0," * 20000 + "0]"])
+@pytest.mark.parametrize("raw", ["{", "{}", "[]", "null", "[null]", '[{"label":"A","label":"B"}]', pytest.param("[" + "0," * 20000 + "0]", id="oversized-json")])
 def test_invalid_json_catalog(raw):
     with pytest.raises(CatalogError):
         approved_candidates("fast", {"AI_ROUTE_CATALOG_JSON": raw}, now=NOW)
@@ -82,8 +85,9 @@ def test_invalid_json_catalog(raw):
 
 def test_duplicate_and_overlarge_catalog():
     for rows in ([row(), row()], [row("MODEL_" + str(i)) for i in range(33)]):
+        env = environment(rows)
         with pytest.raises(CatalogError):
-            approved_candidates("fast", environment(rows), now=NOW)
+            approved_candidates("fast", env, now=NOW)
 
 
 @pytest.mark.parametrize("tier", ["none", "auto", "FAST", "unapproved"])
@@ -94,8 +98,9 @@ def test_no_implicit_catalog_tier(tier):
 
 @pytest.mark.parametrize("tiers", [[[]], [["fast"]], [{}], [None], [True], [1], ["fast", {}], ["fast", ["standard"]]])
 def test_nested_or_non_string_tiers_are_admission_errors(tiers):
+    env = environment([row(tiers=tiers)])
     with pytest.raises(CatalogError, match="ai_catalog_tiers_invalid"):
-        approved_candidates("fast", environment([row(tiers=tiers)]), now=NOW)
+        approved_candidates("fast", env, now=NOW)
 
 
 @pytest.mark.parametrize("tier", [[], {}, None, True])

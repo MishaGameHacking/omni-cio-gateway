@@ -318,8 +318,32 @@ def _policy_history(user_id: int, thread_id: str | None, before_job_id: str | No
     return [row["text"] for row in reversed(rows)]
 
 
-def _chat_plan(user_id: int, text: str, tier: str, thread_id: str | None, before_job_id: str | None = None):
-    return plan_chat(text, tier, history=_policy_history(user_id, thread_id, before_job_id))
+def _selected_financial_context(user_id: int, context: dict | None) -> bool:
+    if not context or context.get("mode") not in {"portfolio", "instrument"}:
+        return False
+    with closing(backend.connect()) as db:
+        user = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if user is None:
+        return False
+    snapshot = state.saved_snapshot(user)
+    if snapshot is None:
+        return False
+    owned = {account["id"] for account in snapshot.get("accounts", [])}
+    account_id = context.get("account_id")
+    if account_id and account_id not in owned:
+        return False
+    if context["mode"] == "portfolio":
+        return bool(owned)
+    return any(position["instrument_uid"] == context.get("instrument_uid")
+               and position["account_id"] in owned
+               and (not account_id or position["account_id"] == account_id)
+               for position in snapshot.get("positions", []))
+
+
+def _chat_plan(user_id: int, text: str, tier: str, thread_id: str | None,
+               before_job_id: str | None = None, *, context: dict | None = None):
+    return plan_chat(text, tier, history=_policy_history(user_id, thread_id, before_job_id),
+                     verified_context=_selected_financial_context(user_id, context))
 
 
 def _encoded_size(messages: list[dict]) -> int:
@@ -343,7 +367,8 @@ def _route_snapshot(plan, route, input_bytes: int) -> dict:
 @router.post("/estimate", responses=HTTP_ERRORS)
 def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> dict:
     try:
-        plan = _chat_plan(int(user["id"]), payload.text, payload.tier, payload.thread_id)
+        plan = _chat_plan(int(user["id"]), payload.text, payload.tier, payload.thread_id,
+                          context=payload.context.model_dump(mode="json"))
         messages, packet = model_messages(user, payload.text, payload.context.model_dump(mode="json"), payload.thread_id)
         _, route = ready(int(user["id"]), plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
         selected = _route_snapshot(plan, route, _encoded_size(messages))
@@ -360,7 +385,8 @@ def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> di
 
 def _admit_send(user_id: int, identifier: str, payload: MessageCreate):
     try:
-        plan = _chat_plan(user_id, payload.text, payload.tier, identifier)
+        plan = _chat_plan(user_id, payload.text, payload.tier, identifier,
+                          context=payload.context.model_dump(mode="json"))
         if payload.tier == "auto" and (payload.max_cost_micro_rub is None or payload.expected_route_id is None):
             raise ChatPolicyError("chat_cost_estimate_required", "Проверьте стоимость запроса перед отправкой.")
         if plan.tier is AnalysisTier.PREMIUM and payload.tier == "auto" and not payload.confirm_premium:
@@ -460,7 +486,8 @@ def _dispatch_guard(selected: dict | None, plan):
 def run_message(user: Any, job: dict, payload: dict) -> dict:
     user_id = int(user["id"])
     try:
-        plan = _chat_plan(user_id, payload["text"], payload["tier"], payload["thread_id"], job["id"])
+        plan = _chat_plan(user_id, payload["text"], payload["tier"], payload["thread_id"], job["id"],
+                          context=payload["context"])
         if plan.tier is AnalysisTier.PREMIUM and payload["tier"] == "auto" and payload.get("confirm_premium") is not True:
             raise GuardError("chat_premium_confirmation_required")
     except ChatPolicyError as error:

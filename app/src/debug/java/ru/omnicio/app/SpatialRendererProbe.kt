@@ -155,8 +155,9 @@ internal fun SpatialRendererProbe() {
                         }
                     }
                     item {
-                        SpectrumTextButton("Выбрать второй элемент", { selected = 1 }, Modifier.fillMaxWidth())
-                        Text("Выбран элемент: ${selected + 1}")
+                        SpectrumTextButton("Выбрать второй элемент", { selected = 1 },
+                            Modifier.fillMaxWidth().testTag("spatial-select-second"))
+                        Text("Выбран элемент: ${selected + 1}", Modifier.testTag("spatial-selection-result"))
                     }
                 } 2 -> {
                     item {

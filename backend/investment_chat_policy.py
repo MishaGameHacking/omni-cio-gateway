@@ -16,7 +16,7 @@ try:
 except ImportError:  # uvicorn top-level imports
     from ai_policy import AnalysisTier
 
-POLICY_VERSION = "investment-chat-v1"
+POLICY_VERSION = "investment-chat-v2"
 SCOPE_MESSAGE = (
     "Analyst AI отвечает только на вопросы об инвестициях, активах и мировой "
     "финансовой политике. Этот запрос не относится к поддерживаемым темам."
@@ -68,12 +68,22 @@ INJECTION = re.compile(
     re.IGNORECASE,
 )
 RETAIL = re.compile(r"\bакци\w*\b[^.!?\n]{0,50}\b(?:магазин\w*|супермаркет\w*|скидк\w*)\b", re.IGNORECASE)
-FOLLOW_UP = re.compile(
-    r"(?:(?:а|и|and|а\s+какие)\s+)?(?:почему|поясни|объясни|подробнее|"
-    r"что\s+это\s+значит|какие\s+риски|риски|что\s+дальше|"
-    r"приведи\s+пример|why|explain|more\s+detail|what\s+risks)[?.!\s]*",
-    re.IGNORECASE,
-)
+FOLLOW_UP = frozenset({
+    "почему", "поясни", "объясни", "подробнее", "что это значит", "какие риски",
+    "риски", "что дальше", "приведи пример", "why", "explain", "more detail",
+    "what risks", "explain the balance", "объясни влияние события",
+    "разобрать возможное влияние",
+})
+
+
+def _follow_up(text: str) -> bool:
+    question = text.rstrip("?.! ")
+    for prefix in ("а какие ", "and ", "а ", "и "):
+        if question.startswith(prefix):
+            question = question[len(prefix):]
+            break
+    return question in FOLLOW_UP
+
 DEFINITION = re.compile(r"^\s*(?:что\s+такое|что\s+означает|объясни\s+термин|what\s+is|define)\b", re.IGNORECASE)
 DEEP = re.compile(r"\b(?:дефолт\w*|банкрот\w*|ковенант\w*|реструктуризац\w*|платежеспособ\w*|default\w*|bankrupt\w*|covenant\w*|solvency)\b", re.IGNORECASE)
 STANDARD = re.compile(
@@ -119,46 +129,59 @@ def _outside(text: str) -> bool:
     return bool(OUTSIDE.search(text) or UNRELATED_TASK.search(text) or RETAIL.search(text) or INJECTION.search(text))
 
 
-def _financial_history(history: Sequence[str]) -> bool:
-    # Do not cross an unrelated previous user question or use model prose to
-    # admit a follow-up. A bounded chain of genuine clarifications is allowed.
+def _financial_history(history: Sequence[str]) -> str | None:
+    # Retain the complexity of the latest financial question, not model prose.
+    # Do not cross an unrelated question or another user's conversation.
     for prior in reversed(history[-4:]):
         prior = normalized(prior[:8000])
         if _outside(prior):
-            return False
+            return None
         if FINANCE.search(prior):
-            return True
-        if not FOLLOW_UP.fullmatch(prior):
-            return False
-    return False
+            return prior
+        if not _follow_up(prior):
+            return None
+    return None
 
 
-def plan_chat(text: str, requested_tier: str = "auto", *, history: Sequence[str] = ()) -> ChatPlan:
+def _required_tier(cleaned: str) -> AnalysisTier:
+    parts = [part for part in re.split(r"[.!?;]+", cleaned) if part.strip()]
+    if DEFINITION.search(cleaned) and not ANALYTIC_REQUEST.search(cleaned) and len(parts) == 1:
+        return AnalysisTier.FAST
+    if DEEP.search(cleaned):
+        return AnalysisTier.PREMIUM
+    if STANDARD.search(cleaned):
+        return AnalysisTier.STANDARD
+    return AnalysisTier.FAST
+
+
+def _selected_tier(requested: str, required: AnalysisTier) -> AnalysisTier:
+    if requested == "auto":
+        return required
+    try:
+        selected = AnalysisTier(requested)
+    except (ValueError, TypeError):
+        raise ChatPolicyError("chat_tier_invalid", TIER_MESSAGE) from None
+    if selected not in TIER_ORDER:
+        raise ChatPolicyError("chat_tier_invalid", TIER_MESSAGE)
+    if TIER_ORDER[selected] < TIER_ORDER[required]:
+        raise ChatPolicyError("chat_tier_insufficient", TIER_MESSAGE)
+    return selected
+
+
+def plan_chat(text: str, requested_tier: str = "auto", *, history: Sequence[str] = (),
+              verified_context: bool = False) -> ChatPlan:
+    # verified_context is supplied only by the server after owner/broker checks;
+    # it permits bounded clarification phrases, never an arbitrary new topic.
     if not isinstance(text, str) or not 1 <= len(text) <= 8000 or not text.strip():
         raise ChatPolicyError("chat_text_invalid", CLARIFY_MESSAGE)
     cleaned = normalized(text)
     if _outside(cleaned):
         raise ChatPolicyError("chat_outside_investment_scope", SCOPE_MESSAGE)
-    if not FINANCE.search(cleaned) and not (FOLLOW_UP.fullmatch(cleaned) and _financial_history(history)):
+    prior = _financial_history(history)
+    follow_up = _follow_up(cleaned)
+    if not FINANCE.search(cleaned) and not (follow_up and (verified_context is True or prior)):
         raise ChatPolicyError("chat_investment_scope_unclear", CLARIFY_MESSAGE)
-    required = AnalysisTier.FAST
-    simple_definition = (DEFINITION.search(cleaned) and not ANALYTIC_REQUEST.search(cleaned)
-                         and len([part for part in re.split(r"[.!?;]+", cleaned) if part.strip()]) == 1)
-    if not simple_definition:
-        if DEEP.search(cleaned):
-            required = AnalysisTier.PREMIUM
-        elif STANDARD.search(cleaned):
-            required = AnalysisTier.STANDARD
-    if requested_tier == "auto":
-        selected = required
-    else:
-        try:
-            selected = AnalysisTier(requested_tier)
-        except (ValueError, TypeError):
-            raise ChatPolicyError("chat_tier_invalid", TIER_MESSAGE) from None
-        if selected not in TIER_ORDER:
-            raise ChatPolicyError("chat_tier_invalid", TIER_MESSAGE)
-        if TIER_ORDER[selected] < TIER_ORDER[required]:
-            raise ChatPolicyError("chat_tier_insufficient", TIER_MESSAGE)
+    required = _required_tier(prior if follow_up and prior else cleaned)
+    selected = _selected_tier(requested_tier, required)
     return ChatPlan(selected, required, LIMITS[selected],
                     "task_complexity" if requested_tier == "auto" else "explicit_user_tier")

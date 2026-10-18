@@ -32,8 +32,9 @@ def test_joint_scenarios_preserve_hedge_and_costs():
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1e999", "1e1000000000", "1e-1000000", True, None, "not-a-number", "9" * 101])
 def test_bad_returns_are_not_zero_or_safe(value):
+    rows = [JointScenario(D(1), {"A": value})]
     with pytest.raises(ScenarioError):
-        evaluate([JointScenario(D(1), {"A": value})])
+        evaluate(rows)
 
 
 @pytest.mark.parametrize("changes", [

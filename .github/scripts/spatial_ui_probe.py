@@ -238,6 +238,13 @@ class _SpatialSession:
         closed = self.metrics(windows=1)
         self.records.append({"scenario": "shared-engine-dialog", "open": window_metrics, "closed": closed})
 
+    def select_second_chart_element(self):
+        # The result follows the button in the lazy item and can be outside the
+        # viewport. Reveal the real result; never retry the tap or set state.
+        self.probe.tap_resource("spatial-select-second", "workspace-content")
+        self.probe.reveal_resource("spatial-selection-result", "workspace-content")
+        self.probe.find("Выбран элемент: 2")
+
     def charts_and_clipping(self):
         from profile_ui_probe import node_bounds
 
@@ -246,8 +253,7 @@ class _SpatialSession:
             self.probe.reveal_resource(target, "workspace-content")
             self.settled()
             self.probe.capture(screenshot)
-        self.probe.tap("Выбрать второй элемент", "workspace-content")
-        self.probe.find("Выбран элемент: 2")
+        self.select_second_chart_element()
         self.probe.reveal_resource("spatial-candles", "workspace-content", direction="start")
         self.settled()
         self.probe.capture("spatial-selected")

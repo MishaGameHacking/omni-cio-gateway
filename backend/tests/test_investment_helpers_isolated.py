@@ -128,8 +128,9 @@ def test_queued_route_cannot_change_or_exceed_reserved_quote(chat, guard):
     check = chat["_dispatch_guard"](selected, plan)
     check(SimpleNamespace(identifier="a"), 100)
     for route, ceiling in (("b", 100), ("a", 101)):
+        candidate = SimpleNamespace(identifier=route)
         with pytest.raises(guard["GuardError"], match="route_or_cost_changed"):
-            check(SimpleNamespace(identifier=route), ceiling)
+            check(candidate, ceiling)
 
 
 def test_cost_change_is_rejected_before_ledger_or_provider(guard):
