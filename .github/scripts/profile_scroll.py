@@ -85,7 +85,8 @@ def tappable_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Elem
     return clipped
 
 
-def fully_visible_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Element | None:
+def fully_visible_resource(tree: ET.Element, target_id: str, list_id: str,
+                           minimum_size: tuple[float, float] = (0, 0)) -> ET.Element | None:
     """Require the whole evidence target inside its current list viewport.
 
     A Compose node can retain logical bounds and visible-to-user=true after
@@ -97,6 +98,10 @@ def fully_visible_resource(tree: ET.Element, target_id: str, list_id: str) -> ET
         return None
     left, top, right, bottom = _bounds(target)
     x1, y1, x2, y2 = viewport
+    # UiAutomator may return an ALREADY clipped rectangle. Containment alone
+    # cannot prove the whole target is visible; use the fixture's declared size.
+    if right - left < minimum_size[0] or bottom - top < minimum_size[1]:
+        return None
     return target if x1 <= left < right <= x2 and y1 <= top < bottom <= y2 else None
 
 
@@ -267,14 +272,19 @@ def reveal_resource_in_list(
     layout_timeout: float = 0,
     for_tap: bool = False,
     for_capture: bool = False,
+    minimum_size: tuple[float, float] = (0, 0),
 ) -> ET.Element | None:
     """Reveal an exact Compose testTag without depending on merged label text."""
+    def find(tree):
+        if for_capture:
+            return fully_visible_resource(tree, target_resource_id, resource_id, minimum_size)
+        if for_tap:
+            return tappable_resource(tree, target_resource_id, resource_id)
+        return visible_resource(tree, target_resource_id)
     return _reveal_target(
         read_tree,
         swipe,
-        lambda tree: fully_visible_resource(tree, target_resource_id, resource_id)
-        if for_capture else (tappable_resource(tree, target_resource_id, resource_id)
-        if for_tap else visible_resource(tree, target_resource_id)),
+        find,
         target_resource_id,
         resource_id=resource_id,
         max_swipes=max_swipes,

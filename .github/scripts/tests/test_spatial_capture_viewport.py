@@ -42,6 +42,17 @@ class CaptureViewportTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "spatial-action"):
             form_bounds(broken)
 
+    def test_already_clipped_accessibility_bounds_are_not_full_geometry(self):
+        clipped = frame("[51,113][163,134]")
+        with self.assertRaisesRegex(AssertionError, "spatial-mesh-swatch"):
+            form_bounds(clipped)
+        frames, gestures = [clipped, frame()], []
+        target = reveal_resource_in_list(lambda: frames.pop(0), lambda *g: gestures.append(g),
+            "spatial-mesh-swatch", resource_id="workspace-content", direction="start",
+            for_capture=True, minimum_size=(111, 111))
+        self.assertEqual(target.get("bounds"), "[20,120][132,232]")
+        self.assertEqual(len(gestures), 1)
+
     def test_other_app_and_ambiguous_lists_are_rejected(self):
         tree = frame()
         list(tree.iter("node"))[1].set("package", "untrusted.app")

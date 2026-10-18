@@ -15,13 +15,14 @@ CLOSE_SPATIAL_WINDOW = 'Закрыть окно 3D'
 TOGGLE_LABEL = 'Тестовый переключатель'
 
 
-def form_bounds(tree):
+def form_bounds(tree, density=1):
     from profile_scroll import fully_visible_resource
     from profile_ui_probe import node_bounds
 
     bounds = []
     for identifier in ("spatial-mesh-swatch", "spatial-action"):
-        target = fully_visible_resource(tree, identifier, "workspace-content")
+        minimum = (112 * density - 1, 112 * density - 1) if identifier == "spatial-mesh-swatch" else (48 * density - 1, 48 * density - 1)
+        target = fully_visible_resource(tree, identifier, "workspace-content", minimum)
         if target is None:
             raise AssertionError("Spatial capture target outside its current viewport: " + identifier)
         bounds.append(node_bounds(target))
@@ -86,13 +87,15 @@ class _SpatialSession:
         raise AssertionError("Idle mesh scene continues submitting frames")
 
     def capture_form(self, name, background):
-        self.probe.reveal_resource("spatial-mesh-swatch", "workspace-content", direction="start", for_capture=True)
+        density = self.metrics()["density"]
+        self.probe.reveal_resource("spatial-mesh-swatch", "workspace-content", direction="start", for_capture=True,
+                                   minimum_size=(112 * density - 1, 112 * density - 1))
         observed = self.settled()
         # Read both rectangles from ONE current frame. Revealing the next target
         # must never scroll the previous witness out of the captured viewport.
-        mesh, button = form_bounds(self.probe.tree())
+        mesh, button = form_bounds(self.probe.tree(), density)
         path = self.probe.capture(name)
-        if (mesh, button) != form_bounds(self.probe.tree()):
+        if (mesh, button) != form_bounds(self.probe.tree(), density):
             raise AssertionError("Spatial evidence layout changed during capture")
         image = read_screenshot(path)
         result = {"scenario": name, "runtime": observed,

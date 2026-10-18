@@ -240,6 +240,7 @@ class ProfileProbe:
         area="profile-content",
         direction="end",
         for_capture=False,
+        minimum_size=(0, 0),
     ):
         from profile_scroll import reveal_resource_in_list
 
@@ -251,12 +252,13 @@ class ProfileProbe:
             direction=direction,
             layout_timeout=12,
             for_capture=for_capture,
+            minimum_size=minimum_size,
         )
         if target is None:
             from profile_scroll import visible_resource, fully_visible_resource
 
             target = self.wait_for(
-                lambda: fully_visible_resource(self.tree(), resource_id, area)
+                lambda: fully_visible_resource(self.tree(), resource_id, area, minimum_size)
                 if for_capture else visible_resource(self.tree(), resource_id),
                 "UI resource not visible: " + resource_id,
             )
