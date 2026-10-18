@@ -419,13 +419,13 @@ private fun ConnectionStages(status: TokenUiStatus) {
             Triple("Вход в Analyst AI подтверждён", "Ваш сеанс Telegram", SpatialState.Success),
             Triple(if (connected) "Доступ к брокеру подтверждён" else if (status.isBusy()) "Проверяем доступ к брокеру" else "Подключите счёт",
                 if (status == TokenUiStatus.Saving) "Проверка и сохранение завершаются одним ответом сервера" else "Доступ только к чтению данных",
-                if (connected) SpatialState.Success else if (status.isBusy()) SpatialState.Loading else if (status is TokenUiStatus.Error) SpatialState.Attention else SpatialState.Idle),
+                when { connected -> SpatialState.Success; status.isBusy() -> SpatialState.Loading; status is TokenUiStatus.Error -> SpatialState.Attention; else -> SpatialState.Idle }),
             Triple(if (connected && snapshot != null) "Снимок портфеля получен" else "Первая загрузка портфеля",
                 if (connected && snapshot != null) "${snapshot.accounts.size} счетов · ${snapshot.asOf ?: "время источника не получено"}" else "Будет подтверждена после получения счетов и позиций",
                 if (connected && snapshot != null) SpatialState.Success else SpatialState.Idle),
         ).forEachIndexed { index, (title, detail, state) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SpatialIcon(if (state == SpatialState.Success) "check" else if (index == 0) "profile" else if (index == 1) "sources" else "portfolio", Modifier.size(30.dp), state = state)
+                SpatialIcon(when { state == SpatialState.Success -> "check"; index == 0 -> "profile"; index == 1 -> "sources"; else -> "portfolio" }, Modifier.size(30.dp), state = state)
                 Column(Modifier.weight(1f)) {
                     Text("${index + 1}. $title", style = MaterialTheme.typography.titleSmall)
                     Text(detail, style = MaterialTheme.typography.bodySmall, color = TApiMuted)

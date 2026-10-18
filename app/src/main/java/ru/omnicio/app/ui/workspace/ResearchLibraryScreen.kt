@@ -45,7 +45,7 @@ fun SaveResearchButton(payload: JSONObject, defaultTitle: String, instrumentId: 
             if (personal.research.size >= 40) Text("Уже сохранено 40 исследований. Удалите ненужное в разделе «Сохранённое».", color = MaterialTheme.colorScheme.error)
         }
     }, confirmButton = { TextButton(onClick = {
-        personal.saveResearch(title, instrumentId, start, end, source, observedAt, note, JSONObject(payload.toString())); open = false
+        personal.saveResearch(ResearchDraft(title, instrumentId, start, end, source, observedAt, note), JSONObject(payload.toString())); open = false
     }, enabled = title.isNotBlank() && personal.research.size < 40 && !personal.busy) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = { open = false }) { Text("Отмена") } })
 }
@@ -98,10 +98,7 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
                     }
                 } }
                 item {
-                    if (LocalWorkspacePreferences.current.value.hideHomeBalance) Text("Исследование скрыто режимом приватности.")
-                    else if (!archiveLoaded) SpectrumLoadingIndicator(description = "Расшифровываем сохранённый снимок")
-                    else if (archive == null) Text("Сохранённый файл недоступен. Исследование не заменено текущими данными.")
-                    else ArchiveContent(archive!!)
+                    SavedArchiveContent(archive, archiveLoaded)
                 }
             }
         }
@@ -140,5 +137,16 @@ private fun ArchiveContent(payload: JSONObject) {
             payload.has("sections") -> InstrumentDossierContent(payload)
             else -> Text(payload.optionalText("summary") ?: payload.optionalText("explanation") ?: "Подробности доступны в исходном сохранённом исследовании.")
         }
+    }
+}
+
+
+@Composable
+private fun SavedArchiveContent(archive: JSONObject?, loaded: Boolean) {
+    when {
+        LocalWorkspacePreferences.current.value.hideHomeBalance -> Text("Исследование скрыто режимом приватности.")
+        !loaded -> SpectrumLoadingIndicator(description = "Расшифровываем сохранённый снимок")
+        archive == null -> Text("Сохранённый файл недоступен. Исследование не заменено текущими данными.")
+        else -> ArchiveContent(archive)
     }
 }

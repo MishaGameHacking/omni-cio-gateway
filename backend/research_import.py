@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     except EvidenceError as error:
         print(json.dumps({'ok': False, 'error': str(error)}), file=sys.stderr)
         return 2
-    except (OSError, sqlite3.Error, UnicodeError, ValueError, TypeError, RecursionError):
+    except (OSError, sqlite3.Error, ValueError, TypeError, RecursionError):
         # Do not echo document contents, paths, SQL or installation settings.
         print(json.dumps({'ok': False, 'error': 'research_import_failed'}), file=sys.stderr)
         return 2

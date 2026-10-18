@@ -198,7 +198,7 @@ class MeshCatalogueTest(unittest.TestCase):
 
     def test_every_distributed_asset_has_finite_volume_normals_and_verified_digest(self):
         manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())
-        self.assertEqual(1, manifest['version'])
+        self.assertEqual(manifest['version'], 1)
         for name, expected in manifest['models'].items():
             with self.subTest(model=name):
                 data = (catalogue.DEST / (name + '.glb')).read_bytes()
@@ -207,7 +207,7 @@ class MeshCatalogueTest(unittest.TestCase):
                 doc, binary = decode(data)
                 self.assertNotIn('images', doc)
                 self.assertNotIn('uri', doc['buffers'][0])
-                self.assertEqual('2.0', doc['asset']['version'])
+                self.assertEqual(doc['asset']['version'], '2.0')
                 for axis in range(3):
                     self.assertGreater(doc['accessors'][0]['max'][axis], doc['accessors'][0]['min'][axis])
                 for index in (0, 1):
@@ -221,7 +221,7 @@ class MeshCatalogueTest(unittest.TestCase):
                     self.assertTrue(all(value != 0 or math.copysign(1, value) == 1 for value in values))
                     if index == 1:
                         self.assertTrue(all(abs(sum(v*v for v in values[i:i+3]) - 1) < 1e-5 for i in range(0,len(values),3)))
-                self.assertEqual(expected['triangles'] * 3, doc['accessors'][2]['count'])
+                self.assertEqual(doc['accessors'][2]['count'], expected['triangles'] * 3)
 
     def test_sphere_faces_point_outward_and_closed_torus_has_no_gaps(self):
         sphere = catalogue.Mesh(); sphere.sphere()
@@ -243,9 +243,9 @@ class MeshCatalogueTest(unittest.TestCase):
             document, _ = decode((catalogue.DEST / (name + '.glb')).read_bytes())
             material = document['materials'][0]
             family = info['material']; families.add(family)
-            self.assertEqual('OPAQUE', material['alphaMode'])
+            self.assertEqual(material['alphaMode'], 'OPAQUE')
             pbr = material['pbrMetallicRoughness']
-            self.assertEqual([1, 1, 1, 1], pbr['baseColorFactor'])
+            self.assertEqual(pbr['baseColorFactor'], [1, 1, 1, 1])
             if family == 'metal':
                 self.assertGreater(pbr['metallicFactor'], .5)
             else:
@@ -260,9 +260,9 @@ class MeshCatalogueTest(unittest.TestCase):
             if not name.endswith('_low'):
                 low, _ = decode((catalogue.DEST / (name + '_low.glb')).read_bytes())
                 self.assertEqual(material, low['materials'][0])
-        self.assertEqual({'ceramic', 'metal', 'glass_coating'}, families)
+        self.assertEqual(families, {'ceramic', 'metal', 'glass_coating'})
         for readable in ('surface', 'button', 'input', 'heading', 'bar', 'chip', 'dock'):
-            self.assertEqual('ceramic', manifest[readable]['material'])
+            self.assertEqual(manifest[readable]['material'], 'ceramic')
 
     def test_low_detail_reduces_the_real_triangle_budget(self):
         manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())['models']

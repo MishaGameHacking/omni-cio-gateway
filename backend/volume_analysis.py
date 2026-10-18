@@ -2,7 +2,7 @@
 from contextlib import closing
 import json
 import zlib
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -114,7 +114,7 @@ def comparison(user_id: int, current_card: str | None, previous_card: str | None
 
 @router.get("/diff", responses=HTTP_ERRORS)
 def diff(current_card_id: str, previous_card_id: str | None = None, offset: int = 0, limit: int = 100,
-         user: Any = Depends(backend.current_user)) -> dict:
+         *, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     with closing(backend.connect()) as db:
         for identifier in (current_card_id, previous_card_id):
             if identifier and not db.execute("SELECT 1 FROM insight_cards WHERE user_id=? AND id=?", (int(user["id"]), identifier)).fetchone():

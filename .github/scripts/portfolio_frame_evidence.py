@@ -39,14 +39,7 @@ def _request_record(row, sequence):
             or not isinstance(path, str) or not path.startswith("/") or len(path) > 512 \
             or type(status) is not int or not 100 <= status <= 599:
         raise AssertionError("Invalid portfolio request identity or status")
-    if not isinstance(parameters, dict) or len(parameters) > 24:
-        raise AssertionError("Invalid portfolio request parameters")
-    for key, value in parameters.items():
-        if not isinstance(key, str) or not key or len(key) > 80:
-            raise AssertionError("Invalid portfolio request parameter name")
-        if value is not None and not (isinstance(value, str) and len(value) <= 4096) \
-                and not (type(value) is int and -1_000_000 <= value <= 1_000_000):
-            raise AssertionError("Invalid portfolio request parameter value")
+    _request_parameters(parameters)
     return row
 
 
@@ -70,14 +63,7 @@ def _transcript(raw, route, scenario, run_id):
         return None
     for index, row in enumerate(calls, 1):
         _request_record(row, index)
-    sources = value.get("opened_sources")
-    if not isinstance(sources, list) or len(sources) > 64 \
-            or not all(isinstance(source, str) and 1 <= len(source) <= 4096 for source in sources):
-        raise AssertionError("Invalid observed portfolio source links")
-    if not isinstance(value.get("destination"), dict) or len(value["destination"]) > 24:
-        raise AssertionError("Invalid observed portfolio destination")
-    if not isinstance(value.get("current_page"), str) or len(value["current_page"]) > 256:
-        raise AssertionError("Invalid observed portfolio page")
+    _transcript_destination(value)
     return value
 
 
@@ -87,17 +73,7 @@ def portfolio_observation(tree, route, scenario, run_id):
         raise ValueError("Unsupported portfolio fixture case")
     if not isinstance(run_id, str) or re.fullmatch(r"[a-f0-9]{32}", run_id) is None:
         raise ValueError("Invalid portfolio fixture run identity")
-    markers, transcripts = [], []
-    for node in tree.iter("node"):
-        raw = node.get("content-desc", "")
-        if _visible_node(node, "portfolio-probe"):
-            parts = _unique_object(part.split(":", 1) for part in raw.split(";") if ":" in part)
-            if parts.get("portfolio-probe") == route + "/" + scenario and parts.get("transport") == "synthetic":
-                markers.append(parts)
-        elif _visible_node(node, "portfolio-probe-transcript"):
-            transcript = _transcript(raw, route, scenario, run_id)
-            if transcript is not None:
-                transcripts.append(transcript)
+    markers, transcripts = _observed_markers(tree, route, scenario, run_id)
     if not markers or not transcripts:
         return None
     if any(item != markers[0] for item in markers) or any(item != transcripts[0] for item in transcripts):
@@ -120,3 +96,40 @@ def has_call(observed, path, parameters, *, status=200, after=0):
     expected = ("GET", path, parameters, status)
     return any((row["method"], row["path"], row["parameters"], row["status"]) == expected
                for row in observed["calls"][after:])
+
+
+def _request_parameters(parameters):
+    if not isinstance(parameters, dict) or len(parameters) > 24:
+        raise AssertionError("Invalid portfolio request parameters")
+    for key, value in parameters.items():
+        if not isinstance(key, str) or not key or len(key) > 80:
+            raise AssertionError("Invalid portfolio request parameter name")
+        if value is not None and not (isinstance(value, str) and len(value) <= 4096) \
+                and not (type(value) is int and -1_000_000 <= value <= 1_000_000):
+            raise AssertionError("Invalid portfolio request parameter value")
+
+
+def _transcript_destination(value):
+    sources = value.get("opened_sources")
+    if not isinstance(sources, list) or len(sources) > 64 \
+            or not all(isinstance(source, str) and 1 <= len(source) <= 4096 for source in sources):
+        raise AssertionError("Invalid observed portfolio source links")
+    if not isinstance(value.get("destination"), dict) or len(value["destination"]) > 24:
+        raise AssertionError("Invalid observed portfolio destination")
+    if not isinstance(value.get("current_page"), str) or len(value["current_page"]) > 256:
+        raise AssertionError("Invalid observed portfolio page")
+
+
+def _observed_markers(tree, route, scenario, run_id):
+    markers, transcripts = [], []
+    for node in tree.iter("node"):
+        raw = node.get("content-desc", "")
+        if _visible_node(node, "portfolio-probe"):
+            parts = _unique_object(part.split(":", 1) for part in raw.split(";") if ":" in part)
+            if parts.get("portfolio-probe") == route + "/" + scenario and parts.get("transport") == "synthetic":
+                markers.append(parts)
+        elif _visible_node(node, "portfolio-probe-transcript"):
+            transcript = _transcript(raw, route, scenario, run_id)
+            if transcript is not None:
+                transcripts.append(transcript)
+    return markers, transcripts

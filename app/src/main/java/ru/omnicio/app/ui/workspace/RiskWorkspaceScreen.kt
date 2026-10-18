@@ -27,7 +27,6 @@ fun RiskWorkspaceScreen(onBack: () -> Unit) {
     val checks = rememberWorkspaceResource(riskChecksPath)
     val events = rememberWorkspaceResource("/workspace/risks/events?limit=100")
     val navigate = LocalWorkspaceNavigator.current
-    val evidence = LocalEvidenceNavigator.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var scenario by remember { mutableStateOf(false) }
     val create = rememberWorkspaceAction { checks.refresh(); tab = 2 }
@@ -49,34 +48,9 @@ fun RiskWorkspaceScreen(onBack: () -> Unit) {
                     WorkspaceEmpty("Концентрации пока не рассчитаны", "Для расчёта нужны подтверждённые позиции и оценки. Отсутствие результата не означает отсутствие риска.")
                 }
                 when (tab) {
-                    0 -> resource.data?.records("coverage").orEmpty().forEach { axis -> item(key = axis.text("direction")) { SpectrumCard {
-                        val complete = axis.text("state") == "available"
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SpatialIcon("risk", Modifier.size(40.dp), state = if (complete) SpatialState.Idle else SpatialState.Attention)
-                            Column { Text(riskDirection(axis.text("direction")), style = MaterialTheme.typography.titleLarge)
-                                Text("Подтверждено " + axis.optInt("known_positions") + " из " + axis.optInt("total_positions") + " позиций") }
-                        }
-                        Text(if (complete) "Источники этого направления получены. Само по себе это не означает низкий риск." else "Покрытие неполное: неизвестные сведения не считаются безопасными.")
-                        Text(axis.text("basis", "Основание не получено"), style = MaterialTheme.typography.bodySmall)
-                        axis.strings("missing_instrument_uids").forEach { uid -> SpectrumSecondaryButton("Проверить инструмент · " + uid.take(8), { evidence(EvidenceTarget("instrument", uid)) }, Modifier.fillMaxWidth()) }
-                    } } }
+                    0 -> resource.data?.records("coverage").orEmpty().forEach { axis -> item(key = axis.text("direction")) { RiskCoverageCard(axis) } }
                     1 -> resource.data?.records("concentrations").orEmpty().sortedWith(compareByDescending<JSONObject> { it.optBoolean("breached") }.thenBy { it.text("label") }).forEach { concentration -> item(key = concentration.text("direction") + ":" + concentration.text("id")) {
-                        SpectrumCard(emphasized = concentration.optBoolean("breached")) {
-                            Text(concentration.text("label"), style = MaterialTheme.typography.titleLarge)
-                            Text(riskDirection(concentration.text("direction")), style = MaterialTheme.typography.labelMedium)
-                            Text(PrivateValue(concentration.text("share_percent", "Доля не получена") + if (!concentration.isNull("share_percent")) "%" else ""), style = MaterialTheme.typography.headlineSmall)
-                            Text("Лимит: " + concentration.text("limit_percent", "Не задан") + if (!concentration.isNull("limit_percent")) "%" else "")
-                            Text(if (concentration.isNull("breached")) "Сопоставление с лимитом не подтверждено" else if (concentration.optBoolean("breached")) "Лимит превышен" else "В пределах заданного лимита")
-                            val share = concentration.optString("share_percent").toFloatOrNull()
-                            if (share != null) SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = if (concentration.optBoolean("breached")) LocalSpectrumPalette.current.rose else LocalSpectrumPalette.current.cyan)
-                            DetailFold("Какие позиции входят") { concentration.strings("instrument_uids").forEach { uid ->
-                                SpectrumSecondaryButton("Открыть позицию · " + uid.take(8), { evidence(EvidenceTarget("instrument", uid)) }, Modifier.fillMaxWidth())
-                            } }
-                            SpectrumSecondaryButton("Создать список проверок", {
-                                create.perform(riskChecksPath, JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", "Проверить: " + concentration.text("label"))
-                                    .put("instrument_uids", concentration.optJSONArray("instrument_uids") ?: JSONArray()))
-                            }, Modifier.fillMaxWidth(), !create.busy)
-                        }
+                        RiskConcentrationCard(concentration, create)
                     } }
                     2 -> {
                         item { WorkspaceRequestState(checks) }
@@ -86,19 +60,7 @@ fun RiskWorkspaceScreen(onBack: () -> Unit) {
                     else -> {
                         item { WorkspaceRequestState(events) }
                         if (events.data?.records("items").isNullOrEmpty() && !events.busy) item { WorkspaceEmpty("Изменений пока не записано", "После новой проверки здесь появятся подтверждённые изменения лимитов и источники.") }
-                        events.data?.records("items").orEmpty().forEach { event -> item(key = event.text("id")) { SpectrumCard {
-                            Text(event.text("title", "Изменение риска"), style = MaterialTheme.typography.titleMedium)
-                            Text(localMoment(event.text("occurred_at", event.text("created_at", ""))))
-                            val details = event.optJSONObject("details")
-                            RiskEventObservation("Было", details?.optJSONObject("before"), event.text("kind", ""))
-                            RiskEventObservation("Стало", details?.optJSONObject("after"), event.text("kind", ""))
-                            if (event.text("kind").endsWith("data_stale")) Text("Новых подтверждённых данных недостаточно. Это событие не означает, что риск устранён.")
-                            EvidenceLinks(event.records("sources").ifEmpty { event.strings("source_ids").map { JSONObject().put("source_id", it).put("as_of", event.text("occurred_at", "")) } })
-                            SpectrumSecondaryButton("Подготовить проверку события", {
-                                create.perform(riskChecksPath, JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", event.text("title", "Проверить событие"))
-                                    .put("event_id", event.text("id")).put("instrument_uids", event.optJSONArray("instrument_uids") ?: JSONArray()))
-                            }, Modifier.fillMaxWidth(), !create.busy)
-                        } } }
+                        events.data?.records("items").orEmpty().forEach { event -> item(key = event.text("id")) { RiskHistoryCard(event, create) } }
                     }
                 }
             }
@@ -162,4 +124,58 @@ internal fun riskDirection(direction: String): String = when (direction) {
     "position", "instrument" -> "Отдельные позиции"; "issuer", "company" -> "Компании"; "group" -> "Связанные группы"
     "sector" -> "Отрасли"; "currency" -> "Валюты"; "country" -> "Страны"; "rating", "ratings" -> "Кредитное качество"
     "liquidity" -> "Ликвидность"; "trading" -> "Доступность торгов"; else -> direction.take(100)
+}
+
+@Composable
+private fun RiskCoverageCard(axis: JSONObject) {
+    val evidence = LocalEvidenceNavigator.current
+    SpectrumCard {
+                            val complete = axis.text("state") == "available"
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                SpatialIcon("risk", Modifier.size(40.dp), state = if (complete) SpatialState.Idle else SpatialState.Attention)
+                                Column { Text(riskDirection(axis.text("direction")), style = MaterialTheme.typography.titleLarge)
+                                    Text("Подтверждено " + axis.optInt("known_positions") + " из " + axis.optInt("total_positions") + " позиций") }
+                            }
+                            Text(if (complete) "Источники этого направления получены. Само по себе это не означает низкий риск." else "Покрытие неполное: неизвестные сведения не считаются безопасными.")
+                            Text(axis.text("basis", "Основание не получено"), style = MaterialTheme.typography.bodySmall)
+                            axis.strings("missing_instrument_uids").forEach { uid -> SpectrumSecondaryButton("Проверить инструмент · " + uid.take(8), { evidence(EvidenceTarget("instrument", uid)) }, Modifier.fillMaxWidth()) }
+                        }
+}
+
+@Composable
+private fun RiskConcentrationCard(concentration: JSONObject, create: WorkspaceAction) {
+    val evidence = LocalEvidenceNavigator.current
+    SpectrumCard(emphasized = concentration.optBoolean("breached")) {
+                                Text(concentration.text("label"), style = MaterialTheme.typography.titleLarge)
+                                Text(riskDirection(concentration.text("direction")), style = MaterialTheme.typography.labelMedium)
+                                Text(PrivateValue(concentration.text("share_percent", "Доля не получена") + if (!concentration.isNull("share_percent")) "%" else ""), style = MaterialTheme.typography.headlineSmall)
+                                Text("Лимит: " + concentration.text("limit_percent", "Не задан") + if (!concentration.isNull("limit_percent")) "%" else "")
+                                Text(if (concentration.isNull("breached")) "Сопоставление с лимитом не подтверждено" else if (concentration.optBoolean("breached")) "Лимит превышен" else "В пределах заданного лимита")
+                                val share = concentration.optString("share_percent").toFloatOrNull()
+                                if (share != null) SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = if (concentration.optBoolean("breached")) LocalSpectrumPalette.current.rose else LocalSpectrumPalette.current.cyan)
+                                DetailFold("Какие позиции входят") { concentration.strings("instrument_uids").forEach { uid ->
+                                    SpectrumSecondaryButton("Открыть позицию · " + uid.take(8), { evidence(EvidenceTarget("instrument", uid)) }, Modifier.fillMaxWidth())
+                                } }
+                                SpectrumSecondaryButton("Создать список проверок", {
+                                    create.perform(riskChecksPath, JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", "Проверить: " + concentration.text("label"))
+                                        .put("instrument_uids", concentration.optJSONArray("instrument_uids") ?: JSONArray()))
+                                }, Modifier.fillMaxWidth(), !create.busy)
+                            }
+}
+
+@Composable
+private fun RiskHistoryCard(event: JSONObject, create: WorkspaceAction) {
+    SpectrumCard {
+                                Text(event.text("title", "Изменение риска"), style = MaterialTheme.typography.titleMedium)
+                                Text(localMoment(event.text("occurred_at", event.text("created_at", ""))))
+                                val details = event.optJSONObject("details")
+                                RiskEventObservation("Было", details?.optJSONObject("before"), event.text("kind", ""))
+                                RiskEventObservation("Стало", details?.optJSONObject("after"), event.text("kind", ""))
+                                if (event.text("kind").endsWith("data_stale")) Text("Новых подтверждённых данных недостаточно. Это событие не означает, что риск устранён.")
+                                EvidenceLinks(event.records("sources").ifEmpty { event.strings("source_ids").map { JSONObject().put("source_id", it).put("as_of", event.text("occurred_at", "")) } })
+                                SpectrumSecondaryButton("Подготовить проверку события", {
+                                    create.perform(riskChecksPath, JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", event.text("title", "Проверить событие"))
+                                        .put("event_id", event.text("id")).put("instrument_uids", event.optJSONArray("instrument_uids") ?: JSONArray()))
+                                }, Modifier.fillMaxWidth(), !create.busy)
+                            }
 }

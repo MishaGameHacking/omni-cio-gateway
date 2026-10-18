@@ -10,6 +10,9 @@ from portfolio_research_probe import ACCOUNT_A
 from profile_launch import PACKAGE
 from profile_ui_probe import node_bounds
 
+SELECTED_HISTORY_VALUE = '901,75 ₽'
+
+
 AREA = "workspace-content"
 BOND = "synthetic-bond"
 EXACT_MISSING = "Наблюдение с этим точным моментом не найдено в полученной выборке. Другая запись этого дня не подставляется. Возможно, детальная история уже вышла из срока хранения; проверьте источник и диапазон."
@@ -139,15 +142,15 @@ def exercise_history(case):
     if case.scenario == "partial":
         p.reveal(EXACT_MISSING, AREA)
         p.reveal("Частота исходного наблюдения: часовая", AREA)
-        p.reveal("901,75 ₽", AREA)
+        p.reveal(SELECTED_HISTORY_VALUE, AREA)
         case.extra["exact_instant"] = {"time": case.before["history_instant"], "state": "missing",
                                        "same_day_close": "901.75", "replacement_rejected": True}
         return ["exact-instant-request", "missing-instant-not-substituted-by-same-day-close"]
     p.reveal("101.25 ₽", AREA)
     p.reveal("Частота исходного наблюдения: часовая", AREA)
-    p.reveal("901,75 ₽", AREA)
+    p.reveal(SELECTED_HISTORY_VALUE, AREA)
     case.capture("exact-observation")
-    _select_history_bar(case, 10, "901,75 ₽")
+    _select_history_bar(case, 10, SELECTED_HISTORY_VALUE)
     p.tap("Подробнее о графике", AREA)
     selected_row = p.reveal_resource("history-observation-10", AREA)
     close = case.history_instant.replace(hour=18, minute=0, second=0, microsecond=0)

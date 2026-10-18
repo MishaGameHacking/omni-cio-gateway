@@ -9,6 +9,10 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+APPLY_LABEL = 'Применить'
+LIGHT_THEME_LABEL = 'Светлая'
+
+
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
@@ -453,19 +457,19 @@ class ProfileProbe:
         # Spectrum starts dark; light/system remain explicit user choices.
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.tap("Светлая", "workspace-content")
+        self.tap(LIGHT_THEME_LABEL, "workspace-content")
         self.palette(LIGHT_BACKGROUND)
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.tap("Светлая", "workspace-content")
-        self.tap("Применить", "workspace-content", direction="start")
+        self.tap(LIGHT_THEME_LABEL, "workspace-content")
+        self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-initial")
         self.tap(THEME_LABEL)
         self.tap("Тёмная", "workspace-content")
-        self.tap("Применить", "workspace-content", direction="start")
+        self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("dark-selected")
@@ -474,14 +478,14 @@ class ProfileProbe:
         self.palette(DARK_BACKGROUND)
         self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap("Светлая", "workspace-content")
-        self.tap("Применить", "workspace-content", direction="start")
+        self.tap(LIGHT_THEME_LABEL, "workspace-content")
+        self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
         self.capture("light-selected")
         self.tap(THEME_LABEL)
         self.tap("Как в системе", "workspace-content")
-        self.tap("Применить", "workspace-content", direction="start")
+        self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)

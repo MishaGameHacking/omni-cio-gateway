@@ -10,10 +10,11 @@ import re
 import subprocess
 
 
-# Use SwiftShader's Vulkan implementation behind guest ANGLE. This is distinct
-# from the legacy direct SwiftShader GLES compiler that rejected Filament GLSL.
-# Lavapipe booted the API35 guest but stalled all guest commands during install.
-EMULATOR_GPU_MODE = "swiftshader"
+# Guest ANGLE provides the GLES compiler; the host Vulkan ICD executes it.
+# API35 guest Vulkan stalled with Lavapipe and never booted with SwiftShader on
+# the Windows runner. Use its native Vulkan driver and verify the app context.
+# Windows does not support the host swangle software backend.
+EMULATOR_GPU_MODE = "host"
 EMULATOR_FEATURES = "Vulkan,GuestAngle"
 MAX_LOG_CHARACTERS = 2 * 1024 * 1024
 _HEADER = re.compile(
@@ -121,16 +122,20 @@ def snapshot_system_graphics(device) -> dict[str, object]:
     compositor: dict[str, object]
     try:
         result = device("shell", "dumpsys", "SurfaceFlinger", timeout=10)
-        lines = []
-        if result.returncode == 0:
-            for line in result.stdout[:MAX_LOG_CHARACTERS].splitlines():
-                if re.search(r"GLES|Vulkan|Skia|RenderEngine", line, re.IGNORECASE):
-                    lines.append(line.strip()[:512])
-                    if len(lines) == 24:
-                        break
+        lines = _graphics_lines(result.stdout) if result.returncode == 0 else []
         compositor = {"source": "dumpsys SurfaceFlinger", "returncode": result.returncode,
                       "graphics_lines": lines}
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         compositor = {"source": "dumpsys SurfaceFlinger", "error_type": type(exc).__name__}
     return {"requested_gpu_mode": EMULATOR_GPU_MODE, "requested_features": EMULATOR_FEATURES,
             "properties": properties, "system_compositor": compositor}
+
+
+def _graphics_lines(output: str) -> list[str]:
+    lines = []
+    for line in output[:MAX_LOG_CHARACTERS].splitlines():
+        if re.search(r"GLES|Vulkan|Skia|RenderEngine", line, re.IGNORECASE):
+            lines.append(line.strip()[:512])
+            if len(lines) == 24:
+                break
+    return lines

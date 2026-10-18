@@ -85,103 +85,105 @@ internal fun SpatialRendererProbe() {
         SpectrumTabs(listOf("Форма 3D", "Графики 3D", "Отсечение 3D", "Нагрузка", "Правила 3D"), section, { section = it })
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("workspace-content"), state = list,
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (section == 0) {
-                item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        Box(Modifier.size(112.dp).testTag("spatial-mesh-swatch")
-                            .semantics { contentDescription = "Изолированная объёмная модель" }) {
-                            SpatialIcon("brand", Modifier.align(Alignment.Center).size(88.dp), tint = palette.cyan)
-                        }
-                        SpectrumAssetMark("stock", "Тест", Modifier.size(72.dp))
-                    }
-                }
-                item {
-                    SpectrumPrimaryButton("Проверить нажатие", { clicks++ }, Modifier.fillMaxWidth().testTag("spatial-action"))
-                    Text("Нажатий: $clicks", Modifier.testTag("spatial-click-result"))
-                }
-                item { WorkspaceToggle("Тестовый переключатель", if (checked) "Включён" else "Выключен", checked, { checked = it }) }
-                item { SpectrumTextField(input, { input = it }, Modifier.fillMaxWidth().testTag("spatial-input"),
-                    label = { Text("Нативное поле 3D") }, singleLine = true) }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SpectrumTextButton("Тёмная модель", { theme.preview(ThemeMode.DARK) })
-                        SpectrumTextButton("Светлая модель", { theme.preview(ThemeMode.LIGHT) })
-                    }
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        MotionLevel.entries.forEach { mode -> SpectrumChoiceChip(preferences.value.motion == mode,
-                            { preferences.preview(preferences.value.copy(motion = mode)) }, { Text(mode.name) },
-                            Modifier.weight(1f)) }
-                    }
-                    Text("Режим: ${preferences.value.motion.name}")
-                }
-                item { SpectrumTextButton("Открыть окно 3D", { dialog = true }, Modifier.fillMaxWidth().testTag("spatial-open-dialog")) }
-                item {
-                    SpectrumSymbol.entries.take(15).chunked(5).forEach { symbols ->
+            when (section) {
+    0 -> {
+                    item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            symbols.forEach { symbol -> SpectrumIcon(symbol, Modifier.size(48.dp), tile = true) }
+                            Box(Modifier.size(112.dp).testTag("spatial-mesh-swatch")
+                                .semantics { contentDescription = "Изолированная объёмная модель" }) {
+                                SpatialIcon("brand", Modifier.align(Alignment.Center).size(88.dp), tint = palette.cyan)
+                            }
+                            SpectrumAssetMark("stock", "Тест", Modifier.size(72.dp))
                         }
                     }
-                }
-            } else if (section == 1) {
-                item {
-                    Text("Синтетические столбцы: −20, 0, пропуск, 10, 40, 80")
-                    SpatialBars(listOf(-20.0, 0.0, null, 10.0, 40.0, 80.0), -20.0, 80.0, selected,
-                        Modifier.fillMaxWidth().height(144.dp).testTag("spatial-bars")
-                            .semantics { contentDescription = "Столбцы: минус20; ноль; нет наблюдения;10;40;80. Шкала от минус20 до80." })
-                }
-                item {
-                    Text("Синтетические OHLC: 100/120/95/115; 115/130/110/112; 112/125/108/112")
-                    SpatialCandles(listOf(SpatialCandle(100.0,120.0,95.0,115.0), SpatialCandle(115.0,130.0,110.0,112.0),
-                        SpatialCandle(112.0,125.0,108.0,112.0)), 90.0, 140.0, selected,
-                        Modifier.fillMaxWidth().height(144.dp).testTag("spatial-candles")
-                            .semantics { contentDescription = "Три синтетические свечи. Третья имеет равные открытие и закрытие112." })
-                }
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                        SpatialRing(listOf(50.0,30.0,20.0), listOf(palette.cyan,palette.violet,palette.amber), selected,
-                            Modifier.size(132.dp).testTag("spatial-ring").semantics { contentDescription = "Доли:50 процентов;30 процентов;20 процентов" })
-                        Text("Доли: 50% / 30% / 20%")
+                    item {
+                        SpectrumPrimaryButton("Проверить нажатие", { clicks++ }, Modifier.fillMaxWidth().testTag("spatial-action"))
+                        Text("Нажатий: $clicks", Modifier.testTag("spatial-click-result"))
                     }
-                }
-                item {
-                    SpectrumTextButton("Выбрать второй элемент", { selected = 1 }, Modifier.fillMaxWidth())
-                    Text("Выбран элемент: ${selected + 1}")
-                }
-            } else if (section == 2) {
-                item {
-                    Text("Большая модель ограничена центральным окном. Внешняя область остаётся фоном.")
-                    Box(Modifier.fillMaxWidth().height(160.dp).testTag("spatial-clip-region")
-                        .semantics { contentDescription = "Внешняя область отсечения" }) {
-                        Box(Modifier.align(Alignment.Center).size(144.dp,64.dp).clipToBounds()
-                            .testTag("spatial-clip-window").semantics { contentDescription = "Видимая область модели" }) {
-                            SpatialIcon("orbit", Modifier.requiredSize(176.dp).align(Alignment.Center), tint = palette.cyan)
+                    item { WorkspaceToggle("Тестовый переключатель", if (checked) "Включён" else "Выключен", checked, { checked = it }) }
+                    item { SpectrumTextField(input, { input = it }, Modifier.fillMaxWidth().testTag("spatial-input"),
+                        label = { Text("Нативное поле 3D") }, singleLine = true) }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SpectrumTextButton("Тёмная модель", { theme.preview(ThemeMode.DARK) })
+                            SpectrumTextButton("Светлая модель", { theme.preview(ThemeMode.LIGHT) })
                         }
                     }
-                }
-            } else if (section == 3) {
-                items(120, key = { "stress-$it" }) { index ->
-                    SpectrumCard(Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SpectrumIcon(SpectrumSymbol.entries[index % 15], Modifier.size(48.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("Тестовая строка ${index + 1}", style = MaterialTheme.typography.titleMedium)
-                                Text("СИНТЕТИЧЕСКИЙ ТЕСТ · список из 120 строк", style = MaterialTheme.typography.bodySmall)
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MotionLevel.entries.forEach { mode -> SpectrumChoiceChip(preferences.value.motion == mode,
+                                { preferences.preview(preferences.value.copy(motion = mode)) }, { Text(mode.name) },
+                                Modifier.weight(1f)) }
+                        }
+                        Text("Режим: ${preferences.value.motion.name}")
+                    }
+                    item { SpectrumTextButton("Открыть окно 3D", { dialog = true }, Modifier.fillMaxWidth().testTag("spatial-open-dialog")) }
+                    item {
+                        SpectrumSymbol.entries.take(15).chunked(5).forEach { symbols ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                symbols.forEach { symbol -> SpectrumIcon(symbol, Modifier.size(48.dp), tile = true) }
                             }
                         }
                     }
-                }
-            } else {
-                item {
-                    Text("Синтетическая непрерывная модель", style = MaterialTheme.typography.titleMedium)
-                    SpatialIcon("orbit", Modifier.fillMaxWidth().height(132.dp), tint = palette.cyan,
-                        state = SpatialState.Loading)
-                    Text("Источник политики: настройки Android и настоящий thermal listener.")
-                }
-                item {
-                    SpectrumTextButton("Открыть экран возврата", { backScreen = true }, Modifier.fillMaxWidth())
-                    Text("Подтверждённых возвратов: $backCommits")
+                } 1 -> {
+                    item {
+                        Text("Синтетические столбцы: −20, 0, пропуск, 10, 40, 80")
+                        SpatialBars(listOf(-20.0, 0.0, null, 10.0, 40.0, 80.0), -20.0, 80.0, selected,
+                            Modifier.fillMaxWidth().height(144.dp).testTag("spatial-bars")
+                                .semantics { contentDescription = "Столбцы: минус20; ноль; нет наблюдения;10;40;80. Шкала от минус20 до80." })
+                    }
+                    item {
+                        Text("Синтетические OHLC: 100/120/95/115; 115/130/110/112; 112/125/108/112")
+                        SpatialCandles(listOf(SpatialCandle(100.0,120.0,95.0,115.0), SpatialCandle(115.0,130.0,110.0,112.0),
+                            SpatialCandle(112.0,125.0,108.0,112.0)), 90.0, 140.0, selected,
+                            Modifier.fillMaxWidth().height(144.dp).testTag("spatial-candles")
+                                .semantics { contentDescription = "Три синтетические свечи. Третья имеет равные открытие и закрытие112." })
+                    }
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                            SpatialRing(listOf(50.0,30.0,20.0), listOf(palette.cyan,palette.violet,palette.amber), selected,
+                                Modifier.size(132.dp).testTag("spatial-ring").semantics { contentDescription = "Доли:50 процентов;30 процентов;20 процентов" })
+                            Text("Доли: 50% / 30% / 20%")
+                        }
+                    }
+                    item {
+                        SpectrumTextButton("Выбрать второй элемент", { selected = 1 }, Modifier.fillMaxWidth())
+                        Text("Выбран элемент: ${selected + 1}")
+                    }
+                } 2 -> {
+                    item {
+                        Text("Большая модель ограничена центральным окном. Внешняя область остаётся фоном.")
+                        Box(Modifier.fillMaxWidth().height(160.dp).testTag("spatial-clip-region")
+                            .semantics { contentDescription = "Внешняя область отсечения" }) {
+                            Box(Modifier.align(Alignment.Center).size(144.dp,64.dp).clipToBounds()
+                                .testTag("spatial-clip-window").semantics { contentDescription = "Видимая область модели" }) {
+                                SpatialIcon("orbit", Modifier.requiredSize(176.dp).align(Alignment.Center), tint = palette.cyan)
+                            }
+                        }
+                    }
+                } 3 -> {
+                    items(120, key = { "stress-$it" }) { index ->
+                        SpectrumCard(Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                SpectrumIcon(SpectrumSymbol.entries[index % 15], Modifier.size(48.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Тестовая строка ${index + 1}", style = MaterialTheme.typography.titleMedium)
+                                    Text("СИНТЕТИЧЕСКИЙ ТЕСТ · список из 120 строк", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                } else -> {
+                    item {
+                        Text("Синтетическая непрерывная модель", style = MaterialTheme.typography.titleMedium)
+                        SpatialIcon("orbit", Modifier.fillMaxWidth().height(132.dp), tint = palette.cyan,
+                            state = SpatialState.Loading)
+                        Text("Источник политики: настройки Android и настоящий thermal listener.")
+                    }
+                    item {
+                        SpectrumTextButton("Открыть экран возврата", { backScreen = true }, Modifier.fillMaxWidth())
+                        Text("Подтверждённых возвратов: $backCommits")
+                    }
                 }
             }
         }

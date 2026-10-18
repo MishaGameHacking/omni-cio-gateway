@@ -29,6 +29,12 @@ import ru.omnicio.app.data.workspace.WorkspaceTransport
 import ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator
 import ru.omnicio.app.ui.workspace.*
 
+private const val SYNTHETIC_CASH = "synthetic-cash"
+private const val SYNTHETIC_ISSUER = "synthetic-issuer"
+private const val SYNTHETIC_OPERATION = "synthetic-operation"
+private const val SYNTHETIC_SNAPSHOT = "synthetic-snapshot"
+
+
 /**
  * Debug-only contract fixture for production screens. Every value below is
  * synthetic. The transport has no HTTPS client, network fallback or auth bypass.
@@ -147,7 +153,7 @@ private fun probePortfolio(): PortfolioSnapshot {
             currentPrice = money(1_000), instrumentType = "share", sector = "Синтетический сектор"),
         PortfolioPosition(PROBE_BOND, "Синтетическая облигация", "TEST2", ApiDecimal(20, 0), money(20_000), null,
             currentPrice = money(1_000), instrumentType = "bond"),
-        PortfolioPosition("synthetic-cash", "Тестовый остаток", null, ApiDecimal(10_000, 0), money(10_000), null, instrumentType = "cash"),
+        PortfolioPosition(SYNTHETIC_CASH, "Тестовый остаток", null, ApiDecimal(10_000, 0), money(10_000), null, instrumentType = "cash"),
     )
     return PortfolioSnapshot(money(100_000), null, null,
         listOf(PortfolioAccount(PROBE_ACCOUNT, "Синтетический счёт", money(100_000), null, positions)), emptyList(), PROBE_AS_OF)
@@ -201,7 +207,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     fun workspace(): JSONObject {
         val ai = timelineProbeAi(scenario)
         val sources = ai.optJSONObject("last_check")?.optJSONObject("trigger")?.records("sources").orEmpty()
-        return jObject("schema_version" to 1, "snapshot_id" to "synthetic-snapshot", "currency" to "RUB",
+        return jObject("schema_version" to 1, "snapshot_id" to SYNTHETIC_SNAPSHOT, "currency" to "RUB",
             "as_of" to PROBE_AS_OF, "sources" to JSONArray(listOf(probeSource()) + sources),
             "sections" to jObject("ai" to jObject("state" to if (scenario == "empty") "not_configured" else "available",
                 "data" to ai, "as_of" to PROBE_AS_OF, "sources" to JSONArray(sources))))
@@ -215,164 +221,437 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
             code = "synthetic_source_failure", status = 503, retryable = true)
         val endpoint = path.substringBefore('?')
         return try {
-            when {
-                method == "GET" && endpoint == "/workspace" -> ok(workspace())
-                method == "GET" && endpoint.startsWith("/workspace/analysis/checks/") -> {
-                    val check = timelineProbeCheck(scenario, endpoint.substringAfterLast('/'))
-                        ?: return VolumeReply(error = "Тестовая проверка не найдена.", code = "not_found", status = 404)
-                    ok(check)
-                }
-                method == "GET" && endpoint == "/workspace/analysis/diff" -> {
-                    val parameters = fixtureQuery(path)
-                    require(parameters["current_card_id"] == "synthetic-analysis")
-                    require(parameters["previous_card_id"] in setOf(null, "synthetic-previous-analysis"))
-                    require(parameters["offset"]?.toIntOrNull() in setOf(null, 0))
-                    ok(timelineProbeFacts())
-                }
-                method == "POST" && endpoint == "/workspace/analysis" -> {
-                    require(body?.optString("reason") == "manual")
-                    if (scenario in setOf("empty", "partial")) return conflict("Синтетический анализ недоступен по состоянию источника.")
-                    enqueue(body)
-                }
-                method == "GET" && endpoint == "/workspace/risks" -> ok(risks())
-                method == "GET" && endpoint == "/workspace/risks/checks" -> ok(jObject("items" to JSONArray(checks)))
-                method == "GET" && endpoint == "/workspace/risks/events" -> ok(jObject("items" to riskEvents()))
-                method == "POST" && endpoint == "/workspace/risks/checks" -> {
-                    require(body?.optString("title")?.isNotBlank() == true)
-                    val created = riskCheck("synthetic-check-${++sequence}", body.getString("title"))
-                    checks.add(0, created); ok(created)
-                }
-                method == "PATCH" && endpoint.startsWith("/workspace/risks/checks/") -> {
-                    val check = checks.single { it.getString("id") == endpoint.substringAfterLast('/') }
-                    require(body?.optString("state") in setOf("pending", "reviewed"))
-                    val steps = check.getJSONArray("steps")
-                    val selected = (0 until steps.length()).map { steps.getJSONObject(it) }.single { it.getString("id") == body!!.getString("step_id") }
-                    selected.put("state", body!!.getString("state")); ok(check)
-                }
-                method == "POST" && endpoint == "/workspace/risks/scenario" -> ok(scenarioResult(body!!))
-                method == "POST" && endpoint == "/workspace/risks/scenarios/compare" -> {
-                    val candidates = body!!.getJSONArray("scenarios")
-                    require(candidates.length() in 2..4 && body.optString("currency", "RUB") == "RUB")
-                    val seen = mutableSetOf<String>()
-                    val compared = JSONArray()
-                    repeat(candidates.length()) { index ->
-                        val candidate = candidates.getJSONObject(index)
-                        require(seen.add(candidate.getString("id")) && candidate.getString("title").isNotBlank())
-                        compared.put(jObject("id" to candidate.getString("id"), "title" to candidate.getString("title"), "result" to scenarioResult(candidate)))
-                    }
-                    ok(jObject("snapshot_id" to "synthetic-snapshot", "as_of" to PROBE_AS_OF, "currency" to "RUB", "scenarios" to compared,
-                        "comparison_basis" to "same_observed_snapshot_same_currency", "assumptions_are_user_defined" to true))
-                }
-                method == "GET" && endpoint == "/workspace/strategy" -> ok(strategy())
-                method == "POST" && endpoint == "/workspace/strategy/preview" -> {
-                    if (body?.optInt("expected_version") != version) return conflict("Синтетический конфликт версии: пересчитайте предпросмотр.")
-                    require(body.has("config") xor body.has("rollback_to_version"))
-                    val candidate = if (body.has("config")) body.getJSONObject("config") else {
-                        require(body.getInt("rollback_to_version") == 2 && version > 0)
-                        strategyConfig("income")
-                    }
-                    require(validProbeStrategy(candidate))
-                    preview = jObject("preview_id" to "synthetic-preview-${++sequence}", "expected_version" to version,
-                        "snapshot_id" to "synthetic-snapshot", "config" to candidate,
-                        "can_confirm" to (scenario != "partial"), "expires_at" to "2026-10-18T10:10:00Z",
-                        "impact" to jObject("coverage" to risks().optJSONArray("coverage"), "breaches" to risks().optJSONArray("concentrations"),
-                            "reserve_gap" to null, "reserve_gap_basis" to "observed_cash_balance_before_withdrawal_restrictions",
-                            "withdrawable_cash" to null, "execution_state" to "not_executed",
-                            "warnings" to if (scenario == "partial") jArray("Тест: источник части связей отсутствует; применение недоступно.") else JSONArray()))
-                    ok(preview!!)
-                }
-                method == "POST" && endpoint == "/workspace/strategy/confirm" -> {
-                    val value = preview ?: return conflict("Сначала рассчитайте тестовый предпросмотр.")
-                    require(value.optBoolean("can_confirm") && body?.optInt("expected_version") == version && body.optString("preview_id") == value.getString("preview_id"))
-                    config = JSONObject(value.getJSONObject("config").toString()); version++; preview = null; ok(strategy())
-                }
-                method == "GET" && endpoint == "/workspace/plans" -> ok(jObject("items" to JSONArray(plans)))
-                method == "POST" && endpoint == "/workspace/plans" -> {
-                    require(body?.optString("account_id") == PROBE_ACCOUNT && body.optString("instrument_uid") in setOf(PROBE_STOCK, PROBE_BOND))
-                    require(body.getString("quantity").toBigDecimal().signum() > 0 && body.getString("side") in setOf("buy", "sell"))
-                    require(body.optInt("strategy_version") == version)
-                    val created = plan().put("id", "synthetic-plan-${++sequence}").put("title", "СИНТЕТИЧЕСКИЙ РАСЧЁТ · " + body.optString("title"))
-                        .put("quantity", body.getString("quantity")).put("instrument_uid", body.getString("instrument_uid"))
-                        .put("side", body.getString("side")).put("state", "calculated").put("executed_quantity", "0")
-                        .put("opened_at", JSONObject.NULL).put("bound_operations", JSONArray()).put("candidate_operations", JSONArray())
-                        .put("calculation", jObject("estimated_value" to probeMoney(body.getString("quantity").toBigDecimal().multiply(BigDecimal("1000")).toPlainString())))
-                    plans.add(0, created); ok(created)
-                }
-                method == "POST" && endpoint.endsWith("/open-broker") -> VolumeReply(status = 409, code = "fixture_external_handoff_blocked",
-                    error = "В визуальном тесте внешний брокер не открывается. Переход не означает сделку.")
-                method == "POST" && endpoint.startsWith("/workspace/plans/") && endpoint.endsWith("/reconcile") -> {
-                    val plan = plans.single { it.getString("id") == endpoint.removeSuffix("/reconcile").substringAfterLast('/') }
-                    val identifiers = body?.optJSONArray("operation_ids")
-                    if (identifiers != null && identifiers.length() > 0) {
-                        require((0 until identifiers.length()).all { identifiers.getString(it) == "synthetic-operation" })
-                        val bound = plan.getJSONArray("bound_operations")
-                        if ((0 until bound.length()).none { bound.getJSONObject(it).getString("id") == "synthetic-operation" }) {
-                            bound.put(syntheticOperation("synthetic-operation", "3"))
-                            plan.put("executed_quantity", plan.getString("executed_quantity").toBigDecimal().add(BigDecimal("3")).toPlainString())
-                        }
-                        plan.put("state", "partial")
-                    }
-                    enqueue(body)
-                }
-                method == "GET" && endpoint == "/workspace/notifications/events" -> ok(jObject("items" to JSONArray(notifications)))
-                method == "POST" && endpoint.startsWith("/workspace/notifications/") && endpoint.endsWith("/ack") -> {
-                    require(body?.optString("state") == "read")
-                    val event = notifications.single { it.getString("id") == endpoint.removeSuffix("/ack").substringAfterLast('/') }
-                    event.put("state", "read"); ok(event)
-                }
-                method == "GET" && endpoint == "/workspace/chat/threads" -> ok(jObject("items" to if (!hasThread) JSONArray() else jArray(
-                    jObject("thread_id" to PROBE_THREAD, "title" to "Синтетический диалог", "updated_at" to PROBE_AS_OF))))
-                method == "POST" && endpoint == "/workspace/chat/threads" -> { hasThread = true; ok(jObject("thread_id" to PROBE_THREAD)) }
-                method == "GET" && endpoint == "/workspace/chat/threads/$PROBE_THREAD/messages" -> ok(jObject("items" to JSONArray(messages), "has_more" to false))
-                method == "POST" && endpoint == "/workspace/chat/estimate" -> {
-                    require(body?.getString("text")?.isNotBlank() == true)
-                    require(body.getString("thread_id") == PROBE_THREAD && body.getString("tier") in setOf("fast", "standard", "premium"))
-                    require(body.getJSONObject("context").getString("mode") in setOf("general", "portfolio", "instrument"))
-                    lastChatEstimate = JSONObject(body.toString())
-                    ok(jObject("available" to true, "estimated_upper_bound" to probeMoney("0.01"), "synthetic" to true))
-                }
-                method == "POST" && endpoint == "/workspace/chat/threads/$PROBE_THREAD/messages" -> {
-                    val requestId = body?.optString("request_id").orEmpty()
-                    trace.value = trace.value.copy(messagePosts = trace.value.messagePosts + 1, messageRequestId = requestId)
-                    require(body?.getString("text")?.isNotBlank() == true && body.getJSONObject("context").getString("mode") in setOf("general", "portfolio", "instrument"))
-                    require(UUID.fromString(requestId).toString() == requestId)
-                    val estimated = checkNotNull(lastChatEstimate) { "Message requires a preceding exact cost estimate" }
-                    require(estimated.getString("text") == body.getString("text") && estimated.getString("tier") == body.getString("tier") &&
-                        estimated.getJSONObject("context").toString() == body.getJSONObject("context").toString())
-                    if (scenario == "ready" && trace.value.messagePosts != 1) return invalid("A lost chat response must not issue a second message POST")
-                    messages.add(jObject("id" to "synthetic-user-${++sequence}", "role" to "user", "text" to body.getString("text"), "created_at" to PROBE_AS_OF))
-                    messages.add(assistantMessage("synthetic-answer-$sequence"))
-                    val accepted = enqueue(body)
-                    // The simulated server has accepted this exact request. Only
-                    // its response is lost; recovery must read the existing job.
-                    if (scenario == "ready" && accepted.data != null) VolumeReply(
-                        error = "СИНТЕТИЧЕСКАЯ потеря ответа после принятия запроса. Сверьте сохранённый идентификатор.",
-                        code = "synthetic_lost_response", ambiguous = true)
-                    else accepted
-                }
-                method == "GET" && endpoint.startsWith("/workspace/jobs/by-request/") -> {
-                    val requestId = endpoint.substringAfterLast('/')
-                    trace.value = trace.value.copy(byRequestGets = trace.value.byRequestGets + 1)
-                    val id = requestJobs[requestId] ?: return VolumeReply(status = 404, error = "Тестовое задание не найдено.")
-                    trace.value = trace.value.copy(recoveredRequestId = requestId)
-                    ok(jObject("job_id" to id))
-                }
-                method == "GET" && endpoint.startsWith("/workspace/jobs/") -> {
-                    val id = endpoint.substringAfterLast('/'); val value = jobs[id] ?: return invalid("Unknown fixture job")
-                    val polls = (jobPolls[id] ?: 0) + 1; jobPolls[id] = polls
-                    if (value.optString("state") == "running" && polls >= 3) value.put("state", "completed").put("stage", "completed")
-                    ok(value)
-                }
-                method == "POST" && endpoint.endsWith("/cancel") -> {
-                    val id = endpoint.removeSuffix("/cancel").substringAfterLast('/'); val value = jobs.getValue(id)
-                    value.put("state", "cancelled").put("stage", "cancelled"); ok(value)
-                }
-                else -> invalid("Unhandled fixture route: $method $endpoint")
-            }
+            routeCore(path, endpoint, method, body)
+                ?: routeRisks(endpoint, method, body)
+                ?: routeStrategy(endpoint, method, body)
+                ?: routePlans(endpoint, method, body)
+                ?: routeNotifications(endpoint, method, body)
+                ?: routeChat(endpoint, method, body)
+                ?: routeJobs(endpoint, method)
+                ?: invalid("Unhandled fixture route: $method $endpoint")
         } catch (failure: Exception) { invalid("Fixture contract rejected $method $endpoint: ${failure.javaClass.simpleName}") }
     }
 
-    private fun ok(data: JSONObject) = VolumeReply(data = JSONObject(data.toString()), status = 200)
+    private fun routeCore(
+        path: String,
+        endpoint: String,
+        method: String,
+        body: JSONObject?,
+    ): VolumeReply? {
+        return when {
+            method == "GET" && endpoint == "/workspace" -> ok(workspace())
+            method == "GET" && endpoint.startsWith("/workspace/analysis/checks/") ->
+                observedAnalysisCheck(endpoint)
+            method == "GET" && endpoint == "/workspace/analysis/diff" ->
+                observedAnalysisDifference(path)
+            method == "POST" && endpoint == "/workspace/analysis" -> startAnalysis(body)
+            else -> null
+        }
+    }
+
+    private fun routeRisks(endpoint: String, method: String, body: JSONObject?): VolumeReply? {
+        return when {
+            method == "GET" && endpoint == "/workspace/risks" -> ok(risks())
+            method == "GET" && endpoint == "/workspace/risks/checks" ->
+                ok(jObject("items" to JSONArray(checks)))
+            method == "GET" && endpoint == "/workspace/risks/events" ->
+                ok(jObject("items" to riskEvents()))
+            method == "POST" && endpoint == "/workspace/risks/checks" -> createRiskCheck(body)
+            method == "PATCH" && endpoint.startsWith("/workspace/risks/checks/") ->
+                updateRiskCheck(endpoint, body)
+            method == "POST" && endpoint == "/workspace/risks/scenario" ->
+                ok(scenarioResult(body!!))
+            method == "POST" && endpoint == "/workspace/risks/scenarios/compare" ->
+                compareRiskScenarios(body)
+            else -> null
+        }
+    }
+
+    private fun routeStrategy(endpoint: String, method: String, body: JSONObject?): VolumeReply? {
+        return when {
+            method == "GET" && endpoint == "/workspace/strategy" -> ok(strategy())
+            method == "POST" && endpoint == "/workspace/strategy/preview" -> previewStrategy(body)
+            method == "POST" && endpoint == "/workspace/strategy/confirm" -> confirmStrategy(body)
+            else -> null
+        }
+    }
+
+    private fun routePlans(endpoint: String, method: String, body: JSONObject?): VolumeReply? {
+        return when {
+            method == "GET" && endpoint == "/workspace/plans" ->
+                ok(jObject("items" to JSONArray(plans)))
+            method == "POST" && endpoint == "/workspace/plans" -> createPlan(body)
+            method == "POST" && endpoint.endsWith("/open-broker") ->
+                VolumeReply(
+                    status = 409,
+                    code = "fixture_external_handoff_blocked",
+                    error =
+                        "В визуальном тесте внешний брокер не открывается. Переход не означает сделку.",
+                )
+            method == "POST" &&
+                endpoint.startsWith("/workspace/plans/") &&
+                endpoint.endsWith("/reconcile") -> reconcilePlan(endpoint, body)
+            else -> null
+        }
+    }
+
+    private fun routeNotifications(
+        endpoint: String,
+        method: String,
+        body: JSONObject?,
+    ): VolumeReply? {
+        return when {
+            method == "GET" && endpoint == "/workspace/notifications/events" ->
+                ok(jObject("items" to JSONArray(notifications)))
+            method == "POST" &&
+                endpoint.startsWith("/workspace/notifications/") &&
+                endpoint.endsWith("/ack") -> acknowledgeNotification(endpoint, body)
+            else -> null
+        }
+    }
+
+    private fun routeChat(endpoint: String, method: String, body: JSONObject?): VolumeReply? {
+        return when {
+            method == "GET" && endpoint == "/workspace/chat/threads" ->
+                ok(
+                    jObject(
+                        "items" to
+                            if (!hasThread) JSONArray()
+                            else
+                                jArray(
+                                    jObject(
+                                        "thread_id" to PROBE_THREAD,
+                                        "title" to "Синтетический диалог",
+                                        "updated_at" to PROBE_AS_OF,
+                                    )
+                                )
+                    )
+                )
+            method == "POST" && endpoint == "/workspace/chat/threads" -> createChatThread()
+            method == "GET" && endpoint == "/workspace/chat/threads/$PROBE_THREAD/messages" ->
+                ok(jObject("items" to JSONArray(messages), "has_more" to false))
+            method == "POST" && endpoint == "/workspace/chat/estimate" -> estimateChat(body)
+            method == "POST" && endpoint == "/workspace/chat/threads/$PROBE_THREAD/messages" ->
+                sendChat(body)
+            else -> null
+        }
+    }
+
+    private fun routeJobs(endpoint: String, method: String): VolumeReply? {
+        return when {
+            method == "GET" && endpoint.startsWith("/workspace/jobs/by-request/") ->
+                recoverRequest(endpoint)
+            method == "GET" && endpoint.startsWith("/workspace/jobs/") -> pollJob(endpoint)
+            method == "POST" && endpoint.endsWith("/cancel") -> cancelJob(endpoint)
+            else -> null
+        }
+    }
+
+    private fun observedAnalysisCheck(endpoint: String): VolumeReply {
+        val check =
+            timelineProbeCheck(scenario, endpoint.substringAfterLast('/'))
+                ?: return VolumeReply(
+                    error = "Тестовая проверка не найдена.",
+                    code = "not_found",
+                    status = 404,
+                )
+        return ok(check)
+    }
+
+    private fun observedAnalysisDifference(path: String): VolumeReply {
+        val parameters = fixtureQuery(path)
+        require(parameters["current_card_id"] == "synthetic-analysis")
+        require(parameters["previous_card_id"] in setOf(null, "synthetic-previous-analysis"))
+        require(parameters["offset"]?.toIntOrNull() in setOf(null, 0))
+        return ok(timelineProbeFacts())
+    }
+
+    private fun startAnalysis(body: JSONObject?): VolumeReply {
+        require(body?.optString("reason") == "manual")
+        if (scenario in setOf("empty", "partial"))
+            return conflict("Синтетический анализ недоступен по состоянию источника.")
+        return enqueue(body)
+    }
+
+    private fun createRiskCheck(body: JSONObject?): VolumeReply {
+        require(body?.optString("title")?.isNotBlank() == true)
+        val created = riskCheck("synthetic-check-${++sequence}", body.getString("title"))
+        checks.add(0, created)
+        return ok(created)
+    }
+
+    private fun updateRiskCheck(endpoint: String, body: JSONObject?): VolumeReply {
+        val check = checks.single { it.getString("id") == endpoint.substringAfterLast('/') }
+        require(body?.optString("state") in setOf("pending", "reviewed"))
+        val steps = check.getJSONArray("steps")
+        val selected =
+            (0 until steps.length())
+                .map { steps.getJSONObject(it) }
+                .single { it.getString("id") == body!!.getString("step_id") }
+        selected.put("state", body!!.getString("state"))
+        return ok(check)
+    }
+
+    private fun compareRiskScenarios(body: JSONObject?): VolumeReply {
+        val candidates = body!!.getJSONArray("scenarios")
+        require(candidates.length() in 2..4 && body.optString("currency", "RUB") == "RUB")
+        val seen = mutableSetOf<String>()
+        val compared = JSONArray()
+        repeat(candidates.length()) { index ->
+            val candidate = candidates.getJSONObject(index)
+            require(
+                seen.add(candidate.getString("id")) && candidate.getString("title").isNotBlank()
+            )
+            compared.put(
+                jObject(
+                    "id" to candidate.getString("id"),
+                    "title" to candidate.getString("title"),
+                    "result" to scenarioResult(candidate),
+                )
+            )
+        }
+        return ok(
+            jObject(
+                "snapshot_id" to SYNTHETIC_SNAPSHOT,
+                "as_of" to PROBE_AS_OF,
+                "currency" to "RUB",
+                "scenarios" to compared,
+                "comparison_basis" to "same_observed_snapshot_same_currency",
+                "assumptions_are_user_defined" to true,
+            )
+        )
+    }
+
+    private fun previewStrategy(body: JSONObject?): VolumeReply {
+        if (body?.optInt("expected_version") != version)
+            return conflict("Синтетический конфликт версии: пересчитайте предпросмотр.")
+        require(body.has("config") xor body.has("rollback_to_version"))
+        val candidate =
+            if (body.has("config")) body.getJSONObject("config")
+            else {
+                require(body.getInt("rollback_to_version") == 2 && version > 0)
+                strategyConfig("income")
+            }
+        require(validProbeStrategy(candidate))
+        preview =
+            jObject(
+                "preview_id" to "synthetic-preview-${++sequence}",
+                "expected_version" to version,
+                "snapshot_id" to SYNTHETIC_SNAPSHOT,
+                "config" to candidate,
+                "can_confirm" to (scenario != "partial"),
+                "expires_at" to "2026-10-18T10:10:00Z",
+                "impact" to
+                    jObject(
+                        "coverage" to risks().optJSONArray("coverage"),
+                        "breaches" to risks().optJSONArray("concentrations"),
+                        "reserve_gap" to null,
+                        "reserve_gap_basis" to
+                            "observed_cash_balance_before_withdrawal_restrictions",
+                        "withdrawable_cash" to null,
+                        "execution_state" to "not_executed",
+                        "warnings" to
+                            if (scenario == "partial")
+                                jArray(
+                                    "Тест: источник части связей отсутствует; применение недоступно."
+                                )
+                            else JSONArray(),
+                    ),
+            )
+        return ok(preview!!)
+    }
+
+    private fun confirmStrategy(body: JSONObject?): VolumeReply {
+        val value = preview ?: return conflict("Сначала рассчитайте тестовый предпросмотр.")
+        require(
+            value.optBoolean("can_confirm") &&
+                body?.optInt("expected_version") == version &&
+                body.optString("preview_id") == value.getString("preview_id")
+        )
+        config = JSONObject(value.getJSONObject("config").toString())
+        version++
+        preview = null
+        return ok(strategy())
+    }
+
+    private fun createPlan(body: JSONObject?): VolumeReply {
+        require(
+            body?.optString("account_id") == PROBE_ACCOUNT &&
+                body.optString("instrument_uid") in setOf(PROBE_STOCK, PROBE_BOND)
+        )
+        require(
+            body.getString("quantity").toBigDecimal().signum() > 0 &&
+                body.getString("side") in setOf("buy", "sell")
+        )
+        require(body.optInt("strategy_version") == version)
+        val created =
+            plan()
+                .put("id", "synthetic-plan-${++sequence}")
+                .put("title", "СИНТЕТИЧЕСКИЙ РАСЧЁТ · " + body.optString("title"))
+                .put("quantity", body.getString("quantity"))
+                .put("instrument_uid", body.getString("instrument_uid"))
+                .put("side", body.getString("side"))
+                .put("state", "calculated")
+                .put("executed_quantity", "0")
+                .put("opened_at", JSONObject.NULL)
+                .put("bound_operations", JSONArray())
+                .put("candidate_operations", JSONArray())
+                .put(
+                    "calculation",
+                    jObject(
+                        "estimated_value" to
+                            probeMoney(
+                                body
+                                    .getString("quantity")
+                                    .toBigDecimal()
+                                    .multiply(BigDecimal("1000"))
+                                    .toPlainString()
+                            )
+                    ),
+                )
+        plans.add(0, created)
+        return ok(created)
+    }
+
+    private fun reconcilePlan(endpoint: String, body: JSONObject?): VolumeReply {
+        val plan = plans.single {
+            it.getString("id") == endpoint.removeSuffix("/reconcile").substringAfterLast('/')
+        }
+        val identifiers = body?.optJSONArray("operation_ids")
+        if (identifiers != null && identifiers.length() > 0) {
+            require(
+                (0 until identifiers.length()).all {
+                    identifiers.getString(it) == SYNTHETIC_OPERATION
+                }
+            )
+            val bound = plan.getJSONArray("bound_operations")
+            if (
+                (0 until bound.length()).none {
+                    bound.getJSONObject(it).getString("id") == SYNTHETIC_OPERATION
+                }
+            ) {
+                bound.put(syntheticOperation(SYNTHETIC_OPERATION, "3"))
+                plan.put(
+                    "executed_quantity",
+                    plan
+                        .getString("executed_quantity")
+                        .toBigDecimal()
+                        .add(BigDecimal("3"))
+                        .toPlainString(),
+                )
+            }
+            plan.put("state", "partial")
+        }
+        return enqueue(body)
+    }
+
+    private fun acknowledgeNotification(endpoint: String, body: JSONObject?): VolumeReply {
+        require(body?.optString("state") == "read")
+        val event = notifications.single {
+            it.getString("id") == endpoint.removeSuffix("/ack").substringAfterLast('/')
+        }
+        event.put("state", "read")
+        return ok(event)
+    }
+
+    private fun createChatThread(): VolumeReply {
+        hasThread = true
+        return ok(jObject("thread_id" to PROBE_THREAD))
+    }
+
+    private fun estimateChat(body: JSONObject?): VolumeReply {
+        require(body?.getString("text")?.isNotBlank() == true)
+        require(
+            body.getString("thread_id") == PROBE_THREAD &&
+                body.getString("tier") in setOf("fast", "standard", "premium")
+        )
+        require(
+            body.getJSONObject("context").getString("mode") in
+                setOf("general", "portfolio", "instrument")
+        )
+        lastChatEstimate = JSONObject(body.toString())
+        return ok(
+            jObject(
+                "available" to true,
+                "estimated_upper_bound" to probeMoney("0.01"),
+                "synthetic" to true,
+            )
+        )
+    }
+
+    private fun sendChat(body: JSONObject?): VolumeReply {
+        val requestId = body?.optString("request_id").orEmpty()
+        trace.value =
+            trace.value.copy(
+                messagePosts = trace.value.messagePosts + 1,
+                messageRequestId = requestId,
+            )
+        require(
+            body?.getString("text")?.isNotBlank() == true &&
+                body.getJSONObject("context").getString("mode") in
+                    setOf("general", "portfolio", "instrument")
+        )
+        require(UUID.fromString(requestId).toString() == requestId)
+        val estimated =
+            checkNotNull(lastChatEstimate) { "Message requires a preceding exact cost estimate" }
+        require(
+            estimated.getString("text") == body.getString("text") &&
+                estimated.getString("tier") == body.getString("tier") &&
+                estimated.getJSONObject("context").toString() ==
+                    body.getJSONObject("context").toString()
+        )
+        if (scenario == "ready" && trace.value.messagePosts != 1)
+            return invalid("A lost chat response must not issue a second message POST")
+        messages.add(
+            jObject(
+                "id" to "synthetic-user-${++sequence}",
+                "role" to "user",
+                "text" to body.getString("text"),
+                "created_at" to PROBE_AS_OF,
+            )
+        )
+        messages.add(assistantMessage("synthetic-answer-$sequence"))
+        val accepted = enqueue(body)
+        // The simulated server has accepted this exact request. Only
+        // its response is lost; recovery must read the existing job.
+        return if (scenario == "ready" && accepted.data != null)
+            VolumeReply(
+                error =
+                    "СИНТЕТИЧЕСКАЯ потеря ответа после принятия запроса. Сверьте сохранённый идентификатор.",
+                code = "synthetic_lost_response",
+                ambiguous = true,
+            )
+        else accepted
+    }
+
+    private fun recoverRequest(endpoint: String): VolumeReply {
+        val requestId = endpoint.substringAfterLast('/')
+        trace.value = trace.value.copy(byRequestGets = trace.value.byRequestGets + 1)
+        val id =
+            requestJobs[requestId]
+                ?: return VolumeReply(status = 404, error = "Тестовое задание не найдено.")
+        trace.value = trace.value.copy(recoveredRequestId = requestId)
+        return ok(jObject("job_id" to id))
+    }
+
+    private fun pollJob(endpoint: String): VolumeReply {
+        val id = endpoint.substringAfterLast('/')
+        val value = jobs[id] ?: return invalid("Unknown fixture job")
+        val polls = (jobPolls[id] ?: 0) + 1
+        jobPolls[id] = polls
+        if (value.optString("state") == "running" && polls >= 3)
+            value.put("state", "completed").put("stage", "completed")
+        return ok(value)
+    }
+
+    private fun cancelJob(endpoint: String): VolumeReply {
+        val id = endpoint.removeSuffix("/cancel").substringAfterLast('/')
+        val value = jobs.getValue(id)
+        value.put("state", "cancelled").put("stage", "cancelled")
+        return ok(value)
+    }
+
+private fun ok(data: JSONObject) = VolumeReply(data = JSONObject(data.toString()), status = 200)
     private fun fixtureQuery(path: String): Map<String, String> = path.substringAfter('?', "").split('&').mapNotNull { pair ->
         val parts = pair.split('=', limit = 2)
         if (parts.size != 2) null else java.net.URLDecoder.decode(parts[0], Charsets.UTF_8) to
@@ -413,15 +692,15 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
             "direction" to direction, "state" to if (missing.isEmpty()) "available" else "partial", "known_positions" to known,
             "total_positions" to 3, "not_applicable_positions" to notApplicable, "missing_instrument_uids" to JSONArray(missing),
             "as_of" to PROBE_AS_OF, "age_seconds" to 0, "basis" to "СИНТЕТИЧЕСКИЙ тест подтверждённых наблюдений")
-        return jObject("as_of" to PROBE_AS_OF, "snapshot_id" to "synthetic-snapshot", "strategy_version" to version,
+        return jObject("as_of" to PROBE_AS_OF, "snapshot_id" to SYNTHETIC_SNAPSHOT, "strategy_version" to version,
             "coverage" to jArray(coverage("issuer", if (partial) 1 else 2, 1, if (partial) listOf(PROBE_BOND) else emptyList()),
                 coverage("ratings", if (partial) 0 else 1, 2, if (partial) listOf(PROBE_BOND) else emptyList()),
                 coverage("trading", if (partial) 1 else 2, 1, if (partial) listOf(PROBE_BOND) else emptyList()),
                 coverage("liquidity", if (partial) 1 else 2, 1, if (partial) listOf(PROBE_BOND) else emptyList()),
                 coverage("position", 3, 0), coverage("currency", 3, 0)),
-            "concentrations" to jArray(jObject("direction" to "issuer", "id" to "synthetic-issuer", "label" to "Синтетическая компания",
+            "concentrations" to jArray(jObject("direction" to "issuer", "id" to SYNTHETIC_ISSUER, "label" to "Синтетическая компания",
                 "value" to if (partial) null else probeMoney("70000"),
-                "share_percent" to if (partial) null else "70", "limit_percent" to "60", "breached" to if (partial) null else true,
+                "share_percent" to if (partial) null else "70", "limit_percent" to "60", "breached" to true.takeUnless { partial },
                 "instrument_uids" to jArray(PROBE_STOCK), "source_ids" to jArray(PROBE_SOURCE))),
             "events" to riskEvents(), "sources" to jArray(probeSource()), "coverage_is_not_probability_of_loss" to true)
     }
@@ -446,18 +725,18 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
         val percent = shock.getString("percent").toBigDecimal()
         require(percent >= BigDecimal(-100) && percent <= BigDecimal(1000))
         val axis = shock.getString("axis"); val id = shock.getString("id")
-        val values = linkedMapOf(PROBE_STOCK to BigDecimal("70000"), PROBE_BOND to BigDecimal("20000"), "synthetic-cash" to BigDecimal("10000"))
+        val values = linkedMapOf(PROBE_STOCK to BigDecimal("70000"), PROBE_BOND to BigDecimal("20000"), SYNTHETIC_CASH to BigDecimal("10000"))
         val selected = when (axis) {
             "all" -> values
             "currency" -> { require(id == "RUB"); values }
             "instrument" -> { require(id in values); values.filterKeys { it == id } }
-            "country" -> { require(id == "RU"); values.filterKeys { it != "synthetic-cash" } }
+            "country" -> { require(id == "RU"); values.filterKeys { it != SYNTHETIC_CASH } }
             "sector" -> { require(id == "Синтетический сектор"); values.filterKeys { it == PROBE_STOCK } }
             else -> error("Unknown synthetic scenario axis")
         }
         val change = selected.values.fold(BigDecimal.ZERO, BigDecimal::add).multiply(percent).divide(BigDecimal(100))
         val unknown = if (scenario == "partial" && axis == "sector") listOf(PROBE_BOND) else emptyList()
-        return jObject("snapshot_id" to "synthetic-snapshot", "as_of" to PROBE_AS_OF, "baseline" to probeMoney("100000"),
+        return jObject("snapshot_id" to SYNTHETIC_SNAPSHOT, "as_of" to PROBE_AS_OF, "baseline" to probeMoney("100000"),
             "estimated_change" to probeMoney(change.toPlainString()), "estimated_after" to if (unknown.isEmpty()) probeMoney(BigDecimal("100000").add(change).toPlainString()) else null,
             "covered_positions" to selected.size, "total_positions" to 3, "uncovered_instrument_uids" to JSONArray(unknown),
             "assumptions" to jArray(JSONObject(shock.toString())), "complete" to unknown.isEmpty(), "is_forecast" to false,
@@ -473,7 +752,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
         "opened_at" to if (scenario == "partial" || scenario == "job") PROBE_AS_OF else null, "broker_url" to null,
         "calculation" to jObject("estimated_value" to probeMoney("10000")), "reconciliation_complete" to (scenario != "partial"),
         "bound_operations" to if (scenario == "partial") jArray(syntheticOperation("synthetic-bound", "2")) else JSONArray(),
-        "candidate_operations" to if (scenario == "partial") jArray(syntheticOperation("synthetic-bound", "2"), syntheticOperation("synthetic-operation", "3")) else JSONArray(),
+        "candidate_operations" to if (scenario == "partial") jArray(syntheticOperation("synthetic-bound", "2"), syntheticOperation(SYNTHETIC_OPERATION, "3")) else JSONArray(),
         "sources" to jArray(probeSource()))
     private fun syntheticOperation(id: String, quantity: String) = jObject("id" to id, "date" to PROBE_AS_OF, "quantity" to quantity,
         "payment" to probeMoney(BigDecimal(quantity).multiply(BigDecimal("-1000")).toPlainString()))
@@ -488,14 +767,14 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
             "value" to jObject("share_percent" to if (scenario == "partial") null else "70", "limit_percent" to "60"))),
         "sources" to jArray(probeSource()), "uncertainties" to if (scenario == "partial") jArray("СИНТЕТИЧЕСКИЙ тест отсутствующего рейтинга") else JSONArray(),
         "impact_hypothesis" to if (scenario == "ready" && id == "synthetic-answer") impactHypothesis() else null,
-        "actions" to jArray(jObject("type" to "open_risks", "id" to "synthetic-issuer", "label" to "Открыть тестовую концентрацию")))
+        "actions" to jArray(jObject("type" to "open_risks", "id" to SYNTHETIC_ISSUER, "label" to "Открыть тестовую концентрацию")))
 
     /** The UI receives server-owned facts separately from the explicitly hypothetical channel. */
     private fun impactHypothesis() = jObject("kind" to "hypothesis",
         "label" to "Гипотеза влияния ИИ — не подтверждённый факт",
         "event" to jObject("id" to "event:synthetic-impact-event", "title" to "СИНТЕТИЧЕСКОЕ событие влияния",
             "published_at" to PROBE_AS_OF, "fact_id" to "synthetic-event-fact", "event_identity_verified" to true, "source_ids" to jArray(PROBE_SOURCE)),
-        "companies" to jArray(jObject("instrument_uid" to PROBE_STOCK, "issuer_id" to "synthetic-issuer",
+        "companies" to jArray(jObject("instrument_uid" to PROBE_STOCK, "issuer_id" to SYNTHETIC_ISSUER,
             "issuer_name" to "СИНТЕТИЧЕСКИЙ эмитент гипотезы", "identity_state" to "verified",
             "fact_id" to "synthetic-company-fact", "source_ids" to jArray(PROBE_SOURCE))),
         "positions" to jArray(jObject("instrument_uid" to PROBE_STOCK, "account_id" to PROBE_ACCOUNT,
@@ -506,6 +785,6 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
             "assumptions" to jArray("СИНТЕТИЧЕСКОЕ допущение: компания использует затронутый ресурс"),
             "fact_ids" to jArray("synthetic-event-fact", "synthetic-company-fact", "synthetic-position-fact"), "source_ids" to jArray(PROBE_SOURCE))),
         "limitations" to jArray("СИНТЕТИЧЕСКИЙ пример: численное влияние не рассчитано"),
-        "sources" to jArray(probeSource()), "snapshot_id" to "synthetic-snapshot", "as_of" to PROBE_AS_OF,
+        "sources" to jArray(probeSource()), "snapshot_id" to SYNTHETIC_SNAPSHOT, "as_of" to PROBE_AS_OF,
         "computed_financial_impact" to null)
 }

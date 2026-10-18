@@ -445,24 +445,7 @@ def persist(user: Any, snapshot: dict) -> None:
         db.execute("""INSERT INTO workspace_snapshots VALUES (?,?,?,?,?,?)
             ON CONFLICT(user_id,currency) DO UPDATE SET id=excluded.id,broker_key=excluded.broker_key,payload_json=excluded.payload_json,created_at=excluded.created_at""",
             (user_id, snapshot["currency"], snapshot["snapshot_id"], state.broker_key(user), state.encode(snapshot), int(time.time())))
-        for key in new_breaches.keys() | old_breaches.keys():
-            before, after = old_breaches.get(key), new_breaches.get(key)
-            if before is not None and after is not None and before["share_percent"] == after["share_percent"]:
-                continue
-            details_row = after or before
-            # An incomplete aggregate may fall below its limit only because a
-            # position lost its valuation/identity. That is not risk resolution.
-            missing_basis = after is None and (key[0] not in complete_axes or
-                key in all_current and all_current[key]["breached"] is None or
-                decimal(snapshot.get("capital", {}).get("total")) in {None, ZERO})
-            kind = "risk_limit_observed" if after else "risk_data_stale" if missing_basis else "risk_limit_resolved"
-            risk_event = state.event(db, user_id, kind, snapshot["snapshot_id"],
-                {"title": ("Превышение лимита: " if after else "Основание риска требует обновления: " if missing_basis else "Лимит восстановлен: ") + details_row["label"],
-                 "details": {"before": before, "after": after, "strategy_version": (active or {}).get("version", 0)},
-                 "instrument_uids": details_row["instrument_uids"], "source_ids": details_row["source_ids"]},
-                snapshot["snapshot_id"] + ":" + ":".join(key))
-            notifications.enqueue_in(db, user_id, kind="risk", title=risk_event["title"],
-                                     body="Проверьте подтверждённый лимит и актуальность источника; это не выполненная сделка.", event_id=risk_event["id"])
+        _record_concentration_changes(db, user_id, snapshot, active, old_breaches, new_breaches, all_current, complete_axes)
         for item in snapshot.get("events", {}).get("items", []):
             state.event(db, user_id, "market_news", snapshot["snapshot_id"], item, item["id"])
         volume_credit.record_changes_in(db, user_id, snapshot, old)
@@ -478,33 +461,8 @@ def ai_data(user: Any) -> dict:
         slot_rows = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='monitor_slot' ORDER BY id", (user_id,)).fetchall()
         monitor_jobs = db.execute("SELECT id,status,result_json,error_code,created_at,updated_at,cancel_requested_at FROM ai_work_jobs WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 20", (user_id,)).fetchall()
     last_check = json.loads(checked[0]) if checked else None
-    last = None if not row else {"id": row["id"], "created_at": datetime.fromtimestamp(row["created_at"], timezone.utc).isoformat(),
-                                 "state": row["state"], "reason": row["reason"], "tier": row["tier"],
-                                 "card_id": last_check.get("card_id") if last_check and last_check.get("run_id") == row["id"] else None}
-    current = {"title": cards[0]["title"], "summary": cards[0]["summary"], "actions": json.loads(cards[0]["actions_json"])} if cards else {}
-    previous = {"title": cards[1]["title"], "summary": cards[1]["summary"], "actions": json.loads(cards[1]["actions_json"])} if len(cards) > 1 else {}
-    diff = {"previous_card_id": cards[1]["id"] if len(cards) > 1 else None, "current_card_id": cards[0]["id"] if cards else None,
-            "added": [{"field": k, "value": v} for k, v in current.items() if k not in previous],
-            "removed": [{"field": k, "value": v} for k, v in previous.items() if k not in current],
-            "changed": [{"field": k, "before": previous[k], "after": v, "source_ids": []} for k, v in current.items() if k in previous and previous[k] != v],
-            "unchanged": [{"field": k, "value": v, "source_ids": []} for k, v in current.items() if k in previous and previous[k] == v],
-            "scope": "stored_report_fields_and_evidence_records", "fact_comparison_available": False,
-            "comparison_limit": "Historical cards do not bind every sentence to stable structured fact IDs; text equality is not proof of unchanged underlying facts."}
-    evidence_current = json.loads(cards[0]["evidence_json"]) if cards else []
-    evidence_previous = json.loads(cards[1]["evidence_json"]) if len(cards) > 1 else []
-    diff["evidence_diff"] = {
-        "added": [row for row in evidence_current if row not in evidence_previous],
-        "removed": [row for row in evidence_previous if row not in evidence_current],
-        "unchanged": [row for row in evidence_current if row in evidence_previous],
-        "current_source_ids": sorted({row["source_id"] for row in evidence_current if row.get("source_id")}),
-        "previous_source_ids": sorted({row["source_id"] for row in evidence_previous if row.get("source_id")})}
-    try:
-        from .volume_analysis import comparison
-    except ImportError:
-        from volume_analysis import comparison
-    structured = comparison(user_id, diff["current_card_id"], diff["previous_card_id"])
-    diff["structured_facts"] = structured
-    diff["fact_comparison_available"] = structured["available"]
+    last = _last_analysis_run(row, last_check)
+    diff = _analysis_difference(user_id, cards)
     try:
         GuardedAIClient(user_id, backend.connect).check_ready(AnalysisTier.FAST)
         readiness = {"available": True, "reason": None}
@@ -514,10 +472,7 @@ def ai_data(user: Any) -> dict:
         from .volume_jobs import user_jobs
     except ImportError:
         from volume_jobs import user_jobs
-    observed_jobs = [{"job_id": row["id"], "state": "cancelled" if row["error_code"] == "analysis_cancelled" else "cancel_requested" if row["cancel_requested_at"] and row["status"] == "running" else row["status"],
-                      "result": json.loads(row["result_json"]) if row["result_json"] else None, "error_code": row["error_code"],
-                      "created_at": datetime.fromtimestamp(row["created_at"], timezone.utc).isoformat(),
-                      "updated_at": datetime.fromtimestamp(row["updated_at"], timezone.utc).isoformat(), "kind": "scheduled_monitor"} for row in monitor_jobs]
+    observed_jobs = [_monitor_job_record(row) for row in monitor_jobs]
     check_history = []
     for record in check_rows:
         item = json.loads(record[0])
@@ -537,17 +492,8 @@ def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None
     observed = (snapshot or {}).get("as_of")
     stale = observed is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(observed)).total_seconds() > 900
     missing = "workspace_refresh_required" if user["tinvest_token_encrypted"] else "tinvest_not_connected"
-    base_state = "partial" if stale else "available" if snapshot else "unavailable"
-    reason = "snapshot_stale" if stale else None if snapshot else missing
-    sections = {}
-    for key, empty in (("capital", {"total": None, "cash": []}), ("attribution", {}), ("payouts", {"items": [], "complete": False}), ("events", {"items": []})):
-        data = (snapshot or {}).get(key, empty)
-        item_state = "partial" if snapshot and data.get("complete") is False else base_state
-        section_observed = (snapshot or {}).get("section_as_of", {}).get(key, observed)
-        section_stale = section_observed is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(section_observed)).total_seconds() > 900
-        if section_stale:
-            item_state = "partial"
-        sections[key] = section(data, state=item_state, reason="snapshot_stale" if section_stale else reason or ("source_coverage_incomplete" if item_state == "partial" else None), as_of=section_observed, sources=(snapshot or {}).get("sources", []))
+    base_state, reason = _snapshot_state(snapshot, stale, missing)
+    sections = _snapshot_sections(snapshot, observed, base_state, reason)
     active = state.active_strategy(int(user["id"]))
     exposures = state.exposure_data(snapshot, (active or {}).get("config"))
     exposure_state = "partial" if snapshot and any(not axis["complete"] for axis in exposures["axes"]) else base_state
@@ -574,3 +520,113 @@ def operation_position(account_id: str, operation_id: str, user: Annotated[Any, 
     held = [p for p in (snapshot or {}).get("positions", []) if p["account_id"] == account_id and p["instrument_uid"] == uid]
     return {"operation": operation, "position_ref": operation["position_ref"], "positions": held,
             "relationship": "broker_instrument_uid", "as_of": (snapshot or {}).get("as_of")}
+
+
+def _record_concentration_changes(db, user_id, snapshot, active, old_breaches, new_breaches, all_current, complete_axes):
+    for key in new_breaches.keys() | old_breaches.keys():
+        before, after = old_breaches.get(key), new_breaches.get(key)
+        if before is not None and after is not None and before["share_percent"] == after["share_percent"]:
+            continue
+        details_row = after or before
+        # An incomplete aggregate may fall below its limit only because a
+        # position lost its valuation/identity. That is not risk resolution.
+        missing_basis = after is None and (key[0] not in complete_axes or
+            key in all_current and all_current[key]["breached"] is None or
+            decimal(snapshot.get("capital", {}).get("total")) in {None, ZERO})
+        kind, title_prefix = _risk_change_label(after, missing_basis)
+        risk_event = state.event(db, user_id, kind, snapshot["snapshot_id"],
+            {"title": title_prefix + details_row["label"],
+             "details": {"before": before, "after": after, "strategy_version": (active or {}).get("version", 0)},
+             "instrument_uids": details_row["instrument_uids"], "source_ids": details_row["source_ids"]},
+            snapshot["snapshot_id"] + ":" + ":".join(key))
+        notifications.enqueue_in(db, user_id, kind="risk", title=risk_event["title"],
+                                 body="Проверьте подтверждённый лимит и актуальность источника; это не выполненная сделка.", event_id=risk_event["id"])
+
+
+def _risk_change_label(after, missing_basis):
+    if after:
+        return "risk_limit_observed", "Превышение лимита: "
+    if missing_basis:
+        return "risk_data_stale", "Основание риска требует обновления: "
+    return "risk_limit_resolved", "Лимит восстановлен: "
+
+
+def _last_analysis_run(row, last_check):
+    if not row:
+        return None
+    card_id = last_check.get("card_id") if last_check and last_check.get("run_id") == row["id"] else None
+    return {"id": row["id"], "created_at": datetime.fromtimestamp(row["created_at"], timezone.utc).isoformat(),
+            "state": row["state"], "reason": row["reason"], "tier": row["tier"], "card_id": card_id}
+
+
+def _analysis_difference(user_id, cards):
+    current = {"title": cards[0]["title"], "summary": cards[0]["summary"], "actions": json.loads(cards[0]["actions_json"])} if cards else {}
+    previous = {"title": cards[1]["title"], "summary": cards[1]["summary"], "actions": json.loads(cards[1]["actions_json"])} if len(cards) > 1 else {}
+    diff = {"previous_card_id": cards[1]["id"] if len(cards) > 1 else None, "current_card_id": cards[0]["id"] if cards else None,
+            "added": [{"field": k, "value": v} for k, v in current.items() if k not in previous],
+            "removed": [{"field": k, "value": v} for k, v in previous.items() if k not in current],
+            "changed": [{"field": k, "before": previous[k], "after": v, "source_ids": []} for k, v in current.items() if k in previous and previous[k] != v],
+            "unchanged": [{"field": k, "value": v, "source_ids": []} for k, v in current.items() if k in previous and previous[k] == v],
+            "scope": "stored_report_fields_and_evidence_records", "fact_comparison_available": False,
+            "comparison_limit": "Historical cards do not bind every sentence to stable structured fact IDs; text equality is not proof of unchanged underlying facts."}
+    diff["evidence_diff"] = _evidence_difference(cards)
+    try:
+        from .volume_analysis import comparison
+    except ImportError:
+        from volume_analysis import comparison
+    structured = comparison(user_id, diff["current_card_id"], diff["previous_card_id"])
+    diff["structured_facts"] = structured
+    diff["fact_comparison_available"] = structured["available"]
+    return diff
+
+
+def _evidence_difference(cards):
+    evidence_current = json.loads(cards[0]["evidence_json"]) if cards else []
+    evidence_previous = json.loads(cards[1]["evidence_json"]) if len(cards) > 1 else []
+    return {
+        "added": [row for row in evidence_current if row not in evidence_previous],
+        "removed": [row for row in evidence_previous if row not in evidence_current],
+        "unchanged": [row for row in evidence_current if row in evidence_previous],
+        "current_source_ids": sorted({row["source_id"] for row in evidence_current if row.get("source_id")}),
+        "previous_source_ids": sorted({row["source_id"] for row in evidence_previous if row.get("source_id")})}
+
+
+def _monitor_job_record(row):
+    status = row["status"]
+    if row["error_code"] == "analysis_cancelled":
+        status = "cancelled"
+    elif row["cancel_requested_at"] and status == "running":
+        status = "cancel_requested"
+    return {"job_id": row["id"], "state": status,
+            "result": json.loads(row["result_json"]) if row["result_json"] else None, "error_code": row["error_code"],
+            "created_at": datetime.fromtimestamp(row["created_at"], timezone.utc).isoformat(),
+            "updated_at": datetime.fromtimestamp(row["updated_at"], timezone.utc).isoformat(), "kind": "scheduled_monitor"}
+
+
+def _snapshot_sections(snapshot, observed, base_state, reason):
+    sections = {}
+    for key, empty in (("capital", {"total": None, "cash": []}), ("attribution", {}), ("payouts", {"items": [], "complete": False}), ("events", {"items": []})):
+        data = (snapshot or {}).get(key, empty)
+        item_state = "partial" if snapshot and data.get("complete") is False else base_state
+        section_observed = (snapshot or {}).get("section_as_of", {}).get(key, observed)
+        section_stale = section_observed is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(section_observed)).total_seconds() > 900
+        if section_stale:
+            item_state = "partial"
+        sections[key] = section(data, state=item_state, reason=_section_reason(section_stale, reason, item_state), as_of=section_observed, sources=(snapshot or {}).get("sources", []))
+    return sections
+
+
+def _snapshot_state(snapshot, stale, missing):
+    if stale:
+        return "partial", "snapshot_stale"
+    if snapshot:
+        return "available", None
+    return "unavailable", missing
+
+
+def _section_reason(stale, reason, state):
+    if stale:
+        return "snapshot_stale"
+    if reason:
+        return reason
+    return "source_coverage_incomplete" if state == "partial" else None

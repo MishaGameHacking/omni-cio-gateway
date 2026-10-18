@@ -234,14 +234,14 @@ class EvidenceTests(unittest.TestCase):
 
     def test_new_release_requires_real_16kb_and_4kb_full_matrix(self):
         checked = from_ci_reports(runtime_reports(), CANDIDATE, require_runtime_16kb=True)
-        self.assertEqual(16384, checked['35']['page_size_bytes'])
+        self.assertEqual(checked['35']['page_size_bytes'], 16384)
         self.assertTrue(checked['35']['runtime_16kb'])
-        self.assertEqual(4096, checked['36']['page_size_bytes'])
+        self.assertEqual(checked['36']['page_size_bytes'], 4096)
         self.assertFalse(checked['36']['runtime_16kb'])
-        self.assertEqual(52, checked['35']['business_case_count'])
-        self.assertEqual(52, checked['36']['business_case_count'])
-        self.assertEqual(14, checked['35']['portfolio_case_count'])
-        self.assertEqual(14, checked['36']['portfolio_case_count'])
+        self.assertEqual(checked['35']['business_case_count'], 52)
+        self.assertEqual(checked['36']['business_case_count'], 52)
+        self.assertEqual(checked['35']['portfolio_case_count'], 14)
+        self.assertEqual(checked['36']['portfolio_case_count'], 14)
         # Historical transcripts remain usable for recovery, never a new 3D release.
         for old in (reports(), [android15_report(), *reports()]):
             from_ci_reports(old, CANDIDATE)
@@ -270,7 +270,7 @@ class EvidenceTests(unittest.TestCase):
                 self.reject(data)
 
     def test_new_release_requires_all_six_routes_and_both_native_font_sizes(self):
-        self.assertEqual(52, len(BUSINESS_CASE_IDS))
+        self.assertEqual(len(BUSINESS_CASE_IDS), 52)
         self.assertEqual({f'analysis/{state}@{font}' for state in ('ready', 'partial', 'empty', 'error') for font in (1, 2)},
                          {case for case in BUSINESS_CASE_IDS if case.startswith('analysis/')})
         for field, value in (('ui_suite', 'old-profile-only'), ('business_case_count', 44),
@@ -297,9 +297,9 @@ class EvidenceTests(unittest.TestCase):
                     from_ci_reports(data, CANDIDATE, require_runtime_16kb=True)
 
     def test_portfolio_receipt_requires_both_fonts_and_exact_missing_instant_scenario(self):
-        self.assertEqual(14, len(PORTFOLIO_CASE_IDS))
-        self.assertEqual({'history/ready@1', 'history/ready@2', 'history/partial@1', 'history/partial@2'},
-                         {case for case in PORTFOLIO_CASE_IDS if case.startswith('history/')})
+        self.assertEqual(len(PORTFOLIO_CASE_IDS), 14)
+        self.assertEqual({case for case in PORTFOLIO_CASE_IDS if case.startswith('history/')},
+                         {'history/ready@1', 'history/ready@2', 'history/partial@1', 'history/partial@2'})
         for field, value in (('portfolio_case_count', 7), ('portfolio_case_count', 14.0),
                              ('portfolio_case_count', True), ('portfolio_cases', sorted(PORTFOLIO_CASE_IDS)[:-1]),
                              ('portfolio_cases', '14'), ('portfolio_cases', sorted(BUSINESS_CASE_IDS)[:14])):

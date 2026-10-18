@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.data.market.rememberWorkspaceRequest
+import ru.omnicio.app.data.workspace.PersonalWorkspaceController
+import ru.omnicio.app.data.market.WorkspaceRequest
+import androidx.compose.foundation.lazy.LazyItemScope
 import ru.omnicio.app.data.workspace.rememberPersonalWorkspace
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
@@ -93,39 +96,21 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
             bottomBar = { AnalystBottomBar(AnalystTab.Home, onOpenPortfolio, onOpenProfile) }) { padding ->
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = refreshNow, state = pullState,
                 modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), indicator = {
-                    if (pullState.distanceFraction > 0f || refreshing) SpectrumCard(Modifier.align(Alignment.TopCenter).padding(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SpectrumIcon(SpectrumSymbol.Sources, Modifier.size(32.dp), selected = refreshing)
-                            Text(if (refreshing) "Запрашиваем данные…" else if (pullState.distanceFraction >= 1f) "Отпустите для обновления" else "Потяните для обновления")
-                        }
-                    }
+                    HomePullIndicator(refreshing, pullState.distanceFraction)
                 }) {
             LazyColumn(Modifier.fillMaxSize(), state = listState,
                 contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 stickyHeader(key = "compact-capital") {
-                    if (snapshot != null && (collapsed || listState.firstVisibleItemIndex > 1)) ru.omnicio.app.ui.spatial.SpatialSurface(color = MaterialTheme.colorScheme.surface) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = onCurrencyClick, modifier = Modifier.weight(1f)) { Text(snapshot.totalValue.moneyText(), style = MaterialTheme.typography.titleMedium) }
-                            TextButton(onClick = { collapsed = !collapsed }) { Text(if (collapsed) "Развернуть" else "Свернуть") }
-                        }
-                    }
+                    CompactCapital(snapshot, collapsed, listState.firstVisibleItemIndex > 1, onCurrencyClick) { collapsed = !collapsed }
                 }
                 item(key = "brand-header") { HomeHeader(user, onOpenMessages) }
                 item(key = "portfolio-hero") {
-                    if (!collapsed) CapitalHero(state, snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis,
-                        prefs.hideHomeBalance, onCurrencyClick, onConnect)
-                    Row(Modifier.fillMaxWidth()) {
-                        if (snapshot != null) TextButton(onClick = { collapsed = !collapsed }) { Text(if (collapsed) "Развернуть капитал" else "Свернуть капитал") }
-                        TextButton(onClick = refreshNow, enabled = !refreshing && !waiting) { Text("Обновить") }
-                    }
-                    refreshMessage?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall) }
+                    HomeCapitalBlock(state, snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis,
+                        prefs.hideHomeBalance, collapsed, waiting, refreshMessage, onCurrencyClick, onConnect,
+                        refreshNow) { collapsed = !collapsed }
                 }
                 if (!snapshot?.warnings.isNullOrEmpty()) {
-                    item(key = "attention") { SpectrumCard {
-                        Text("Требует внимания", style = MaterialTheme.typography.titleMedium)
-                        snapshot!!.warnings.take(2).forEach { Text(it) }
-                        if (snapshot.warnings.size > 2) DetailFold("Все ограничения (${snapshot.warnings.size})") { snapshot.warnings.drop(2).forEach { Text(it) } }
-                    } }
+                    item(key = "attention") { HomeWarningCard(checkNotNull(snapshot).warnings) }
                 }
                 item(key = "capabilities") { HomeQuickActions(onOpenPortfolio, onOpenPayments) }
                 if (personal.loaded && !personal.releaseDismissed(ru.omnicio.app.BuildConfig.VERSION_NAME)) item(key = "release-introduction") {
@@ -137,31 +122,16 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                     }
                 }
                 item(key = "order-controls") {
-                    Row {
-                        TextButton(onClick = { previewOrder = savedOrder; editing = true }, enabled = personal.loaded) { Text("Настроить главный экран") }
-                        if (undoOrder != null) TextButton(onClick = { personal.saveDashboardOrder(undoOrder!!); undoOrder = null }, enabled = !personal.busy) { Text("Отменить порядок") }
-                    }
-                    if (previewOrder != null && previewOrder != savedOrder) Text("Просмотр нового порядка · ещё не сохранён")
+                    HomeOrderControls(personal.loaded, personal.busy, undoOrder != null,
+                        previewOrder != null && previewOrder != savedOrder,
+                        { previewOrder = savedOrder; editing = true },
+                        { undoOrder?.let(personal::saveDashboardOrder); undoOrder = null })
                 }
                 items(order, key = { "dashboard:$it" }) { key ->
-                    Box(Modifier.animateItem(
-                        fadeInSpec = if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
-                        placementSpec = if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
-                        fadeOutSpec = if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null)) {
-                        when (key) {
-                            "assistant" -> HomeNextStep(state, snapshot, refreshError, waiting, onConnect, onOpenRisk, onOpenRecommendations)
-                            "changes" -> if (snapshot != null) ChangesSinceVisit(snapshot, personal)
-                            "composition" -> if (snapshot != null) CapitalComposition(snapshot, workspace.json)
-                            "attribution" -> if (snapshot != null) Column {
-                                WorkspaceRequestNotice(workspace)
-                                if (!workspace.showingPreviousQuery) HomeAttribution(workspace.json, attributionPeriod) { attributionStart = it.start; attributionEnd = it.end }
-                                else PeriodControls(attributionPeriod) { attributionStart = it.start; attributionEnd = it.end }
-                            }
-                            "payouts" -> if (snapshot != null) HomePayoutTimeline(workspace.json, onOpenPayments)
-                            "goal" -> if (snapshot != null) HomeGoalProgress(workspace.json)
-                            "monitoring" -> ObservationSummary(onOpenRisk)
-                            "allocation" -> if (snapshot != null && prefs.homeStructure) AllocationOverview(snapshot, onOpenPortfolio)
-                        }
+                    HomeAnimatedCard(itemMotion, itemDuration) {
+                        HomeDashboardCard(key, state, snapshot, refreshError, waiting, personal, workspace, attributionPeriod,
+                            { attributionStart = it.start; attributionEnd = it.end }, onConnect, onOpenRisk,
+                            onOpenRecommendations, onOpenPayments, onOpenPortfolio)
                     }
                 }
             }
@@ -285,3 +255,184 @@ private fun HomeNextStep(state: PortfolioUiState, snapshot: PortfolioSnapshot?, 
                     }
 }
 
+@Composable
+private fun BoxScope.HomePullIndicator(refreshing: Boolean, distanceFraction: Float) {
+    if (distanceFraction > 0f || refreshing)
+        SpectrumCard(Modifier.align(Alignment.TopCenter).padding(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SpectrumIcon(SpectrumSymbol.Sources, Modifier.size(32.dp), selected = refreshing)
+                Text(
+                    if (refreshing) "Запрашиваем данные…"
+                    else if (distanceFraction >= 1f) "Отпустите для обновления"
+                    else "Потяните для обновления"
+                )
+            }
+        }
+}
+
+@Composable
+private fun CompactCapital(
+    snapshot: PortfolioSnapshot?,
+    collapsed: Boolean,
+    scrolled: Boolean,
+    onCurrencyClick: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    if (snapshot != null && (collapsed || scrolled))
+        ru.omnicio.app.ui.spatial.SpatialSurface(color = MaterialTheme.colorScheme.surface) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onCurrencyClick, modifier = Modifier.weight(1f)) {
+                    Text(
+                        snapshot.totalValue.moneyText(),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                TextButton(onClick = onToggle) { Text(if (collapsed) "Развернуть" else "Свернуть") }
+            }
+        }
+}
+
+@Composable
+private fun HomeCapitalBlock(
+    state: PortfolioUiState,
+    snapshot: PortfolioSnapshot?,
+    selectedCurrency: PortfolioCurrency,
+    refreshing: Boolean,
+    refreshError: String?,
+    lastUpdatedMillis: Long?,
+    hidden: Boolean,
+    collapsed: Boolean,
+    waiting: Boolean,
+    refreshMessage: String?,
+    onCurrencyClick: () -> Unit,
+    onConnect: () -> Unit,
+    refreshNow: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    if (!collapsed)
+        CapitalHero(
+            state,
+            snapshot,
+            selectedCurrency,
+            refreshing,
+            refreshError,
+            lastUpdatedMillis,
+            hidden,
+            onCurrencyClick,
+            onConnect,
+        )
+    Row(Modifier.fillMaxWidth()) {
+        if (snapshot != null)
+            TextButton(onClick = onToggle) {
+                Text(if (collapsed) "Развернуть капитал" else "Свернуть капитал")
+            }
+        TextButton(onClick = refreshNow, enabled = !refreshing && !waiting) { Text("Обновить") }
+    }
+    refreshMessage?.let {
+        Text(
+            it,
+            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun HomeWarningCard(warnings: List<String>) {
+    SpectrumCard {
+        Text("Требует внимания", style = MaterialTheme.typography.titleMedium)
+        warnings.take(2).forEach { Text(it) }
+        if (warnings.size > 2)
+            DetailFold("Все ограничения (${warnings.size})") {
+                warnings.drop(2).forEach { Text(it) }
+            }
+    }
+}
+
+@Composable
+private fun HomeOrderControls(
+    loaded: Boolean,
+    busy: Boolean,
+    canUndo: Boolean,
+    previewing: Boolean,
+    onEdit: () -> Unit,
+    onUndo: () -> Unit,
+) {
+    Row {
+        TextButton(onClick = onEdit, enabled = loaded) { Text("Настроить главный экран") }
+        if (canUndo) TextButton(onClick = onUndo, enabled = !busy) { Text("Отменить порядок") }
+    }
+    if (previewing) Text("Просмотр нового порядка · ещё не сохранён")
+}
+
+@Composable
+private fun HomeDashboardCard(
+    key: String,
+    state: PortfolioUiState,
+    snapshot: PortfolioSnapshot?,
+    refreshError: String?,
+    waiting: Boolean,
+    personal: PersonalWorkspaceController,
+    workspace: WorkspaceRequest,
+    attributionPeriod: PortfolioPeriod,
+    onAttribution: (PortfolioPeriod) -> Unit,
+    onConnect: () -> Unit,
+    onOpenRisk: () -> Unit,
+    onOpenRecommendations: () -> Unit,
+    onOpenPayments: () -> Unit,
+    onOpenPortfolio: () -> Unit,
+) {
+    val prefs = LocalWorkspacePreferences.current.value
+    when (key) {
+        "assistant" ->
+            HomeNextStep(
+                state,
+                snapshot,
+                refreshError,
+                waiting,
+                onConnect,
+                onOpenRisk,
+                onOpenRecommendations,
+            )
+        "changes" -> if (snapshot != null) ChangesSinceVisit(snapshot, personal)
+        "composition" -> if (snapshot != null) CapitalComposition(snapshot, workspace.json)
+        "attribution" ->
+            if (snapshot != null)
+                Column {
+                    WorkspaceRequestNotice(workspace)
+                    if (!workspace.showingPreviousQuery)
+                        HomeAttribution(workspace.json, attributionPeriod, onAttribution)
+                    else PeriodControls(attributionPeriod, onAttribution)
+                }
+        "payouts" -> if (snapshot != null) HomePayoutTimeline(workspace.json, onOpenPayments)
+        "goal" -> if (snapshot != null) HomeGoalProgress(workspace.json)
+        "monitoring" -> ObservationSummary(onOpenRisk)
+        "allocation" ->
+            if (snapshot != null && prefs.homeStructure)
+                AllocationOverview(snapshot, onOpenPortfolio)
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun LazyItemScope.HomeAnimatedCard(
+    itemMotion: Boolean,
+    itemDuration: Int,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        Modifier.animateItem(
+            fadeInSpec =
+                if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
+            placementSpec =
+                if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
+            fadeOutSpec =
+                if (itemMotion) androidx.compose.animation.core.tween(itemDuration) else null,
+        )
+    ) {
+        content()
+    }
+}

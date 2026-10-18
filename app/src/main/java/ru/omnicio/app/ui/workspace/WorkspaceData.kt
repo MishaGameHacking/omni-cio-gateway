@@ -142,8 +142,7 @@ fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
                 var checkpoint: String? = null
                 var prepared = JobCheckpointPreparation(false)
                 try {
-                    val requestBody = body?.let { JSONObject(it.toString()) } ?: if (method == "GET" || method == "DELETE") null else JSONObject()
-                    if (tracked && requestBody?.has("request_id") != true) requestBody?.put("request_id", UUID.randomUUID().toString())
+                    val requestBody = workspaceRequestBody(body, method, tracked)
                     checkpoint = requestBody?.optString("request_id")?.takeIf { tracked && it.isNotBlank() }
                     val requestId = checkpoint
                     prepared = if (requestId == null) JobCheckpointPreparation(true) else withContext(Dispatchers.IO) {
@@ -162,28 +161,16 @@ fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
                     reportActionFeedback(reply, feedback, method, userInitiated)
                     val result = reply.data
                     if (result != null) {
-                        if (requestId != null) {
-                            val jobId = result.optString("job_id").takeIf { it.isNotBlank() && it != "null" }
-                            val saved = jobId != null && withContext(Dispatchers.IO) {
-                                checkpoints.save(session.userId, requestId, path, jobId)
-                            }
-                            if (!saved) {
-                                error = "Подтверждение задания не сохранено. Сверьте сохранённый запрос перед продолжением."
-                                ambiguous = true
-                                failedCallback(WorkspaceRequestFailure(reply.copy(data = null, error = error, ambiguous = true), requestId, true))
-                                return@launch
-                            }
+                        if (!saveJobAcknowledgement(checkpoints, session.userId, requestId, path, result)) {
+                            error = "Подтверждение задания не сохранено. Сверьте сохранённый запрос перед продолжением."
+                            ambiguous = true
+                            failedCallback(WorkspaceRequestFailure(reply.copy(data = null, error = error, ambiguous = true), requestId, true))
+                            return@launch
                         }
                         callback(result)
                         if (method != "GET") invalidate()
                     } else {
-                        // Only a fresh request with a definite pre-enqueue rejection may be discarded.
-                        // A prior ambiguous dispatch remains recoverable even if a later retry is rejected.
-                        val rejectedBeforeEnqueue = requestId != null && prepared.isNew && JobCheckpointStore.isChatPath(path) &&
-                            !reply.ambiguous && reply.status in 400..499 && reply.code != "request_id_payload_conflict"
-                        val removed = rejectedBeforeEnqueue && withContext(Dispatchers.IO) {
-                            checkpoints.removeRequest(session.userId, checkNotNull(requestId))
-                        }
+                        val removed = discardRejectedCheckpoint(checkpoints, session.userId, requestId, path, prepared, reply)
                         failedCallback(WorkspaceRequestFailure(reply, requestId, requestId != null && !removed))
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
@@ -227,3 +214,27 @@ internal fun localMoment(raw: String): String = runCatching {
     java.time.Instant.parse(raw).atZone(java.time.ZoneId.systemDefault())
         .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
 }.getOrDefault(raw.take(80))
+
+
+private fun workspaceRequestBody(body: JSONObject?, method: String, tracked: Boolean): JSONObject? {
+    val request = body?.let { JSONObject(it.toString()) }
+        ?: if (method == "GET" || method == "DELETE") null else JSONObject()
+    if (tracked && request?.has("request_id") != true) request?.put("request_id", UUID.randomUUID().toString())
+    return request
+}
+
+private suspend fun saveJobAcknowledgement(checkpoints: JobCheckpointStore, userId: String,
+    requestId: String?, path: String, result: JSONObject): Boolean {
+    if (requestId == null) return true
+    val jobId = result.optString("job_id").takeIf { it.isNotBlank() && it != "null" } ?: return false
+    return withContext(Dispatchers.IO) { checkpoints.save(userId, requestId, path, jobId) }
+}
+
+private suspend fun discardRejectedCheckpoint(checkpoints: JobCheckpointStore, userId: String,
+    requestId: String?, path: String, prepared: JobCheckpointPreparation, reply: VolumeReply): Boolean {
+    // Discard only a fresh request with a definite pre-enqueue rejection.
+    // A prior ambiguous dispatch remains recoverable even if a later retry is rejected.
+    if (requestId == null || !prepared.isNew || !JobCheckpointStore.isChatPath(path) ||
+        reply.ambiguous || reply.status !in 400..499 || reply.code == "request_id_payload_conflict") return false
+    return withContext(Dispatchers.IO) { checkpoints.removeRequest(userId, requestId) }
+}

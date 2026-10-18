@@ -74,16 +74,14 @@ class ProfileUiProbeActivity : ComponentActivity() {
                 ) {
                     CompositionLocalProvider(LocalWorkspaceNavigator provides { if (it == WorkspaceRoute.Appearance) appearanceOpen = true },
                         LocalSpectrumTabScrollTag provides "profile-tabs") {
-                    if (appearanceOpen) AppearanceScreen { appearanceOpen = false }
-                    else if (screen == "spatial") SpatialRendererProbe()
-                    else if (screen.startsWith("business-")) BusinessWorkspaceProbe(screen, scenario, onBack = { finish() })
-                    else if (screen.startsWith("portfolio-")) PortfolioWorkspaceProbe(screen, scenario, onBack = { finish() })
-                    else if (screen != "profile") {
-                        SpectrumDashboardProbe(screen)
-                    } else if (educationOpen) {
-                        EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
-                    } else {
-                        ProfileScreen(
+                    when {
+                        appearanceOpen -> AppearanceScreen { appearanceOpen = false }
+                        screen == "spatial" -> SpatialRendererProbe()
+                        screen.startsWith("business-") -> BusinessWorkspaceProbe(screen, scenario, onBack = { finish() })
+                        screen.startsWith("portfolio-") -> PortfolioWorkspaceProbe(screen, scenario, onBack = { finish() })
+                        screen != "profile" -> SpectrumDashboardProbe(screen)
+                        educationOpen -> EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
+                        else -> ProfileScreen(
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
                             tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
                             onScreenshotsBlockedChange = { screenshotsBlocked = it },

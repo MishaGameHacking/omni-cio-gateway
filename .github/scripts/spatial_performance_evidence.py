@@ -30,17 +30,13 @@ def frame_timings(output: str):
         if {"Flags", "IntendedVsync", "FrameCompleted"} <= set(values):
             columns = values
             continue
-        if columns is None or len(values) != len(columns) or not values or not all(re.fullmatch(r"-?\d+", value) for value in values):
+        row = _timing_row(columns, values)
+        if row is None or row["Flags"] != 0:
             continue
-        row = dict(zip(columns, map(int, values)))
-        if row["Flags"] != 0:
+        timing = _frame_duration(row)
+        if timing is None:
             continue
-        start, finish = row["IntendedVsync"], row["FrameCompleted"]
-        if not 0 < start < finish < 2**63 - 1:
-            continue
-        duration = (finish - start) / 1_000_000
-        if not math.isfinite(duration) or duration > 60_000:
-            raise AssertionError("Invalid measured frame timing")
+        start, finish, duration = timing
         samples.append(duration)
         deadline = row.get("FrameDeadline", 0)
         if deadline > start and finish > deadline:
@@ -52,3 +48,21 @@ def frame_timings(output: str):
             "samples": len(samples), "p50_ms": samples[math.ceil(len(samples)*.5)-1],
             "p95_ms": samples[math.ceil(len(samples)*.95)-1], "max_ms": samples[-1],
             "deadline_misses": misses, "filament_gpu_time": "not-measured"}
+
+
+def _timing_row(columns, values):
+    if columns is None or len(values) != len(columns) or not values:
+        return None
+    if not all(re.fullmatch(r"-?\d+", value) for value in values):
+        return None
+    return dict(zip(columns, map(int, values)))
+
+
+def _frame_duration(row):
+    start, finish = row["IntendedVsync"], row["FrameCompleted"]
+    if not 0 < start < finish < 2**63 - 1:
+        return None
+    duration = (finish - start) / 1_000_000
+    if not math.isfinite(duration) or duration > 60_000:
+        raise AssertionError("Invalid measured frame timing")
+    return start, finish, duration

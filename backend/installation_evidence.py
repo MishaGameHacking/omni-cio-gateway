@@ -108,18 +108,7 @@ def _one_emulator(run: dict, digest: str) -> dict:
         checked.update(validate_ui_receipt(
             profile, records['debug_ui_fixture_install'].get('apk_sha256')))
     if 'kernel_page_size' in records:
-        kernel = records['kernel_page_size']
-        image = f"system-images;android-{api};{'google_apis_ps16k' if api == 35 else 'google_apis'};x86_64"
-        expected_bytes = 16_384 if api == 35 else 4_096
-        if type(kernel.get('android_api')) is not int or kernel['android_api'] != api \
-                or kernel.get('abi') != 'x86_64' or kernel.get('system_image') != image \
-                or type(kernel.get('page_size_bytes')) is not int or kernel['page_size_bytes'] != expected_bytes \
-                or kernel.get('command') != 'getconf PAGE_SIZE':
-            raise InstallationEvidenceError('invalid_kernel_page_size_evidence')
-        if _digest(kernel.get('apk_sha256')) != digest:
-            raise InstallationEvidenceError('installation_artifact_mismatch')
-        checked.update(page_size_bytes=expected_bytes, system_image=image,
-                       runtime_16kb=expected_bytes == 16_384)
+        checked.update(_kernel_evidence(records['kernel_page_size'], api, digest))
     return checked
 
 
@@ -139,11 +128,29 @@ def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_1
     if "36" not in result:
         raise InstallationEvidenceError("android_16_evidence_required")
     if require_runtime_16kb:
-        for api, size in (('35', 16_384), ('36', 4_096)):
-            checked = result.get(api, {})
-            if checked.get('page_size_bytes') != size or checked.get('upgrade') is not True \
-                    or checked.get('upgrade_launch') is not True \
-                    or checked.get('business_case_count') != len(BUSINESS_CASE_IDS) \
-                    or checked.get('portfolio_case_count') != len(PORTFOLIO_CASE_IDS):
-                raise InstallationEvidenceError('android_runtime_page_size_evidence_required')
+        _require_runtime_matrix(result)
     return result
+
+
+def _kernel_evidence(kernel, api, digest):
+    image = f"system-images;android-{api};{'google_apis_ps16k' if api == 35 else 'google_apis'};x86_64"
+    expected_bytes = 16_384 if api == 35 else 4_096
+    if type(kernel.get('android_api')) is not int or kernel['android_api'] != api \
+            or kernel.get('abi') != 'x86_64' or kernel.get('system_image') != image \
+            or type(kernel.get('page_size_bytes')) is not int or kernel['page_size_bytes'] != expected_bytes \
+            or kernel.get('command') != 'getconf PAGE_SIZE':
+        raise InstallationEvidenceError('invalid_kernel_page_size_evidence')
+    if _digest(kernel.get('apk_sha256')) != digest:
+        raise InstallationEvidenceError('installation_artifact_mismatch')
+    return dict(page_size_bytes=expected_bytes, system_image=image,
+                runtime_16kb=expected_bytes == 16_384)
+
+
+def _require_runtime_matrix(result):
+    for api, size in (('35', 16_384), ('36', 4_096)):
+        checked = result.get(api, {})
+        if checked.get('page_size_bytes') != size or checked.get('upgrade') is not True \
+                or checked.get('upgrade_launch') is not True \
+                or checked.get('business_case_count') != len(BUSINESS_CASE_IDS) \
+                or checked.get('portfolio_case_count') != len(PORTFOLIO_CASE_IDS):
+            raise InstallationEvidenceError('android_runtime_page_size_evidence_required')

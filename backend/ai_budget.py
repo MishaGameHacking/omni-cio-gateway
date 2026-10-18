@@ -106,13 +106,7 @@ class MoneyLedger:
 
     def reserve(self, *, user_id: int, key: str, route: str, model: str,
                 ceiling: int, user_cap: int, project_cap: int, at: int | None = None, job: tuple[str, str] | None = None, guard=None) -> None:
-        values = (ceiling, user_cap, project_cap)
-        if any(type(v) is not int or not 0 < v <= MAX_MONEY for v in values):
-            raise BudgetDenied('ai_budget_disabled_or_invalid')
-        if type(user_id) is not int or user_id <= 0 or not key or len(key) > 180:
-            raise BudgetDenied('ai_budget_invalid_identity')
-        if not route or not model or len(route) > 200 or len(model) > 200:
-            raise BudgetDenied('ai_budget_invalid_route')
+        _validate_reservation(user_id, key, route, model, ceiling, user_cap, project_cap)
         now = int(time.time()) if at is None else at
         day = day_key(now)
         with transaction(self.connect) as db:
@@ -184,3 +178,13 @@ class MoneyLedger:
             paused = bool(db.execute("SELECT 1 FROM ai_money_control WHERE name='paused'").fetchone())
         return {'day': day, 'timezone': 'Europe/Moscow', 'estimated_and_reserved_rub': str(Decimal(spent) / SCALE),
                 'unresolved_attempts': unresolved, 'paid_calls_paused': paused, 'provider_invoice_reconciled': False}
+
+
+def _validate_reservation(user_id, key, route, model, ceiling, user_cap, project_cap):
+    values = (ceiling, user_cap, project_cap)
+    if any(type(v) is not int or not 0 < v <= MAX_MONEY for v in values):
+        raise BudgetDenied('ai_budget_disabled_or_invalid')
+    if type(user_id) is not int or user_id <= 0 or not key or len(key) > 180:
+        raise BudgetDenied('ai_budget_invalid_identity')
+    if not route or not model or len(route) > 200 or len(model) > 200:
+        raise BudgetDenied('ai_budget_invalid_route')

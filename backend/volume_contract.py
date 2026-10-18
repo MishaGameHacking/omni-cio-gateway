@@ -64,27 +64,14 @@ def decimal(value: Any) -> Decimal | None:
             return decimal(value['value'])
         if 'amount' in value:
             return decimal(value['amount'])
-        units, nano = value.get('units'), value.get('nano', 0)
-        if isinstance(units, bool) or isinstance(nano, bool):
-            return None
-        try:
-            if not re.fullmatch(r'-?\d{1,25}', str(units)) or not re.fullmatch(r'-?\d{1,9}', str(nano)):
-                return None
-            with localcontext(FINANCIAL_CONTEXT):
-                result = Decimal(str(units)) + Decimal(str(nano)) / Decimal(1_000_000_000)
-        except (InvalidOperation, ValueError, TypeError):
-            return None
+        result = _quotation_decimal(value)
     else:
-        try:
-            if len(str(value)) > 128:
-                return None
-            result = Decimal(str(value))
-        except (InvalidOperation, ValueError, TypeError):
-            return None
-    if not result.is_finite() or result.copy_abs() > MAX_VALUE:
+        result = _scalar_decimal(value)
+    if result is None or not result.is_finite() or result.copy_abs() > MAX_VALUE:
         return None
     # Scientific notation must not allocate unbounded zero-filled strings.
-    if result.as_tuple().exponent < (-100 if isinstance(value, Decimal) else -40) or result.as_tuple().exponent > 24:
+    minimum_exponent = -100 if isinstance(value, Decimal) else -40
+    if not minimum_exponent <= result.as_tuple().exponent <= 24:
         return None
     return result
 
@@ -162,3 +149,25 @@ def require_id(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_:@.\-]{1,160}', value):
         raise HTTPException(422, 'invalid_resource_id')
     return value
+
+
+def _quotation_decimal(value: dict) -> Decimal | None:
+    units, nano = value.get('units'), value.get('nano', 0)
+    if isinstance(units, bool) or isinstance(nano, bool):
+        return None
+    try:
+        if not re.fullmatch(r'-?\d{1,25}', str(units)) or not re.fullmatch(r'-?\d{1,9}', str(nano)):
+            return None
+        with localcontext(FINANCIAL_CONTEXT):
+            return Decimal(str(units)) + Decimal(str(nano)) / Decimal(1_000_000_000)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _scalar_decimal(value: Any) -> Decimal | None:
+    try:
+        if len(str(value)) > 128:
+            return None
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None

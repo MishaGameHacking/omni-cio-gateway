@@ -34,7 +34,9 @@ COATED_MODELS = frozenset('analyst avatar brand globe orbit goal'.split())
 
 def material_family(name):
     base = name.removesuffix('_low')
-    return 'glass_coating' if base in COATED_MODELS else 'metal' if base in METAL_MODELS else 'ceramic'
+    if base in COATED_MODELS:
+        return 'glass_coating'
+    return 'metal' if base in METAL_MODELS else 'ceramic'
 
 
 def gltf_material(family):
@@ -192,105 +194,211 @@ class Mesh:
             self.triangle((0,0,-d/2),rings[0][k],rings[0][i])
 
 
-def icon(name, detail=True):
-    m=Mesh(detail)
-    if name in ("surface","button","chip","input","dock","heading","bar"):
-        m.rounded(r=.11 if name!="bar" else .045,d=.12 if name!="bar" else 1,bevel=.018)
-    elif name=="home":
-        m.prism([(-.42,.05),(0,.42),(.42,.05)],.17)
-        m.box(-.23,-.16,w=.18,h=.4,d=.16);m.box(.23,-.16,w=.18,h=.4,d=.16)
-        m.box(0,-.33,w=.58,h=.07,d=.16)
-    elif name=="portfolio":
-        m.rounded(w=.78,h=.55,r=.09,d=.18)
-        for a,b,c,d in [(-.16,.25,-.16,.4),(-.16,.4,.16,.4),(.16,.4,.16,.25)]:m.rod(a,b,c,d)
-        m.box(0,0,.14,.12,.12,.07)
-    elif name in ("ideas","search"):
-        m.ring(.26,.047,0,segments=32);m.rod(.19,-.19,.41,-.41,.06)
-        if name=="ideas":m.rod(-.12,0,.12,0);m.rod(0,-.12,0,.12)
-    elif name=="pulse":
-        m.ring(.4,.025,segments=32)
-        for a,b,c,d in [(-.4,0,-.18,0),(-.18,0,-.06,.25),(-.06,.25,.08,-.25),(.08,-.25,.19,0),(.19,0,.4,0)]:m.rod(a,b,c,d,.04)
-    elif name in ("messages","sources","education"):
-        if name=="education":
-            m.prism([(-.45,.16),(0,.38),(.45,.16),(0,-.02)],.1)
-            m.box(0,-.15,w=.58,h=.22,d=.19)
-        else:
-            m.rounded(w=.72,h=.7,r=.1,d=.14)
-            if name=="messages":m.prism([(-.28,-.27),(-.28,-.48),(-.05,-.27)],.1)
-            for y,w in [(.18,.43),(0,.43),(-.18,.27)]:m.box(-.035,y,.1,w,.04,.04)
-    elif name=="profile":
-        m.sphere(0,.19,0,.18)
-        # Separate shoulder mesh avoids deforming the head.
-        n=Mesh(detail);n.rounded(w=.7,h=.29,r=.13,d=.2)
-        offset=len(m.vertices);m.vertices.extend((x,y-.27,z) for x,y,z in n.vertices);m.normals.extend(n.normals);m.indices.extend(i+offset for i in n.indices)
-    elif name in ("risk","shield"):
-        m.prism([(-.34,.29),(0,.42),(.34,.29),(.3,-.16),(0,-.43),(-.3,-.16)],.17)
-        m.rod(-.17,0,-.04,-.12,.03,.14);m.rod(-.04,-.12,.19,.16,.03,.14)
-    elif name=="allocation":
-        for i,h in enumerate((.35,.68,.5)):
-            m.box((i-1)*.26,h/2-.36,w=.19,h=h,d=.19)
-    elif name=="back":
-        m.rod(.3,0,-.3,0,.055);m.rod(-.3,0,-.03,.27,.055);m.rod(-.3,0,-.03,-.27,.055)
-    elif name=="forward":
-        m.rod(-.3,0,.3,0,.055);m.rod(.3,0,.03,.27,.055);m.rod(.3,0,.03,-.27,.055)
-    elif name=="close":
-        m.rod(-.28,-.28,.28,.28,.055);m.rod(-.28,.28,.28,-.28,.055)
-    elif name in ("plus","minus"):
-        m.rod(-.32,0,.32,0,.055)
-        if name=="plus":m.rod(0,-.32,0,.32,.055)
-    elif name in ("update","arrow"):
-        m.box(0,.12,w=.09,h=.43,d=.15)
-        m.prism([(-.23,-.07),(0,-.32),(.23,-.07)],.15)
-        if name=="update":m.rod(-.35,-.2,-.35,-.42);m.rod(-.35,-.42,.35,-.42);m.rod(.35,-.42,.35,-.2)
-    elif name in ("analyst","avatar","brand"):
-        m.sphere(r=.26,rings=8 if detail else 5,segments=16 if detail else 8)
-        m.ring(.42,.022,tilt=.48,segments=36 if detail else 20)
-        if detail:m.ring(.36,.025,tilt=1.25,segments=32)
-        m.sphere(-.095,.055,.24,.035,rings=5,segments=6);m.sphere(.095,.055,.24,.035,rings=5,segments=6)
-    elif name in ("notifications","bell"):
-        m.prism([(-.35,-.2),(-.22,.21),(-.1,.34),(.1,.34),(.22,.21),(.35,-.2)],.18)
-        m.box(0,-.23,w=.78,h=.07,d=.19);m.sphere(0,-.34,0,.07,rings=5,segments=8)
-    elif name in ("market","charts"):
-        for i,h in enumerate((.33,.51,.73)):
-            m.box((i-1)*.26,h/2-.38,w=.17,h=h,d=.22)
-    elif name=="goal":
-        m.ring(.39,.03,segments=32);m.ring(.22,.035,segments=28);m.sphere(r=.065,rings=5,segments=8)
-        m.rod(.04,.04,.4,.4,.03,.1)
-    elif name=="globe":
-        # True spherical latitude/longitude grid. No fictional country markers.
-        for longitude in (0,math.pi/3,math.pi*2/3):
-            meridian=Mesh(detail);meridian.ring(.4,.014,segments=40)
-            m.append(meridian,rotate_y=longitude)
-        for latitude in (-.2,0,.2):
-            parallel=Mesh(detail);parallel.ring(math.sqrt(.4*.4-latitude*latitude),.014,segments=40,tilt=math.pi/2)
-            m.append(parallel,translate_y=latitude)
-    elif name=="orbit":
-        m.ring(.4,.022,segments=40 if detail else 20)
-        for tilt in (.45,1.0,1.55):m.ring(.39,.014,tilt=tilt,segments=36 if detail else 20)
-        m.sphere(r=.17)
-    elif name=="check":
-        m.rod(-.31,0,-.06,-.23,.065);m.rod(-.06,-.23,.34,.3,.065)
-    elif name in ("warning","error"):
-        m.prism([(-.44,-.34),(.44,-.34),(0,.43)],.14)
-        m.box(0,.055,.12,.06,.27,.04);m.sphere(0,-.21,.12,.04,rings=5,segments=6)
-    elif name=="settings":
-        m.ring(.24,.09,segments=24)
-        for i in range(8):
-            t=i*math.pi/4;m.rod(.24*math.cos(t),.24*math.sin(t),.4*math.cos(t),.4*math.sin(t),.055)
-    elif name=="bookmark":m.prism([(-.28,-.4),(0,-.23),(.28,-.4),(.28,.4),(-.28,.4)],.15)
-    elif name=="calendar":
-        m.rounded(w=.73,h=.72,r=.07,d=.12)
-        for x in (-.23,0,.23):
-            for y in (-.2,0,.2):m.box(x,y,.1,.1,.08,.07)
-    elif name in ("stock","bond","fund","currency","monogram"):
-        m.ring(.34,.085,segments=32)
-        if name=="stock":m.rod(-.18,-.15,0,.02);m.rod(0,.02,.18,.19)
-        elif name=="bond":m.box(0,0,w=.21,h=.41,d=.13)
-        elif name=="fund":m.box(-.08,-.07,w=.2,h=.2);m.box(.1,.09,w=.2,h=.2)
-        elif name=="currency":m.rod(0,-.24,0,.24,.04);m.rod(-.15,.11,.15,.11,.04)
+def _draw_surface(m, name):
+    m.rounded(r=.11 if name!="bar" else .045,d=.12 if name!="bar" else 1,bevel=.018)
+
+
+def _draw_home(m, _name):
+    m.prism([(-.42,.05),(0,.42),(.42,.05)],.17)
+    m.box(-.23,-.16,w=.18,h=.4,d=.16);m.box(.23,-.16,w=.18,h=.4,d=.16)
+    m.box(0,-.33,w=.58,h=.07,d=.16)
+
+
+def _draw_portfolio(m, _name):
+    m.rounded(w=.78,h=.55,r=.09,d=.18)
+    for a,b,c,d in [(-.16,.25,-.16,.4),(-.16,.4,.16,.4),(.16,.4,.16,.25)]:m.rod(a,b,c,d)
+    m.box(0,0,.14,.12,.12,.07)
+
+
+def _draw_ideas(m, name):
+    m.ring(.26,.047,0,segments=32);m.rod(.19,-.19,.41,-.41,.06)
+    if name=="ideas":m.rod(-.12,0,.12,0);m.rod(0,-.12,0,.12)
+
+
+def _draw_pulse(m, _name):
+    m.ring(.4,.025,segments=32)
+    for a,b,c,d in [(-.4,0,-.18,0),(-.18,0,-.06,.25),(-.06,.25,.08,-.25),(.08,-.25,.19,0),(.19,0,.4,0)]:m.rod(a,b,c,d,.04)
+
+
+def _draw_messages(m, name):
+    if name=="education":
+        m.prism([(-.45,.16),(0,.38),(.45,.16),(0,-.02)],.1)
+        m.box(0,-.15,w=.58,h=.22,d=.19)
     else:
-        m.sphere(r=.29,rings=5,segments=8)
-    return m
+        m.rounded(w=.72,h=.7,r=.1,d=.14)
+        if name=="messages":m.prism([(-.28,-.27),(-.28,-.48),(-.05,-.27)],.1)
+        for y,w in [(.18,.43),(0,.43),(-.18,.27)]:m.box(-.035,y,.1,w,.04,.04)
+
+
+def _draw_profile(m, _name):
+    m.sphere(0,.19,0,.18)
+    # Separate shoulder mesh avoids deforming the head.
+    n=Mesh(m.detail);n.rounded(w=.7,h=.29,r=.13,d=.2)
+    offset=len(m.vertices);m.vertices.extend((x,y-.27,z) for x,y,z in n.vertices);m.normals.extend(n.normals);m.indices.extend(i+offset for i in n.indices)
+
+
+def _draw_risk(m, _name):
+    m.prism([(-.34,.29),(0,.42),(.34,.29),(.3,-.16),(0,-.43),(-.3,-.16)],.17)
+    m.rod(-.17,0,-.04,-.12,.03,.14);m.rod(-.04,-.12,.19,.16,.03,.14)
+
+
+def _draw_allocation(m, _name):
+    for i,h in enumerate((.35,.68,.5)):
+        m.box((i-1)*.26,h/2-.36,w=.19,h=h,d=.19)
+
+
+def _draw_back(m, _name):
+    m.rod(.3,0,-.3,0,.055);m.rod(-.3,0,-.03,.27,.055);m.rod(-.3,0,-.03,-.27,.055)
+
+
+def _draw_forward(m, _name):
+    m.rod(-.3,0,.3,0,.055);m.rod(.3,0,.03,.27,.055);m.rod(.3,0,.03,-.27,.055)
+
+
+def _draw_close(m, _name):
+    m.rod(-.28,-.28,.28,.28,.055);m.rod(-.28,.28,.28,-.28,.055)
+
+
+def _draw_plus(m, name):
+    m.rod(-.32,0,.32,0,.055)
+    if name=="plus":m.rod(0,-.32,0,.32,.055)
+
+
+def _draw_update(m, name):
+    m.box(0,.12,w=.09,h=.43,d=.15)
+    m.prism([(-.23,-.07),(0,-.32),(.23,-.07)],.15)
+    if name=="update":m.rod(-.35,-.2,-.35,-.42);m.rod(-.35,-.42,.35,-.42);m.rod(.35,-.42,.35,-.2)
+
+
+def _draw_analyst(m, _name):
+    m.sphere(r=.26,rings=8 if m.detail else 5,segments=16 if m.detail else 8)
+    m.ring(.42,.022,tilt=.48,segments=36 if m.detail else 20)
+    if m.detail:m.ring(.36,.025,tilt=1.25,segments=32)
+    m.sphere(-.095,.055,.24,.035,rings=5,segments=6);m.sphere(.095,.055,.24,.035,rings=5,segments=6)
+
+
+def _draw_notifications(m, _name):
+    m.prism([(-.35,-.2),(-.22,.21),(-.1,.34),(.1,.34),(.22,.21),(.35,-.2)],.18)
+    m.box(0,-.23,w=.78,h=.07,d=.19);m.sphere(0,-.34,0,.07,rings=5,segments=8)
+
+
+def _draw_market(m, _name):
+    for i,h in enumerate((.33,.51,.73)):
+        m.box((i-1)*.26,h/2-.38,w=.17,h=h,d=.22)
+
+
+def _draw_goal(m, _name):
+    m.ring(.39,.03,segments=32);m.ring(.22,.035,segments=28);m.sphere(r=.065,rings=5,segments=8)
+    m.rod(.04,.04,.4,.4,.03,.1)
+
+
+def _draw_globe(m, _name):
+    for longitude in (0,math.pi/3,math.pi*2/3):
+        meridian=Mesh(m.detail);meridian.ring(.4,.014,segments=40)
+        m.append(meridian,rotate_y=longitude)
+    for latitude in (-.2,0,.2):
+        parallel=Mesh(m.detail);parallel.ring(math.sqrt(.4*.4-latitude*latitude),.014,segments=40,tilt=math.pi/2)
+        m.append(parallel,translate_y=latitude)
+
+
+def _draw_orbit(m, _name):
+    m.ring(.4,.022,segments=40 if m.detail else 20)
+    for tilt in (.45,1.0,1.55):m.ring(.39,.014,tilt=tilt,segments=36 if m.detail else 20)
+    m.sphere(r=.17)
+
+
+def _draw_check(m, _name):
+    m.rod(-.31,0,-.06,-.23,.065);m.rod(-.06,-.23,.34,.3,.065)
+
+
+def _draw_warning(m, _name):
+    m.prism([(-.44,-.34),(.44,-.34),(0,.43)],.14)
+    m.box(0,.055,.12,.06,.27,.04);m.sphere(0,-.21,.12,.04,rings=5,segments=6)
+
+
+def _draw_settings(m, _name):
+    m.ring(.24,.09,segments=24)
+    for i in range(8):
+        t=i*math.pi/4;m.rod(.24*math.cos(t),.24*math.sin(t),.4*math.cos(t),.4*math.sin(t),.055)
+
+
+def _draw_bookmark(m, _name):
+    m.prism([(-.28,-.4),(0,-.23),(.28,-.4),(.28,.4),(-.28,.4)],.15)
+
+
+def _draw_calendar(m, _name):
+    m.rounded(w=.73,h=.72,r=.07,d=.12)
+    for x in (-.23,0,.23):
+        for y in (-.2,0,.2):m.box(x,y,.1,.1,.08,.07)
+
+
+def _draw_stock(m, name):
+    m.ring(.34,.085,segments=32)
+    if name=="stock":m.rod(-.18,-.15,0,.02);m.rod(0,.02,.18,.19)
+    elif name=="bond":m.box(0,0,w=.21,h=.41,d=.13)
+    elif name=="fund":m.box(-.08,-.07,w=.2,h=.2);m.box(.1,.09,w=.2,h=.2)
+    elif name=="currency":m.rod(0,-.24,0,.24,.04);m.rod(-.15,.11,.15,.11,.04)
+
+
+def _draw_fallback(m, _name):
+    m.sphere(r=.29,rings=5,segments=8)
+
+
+_ICON_BUILDERS = {
+    'surface': _draw_surface,
+    'button': _draw_surface,
+    'chip': _draw_surface,
+    'input': _draw_surface,
+    'dock': _draw_surface,
+    'heading': _draw_surface,
+    'bar': _draw_surface,
+    'home': _draw_home,
+    'portfolio': _draw_portfolio,
+    'ideas': _draw_ideas,
+    'search': _draw_ideas,
+    'pulse': _draw_pulse,
+    'messages': _draw_messages,
+    'sources': _draw_messages,
+    'education': _draw_messages,
+    'profile': _draw_profile,
+    'risk': _draw_risk,
+    'shield': _draw_risk,
+    'allocation': _draw_allocation,
+    'back': _draw_back,
+    'forward': _draw_forward,
+    'close': _draw_close,
+    'plus': _draw_plus,
+    'minus': _draw_plus,
+    'update': _draw_update,
+    'arrow': _draw_update,
+    'analyst': _draw_analyst,
+    'avatar': _draw_analyst,
+    'brand': _draw_analyst,
+    'notifications': _draw_notifications,
+    'bell': _draw_notifications,
+    'market': _draw_market,
+    'charts': _draw_market,
+    'goal': _draw_goal,
+    'globe': _draw_globe,
+    'orbit': _draw_orbit,
+    'check': _draw_check,
+    'warning': _draw_warning,
+    'error': _draw_warning,
+    'settings': _draw_settings,
+    'bookmark': _draw_bookmark,
+    'calendar': _draw_calendar,
+    'stock': _draw_stock,
+    'bond': _draw_stock,
+    'fund': _draw_stock,
+    'currency': _draw_stock,
+    'monogram': _draw_stock,
+}
+
+
+def icon(name, detail=True):
+    mesh = Mesh(detail)
+    _ICON_BUILDERS.get(name, _draw_fallback)(mesh, name)
+    return mesh
 
 
 def encode(mesh,name):
@@ -348,36 +456,55 @@ def verify_packaged_assets(apk, assets):
 
 
 def generate(check=False, check_apk=False):
-    manifest={'version':VERSION,'format':'glTF 2.0 / GLB','source':'First-party procedural geometry; no remote content','models':{}}
-    errors=[]
-    assets={}
+    manifest = {'version': VERSION, 'format': 'glTF 2.0 / GLB',
+                'source': 'First-party procedural geometry; no remote content', 'models': {}}
+    errors, assets = [], {}
     for name in NAMES:
-        for suffix,detail in (('',True),('_low',False)):
-            key=name+suffix;mesh=icon(name,detail);payload=encode(mesh,key);path=DEST/(key+'.glb')
-            if check_apk:assets[key+'.glb']=payload
-            manifest['models'][key]={'sha256':hashlib.sha256(payload).hexdigest(),'bytes':len(payload),
-                                    'triangles':len(mesh.indices)//3,'material':material_family(key)}
-            if check:
-                if not path.exists() or path.read_bytes()!=payload:errors.append(str(path))
-            else:path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(payload)
-    payload=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
-    path=DEST/CATALOGUE_NAME
-    if check:
-        actual=path.read_bytes() if path.exists() else None
-        if actual!=payload:
-            errors.append(CATALOGUE_NAME)
-            print('SPECTRUM_CATALOGUE_DIFFERENCE='+json.dumps({
-                'expected_sha256':hashlib.sha256(payload).hexdigest(),
-                'actual_sha256':None if actual is None else hashlib.sha256(actual).hexdigest(),
-                'actual_crlf_count':None if actual is None else actual.count(b'\r\n'),
-                'exact_checkout_crlf':actual==payload.replace(b'\n',b'\r\n'),
-            },sort_keys=True),flush=True)
-    else:path.write_bytes(payload)
-    if errors:raise SystemExit('Mesh catalogue differs: '+', '.join(errors))
+        for suffix, detail in (('', True), ('_low', False)):
+            key = name + suffix
+            mesh = icon(name, detail)
+            payload = encode(mesh, key)
+            manifest['models'][key] = {'sha256': hashlib.sha256(payload).hexdigest(), 'bytes': len(payload),
+                                       'triangles': len(mesh.indices)//3, 'material': material_family(key)}
+            if check_apk:
+                assets[key + '.glb'] = payload
+            _store_mesh_asset(DEST / (key + '.glb'), payload, check, errors)
+    payload = (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+    _store_catalogue(payload, check, errors)
+    if errors:
+        raise SystemExit('Mesh catalogue differs: ' + ', '.join(errors))
     if check_apk:
-        assets[CATALOGUE_NAME]=payload
-        verify_packaged_assets(ROOT/'app/build/outputs/apk/preview/app-preview.apk',assets)
-    print(f'{len(manifest["models"])} GLB assets {"verified" if check else "generated"}; '+str(sum(v['bytes'] for v in manifest['models'].values()))+' bytes')
+        assets[CATALOGUE_NAME] = payload
+        verify_packaged_assets(ROOT / 'app/build/outputs/apk/preview/app-preview.apk', assets)
+    action = 'verified' if check else 'generated'
+    print(f'{len(manifest["models"])} GLB assets {action}; '
+          + str(sum(v['bytes'] for v in manifest['models'].values())) + ' bytes')
+
+
+def _store_mesh_asset(path, payload, check, errors):
+    if check:
+        if not path.exists() or path.read_bytes() != payload:
+            errors.append(str(path))
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
+def _store_catalogue(payload, check, errors):
+    path = DEST / CATALOGUE_NAME
+    if not check:
+        path.write_bytes(payload)
+        return
+    actual = path.read_bytes() if path.exists() else None
+    if actual == payload:
+        return
+    errors.append(CATALOGUE_NAME)
+    print('SPECTRUM_CATALOGUE_DIFFERENCE=' + json.dumps({
+        'expected_sha256': hashlib.sha256(payload).hexdigest(),
+        'actual_sha256': None if actual is None else hashlib.sha256(actual).hexdigest(),
+        'actual_crlf_count': None if actual is None else actual.count(b'\r\n'),
+        'exact_checkout_crlf': actual == payload.replace(b'\n', b'\r\n'),
+    }, sort_keys=True), flush=True)
 
 
 if __name__=='__main__':

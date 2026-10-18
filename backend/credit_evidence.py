@@ -111,14 +111,7 @@ class Rating:
         root = AGENCIES[self.agency]
         if host != root and host != 'www.' + root:
             return None
-        if self.agency == 'ACRA':
-            symbol = self.grade[:-4] if self.grade.endswith('(RU)') else ''
-        elif self.agency == 'EXPERT_RA':
-            symbol = self.grade[2:] if self.grade.startswith('ru') else ''
-        elif self.agency == 'NKR':
-            symbol = self.grade[:-3] if self.grade.endswith('.ru') else ''
-        else:
-            symbol = self.grade[:-4] if self.grade.endswith('|ru|') else ''
+        symbol = _national_rating_symbol(self.agency, self.grade)
         return LEVELS.index(symbol) if symbol in LEVELS else None
 
     def bucket(self) -> str:
@@ -325,3 +318,13 @@ def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datet
             'standard': standard, 'currency': currency,
             'period_start': statement.period_start, 'period_end': statement.period_end,
             'source': asdict(statement.source), 'default_probability': None}
+
+
+def _national_rating_symbol(agency: str, grade: str) -> str:
+    if agency == 'ACRA':
+        return grade[:-4] if grade.endswith('(RU)') else ''
+    if agency == 'EXPERT_RA':
+        return grade[2:] if grade.startswith('ru') else ''
+    if agency == 'NKR':
+        return grade[:-3] if grade.endswith('.ru') else ''
+    return grade[:-4] if grade.endswith('|ru|') else ''

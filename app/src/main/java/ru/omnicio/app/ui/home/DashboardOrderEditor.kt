@@ -42,7 +42,6 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
     val change by rememberUpdatedState(onPreview)
     val rowHeight = with(LocalDensity.current) { 76.dp.toPx() }
     var dragging by remember { mutableStateOf<String?>(null) }
-    var drift by remember { mutableFloatStateOf(0f) }
     ModalBottomSheet(onDismissRequest = onClose, dragHandle = null) {
         SpatialWindow(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -55,20 +54,8 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
                 key(id) {
                     ru.omnicio.app.ui.spatial.SpatialSurface(color = if (dragging == id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                         state = if (dragging == id) ru.omnicio.app.ui.spatial.SpatialState.Selected else ru.omnicio.app.ui.spatial.SpatialState.Idle,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).pointerInput(id, busy) {
-                            if (!busy) detectDragGesturesAfterLongPress(
-                                onDragStart = { dragging = id; drift = 0f },
-                                onDragEnd = { dragging = null; drift = 0f },
-                                onDragCancel = { dragging = null; drift = 0f },
-                                onDrag = { changePointer, amount ->
-                                    changePointer.consume(); drift += amount.y
-                                    if (drift >= rowHeight || drift <= -rowHeight) {
-                                        val step = if (drift > 0f) 1 else -1
-                                        change(moveDashboardCard(currentOrder, id, step)); drift -= rowHeight * step
-                                    }
-                                },
-                            )
-                        }.semantics { stateDescription = "Позиция ${index + 1} из ${order.size}" }) {
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).dashboardDrag(id, busy, rowHeight, { currentOrder }, { change(it) }) { dragging = it }
+                            .semantics { stateDescription = "Позиция ${index + 1} из ${order.size}" }) {
                         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(28.dp), selected = dragging == id)
                             Text(dashboardCards.getValue(id), Modifier.weight(1f).padding(horizontal = 8.dp))
@@ -87,3 +74,39 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
         }
     }
 }
+
+private fun Modifier.dashboardDrag(
+    id: String,
+    busy: Boolean,
+    rowHeight: Float,
+    currentOrder: () -> List<String>,
+    change: (List<String>) -> Unit,
+    onDragging: (String?) -> Unit,
+): Modifier =
+    pointerInput(id, busy, rowHeight) {
+        var drift = 0f
+        if (!busy)
+            detectDragGesturesAfterLongPress(
+                onDragStart = {
+                    onDragging(id)
+                    drift = 0f
+                },
+                onDragEnd = {
+                    onDragging(null)
+                    drift = 0f
+                },
+                onDragCancel = {
+                    onDragging(null)
+                    drift = 0f
+                },
+                onDrag = { changePointer, amount ->
+                    changePointer.consume()
+                    drift += amount.y
+                    if (drift >= rowHeight || drift <= -rowHeight) {
+                        val step = if (drift > 0f) 1 else -1
+                        change(moveDashboardCard(currentOrder(), id, step))
+                        drift -= rowHeight * step
+                    }
+                },
+            )
+    }

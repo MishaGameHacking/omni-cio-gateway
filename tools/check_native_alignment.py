@@ -106,12 +106,7 @@ def check_elf(data: bytes) -> dict:
     relros: list[dict] = []
     for index in range(count):
         offset = table_offset + index * entry_size
-        if elf_class == 2:
-            kind, flags, file_offset, address, _, file_size, memory_size, alignment = \
-                struct.unpack_from("<IIQQQQQQ", data, offset)
-        else:
-            kind, file_offset, address, _, file_size, memory_size, flags, alignment = \
-                struct.unpack_from("<IIIIIIII", data, offset)
+        kind, flags, file_offset, address, file_size, memory_size, alignment = _program_header(data, offset, elf_class)
         if kind not in (PT_LOAD, PT_GNU_RELRO):
             continue
         require(file_size <= memory_size, "ELF segment file size exceeds memory size")
@@ -129,34 +124,7 @@ def check_elf(data: bytes) -> dict:
             relros.append(segment)
     require(bool(loads), "ELF has no LOAD segment")
 
-    for relro in relros:
-        start = relro["virtual_address"]
-        end = start + relro["memory_size"]
-        protected_start = start // PAGE_BYTES * PAGE_BYTES
-        protected_end = (end + PAGE_BYTES - 1) // PAGE_BYTES * PAGE_BYTES
-        containing = [load for load in loads
-                      if load["virtual_address"] <= start < load["virtual_address"] + load["memory_size"]
-                      and (load["virtual_address"] + load["memory_size"] + PAGE_BYTES - 1)
-                      // PAGE_BYTES * PAGE_BYTES >= end]
-        require(bool(containing), "ELF RELRO lies outside its LOAD segment")
-        # LLD may include trailing alignment padding in RELRO p_memsz beyond
-        # LOAD p_memsz (AndroidX graphics.path does). That padding is already
-        # inside the mapped final page. Actual writable bytes remain checked.
-        # The Android guide explicitly allows an unaligned RELRO end when it
-        # occupies its own LOAD. Rounding protection up is safe only if it does
-        # not cover writable bytes outside RELRO (including another LOAD).
-        for load in loads:
-            if not load["flags"] & PF_W:
-                continue
-            load_start = load["virtual_address"]
-            load_end = load_start + load["memory_size"]
-            outside = ((load_start, min(load_end, start)),
-                       (max(load_start, end), load_end))
-            require(not any(max(a, protected_start) < min(b, protected_end)
-                            for a, b in outside),
-                    "ELF RELRO page protection overlaps writable data")
-        relro["end_aligned_16kb"] = end % PAGE_BYTES == 0
-        relro["layout"] = "page_boundary" if end % PAGE_BYTES == 0 else "own_load_segment"
+    _check_relro_pages(relros, loads)
     return {"bits": 32 if elf_class == 1 else 64,
             "load_segments": loads, "relro_segments": relros,
             "elf_16kb": True, "relro_16kb": True}
@@ -185,21 +153,7 @@ def inspect_native_archive(path: Path, *, require_stored: bool = False) -> dict:
         for entry in entries:
             if not (entry.filename.startswith(prefix) and entry.filename.endswith(".so")):
                 continue
-            require(len(entry.filename.split("/")) == 3, "Unexpected native library path")
-            require(not entry.flag_bits & 1, "Encrypted native ZIP entry")
-            try:
-                record = check_elf(archive.read(entry))
-                stored = entry.compress_type == zipfile.ZIP_STORED
-                if is_apk:
-                    require(stored or not require_stored, "Native APK library must be uncompressed")
-                data_offset = zip_data_offset(raw, entry)
-                if is_apk and stored:
-                    require(data_offset % PAGE_BYTES == 0, "Native APK ZIP data is not 16 KB aligned")
-            except NativeAlignmentError as error:
-                raise NativeAlignmentError(f"{entry.filename}: {error}") from error
-            record.update({"path": entry.filename, "abi": entry.filename.split("/")[1],
-                           "bytes": entry.file_size, "stored": stored, "zip_data_offset": data_offset,
-                           "zip_16kb": data_offset % PAGE_BYTES == 0 if is_apk and stored else None})
+            record = _inspect_native_entry(archive, raw, entry, is_apk, require_stored)
             libraries.append(record)
     require(bool(libraries), "Artifact contains no packaged native libraries")
     return {"artifact": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -229,6 +183,66 @@ def main() -> None:
     if arguments.output:
         write_report(output)
     print(output, end="")
+
+
+def _check_relro_pages(relros, loads):
+    for relro in relros:
+        start = relro["virtual_address"]
+        end = start + relro["memory_size"]
+        protected_start = start // PAGE_BYTES * PAGE_BYTES
+        protected_end = (end + PAGE_BYTES - 1) // PAGE_BYTES * PAGE_BYTES
+        containing = [load for load in loads
+                      if load["virtual_address"] <= start < load["virtual_address"] + load["memory_size"]
+                      and (load["virtual_address"] + load["memory_size"] + PAGE_BYTES - 1)
+                      // PAGE_BYTES * PAGE_BYTES >= end]
+        require(bool(containing), "ELF RELRO lies outside its LOAD segment")
+        # LLD may include trailing alignment padding in RELRO p_memsz beyond
+        # LOAD p_memsz (AndroidX graphics.path does). That padding is already
+        # inside the mapped final page. Actual writable bytes remain checked.
+        # The Android guide explicitly allows an unaligned RELRO end when it
+        # occupies its own LOAD. Rounding protection up is safe only if it does
+        # not cover writable bytes outside RELRO (including another LOAD).
+        for load in loads:
+            if not load["flags"] & PF_W:
+                continue
+            load_start = load["virtual_address"]
+            load_end = load_start + load["memory_size"]
+            outside = ((load_start, min(load_end, start)),
+                       (max(load_start, end), load_end))
+            require(not any(max(a, protected_start) < min(b, protected_end)
+                            for a, b in outside),
+                    "ELF RELRO page protection overlaps writable data")
+        relro["end_aligned_16kb"] = end % PAGE_BYTES == 0
+        relro["layout"] = "page_boundary" if end % PAGE_BYTES == 0 else "own_load_segment"
+
+
+def _inspect_native_entry(archive, raw, entry, is_apk, require_stored):
+    require(len(entry.filename.split("/")) == 3, "Unexpected native library path")
+    require(not entry.flag_bits & 1, "Encrypted native ZIP entry")
+    try:
+        record = check_elf(archive.read(entry))
+        stored = entry.compress_type == zipfile.ZIP_STORED
+        if is_apk:
+            require(stored or not require_stored, "Native APK library must be uncompressed")
+        data_offset = zip_data_offset(raw, entry)
+        if is_apk and stored:
+            require(data_offset % PAGE_BYTES == 0, "Native APK ZIP data is not 16 KB aligned")
+    except NativeAlignmentError as error:
+        raise NativeAlignmentError(f"{entry.filename}: {error}") from error
+    record.update({"path": entry.filename, "abi": entry.filename.split("/")[1],
+                   "bytes": entry.file_size, "stored": stored, "zip_data_offset": data_offset,
+                   "zip_16kb": data_offset % PAGE_BYTES == 0 if is_apk and stored else None})
+    return record
+
+
+def _program_header(data, offset, elf_class):
+    if elf_class == 2:
+        kind, flags, file_offset, address, _, file_size, memory_size, alignment = \
+            struct.unpack_from("<IIQQQQQQ", data, offset)
+    else:
+        kind, file_offset, address, _, file_size, memory_size, flags, alignment = \
+            struct.unpack_from("<IIIIIIII", data, offset)
+    return kind, flags, file_offset, address, file_size, memory_size, alignment
 
 
 if __name__ == "__main__":

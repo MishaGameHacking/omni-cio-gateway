@@ -16,6 +16,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 
+DEFAULT_TIMEZONE = 'Europe/Moscow'
+
+
 try:
     from . import app as backend
     from .ai_budget import transaction
@@ -28,7 +31,7 @@ except ImportError:
     from volume_contract import HTTP_ERRORS, now_iso
 
 router = APIRouter(prefix="/workspace/notifications", tags=["Notification delivery"])
-DEFAULTS = {"timezone": "Europe/Moscow", "morning": "09:00", "evening": "19:00", "quiet_start": "22:00",
+DEFAULTS = {"timezone": DEFAULT_TIMEZONE, "morning": "09:00", "evening": "19:00", "quiet_start": "22:00",
             "quiet_end": "08:00", "briefs_enabled": True, "critical_enabled": True, "enabled": True}
 CLOCK_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
 
@@ -51,7 +54,7 @@ def initialize() -> None:
 
 
 class Preferences(StrictModel):
-    timezone: str = Field(default="Europe/Moscow", max_length=80)
+    timezone: str = Field(default=DEFAULT_TIMEZONE, max_length=80)
     morning: str = Field(default="09:00", pattern=CLOCK_PATTERN)
     evening: str = Field(default="19:00", pattern=CLOCK_PATTERN)
     quiet_start: str = Field(default="22:00", pattern=CLOCK_PATTERN)
@@ -277,7 +280,7 @@ def schedule_slots(user_id: int, at: datetime | None = None) -> list[dict]:
         due = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if due < local:
             due += timedelta(days=1)
-        gate = calendar_gate(calendar, due.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat())
+        gate = calendar_gate(calendar, due.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).date().isoformat())
         result.append({"slot": slot, "at": due.astimezone(timezone.utc).isoformat(), "gate": gate})
     return result
 
@@ -290,7 +293,7 @@ def due_flags(user_id: int, now: datetime, has_run) -> tuple[bool, bool]:
         return False, False
     calendar = (json.loads(row[0]) if row else {}).get("calendar", {})
     local = now.astimezone(ZoneInfo(preferences["timezone"]))
-    market_date = now.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat()
+    market_date = now.astimezone(ZoneInfo(DEFAULT_TIMEZONE)).date().isoformat()
     if calendar_gate(calendar, market_date) != "scheduled":
         return False, False
     flags = []

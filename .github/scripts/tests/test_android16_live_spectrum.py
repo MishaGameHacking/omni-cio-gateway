@@ -72,7 +72,7 @@ class Android16LiveSpectrumTests(unittest.TestCase):
         self.assertIn("SpatialMotion.Subdued", renderer)
         self.assertIn("choreographer.removeFrameCallback(this)", renderer)
         self.assertIn("windows.forEach { it.withdrawFrameRate() }", renderer)
-        self.assertIn("clipping.width<=0f||clipping.height<=0f", renderer)
+        self.assertIn("clipping.width<=0f||clipping.height<=0f", "".join(renderer.split()))
         self.assertEqual(renderer.count("Engine.create("), 1)
         self.assertNotIn("Engine.create(", self.source("ui/spatial/SpatialComponents.kt"))
         back = self.source("ui/spatial/SpatialInteraction.kt")

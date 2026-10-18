@@ -1,6 +1,8 @@
 package ru.omnicio.app.ui.workspace
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,6 +27,9 @@ import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spatial.*
 import ru.omnicio.app.ui.spectrum.*
 
+private const val CHAT_THREADS_PATH = "/workspace/chat/threads"
+
+
 /** An estimate and any following send share these exact immutable inputs. */
 private data class ChatRequestSnapshot(val threadId: String, val text: String, val context: String, val tier: String) {
     fun payload(): JSONObject = JSONObject().put("thread_id", threadId).put("text", text)
@@ -47,14 +52,12 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     onActions: () -> Unit, onStrategy: () -> Unit) {
     val session = LocalWorkspaceSession.current
     val questionContext = LocalChatContext.current
-    val threads = rememberWorkspaceResource("/workspace/chat/threads")
+    val threads = rememberWorkspaceResource(CHAT_THREADS_PATH)
     var threadId by rememberSaveable(session.userId) { mutableStateOf("") }
     var question by rememberSaveable(session.userId) { mutableStateOf("") }
     var jobId by rememberSaveable(session.userId) { mutableStateOf<String?>(null) }
     var tier by rememberSaveable(session.userId) { mutableIntStateOf(0) }
-    var showThreads by rememberSaveable { mutableStateOf(false) }
     var editingContext by rememberSaveable { mutableStateOf(false) }
-    var initialized by remember(session.userId) { mutableStateOf(false) }
     var estimate by remember { mutableStateOf<JSONObject?>(null) }
     var estimateSignature by remember { mutableStateOf("") }
     var pendingEstimate by remember(session.userId) { mutableStateOf<ChatRequestSnapshot?>(null) }
@@ -108,103 +111,44 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         if (!savedRequests.loading && savedRequests.error == null && savedRequests.revision == JobCheckpointStore.revision.value && awaitingRequestId != null &&
             savedRequests.items.none { it.text("request_id", "") == awaitingRequestId }) awaitingRequestId = null
     }
-    LaunchedEffect(threads.data) {
-        if (!initialized && threads.data != null) {
-            initialized = true
-            if (threadId.isBlank()) {
-                val first = threads.data?.records("items")?.firstOrNull()
-                if (first != null) threadId = first.text("thread_id", "")
-                else create.perform("/workspace/chat/threads", JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", questionContext.title))
-            }
+    InitializeChatThread(threads, threadId, session.userId, questionContext.title, create) { threadId = it }
+    val listState = rememberAssistantList(messageItems, cursor)
+    val requestRecovered: (JSONObject) -> Unit = { point ->
+                    if (checkpointMatches(point, request)) question = ""
+                    if (point.text("request_id", "") == awaitingRequestId) { awaitingRequestId = null; pendingSend = null }
+                    estimate = null; cursors = listOf(""); messages.refresh(); threads.refresh()
+                }
+    val sendQuestion = {
+        val approvedDeep = tier == 2 && estimateSignature == signature && estimate?.optBoolean("available") == true
+        if (approvedDeep) startMessage(request) else {
+            pendingEstimate = request
+            estimateAction.perform("/workspace/chat/estimate", request.payload())
         }
     }
-    val listState = rememberLazyListState()
-    LaunchedEffect(messageItems.lastOrNull()?.text("id"), cursor) {
-        if (messageItems.isNotEmpty() && cursor.isBlank()) listState.animateScrollToItem(messageItems.size)
-    }
-    LaunchedEffect(cursor) { if (cursor.isNotBlank()) listState.scrollToItem(0) }
     WorkspaceDetailPage("Ассистент", "Объяснения с проверяемыми основаниями", onBack, SpectrumSymbol.Analyst) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                item { SpectrumCard(emphasized = true) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        SpatialIcon("analyst", Modifier.size(64.dp), state = when {
-                            jobId != null && jobState in setOf("failed", "uncertain", "cancelled") -> SpatialState.Attention
-                            send.error != null || estimateAction.error != null -> SpatialState.Attention
-                            busy -> SpatialState.Loading
-                            messageItems.lastOrNull()?.text("role") == "assistant" -> SpatialState.Success
-                            else -> SpatialState.Idle
-                        })
-                        Column(Modifier.weight(1f)) {
-                            Text(questionContext.title, style = MaterialTheme.typography.titleLarge)
-                            Text("Контекст виден в каждом запросе. Числа и источники проверяются отдельно от объяснения.", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                    SpectrumSecondaryButton("Диалоги", { showThreads = !showThreads }, Modifier.fillMaxWidth())
-                    SpectrumSecondaryButton("Изменить контекст", { editingContext = true }, Modifier.fillMaxWidth(), !busy)
-                    if (questionContext.eventId != null) {
-                        Text("Выбрана конкретная публикация. Аналитик проверит её связь с вашими позициями и отделит возможное влияние от подтверждённых фактов.",
-                            style = MaterialTheme.typography.bodySmall)
-                        if (question.isBlank()) SpectrumSecondaryButton("Подставить вопрос о событии", {
-                            question = eventImpactQuestion; estimate = null
-                        }, Modifier.fillMaxWidth().testTag("assistant-event-question"), !busy)
-                        Text("Вопрос отправляется только кнопкой «Отправить», с обычной проверкой расхода.", style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (showThreads) {
-                        threads.data?.records("items").orEmpty().forEach { item ->
-                            SpectrumSecondaryButton(item.text("title", "Диалог"), { threadId = item.text("thread_id", ""); showThreads = false }, Modifier.fillMaxWidth(), !busy)
-                        }
-                        SpectrumSecondaryButton("Новый диалог", { create.perform("/workspace/chat/threads", JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", questionContext.title)) }, Modifier.fillMaxWidth(), !busy && !create.busy)
-                    }
-                } }
+                item { AssistantContextCard(questionContext,
+                    assistantIconState(jobId, jobState, send.error != null || estimateAction.error != null,
+                        busy, messageItems.lastOrNull()?.text("role")), busy, question, threads, create,
+                    { question = eventImpactQuestion; estimate = null }, { threadId = it }, { editingContext = true }) }
                 item { WorkspaceRequestState(threads); WorkspaceRequestState(messages); WorkspaceActionState(create) }
-                if (messages.data?.optBoolean("has_more") == true) item {
-                    SpectrumSecondaryButton("Более ранние сообщения", {
-                        messages.data?.text("next_before", "")?.takeIf(String::isNotBlank)?.let { cursors = cursors + it }
-                    }, Modifier.fillMaxWidth(), !messages.busy)
-                }
-                if (cursors.size > 1) item { SpectrumCard {
-                    Text("Предыдущая часть диалога · страница " + cursors.size)
-                    SpectrumSecondaryButton("К более новым сообщениям", { cursors = cursors.dropLast(1) }, Modifier.fillMaxWidth(), !messages.busy)
-                    SpectrumSecondaryButton("К последним сообщениям", { cursors = listOf("") }, Modifier.fillMaxWidth(), !messages.busy)
-                } }
+                assistantHistoryPages(messages, cursors) { cursors = it }
                 items(messageItems, key = { it.text("id") }) { message -> AssistantMessage(message, onPortfolio, onActions, onStrategy) }
                 if (messageItems.isEmpty() && !messages.busy) item { WorkspaceEmpty("С чего начнём?", "Спросите о позиции, изменениях капитала или правилах стратегии. Ответ появится после фактического запроса к модели.") }
                 jobId?.let { id -> item { WorkspaceJobPanel(id, onCompleted = { cursors = listOf(""); messages.refresh(); threads.refresh(); jobId = null },
                     onClose = { jobId = null }, onStateChanged = { jobState = it }) } }
                 item { WorkspaceActionState(send); WorkspaceActionState(estimateAction) }
-                item { PendingJobRecovery(savedRequests, onThreadRecovered = { threadId = it }, onRequestRecovered = { point ->
-                    if (checkpointMatches(point, request)) question = ""
-                    if (point.text("request_id", "") == awaitingRequestId) { awaitingRequestId = null; pendingSend = null }
-                    estimate = null; cursors = listOf(""); messages.refresh(); threads.refresh()
-                },
+                item { PendingJobRecovery(savedRequests, onThreadRecovered = { threadId = it }, onRequestRecovered = requestRecovered,
                     enabled = !send.busy && !estimateAction.busy && jobId == null,
                     onBusyChanged = { restoringJob = it }) { jobId = it } }
-                estimate?.let { value -> item { SpectrumCard {
-                    Text(if (value.optBoolean("available")) "Оценка расхода" else "Модель пока недоступна", style = MaterialTheme.typography.titleMedium)
-                    Text(PrivateValue(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Точная стоимость не подтверждена"))
-                    Text("Предварительная оценка по текущему контексту; фактическое использование учитывается сервером.", style = MaterialTheme.typography.bodySmall)
-                    if (estimateSignature != signature) Text("Вопрос или контекст изменился. Перед отправкой стоимость будет проверена заново.", style = MaterialTheme.typography.bodySmall)
-                    value.text("context_as_of", "").takeIf(String::isNotBlank)?.let { Text("Контекст от " + localMoment(it), style = MaterialTheme.typography.bodySmall) }
-                    if (!value.optBoolean("available")) Text("Проверьте готовность сервиса в истории анализов.")
-                } } }
+                estimate?.let { value -> item { AssistantEstimateCard(value, estimateSignature == signature) } }
             }
-            SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                if (savedRequests.loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
-                else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
-                DetailFold("Глубина ответа: " + listOf("Кратко", "Подробно", "Глубокий разбор")[tier]) {
-                    WorkspaceChoices("Выбор модели", listOf("Кратко", "Подробно", "Глубокий разбор"), tier) { if (!busy) { tier = it; estimate = null } }
-                }
-                WorkspaceTextInput(question, { question = it.take(4_000); estimate = null }, "Ваш вопрос", singleLine = false,
-                    modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                val approvedDeep = tier == 2 && estimateSignature == signature && estimate?.optBoolean("available") == true
-                SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 2) "Проверить стоимость" else "Отправить",
-                    { if (approvedDeep) startMessage(request) else {
-                        pendingEstimate = request
-                        estimateAction.perform("/workspace/chat/estimate", request.payload())
-                    } },
-                    Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)
+            AssistantComposer(question, tier, savedRequests.loading, needsRecovery, busy, valid,
+                tier == 2 && estimateSignature == signature && estimate?.optBoolean("available") == true,
+                { tier = it; estimate = null }, { question = it.take(4_000); estimate = null }) {
+                sendQuestion()
             }
         }
     }
@@ -340,4 +284,113 @@ fun PendingJobRecovery(checkpoints: WorkspaceCheckpoints = rememberJobCheckpoint
             storageError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
+}
+
+@Composable
+private fun AssistantContextCard(questionContext: ChatContext, iconState: SpatialState, busy: Boolean,
+    question: String, threads: WorkspaceResource, create: WorkspaceAction,
+    onEventQuestion: () -> Unit, onThread: (String) -> Unit, onEditContext: () -> Unit) {
+    var showThreads by rememberSaveable { mutableStateOf(false) }
+    SpectrumCard(emphasized = true) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            SpatialIcon("analyst", Modifier.size(64.dp), state = iconState)
+                            Column(Modifier.weight(1f)) {
+                                Text(questionContext.title, style = MaterialTheme.typography.titleLarge)
+                                Text("Контекст виден в каждом запросе. Числа и источники проверяются отдельно от объяснения.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        SpectrumSecondaryButton("Диалоги", { showThreads = !showThreads }, Modifier.fillMaxWidth())
+                        SpectrumSecondaryButton("Изменить контекст", onEditContext, Modifier.fillMaxWidth(), !busy)
+                        if (questionContext.eventId != null) {
+                            Text("Выбрана конкретная публикация. Аналитик проверит её связь с вашими позициями и отделит возможное влияние от подтверждённых фактов.",
+                                style = MaterialTheme.typography.bodySmall)
+                            if (question.isBlank()) SpectrumSecondaryButton("Подставить вопрос о событии", onEventQuestion, Modifier.fillMaxWidth().testTag("assistant-event-question"), !busy)
+                            Text("Вопрос отправляется только кнопкой «Отправить», с обычной проверкой расхода.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (showThreads) {
+                            threads.data?.records("items").orEmpty().forEach { item ->
+                                SpectrumSecondaryButton(item.text("title", "Диалог"), { onThread(item.text("thread_id", "")); showThreads = false }, Modifier.fillMaxWidth(), !busy)
+                            }
+                            SpectrumSecondaryButton("Новый диалог", { create.perform(CHAT_THREADS_PATH, JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", questionContext.title)) }, Modifier.fillMaxWidth(), !busy && !create.busy)
+                        }
+                    }
+}
+
+private fun assistantIconState(jobId: String?, jobState: String, failed: Boolean, busy: Boolean,
+    lastRole: String?): SpatialState = when {
+    jobId != null && jobState in setOf("failed", "uncertain", "cancelled") -> SpatialState.Attention
+    failed -> SpatialState.Attention
+    busy -> SpatialState.Loading
+    lastRole == "assistant" -> SpatialState.Success
+    else -> SpatialState.Idle
+}
+
+@Composable
+private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
+    SpectrumCard {
+                        Text(if (value.optBoolean("available")) "Оценка расхода" else "Модель пока недоступна", style = MaterialTheme.typography.titleMedium)
+                        Text(PrivateValue(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Точная стоимость не подтверждена"))
+                        Text("Предварительная оценка по текущему контексту; фактическое использование учитывается сервером.", style = MaterialTheme.typography.bodySmall)
+                        if (!current) Text("Вопрос или контекст изменился. Перед отправкой стоимость будет проверена заново.", style = MaterialTheme.typography.bodySmall)
+                        value.text("context_as_of", "").takeIf(String::isNotBlank)?.let { Text("Контекст от " + localMoment(it), style = MaterialTheme.typography.bodySmall) }
+                        if (!value.optBoolean("available")) Text("Проверьте готовность сервиса в истории анализов.")
+                    }
+}
+
+@Composable
+private fun AssistantComposer(question: String, tier: Int, loading: Boolean, needsRecovery: Boolean,
+    busy: Boolean, valid: Boolean, approvedDeep: Boolean, onTier: (Int) -> Unit,
+    onQuestion: (String) -> Unit, onSend: () -> Unit) {
+    SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    if (loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
+                    else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
+                    DetailFold("Глубина ответа: " + listOf("Кратко", "Подробно", "Глубокий разбор")[tier]) {
+                        WorkspaceChoices("Выбор модели", listOf("Кратко", "Подробно", "Глубокий разбор"), tier) { if (!busy) onTier(it) }
+                    }
+                    WorkspaceTextInput(question, onQuestion, "Ваш вопрос", singleLine = false,
+                        modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                    SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 2) "Проверить стоимость" else "Отправить",
+                        onSend,
+                        Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)
+                }
+}
+
+@Composable
+private fun InitializeChatThread(threads: WorkspaceResource, threadId: String, userId: String,
+    title: String, create: WorkspaceAction, onThread: (String) -> Unit) {
+    var initialized by remember(userId) { mutableStateOf(false) }
+    LaunchedEffect(threads.data) {
+            if (!initialized && threads.data != null) {
+                initialized = true
+                if (threadId.isBlank()) {
+                    val first = threads.data.records("items").firstOrNull()
+                    if (first != null) onThread(first.text("thread_id", ""))
+                    else create.perform(CHAT_THREADS_PATH, JSONObject().put("request_id", UUID.randomUUID().toString()).put("title", title))
+                }
+            }
+        }
+}
+
+@Composable
+private fun rememberAssistantList(messageItems: List<JSONObject>, cursor: String): LazyListState {
+    val listState = rememberLazyListState()
+    LaunchedEffect(messageItems.lastOrNull()?.text("id"), cursor) {
+        if (messageItems.isNotEmpty() && cursor.isBlank()) listState.animateScrollToItem(messageItems.size)
+    }
+    LaunchedEffect(cursor) { if (cursor.isNotBlank()) listState.scrollToItem(0) }
+    return listState
+}
+
+private fun LazyListScope.assistantHistoryPages(messages: WorkspaceResource, cursors: List<String>,
+    onCursors: (List<String>) -> Unit) {
+    if (messages.data?.optBoolean("has_more") == true) item {
+                        SpectrumSecondaryButton("Более ранние сообщения", {
+                            messages.data.text("next_before", "").takeIf(String::isNotBlank)?.let { onCursors(cursors + it) }
+                        }, Modifier.fillMaxWidth(), !messages.busy)
+                    }
+    if (cursors.size > 1) item { SpectrumCard {
+                        Text("Предыдущая часть диалога · страница " + cursors.size)
+                        SpectrumSecondaryButton("К более новым сообщениям", { onCursors(cursors.dropLast(1)) }, Modifier.fillMaxWidth(), !messages.busy)
+                        SpectrumSecondaryButton("К последним сообщениям", { onCursors(listOf("")) }, Modifier.fillMaxWidth(), !messages.busy)
+                    } }
 }

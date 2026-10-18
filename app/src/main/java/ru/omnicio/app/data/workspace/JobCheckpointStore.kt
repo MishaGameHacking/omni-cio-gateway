@@ -43,8 +43,9 @@ class JobCheckpointStore(context: Context) {
         if (previousJob != null && jobId != null && previousJob != jobId) return false
         val others = prior.filterNot { it.optString("request_id") == requestId }
         if (others.size >= 40) return false
+        val savedJob: Any = (jobId ?: previousJob).let { it ?: JSONObject.NULL }
         val checkpoint = JSONObject().put("request_id", requestId).put("path", path)
-            .put("job_id", jobId ?: previousJob ?: JSONObject.NULL)
+            .put("job_id", savedJob)
             .put("created_at", previous?.optString("created_at") ?: java.time.Instant.now().toString())
         (previousBody ?: requestBody)?.let { checkpoint.put("request_body", JSONObject(it.toString())) }
         return persist(userId, listOf(checkpoint) + others)

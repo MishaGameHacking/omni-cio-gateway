@@ -39,8 +39,10 @@ class EmulatorFailureTests(unittest.TestCase):
     def test_empty_or_partial_exercise_receipt_remains_a_failed_check(self):
         for receipt in (None, {}, {"ui_suite": "spectrum-3d-100-v1", "business_case_count": 0, "business_cases": []}):
             results = [{"test": "debug_ui_fixture_install", "success": True, "apk_sha256": "c" * 64}]
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock(return_value=receipt)
             with self.subTest(receipt=receipt), self.assertRaises(ValueError):
-                installation.record_profile_check(Mock(), results, Mock(return_value=receipt))
+                installation.record_profile_check(prepared_argument_1, results, prepared_argument_2)
             self.assertFalse(results[-1]["success"])
 
     def test_screenshot_timeout_is_recorded_and_propagated(self):

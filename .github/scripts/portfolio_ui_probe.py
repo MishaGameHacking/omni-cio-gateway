@@ -104,10 +104,9 @@ class PortfolioCase:
             if len(records) > 1:
                 raise AssertionError("A source-record tag identifies several native records")
             for record in records:
-                for node in record.iter("node"):
-                    if node.get("package") == PACKAGE and node.get("visible-to-user") == "true" and text in labels(node):
-                        node_bounds(node)
-                        return node
+                matched = _record_value_node(record, text)
+                if matched is not None:
+                    return matched
             if not reader.scroll_list("workspace-content", direction):
                 break
             time.sleep(.15)
@@ -172,3 +171,11 @@ def _write_report(report):
         raise AssertionError("Portfolio evidence exceeded the bounded collector")
     destination.write_text(payload, encoding="utf-8")
     print("PORTFOLIO_UI_VERIFICATION=" + json.dumps(report, ensure_ascii=True, sort_keys=True), flush=True)
+
+
+def _record_value_node(record, text):
+    for node in record.iter("node"):
+        if node.get("package") == PACKAGE and node.get("visible-to-user") == "true" and text in labels(node):
+            node_bounds(node)
+            return node
+    return None

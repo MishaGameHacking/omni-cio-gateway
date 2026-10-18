@@ -26,21 +26,15 @@ import ru.omnicio.app.data.market.records
 import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.*
 
+private const val DISPLAY_DATE_PATTERN = "dd.MM.yyyy"
+
+
 @Composable
 internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyOnly: Boolean = false,
     initialDate: String? = null, initialStart: String? = null, initialEnd: String? = null, initialResolution: String? = null) {
     val anchor = initialDate?.let { runCatching { java.time.Instant.parse(it).atZone(Moscow).toLocalDate() }.getOrNull()
         ?: runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull() }
-    val today = java.time.LocalDate.now(Moscow)
-    val targetStart = initialStart?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
-    val targetEnd = initialEnd?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }?.coerceAtMost(today)
-    val validTarget = targetStart != null && targetEnd != null && targetStart <= targetEnd
-    val defaultStart = if (validTarget) targetStart else anchor?.let { when (initialResolution) {
-        "intraday" -> it; "hour" -> it.minusDays(15); else -> it.minusMonths(1)
-    } }
-    val defaultEnd = (if (validTarget) targetEnd else anchor?.let { when (initialResolution) {
-        "intraday" -> it; "hour" -> it.plusDays(15); else -> it.plusMonths(1)
-    } })?.coerceAtMost(today)
+    val (defaultStart, defaultEnd) = initialAnalyticsPeriod(initialStart, initialEnd, anchor, initialResolution)
     var start by rememberSaveable(account.id, initialDate, initialStart, initialEnd, initialResolution) { mutableStateOf(defaultStart?.toString()) }
     var end by rememberSaveable(account.id, initialDate, initialStart, initialEnd, initialResolution) { mutableStateOf(defaultEnd?.toString()) }
     var resolutionOverride by rememberSaveable(account.id, initialDate, initialStart, initialEnd, initialResolution) {
@@ -184,7 +178,7 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
                     val name = account.positions.firstOrNull { it.id == uid }?.title ?: row.optString("title")
                     Text(name, fontWeight = FontWeight.Bold)
                     val dateLabel = if (row.optBoolean("dateUnknown")) "Реестр" else "Выплата"
-                    DataRow(if (row.optString("kind") == "coupon") "Купон · $dateLabel" else "Дивиденд · $dateLabel", dateText(row.nullableText("date"), "dd.MM.yyyy"))
+                    DataRow(if (row.optString("kind") == "coupon") "Купон · $dateLabel" else "Дивиденд · $dateLabel", dateText(row.nullableText("date"), DISPLAY_DATE_PATTERN))
                     DataRow("На одну бумагу", row.money("perUnit").moneyText())
                     DataRow("Оценка по текущей позиции", row.money("estimate").moneyText())
                     if (row.optBoolean("eligibilityUnknown")) Notice("Право на выплату и количество на дату реестра не подтверждены.")
@@ -196,8 +190,8 @@ internal fun AccountPayments(token: String, account: PortfolioAccount) {
         text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             AccountDataNotice(request)
             Text(account.positions.firstOrNull { it.id == row.optionalText("instrumentUid") }?.title ?: row.optString("title"))
-            DataRow("Дата события", dateText(row.optionalText("date"), "dd.MM.yyyy"))
-            DataRow("Дата реестра", dateText(row.nullableText("recordDate"), "dd.MM.yyyy"))
+            DataRow("Дата события", dateText(row.optionalText("date"), DISPLAY_DATE_PATTERN))
+            DataRow("Дата реестра", dateText(row.nullableText("recordDate"), DISPLAY_DATE_PATTERN))
             DataRow("На бумагу", row.money("perUnit").moneyText())
             Notice("Источником является календарь брокера. Будущие сделки, расчёты, изменения корпоративного события и налоги могут изменить фактическое поступление.")
         } }, confirmButton = { TextButton(onClick = { selectedKey = null }) { Text("Закрыть") } }) }
@@ -229,3 +223,25 @@ private fun PaymentBars(points: List<HistoryPoint>, currency: String) {
     Notice("Оценка выплат · $currency · максимум ${decimalText(max)}")
 }
 
+
+private fun initialAnalyticsPeriod(
+    start: String?,
+    end: String?,
+    anchor: java.time.LocalDate?,
+    resolution: String?,
+): Pair<java.time.LocalDate?, java.time.LocalDate?> {
+    val today = java.time.LocalDate.now(Moscow)
+    val targetStart = start?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    val targetEnd =
+        end?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }?.coerceAtMost(today)
+    if (targetStart != null && targetEnd != null && targetStart <= targetEnd)
+        return targetStart to targetEnd
+    if (anchor == null) return null to null
+    val range =
+        when (resolution) {
+            "intraday" -> anchor to anchor
+            "hour" -> anchor.minusDays(15) to anchor.plusDays(15)
+            else -> anchor.minusMonths(1) to anchor.plusMonths(1)
+        }
+    return range.first to range.second.coerceAtMost(today)
+}

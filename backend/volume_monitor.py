@@ -3,10 +3,13 @@ from contextlib import closing
 from dataclasses import asdict
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
+
+PORTFOLIO_SOURCE = 'GetPortfolio/GetPositions'
+
 
 try:
     from . import app as backend, volume_state as state, volume_workspace as workspace
@@ -60,7 +63,7 @@ def _slot_checks_in(db, user_id: int, now: datetime, check: dict) -> None:
 
 
 @router.get("/checks/{identifier}", responses=HTTP_ERRORS)
-def check_detail(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
+def check_detail(identifier: str, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     with closing(backend.connect()) as db:
         row = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='monitor_check' AND id=?", (int(user["id"]), identifier)).fetchone()
     if row is None:
@@ -124,7 +127,7 @@ def trigger_evidence(user, raw, previous, previous_row, observation: dict, signa
         prior_ref = source("portfolio_snapshots", previous_row["digest"], prior_at,
                            provider="Analyst AI: stored T-Invest observation", currency=snapshot["currency"], unit="money", ttl=0)
         refs[prior_ref["id"]] = prior_ref
-    current_ids = [ref["id"] for ref in snapshot["sources"] if ref.get("method") in {"GetPortfolio", "GetPortfolio/GetPositions"}]
+    current_ids = [ref["id"] for ref in snapshot["sources"] if ref.get("method") in {"GetPortfolio", PORTFOLIO_SOURCE}]
     base_ids = current_ids + ([prior_ref["id"]] if prior_ref else [])
     observations = [{"id": "portfolio_value", "kind": "portfolio_value", "title": "Наблюдаемая стоимость портфеля",
         "before": money((previous or {}).get("totalValue")), "after": money(raw.get("totalValue")),
@@ -157,27 +160,13 @@ def ingest(user, raw, now: datetime) -> dict:
     currency = raw.get("currency", "RUB")
     old = state.saved_snapshot(user, currency) or {}
     previous = {(p["account_id"], p["instrument_uid"]): p for p in old.get("positions", [])}
-    metadata = {}
-    accounts = []
-    for account in raw.get("accounts", []):
-        positions = []
-        for item in account.get("positions", []):
-            prior = previous.get((account["id"], item["id"]), {})
-            meta = prior.get("metadata", {})
-            metadata[item["id"]] = {"sector": meta.get("sector"), "countryOfRisk": meta.get("country_of_risk"),
-                                    "countryOfRiskName": meta.get("country_of_risk_name"), "assetUid": meta.get("asset_uid"),
-                                    "lot": meta.get("lot"), "isin": meta.get("isin"), "exchange": meta.get("exchange"), "_source": meta.get("source")}
-            kind = item.get("instrumentType") or ("cash" if item["id"].startswith("cash:") else prior.get("instrument_type"))
-            positions.append({**item, "instrumentType": kind,
-                              "blocked": item.get("blocked", prior.get("blocked", False)),
-                              "blockedQuantity": item.get("blockedQuantity", prior.get("blocked_quantity"))})
-        accounts.append({**account, "positions": positions})
-    normalized = workspace.normalize_snapshot(user, {**raw, "currency": currency, "source_method": "GetPortfolio/GetPositions", "asOf": now.astimezone(timezone.utc).isoformat(), "accounts": accounts}, metadata)
+    accounts, metadata = _monitor_accounts(raw, previous)
+    normalized = workspace.normalize_snapshot(user, {**raw, "currency": currency, "source_method": PORTFOLIO_SOURCE, "asOf": now.astimezone(timezone.utc).isoformat(), "accounts": accounts}, metadata)
     for key in ("attribution", "payouts", "operations", "events", "news", "calendar", "collection"):
         if key in old:
             normalized[key] = old[key]
     normalized["section_as_of"] = {key: old.get("section_as_of", {}).get(key, old.get("as_of")) for key in ("attribution", "payouts", "operations", "events") if key in old}
-    normalized["sources"] += [r for r in old.get("sources", []) if r.get("method") not in {"GetPortfolio/GetPositions", "GetPortfolio"}]
+    normalized["sources"] += [r for r in old.get("sources", []) if r.get("method") not in {PORTFOLIO_SOURCE, "GetPortfolio"}]
     # Enrich only the already-configured workspace. This adds no surprise HTTP
     # fanout to a new/disconnected session or deterministic analysis tests.
     if old.get("calendar"):
@@ -214,3 +203,22 @@ def ingest(user, raw, now: datetime) -> dict:
             "credit_evidence": [{"instrument_uid": uid, **normalized["rating_observations"][uid]} for uid in credit[:40]],
             "credit_coverage": {"critical_instruments": len(credit), "included": min(40, len(credit))},
             "news_fingerprint": digest(sorted(item["id"] for item in normalized.get("events", {}).get("items", [])))}
+
+
+def _monitor_accounts(raw, previous):
+    metadata = {}
+    accounts = []
+    for account in raw.get("accounts", []):
+        positions = []
+        for item in account.get("positions", []):
+            prior = previous.get((account["id"], item["id"]), {})
+            meta = prior.get("metadata", {})
+            metadata[item["id"]] = {"sector": meta.get("sector"), "countryOfRisk": meta.get("country_of_risk"),
+                                    "countryOfRiskName": meta.get("country_of_risk_name"), "assetUid": meta.get("asset_uid"),
+                                    "lot": meta.get("lot"), "isin": meta.get("isin"), "exchange": meta.get("exchange"), "_source": meta.get("source")}
+            kind = item.get("instrumentType") or ("cash" if item["id"].startswith("cash:") else prior.get("instrument_type"))
+            positions.append({**item, "instrumentType": kind,
+                              "blocked": item.get("blocked", prior.get("blocked", False)),
+                              "blockedQuantity": item.get("blockedQuantity", prior.get("blocked_quantity"))})
+        accounts.append({**account, "positions": positions})
+    return accounts, metadata

@@ -290,8 +290,9 @@ def test_quotation_and_scenario_arithmetic_ignore_ambient_decimal_precision(fixt
     ([{"axis": "all", "id": "all", "percent": "-10"}, {"axis": "sector", "id": "finance", "percent": "-20"}], "scenario_overlapping_shocks"),
 ])
 def test_scenarios_reject_unknown_selectors_and_implicit_overlap(fixture, shocks, error):
+    prepared_argument_1 = state.Scenario(shocks=shocks)
     with pytest.raises(HTTPException) as failure:
-        state.scenario(state.Scenario(shocks=shocks), user=fixture["user"])
+        state.scenario(prepared_argument_1, user=fixture["user"])
     assert failure.value.detail == error
 
 
@@ -341,8 +342,9 @@ def test_strategy_confirmation_is_cas_idempotent_and_applied_to_monitor(fixture)
     result = state.confirm_strategy(one, user=fixture["user"])
     assert result["active"]["version"] == 1
     assert state.confirm_strategy(one, user=fixture["user"]) == result
+    prepared_argument_1 = state.StrategyConfirm(preview_id=second["preview_id"], expected_version=0, request_id="strategy-cas-two")
     with pytest.raises(HTTPException) as failure:
-        state.confirm_strategy(state.StrategyConfirm(preview_id=second["preview_id"], expected_version=0, request_id="strategy-cas-two"), user=fixture["user"])
+        state.confirm_strategy(prepared_argument_1, user=fixture["user"])
     assert failure.value.detail == "strategy_version_changed"
     assert ai.get_profile(int(fixture["user"]["id"]))["max_position_percent"] == 30
     assert any(row["breached"] for row in state.risk_data(fixture["user"])["concentrations"])
@@ -399,8 +401,9 @@ def test_notification_quiet_hours_and_read_ack_without_claim(fixture):
     with transaction(backend.connect) as db:
         notifications.enqueue_in(db, int(fixture["user"]["id"]), kind="risk", title="Fixture event", body="Source observed", event_id="fixture-event")
     item = notifications.events(user=fixture["user"])["items"][0]
+    prepared_argument_1 = notifications.Ack(state="presented")
     with pytest.raises(HTTPException):
-        notifications.acknowledge(item["id"], notifications.Ack(state="presented"), user=fixture["user"])
+        notifications.acknowledge(item["id"], prepared_argument_1, user=fixture["user"])
     ack = notifications.acknowledge(item["id"], notifications.Ack(state="read"), user=fixture["user"])
     assert ack["state"] == "read"
 
@@ -469,8 +472,10 @@ def test_cancelled_worker_cannot_commit_and_paid_expiry_cannot_retry(fixture):
     result = jobs.get_job(int(fixture["user"]["id"]), identifier)
     assert result["state"] == "uncertain"
     assert not result["can_retry"]
+    prepared_argument_1 = state.RequestId(request_id="cannot-repeat-paid")
+    prepared_argument_2 = BackgroundTasks()
     with pytest.raises(HTTPException):
-        jobs.retry(identifier, state.RequestId(request_id="cannot-repeat-paid"), BackgroundTasks(), user=fixture["user"])
+        jobs.retry(identifier, prepared_argument_1, prepared_argument_2, user=fixture["user"])
 
 
 def seed_context(fixture):
@@ -514,6 +519,28 @@ def test_scoped_chat_rejects_other_accounts(fixture):
     with pytest.raises(HTTPException) as failure:
         chat.fact_packet(fixture["user"], {"mode": "portfolio", "account_id": "not-owned"})
     assert failure.value.detail == "chat_account_not_in_workspace"
+
+
+@pytest.mark.parametrize("field, value, error", [
+    ("highlights", None, "ai_chat_highlight_not_in_context"),
+    ("highlights", {}, "ai_chat_highlight_not_in_context"),
+    ("highlights", [{"section": [], "id": "stock"}], "ai_chat_highlight_not_in_context"),
+    ("highlights", [{"section": "portfolio", "id": {}}], "ai_chat_highlight_not_in_context"),
+    ("actions", None, "ai_chat_action_not_allowed"),
+    ("actions", {}, "ai_chat_action_not_allowed"),
+    ("actions", [{"type": []}], "ai_chat_action_not_allowed"),
+    ("actions", [{"type": "open_instrument", "id": []}], "ai_chat_action_not_in_context"),
+])
+def test_chat_rejects_malformed_navigation_without_unhandled_type_errors(field, value, error):
+    packet = {"facts": [], "allowed_highlights": [{"section": "portfolio", "id": "stock"}]}
+    response = {"answer": "Synthetic model response", field: value}
+    with pytest.raises(GuardError, match=error):
+        chat.validate_response(response, packet)
+
+
+def test_manual_plan_does_not_estimate_from_an_invalid_position_value():
+    observed_position = {"value": {"value": "unavailable", "currency": "RUB"}}
+    assert plans._estimated_position_value(observed_position, Decimal("10"), Decimal("5")) is None
 
 
 def test_chat_cursor_paginates_identical_timestamps_and_is_bound_to_user_thread(fixture):
@@ -726,8 +753,9 @@ def test_monitor_trigger_uses_previous_real_observation_and_preserves_slot_decis
     assert len(result["check_history"]) == 2
     detail = monitor.check_detail(now.isoformat(), user=fixture["user"])
     assert detail["trigger"]["observations"] == trigger["observations"]
+    prepared_argument_1 = now.isoformat()
     with pytest.raises(HTTPException) as failure:
-        monitor.check_detail(now.isoformat(), user=fixture["other"])
+        monitor.check_detail(prepared_argument_1, user=fixture["other"])
     assert failure.value.status_code == 404
 
 

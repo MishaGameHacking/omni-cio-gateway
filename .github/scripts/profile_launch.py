@@ -38,15 +38,16 @@ def validate_fixture(expected_screen: str | None, scenario: str | None = None) -
         return
     if expected_screen not in FIXTURE_SCREENS:
         raise ValueError("Unknown fixture screen")
-    if scenario is not None:
-        if expected_screen in PORTFOLIO_SCREENS:
-            if (expected_screen.removeprefix("portfolio-"), scenario) not in PORTFOLIO_CASES:
-                raise ValueError("Unknown portfolio fixture scenario")
-            return
-        if expected_screen not in BUSINESS_SCREENS or scenario not in BUSINESS_SCENARIOS:
-            raise ValueError("Unknown business fixture scenario")
-        if scenario == "job" and expected_screen not in {"business-assistant", "business-plans"}:
-            raise ValueError("Business job fixture is supported only for assistant and plans")
+    if scenario is None:
+        return
+    if expected_screen in PORTFOLIO_SCREENS:
+        if (expected_screen.removeprefix("portfolio-"), scenario) not in PORTFOLIO_CASES:
+            raise ValueError("Unknown portfolio fixture scenario")
+        return
+    if expected_screen not in BUSINESS_SCREENS or scenario not in BUSINESS_SCENARIOS:
+        raise ValueError("Unknown business fixture scenario")
+    if scenario == "job" and expected_screen not in {"business-assistant", "business-plans"}:
+        raise ValueError("Business job fixture is supported only for assistant and plans")
 
 
 def start_status(output: str) -> str:

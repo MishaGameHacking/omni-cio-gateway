@@ -33,19 +33,7 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
             item { WorkspaceRequestState(resource) }
             item { PendingJobRecovery { selectedJob = it } }
             selectedJob?.let { id -> item { WorkspaceJobPanel(id, { resource.refresh() }, { selectedJob = null }) } }
-            item { SpectrumCard(emphasized = true) {
-                val last = ai?.optJSONObject("last_run")
-                SpatialIcon("analyst", Modifier.size(56.dp), state = if (last?.text("state") == "completed") SpatialState.Success else SpatialState.Idle)
-                Text("Последний анализ", style = MaterialTheme.typography.titleLarge)
-                if (last == null) Text("Подтверждённых запусков ещё нет.") else {
-                    Text(localMoment(last.text("created_at", "")))
-                    Text(analysisReasonLine(last))
-                    Text("Состояние: " + analysisState(last.text("state", "")))
-                    Text("Глубина: " + analysisTier(last.text("tier", "")), style = MaterialTheme.typography.bodySmall)
-                    SpectrumSecondaryButton("Открыть сохранённые выводы", { openReport(last.text("card_id", "").takeIf(String::isNotBlank)) }, Modifier.fillMaxWidth())
-                }
-                SpectrumSecondaryButton("Обновить сведения", { resource.refresh(); refresh() }, Modifier.fillMaxWidth())
-            } }
+            item { LastAnalysisCard(ai) { resource.refresh(); refresh() } }
             item { SpectrumCard {
                 Text("Ближайшие проверки", style = MaterialTheme.typography.titleMedium)
                 val next = ai?.records("next_runs").orEmpty()
@@ -218,4 +206,22 @@ private fun readableReportValue(value: Any?): String = when (value) {
     is org.json.JSONArray -> (0 until value.length()).joinToString("\n") { index -> value.optJSONObject(index)?.let { it.text("title", it.text("description", "Проверка")) } ?: value.optString(index) }
     is JSONObject -> value.text("title", value.text("description", "Сохранённое основание"))
     else -> value.toString()
+}
+
+@Composable
+private fun LastAnalysisCard(ai: JSONObject?, onRefresh: () -> Unit) {
+    val openReport = LocalOpenAnalysisReport.current
+    SpectrumCard(emphasized = true) {
+                    val last = ai?.optJSONObject("last_run")
+                    SpatialIcon("analyst", Modifier.size(56.dp), state = if (last?.text("state") == "completed") SpatialState.Success else SpatialState.Idle)
+                    Text("Последний анализ", style = MaterialTheme.typography.titleLarge)
+                    if (last == null) Text("Подтверждённых запусков ещё нет.") else {
+                        Text(localMoment(last.text("created_at", "")))
+                        Text(analysisReasonLine(last))
+                        Text("Состояние: " + analysisState(last.text("state", "")))
+                        Text("Глубина: " + analysisTier(last.text("tier", "")), style = MaterialTheme.typography.bodySmall)
+                        SpectrumSecondaryButton("Открыть сохранённые выводы", { openReport(last.text("card_id", "").takeIf(String::isNotBlank)) }, Modifier.fillMaxWidth())
+                    }
+                    SpectrumSecondaryButton("Обновить сведения", onRefresh, Modifier.fillMaxWidth())
+                }
 }

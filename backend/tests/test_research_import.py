@@ -148,8 +148,9 @@ def test_transaction_failure_rolls_back_entire_evidence_batch(tmp_path):
             WHEN NEW.kind='news_event' BEGIN SELECT RAISE(ABORT,'synthetic-storage-failure'); END""")
         db.commit()
     revision = store.revision(connect)
+    prepared_argument_1 = bundle().name
     with pytest.raises(sqlite3.IntegrityError):
-        cli.run(bundle().name, database=db_path, apply=True)
+        cli.run(prepared_argument_1, database=db_path, apply=True)
     with closing(connect()) as db:
         assert db.execute("SELECT COUNT(*) FROM research_evidence_v1").fetchone()[0] == 0
     assert store.revision(connect) == revision

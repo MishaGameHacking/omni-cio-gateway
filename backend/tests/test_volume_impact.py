@@ -92,12 +92,14 @@ def test_event_hypothesis_reuses_dossier_cache_and_rejects_foreign_scope_before_
     assert packet(fixture, event)["impact_context"]["event"]["id"] == event["id"]
     assert loaded == [fixture["user"]["id"]]
     assert all(key == ("workspace-news", *details.identity(fixture["user"])) for key in keys)
+    prepared_argument_1 = {**context(event), "account_id": "not-owned"}
     with pytest.raises(HTTPException) as failure:
-        chat.fact_packet(fixture["user"], {**context(event), "account_id": "not-owned"})
+        chat.fact_packet(fixture["user"], prepared_argument_1)
     assert failure.value.status_code == 404
     assert len(loaded) == 1
+    prepared_argument_1 = {**context(event), "instrument_uid": "bbb"}
     with pytest.raises(HTTPException) as failure:
-        chat.fact_packet(fixture["user"], {**context(event), "instrument_uid": "bbb"})
+        chat.fact_packet(fixture["user"], prepared_argument_1)
     assert failure.value.detail == "chat_event_not_linked_to_owned_instrument"
 
 
@@ -133,8 +135,9 @@ def test_unknown_company_and_primary_source_are_not_fabricated(fixture):
     assert company["issuer_name"] is None
     assert result["event"]["primary_source_verified"] is False
     assert len(result["limitations"]) == 5
+    prepared_argument_1 = {"channels": [channel(value["impact_context"]["model_request"])]}
     with pytest.raises(GuardError):
-        impact.validate({"channels": [channel(value["impact_context"]["model_request"])]}, {"facts": []})
+        impact.validate(prepared_argument_1, {"facts": []})
 
 
 def test_real_guarded_event_hypothesis_is_charged_once_and_recovered(fixture):

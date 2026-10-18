@@ -3,6 +3,9 @@ package ru.omnicio.app
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val SYNTHETIC_STOCK = "synthetic-stock"
+
+
 /** Synthetic, debug-only observations for the production analysis timeline. */
 internal fun timelineProbeAi(scenario: String): JSONObject {
     val empty = scenario == "empty"
@@ -24,11 +27,8 @@ internal fun timelineProbeAi(scenario: String): JSONObject {
             timelineObject("slot" to "evening", "at" to "2026-10-18T16:00:00Z", "gate" to "market_closed")),
         "monitor_jobs" to JSONArray(), "jobs" to JSONArray(),
         "analysis_diff" to if (empty || partial) null else timelineComparison(),
-        "budget" to if (empty) null else timelineObject("estimated_and_reserved_rub" to "0.01",
-            "day" to "2026-10-17", "timezone" to "Europe/Moscow", "unresolved_attempts" to if (partial) 1 else 0,
-            "paid_calls_paused" to partial),
-        "readiness" to timelineObject("available" to (!empty && !partial),
-            "reason" to if (partial) "budget_exhausted" else if (empty) "provider_not_configured" else "available"),
+        "budget" to timelineBudget(empty, partial),
+        "readiness" to timelineReadiness(empty, partial),
     )
 }
 
@@ -72,7 +72,7 @@ private fun timelineTrigger(skipped: Boolean) = timelineObject(
         "minutes_since_last_analysis" to if (skipped) 5 else 720),
     "observations" to timelineArray(timelineObject("id" to "synthetic-position-change", "kind" to "position_changed",
         "title" to "Синтетическое изменение позиции", "before" to timelinePosition("1000"),
-        "after" to timelinePosition("1100"), "instrument_uids" to timelineArray("synthetic-stock"),
+        "after" to timelinePosition("1100"), "instrument_uids" to timelineArray(SYNTHETIC_STOCK),
         "source_ids" to timelineArray(TIMELINE_SOURCE))),
     "sources" to timelineArray(timelineObject("id" to TIMELINE_SOURCE, "provider" to "СИНТЕТИЧЕСКИЙ источник проверки",
         "method" to "debug-only observations", "observed_at" to TIMELINE_AS_OF, "url" to null)),
@@ -80,12 +80,12 @@ private fun timelineTrigger(skipped: Boolean) = timelineObject(
 )
 
 private fun timelinePosition(amount: String) = timelineObject("account_id" to "synthetic-account",
-    "instrument_uid" to "synthetic-stock", "quantity" to "1",
+    "instrument_uid" to SYNTHETIC_STOCK, "quantity" to "1",
     "value" to timelineObject("amount" to amount, "currency" to "RUB"))
 
 private fun timelineFact(amount: String, asOf: String) = timelineObject(
     "value" to timelinePosition(amount), "as_of" to asOf,
-    "highlight" to timelineObject("section" to "instrument", "id" to "synthetic-stock",
+    "highlight" to timelineObject("section" to "instrument", "id" to SYNTHETIC_STOCK,
         "account_id" to "synthetic-account", "label" to "Показать связанную позицию"))
 
 private fun timelineObject(vararg pairs: Pair<String, Any?>) = JSONObject().apply {
@@ -98,3 +98,26 @@ private const val TIMELINE_CHECK = "synthetic-monitor-check"
 private const val TIMELINE_EVENING_CHECK = "synthetic-evening-check"
 private const val TIMELINE_REPORT = "synthetic-analysis"
 private const val TIMELINE_SOURCE = "synthetic-monitor-source"
+
+
+private fun timelineReadiness(empty: Boolean, partial: Boolean) =
+    timelineObject(
+        "available" to (!empty && !partial),
+        "reason" to
+            when {
+                partial -> "budget_exhausted"
+                empty -> "provider_not_configured"
+                else -> "available"
+            },
+    )
+
+private fun timelineBudget(empty: Boolean, partial: Boolean): JSONObject? =
+    if (empty) null
+    else
+        timelineObject(
+            "estimated_and_reserved_rub" to "0.01",
+            "day" to "2026-10-17",
+            "timezone" to "Europe/Moscow",
+            "unresolved_attempts" to if (partial) 1 else 0,
+            "paid_calls_paused" to partial,
+        )

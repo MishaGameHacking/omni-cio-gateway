@@ -108,7 +108,7 @@ def _create(payload: PlanCreate, user: Any) -> dict:
                   "executed_quantity": "0", "candidate_operations": [], "bound_operations": [],
                   "execution_state": "not_executed", "access_check": "broker_confirmation_required",
                   "calculation": {"quantity": text_number(amount), "lot": text_number(lot), "fees": None,
-                                  "estimated_value": money(decimal(position["value"]) / held * amount, position["value"]["currency"]) if position.get("value") and held and held > 0 else None,
+                                  "estimated_value": _estimated_position_value(position, held, amount),
                                   "price_basis": "observed_position_value_per_unit_not_order_quote"}}
         state.record(db, user_id, "manual_plan", result["id"], result)
         state.remember(db, user_id, payload.request_id, "manual_plan", request, result)
@@ -267,3 +267,12 @@ def reconcile_plan(user: Any, payload: dict, progress) -> dict:
                        association_basis="user_selected_broker_operations", automatic_order_execution=False)
         state.record(db, user_id, "manual_plan", identifier, current)
     return current
+
+
+def _estimated_position_value(position, held, amount):
+    if not position.get("value") or held is None or held <= 0:
+        return None
+    value = decimal(position["value"])
+    if value is None:
+        return None
+    return money(value / held * amount, position["value"]["currency"])

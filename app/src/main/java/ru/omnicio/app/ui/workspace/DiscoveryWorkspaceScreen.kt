@@ -32,6 +32,9 @@ import ru.omnicio.app.ui.spatial.SpatialWindow
 import ru.omnicio.app.ui.spectrum.*
 import java.time.YearMonth
 
+private const val WORKSPACE_CONTENT_TAG = "workspace-content"
+
+
 private data class SearchPage(val title: String, val terms: String, val route: WorkspaceRoute)
 private val discoveryPages = listOf(
     SearchPage("ИИ-помощник", "чат вопрос анализ исследование", WorkspaceRoute.Assistant),
@@ -184,7 +187,7 @@ private fun DiscoveryResultList(results: DiscoveryResults, snapshot: PortfolioSn
     query: String, category: Int, shown: Int, moreAssets: () -> Unit, more: () -> Unit, modifier: Modifier) {
     val navigate = LocalWorkspaceNavigator.current
     val destination = LocalPortfolioDestination.current
-    LazyColumn(modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
+    LazyColumn(modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag(WORKSPACE_CONTENT_TAG), contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         item(key = "scope") {
             Text("Поиск охватывает подключённый портфель, полученные события и материалы этого аккаунта.", style = MaterialTheme.typography.bodySmall)
@@ -322,14 +325,14 @@ private fun DiscoveryResearchDialog(selectedKey: String, request: DiscoveryResea
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         SpatialWindow(Modifier.fillMaxSize()) {
             SpectrumBackground(Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag(WORKSPACE_CONTENT_TAG)
                     .windowInsetsPadding(WindowInsets.safeDrawing), contentPadding = PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                     item { TextButton(onClick = close) { Text("Закрыть разбор") }; DiscoveryResearchNotice(request) }
                     item {
                         when {
                             LocalWorkspacePreferences.current.value.hideHomeBalance -> Text("Разбор скрыт режимом приватности.")
-                            card != null -> DiscoverySelectedResearch(request.json!!, card, session.token)
+                            card != null -> DiscoverySelectedResearch(checkNotNull(request.json), card, session.token)
                             request.loading -> Text("Получаем выбранную карточку по сохранённому идентификатору.")
                             else -> Text("Выбранная карточка не получена однозначно. Другой разбор вместо неё не показан.")
                         }
@@ -367,7 +370,7 @@ private fun DiscoveryDossier(uid: String, close: () -> Unit) {
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         SpatialWindow(Modifier.fillMaxSize()) {
             SpectrumBackground(Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+                LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag(WORKSPACE_CONTENT_TAG)
                     .windowInsetsPadding(WindowInsets.safeDrawing), contentPadding = PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                     item { TextButton(onClick = close) { Text("Закрыть досье") }; WorkspaceRequestNotice(request) }

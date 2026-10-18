@@ -4,6 +4,10 @@ from native_input_evidence import display_geometry
 from profile_launch import PACKAGE
 from spatial_frame_evidence import ready_spatial_metrics
 
+MOTION_DISABLED = 'Без движения'
+BRIGHT_LIGHTING = 'Яркое освещение'
+
+
 AREA = "workspace-content"
 DIRTY = "Предпросмотр · настройки ещё не сохранены"
 DEFAULT = {"motion": "LIVE", "bright_light": False, "accent": "AURORA", "depth": True, "density": "COMFORT"}
@@ -44,7 +48,7 @@ def _preview(case):
     p = case.probe
     p.reveal("Предпросмотр объёма, контраста и движения", AREA, direction="start")
     p.tap("Сдержанное", AREA)
-    p.tap("Яркое освещение", AREA)
+    p.tap(BRIGHT_LIGHTING, AREA)
     _expect_preferences(case, PREVIEW)
     p.reveal(DIRTY, AREA, direction="start")
 
@@ -82,8 +86,8 @@ def exercise_appearance(case):
     _reset(case)
     p.tap("Океан", AREA)
     p.tap("Компактно", AREA)
-    p.tap("Без движения", AREA)
-    p.tap("Яркое освещение", AREA)
+    p.tap(MOTION_DISABLED, AREA)
+    p.tap(BRIGHT_LIGHTING, AREA)
     p.reveal(DIRTY, AREA, direction="start")
     p.tap("Применить", AREA)
     _expect_preferences(case, APPLIED)
@@ -92,10 +96,10 @@ def exercise_appearance(case):
     restored = case.launch()  # Same run/user, real process stop and relaunch.
     if restored["prefs"] != APPLIED:
         raise AssertionError("Applied appearance was not persisted across the real process restart")
-    p.reveal("Без движения", AREA)
-    p.wait_for(lambda: selected_control(p.tree(), "Без движения"), "Saved motion has no actual native selected state")
-    p.reveal("Яркое освещение", AREA)
-    p.wait_for(lambda: selected_control(p.tree(), "Яркое освещение", checked=True), "Saved bright-light mode has no actual checked switch")
+    p.reveal(MOTION_DISABLED, AREA)
+    p.wait_for(lambda: selected_control(p.tree(), MOTION_DISABLED), "Saved motion has no actual native selected state")
+    p.reveal(BRIGHT_LIGHTING, AREA)
+    p.wait_for(lambda: selected_control(p.tree(), BRIGHT_LIGHTING, checked=True), "Saved bright-light mode has no actual checked switch")
     def motion_off():
         actual = ready_spatial_metrics(p.tree())
         return actual if actual is not None and actual["motion"] == "Off" else None

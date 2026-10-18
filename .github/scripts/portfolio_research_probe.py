@@ -2,6 +2,11 @@
 from datetime import timedelta
 from native_input_evidence import focused_editor
 
+DOSSIER_SUFFIX = '/dossier'
+INSTRUMENTS_PATH = '/workspace/instruments/'
+BACK_LABEL = 'Назад'
+
+
 ACCOUNT_A = "synthetic-account-a"
 ACCOUNT_B = "synthetic-account-b"
 SHARE_A = "synthetic-share-a"
@@ -37,7 +42,7 @@ def _context_risks(case):
     p.tap("Назад к действиям", AREA)
     p.tap_resource("instrument-context-events", AREA)
     case.call("/workspace/risks", {"currency": "RUB"})
-    case.call("/workspace/instruments/" + SHARE_A + "/dossier", {})
+    case.call(INSTRUMENTS_PATH + SHARE_A + DOSSIER_SUFFIX, {})
 
 
 def _rating_history(case):
@@ -101,10 +106,10 @@ def exercise_discovery(case):
     p.reveal("2", AREA)
     p.reveal("3", AREA)
     case.capture("comparison")
-    p.tap_visible("Назад")
+    p.tap_visible(BACK_LABEL)
     case.observed()  # The source transcript is behind a modal until it closes.
     for uid in (SHARE_A, SHARE_B):
-        case.call("/workspace/instruments/" + uid + "/candles",
+        case.call(INSTRUMENTS_PATH + uid + "/candles",
                   {"start": str(month_before(case.day)), "end": str(case.day), "interval": "day"})
     p.tap_visible("Снять выбор")
 
@@ -121,9 +126,9 @@ def exercise_discovery(case):
     p.reveal(f"{case.history_start} — {case.history_end}", AREA)
     p.reveal("СИНТЕТИЧЕСКАЯ заметка: проверить исходный период", AREA)
     case.capture("archive")
-    p.tap_visible("Назад")  # Selected archive -> archive list.
+    p.tap_visible(BACK_LABEL)  # Selected archive -> archive list.
     p.reveal("Название, заметка или источник", AREA)
-    p.tap_visible("Назад")  # Archive list -> the actual search screen.
+    p.tap_visible(BACK_LABEL)  # Archive list -> the actual search screen.
     p.find("Найти и исследовать")
     case.search("RESEARCH")
     p.tap_resource("discovery-research-" + SHARE_A, AREA)
@@ -141,7 +146,7 @@ def exercise_discovery(case):
     p.reveal("СИНТЕТИЧЕСКИЙ счёт B", AREA)
     case.capture("watch-dossier")
     p.tap("Закрыть досье", AREA, direction="start")
-    case.call("/workspace/instruments/" + SHARE_A + "/dossier", {})
+    case.call(INSTRUMENTS_PATH + SHARE_A + DOSSIER_SUFFIX, {})
     return ["typed-global-search", "comparison-exact-account-and-distinct-uids", "two-instruments-exact-common-quote-period",
             "payout-eligibility-unknown", "encrypted-archive-date-note",
             "single-research-selection", "watch-reason-and-all-accounts"]
@@ -206,7 +211,7 @@ def _exact_holding(case):
 def _event_draft(case):
     p = case.probe
     p.tap("Досье", "profile-tabs")
-    case.call("/workspace/instruments/" + SHARE_A + "/dossier", {})
+    case.call(INSTRUMENTS_PATH + SHARE_A + DOSSIER_SUFFIX, {})
     p.tap_resource("dossier-impact-" + EVENT, AREA)
     p.find("Ассистент")
     expected = {"mode": "instrument", "instrument_uid": SHARE_A, "account_id": None,

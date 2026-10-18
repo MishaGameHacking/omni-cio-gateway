@@ -22,9 +22,8 @@ class SpatialMaterialTest {
         for (material in SpatialMaterial.entries) {
             assertEquals(material, SpatialMaterial.fromCatalogue(material.catalogueName))
         }
-        try {
+        assertThrows(IllegalStateException::class.java) {
             SpatialMaterial.fromCatalogue("unknown")
-            fail("Unknown family must fail catalogue loading")
-        } catch (_: IllegalStateException) { }
+        }
     }
 }

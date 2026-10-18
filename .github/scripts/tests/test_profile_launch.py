@@ -91,8 +91,10 @@ class ProfileLaunchTests(unittest.TestCase):
                                  ("portfolio-history", "job"), ("portfolio-quotes", "empty"),
                                  ("portfolio-markets", "partial"), ("portfolio-appearance", "partial")):
             command = Mock()
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock()
             with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):
-                launch_profile(command, Mock(), Mock(), expected_screen=screen, scenario=scenario)
+                launch_profile(command, prepared_argument_1, prepared_argument_2, expected_screen=screen, scenario=scenario)
             command.assert_not_called()
 
     def test_portfolio_persistence_relaunch_requires_exact_run_identity(self):
@@ -110,8 +112,10 @@ class ProfileLaunchTests(unittest.TestCase):
                                ("portfolio-history", "../user"), ("portfolio-history", "a" * 33),
                                ("portfolio-history", "A" * 32), ("portfolio-history", 123)):
             command = Mock()
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock()
             with self.subTest(screen=screen, run_id=run_id), self.assertRaises(ValueError):
-                launch_profile(command, Mock(), Mock(), expected_screen=screen, run_id=run_id)
+                launch_profile(command, prepared_argument_1, prepared_argument_2, expected_screen=screen, run_id=run_id)
             command.assert_not_called()
 
     def test_business_launch_requires_exact_screen_and_scenario(self):
@@ -128,8 +132,10 @@ class ProfileLaunchTests(unittest.TestCase):
                                  ("business-notifications", "job"), ("business-analysis", "job"), ("profile", "ready"),
                                  ("business-plans", "unknown")):
             command = Mock()
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock()
             with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):
-                launch_profile(command, Mock(), Mock(), expected_screen=screen, scenario=scenario)
+                launch_profile(command, prepared_argument_1, prepared_argument_2, expected_screen=screen, scenario=scenario)
             command.assert_not_called()
 
     def test_host_launch_timeout_still_requires_exact_ready_screen(self):

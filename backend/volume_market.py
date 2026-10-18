@@ -190,57 +190,27 @@ def candles(uid: str, start: date | None = None, end: date | None = None,
 
 def instrument_events(user: Any, uid: str, meta: dict, begin: datetime, finish: datetime) -> dict:
     items, refs, errors = [], [], []
+    methods = [('reports', 'events', 'report')]
     kind = instrument_kind(meta)
+    if kind == 'bond':
+        methods.append(('coupons', 'events', 'coupon'))
+    elif kind == 'share':
+        methods.append(('dividends', 'dividends', 'dividend'))
     with details.BrokerReader(user) as reader:
-        methods = [('reports', 'events', 'report')]
-        if kind == 'bond':
-            methods.append(('coupons', 'events', 'coupon'))
-        elif kind == 'share':
-            methods.append(('dividends', 'dividends', 'dividend'))
         for method, field, event_kind in methods:
             body = {'instrumentId': uid, 'from': begin.isoformat(), 'to': finish.isoformat()}
             try:
-                raw = broker_read(reader, method, body) if method == 'reports' else reader.read(method, body)
-                rows = raw.get(field, [])
-                if not isinstance(rows, list):
-                    raise HTTPException(502, 'events_invalid_response')
+                rows = _instrument_event_rows(reader, method, field, body)
             except HTTPException as error:
                 errors.append(error_code(error))
                 continue
-            observed = now_iso()
             ref = source({'reports': 'GetAssetReports', 'coupons': 'GetBondCoupons', 'dividends': 'GetDividends'}[method],
-                         uid, observed, url=DOCS + 'instruments-service', ttl=3600)
+                         uid, now_iso(), url=DOCS + 'instruments-service', ttl=3600)
             refs.append(ref)
             for raw_event in rows:
-                if not isinstance(raw_event, dict):
-                    continue
-                if event_kind == 'report' and raw_event.get('instrumentId') not in {None, uid}:
-                    errors.append('report_instrument_identity_mismatch')
-                    continue
-                when = raw_event.get('reportDate') if event_kind == 'report' else raw_event.get('couponDate') if event_kind == 'coupon' else raw_event.get('paymentDate') or raw_event.get('recordDate')
-                try:
-                    at = timestamp(when)
-                except ValueError:
-                    continue
-                if not begin <= at <= finish:
-                    continue
-                if event_kind == 'report':
-                    # An elapsed calendar date does not prove publication.
-                    status = 'scheduled'
-                    amount = None
-                    title = 'Дата отчёта по календарю брокера'
-                else:
-                    status = 'cancelled' if str(raw_event.get('dividendType', '')).lower() == 'cancelled' else 'announced'
-                    amount = money(raw_event.get('payOneBond' if event_kind == 'coupon' else 'dividendNet'))
-                    title = 'Купон' if event_kind == 'coupon' else 'Дивиденд'
-                identifier = digest({'uid': uid, 'kind': event_kind, 'event': raw_event})
-                items.append({'id': identifier, 'kind': event_kind, 'title': title, 'date': at.isoformat(),
-                    'occurred_at': at.isoformat(), 'status': status, 'per_unit': amount,
-                    'instrument_uids': [uid], 'source_ids': [ref['id']], 'relationship': 'broker_link'})
-                if event_kind == 'report':
-                    items[-1].update(period_year=raw_event.get('periodYear'), period_num=raw_event.get('periodNum'),
-                        period_type=raw_event.get('periodType'), record_created_at=raw_event.get('createdAt'),
-                        publication_confirmed=False)
+                event = _instrument_event(raw_event, event_kind, uid, begin, finish, ref, errors)
+                if event is not None:
+                    items.append(event)
     return section({'items': sorted(items, key=lambda item: item['date']), 'errors': errors},
                    state='partial' if errors else 'available', reason=errors[0] if errors else None,
                    as_of=now_iso(), sources=refs)
@@ -263,23 +233,7 @@ def deduplicate_news(rows: list[dict], *, uid: str | None, ref: dict) -> list[di
 
 
 def load_news(user: Any, uid: str | None = None) -> dict:
-    rows, cursor, cursors, complete = [], None, set(), False
-    with details.BrokerReader(user) as reader:
-        for _ in range(10):
-            body = {'limit': 1000}
-            if cursor is not None:
-                body['cursor'] = cursor
-            raw = broker_read(reader, 'news', body)
-            if not isinstance(raw.get('items', []), list):
-                raise HTTPException(502, 'news_invalid_response')
-            rows.extend(raw.get('items', []))
-            if not raw.get('hasNext'):
-                complete = True
-                break
-            cursor = str(raw.get('nextCursor') or '')
-            if not re.fullmatch(r'\d{1,20}', cursor) or cursor in cursors:
-                break
-            cursors.add(cursor)
+    rows, complete = _news_pages(user)
     observed = now_iso()
     ref = source('News', 'market-news', observed, url=DOCS + 'instruments-service-news', ttl=300)
     try:
@@ -291,7 +245,7 @@ def load_news(user: Any, uid: str | None = None) -> dict:
     refs = list({r['id']: r for r in [ref] + [proof for item in items for proof in item['evidence_sources']]}.values())
     return section({'items': items, 'complete': complete, 'provider_history_hours': 24, 'errors': errors},
                    state='available' if complete else 'partial',
-                   reason=None if complete else errors[0] if errors else 'news_page_limit_or_cursor_failure', as_of=observed, sources=refs)
+                   reason=_news_reason(complete, errors), as_of=observed, sources=refs)
 
 
 def rating_section(uid: str, meta: dict) -> dict:
@@ -561,3 +515,78 @@ def load_calendar(user: Any) -> dict:
 @router.get('/markets/calendar', responses=HTTP_ERRORS)
 def calendar(user: Any = Depends(backend.current_user)) -> dict:
     return details.cached(('workspace-calendar', *details.identity(user)), 900, lambda: load_calendar(user))
+
+
+def _instrument_event_rows(reader, method, field, body):
+    raw = broker_read(reader, method, body) if method == 'reports' else reader.read(method, body)
+    rows = raw.get(field, [])
+    if not isinstance(rows, list):
+        raise HTTPException(502, 'events_invalid_response')
+    return rows
+
+
+def _event_date(raw_event, kind):
+    if kind == 'report':
+        return raw_event.get('reportDate')
+    if kind == 'coupon':
+        return raw_event.get('couponDate')
+    return raw_event.get('paymentDate') or raw_event.get('recordDate')
+
+
+def _event_details(raw_event, kind):
+    if kind == 'report':
+        # An elapsed calendar date does not prove publication.
+        return 'scheduled', None, 'Дата отчёта по календарю брокера'
+    status = 'cancelled' if str(raw_event.get('dividendType', '')).lower() == 'cancelled' else 'announced'
+    amount = money(raw_event.get('payOneBond' if kind == 'coupon' else 'dividendNet'))
+    return status, amount, 'Купон' if kind == 'coupon' else 'Дивиденд'
+
+
+def _instrument_event(raw_event, kind, uid, begin, finish, ref, errors):
+    if not isinstance(raw_event, dict):
+        return None
+    if kind == 'report' and raw_event.get('instrumentId') not in {None, uid}:
+        errors.append('report_instrument_identity_mismatch')
+        return None
+    try:
+        at = timestamp(_event_date(raw_event, kind))
+    except ValueError:
+        return None
+    if not begin <= at <= finish:
+        return None
+    status, amount, title = _event_details(raw_event, kind)
+    result = {'id': digest({'uid': uid, 'kind': kind, 'event': raw_event}), 'kind': kind,
+              'title': title, 'date': at.isoformat(), 'occurred_at': at.isoformat(), 'status': status,
+              'per_unit': amount, 'instrument_uids': [uid], 'source_ids': [ref['id']], 'relationship': 'broker_link'}
+    if kind == 'report':
+        result.update(period_year=raw_event.get('periodYear'), period_num=raw_event.get('periodNum'),
+                      period_type=raw_event.get('periodType'), record_created_at=raw_event.get('createdAt'),
+                      publication_confirmed=False)
+    return result
+
+
+def _news_pages(user):
+    rows, cursor, cursors, complete = [], None, set(), False
+    with details.BrokerReader(user) as reader:
+        for _ in range(10):
+            body = {'limit': 1000}
+            if cursor is not None:
+                body['cursor'] = cursor
+            raw = broker_read(reader, 'news', body)
+            if not isinstance(raw.get('items', []), list):
+                raise HTTPException(502, 'news_invalid_response')
+            rows.extend(raw.get('items', []))
+            if not raw.get('hasNext'):
+                complete = True
+                break
+            cursor = str(raw.get('nextCursor') or '')
+            if not re.fullmatch(r'\d{1,20}', cursor) or cursor in cursors:
+                break
+            cursors.add(cursor)
+    return rows, complete
+
+
+def _news_reason(complete, errors):
+    if complete:
+        return None
+    return errors[0] if errors else 'news_page_limit_or_cursor_failure'

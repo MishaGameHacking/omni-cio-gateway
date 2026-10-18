@@ -23,9 +23,7 @@ def chat_counters(parts, requests, scenario):
         valid_message = message_id == "none"
     else:
         valid_message = isinstance(message_id, str) and UUID.fullmatch(message_id) is not None
-    valid_recovered = recovered_id == "none" or (
-        isinstance(recovered_id, str) and (UUID.fullmatch(recovered_id) is not None
-                                         or scenario == "job" and recovered_id == "synthetic-request"))
+    valid_recovered = _valid_recovered_id(recovered_id, scenario)
     if not valid_message or not valid_recovered or counts["by-request-gets"] == 0 and recovered_id != "none":
         raise AssertionError("Observed chat identifiers do not match their actual request counters")
     return {"message_posts": counts["message-posts"], "message_request_id": None if message_id == "none" else message_id,
@@ -73,7 +71,7 @@ def exercise_chat_recovery(probe, observed):
     if before["message_posts"] or before["by_request_gets"]:
         raise AssertionError("The unsent draft triggered a request before the user sent it")
     probe.tap_visible(SEND)
-    accepted = probe.wait_for(lambda: accepted_single_request(observed()), "The server did not accept the one synthetic message POST")
+    probe.wait_for(lambda: accepted_single_request(observed()), "The server did not accept the one synthetic message POST")
     # Wait until the failure has reached production UI. Observing disabled Send
     # only during the still-running POST would miss the original regression.
     probe.reveal(LOST_REPLY, "workspace-content")
@@ -93,3 +91,11 @@ def exercise_chat_recovery(probe, observed):
     return {"before": before, "accepted": accepted, "recovered": recovered, "completed": completed,
             "send_disabled_while_uncertain": True, "screen_remounted": False,
             "recovery_method": "GET", "new_message_posts": completed["message_posts"] - before["message_posts"]}
+
+
+def _valid_recovered_id(identifier, scenario):
+    if identifier == "none":
+        return True
+    if not isinstance(identifier, str):
+        return False
+    return UUID.fullmatch(identifier) is not None or (scenario == "job" and identifier == "synthetic-request")

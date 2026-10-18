@@ -6,8 +6,10 @@ activityCompose = "1.13.0"
 coroutines = "1.9.0"
 browser = "1.10.0"
 filament = "1.72.1"
+junit = "4.13.2"
 
 [libraries]
+junit = { module = "junit:junit", version.ref = "junit" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }

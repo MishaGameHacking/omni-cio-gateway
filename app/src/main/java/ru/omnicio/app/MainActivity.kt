@@ -291,68 +291,10 @@ private fun AnalystAiApp(
         if (code != null) {
             initialSessionChecked = true
             authState = AuthUiState.Loading("Подтверждаем вход через Telegram…")
-            when (val result = withContext(Dispatchers.IO) {
-                backend.exchangeTelegramCode(code)
-            }) {
-                is BackendResult.Success -> {
-                    val saved = withContext(Dispatchers.IO) {
-                        runCatching { sessionStore.save(result.value); EncryptedWorkspaceStore(context).activateUser(result.value.user.telegramId) }.isSuccess
-                    }
-                    authState = if (saved) {
-                        AuthUiState.SignedIn(
-                            accessToken = result.value.accessToken,
-                            user = result.value.user,
-                        )
-                    } else {
-                        AuthUiState.SignedOut(
-                            errorMessage = "Не удалось сохранить вход на устройстве. Попробуйте ещё раз.",
-                        )
-                    }
-                }
-                is BackendResult.Failure -> {
-                    authState = AuthUiState.SignedOut(
-                        errorMessage = result.message,
-                    )
-                }
-            }
+            authState = exchangeTelegramSession(backend, sessionStore, context, code)
             onAuthCodeConsumed()
         } else if (!initialSessionChecked) {
-            val storedToken = withContext(Dispatchers.IO) {
-                sessionStore.loadAccessToken()
-            }
-            authState = if (storedToken == null) {
-                AuthUiState.SignedOut()
-            } else {
-                when (val result = withContext(Dispatchers.IO) {
-                    backend.fetchMe(storedToken)
-                }) {
-                    is BackendResult.Success -> {
-                        withContext(Dispatchers.IO) { EncryptedWorkspaceStore(context).activateUser(result.value.telegramId) }
-                        AuthUiState.SignedIn(
-                            accessToken = storedToken,
-                            user = result.value,
-                        )
-                    }
-                    is BackendResult.Failure -> {
-                        if (result.retryable) {
-                            val cachedUser = withContext(Dispatchers.IO) {
-                                sessionStore.loadCachedUser()
-                            }
-                            if (cachedUser != null) {
-                                AuthUiState.SignedIn(
-                                    accessToken = storedToken,
-                                    user = cachedUser,
-                                )
-                            } else {
-                                AuthUiState.SignedOut(errorMessage = result.message)
-                            }
-                        } else {
-                            withContext(Dispatchers.IO) { sessionStore.clear() }
-                            AuthUiState.SignedOut()
-                        }
-                    }
-                }
-            }
+            authState = restoreAnalystSession(backend, sessionStore, context)
             initialSessionChecked = true
         }
     }
@@ -750,4 +692,58 @@ private fun workspaceTransition(initialState: AppScreen, targetState: AppScreen,
                 (slideInHorizontally(tween(duration)) { it / 8 * direction } + fadeIn(tween(duration))) togetherWith
                     (slideOutHorizontally(tween(duration)) { -it / 8 * direction } + fadeOut(tween(duration)))
             }
+}
+
+private suspend fun exchangeTelegramSession(
+    backend: AnalystBackendClient,
+    sessionStore: AuthSessionStore,
+    context: android.content.Context,
+    code: String,
+): AuthUiState {
+    return when (val result = withContext(Dispatchers.IO) { backend.exchangeTelegramCode(code) }) {
+        is BackendResult.Success -> {
+            val saved =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        sessionStore.save(result.value)
+                        EncryptedWorkspaceStore(context).activateUser(result.value.user.telegramId)
+                    }
+                        .isSuccess
+                }
+            if (saved) AuthUiState.SignedIn(result.value.accessToken, result.value.user)
+            else
+                AuthUiState.SignedOut(
+                    errorMessage = "Не удалось сохранить вход на устройстве. Попробуйте ещё раз."
+                )
+        }
+        is BackendResult.Failure -> AuthUiState.SignedOut(errorMessage = result.message)
+    }
+}
+
+private suspend fun restoreAnalystSession(
+    backend: AnalystBackendClient,
+    sessionStore: AuthSessionStore,
+    context: android.content.Context,
+): AuthUiState {
+    val storedToken =
+        withContext(Dispatchers.IO) { sessionStore.loadAccessToken() }
+            ?: return AuthUiState.SignedOut()
+    return when (val result = withContext(Dispatchers.IO) { backend.fetchMe(storedToken) }) {
+        is BackendResult.Success -> {
+            withContext(Dispatchers.IO) {
+                EncryptedWorkspaceStore(context).activateUser(result.value.telegramId)
+            }
+            AuthUiState.SignedIn(storedToken, result.value)
+        }
+        is BackendResult.Failure -> {
+            if (result.retryable) {
+                val cachedUser = withContext(Dispatchers.IO) { sessionStore.loadCachedUser() }
+                if (cachedUser != null) AuthUiState.SignedIn(storedToken, cachedUser)
+                else AuthUiState.SignedOut(errorMessage = result.message)
+            } else {
+                withContext(Dispatchers.IO) { sessionStore.clear() }
+                AuthUiState.SignedOut()
+            }
+        }
+    }
 }

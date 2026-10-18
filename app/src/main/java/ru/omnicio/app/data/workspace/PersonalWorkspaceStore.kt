@@ -110,11 +110,11 @@ class PersonalWorkspaceController internal constructor(
             .put("watched_only", value.watchedOnly).put("exposure_id", value.exposureId)) + rows))
     }
     fun deleteFilter(id: String) = edit { it.put("filters", JSONArray(it.rows("filters").filter { row -> row.optString("id") != id })) }
-    fun saveResearch(title: String, instrumentId: String?, start: String?, end: String?, source: String,
-        observedAt: String?, note: String, payload: JSONObject) {
-        if (title.isBlank()) return
-        save(SavedResearch(UUID.randomUUID().toString(), title.trim().take(140), instrumentId, start, end,
-            source.take(500), observedAt, Instant.now().toString(), note.take(2000)), payload)
+    fun saveResearch(draft: ResearchDraft, payload: JSONObject) {
+        if (draft.title.isBlank()) return
+        save(SavedResearch(UUID.randomUUID().toString(), draft.title.trim().take(140), draft.instrumentId,
+            draft.start, draft.end, draft.source.take(500), draft.observedAt, Instant.now().toString(),
+            draft.note.take(2000)), payload)
     }
     fun saveDashboardOrder(order: List<String>) = edit { it.put("dashboard_order", JSONArray(order.distinct())) }
     fun recordVisit(snapshot: JSONObject) = edit {
@@ -211,3 +211,7 @@ internal fun JSONObject.rows(key: String): List<JSONObject> = optJSONArray(key)?
 } ?: emptyList()
 internal fun JSONObject.text(key: String): String? = (opt(key) as? String)?.takeIf(String::isNotBlank)
 private fun JSONArray?.strings(): List<String> = this?.let { a -> (0 until a.length()).mapNotNull { a.opt(it) as? String } } ?: emptyList()
+
+
+data class ResearchDraft(val title: String, val instrumentId: String?, val start: String?, val end: String?,
+    val source: String, val observedAt: String?, val note: String)

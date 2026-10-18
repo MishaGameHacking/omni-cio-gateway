@@ -276,25 +276,37 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
             engine?.lightManager?.let { it.setShadowCaster(it.getInstance(light),!reducedQuality) }
             shadowsEnabled=!reducedQuality
         }
-        var moving=false;var rendered=false
-        val colors=palette
-        if (colors!=null) windows.forEach { window ->
-            if (window.hasSurface) {
-                moving=window.update(frameTimeNanos,colors) || moving
-                if (window.dirty>0 || moving) {
-                    if (window.render(frameTimeNanos)) { frames++;rendered=true } else skipped++
-                }
-            }
-        }
-        if (rendered) {
-            if (interval > 0.0) {intervals.addLast(interval);if(intervals.size>240)intervals.removeFirst()}
-            submits.addLast((System.nanoTime()-start)/1e6);if(submits.size>240)submits.removeFirst()
-        }
+        val (moving, rendered) = updateWindows(frameTimeNanos, palette)
+        recordFrameTimings(rendered, interval, start)
         val pending=moving || windows.any { it.hasSurface && it.dirty>0 }
         if (pending) {scheduled=true;choreographer.postFrameCallback(this)} else {
             lastFrame=0;windows.forEach { it.withdrawFrameRate() }
         }
-        if (!pending || frames%30L==0L) diagnostics=SpatialDiagnostics(
+        if (!pending || frames%30L==0L) updateDiagnostics()
+    }
+        private fun updateWindows(frameTimeNanos: Long, colors: SpectrumPalette?): Pair<Boolean, Boolean> {
+        if (colors == null) return false to false
+        var moving = false
+        var rendered = false
+        windows.forEach { window ->
+            if (!window.hasSurface) return@forEach
+            moving = window.update(frameTimeNanos, colors) || moving
+            if (window.dirty > 0 || moving) {
+                if (window.render(frameTimeNanos)) { frames++; rendered = true } else skipped++
+            }
+        }
+        return moving to rendered
+    }
+
+    private fun recordFrameTimings(rendered: Boolean, interval: Double, start: Long) {
+        if (rendered) {
+            if (interval > 0.0) {intervals.addLast(interval);if(intervals.size>240)intervals.removeFirst()}
+            submits.addLast((System.nanoTime()-start)/1e6);if(submits.size>240)submits.removeFirst()
+        }
+    }
+
+    private fun updateDiagnostics() {
+        diagnostics=SpatialDiagnostics(
             engineCount=SpatialNativeLifetime.engines,windowCount=windows.count { it.hasSurface },
             submittedFrames=frames,skippedFrames=skipped,
             frameIntervalP95Ms=percentile(intervals),cpuSubmitP95Ms=percentile(submits),
@@ -303,7 +315,9 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
             quality=if(reducedQuality)"economy" else "standard",error=diagnostics.error,
         )
     }
-    private fun percentile(values: Collection<Double>): Double = values.sorted().let { if(it.isEmpty())0.0 else it[((it.size-1)*.95).toInt()] }
+
+
+private fun percentile(values: Collection<Double>): Double = values.sorted().let { if(it.isEmpty())0.0 else it[((it.size-1)*.95).toInt()] }
     fun close() { closing=true;maybeClose() }
     private fun maybeClose() {
         if (!closing || windows.isNotEmpty() || closed) return
@@ -394,132 +408,191 @@ internal class SpatialRenderWindow(
         owner.invalidate()
     }
 
-    fun update(now:Long,palette:SpectrumPalette):Boolean {
-        val live=mutableSetOf<String>();var animated=false
-        // During shared-element overlap the destination's later slot wins. This
-        // preserves a single entity and material instance, not a duplicate model.
-        val sharedDestinations=mutableMapOf<String,Long>()
-        for(slot in slots.values) for(primitive in slot.primitives) {
-            primitive.sharedKey?.let { sharedDestinations[it]=slot.id }
+    fun update(now: Long, palette: SpectrumPalette): Boolean {
+        val live = mutableSetOf<String>()
+        val sharedDestinations = mutableMapOf<String, Long>()
+        // During shared-element overlap the destination's later slot wins.
+        for (slot in slots.values) for (primitive in slot.primitives) {
+            primitive.sharedKey?.let { sharedDestinations[it] = slot.id }
         }
-        for(slot in slots.values){
-            val bounds=slot.bounds.translate(-origin.x,-origin.y)
-            val clipping=slot.clip.translate(-origin.x,-origin.y).intersect(Rect(0f,0f,width.toFloat(),height.toFloat()))
-            if(clipping.width<=0f||clipping.height<=0f||bounds.width<=0f||bounds.height<=0f)continue
-            slot.primitives.forEachIndexed { index,p ->
-                if(p.sharedKey!=null&&sharedDestinations[p.sharedKey]!=slot.id)return@forEachIndexed
-                val w=bounds.width*p.rect.width;val h=bounds.height*p.rect.height
-                if(w<=0f||h<=0f)return@forEachIndexed
-                val id=p.sharedKey?.let { "object/$it" } ?: "${slot.id}/${p.key}/$index";live.add(id)
-                var mesh=instances[id]
-                if(mesh!=null&&(mesh.asset!=p.asset||mesh.low!=owner.reducedQuality)){
-                    val replacement=owner.acquire(p.asset)
-                    if(replacement!=null){
-                        scene.removeEntities(mesh.lease.instance.entities);mesh.lease.release()
-                        mesh=ActiveMesh(p.asset,owner.reducedQuality,replacement,p,now)
-                        instances[id]=mesh;scene.addEntities(replacement.instance.entities)
-                    }
-                }
-                if(mesh==null){
-                    val lease=owner.acquire(p.asset) ?: return@forEachIndexed
-                    mesh=ActiveMesh(p.asset,owner.reducedQuality,lease,p,now)
-                    mesh.previousDepth=p.depth-4f
-                    instances[id]=mesh;scene.addEntities(lease.instance.entities)
-                }
-                if(mesh.primitive.state!=p.state||mesh.primitive.rect!=p.rect||mesh.primitive.depth!=p.depth){
-                    mesh.changedAt=now;mesh.previousRect=mesh.normalizedRect;mesh.previousDepth=mesh.currentDepth
-                }
-                mesh.primitive=p
-                val motion=if(p.motionAllowed)owner.effectiveMotion else SpatialMotion.Off
-                val elapsed=(now-mesh.changedAt)/1e9
-                val busy=p.state==SpatialState.Loading&&motion==SpatialMotion.Live
-                val duration=if(motion==SpatialMotion.Subdued).16 else .52
-                val active=motion!=SpatialMotion.Off&&(elapsed<duration||busy)
-                animated=animated||active
-                val wave=if(active)sin(min(elapsed/duration,1.0)*PI).toFloat() else 0f
-                val progress=if(motion==SpatialMotion.Off)1f else (elapsed/duration).toFloat().coerceIn(0f,1f)
-                val eased=progress*progress*(3f-2f*progress)
-                val normalized=mesh.previousRect?.let { androidx.compose.ui.geometry.lerp(it,p.rect,eased) } ?: p.rect
-                mesh.normalizedRect=normalized
-                val depth=mesh.previousDepth?.let { it+(p.depth-it)*eased } ?: p.depth
-                mesh.currentDepth=depth
-                val target=Rect(bounds.left+bounds.width*normalized.left,bounds.top+bounds.height*normalized.top,
-                    bounds.left+bounds.width*normalized.right,bounds.top+bounds.height*normalized.bottom)
-                if(mesh.target!=target){
-                    if(p.sharedKey!=null&&mesh.sourceSlot!=slot.id){
-                        mesh.transferFrom=mesh.bounds;mesh.transferStart=now
-                    }
-                    mesh.target=target
-                }
-                mesh.sourceSlot=slot.id
-                val transferDuration=if(motion==SpatialMotion.Subdued).12 else .32
-                val fraction=if(motion==SpatialMotion.Off||p.sharedKey==null)1f
-                    else ((now-mesh.transferStart)/1e9/transferDuration).toFloat().coerceIn(0f,1f)
-                val from=mesh.transferFrom
-                val positioned=if(from!=null&&fraction<1f) androidx.compose.ui.geometry.lerp(from,target,
-                    fraction*fraction*(3f-2f*fraction)) else target
-                if(from!=null&&fraction<1f)animated=true
-                if(fraction>=1f)mesh.transferFrom=null
-                mesh.bounds=positioned
-                val x=(positioned.left+positioned.right)/2
-                val y=height-(positioned.top+positioned.bottom)/2
-                val pressed=if(p.state==SpatialState.Pressed)1f else 0f
-                val assetName=(p.asset as? SpatialAsset.Catalogue)?.name
-                val scale=1f-pressed*.035f+if(assetName=="goal")wave*.035f else 0f
-                Matrix.setIdentityM(mesh.matrix,0)
-                val backProgress = if (owner.effectiveMotion == SpatialMotion.Off) 0f
-                    else max(owner.navigationProgress, localBackProgress)
-                Matrix.translateM(mesh.matrix,0,x,y,(depth-pressed*2f-backProgress*48f)*density)
-                if (p.rotationY != 0f) Matrix.rotateM(mesh.matrix, 0, p.rotationY, 0f, 1f, 0f)
-                if(p.tilt){
-                    val nod=if(assetName=="avatar"||assetName=="analyst"||assetName=="brand")wave*9f else wave*4f
-                    Matrix.rotateM(mesh.matrix,0,-7f+nod,1f,0f,0f)
-                    Matrix.rotateM(mesh.matrix,0,9f+wave*if(assetName=="globe"||assetName=="orbit")22f else 8f,0f,1f,0f)
-                    if(assetName=="notifications")Matrix.rotateM(mesh.matrix,0,
-                        (sin(elapsed*28)*wave*11).toFloat(),0f,0f,1f)
-                    if(busy)Matrix.rotateM(mesh.matrix,0,(elapsed*50%360).toFloat(),0f,1f,0f)
-                }
-                Matrix.scaleM(mesh.matrix,0,positioned.width*scale,positioned.height*scale,p.thickness*density)
-                if(!mesh.matrix.contentEquals(mesh.appliedMatrix)){
-                    engine.transformManager.setTransform(mesh.lease.transform,mesh.matrix)
-                    mesh.matrix.copyInto(mesh.appliedMatrix)
-                }
-                val color=if(p.state==SpatialState.Disabled)lerp(p.color,palette.card,.5f) else p.color
-                val brightness=if(p.state==SpatialState.Selected)1.08f else 1f
-                val selected=p.state==SpatialState.Selected
-                if(mesh.color!=color||mesh.selected!=selected){
-                    val r=linear(color.red)*brightness;val g=linear(color.green)*brightness;val b=linear(color.blue)*brightness
-                    mesh.lease.materials.forEach { it.setParameter("baseColorFactor",r,g,b,1f) }
-                    mesh.color=color;mesh.selected=selected
-                }
-                if(mesh.opaque!=owner.opaque){
-                    val preset = mesh.lease.pool.material
-                    val appearance = preset.appearance(owner.opaque)
-                    mesh.lease.materials.forEach {
-                        it.setParameter("roughnessFactor", appearance.roughness)
-                        it.setParameter("metallicFactor", appearance.metallic)
-                        if (preset.clearCoat > 0f) {
-                            // Filament 1.72.1 gltfio AssetLoader parameter spelling.
-                            it.setParameter("clearCoatFactor", appearance.clearCoat)
-                            it.setParameter("clearCoatRoughnessFactor", preset.clearCoatRoughness)
-                        }
-                    }
-                    mesh.opaque=owner.opaque
-                }
-                val clip=if(from!=null&&fraction<1f)Rect(0f,0f,width.toFloat(),height.toFloat()) else clipping
-                if(mesh.clip!=clip){
-                    mesh.lease.materials.forEach { it.setScissor(clip.left.toInt().coerceAtLeast(0),
-                        (height-clip.bottom).toInt().coerceAtLeast(0),clip.width.toInt(),clip.height.toInt()) }
-                    mesh.clip=clip
-                }
-            }
-        }
-        val stale=instances.keys.filter { it !in live }
-        stale.forEach { key -> instances.remove(key)?.let { scene.removeEntities(it.lease.instance.entities);it.lease.release() } }
-        if(animated)dirty=max(dirty,2)
+        val frame = SceneFrame(now, palette, live, sharedDestinations)
+        var animated = false
+        for (slot in slots.values) animated = updateSlot(slot, frame) || animated
+        val stale = instances.keys.filter { it !in live }
+        stale.forEach { key -> instances.remove(key)?.let { scene.removeEntities(it.lease.instance.entities); it.lease.release() } }
+        if (animated) dirty = max(dirty, 2)
         return animated
     }
-    private fun linear(c:Float)=if(c<=.04045f)c/12.92f else ((c+.055f)/1.055f).pow(2.4f)
+        private data class SceneFrame(val now: Long, val palette: SpectrumPalette,
+        val live: MutableSet<String>, val sharedDestinations: Map<String, Long>)
+    private data class MeshAnimation(val motion: SpatialMotion, val elapsed: Double, val busy: Boolean,
+        val active: Boolean, val wave: Float, val depth: Float, val normalized: Rect)
+
+    private fun updateSlot(slot: SpatialSlot, frame: SceneFrame): Boolean {
+        val bounds = slot.bounds.translate(-origin.x, -origin.y)
+        val clipping = slot.clip.translate(-origin.x, -origin.y).intersect(Rect(0f, 0f, width.toFloat(), height.toFloat()))
+        if (clipping.width <= 0f || clipping.height <= 0f || bounds.width <= 0f || bounds.height <= 0f) return false
+        var animated = false
+        slot.primitives.forEachIndexed { index, primitive ->
+            if (primitive.sharedKey == null || frame.sharedDestinations[primitive.sharedKey] == slot.id) {
+                animated = updatePrimitive(slot.id, primitive, index, bounds, clipping, frame) || animated
+            }
+        }
+        return animated
+    }
+
+    private fun updatePrimitive(slotId: Long, p: SpatialPrimitive, index: Int, bounds: Rect,
+        clipping: Rect, frame: SceneFrame): Boolean {
+        if (bounds.width * p.rect.width <= 0f || bounds.height * p.rect.height <= 0f) return false
+        val id = p.sharedKey?.let { "object/$it" } ?: "${slotId}/${p.key}/$index"
+        frame.live.add(id)
+        val mesh = meshFor(id, p, frame.now) ?: return false
+        val animation = animateMesh(mesh, p, frame.now)
+        val transferring = positionMesh(mesh, p, bounds, slotId, frame.now, animation)
+        transformMesh(mesh, p, animation)
+        applyColor(mesh, p, frame.palette)
+        applyAppearance(mesh)
+        applyClip(mesh, if (transferring) Rect(0f, 0f, width.toFloat(), height.toFloat()) else clipping)
+        return animation.active || transferring
+    }
+
+    private fun meshFor(id: String, p: SpatialPrimitive, now: Long): ActiveMesh? {
+        var mesh=instances[id]
+        if(mesh!=null&&(mesh.asset!=p.asset||mesh.low!=owner.reducedQuality)){
+            val replacement=owner.acquire(p.asset)
+            if(replacement!=null){
+                scene.removeEntities(mesh.lease.instance.entities);mesh.lease.release()
+                mesh=ActiveMesh(p.asset,owner.reducedQuality,replacement,p,now)
+                instances[id]=mesh;scene.addEntities(replacement.instance.entities)
+            }
+        }
+        if(mesh==null){
+            val lease=owner.acquire(p.asset) ?: return null
+            mesh=ActiveMesh(p.asset,owner.reducedQuality,lease,p,now)
+            mesh.previousDepth=p.depth-4f
+            instances[id]=mesh;scene.addEntities(lease.instance.entities)
+        }
+        return mesh
+    }
+
+    private fun animateMesh(mesh: ActiveMesh, p: SpatialPrimitive, now: Long): MeshAnimation {
+        if(mesh.primitive.state!=p.state||mesh.primitive.rect!=p.rect||mesh.primitive.depth!=p.depth){
+            mesh.changedAt=now;mesh.previousRect=mesh.normalizedRect;mesh.previousDepth=mesh.currentDepth
+        }
+        mesh.primitive=p
+        val motion=if(p.motionAllowed)owner.effectiveMotion else SpatialMotion.Off
+        val elapsed=(now-mesh.changedAt)/1e9
+        val busy=p.state==SpatialState.Loading&&motion==SpatialMotion.Live
+        val duration=if(motion==SpatialMotion.Subdued).16 else .52
+        val active=motion!=SpatialMotion.Off&&(elapsed<duration||busy)
+        val wave=if(active)sin(min(elapsed/duration,1.0)*PI).toFloat() else 0f
+        val progress=if(motion==SpatialMotion.Off)1f else (elapsed/duration).toFloat().coerceIn(0f,1f)
+        val eased=progress*progress*(3f-2f*progress)
+        val normalized=mesh.previousRect?.let { androidx.compose.ui.geometry.lerp(it,p.rect,eased) } ?: p.rect
+        mesh.normalizedRect=normalized
+        val depth=mesh.previousDepth?.let { it+(p.depth-it)*eased } ?: p.depth
+        mesh.currentDepth=depth
+        return MeshAnimation(motion, elapsed, busy, active, wave, depth, normalized)
+    }
+
+    private fun positionMesh(mesh: ActiveMesh, p: SpatialPrimitive, bounds: Rect, slotId: Long,
+        now: Long, animation: MeshAnimation): Boolean {
+        val motion = animation.motion
+        val normalized = animation.normalized
+        val target=Rect(bounds.left+bounds.width*normalized.left,bounds.top+bounds.height*normalized.top,
+            bounds.left+bounds.width*normalized.right,bounds.top+bounds.height*normalized.bottom)
+        if(mesh.target!=target){
+            if(p.sharedKey!=null&&mesh.sourceSlot!=slotId){
+                mesh.transferFrom=mesh.bounds;mesh.transferStart=now
+            }
+            mesh.target=target
+        }
+        mesh.sourceSlot=slotId
+        val transferDuration=if(motion==SpatialMotion.Subdued).12 else .32
+        val fraction=if(motion==SpatialMotion.Off||p.sharedKey==null)1f
+            else ((now-mesh.transferStart)/1e9/transferDuration).toFloat().coerceIn(0f,1f)
+        val from=mesh.transferFrom
+        val positioned=if(from!=null&&fraction<1f) androidx.compose.ui.geometry.lerp(from,target,
+            fraction*fraction*(3f-2f*fraction)) else target
+        if(fraction>=1f)mesh.transferFrom=null
+        mesh.bounds=positioned
+        return from != null && fraction < 1f
+    }
+
+    private fun transformMesh(mesh: ActiveMesh, p: SpatialPrimitive, animation: MeshAnimation) {
+        val positioned = checkNotNull(mesh.bounds)
+        val wave = animation.wave
+        val depth = animation.depth
+        val x=(positioned.left+positioned.right)/2
+        val y=height-(positioned.top+positioned.bottom)/2
+        val pressed=if(p.state==SpatialState.Pressed)1f else 0f
+        val assetName=(p.asset as? SpatialAsset.Catalogue)?.name
+        val scale=1f-pressed*.035f+if(assetName=="goal")wave*.035f else 0f
+        Matrix.setIdentityM(mesh.matrix,0)
+        val backProgress = if (owner.effectiveMotion == SpatialMotion.Off) 0f
+            else max(owner.navigationProgress, localBackProgress)
+        Matrix.translateM(mesh.matrix,0,x,y,(depth-pressed*2f-backProgress*48f)*density)
+        if (p.rotationY != 0f) Matrix.rotateM(mesh.matrix, 0, p.rotationY, 0f, 1f, 0f)
+        applyTilt(mesh, p, animation, assetName)
+        Matrix.scaleM(mesh.matrix,0,positioned.width*scale,positioned.height*scale,p.thickness*density)
+        if(!mesh.matrix.contentEquals(mesh.appliedMatrix)){
+            engine.transformManager.setTransform(mesh.lease.transform,mesh.matrix)
+            mesh.matrix.copyInto(mesh.appliedMatrix)
+        }
+    }
+
+    private fun applyTilt(mesh: ActiveMesh, p: SpatialPrimitive, animation: MeshAnimation, assetName: String?) {
+        val wave = animation.wave
+        val elapsed = animation.elapsed
+        val busy = animation.busy
+        if(p.tilt){
+            val nod=if(assetName=="avatar"||assetName=="analyst"||assetName=="brand")wave*9f else wave*4f
+            Matrix.rotateM(mesh.matrix,0,-7f+nod,1f,0f,0f)
+            Matrix.rotateM(mesh.matrix,0,9f+wave*if(assetName=="globe"||assetName=="orbit")22f else 8f,0f,1f,0f)
+            if(assetName=="notifications")Matrix.rotateM(mesh.matrix,0,
+                (sin(elapsed*28)*wave*11).toFloat(),0f,0f,1f)
+            if(busy)Matrix.rotateM(mesh.matrix,0,(elapsed*50%360).toFloat(),0f,1f,0f)
+        }
+    }
+
+    private fun applyColor(mesh: ActiveMesh, p: SpatialPrimitive, palette: SpectrumPalette) {
+        val color=if(p.state==SpatialState.Disabled)lerp(p.color,palette.card,.5f) else p.color
+        val brightness=if(p.state==SpatialState.Selected)1.08f else 1f
+        val selected=p.state==SpatialState.Selected
+        if(mesh.color!=color||mesh.selected!=selected){
+            val r=linear(color.red)*brightness;val g=linear(color.green)*brightness;val b=linear(color.blue)*brightness
+            mesh.lease.materials.forEach { it.setParameter("baseColorFactor",r,g,b,1f) }
+            mesh.color=color;mesh.selected=selected
+        }
+    }
+
+    private fun applyAppearance(mesh: ActiveMesh) {
+        if(mesh.opaque!=owner.opaque){
+            val preset = mesh.lease.pool.material
+            val appearance = preset.appearance(owner.opaque)
+            mesh.lease.materials.forEach {
+                it.setParameter("roughnessFactor", appearance.roughness)
+                it.setParameter("metallicFactor", appearance.metallic)
+                if (preset.clearCoat > 0f) {
+                    // Filament 1.72.1 gltfio AssetLoader parameter spelling.
+                    it.setParameter("clearCoatFactor", appearance.clearCoat)
+                    it.setParameter("clearCoatRoughnessFactor", preset.clearCoatRoughness)
+                }
+            }
+            mesh.opaque=owner.opaque
+        }
+    }
+
+    private fun applyClip(mesh: ActiveMesh, clip: Rect) {
+        if(mesh.clip!=clip){
+            mesh.lease.materials.forEach { it.setScissor(clip.left.toInt().coerceAtLeast(0),
+                (height-clip.bottom).toInt().coerceAtLeast(0),clip.width.toInt(),clip.height.toInt()) }
+            mesh.clip=clip
+        }
+    }
+
+
+private fun linear(c:Float)=if(c<=.04045f)c/12.92f else ((c+.055f)/1.055f).pow(2.4f)
 
     fun render(time:Long):Boolean {
         val chain=swap?:return false

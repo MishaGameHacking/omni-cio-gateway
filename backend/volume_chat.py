@@ -117,7 +117,7 @@ def messages(identifier: str, before: str | None = None, user: Any = Depends(bac
             timestamp(cursor_at)
             if not isinstance(cursor_id, str) or not 1 <= len(cursor_id) <= 160:
                 raise ValueError
-        except (ValueError, KeyError, TypeError, AttributeError, UnicodeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             raise HTTPException(422, "chat_cursor_invalid_or_wrong_scope") from None
     with closing(backend.connect()) as db:
         _thread(db, user_id, identifier)
@@ -214,9 +214,7 @@ def fact_packet(user: Any, context: dict) -> dict:
     owned = {a["id"]: a for a in snapshot.get("accounts", [])}
     if account_id and account_id not in owned:
         raise HTTPException(404, "chat_account_not_in_workspace")
-    scoped_positions = [p for p in all_positions if (not account_id or p["account_id"] == account_id) and (context["mode"] != "instrument" or p["instrument_uid"] == context.get("instrument_uid"))]
-    if context["mode"] == "instrument" and not scoped_positions:
-        raise HTTPException(409, "chat_instrument_not_in_verified_workspace")
+    scoped_positions = _scoped_chat_positions(all_positions, account_id, context)
     # Use aggregate summaries and a declared bounded selection; never claim the
     # packet contains every row of a large portfolio.
     selected = scoped_positions[:80]
@@ -226,94 +224,21 @@ def fact_packet(user: Any, context: dict) -> dict:
     def add(identifier, value, refs, section_name, highlight_id=None, observed=None, target=None):
         facts.append({"id": identifier, "value": value, "source_ids": refs, "as_of": observed or snapshot["as_of"]})
         highlights.append({"section": section_name, "id": highlight_id or identifier, **(target or {})})
-    add("capital:total", owned[account_id]["value"] if account_id else snapshot["capital"]["total"], [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"} and (not account_id or r.get("subject_id") == account_id)], "capital")
-    facts[-1]["scope"] = "selected_account_balance" if account_id else "whole_portfolio_balance"
-    for index, value in enumerate([] if account_id else snapshot["capital"].get("cash", [])):
-        add("capital:cash:" + str(index), value, [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"}], "capital")
-    for index, item in enumerate(selected):
-        uid = item["instrument_uid"]
-        add("position:" + str(index), {"instrument_uid": uid, "title": item["title"], "instrument_type": item["instrument_type"],
-                                      "quantity": item.get("quantity"), "value": item.get("value"), "blocked": item["blocked"],
-                                      "sector": item.get("metadata", {}).get("sector")}, item["source_ids"], "portfolio", uid,
-            target={"account_id": account_id, "instrument_uid": uid,
-                    "account_ids": sorted({p["account_id"] for p in scoped_positions if p["instrument_uid"] == uid})})
+    _append_capital_facts(add, facts, snapshot, owned, account_id)
+    _append_position_facts(add, selected, scoped_positions, account_id)
     active = state.active_strategy(int(user["id"]))
     risk = state.exposure_data(snapshot, (active or {}).get("config"))
-    relevant_risks = [r for r in risk["concentrations"] if r["breached"] and scoped_uids.intersection(r["instrument_uids"])]
-    for index, item in enumerate(relevant_risks[:40]):
-        value = {k: item[k] for k in ("direction", "id", "label", "share_percent", "limit_percent", "breached")}
-        # Confirmed concentration limits apply to the whole portfolio. Account
-        # filtering selects relevant risks without silently changing denominators.
-        value["basis_scope"] = "whole_portfolio_confirmed_limit_relevant_to_selected_positions"
-        add("risk:" + str(index), value, item["source_ids"], "risks", item["id"], target={"direction": item["direction"]})
-    credit_rows = [(uid, row) for uid, observation in snapshot.get("rating_observations", {}).items() if uid in scoped_uids
-                   for row in observation.get("data", {}).get("items", [])]
-    for index, (uid, row) in enumerate(credit_rows[:24]):
-        add("rating:" + str(index), {k: row[k] for k in ("agency", "scale", "subject_kind", "subject_id", "grade", "status", "outlook")},
-            [row["source"]["id"]], "portfolio", uid, observed=row["source"]["checked_at"],
-            target={"instrument_uid": uid, "account_id": account_id})
-    begin, requested_finish = date_range(date.fromisoformat(str(context["start"])) if context.get("start") else None,
-                                         date.fromisoformat(str(context["end"])) if context.get("end") else None)
-    finish = min(requested_finish, timestamp(snapshot["as_of"]))
-    if begin > finish:
-        raise HTTPException(409, "chat_period_after_verified_snapshot")
-    relevant_events = []
-    for item in snapshot.get("events", {}).get("items", []):
-        linked = sorted(scoped_uids.intersection(item.get("instrument_uids", [])))
-        if not linked:
-            continue
-        if context.get("start") or context.get("end"):
-            try:
-                if not begin <= timestamp(item.get("occurred_at")) <= finish:
-                    continue
-            except ValueError:
-                continue
-        relevant_events.append({**item, "instrument_uids": linked})
-    for index, item in enumerate(relevant_events[:15]):
-        add("event:" + str(index), {k: item.get(k) for k in ("title", "summary", "occurred_at", "instrument_uids", "relationship")}, item.get("source_ids", []), "events", item["id"], observed=snapshot.get("section_as_of", {}).get("events"))
+    relevant_risks = _append_risk_facts(add, risk, scoped_uids)
+    credit_rows = _append_rating_facts(add, snapshot, scoped_uids, account_id)
+    begin, requested_finish, finish = _chat_period(snapshot, context)
+    relevant_events = _scoped_chat_events(snapshot, scoped_uids, context, begin, finish)
+    _append_event_facts(add, relevant_events, snapshot)
     history = snapshot.get("operations", {})
-    sums, refs, operations, missing_payment, invalid_dates = {}, set(), [], 0, 0
-    for item in history.get("items", []):
-        if item.get("account_id") not in owned or (account_id and item.get("account_id") != account_id) or (context["mode"] == "instrument" and item.get("instrumentUid") != context.get("instrument_uid")):
-            continue
-        try:
-            when = timestamp(item.get("date"))
-        except ValueError:
-            invalid_dates += 1
-            continue
-        if not begin <= when <= finish:
-            continue
-        operations.append(item)
-        if item.get("state") == "OPERATION_STATE_EXECUTED":
-            amount = money(item.get("payment"))
-            if amount:
-                key = (item["category"], amount["currency"])
-                sums[key] = sums.get(key, ZERO) + decimal(amount)
-            else:
-                missing_payment += 1
-            refs.update(item.get("source_ids", []))
-    try:
-        complete = bool(history.get("complete")) and begin <= finish and timestamp(history["start"]) <= begin and timestamp(history["end"]) >= finish and not (missing_payment or invalid_dates)
-    except (KeyError, ValueError):
-        complete = False
-    add("operations:range", {"start": begin.isoformat(), "end": finish.isoformat(), "complete": complete,
-                            "missing_payment_count": missing_payment, "invalid_date_count": invalid_dates,
-                            "flows": [{"category": category, "amount": money(value, currency)} for (category, currency), value in sorted(sums.items())],
-                            "basis": "executed_broker_cashflows_not_investment_return"}, sorted(refs), "operations", observed=snapshot.get("section_as_of", {}).get("operations"),
-        target={"account_id": account_id, "instrument_uid": context.get("instrument_uid") if context["mode"] == "instrument" else None,
-                "start": begin.date().isoformat(), "end": (requested_finish - timedelta(microseconds=1)).date().isoformat()})
-    for item in sorted(operations, key=lambda r: r["date"], reverse=True)[:24]:
-        identifier = "operation:" + digest({"account_id": item["account_id"], "id": item["id"]})
-        add(identifier, {"date": item["date"], "title": item.get("title"), "category": item["category"],
-                         "state": item.get("state"), "instrument_uid": item.get("instrumentUid"),
-                         "quantity": text_number(decimal(item.get("quantity"))), "payment": money(item.get("payment"))},
-            item.get("source_ids", []), "operations", identifier, observed=snapshot.get("section_as_of", {}).get("operations"),
-            target={"account_id": item["account_id"], "operation_id": item["id"], "date": item["date"], "instrument_uid": item.get("instrumentUid")})
-    observation_facts, observations_coverage = _history_facts(int(user["id"]), snapshot, {account_id} if account_id else set(owned), begin, finish)
-    for item in observation_facts:
-        refs_by_id[item["source"]["id"]] = item["source"]
-        facts.append({k: item[k] for k in ("id", "value", "source_ids", "as_of")})
-        highlights.append(item["highlight"])
+    sums, refs, operations, missing_payment, invalid_dates = _chat_operations(history, owned, account_id, context, begin, finish)
+    complete = _chat_operations_complete(history, begin, finish, missing_payment, invalid_dates)
+    _append_operation_summary(add, sums, refs, complete, missing_payment, invalid_dates, snapshot, account_id, context, begin, finish, requested_finish)
+    _append_operation_details(add, operations, snapshot)
+    observations_coverage = _append_history_facts(user, snapshot, account_id, owned, begin, finish, refs_by_id, facts, highlights)
     impact_context = impact.prepare(user, snapshot, context, selected)
     if impact_context is not None:
         facts.extend(impact_context["facts"])
@@ -420,41 +345,15 @@ def validate_response(raw: dict, packet: dict) -> dict:
     raw_claims = raw.get("claims", [])
     if not isinstance(raw_claims, list) or len(raw_claims) > 80:
         raise GuardError("ai_chat_claims_invalid")
-    evidence, claims, uncertainties = [], [], []
-    for claim in raw_claims:
-        if not isinstance(claim, dict) or not isinstance(claim.get("text"), str) or not isinstance(claim.get("fact_ids"), list):
-            raise GuardError("ai_chat_claims_invalid")
-        if any(not isinstance(identifier, str) or identifier not in facts for identifier in claim["fact_ids"]):
-            raise GuardError("ai_chat_evidence_not_in_context")
-        claims.append({"text": claim["text"][:4000], "fact_ids": claim["fact_ids"], "interpretation": True})
-        for identifier in claim["fact_ids"]:
-            for source_id in facts[identifier]["source_ids"]:
-                item = {"source_id": source_id, "fact_id": identifier, "as_of": facts[identifier]["as_of"]}
-                if item not in evidence:
-                    evidence.append(item)
-        if isinstance(claim.get("uncertainty"), str) and claim["uncertainty"].strip():
-            uncertainties.append(claim["uncertainty"][:2000])
+    evidence, claims, uncertainties = _validated_claims(raw_claims, facts)
     supplied = raw.get("uncertainties", [])
     if not isinstance(supplied, list) or any(not isinstance(v, str) for v in supplied):
         raise GuardError("ai_chat_uncertainty_invalid")
     uncertainties.extend(v[:2000] for v in supplied[:20])
     if not evidence:
         uncertainties.append("Ответ содержит общее объяснение ИИ без подтверждённого фактического утверждения о портфеле.")
-    valid_highlights = {(v["section"], v["id"]): v for v in packet["allowed_highlights"]}
-    highlights = []
-    for item in raw.get("highlights", []):
-        if isinstance(item, dict) and (item.get("section"), item.get("id")) in valid_highlights:
-            highlights.append(dict(valid_highlights[item["section"], item["id"]]))
-        else:
-            raise GuardError("ai_chat_highlight_not_in_context")
-    allowed_uids = {v["id"] for v in packet["allowed_highlights"] if v["section"] == "portfolio"}
-    actions = []
-    for item in raw.get("actions", []):
-        if not isinstance(item, dict) or item.get("type") not in {"open_instrument", "open_risks", "open_strategy", "open_sources"}:
-            raise GuardError("ai_chat_action_not_allowed")
-        if item["type"] == "open_instrument" and item.get("id") not in allowed_uids:
-            raise GuardError("ai_chat_action_not_in_context")
-        actions.append({"type": item["type"], "id": str(item.get("id") or "")[:160], "requires_navigation_only": True})
+    highlights = _validated_highlights(raw, packet)
+    actions = _validated_actions(raw, packet)
     impact_hypothesis = impact.validate(raw.get("impact_hypothesis"), packet)
     return {"text": answer, "claims": claims, "evidence": evidence, "highlights": highlights,
             "uncertainties": uncertainties, "actions": actions,
@@ -483,3 +382,213 @@ def run_message(user: Any, job: dict, payload: dict) -> dict:
     return {"thread_id": payload["thread_id"], "message_id": identifier, "model": response.model,
             "usage": {"prompt_tokens": response.usage.prompt_tokens, "completion_tokens": response.usage.completion_tokens, "total_tokens": response.usage.total_tokens},
             "context_as_of": packet["as_of"], "provider_invoice_reconciled": False}
+
+
+def _scoped_chat_positions(all_positions, account_id, context):
+    scoped_positions = [p for p in all_positions if (not account_id or p["account_id"] == account_id) and (context["mode"] != "instrument" or p["instrument_uid"] == context.get("instrument_uid"))]
+    if context["mode"] == "instrument" and not scoped_positions:
+        raise HTTPException(409, "chat_instrument_not_in_verified_workspace")
+    return scoped_positions
+
+
+def _append_capital_facts(add, facts, snapshot, owned, account_id):
+    add("capital:total", owned[account_id]["value"] if account_id else snapshot["capital"]["total"], [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"} and (not account_id or r.get("subject_id") == account_id)], "capital")
+    facts[-1]["scope"] = "selected_account_balance" if account_id else "whole_portfolio_balance"
+    for index, value in enumerate([] if account_id else snapshot["capital"].get("cash", [])):
+        add("capital:cash:" + str(index), value, [r["id"] for r in snapshot.get("sources", []) if r.get("method") in {"GetPortfolio/GetPositions", "GetPortfolio"}], "capital")
+
+
+def _append_position_facts(add, selected, scoped_positions, account_id):
+    for index, item in enumerate(selected):
+        uid = item["instrument_uid"]
+        add("position:" + str(index), {"instrument_uid": uid, "title": item["title"], "instrument_type": item["instrument_type"],
+                                      "quantity": item.get("quantity"), "value": item.get("value"), "blocked": item["blocked"],
+                                      "sector": item.get("metadata", {}).get("sector")}, item["source_ids"], "portfolio", uid,
+            target={"account_id": account_id, "instrument_uid": uid,
+                    "account_ids": sorted({p["account_id"] for p in scoped_positions if p["instrument_uid"] == uid})})
+
+
+def _append_risk_facts(add, risk, scoped_uids):
+    relevant_risks = [r for r in risk["concentrations"] if r["breached"] and scoped_uids.intersection(r["instrument_uids"])]
+    for index, item in enumerate(relevant_risks[:40]):
+        value = {k: item[k] for k in ("direction", "id", "label", "share_percent", "limit_percent", "breached")}
+        # Confirmed concentration limits apply to the whole portfolio. Account
+        # filtering selects relevant risks without silently changing denominators.
+        value["basis_scope"] = "whole_portfolio_confirmed_limit_relevant_to_selected_positions"
+        add("risk:" + str(index), value, item["source_ids"], "risks", item["id"], target={"direction": item["direction"]})
+    return relevant_risks
+
+
+def _append_rating_facts(add, snapshot, scoped_uids, account_id):
+    credit_rows = [(uid, row) for uid, observation in snapshot.get("rating_observations", {}).items() if uid in scoped_uids
+                   for row in observation.get("data", {}).get("items", [])]
+    for index, (uid, row) in enumerate(credit_rows[:24]):
+        add("rating:" + str(index), {k: row[k] for k in ("agency", "scale", "subject_kind", "subject_id", "grade", "status", "outlook")},
+            [row["source"]["id"]], "portfolio", uid, observed=row["source"]["checked_at"],
+            target={"instrument_uid": uid, "account_id": account_id})
+    return credit_rows
+
+
+def _chat_period(snapshot, context):
+    begin, requested_finish = date_range(date.fromisoformat(str(context["start"])) if context.get("start") else None,
+                                         date.fromisoformat(str(context["end"])) if context.get("end") else None)
+    finish = min(requested_finish, timestamp(snapshot["as_of"]))
+    if begin > finish:
+        raise HTTPException(409, "chat_period_after_verified_snapshot")
+    return begin, requested_finish, finish
+
+
+def _scoped_chat_events(snapshot, scoped_uids, context, begin, finish):
+    relevant_events = []
+    for item in snapshot.get("events", {}).get("items", []):
+        linked = sorted(scoped_uids.intersection(item.get("instrument_uids", [])))
+        if not linked:
+            continue
+        if context.get("start") or context.get("end"):
+            try:
+                if not begin <= timestamp(item.get("occurred_at")) <= finish:
+                    continue
+            except ValueError:
+                continue
+        relevant_events.append({**item, "instrument_uids": linked})
+    return relevant_events
+
+
+def _append_event_facts(add, relevant_events, snapshot):
+    for index, item in enumerate(relevant_events[:15]):
+        add("event:" + str(index), {k: item.get(k) for k in ("title", "summary", "occurred_at", "instrument_uids", "relationship")}, item.get("source_ids", []), "events", item["id"], observed=snapshot.get("section_as_of", {}).get("events"))
+
+
+def _chat_operations(history, owned, account_id, context, begin, finish):
+    sums, refs, operations, missing_payment, invalid_dates = {}, set(), [], 0, 0
+    for item in history.get("items", []):
+        if not _operation_in_chat_scope(item, owned, account_id, context):
+            continue
+        try:
+            when = timestamp(item.get("date"))
+        except ValueError:
+            invalid_dates += 1
+            continue
+        if not begin <= when <= finish:
+            continue
+        operations.append(item)
+        missing_payment += _add_executed_flow(item, sums, refs)
+    return sums, refs, operations, missing_payment, invalid_dates
+
+
+def _chat_operations_complete(history, begin, finish, missing_payment, invalid_dates):
+    try:
+        complete = bool(history.get("complete")) and begin <= finish and timestamp(history["start"]) <= begin and timestamp(history["end"]) >= finish and not (missing_payment or invalid_dates)
+    except (KeyError, ValueError):
+        complete = False
+    return complete
+
+
+def _append_operation_summary(add, sums, refs, complete, missing_payment, invalid_dates, snapshot, account_id, context, begin, finish, requested_finish):
+    add("operations:range", {"start": begin.isoformat(), "end": finish.isoformat(), "complete": complete,
+                            "missing_payment_count": missing_payment, "invalid_date_count": invalid_dates,
+                            "flows": [{"category": category, "amount": money(value, currency)} for (category, currency), value in sorted(sums.items())],
+                            "basis": "executed_broker_cashflows_not_investment_return"}, sorted(refs), "operations", observed=snapshot.get("section_as_of", {}).get("operations"),
+        target={"account_id": account_id, "instrument_uid": context.get("instrument_uid") if context["mode"] == "instrument" else None,
+                "start": begin.date().isoformat(), "end": (requested_finish - timedelta(microseconds=1)).date().isoformat()})
+
+
+def _append_operation_details(add, operations, snapshot):
+    for item in sorted(operations, key=lambda r: r["date"], reverse=True)[:24]:
+        identifier = "operation:" + digest({"account_id": item["account_id"], "id": item["id"]})
+        add(identifier, {"date": item["date"], "title": item.get("title"), "category": item["category"],
+                         "state": item.get("state"), "instrument_uid": item.get("instrumentUid"),
+                         "quantity": text_number(decimal(item.get("quantity"))), "payment": money(item.get("payment"))},
+            item.get("source_ids", []), "operations", identifier, observed=snapshot.get("section_as_of", {}).get("operations"),
+            target={"account_id": item["account_id"], "operation_id": item["id"], "date": item["date"], "instrument_uid": item.get("instrumentUid")})
+
+
+def _append_history_facts(user, snapshot, account_id, owned, begin, finish, refs_by_id, facts, highlights):
+    observation_facts, observations_coverage = _history_facts(int(user["id"]), snapshot, {account_id} if account_id else set(owned), begin, finish)
+    for item in observation_facts:
+        refs_by_id[item["source"]["id"]] = item["source"]
+        facts.append({k: item[k] for k in ("id", "value", "source_ids", "as_of")})
+        highlights.append(item["highlight"])
+    return observations_coverage
+
+
+def _operation_in_chat_scope(item, owned, account_id, context):
+    if item.get("account_id") not in owned:
+        return False
+    if account_id and item.get("account_id") != account_id:
+        return False
+    return context["mode"] != "instrument" or item.get("instrumentUid") == context.get("instrument_uid")
+
+
+def _add_executed_flow(item, sums, refs):
+    if item.get("state") != "OPERATION_STATE_EXECUTED":
+        return 0
+    amount = money(item.get("payment"))
+    refs.update(item.get("source_ids", []))
+    if amount is None:
+        return 1
+    key = (item["category"], amount["currency"])
+    sums[key] = sums.get(key, ZERO) + decimal(amount)
+    return 0
+
+
+def _validated_claims(raw_claims, facts):
+    evidence, claims, uncertainties = [], [], []
+    for claim in raw_claims:
+        if not isinstance(claim, dict) or not isinstance(claim.get("text"), str) or not isinstance(claim.get("fact_ids"), list):
+            raise GuardError("ai_chat_claims_invalid")
+        if any(not isinstance(identifier, str) or identifier not in facts for identifier in claim["fact_ids"]):
+            raise GuardError("ai_chat_evidence_not_in_context")
+        claims.append({"text": claim["text"][:4000], "fact_ids": claim["fact_ids"], "interpretation": True})
+        _append_claim_evidence(claim["fact_ids"], facts, evidence)
+        if isinstance(claim.get("uncertainty"), str) and claim["uncertainty"].strip():
+            uncertainties.append(claim["uncertainty"][:2000])
+    return evidence, claims, uncertainties
+
+
+def _validated_highlights(raw, packet):
+    valid_highlights = {(v["section"], v["id"]): v for v in packet["allowed_highlights"]}
+    highlights = []
+    for item in _response_items(raw, "highlights", "ai_chat_highlight_not_in_context"):
+        if _is_context_highlight(item, valid_highlights):
+            highlights.append(dict(valid_highlights[item["section"], item["id"]]))
+        else:
+            raise GuardError("ai_chat_highlight_not_in_context")
+    return highlights
+
+
+def _validated_actions(raw, packet):
+    allowed_uids = {v["id"] for v in packet["allowed_highlights"] if v["section"] == "portfolio"}
+    actions = []
+    for item in _response_items(raw, "actions", "ai_chat_action_not_allowed"):
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str) or item["type"] not in {"open_instrument", "open_risks", "open_strategy", "open_sources"}:
+            raise GuardError("ai_chat_action_not_allowed")
+        if item["type"] == "open_instrument" and not _allowed_instrument_action(item, allowed_uids):
+            raise GuardError("ai_chat_action_not_in_context")
+        actions.append({"type": item["type"], "id": str(item.get("id") or "")[:160], "requires_navigation_only": True})
+    return actions
+
+
+def _append_claim_evidence(identifiers, facts, evidence):
+    for identifier in identifiers:
+        for source_id in facts[identifier]["source_ids"]:
+            item = {"source_id": source_id, "fact_id": identifier, "as_of": facts[identifier]["as_of"]}
+            if item not in evidence:
+                evidence.append(item)
+
+
+def _response_items(raw, field, error):
+    items = raw.get(field, [])
+    if not isinstance(items, list):
+        raise GuardError(error)
+    return items
+
+
+def _is_context_highlight(item, valid_highlights):
+    return (isinstance(item, dict) and isinstance(item.get("section"), str)
+            and isinstance(item.get("id"), str)
+            and (item["section"], item["id"]) in valid_highlights)
+
+
+def _allowed_instrument_action(item, allowed_uids):
+    return isinstance(item.get("id"), str) and item["id"] in allowed_uids

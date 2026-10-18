@@ -81,8 +81,9 @@ class PortfolioFrameEvidenceTests(unittest.TestCase):
         root[1].set("content-desc", raw[:-1] + ', "contract_errors": 1}')
         with self.assertRaises(AssertionError):
             observe(root)
+        prepared_argument_1 = frame(errors="1")
         with self.assertRaises(AssertionError):
-            observe(frame(errors="1"))
+            observe(prepared_argument_1)
 
     def test_initial_screen_without_source_calls_is_ready_but_has_no_endpoint_evidence(self):
         for route in ("appearance", "history", "dossier", "quotes"):

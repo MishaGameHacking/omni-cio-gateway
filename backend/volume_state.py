@@ -658,16 +658,7 @@ def create_check(payload: CheckCreate, user: Any = Depends(backend.current_user)
             event = json.loads(row[0])
         if snapshot is None and event is None:
             raise HTTPException(409, "risk_check_basis_unavailable")
-        owned = {p["instrument_uid"] for p in positions(snapshot)} | set((event or {}).get("instrument_uids", []))
-        selected_uids = sorted(set(payload.instrument_uids) or set((event or {}).get("instrument_uids", [])) or owned)
-        if any(uid not in owned for uid in selected_uids):
-            raise HTTPException(422, "risk_check_instrument_not_in_snapshot_or_owned_event")
-        selected_positions = [{key: p.get(key) for key in ("instrument_uid", "account_id", "title", "quantity", "value", "source_ids")}
-                              for p in positions(snapshot) if not selected_uids or p["instrument_uid"] in selected_uids]
-        source_ids = set((event or {}).get("source_ids", [])) | {ref for p in selected_positions for ref in p.get("source_ids", [])}
-        all_sources = (snapshot or {}).get("sources", []) + (event or {}).get("sources", [])
-        checked_sources = list({ref["id"]: ref for ref in all_sources if ref.get("id") in source_ids}.values())
-        linked_source_ids = sorted({ref["id"] for ref in checked_sources})
+        selected_uids, selected_positions, checked_sources, linked_source_ids = _risk_check_scope(snapshot, event, payload)
         strategy = db.execute("SELECT version,config_json,confirmed_at FROM workspace_strategy_versions WHERE user_id=? ORDER BY version DESC LIMIT 1", (user_id,)).fetchone()
         identifier = uuid.uuid4().hex
         result = {"id": identifier, "title": payload.title, "state": "to_review", "created_at": now_iso(),
@@ -707,3 +698,17 @@ def risk_events(limit: int = 100, user: Any = Depends(backend.current_user)) -> 
     with closing(backend.connect()) as db:
         rows = db.execute("SELECT payload_json FROM workspace_events WHERE user_id=? AND kind LIKE 'risk_%' ORDER BY created_at DESC,id LIMIT ?", (int(user["id"]), min(max(limit, 1), 500))).fetchall()
     return {"items": [json.loads(row[0]) for row in rows]}
+
+
+def _risk_check_scope(snapshot, event, payload):
+    owned = {p["instrument_uid"] for p in positions(snapshot)} | set((event or {}).get("instrument_uids", []))
+    selected_uids = sorted(set(payload.instrument_uids) or set((event or {}).get("instrument_uids", [])) or owned)
+    if any(uid not in owned for uid in selected_uids):
+        raise HTTPException(422, "risk_check_instrument_not_in_snapshot_or_owned_event")
+    selected_positions = [{key: p.get(key) for key in ("instrument_uid", "account_id", "title", "quantity", "value", "source_ids")}
+                          for p in positions(snapshot) if not selected_uids or p["instrument_uid"] in selected_uids]
+    source_ids = set((event or {}).get("source_ids", [])) | {ref for p in selected_positions for ref in p.get("source_ids", [])}
+    all_sources = (snapshot or {}).get("sources", []) + (event or {}).get("sources", [])
+    checked_sources = list({ref["id"]: ref for ref in all_sources if ref.get("id") in source_ids}.values())
+    linked_source_ids = sorted({ref["id"] for ref in checked_sources})
+    return selected_uids, selected_positions, checked_sources, linked_source_ids

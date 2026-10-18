@@ -123,13 +123,15 @@ class NativeAlignmentTests(unittest.TestCase):
 
     def test_relro_sharing_a_load_requires_safe_page_boundary(self):
         self.assertTrue(check_elf(elf(relro_size=16384, memory_size=32768))["relro_16kb"])
+        prepared_argument_1 = elf(relro_size=4096, memory_size=32768)
         with self.assertRaisesRegex(NativeAlignmentError, "overlaps writable"):
-            check_elf(elf(relro_size=4096, memory_size=32768))
+            check_elf(prepared_argument_1)
 
     def test_relro_alignment_padding_may_extend_past_load_payload_but_not_its_page(self):
         self.assertTrue(check_elf(elf(relro_size=4096, memory_size=3072))["relro_16kb"])
+        prepared_argument_1 = elf(relro_size=32768, memory_size=3072)
         with self.assertRaisesRegex(NativeAlignmentError, "outside its LOAD"):
-            check_elf(elf(relro_size=32768, memory_size=3072))
+            check_elf(prepared_argument_1)
 
     def test_local_zip_data_offset_and_uncompressed_requirement(self):
         with tempfile.TemporaryDirectory() as directory:

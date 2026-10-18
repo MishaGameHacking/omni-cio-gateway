@@ -98,10 +98,10 @@ class SemanticActionTests(unittest.TestCase):
                     )
 
     def test_nested_dossier_tabs_have_a_distinct_horizontal_target(self):
-        self.assertEqual(6, frames.SCROLL_LIST_CODES["dossier-tabs"])
+        self.assertEqual(frames.SCROLL_LIST_CODES["dossier-tabs"], 6)
         self.assertNotEqual(frames.SCROLL_LIST_CODES["profile-tabs"], frames.SCROLL_LIST_CODES["dossier-tabs"])
-        self.assertEqual("end", profile.semantic_scroll_direction("dossier-tabs", 300, 200, 100, 200))
-        self.assertEqual("start", profile.semantic_scroll_direction("dossier-tabs", 100, 200, 300, 200))
+        self.assertEqual(profile.semantic_scroll_direction("dossier-tabs", 300, 200, 100, 200), "end")
+        self.assertEqual(profile.semantic_scroll_direction("dossier-tabs", 100, 200, 300, 200), "start")
         with self.assertRaises(ValueError):
             profile.semantic_scroll_direction("dossier-tabs", 100, 200, 100, 400)
 

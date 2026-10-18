@@ -103,7 +103,8 @@ fun PortfolioScreen(
     }
     LaunchedEffect(destination, snapshot?.accounts?.map { it.id }) {
         destination?.let { target ->
-            if (target.operationId != null) {
+            when {
+                target.operationId != null -> {
                 val accounts = snapshot?.accounts ?: return@LaunchedEffect
                 operationId = target.operationId; operationDate = target.operationDate
                 operationRequestKey++
@@ -114,7 +115,8 @@ fun PortfolioScreen(
                     accounts.size == 1 -> { accountId = accounts.single().id; section = 1 }
                     else -> selectForSection = 1
                 }
-            } else if (target.query.isNotBlank()) {
+            }
+                target.query.isNotBlank() -> {
                 val accounts = snapshot?.accounts ?: return@LaunchedEffect
                 val exact = accounts.filter { target.accountId == null || it.id == target.accountId }.flatMap { account ->
                     account.positions.filter { it.id == target.query }.map { PositionSelection(account.id, it.id) }
@@ -122,76 +124,66 @@ fun PortfolioScreen(
                 assetQuery = target.query; assetSector = target.sector; assetKind = target.kind; assetAccountId = target.accountId
                 accountId = null; overviewSection = 1
                 if (exact.size == 1) positionDetails = exact.single()
-            } else if (target.section > 2) {
+            }
+                target.section > 2 -> {
                 val accounts = snapshot?.accounts ?: return@LaunchedEffect
                 if (target.accountId == null && accounts.size > 1) selectForSection = target.section
                 else { accountId = target.accountId ?: accounts.firstOrNull()?.id; section = target.section }
-            } else {
+            }
+                else -> {
                 overviewSection = target.section; accountId = target.accountId
                 if (target.accountId != null) section = target.section
                 assetQuery = target.query; assetSector = target.sector; assetKind = target.kind; assetAccountId = null
+            }
             }
             onDestinationConsumed()
         }
     }
     BackHandler(accountId != null && positionDetails == null) { accountId = null; section = 0 }
     BackHandler(positionDetails != null) { positionDetails = null }
-    val savedPages = rememberSaveableStateHolder()
-    val motionDuration = portfolioMotionDuration(180, 80)
 
-    SharedTransitionLayout(modifier.fillMaxSize()) {
-    AnimatedContent(positionDetails, transitionSpec = { fadeIn(tween(motionDuration)) togetherWith fadeOut(tween(motionDuration)) },
-        label = "portfolio-instrument-transition") { detail ->
-    CompositionLocalProvider(LocalInstrumentTransition provides InstrumentTransition(this@SharedTransitionLayout, this@AnimatedContent)) {
-    savedPages.SaveableStateProvider(detail?.let { "${it.accountId}:${it.positionId}" } ?: "portfolio") {
-    if (detail != null) {
-        LivePositionDetails(detail, snapshot?.accounts, embedded = true) { positionDetails = null }
-    } else {
-    SpectrumBackground(modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = Color.Transparent,
-            contentWindowInsets = WindowInsets.safeDrawing,
-            bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
-        ) { insets ->
-            if (account != null) {
-                AccountScreen(account, accessToken, section, { section = it },
-                    { accountId = null; section = 0 }, snapshot.asOf, refreshError,
-                    Modifier.padding(insets).consumeWindowInsets(insets), snapshot.accounts,
-                    { accountId = it; operationId = null; operationDate = null }, { positionDetails = it }, historyDate,
-                    { date -> historyDate = date; historyStart = null; historyEnd = null; historyResolution = null; section = 3 },
-                    historyStart = historyStart, historyEnd = historyEnd, historyResolution = historyResolution,
-                    initialOperationId = operationId, initialOperationDate = operationDate, operationRequestKey = operationRequestKey)
-            } else {
-                PortfolioDashboard(
-                    state = state,
-                    selectedCurrency = selectedCurrency,
-                    refreshing = refreshing,
-                    refreshError = refreshError,
-                    lastUpdatedMillis = lastUpdatedMillis,
-                    accessToken = accessToken,
-                    selectedSection = overviewSection,
-                    onSelectSection = { overviewSection = it; listScope.launch { listState.scrollToItem(0) } },
-                    listState = listState,
-                    onProfileClick = onConnect,
-                    assetQuery = assetQuery, assetSector = assetSector, assetKind = assetKind, assetAccountId = assetAccountId,
-                    onOpenAccount = { accountId = it.id; section = 0 },
-                    onOpenSection = { target ->
-                        if (snapshot?.accounts?.size == 1) {
-                            accountId = snapshot.accounts.first().id
-                            section = target
-                        } else selectForSection = target
-                    },
-                    onPositionClick = { id, position -> positionDetails = PositionSelection(id, position.id) },
-                    modifier = Modifier.padding(insets).consumeWindowInsets(insets),
-                )
+    PortfolioTransition(positionDetails, snapshot, modifier, { positionDetails = null }) {
+        SpectrumBackground(modifier.fillMaxSize()) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = Color.Transparent,
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    bottomBar = { AnalystBottomBar(AnalystTab.Portfolio, { accountId = null }, onProfileClick) },
+                ) { insets ->
+                    if (account != null) {
+                        AccountScreen(account, accessToken, section, { section = it },
+                            { accountId = null; section = 0 }, snapshot.asOf, refreshError,
+                            Modifier.padding(insets).consumeWindowInsets(insets), snapshot.accounts,
+                            { accountId = it; operationId = null; operationDate = null }, { positionDetails = it }, historyDate,
+                            { date -> historyDate = date; historyStart = null; historyEnd = null; historyResolution = null; section = 3 },
+                            historyStart = historyStart, historyEnd = historyEnd, historyResolution = historyResolution,
+                            initialOperationId = operationId, initialOperationDate = operationDate, operationRequestKey = operationRequestKey)
+                    } else {
+                        PortfolioDashboard(
+                            state = state,
+                            selectedCurrency = selectedCurrency,
+                            refreshing = refreshing,
+                            refreshError = refreshError,
+                            lastUpdatedMillis = lastUpdatedMillis,
+                            accessToken = accessToken,
+                            selectedSection = overviewSection,
+                            onSelectSection = { overviewSection = it; listScope.launch { listState.scrollToItem(0) } },
+                            listState = listState,
+                            onProfileClick = onConnect,
+                            assetQuery = assetQuery, assetSector = assetSector, assetKind = assetKind, assetAccountId = assetAccountId,
+                            onOpenAccount = { accountId = it.id; section = 0 },
+                            onOpenSection = { target ->
+                                if (snapshot?.accounts?.size == 1) {
+                                    accountId = snapshot.accounts.first().id
+                                    section = target
+                                } else selectForSection = target
+                            },
+                            onPositionClick = { id, position -> positionDetails = PositionSelection(id, position.id) },
+                            modifier = Modifier.padding(insets).consumeWindowInsets(insets),
+                        )
+                    }
+                }
             }
-        }
-    }
-    }
-    }
-    }
-    }
     }
     if (selectForSection != null && snapshot != null) {
         AlertDialog(onDismissRequest = { selectForSection = null }, title = { Text("Выберите счёт") },
@@ -389,3 +381,24 @@ internal fun AccountStructure(account: PortfolioAccount) {
     if (mode == 1) Notice("Группировка по названиям инструментов/компаний API; единая структура эмитентов для всех типов активов ещё уточняется.")
 }
 
+@Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
+private fun PortfolioTransition(positionDetails: PositionSelection?, snapshot: PortfolioSnapshot?,
+    modifier: Modifier, onCloseDetails: () -> Unit, content: @Composable () -> Unit) {
+    val savedPages = rememberSaveableStateHolder()
+    val motionDuration = portfolioMotionDuration(180, 80)
+    SharedTransitionLayout(modifier.fillMaxSize()) {
+        AnimatedContent(positionDetails, transitionSpec = { fadeIn(tween(motionDuration)) togetherWith fadeOut(tween(motionDuration)) },
+            label = "portfolio-instrument-transition") { detail ->
+        CompositionLocalProvider(LocalInstrumentTransition provides InstrumentTransition(this@SharedTransitionLayout, this@AnimatedContent)) {
+        savedPages.SaveableStateProvider(detail?.let { "${it.accountId}:${it.positionId}" } ?: "portfolio") {
+        if (detail != null) {
+            LivePositionDetails(detail, snapshot?.accounts, embedded = true) { onCloseDetails() }
+        } else {
+        content()
+        }
+        }
+        }
+        }
+        }
+}

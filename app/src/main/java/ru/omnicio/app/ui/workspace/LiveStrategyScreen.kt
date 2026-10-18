@@ -22,6 +22,9 @@ import java.util.UUID
 import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
 import ru.omnicio.app.ui.spectrum.*
 
+private const val UNSPECIFIED_VALUE = "Не задано"
+
+
 private val limitTitles = linkedMapOf("position_percent" to "Одна позиция", "issuer_percent" to "Компания",
     "group_percent" to "Связанная группа", "sector_percent" to "Отрасль", "currency_percent" to "Валюта")
 
@@ -72,18 +75,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { WorkspaceRequestState(resource) }
-                item { SpectrumCard(emphasized = true) {
-                    Text(if (active == null) "Правила ещё не подтверждены" else "Действует версия " + version, style = MaterialTheme.typography.titleLarge)
-                    Text(when {
-                        dirty && draftSaved -> "Изменения сохранены как ваш черновик. Для применения нужен расчёт и подтверждение."
-                        dirty -> "Изменения пока открыты на этом экране. Сохранение черновика ещё не подтверждено."
-                        active == null -> "Рассчитайте влияние правил и подтвердите первую версию, чтобы использовать её при проверке портфеля."
-                        else -> "Подтверждённая версия используется при серверной проверке портфеля."
-                    })
-                    if (loaded && dirty && !draftSaved) SpectrumSecondaryButton("Повторить сохранение черновика", { draftRevision++ }, Modifier.fillMaxWidth())
-                    active?.optString("confirmed_at")?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
-                    savedMessage?.let { Text(it, color = LocalSpectrumPalette.current.emerald) }
-                } }
+                item { StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ } }
                 when (tab) {
                     0 -> item { StrategyGoalEditor(config, edit) }
                     1 -> item { StrategyReserveEditor(config, edit) }
@@ -186,17 +178,17 @@ private fun StrategyDifference(before: JSONObject?, after: JSONObject) {
     if (before == null) Text("До подтверждения активной версии нет.")
     listOf("goal", "horizon_months", "risk_level").forEach { field ->
         val label = when (field) { "goal" -> "Цель"; "horizon_months" -> "Горизонт, месяцев"; else -> "Профиль риска" }
-        if (before?.opt(field) != after.opt(field)) Text(label + ": " + strategyValue(before?.text(field, "Не задано")) + " → " + strategyValue(after.text(field)))
+        if (before?.opt(field) != after.opt(field)) Text(label + ": " + strategyValue(before?.text(field, UNSPECIFIED_VALUE)) + " → " + strategyValue(after.text(field)))
     }
     val oldLimits = before?.optJSONObject("limits")
     val newLimits = after.optJSONObject("limits")
-    limitTitles.forEach { (key, label) -> if (oldLimits?.opt(key) != newLimits?.opt(key)) Text(label + ": " + (oldLimits?.text(key) ?: "Не задано") + " → " + (newLimits?.text(key) ?: "Не задано") + "%") }
+    limitTitles.forEach { (key, label) -> if (oldLimits?.opt(key) != newLimits?.opt(key)) Text(label + ": " + (oldLimits?.text(key) ?: UNSPECIFIED_VALUE) + " → " + (newLimits?.text(key) ?: UNSPECIFIED_VALUE) + "%") }
     Text("Резерв: " + PrivateValue(moneyText(before?.optJSONObject("reserve"))) + " → " + PrivateValue(moneyText(after.optJSONObject("reserve"))))
 }
 
 private fun strategyValue(value: String?): String = when (value) {
     "preservation" -> "Сохранение"; "income" -> "Выплаты"; "growth" -> "Рост"; "moderate" -> "Умеренный"
-    "conservative" -> "Консервативный"; "aggressive" -> "Высокий"; else -> value ?: "Не задано"
+    "conservative" -> "Консервативный"; "aggressive" -> "Высокий"; else -> value ?: UNSPECIFIED_VALUE
 }
 
 @Composable
@@ -214,3 +206,20 @@ private fun StrategyPreview(preview: JSONObject, enabled: Boolean, confirm: () -
     }
 }
 
+@Composable
+private fun StrategyStateCard(active: JSONObject?, dirty: Boolean, draftSaved: Boolean, loaded: Boolean,
+    savedMessage: String?, retryDraft: () -> Unit) {
+    val version = active?.optInt("version") ?: 0
+    SpectrumCard(emphasized = true) {
+                        Text(if (active == null) "Правила ещё не подтверждены" else "Действует версия " + version, style = MaterialTheme.typography.titleLarge)
+                        Text(when {
+                            dirty && draftSaved -> "Изменения сохранены как ваш черновик. Для применения нужен расчёт и подтверждение."
+                            dirty -> "Изменения пока открыты на этом экране. Сохранение черновика ещё не подтверждено."
+                            active == null -> "Рассчитайте влияние правил и подтвердите первую версию, чтобы использовать её при проверке портфеля."
+                            else -> "Подтверждённая версия используется при серверной проверке портфеля."
+                        })
+                        if (loaded && dirty && !draftSaved) SpectrumSecondaryButton("Повторить сохранение черновика", retryDraft, Modifier.fillMaxWidth())
+                        active?.optString("confirmed_at")?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
+                        savedMessage?.let { Text(it, color = LocalSpectrumPalette.current.emerald) }
+                    }
+}

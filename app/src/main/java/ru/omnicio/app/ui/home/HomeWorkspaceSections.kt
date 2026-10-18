@@ -181,13 +181,14 @@ internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWo
     }
     SpectrumCard {
         Text("С прошлого посещения", style = MaterialTheme.typography.titleLarge)
-        if (!initialized) Text("Читаем сохранённую точку сравнения…")
-        else if (baselineVisit == null) Text("Первая точка сравнения сохранена. При следующем посещении появятся фактические изменения.")
-        else if (baseline == null) Text("Исходная точка сравнения недоступна. Текущий снимок не подставлен вместо прежнего.")
-        else {
-            Notice("Сравниваем снимки ${baseline.optionalText("as_of") ?: baselineVisit ?: "без времени"} и ${snapshot.asOf ?: "без времени"}.")
-            val before = baseline?.optionalText("total")?.toBigDecimalOrNull()
-            val sameCurrency = baseline?.optionalText("currency") == snapshot.totalValue.currency
+        when {
+            !initialized -> Text("Читаем сохранённую точку сравнения…")
+            baselineVisit == null -> Text("Первая точка сравнения сохранена. При следующем посещении появятся фактические изменения.")
+            baseline == null -> Text("Исходная точка сравнения недоступна. Текущий снимок не подставлен вместо прежнего.")
+            else -> {
+            Notice("Сравниваем снимки ${baseline.optionalText("as_of") ?: baselineVisit} и ${snapshot.asOf ?: "без времени"}.")
+            val before = baseline.optionalText("total")?.toBigDecimalOrNull()
+            val sameCurrency = baseline.optionalText("currency") == snapshot.totalValue.currency
             if (before != null && sameCurrency) DataRow("Изменение общей оценки", PrivateValue(
                 "${decimalText(snapshot.totalValue.value.toBigDecimal() - before)} ${currencySymbol(snapshot.totalValue.currency)}"))
             else Notice("Общую сумму нельзя сравнить: оценки в разных валютах или первая сумма неизвестна.")
@@ -195,6 +196,7 @@ internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWo
             changes.take(4).forEach { Text(it) }
             if (changes.size > 4) DetailFold("Все изменения (${changes.size})") { changes.drop(4).forEach { Text(it) } }
             Notice("Разница снимков не доказывает сделку, выплату или причину движения цены.")
+            }
         }
     }
 }

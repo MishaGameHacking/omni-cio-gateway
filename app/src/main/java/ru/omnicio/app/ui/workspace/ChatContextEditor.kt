@@ -23,7 +23,7 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
     val accounts = portfolio?.accounts.orEmpty()
     val positions = accounts.filter { accountId == null || it.id == accountId }.flatMap { it.positions }.distinctBy { it.id }
     val selected = positions.firstOrNull { it.id == instrument }
-    val validRange = if (start.isBlank() && end.isBlank()) true else runCatching { LocalDate.parse(start) <= LocalDate.parse(end) }.getOrDefault(false)
+    val validRange = (start.isBlank() && end.isBlank()) || runCatching { LocalDate.parse(start) <= LocalDate.parse(end) }.getOrDefault(false)
     WorkspaceDialog("Контекст следующего вопроса", onClose) {
         WorkspaceChoices("О чём говорим", listOf("Общий вопрос", "Портфель", "Инструмент"), mode) { mode = it }
         if (mode != 0) {
@@ -51,11 +51,13 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
             }
         }
         SpectrumPrimaryButton("Использовать этот контекст", {
-            val base = if (mode == 0) "Общий вопрос" else if (mode == 2) selected?.title.orEmpty() else accounts.firstOrNull { it.id == accountId }?.name ?: "Мой портфель"
-            val title = base + if (mode != 0 && start.isNotBlank()) " · " + start + " — " + end else ""
-            select(ChatContext(listOf("general", "portfolio", "instrument")[mode], if (mode == 2) instrument else null, title,
-                if (mode == 0) null else accountId, start.takeIf { mode != 0 && it.isNotBlank() }, end.takeIf { mode != 0 && it.isNotBlank() },
-                current.eventId.takeIf { keepEvent && mode == 2 && instrument == current.instrumentUid }))
+            val base = when (mode) {
+                0 -> "Общий вопрос"
+                2 -> selected?.title.orEmpty()
+                else -> accounts.firstOrNull { it.id == accountId }?.name ?: "Мой портфель"
+            }
+            select(editedChatContext(mode, base, instrument, accountId, start to end,
+                current.eventId.takeIf { keepEvent && instrument == current.instrumentUid }))
             onClose()
         }, Modifier.fillMaxWidth(), (mode == 0 || validRange) && (mode != 2 || selected != null))
         SpectrumSecondaryButton("Вернуться", onClose, Modifier.fillMaxWidth())
@@ -89,4 +91,14 @@ private fun factLabel(key: String) = when (key) {
     "summary" -> "Содержание"; "occurred_at" -> "Дата события"; "relationship" -> "Связь"; "complete" -> "Полнота подтверждена"
     "start" -> "Начало"; "end" -> "Конец"; "flows" -> "Денежные потоки"; "category" -> "Категория"; "amount" -> "Сумма"
     "basis" -> "Основание"; "balance" -> "Капитал"; "at", "date" -> "Дата"; else -> key.replace('_', ' ').take(100)
+}
+
+
+private fun editedChatContext(mode: Int, base: String, instrument: String?, accountId: String?,
+    period: Pair<String, String>, eventId: String?): ChatContext {
+    val (start, end) = period
+    val title = base + if (mode != 0 && start.isNotBlank()) " · " + start + " — " + end else ""
+    return ChatContext(listOf("general", "portfolio", "instrument")[mode], if (mode == 2) instrument else null, title,
+        if (mode == 0) null else accountId, start.takeIf { mode != 0 && it.isNotBlank() },
+        end.takeIf { mode != 0 && it.isNotBlank() }, eventId.takeIf { mode == 2 })
 }

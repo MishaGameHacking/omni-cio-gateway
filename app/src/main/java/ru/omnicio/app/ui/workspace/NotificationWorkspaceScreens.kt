@@ -23,9 +23,12 @@ import ru.omnicio.app.data.notifications.WorkspaceNotificationService
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spectrum.*
 
+private const val NOTIFICATION_PREFERENCES_PATH = "/workspace/notifications/preferences"
+
+
 @Composable
 fun NotificationDeliveryRuntime() {
-    val resource = rememberWorkspaceResource("/workspace/notifications/preferences")
+    val resource = rememberWorkspaceResource(NOTIFICATION_PREFERENCES_PATH)
     val context = LocalContext.current
     LaunchedEffect(resource.data) {
         val enabled = resource.data?.optJSONObject("preferences")?.optBoolean("enabled") ?: return@LaunchedEffect
@@ -35,7 +38,7 @@ fun NotificationDeliveryRuntime() {
 
 @Composable
 fun NotificationSettingsScreen(onBack: () -> Unit) {
-    val resource = rememberWorkspaceResource("/workspace/notifications/preferences")
+    val resource = rememberWorkspaceResource(NOTIFICATION_PREFERENCES_PATH)
     val context = LocalContext.current
     var draft by rememberSaveable { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<JSONObject?>(null) }
@@ -79,7 +82,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                     val valid = notificationRulesValid(settings)
                     if (!valid) Text("Проверьте часовой пояс и время в формате 09:00.", color = MaterialTheme.colorScheme.error)
                     SpectrumPrimaryButton("Применить правила", {
-                        save.perform("/workspace/notifications/preferences", JSONObject(settings.toString()).put("expected_version", resource.data?.optInt("version") ?: 0), "PUT")
+                        save.perform(NOTIFICATION_PREFERENCES_PATH, JSONObject(settings.toString()).put("expected_version", resource.data?.optInt("version") ?: 0), "PUT")
                     }, Modifier.fillMaxWidth(), valid && !save.busy && !simulate.busy)
                     SpectrumSecondaryButton("Проверить на прошлых событиях", { simulate.perform("/workspace/notifications/preview", JSONObject().put("preferences", settings)) },
                         Modifier.fillMaxWidth(), valid && !save.busy && !simulate.busy)

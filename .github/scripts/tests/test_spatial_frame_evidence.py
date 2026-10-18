@@ -89,13 +89,15 @@ class SpatialFrameEvidenceTests(unittest.TestCase):
         for changes in ({"engines": 0}, {"frames": 0}, {"meshes": 0}, {"pending": 1}, {"windows": 2}):
             with self.subTest(changes=changes):
                 self.assertIsNone(evidence.ready_spatial_metrics(marker(**changes)))
+        prepared_argument_1 = marker(engines=2)
         with self.assertRaises(AssertionError):
-            evidence.ready_spatial_metrics(marker(engines=2))
+            evidence.ready_spatial_metrics(prepared_argument_1)
 
     def test_bad_runtime_counters_and_wrong_package_cannot_pass(self):
         for changes in ({"frames": -1}, {"density": "NaN"}, {"density": 0}, {"error": "present"}):
+            prepared_argument_1 = marker(**changes)
             with self.subTest(changes=changes), self.assertRaises(AssertionError):
-                evidence.spatial_metrics(marker(**changes))
+                evidence.spatial_metrics(prepared_argument_1)
         wrong = marker()
         next(wrong.iter("node")).set("package", "another.package")
         self.assertIsNone(evidence.spatial_metrics(wrong))
@@ -105,7 +107,7 @@ class SpatialFrameEvidenceTests(unittest.TestCase):
 
     def test_policy_metrics_use_real_public_ranges_and_no_duplicate_keys(self):
         observed = evidence.spatial_metrics(marker(thermal=2, **{"system-motion": "true", "power-save": "false", "back-progress": .3}))
-        self.assertEqual(2, observed["thermal"])
+        self.assertEqual(observed["thermal"], 2)
         self.assertTrue(observed["system-motion"])
         self.assertFalse(observed["power-save"])
         for changes in ({"thermal": 7}, {"back-progress": 1.2}, {"system-motion": "yes"}, {"power-save": "0"}):
