@@ -17,7 +17,7 @@ try:
     from . import volume_market as market, volume_state as state, purchase_policy as policy
     from .credit_evidence import Rating, Source, credit_assessment
     from .ai_budget import transaction
-    from .volume_contract import HTTP_ERRORS, decimal, digest, text_number, financial_context
+    from .volume_contract import HTTP_ERRORS, decimal, digest, text_number, financial_context, timestamp
 except ImportError:
     import app as backend
     import portfolio_details as details
@@ -27,7 +27,7 @@ except ImportError:
     import purchase_policy as policy
     from credit_evidence import Rating, Source, credit_assessment
     from ai_budget import transaction
-    from volume_contract import HTTP_ERRORS, decimal, digest, text_number, financial_context
+    from volume_contract import HTTP_ERRORS, decimal, digest, text_number, financial_context, timestamp
 
 router = APIRouter(prefix="/workspace/purchases", tags=["Personal purchase constraint checks"])
 
@@ -153,6 +153,8 @@ def archive_check(user, result: dict, inputs: dict) -> str:
     """Encrypt immutable calculation evidence; commit only against current inputs."""
     user_id, identifier = int(user["id"]), uuid.uuid4().hex
     with transaction(backend.connect) as db:
+        if result["constraints_passed"] and timestamp(result["expires_at"]) <= datetime.now(timezone.utc):
+            raise HTTPException(409, "purchase_observations_expired")
         active = state.active_strategy(user_id, db)
         saved = db.execute("SELECT id,broker_key FROM workspace_snapshots WHERE user_id=? AND currency=?",
                            (user_id, inputs["snapshot"]["currency"])).fetchone()
@@ -167,6 +169,18 @@ def archive_check(user, result: dict, inputs: dict) -> str:
         encrypted = backend.FERNET.encrypt(state.encode({"result": result, "inputs": inputs}).encode()).decode()
         state.record(db, user_id, "purchase_check", identifier, {"encrypted": encrypted})
     return identifier
+
+
+def observation_expiry(started, snapshot, book, now):
+    """A later calculation must not renew the lifetime of older observations."""
+    deadlines = [started + timedelta(seconds=60)]
+    for value, lifetime in ((snapshot.get("as_of"), 300), (book.get("orderbookTs"), 60)):
+        try:
+            observed = timestamp(value)
+            deadlines.append(observed + timedelta(seconds=lifetime) if observed <= now else now)
+        except ValueError:
+            deadlines.append(now)
+    return min(deadlines)
 
 
 @router.get("/checks/{identifier}", responses=HTTP_ERRORS)
@@ -200,11 +214,12 @@ def _check_purchase(payload: PurchaseCheck, user: Any) -> dict:
     if not snapshot or not policy.fresh(snapshot.get("as_of"), datetime.now(timezone.utc), 300):
         raise HTTPException(409, "purchase_fresh_snapshot_required")
     revision = research_store.revision(backend.connect)
+    started = datetime.now(timezone.utc)
     meta, info, limits, quote, trading, book = _broker_observations(user, payload, price)
     now = datetime.now(timezone.utc)
     identity, credit = reviewed_credit(payload.instrument_uid, meta.get("instrumentType"), now)
     result = policy.assess_purchase(snapshot=snapshot, config=config, meta=meta, identity=identity,
-        credit=credit, info=info, quote=quote, capacity=limits, lots=payload.lots, observed_at=now.isoformat(), now=now)
+        credit=credit, info=info, quote=quote, capacity=limits, lots=payload.lots, observed_at=started.isoformat(), now=now)
     reasons = result["reasons"] + liquidity_reasons(book, trading, payload.limit_price, payload.lots, now)
     if not quoted_principal_matches(meta, price, quote, payload.lots):
         reasons.append("broker_price_unit_or_principal_mismatch")
@@ -218,7 +233,7 @@ def _check_purchase(payload: PurchaseCheck, user: Any) -> dict:
     result.update(reasons=sorted(set(reasons)), constraints_passed=not reasons,
         instrument_uid=payload.instrument_uid, account_id=payload.account_id,
         limit_price=text_number(decimal(payload.limit_price)), as_of=now.isoformat(),
-        expires_at=(now + timedelta(seconds=60)).isoformat(), snapshot_id=snapshot["snapshot_id"],
+        expires_at=observation_expiry(started, snapshot, book, now).isoformat(), snapshot_id=snapshot["snapshot_id"],
         strategy_version=active["version"], evidence_revision=asdict(revision),
         advice_kind="personalized_purchase_constraint_check",
         suitability_complete=False,
@@ -226,7 +241,8 @@ def _check_purchase(payload: PurchaseCheck, user: Any) -> dict:
         explanation="Проверка ограничений конкретной покупки. Полная инвестиционная рекомендация требует оценки способности нести убытки и инвестиционного обоснования.")
     inputs = {"snapshot": snapshot, "strategy": active, "instrument": meta, "broker_user_info": info,
         "identity": identity, "credit": credit, "capacity": limits, "quote": quote, "book": book,
-        "trading": trading, "request": payload.model_dump(), "observed_at": now.isoformat(), "policy": policy.POLICY_VERSION}
+        "trading": trading, "request": payload.model_dump(), "observed_at": now.isoformat(),
+        "broker_read_started_at": started.isoformat(), "policy": policy.POLICY_VERSION}
     result["input_digest"] = digest(inputs)
     archive_check(user, result, inputs)
     return result

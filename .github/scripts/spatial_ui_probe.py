@@ -257,12 +257,19 @@ class _SpatialSession:
         old_rotation = self.probe.command("shell", "settings", "get", "system", "user_rotation").strip()
         old_auto = self.probe.command("shell", "settings", "get", "system", "accelerometer_rotation").strip()
         try:
-            self.probe.tap("Форма 3D", "profile-tabs", direction="start")
+            # Scroll animations can move a partially visible text label between
+            # reveal and tap. Use the settled native tab hit target, then prove
+            # the intended section/state BEFORE requesting Activity recreation.
+            self.probe.tap_resource("profile-tabs-item-0", "profile-tabs", direction="start")
+            self.probe.find("Нажатий: 1")
+            self.probe.capture("spatial-rotation-before")
             self.probe.command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
             self.probe.command("shell", "settings", "put", "system", "user_rotation", "1")
             self.probe.wait_for(lambda: landscape_ready(self.probe.tree()),
                                 "Recreated landscape app did not become ready")
-            self.probe.reveal("Нажатий: 1", "workspace-content")
+            self.probe.capture("spatial-rotation-ready")
+            self.probe.reveal_resource("spatial-click-result", "workspace-content", direction="start")
+            self.probe.find("Нажатий: 1")
             self.probe.reveal("Включён", "workspace-content")
             edited = self.probe.reveal_resource("spatial-input", "workspace-content")
             if not any("3d" in node.get("text", "") for node in edited.iter("node")):

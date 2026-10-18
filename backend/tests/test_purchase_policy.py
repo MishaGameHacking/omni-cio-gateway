@@ -110,6 +110,20 @@ def test_future_and_expired_snapshots_do_not_authorize_purchase(age):
     assert "fresh_observations_required" in policy.assess_purchase(**data)["reasons"]
 
 
+def test_calculation_cannot_renew_old_snapshot_book_or_broker_reads():
+    now = datetime.now(timezone.utc)
+    snapshot = {"as_of": (now - timedelta(seconds=299)).isoformat()}
+    book = {"orderbookTs": (now - timedelta(seconds=58)).isoformat()}
+    assert purchases.observation_expiry(now, snapshot, book, now) == now + timedelta(seconds=1)
+    snapshot["as_of"] = now.isoformat()
+    assert purchases.observation_expiry(now, snapshot, book, now) == now + timedelta(seconds=2)
+    started = now - timedelta(seconds=61)
+    assert purchases.observation_expiry(started, snapshot, book, now) < now
+    data = inputs()
+    data["observed_at"] = (data["now"] - timedelta(seconds=61)).isoformat()
+    assert "fresh_observations_required" in policy.assess_purchase(**data)["reasons"]
+
+
 def test_missing_or_duplicate_positions_do_not_appear_diversified():
     data = inputs()
     data["snapshot"]["positions"][0]["verified_identity"] = None
@@ -242,6 +256,22 @@ def test_purchase_endpoint_archives_encrypted_reproducible_evidence_and_isolates
     assert 'encrypted' in raw
     backend.app.dependency_overrides[backend.current_user] = lambda: fixture['other']
     assert fixture['client'].get(path).status_code == 404
+
+
+def test_expired_positive_result_cannot_be_committed(fixture):
+    from contextlib import closing
+    from backend import app as backend
+    payload, _, _ = prepare_endpoint(fixture)
+    original = purchases.archive_check
+    def expired(user, result, observations):
+        result["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        return original(user, result, observations)
+    fixture["patch"].setattr(purchases, "archive_check", expired)
+    response = fixture["client"].post("/workspace/purchases/check", json=payload)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "purchase_observations_expired"
+    with closing(backend.connect()) as db:
+        assert db.execute("SELECT COUNT(*) FROM workspace_records WHERE kind='purchase_check'").fetchone()[0] == 0
 
 
 def test_purchase_foreign_account_is_rejected_before_account_specific_broker_reads(fixture):

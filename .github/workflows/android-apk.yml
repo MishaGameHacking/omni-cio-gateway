@@ -37,7 +37,7 @@ jobs:
       queue: max
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    # Full API35 16KB/API36 upgrade + 52 business and 14 portfolio/font cases per API, native
+    # Full API35 16KB/API36 upgrade + 60 business and 14 portfolio/font cases per API, native
     # rendering and long-scroll gates. Per-command/assertion deadlines are unchanged.
     timeout-minutes: 70
     # Applies before checkout cleans generated Kotlin class paths on Windows.

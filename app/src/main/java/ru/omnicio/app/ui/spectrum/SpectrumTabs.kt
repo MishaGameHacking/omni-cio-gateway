@@ -79,6 +79,8 @@ fun SpectrumTabs(
                     modifier = Modifier
                         .width(widths[index])
                         .height(height)
+                        .let { target -> if (scrollTag == null) target else target
+                            .semantics { testTagsAsResourceId = true }.testTag("$scrollTag-item-$index") }
                         .selectable(chosen, interactionSource = interaction, indication = null, role = Role.Tab, onClick = click),
                     kind = SpatialSurfaceKind.Chip,
                     color = if (chosen) palette.cardStrong else palette.card,
