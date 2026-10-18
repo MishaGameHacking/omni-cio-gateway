@@ -14,6 +14,7 @@ import android.util.Xml;
 import android.view.Display;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -88,6 +89,7 @@ public final class FrameInstrumentation extends Instrumentation {
             }
             AccessibilityServiceInfo info = automation.getServiceInfo();
             info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                    | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
                     | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS;
             automation.setServiceInfo(info);
             Display screen = getContext().getSystemService(DisplayManager.class)
@@ -160,7 +162,7 @@ public final class FrameInstrumentation extends Instrumentation {
                 if ((rawRequest & ~REQUEST_SEQUENCE_MASK) != 0) {
                     throw new IOException("Frame request contains action flags");
                 }
-                byte[] frame = root == null ? new byte[0] : encodeTree(root);
+                byte[] frame = root == null ? new byte[0] : encodeTree(root, automation);
                 output.writeInt(request);
                 output.writeInt(root == null ? 0 : 1);
                 output.writeInt(frame.length);
@@ -246,7 +248,7 @@ public final class FrameInstrumentation extends Instrumentation {
         }
     }
 
-    private byte[] encodeTree(AccessibilityNodeInfo root) throws IOException {
+    private byte[] encodeTree(AccessibilityNodeInfo root, UiAutomation automation) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         XmlSerializer xml = Xml.newSerializer();
         xml.setOutput(new BoundedOutput(bytes), "UTF-8");
@@ -255,6 +257,7 @@ public final class FrameInstrumentation extends Instrumentation {
         Rect display = windows.getMaximumWindowMetrics().getBounds();
         attr(xml, "display-width", Integer.toString(display.width()));
         attr(xml, "display-height", Integer.toString(display.height()));
+        attr(xml, "keyboard-visible", Boolean.toString(keyboardVisible(automation, display)));
         writeNode(xml, root, display, 0, new int[] {0});
         xml.endTag(null, "hierarchy");
         xml.endDocument();
@@ -262,6 +265,19 @@ public final class FrameInstrumentation extends Instrumentation {
             throw new IOException("Accessibility tree exceeds byte budget");
         }
         return bytes.toByteArray();
+    }
+
+    private static boolean keyboardVisible(UiAutomation automation, Rect display) {
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                Rect bounds = new Rect();
+                window.getBoundsInScreen(bounds);
+                if (!bounds.isEmpty() && Rect.intersects(bounds, display)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void writeNode(

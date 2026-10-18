@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import Mock
 import xml.etree.ElementTree as ET
 
 SPEC = importlib.util.spec_from_file_location("native_input_evidence", Path(__file__).resolve().parents[1] / "native_input_evidence.py")
@@ -20,6 +21,39 @@ def frame(**changes):
 
 
 class NativeInputEvidenceTests(unittest.TestCase):
+    def test_keyboard_back_is_never_sent_without_a_visible_input_method(self):
+        root = frame()
+        root.set("keyboard-visible", "false")
+        probe = Mock()
+        probe.tree.return_value = root
+        self.assertFalse(native.dismiss_keyboard(probe))
+        probe.command.assert_not_called()
+        probe.wait_for.assert_not_called()
+
+    def test_keyboard_back_requires_observed_dismissal_and_app_window(self):
+        shown, hidden = frame(), frame()
+        shown.set("keyboard-visible", "true")
+        hidden.set("keyboard-visible", "false")
+        probe = Mock()
+        probe.tree.side_effect = [shown, shown, hidden]
+
+        def wait(read, _message):
+            self.assertFalse(read())
+            self.assertTrue(read())
+
+        probe.wait_for.side_effect = wait
+        self.assertTrue(native.dismiss_keyboard(probe))
+        probe.command.assert_called_once_with("shell", "input", "keyevent", "BACK")
+        for value in (None, "unknown", "1"):
+            root = frame()
+            if value is not None:
+                root.set("keyboard-visible", value)
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                native.keyboard_visible(root)
+        hidden[0].set("package", "other.app")
+        with self.assertRaises(AssertionError):
+            native.keyboard_visible(hidden)
+
     def test_same_text_is_not_enough_without_native_focus_and_editability(self):
         actual = native.focused_editor(frame(), "UIprobe", (5, 5))
         self.assertTrue(actual["focused"])

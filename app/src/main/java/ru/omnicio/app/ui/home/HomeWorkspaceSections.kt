@@ -101,7 +101,7 @@ internal fun HomePayoutTimeline(workspace: JSONObject?, onAll: () -> Unit) {
         WorkspaceSectionNotice(section)
         val rows = section?.optJSONObject("data")?.records("items").orEmpty()
             .sortedBy { it.optionalText("date") ?: "9999" }
-        val today = LocalDate.now().toString()
+        val today = LocalDate.now(ru.omnicio.app.ui.portfolio.Moscow).toString()
         val future = rows.filter { (it.optionalText("date") ?: "9999") >= today }
         val visible = (future + rows.filterNot(future::contains).asReversed()).take(5)
         visible.forEach { row ->

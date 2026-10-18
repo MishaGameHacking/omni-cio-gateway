@@ -224,7 +224,7 @@ def _event_draft(case):
     question = "Как это событие может повлиять на мои позиции?"
     p.tap_visible("Ваш вопрос")
     p.wait_for(lambda: focused_editor(p.tree(), question), "Event shortcut did not fill the real native draft")
-    p.command("shell", "input", "keyevent", "BACK")
+    p.dismiss_keyboard()
     after = case.observed()
     if any(row["method"] != "GET" for row in after["calls"]):
         raise AssertionError("Opening or filling an event question unexpectedly sent a paid request")

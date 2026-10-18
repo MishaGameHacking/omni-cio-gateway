@@ -200,10 +200,11 @@ jobs:
             };
             const portfolioStepShots = Object.entries(portfolioSteps).flatMap(([route, stages]) =>
               stages.flatMap(stage => ['', '-font-200'].map(suffix => `portfolio-${route}-${stage}${suffix}`)));
-            const allShots = [...shots, ...spatialShots, ...businessShots, ...portfolioShots, ...portfolioStepShots];
+            const contextShots = ['session-context-restored', 'session-context-restored-font-200', 'session-context-signed-out-rotation', 'session-context-signed-out-rotation-font-200'];
+            const allShots = [...contextShots, ...shots, ...spatialShots, ...businessShots, ...portfolioShots, ...portfolioStepShots];
             const names = ['apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json',
               ...['ui-screens-api35', 'ui-screens'].flatMap(folder => [
-                `${folder}/spatial-verification.json`, `${folder}/business-verification.json`, `${folder}/portfolio-verification.json`,
+                `${folder}/session-context-verification.json`, `${folder}/spatial-verification.json`, `${folder}/business-verification.json`, `${folder}/portfolio-verification.json`,
                 ...allShots.map(name => `${folder}/${name}.png`)])];
             const records = [];
             for (const name of names) {

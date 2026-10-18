@@ -66,8 +66,9 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
     LaunchedEffect(personal.dashboardOrder, savingOrder) {
         if (savingOrder != null && savedOrder == savingOrder) { savingOrder = null; previewOrder = null; editing = false }
     }
-    var attributionStart by rememberSaveable { mutableStateOf<String?>(java.time.LocalDate.now().minusMonths(1).toString()) }
-    var attributionEnd by rememberSaveable { mutableStateOf<String?>(java.time.LocalDate.now().toString()) }
+    val attributionToday = remember { java.time.LocalDate.now(ru.omnicio.app.ui.portfolio.Moscow) }
+    var attributionStart by rememberSaveable { mutableStateOf<String?>(attributionToday.minusMonths(1).toString()) }
+    var attributionEnd by rememberSaveable { mutableStateOf<String?>(attributionToday.toString()) }
     val attributionPeriod = PortfolioPeriod(attributionStart, attributionEnd)
     val workspace = rememberWorkspaceRequest(parameters = attributionPeriod.parameters() + ("currency" to selectedCurrency.name),
         refreshKey = LocalWorkspaceRefreshKey.current)

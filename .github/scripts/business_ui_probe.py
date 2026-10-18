@@ -211,7 +211,7 @@ class _BusinessCase:
                 self.probe.tap("Синтетическая акция", "workspace-content")
                 self.probe.tap("Количество единиц инструмента", "workspace-content")
                 self.probe.command("shell", "input", "text", "5")
-                self.probe.command("shell", "input", "keyevent", "BACK")
+                self.probe.dismiss_keyboard()
                 self.probe.tap("Проверить и сохранить расчёт", "workspace-content")
                 self.probe.reveal("СИНТЕТИЧЕСКИЙ РАСЧЁТ", "workspace-content")
                 self.probe.reveal("План: 5 ед. · лот 1", "workspace-content")
@@ -292,7 +292,7 @@ class _BusinessCase:
         rotation_name = "business-assistant-draft-rotation" + ("-font-200" if math.isclose(self.font_scale, 2.0) else "")
         self.draft_rotation = rotate_focused_draft(self.probe, "UIprobe", rotation_name)
         self.checks.extend(("unsent-draft-survives-rotation", "native-input-focus-and-caret-retained"))
-        self.probe.command("shell", "input", "keyevent", "BACK")
+        self.probe.dismiss_keyboard()
         self.chat_recovery = exercise_chat_recovery(self.probe, self.observed)
         self.checks.extend(("exact-position-and-date-destinations", "native-chat-input", "estimate-and-send-contract",
                        "lost-response-blocks-repeat", "same-request-get-recovery-without-remount"))

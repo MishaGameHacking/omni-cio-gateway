@@ -520,7 +520,7 @@ private fun AnalysisProfileContent(
             if (profile != null && !loading) {
                 item { SpectrumTabs(listOf("Правила", "Уведомления", "Наблюдение"), section, { section = it }) }
                 if (section == 2) item { MonitoringStatus(status) }
-                if (section == 1) item { NotificationDeliveryDraft() }
+                if (section == 1) item { NotificationDeliverySettingsLink(enabled = !dirty && pendingSave == null) }
                 profileControls(profile, section, enabled = pendingSave == null) { draft = it }
                 message?.let { text ->
                     item {

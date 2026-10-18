@@ -106,6 +106,13 @@ class ProfileDriverTests(unittest.TestCase):
             self.assertIs(driver.wait_for(read, "missing"), node)
         self.assertEqual(read.call_count, 3)
 
+    def test_wait_requires_boolean_conditions_to_be_true(self):
+        driver = probe.ProfileProbe(Mock())
+        read = Mock(side_effect=[False, True])
+        with patch.object(probe.time, "sleep"):
+            self.assertIs(driver.wait_for(read, "condition remained false"), True)
+        self.assertEqual(read.call_count, 2)
+
     def test_wait_deadline_cannot_pass_missing_target(self):
         driver = probe.ProfileProbe(Mock())
         with patch.object(probe.time, "monotonic", side_effect=[0, 13]), self.assertRaises(AssertionError):

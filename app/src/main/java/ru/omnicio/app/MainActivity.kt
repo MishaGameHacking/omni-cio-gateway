@@ -44,6 +44,7 @@ import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
+import ru.omnicio.app.data.market.optionalText
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.portfolio.rememberLivePortfolio
@@ -379,7 +380,11 @@ private fun AnalystAiApp(
                         scope.launch(Dispatchers.IO) {
                             if (userId != null) workspaceStore.deactivateUser(userId)
                             sessionStore.clear()
-                            if (userId != null) { OfflinePortfolioStore(context).clearSnapshots(userId); workspaceStore.remove(userId, "navigation") }
+                            if (userId != null) {
+                                OfflinePortfolioStore(context).clearSnapshots(userId)
+                                workspaceStore.remove(userId, "navigation")
+                                workspaceStore.remove(userId, "navigation_detail")
+                            }
                         }
                         ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
                         backStack = arrayListOf(); recentNames = arrayListOf(); knownUser = null
@@ -413,6 +418,7 @@ private fun AnalystAppContent(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
+    val userState = rememberUserWorkspaceState()
     when (val current = authState) {
         is AuthUiState.Loading -> {
             TelegramLoginScreen(
@@ -432,7 +438,7 @@ private fun AnalystAppContent(
         }
 
         is AuthUiState.SignedIn -> {
-            key(current.user.telegramId) { SignedInAppContent(
+            userState.Content(current.user.telegramId) { SignedInAppContent(
                 notificationId = notificationId, onNotificationConsumed = onNotificationConsumed,
                 session = current,
                 screen = screen,
@@ -448,7 +454,7 @@ private fun AnalystAppContent(
                 onCurrencyChange = onCurrencyChange,
                 onTApiConfiguredChange = onTApiConfiguredChange,
                 onScreenshotsBlockedChange = onScreenshotsBlockedChange,
-                onLogout = onLogout,
+                onLogout = { userState.forget(); onLogout() },
             ) }
         }
     }
@@ -474,7 +480,9 @@ private fun SignedInAppContent(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
-    var portfolioDestination by remember { mutableStateOf<PortfolioDestination?>(null) }
+    var portfolioDestination by rememberSaveable(session.user.telegramId, stateSaver = PortfolioDestinationSaver) {
+        mutableStateOf<PortfolioDestination?>(null)
+    }
     var historyDate by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
     var historyStart by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
     var historyEnd by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
@@ -502,35 +510,38 @@ private fun SignedInAppContent(
     val motion = LocalSpectrumMotionPreference.current.enabled && android.animation.ValueAnimator.areAnimatorsEnabled()
     val appContext = LocalContext.current
     val storage = remember(appContext) { EncryptedWorkspaceStore(appContext) }
-    var lastTarget by remember { mutableStateOf<JSONObject?>(null) }
-    var restored by remember { mutableStateOf(false) }
+    var lastTargetJson by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var restored by rememberSaveable(session.user.telegramId) { mutableStateOf(false) }
     LaunchedEffect(session.user.telegramId) {
+        if (restored) return@LaunchedEffect
         val saved = withContext(Dispatchers.IO) { storage.readJson(session.user.telegramId, "navigation_detail") }
         if (saved != null) {
             saved.optJSONObject("portfolio")?.let { target ->
                 portfolioDestination = PortfolioDestination(target.optInt("section", 1), target.optString("account_id").takeIf { it.isNotBlank() }, target.optString("query", ""),
+                    sector = target.optionalText("sector"), kind = target.optionalText("kind"),
                     operationId = target.text("operation_id", "").takeIf(String::isNotBlank),
                     operationDate = target.text("operation_date", "").takeIf(String::isNotBlank))
                 historyDate = target.optString("date").takeIf { it.isNotBlank() && it != "null" }
                 historyStart = target.text("start", "").takeIf(String::isNotBlank)
                 historyEnd = target.text("end", "").takeIf(String::isNotBlank)
                 historyResolution = target.text("resolution", "").takeIf(String::isNotBlank)
-                lastTarget = target
+                lastTargetJson = target.toString()
             }
             saved.optJSONObject("chat")?.let { chatJson = it.toString() }
             chatTitle = saved.text("chat_title", "Мой портфель")
         }
         restored = true
     }
-    LaunchedEffect(lastTarget, chatJson, chatTitle, restored) {
+    LaunchedEffect(lastTargetJson, chatJson, chatTitle, restored) {
         if (restored) withContext(Dispatchers.IO) { storage.saveJson(session.user.telegramId, "navigation_detail", JSONObject()
-            .put("portfolio", lastTarget ?: JSONObject.NULL).put("chat", JSONObject(chatJson)).put("chat_title", chatTitle)) }
+            .put("portfolio", lastTargetJson?.let(::JSONObject) ?: JSONObject.NULL).put("chat", JSONObject(chatJson)).put("chat_title", chatTitle)) }
     }
     val toPortfolio: (PortfolioDestination) -> Unit = { target ->
         portfolioDestination = target
-        lastTarget = JSONObject().put("section", target.section).put("account_id", target.accountId ?: "").put("query", target.query).put("date", historyDate ?: "")
+        lastTargetJson = JSONObject().put("section", target.section).put("account_id", target.accountId ?: "").put("query", target.query).put("date", historyDate ?: "")
+            .put("sector", target.sector ?: JSONObject.NULL).put("kind", target.kind ?: JSONObject.NULL)
             .put("start", historyStart ?: "").put("end", historyEnd ?: "").put("resolution", historyResolution ?: "")
-            .put("operation_id", target.operationId ?: "").put("operation_date", target.operationDate ?: "")
+            .put("operation_id", target.operationId ?: "").put("operation_date", target.operationDate ?: "").toString()
         openPortfolio()
     }
     val evidenceNavigator: (EvidenceTarget) -> Unit = { target ->

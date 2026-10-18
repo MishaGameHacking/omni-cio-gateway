@@ -90,7 +90,7 @@ class PortfolioCase:
         if text:
             self.probe.command("shell", "input", "text", text)
         self.probe.wait_for(lambda: focused_editor(self.probe.tree(), text), "Search did not enter the actual native editor")
-        self.probe.command("shell", "input", "keyevent", "BACK")
+        self.probe.dismiss_keyboard()
 
     def record_text(self, resource_id, text, *, direction="end"):
         """Bind a value to its exact native source record even at 200% font."""

@@ -135,9 +135,9 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
                 LightManager.Builder(LightManager.Type.DIRECTIONAL)
                     .color(1f,.97f,.93f).intensity(95_000f).direction(-.4f,-.65f,-1f)
                     .castShadows(true).shadowOptions(LightManager.ShadowOptions().apply {
-                        // Filament's full sampling-error bias prevents self-shadow
-                        // stripes on the broad orthographic card surfaces.
-                        mapSize=1024;shadowCascades=1;normalBias=1f;shadowFarHint=1000f
+                        // Coordinates are screen pixels, not metres. Use a subpixel
+                        // world-space bias along with Filament's full normal bias.
+                        mapSize=1024;shadowCascades=1;constantBias=.1f;normalBias=1f;shadowFarHint=1000f
                     }).build(e,light)
                 ambient = IndirectLight.Builder().irradiance(1,floatArrayOf(.65f,.69f,.78f))
                     .intensity(24_000f).build(e)
@@ -260,8 +260,11 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
         stale.toList().dropLast(24).forEach { key -> pools.remove(key)?.let(::destroyPool) }
     }
     private fun destroyPool(pool: AssetPool) {
-        pool.leases.forEach { lease -> lease.materials.forEach { engine?.destroyMaterialInstance(it) } }
+        // Removing entities from a Scene does not destroy their Renderables.
+        // Release the asset's entities before their independently cloned materials.
         loader?.destroyAsset(pool.asset)
+        pool.leases.forEach { lease -> lease.materials.forEach { engine?.destroyMaterialInstance(it) } }
+        pool.leases.clear()
     }
 
     override fun doFrame(frameTimeNanos: Long) {

@@ -17,7 +17,7 @@
 точные результаты и границы приёмки записаны в F01.4 / F22 ниже.
 Указатель актуальных и исторических документов: [docs/README](README.md).
 
-## Проверка нового обновления 3D100
+## Исторический прогон 3D100 на 81b0101
 
 - Реализация: [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880), версия `35 / 0.11.0`; preview package, сертификат и baseline `0.10.0 / 34` сохранены.
 - Последний завершённый GitHub SHA: [`81b0101`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/81b01017a1be73c5ba4d0ebe39e1e7f86002654f). [Backend CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39099562510) — **846 passed, 2 skipped, 337 subtests passed за 43,51 с**, health/OpenAPI успешны; **Sonar Quality Gate passed**. Windows-исправление импорта подтверждено.
@@ -31,7 +31,11 @@
 
 ## Исправление качества 18.10.2026 — F01 / F22 / F23
 
-Подтверждённый срез `e1378ea`: **0 открытых замечаний Sonar всех типов**, **0 принятых**; исходные 142 замечания устранены. Backend CI **SUCCESS**; все варианты APK/lint прошли. API35/16384 прошёл upgrade и clean launch; debug Activity остановилась на устаревшем ожидании классификации фьючерсов. Оно исправлено и добавлено в JVM-прогон. Полный runtime API35/16384 и API36/4096 ещё не прошёл. Локально прошли **884 Python-теста / 616 subtests**, **462 Android/релизных тестов (1 предусмотренный пропуск)** и чистая компиляция debug/release с **48 JVM-тестами**. На `54d45d3` upgrade/clean launch успешны и получен настоящий 3D-кадр; Android exit-info подтвердил LOW_MEMORY, а UI runner ошибочно читал состояние у подписи переключателя. Исправлены память AVD, поиск реального checkable-узла и normalBias для самозатенения. На `e1378ea` стартовые debug-контракты прошли, получен свежий accessibility marker с 1 Engine / 1 Window / 18 meshes / 9 submitted frames. Проверка остановилась на тайм-ауте второго `dumpsys activity activities`, до первого снимка. Следующий срез ограничивает только чтение системного отчёта и повторяет обе проверки foreground вокруг нового frame в прежнем общем дедлайне; тайм-аут и неполный отчёт не считаются успехом. Предыдущие результаты ниже исторические. Общая приёмка 100 пунктов остаётся открытой; точная карта — [3D100_EVIDENCE](3D100_EVIDENCE.md).
+Последний завершённый срез [`7d15f5d`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/7d15f5dd3d2894397b62d7503ca135c1c4e4b60b): **0 открытых замечаний Sonar всех типов, 0 принятых**, исходные 142 устранены. Backend CI, все APK и lint — **SUCCESS**. [Android runtime](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39115142626) подтвердил API35/16384, upgrade/clean launch, настоящий 3D-кадр, кнопку и нативный переключатель. Прогон затем выявил **APP CRASH(EXCEPTION)**: при уничтожении Activity клонированный MaterialInstance освобождался раньше использующего его Renderable. Полный runtime API35 и API36 ещё не прошёл.
+
+Следующее исправление сначала уничтожает asset с renderables, затем его отдельно клонированные материалы. UI-драйвер наблюдает настоящее окно TYPE_INPUT_METHOD; команда Back отправляется только видимой клавиатуре. Фокус и введённый текст подтверждаются свежим accessibility frame; boolean false больше не завершает ожидание. Уточнён subpixel shadow bias для сцены в пиксельных координатах; исчезновение полос требует нового снимка.
+
+При сверке требований исправлены сохранение контекста по подтверждённому user ID через повторный вход, очистка при logout, точные фильтры pending portfolio route, московские календарные границы и переход из профиля к действующим серверным правилам доставки. Добавлен synthetic device-case production state owner для font100/200; он не проверяет настоящий Telegram login и ещё ожидает emulator pass. Локально: **884 Python-теста / 616 subtests**, **465 Android/релизных тестов (1 предусмотренный пропуск)**; последний завершённый JVM-прогон — **51 тест**. Общая приёмка 100 пунктов остаётся открытой; карта — [3D100_EVIDENCE](3D100_EVIDENCE.md). Все результаты ниже исторические.
 
 Полная выгрузка Sonar для `b280a02` содержит **142 открытых замечания всех типов**;
 прошедший Quality Gate не означает их устранение. Android CI этого SHA собрал все

@@ -6,6 +6,26 @@ import re
 PACKAGE = "ru.omnicio.app.debug"
 
 
+def keyboard_visible(tree) -> bool:
+    value = tree.get("keyboard-visible")
+    if value not in {"true", "false"}:
+        raise AssertionError("Missing public input-method window observation")
+    if not any(node.get("package") == PACKAGE and node.get("visible-to-user") == "true"
+               for node in tree.iter("node")):
+        raise AssertionError("Keyboard dismissal requires the actual app window")
+    return value == "true"
+
+
+def dismiss_keyboard(probe) -> bool:
+    """Back belongs to the IME only when its actual visible window is present."""
+    if not keyboard_visible(probe.tree()):
+        return False
+    probe.command("shell", "input", "keyevent", "BACK")
+    probe.wait_for(lambda: not keyboard_visible(probe.tree()),
+                   "Android did not dismiss the visible input-method window")
+    return True
+
+
 def display_geometry(tree) -> tuple[int, int]:
     values = [tree.get("display-width", ""), tree.get("display-height", "")]
     if any(re.fullmatch(r"[1-9]\d{0,4}", value) is None for value in values):

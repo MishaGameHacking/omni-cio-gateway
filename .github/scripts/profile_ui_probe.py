@@ -159,7 +159,7 @@ class ProfileProbe:
         while time.monotonic() < deadline:
             try:
                 value = read()
-                if value is not None:
+                if value is not None and value is not False:
                     return value
             except (RuntimeError, ET.ParseError, ValueError) as error:
                 last_error = error
@@ -268,6 +268,10 @@ class ProfileProbe:
             str((left + right) // 2),
             str((top + bottom) // 2),
         )
+
+    def dismiss_keyboard(self):
+        from native_input_evidence import dismiss_keyboard
+        return dismiss_keyboard(self)
 
     def tap(self, text, area="profile-content", direction="end"):
         self.tap_node(self.reveal(text, area, direction))
@@ -386,7 +390,7 @@ class ProfileProbe:
                 search = self.wait_for(lambda: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
                 self.tap_node(search)
                 self.command("shell", "input", "text", "NO_SUCH_ASSET")
-                self.command("shell", "input", "keyevent", "BACK")
+                self.dismiss_keyboard()
                 self.find("Ничего не найдено")
                 self.tap_visible("Сбросить")
                 self.find("Денежные средства")
@@ -400,6 +404,10 @@ class ProfileProbe:
         from business_ui_probe import exercise_business
         report = exercise_business(self)
         self.business_cases = [row["case"] + "@" + format(row["font_scale"], "g") for row in report["cases"]]
+
+    def session_context(self):
+        from session_context_probe import exercise_session_context
+        exercise_session_context(self)
 
     def portfolio(self):
         from portfolio_ui_probe import exercise_portfolio
@@ -619,6 +627,7 @@ def exercise_checks(device, read_tree) -> dict:
     try:
         stages = (
             ("spatial-renderer", probe.spatial),
+            ("session-context", probe.session_context),
             ("business-26-cases", probe.business),
             ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),

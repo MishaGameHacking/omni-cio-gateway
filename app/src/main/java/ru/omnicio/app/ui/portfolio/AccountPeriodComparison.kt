@@ -27,7 +27,7 @@ internal fun accountPeriodObservation(json: JSONObject): AccountPeriodObservatio
 
 @Composable
 internal fun AccountPeriodComparison(token: String, account: PortfolioAccount) {
-    val today = remember { LocalDate.now() }
+    val today = remember { LocalDate.now(Moscow) }
     var firstStart by rememberSaveable(account.id) { mutableStateOf<String?>(today.minusMonths(1).toString()) }
     var firstEnd by rememberSaveable(account.id) { mutableStateOf<String?>(today.toString()) }
     var secondStart by rememberSaveable(account.id) { mutableStateOf<String?>(today.minusMonths(2).toString()) }
