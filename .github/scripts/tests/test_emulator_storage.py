@@ -36,7 +36,7 @@ class EmulatorStorageTests(unittest.TestCase):
     def test_replaces_duplicate_size_without_changing_ram_or_image(self):
         self.configure(DATA_BYTES + HEADROOM_BYTES)
         self.assertEqual(self.config.read_text(encoding="utf-8"),
-                         f"hw.ramSize=4096\ntag.id=ps16k\ndisk.dataPartition.size={DATA_BYTES}\n")
+                         f"hw.ramSize=4096\ntag.id=ps16k\ndisk.dataPartition.size={DATA_BYTES}\nhw.mainKeys=no\n")
 
     def test_official_initial_image_is_never_shrunk(self):
         with self.source.open("r+b") as source:
