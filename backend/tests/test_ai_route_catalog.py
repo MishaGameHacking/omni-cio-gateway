@@ -90,3 +90,15 @@ def test_duplicate_and_overlarge_catalog():
 def test_no_implicit_catalog_tier(tier):
     with pytest.raises(CatalogError, match="invalid_tier"):
         approved_candidates(tier, {}, now=NOW)
+
+
+@pytest.mark.parametrize("tiers", [[[]], [["fast"]], [{}], [None], [True], [1], ["fast", {}], ["fast", ["standard"]]])
+def test_nested_or_non_string_tiers_are_admission_errors(tiers):
+    with pytest.raises(CatalogError, match="ai_catalog_tiers_invalid"):
+        approved_candidates("fast", environment([row(tiers=tiers)]), now=NOW)
+
+
+@pytest.mark.parametrize("tier", [[], {}, None, True])
+def test_unhashable_top_level_tier_is_admission_error(tier):
+    with pytest.raises(CatalogError, match="ai_route_invalid_tier"):
+        approved_candidates(tier, {}, now=NOW)

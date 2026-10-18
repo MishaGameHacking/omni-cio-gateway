@@ -57,7 +57,8 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
     private fun failure(status: Int, json: JSONObject?): VolumeReply {
         val detail = json?.opt("detail")
         val code = when (detail) { is JSONObject -> detail.optString("code", "request_failed"); is String -> detail; else -> "invalid_response" }
-        val message = when (status) {
+        val policyMessage = if (status == 422 || status == 409) chatPolicyMessage(code) else null
+        val message = policyMessage ?: when (status) {
             401, 403 -> "Войдите через Telegram заново. Рабочий контекст сохранён для вашего аккаунта."
             404 -> "Данные пока недоступны. Проверьте выбранный объект или обновите сведения."
             409 -> "Исходные данные изменились. Обновите их и подготовьте действие заново."
@@ -73,6 +74,14 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
     companion object {
         private const val REQUEST_LIMIT = 100_000
         private const val RESPONSE_LIMIT = 2_000_000
+        fun chatPolicyMessage(code: String?): String? = when (code) {
+            "chat_outside_investment_scope" -> "Analyst AI отвечает только об инвестициях, активах и мировой финансовой политике. Этот вопрос не отправлен модели."
+            "chat_investment_scope_unclear", "chat_text_invalid" -> "Уточните инвестиционный вопрос: укажите актив, портфель или влияние события на финансовые рынки."
+            "chat_tier_insufficient", "chat_tier_invalid" -> "Для этого вопроса нужен более глубокий анализ. Выберите «Авто» или подходящую глубину."
+            "chat_cost_estimate_required", "chat_cost_or_route_changed" -> "Стоимость или маршрут требуют повторной проверки. Запрос модели не отправлен."
+            "chat_premium_confirmation_required" -> "Подтвердите стоимость глубокого запроса перед отправкой."
+            else -> null
+        }
         fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
     }
 }

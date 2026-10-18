@@ -40,6 +40,20 @@ def _unique_object(pairs):
     return result
 
 
+def _validate_tiers(tiers: object) -> None:
+    if not isinstance(tiers, list) or not tiers:
+        raise CatalogError("ai_catalog_tiers_invalid")
+    # Validate element types before hashing: nested JSON objects/lists are not
+    # hashable and must produce an admission error, never an unhandled 500.
+    for tier in tiers:
+        if not isinstance(tier, str):
+            raise CatalogError("ai_catalog_tiers_invalid")
+        if tier not in TIERS:
+            raise CatalogError("ai_catalog_tiers_invalid")
+    if len(set(tiers)) != len(tiers):
+        raise CatalogError("ai_catalog_tiers_invalid")
+
+
 def _valid_entry(row: dict, env: Mapping[str, str], now: int) -> Candidate:
     if not isinstance(row, dict) or set(row) != FIELDS:
         raise CatalogError("ai_catalog_schema_invalid")
@@ -48,8 +62,7 @@ def _valid_entry(row: dict, env: Mapping[str, str], now: int) -> Candidate:
         raise CatalogError("ai_catalog_label_invalid")
     if not isinstance(model, str) or not model or model != env.get("AI_MODEL_" + label):
         raise CatalogError("ai_catalog_model_binding_required")
-    if not isinstance(tiers, list) or not tiers or any(not isinstance(tier, str) or tier not in TIERS for tier in tiers) or len(set(tiers)) != len(tiers):
-        raise CatalogError("ai_catalog_tiers_invalid")
+    _validate_tiers(tiers)
     review = row["evaluation_id"]
     if not isinstance(review, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}", review) is None or row["structured_json_verified"] is not True:
         raise CatalogError("ai_catalog_evaluation_required")
@@ -66,7 +79,7 @@ def _valid_entry(row: dict, env: Mapping[str, str], now: int) -> Candidate:
 
 
 def approved_candidates(tier: str, env: Mapping[str, str], *, now: int) -> tuple[Candidate, ...]:
-    if tier not in TIERS:
+    if not isinstance(tier, str) or tier not in TIERS:
         raise CatalogError("ai_route_invalid_tier")
     raw = env.get(CATALOG_KEY, "")
     if not raw:

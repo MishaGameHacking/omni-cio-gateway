@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -19,10 +20,12 @@ import httpx
 
 try:
     from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
+    from .ai_route_catalog import approved_candidates, CatalogError
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
     from .monitoring_access import assert_monitoring_access
 except ImportError:
     from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
+    from ai_route_catalog import approved_candidates, CatalogError
     from ai_jobs import CURRENT_JOB, AnalysisQueue
     from monitoring_access import assert_monitoring_access
 
@@ -52,6 +55,27 @@ def _reject_nonfinite(_: str):
     raise GuardError('ai_nonfinite_json')
 
 
+def _finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise GuardError('ai_nonfinite_json')
+    return parsed
+
+
+def _unique_json_object(pairs) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise GuardError('ai_duplicate_json_field')
+        result[key] = value
+    return result
+
+
+def _model_json(value):
+    return json.loads(value, parse_constant=_reject_nonfinite,
+                      parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+
+
 def _result_content(response: dict) -> dict:
     choices = response.get('choices')
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -60,7 +84,7 @@ def _result_content(response: dict) -> dict:
     if not isinstance(message, dict) or not isinstance(message.get('content'), str):
         raise GuardError('ai_content_invalid')
     try:
-        content = json.loads(message['content'], parse_constant=_reject_nonfinite)
+        content = _model_json(message['content'])
     except (ValueError, TypeError):
         raise GuardError('ai_content_not_json') from None
     if not isinstance(content, dict):
@@ -112,14 +136,35 @@ class Route:
         return hashlib.sha256((self.mode + ':' + self.url + ':' + self.model).encode()).hexdigest()
 
 
-def configured_route(tier, env=None, *, at: int | None = None) -> Route:
+def configured_route(tier, env=None, *, at: int | None = None,
+                     input_bytes: int = 0, max_output_tokens: int = 1600) -> Route:
     env = os.environ if env is None else env
     now = int(time.time()) if at is None else at
-    label = str(tier.value).upper()
-    if label not in {'FAST','STANDARD','PREMIUM'}:
-        reject('ai_route_invalid_tier')
-    mode = env.get('AI_TRANSPORT', 'gateway')
+    if type(input_bytes) is not int or not 0 <= input_bytes <= 110_000:
+        reject('ai_context_size_invalid')
+    if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
+        reject('ai_output_limit_invalid')
+    try:
+        candidates = approved_candidates(str(tier.value), env, now=now)
+    except (CatalogError, AttributeError) as error:
+        reject(str(error) if isinstance(error, CatalogError) else 'ai_route_invalid_tier')
+    eligible = []
+    for candidate in candidates:
+        route = _configured_label(candidate.label, env, now)
+        if candidate.fits(input_bytes + route.input_allowance, max_output_tokens):
+            ceiling = token_cost(input_bytes + route.input_allowance, max_output_tokens,
+                                 route.input_rate, route.output_rate)
+            eligible.append((ceiling, route.identifier, route))
+    if not eligible:
+        reject('ai_no_route_with_context_capacity')
+    # Selection is before dispatch. Never retry a possibly charged request on
+    # another model; the existing ledger/reconciliation rules remain authoritative.
+    return min(eligible, key=lambda item: (item[0], item[1]))[2]
+
+
+def _configured_label(label: str, env, now: int) -> Route:
     prefix = 'AI_' + label + '_'
+    mode = env.get(prefix + 'TRANSPORT', env.get('AI_TRANSPORT', 'gateway'))
     if env.get('AI_EXTERNAL_PROCESSING_APPROVED') != 'true':
         reject('ai_processing_approval_required')
     region = env.get(prefix + 'PROCESSING_REGION', '')
@@ -158,20 +203,21 @@ def configured_route(tier, env=None, *, at: int | None = None) -> Route:
 
 class GuardedAIClient:
     def __init__(self, user_id: int, connect, *, transport=None, env=None,
-                 attempt_id=None, budget_guard=None, before_send=None, after_response=None):
+                 attempt_id=None, budget_guard=None, before_send=None, after_response=None, route_guard=None):
         self.user_id = user_id
         self.connect = connect
         self.env = os.environ if env is None else env
         self.transport = transport
         self.attempt_id = attempt_id
+        self.route_guard = route_guard
         self.budget_guard = budget_guard
         self.before_send = before_send
         self.after_response = after_response
         self.ledger = MoneyLedger(connect)
         self.ledger.initialize()
 
-    def check_ready(self, tier) -> Route:
-        route = configured_route(tier, self.env)
+    def check_ready(self, tier, *, input_bytes: int = 0, max_output_tokens: int = 1600) -> Route:
+        route = configured_route(tier, self.env, input_bytes=input_bytes, max_output_tokens=max_output_tokens)
         if micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')) <= 0 or micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')) <= 0:
             reject('ai_ruble_budget_not_enabled')
         return route
@@ -184,20 +230,22 @@ class GuardedAIClient:
 
     def _complete(self, tier, messages, max_output_tokens: int):
         assert_monitoring_access(self.connect)
-        route = self.check_ready(tier)
         if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
             reject('ai_output_limit_invalid')
         if not messages or len(messages) > 4:
             reject('ai_messages_invalid')
         for message in messages:
-            if set(message) != {'role','content'} or message['role'] not in {'system','user','assistant'} or not isinstance(message['content'], str):
+            if not isinstance(message, dict) or set(message) != {'role','content'} or message['role'] not in {'system','user','assistant'} or not isinstance(message['content'], str):
                 reject('ai_messages_invalid')
         encoded = json.dumps(list(messages), ensure_ascii=False, allow_nan=False).encode()
         if len(encoded) > 110_000:
             reject('ai_context_too_large')
+        route = self.check_ready(tier, input_bytes=len(encoded), max_output_tokens=max_output_tokens)
         # Conservative configurable estimate, not a tokenizer/invoice guarantee.
         input_bound = len(encoded) + route.input_allowance
         ceiling = token_cost(input_bound, max_output_tokens, route.input_rate, route.output_rate)
+        if self.route_guard is not None:
+            self.route_guard(route, ceiling)
         job = CURRENT_JOB.get()
         if job:
             queue = AnalysisQueue(self.connect)
@@ -272,7 +320,7 @@ class GuardedAIClient:
                         data.extend(chunk)
                         if len(data) > MAX_RESPONSE_BYTES:
                             raise GuardError('ai_response_too_large')
-            parsed = json.loads(data, parse_constant=_reject_nonfinite)
+            parsed = _model_json(data)
             if not isinstance(parsed, dict):
                 raise ValueError
             return parsed

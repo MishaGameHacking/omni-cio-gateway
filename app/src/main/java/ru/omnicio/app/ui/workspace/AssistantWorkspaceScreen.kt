@@ -23,6 +23,7 @@ import org.json.JSONObject
 import java.net.URLDecoder
 import java.util.UUID
 import ru.omnicio.app.data.workspace.JobCheckpointStore
+import ru.omnicio.app.data.workspace.ChatRouteQuote
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spatial.*
 import ru.omnicio.app.ui.spectrum.*
@@ -56,7 +57,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     var threadId by rememberSaveable(session.userId) { mutableStateOf("") }
     var question by rememberSaveable(session.userId) { mutableStateOf("") }
     var jobId by rememberSaveable(session.userId) { mutableStateOf<String?>(null) }
-    var tier by rememberSaveable(session.userId) { mutableIntStateOf(0) }
+    var tier by rememberSaveable(session.userId, "routing-auto-v1") { mutableIntStateOf(0) }
     var editingContext by rememberSaveable { mutableStateOf(false) }
     var estimate by remember { mutableStateOf<JSONObject?>(null) }
     var estimateSignature by remember { mutableStateOf("") }
@@ -65,7 +66,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     var awaitingRequestId by rememberSaveable(session.userId) { mutableStateOf<String?>(null) }
     var restoringJob by remember(session.userId) { mutableStateOf(false) }
     val savedRequests = rememberJobCheckpoints()
-    val tiers = listOf("fast", "standard", "premium")
+    val tiers = listOf("auto", "fast", "standard", "premium")
     val request = ChatRequestSnapshot(threadId, question.trim(), questionContext.json().toString(), tiers[tier])
     val signature = request.signature
     val pendingQuestion = savedRequests.items.any { JobCheckpointStore.isUnconfirmedChat(it) || checkpointMatches(it, request) }
@@ -88,9 +89,14 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     val create = rememberWorkspaceAction { result ->
         threadId = result.text("thread_id", ""); threads.refresh()
     }
-    val startMessage: (ChatRequestSnapshot) -> Unit = { selected ->
-        if (!needsRecovery && jobId == null && !restoringJob && !send.busy) {
-            val body = selected.payload().apply { remove("thread_id"); put("request_id", UUID.randomUUID().toString()) }
+    val startMessage: (ChatRequestSnapshot, ChatRouteQuote, Boolean) -> Unit = { selected, quote, confirmed ->
+        if (quote.usable && (!quote.needsConfirmation(selected.tier) || confirmed) &&
+            !needsRecovery && jobId == null && !restoringJob && !send.busy) {
+            val body = selected.payload().apply {
+                remove("thread_id"); put("request_id", UUID.randomUUID().toString())
+                put("max_cost_micro_rub", quote.ceilingMicroRub); put("expected_route_id", quote.routeId)
+                if (confirmed) put("confirm_premium", true)
+            }
             pendingSend = selected
             send.perform("/workspace/chat/threads/" + VolumeWorkspaceClient.encode(selected.threadId) + "/messages", body, job = true)
         }
@@ -100,8 +106,10 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         pendingEstimate = null
         if (selected != null) {
             estimate = result; estimateSignature = selected.signature
-            if (selected.signature == signature && selected.tier != "premium" && jobId == null && !restoringJob && !needsRecovery && result.optBoolean("available")) {
-                startMessage(selected)
+            val quote = routeQuote(result)
+            if (selected.signature == signature && quote.usable && !quote.needsConfirmation(selected.tier) &&
+                jobId == null && !restoringJob && !needsRecovery) {
+                startMessage(selected, quote, false)
             }
         }
     }
@@ -118,9 +126,10 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                     if (point.text("request_id", "") == awaitingRequestId) { awaitingRequestId = null; pendingSend = null }
                     estimate = null; cursors = listOf(""); messages.refresh(); threads.refresh()
                 }
+    val quotedRoute = routeQuote(estimate)
+    val approvedDeep = estimateSignature == signature && quotedRoute.usable && quotedRoute.needsConfirmation(request.tier)
     val sendQuestion = {
-        val approvedDeep = tier == 2 && estimateSignature == signature && estimate?.optBoolean("available") == true
-        if (approvedDeep) startMessage(request) else {
+        if (approvedDeep) startMessage(request, quotedRoute, true) else {
             pendingEstimate = request
             estimateAction.perform("/workspace/chat/estimate", request.payload())
         }
@@ -146,7 +155,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                 estimate?.let { value -> item { AssistantEstimateCard(value, estimateSignature == signature) } }
             }
             AssistantComposer(question, tier, savedRequests.loading, needsRecovery, busy, valid,
-                tier == 2 && estimateSignature == signature && estimate?.optBoolean("available") == true,
+                approvedDeep,
                 { tier = it; estimate = null }, { question = it.take(4_000); estimate = null }) {
                 sendQuestion()
             }
@@ -327,16 +336,34 @@ private fun assistantIconState(jobId: String?, jobState: String, failed: Boolean
     else -> SpatialState.Idle
 }
 
+private fun routeQuote(value: JSONObject?): ChatRouteQuote {
+    val ceiling = when (val raw = value?.opt("cost_ceiling_micro_rub")) {
+        is Int -> raw.toLong()
+        is Long -> raw
+        else -> null
+    }
+    return ChatRouteQuote(value?.optBoolean("available") == true, value?.optString("selected_tier").orEmpty(),
+        value?.optBoolean("requires_cost_confirmation") == true, ceiling, value?.optString("route_id").orEmpty())
+}
+
 @Composable
 private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
+    val quote = routeQuote(value)
     SpectrumCard {
-                        Text(if (value.optBoolean("available")) "Оценка расхода" else "Модель пока недоступна", style = MaterialTheme.typography.titleMedium)
-                        Text(PrivateValue(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Точная стоимость не подтверждена"))
-                        Text("Предварительная оценка по текущему контексту; фактическое использование учитывается сервером.", style = MaterialTheme.typography.bodySmall)
-                        if (!current) Text("Вопрос или контекст изменился. Перед отправкой стоимость будет проверена заново.", style = MaterialTheme.typography.bodySmall)
-                        value.text("context_as_of", "").takeIf(String::isNotBlank)?.let { Text("Контекст от " + localMoment(it), style = MaterialTheme.typography.bodySmall) }
-                        if (!value.optBoolean("available")) Text("Проверьте готовность сервиса в истории анализов.")
-                    }
+        Text(if (quote.usable) "Оценка расхода" else "Вопрос не отправлен", style = MaterialTheme.typography.titleMedium)
+        if (quote.usable) {
+            Text(PrivateValue(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Стоимость не подтверждена"))
+            val depth = when (quote.selectedTier) { "fast" -> "Кратко"; "standard" -> "Подробно"; else -> "Глубокий разбор" }
+            Text("Выбрано сервером: " + depth, style = MaterialTheme.typography.bodySmall)
+            Text("Оценка ограничивает расход: при смене маршрута или увеличении суммы сервер запросит новую проверку.", style = MaterialTheme.typography.bodySmall)
+            if (quote.needsConfirmation(quote.selectedTier)) Text("Глубокий запрос будет отправлен только после отдельного подтверждения кнопкой ниже.")
+        } else {
+            Text(VolumeWorkspaceClient.chatPolicyMessage(value.optString("reason")) ?:
+                "Маршрут и стоимость не подтверждены. Проверьте готовность сервиса в истории анализов.")
+        }
+        if (!current) Text("Вопрос или контекст изменился. Перед отправкой стоимость будет проверена заново.", style = MaterialTheme.typography.bodySmall)
+        value.text("context_as_of", "").takeIf(String::isNotBlank)?.let { Text("Контекст от " + localMoment(it), style = MaterialTheme.typography.bodySmall) }
+    }
 }
 
 @Composable
@@ -346,12 +373,12 @@ private fun AssistantComposer(question: String, tier: Int, loading: Boolean, nee
     SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                     if (loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
                     else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
-                    DetailFold("Глубина ответа: " + listOf("Кратко", "Подробно", "Глубокий разбор")[tier]) {
-                        WorkspaceChoices("Выбор модели", listOf("Кратко", "Подробно", "Глубокий разбор"), tier) { if (!busy) onTier(it) }
+                    DetailFold("Глубина ответа: " + listOf("Авто", "Кратко", "Подробно", "Глубокий разбор")[tier]) {
+                        WorkspaceChoices("Выбор модели", listOf("Авто", "Кратко", "Подробно", "Глубокий разбор"), tier) { if (!busy) onTier(it) }
                     }
                     WorkspaceTextInput(question, onQuestion, "Ваш вопрос", singleLine = false,
                         modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                    SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 2) "Проверить стоимость" else "Отправить",
+                    SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 3) "Проверить стоимость" else "Отправить",
                         onSend,
                         Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)
                 }
