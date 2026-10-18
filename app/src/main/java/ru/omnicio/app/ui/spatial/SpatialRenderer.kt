@@ -331,11 +331,17 @@ internal class SpatialRenderWindow(
     private val scene=engine.createScene().apply { addEntity(light);indirectLight=ambient }
     private val cameraEntity=EntityManager.get().create()
     private val camera=engine.createCamera(cameraEntity).apply { setExposure(16f,1f/125f,100f) }
+    private var msaaSamples=if(owner.reducedQuality)2 else 4
     private val view=engine.createView().apply {
         scene=this@SpatialRenderWindow.scene;camera=this@SpatialRenderWindow.camera
         blendMode=View.BlendMode.TRANSLUCENT
         // Per-material scissor clips meshes to native layout. Dynamic resolution is incompatible.
-        antiAliasing=View.AntiAliasing.FXAA
+        // The GLES 3.0 software driver used by the Android 15 ps16k image aborts
+        // while linking Filament 1.72.1's translucent FXAA pass. Use geometry MSAA
+        // instead; keep post-processing for PBR tone mapping and gamma encoding.
+        antiAliasing=View.AntiAliasing.NONE
+        setPostProcessingEnabled(true)
+        multiSampleAntiAliasingOptions=multisampling(msaaSamples)
     }
     private val ui=UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK).apply {isOpaque=false;renderCallback=this@SpatialRenderWindow}
     private var swap: SwapChain?=null
@@ -354,6 +360,9 @@ internal class SpatialRenderWindow(
         private set
     val hasSurface get()=ui.isReadyToRender && swap!=null && !destroyed
     val meshCount get()=instances.size
+    private fun multisampling(samples: Int)=View.MultiSampleAntiAliasingOptions().apply {
+        enabled=true;sampleCount=samples;customResolve=false
+    }
     private data class ActiveMesh(val asset: SpatialAsset,val low: Boolean,val lease: SpatialOwner.Lease,
         var primitive: SpatialPrimitive,var changedAt: Long,var matrix: FloatArray=FloatArray(16),
         var bounds: Rect?=null,var target: Rect?=null,var transferFrom: Rect?=null,var transferStart:Long=0L,
@@ -391,6 +400,11 @@ internal class SpatialRenderWindow(
     }
 
     fun update(now:Long,palette:SpectrumPalette):Boolean {
+        val samples=if(owner.reducedQuality)2 else 4
+        if(msaaSamples!=samples){
+            view.multiSampleAntiAliasingOptions=multisampling(samples)
+            msaaSamples=samples
+        }
         val live=mutableSetOf<String>();var animated=false
         // During shared-element overlap the destination's later slot wins. This
         // preserves a single entity and material instance, not a duplicate model.

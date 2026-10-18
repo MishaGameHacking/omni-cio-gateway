@@ -30,6 +30,36 @@ readable controls until their first mesh frame is submitted and if the graphical
 module fails; diagnostics explicitly report failures. This is especially necessary
 for white button labels in the light theme while initial shaders/assets load.
 
+## Antialiasing and GLES compatibility
+
+Every window uses geometry MSAA (4 samples, 2 in the existing thermal/battery
+economy profile), with the standard resolve. FXAA is disabled. Post-processing
+remains enabled for tone mapping and gamma encoding; the PBR materials, directional
+light, shadows, transparent composition and exact orthographic geometry stay active.
+
+The first [API 35 ps16k runtime](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39069831896)
+of candidate `4fa39fd` installed and upgraded successfully, measured
+`PAGE_SIZE=16384`, then aborted while compiling Filament's
+translucent `fxaa` program on the emulator's GLES 3.0 SwiftShader driver. The
+compiler's detailed InfoLog was absent from that run's general log tail. This
+is an observed shader failure, not an ELF/ZIP alignment failure.
+
+In pinned Filament 1.72.1, [PostProcessManager](https://github.com/google/filament/blob/v1.72.1/filament/src/PostProcessManager.cpp)
+registers material bytes during `init()` and loads/compiles the material lazily.
+[Renderer](https://github.com/google/filament/blob/v1.72.1/filament/src/details/Renderer.cpp)
+calls `fxaa()` only when the view enables FXAA. Selecting MSAA with `AntiAliasing.NONE`
+therefore avoids the failing program, while
+[View's MSAA API](https://github.com/google/filament/blob/v1.72.1/android/filament-android/src/main/java/com/google/android/filament/View.java)
+retains geometry antialiasing independently. No Java exception handler can recover
+an abort on Filament's native engine thread.
+
+The replacement must pass the complete next API 35/36 runtime before release.
+Existing mesh-pixel, contrast, clipping, motion, lifetime, long-scroll and upgrade
+checks remain mandatory. On failure, the runner now collects filtered main/system
+shader logs and the installed app's UID logs, which retain PID/TID even after an
+abort, in addition to the existing crash buffer. Output and command times are
+bounded; a diagnostic read never counts as a successful rendering test.
+
 ## Motion, lifecycle and cost
 
 Live is a finite state response, with continuous rotation only for an explicit

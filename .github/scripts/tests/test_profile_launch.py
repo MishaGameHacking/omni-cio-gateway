@@ -58,6 +58,25 @@ RESUMED = "topResumedActivity=ActivityRecord{123 u0 " + ACTIVITY + " t12}"
 
 
 class ProfileLaunchTests(unittest.TestCase):
+    def test_generic_ready_marker_does_not_require_a_screen(self):
+        self.assertIsNotNone(ready_marker(tree(screen=""), None, None))
+        self.assertIsNone(ready_marker(tree(screen="", marker="not-ready"), None, None))
+
+    def test_scenario_without_screen_is_rejected_before_device_or_tree_access(self):
+        for scenario in ("ready", "empty", "partial", "error", "job", ""):
+            with self.subTest(scenario=scenario):
+                command, read_tree, wait = Mock(), Mock(), Mock()
+                with self.assertRaisesRegex(ValueError, "requires an explicit screen"):
+                    launch_profile(command, read_tree, wait, expected_screen=None, scenario=scenario)
+                command.assert_not_called()
+                read_tree.assert_not_called()
+                wait.assert_not_called()
+
+                unread_tree = Mock()
+                with self.assertRaisesRegex(ValueError, "requires an explicit screen"):
+                    ready_marker(unread_tree, None, scenario)
+                unread_tree.iter.assert_not_called()
+
     def test_portfolio_launch_requires_exact_production_route_and_scenario(self):
         ready = tree(screen="probe-screen:portfolio-history;probe-scenario:partial")
         self.assertIsNotNone(ready_marker(ready, "portfolio-history", "partial"))

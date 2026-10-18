@@ -32,7 +32,11 @@ FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "as
 
 
 def validate_fixture(expected_screen: str | None, scenario: str | None = None) -> None:
-    if expected_screen is not None and expected_screen not in FIXTURE_SCREENS:
+    if expected_screen is None:
+        if scenario is not None:
+            raise ValueError("Fixture scenario requires an explicit screen")
+        return
+    if expected_screen not in FIXTURE_SCREENS:
         raise ValueError("Unknown fixture screen")
     if scenario is not None:
         if expected_screen in PORTFOLIO_SCREENS:

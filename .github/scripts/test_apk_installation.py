@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -171,6 +172,59 @@ def collect_failure_diagnostics(device) -> None:
                 "EMULATOR_DIAGNOSTIC_UNAVAILABLE=" + type(exc).__name__,
                 flush=True,
             )
+
+
+def candidate_package_uid(output: str) -> str | None:
+    """Resolve only this installed APK's UID, including after its process died."""
+    matches = []
+    for line in output.splitlines():
+        match = re.fullmatch(r"package:ru\.omnicio\.app\.debug uid:([0-9]{1,10})", line.strip())
+        if match is not None:
+            value = int(match.group(1))
+            if 10000 <= value <= 2147483647:
+                matches.append(str(value))
+    return matches[0] if len(matches) == 1 else None
+
+
+def collect_graphics_diagnostics(device) -> None:
+    """Retain shader errors and app PIDs before unrelated log traffic hides them.
+
+    Read the bounded Android log buffers through tag/UID filters, not a global
+    last-N-lines query. The package UID still identifies the failed process after
+    SIGABRT; threadtime output retains its exact PID/TID. Each read has a deadline
+    and the printed excerpt is bounded. Diagnostics never turn a failure into a
+    pass or authorize an emulator retry.
+    """
+    commands = [(
+        "shader-main-system",
+        ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime",
+         "Filament:V", "filament:V", "Spectrum3D:V", "libc:F", "*:S"),
+    )]
+    try:
+        identity = device("shell", "cmd", "package", "list", "packages", "-U",
+                          "ru.omnicio.app.debug", timeout=10)
+        uid = candidate_package_uid(identity.stdout) if identity.returncode == 0 else None
+        if uid is not None:
+            commands.append((
+                "candidate-uid-" + uid,
+                ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime", "--uid=" + uid),
+            ))
+        else:
+            print("EMULATOR_GRAPHICS_IDENTITY=unavailable", flush=True)
+    except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
+        print("EMULATOR_GRAPHICS_IDENTITY=" + type(exc).__name__, flush=True)
+    for label, command in commands:
+        try:
+            diagnostic = device(*command, timeout=10)
+            if diagnostic.returncode:
+                print("EMULATOR_GRAPHICS_DIAGNOSTIC_UNAVAILABLE=" + label, flush=True)
+                continue
+            output = diagnostic.stdout
+            if len(output) > 32000:
+                output = output[:16000] + "\n[bounded diagnostic: middle omitted]\n" + output[-16000:]
+            print("EMULATOR_GRAPHICS_DIAGNOSTIC=" + label + "\n" + output, flush=True)
+        except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
+            print("EMULATOR_GRAPHICS_DIAGNOSTIC_UNAVAILABLE=" + label + ":" + type(exc).__name__, flush=True)
 
 
 def run_with_transport_retry(
@@ -524,6 +578,7 @@ def run_attempt(
             log.flush()
             _write_report(work / "install-results.json", results)
             if failed and not transport_lost:
+                collect_graphics_diagnostics(device)
                 collect_runtime_failure(device)
                 collect_failure_diagnostics(device)
             elif failed:
