@@ -28,6 +28,7 @@ jobs:
     permissions:
       contents: write
       checks: read
+      actions: read
     # Four registered runners share one laptop. Build/lint may use separate
     # workspaces; test_apk_installation.py takes the host-wide OS lease before
     # touching ADB or starting an emulator. A PR-specific group prevents one
@@ -229,8 +230,10 @@ jobs:
             }
             core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request.head.sha, run:context.runId, records}));
             await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
+      # Exact PNG/JSON evidence above is mandatory. Duplicate Actions storage is
+      # opt-in while the account quota is full; no historical data is deleted.
       - name: Upload optional synthetic Spectrum screenshots
-        if: always()
+        if: always() && vars.RETAIN_DUPLICATE_UI_ARTIFACTS == 'true'
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -243,3 +246,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
           compression-level: 0
+
+      # A [private-apk] head explicitly requests a manual-test attachment. The
+      # existing composite action must fully pass first. This never deploys.
+      - name: Retain requested device-test APK as a private draft
+        if: success()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await require('./.github/scripts/private_apk_review.cjs')({github, context, core});

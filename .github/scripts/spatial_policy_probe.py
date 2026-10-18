@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 import time
 
-from native_input_evidence import display_geometry
+from predictive_back_input import back_gesture
 
 NAVIGATION_OVERLAYS = {
     "com.android.internal.systemui.navbar.gestural",
@@ -96,12 +97,8 @@ def predictive_back(probe, metrics):
         probe.tap("Открыть экран возврата", "workspace-content")
         probe.find("Экран возврата")
         probe.find("Подтверждённых возвратов: 0")
-        width, height = display_geometry(probe.tree())
-        y = height // 2
-        probe.command("shell", "input", "touchscreen", "motionevent", "DOWN", "1", str(y))
         held = True
-        for portion in (.08, .16, .3):
-            probe.command("shell", "input", "touchscreen", "motionevent", "MOVE", str(int(width * portion)), str(y))
+        back_gesture(probe, "hold")
 
         def progressed():
             actual = metrics()
@@ -109,7 +106,7 @@ def predictive_back(probe, metrics):
 
         progress = probe.wait_for(progressed, "System Back gesture never reached the production predictive handler")
         probe.capture("spatial-predictive-back-progress")
-        probe.command("shell", "input", "touchscreen", "motionevent", "CANCEL")
+        back_gesture(probe, "cancel")
         held = False
         probe.find("Экран возврата")
         probe.find("Подтверждённых возвратов: 0")
@@ -121,14 +118,31 @@ def predictive_back(probe, metrics):
         cancelled = probe.wait_for(reset, "Cancelled Back left residual mesh depth or translation")
         probe.capture("spatial-predictive-back-cancelled")
         # A separate complete system gesture must commit exactly once.
-        probe.command("shell", "input", "touchscreen", "swipe", "1", str(y), str(int(width * .75)), str(y), "450")
+        held = True
+        back_gesture(probe, "hold")
+        back_gesture(probe, "commit")
+        held = False
         probe.reveal("Подтверждённых возвратов: 1", "workspace-content")
         committed = probe.wait_for(reset, "Committed Back did not reset scene progress")
         return {"scenario": "system-predictive-back-cancel-and-commit", "progress": progress,
                 "cancelled": cancelled, "committed": committed, "commits_after_cancel": 0,
-                "commits_after_complete_gesture": 1, "input": "Android InputShellCommand touchscreen MotionEvents"}
+                "commits_after_complete_gesture": 1, "input": "public UiAutomation continuous touchscreen MotionEvents"}
     finally:
-        if held:
-            probe.command("shell", "input", "touchscreen", "motionevent", "CANCEL")
-        probe.command("shell", "cmd", "overlay", "enable-exclusive", "--category", overlay)
-        _restore_animator_scale(probe, scale)
+        _cleanup_back(probe, held, overlay, scale, sys.exc_info()[1])
+
+
+def _cleanup_back(probe, held, overlay, scale, original):
+    actions = [lambda: probe.command("shell", "cmd", "overlay", "enable-exclusive", "--category", overlay),
+               lambda: _restore_animator_scale(probe, scale)]
+    if held:
+        actions.insert(0, lambda: back_gesture(probe, "cancel"))
+    errors = []
+    for action in actions:
+        try:
+            action()
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        if original is None:
+            raise errors[0]
+        original.add_note("Back cleanup failed: " + ", ".join(type(error).__name__ for error in errors))

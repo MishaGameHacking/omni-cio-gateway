@@ -30,7 +30,7 @@ import org.xmlpull.v1.XmlSerializer;
 /**
  * One public UiAutomation connection for the whole disposable-emulator scenario.
  * A separate test-only package survives force-stop/restart of the app under test.
- * It reads fresh frames and performs only exact whitelisted list scroll actions.
+ * It reads fresh frames, scrolls exact lists and injects fixture-only Back gestures.
  */
 public final class FrameInstrumentation extends Instrumentation {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
@@ -41,6 +41,7 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int ACTION_LIST_MASK = 0x0f;
     private static final int REQUEST_SEQUENCE_MASK = 0x00ffffff;
     private static final int ALLOWED_REQUEST_BITS = ACTION_FLAG
+            | BackGestureInput.REQUEST_FLAG
             | ACTION_START_FLAG
             | (ACTION_LIST_MASK << ACTION_LIST_SHIFT)
             | REQUEST_SEQUENCE_MASK;
@@ -128,8 +129,16 @@ public final class FrameInstrumentation extends Instrumentation {
         }
         output.writeInt(2);
         output.flush();
+        try (BackGestureInput gesture = new BackGestureInput(automation, windows)) {
+            serveRequests(client, input, output, automation, gesture);
+        }
+    }
+
+    private void serveRequests(LocalSocket client, DataInputStream input, DataOutputStream output,
+            UiAutomation automation, BackGestureInput gesture) throws IOException {
         int previous = 0;
         while (true) {
+            client.setSoTimeout(gesture.isHeld() ? 20_000 : 120_000);
             int rawRequest = input.readInt();
             if (rawRequest == 0) {
                 return;
@@ -147,7 +156,20 @@ public final class FrameInstrumentation extends Instrumentation {
             }
             AccessibilityNodeInfo root = automation.getRootInActiveWindow();
             boolean actionRequest = (rawRequest & ACTION_FLAG) != 0;
-            if (actionRequest) {
+            boolean backRequest = (rawRequest & BackGestureInput.REQUEST_FLAG) != 0;
+            if (backRequest) {
+                if (actionRequest || (rawRequest & ACTION_START_FLAG) != 0) {
+                    throw new IOException("Back request contains unrelated action flags");
+                }
+                gesture.perform((rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK, root);
+                output.writeInt(request);
+                output.writeInt(4);
+                output.writeInt(0);
+                output.flush();
+            } else if (actionRequest) {
+                if (gesture.isHeld()) {
+                    throw new IOException("Cannot scroll during a held Back touch");
+                }
                 int listCode = (rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK;
                 boolean towardStart = (rawRequest & ACTION_START_FLAG) != 0;
                 boolean performed = scrollExactList(root, listCode, towardStart);
