@@ -85,6 +85,21 @@ def tappable_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Elem
     return clipped
 
 
+def fully_visible_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Element | None:
+    """Require the whole evidence target inside its current list viewport.
+
+    A Compose node can retain logical bounds and visible-to-user=true after
+    scrolling behind a sticky header. Such bounds cannot identify captured pixels.
+    """
+    target = visible_resource(tree, target_id)
+    viewport = _scroll_area(tree, list_id)
+    if target is None or viewport is None:
+        return None
+    left, top, right, bottom = _bounds(target)
+    x1, y1, x2, y2 = viewport
+    return target if x1 <= left < right <= x2 and y1 <= top < bottom <= y2 else None
+
+
 def settled_resource(read_tree, target_id: str, list_id: str, max_frames: int = 20):
     """Require three equal fresh rectangles after an asynchronous scroll."""
     if list_id not in LIST_IDS or not 3 <= max_frames <= 30:
@@ -251,13 +266,15 @@ def reveal_resource_in_list(
     direction: str = "end",
     layout_timeout: float = 0,
     for_tap: bool = False,
+    for_capture: bool = False,
 ) -> ET.Element | None:
     """Reveal an exact Compose testTag without depending on merged label text."""
     return _reveal_target(
         read_tree,
         swipe,
-        lambda tree: tappable_resource(tree, target_resource_id, resource_id)
-        if for_tap else visible_resource(tree, target_resource_id),
+        lambda tree: fully_visible_resource(tree, target_resource_id, resource_id)
+        if for_capture else (tappable_resource(tree, target_resource_id, resource_id)
+        if for_tap else visible_resource(tree, target_resource_id)),
         target_resource_id,
         resource_id=resource_id,
         max_swipes=max_swipes,

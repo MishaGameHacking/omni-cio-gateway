@@ -15,6 +15,18 @@ CLOSE_SPATIAL_WINDOW = 'Закрыть окно 3D'
 TOGGLE_LABEL = 'Тестовый переключатель'
 
 
+def form_bounds(tree):
+    from profile_scroll import fully_visible_resource
+    from profile_ui_probe import node_bounds
+
+    bounds = []
+    for identifier in ("spatial-mesh-swatch", "spatial-action"):
+        target = fully_visible_resource(tree, identifier, "workspace-content")
+        if target is None:
+            raise AssertionError("Spatial capture target outside its current viewport: " + identifier)
+        bounds.append(node_bounds(target))
+    return tuple(bounds)
+
 
 def exercise_spatial(probe):
     _SpatialSession(probe).run()
@@ -74,13 +86,14 @@ class _SpatialSession:
         raise AssertionError("Idle mesh scene continues submitting frames")
 
     def capture_form(self, name, background):
-        from profile_ui_probe import node_bounds
-
-        self.probe.reveal_resource("spatial-mesh-swatch", "workspace-content", direction="start")
+        self.probe.reveal_resource("spatial-mesh-swatch", "workspace-content", direction="start", for_capture=True)
         observed = self.settled()
-        mesh = node_bounds(self.probe.reveal_resource("spatial-mesh-swatch", "workspace-content"))
-        button = node_bounds(self.probe.reveal_resource("spatial-action", "workspace-content"))
+        # Read both rectangles from ONE current frame. Revealing the next target
+        # must never scroll the previous witness out of the captured viewport.
+        mesh, button = form_bounds(self.probe.tree())
         path = self.probe.capture(name)
+        if (mesh, button) != form_bounds(self.probe.tree()):
+            raise AssertionError("Spatial evidence layout changed during capture")
         image = read_screenshot(path)
         result = {"scenario": name, "runtime": observed,
                   "mesh": mesh_witness(image, mesh, background),

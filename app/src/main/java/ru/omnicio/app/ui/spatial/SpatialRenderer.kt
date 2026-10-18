@@ -135,9 +135,11 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
                 LightManager.Builder(LightManager.Type.DIRECTIONAL)
                     .color(1f,.97f,.93f).intensity(95_000f).direction(-.4f,-.65f,-1f)
                     .castShadows(true).shadowOptions(LightManager.ShadowOptions().apply {
-                        // Coordinates are screen pixels, not metres. Use a subpixel
-                        // world-space bias along with Filament's full normal bias.
-                        mapSize=1024;shadowCascades=1;constantBias=.1f;normalBias=1f;shadowFarHint=1000f
+                        // World coordinates are physical screen pixels. A 0.1px
+                        // offset leaves coplanar shadow-map samples on the front
+                        // face (observed striping). One pixel remains below the
+                        // raised geometry thickness and preserves cast shadows.
+                        mapSize=2048;shadowCascades=1;constantBias=1f;normalBias=1f;shadowFarHint=1000f
                     }).build(e,light)
                 ambient = IndirectLight.Builder().irradiance(1,floatArrayOf(.65f,.69f,.78f))
                     .intensity(24_000f).build(e)

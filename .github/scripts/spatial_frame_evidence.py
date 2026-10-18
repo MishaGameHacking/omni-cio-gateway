@@ -126,7 +126,8 @@ def mesh_witness(image: Screenshot, rectangle, background):
     fraction = len(changed) / len(colors)
     shades = len({tuple(channel // 16 for channel in color) for color in changed})
     if not .015 <= fraction <= .95 or shades < 6:
-        raise AssertionError("Captured isolated mesh is absent, flat-covered or lacks visible shading")
+        raise AssertionError(f"Captured isolated mesh is absent, flat-covered or lacks visible shading: "
+                             f"fraction={fraction:.6f}, shades={shades}, bounds={rectangle}")
     return {"mesh_pixel_fraction": fraction, "quantized_mesh_shades": shades, "bounds": list(rectangle)}
 
 
