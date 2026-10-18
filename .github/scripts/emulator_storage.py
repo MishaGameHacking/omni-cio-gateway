@@ -1,4 +1,4 @@
-"""Bound disposable AVD storage and remove only the stopped attempt's data."""
+"""Configure owned AVD storage/navigation and remove only the stopped attempt's data."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,7 @@ MIB = 1024 * 1024
 DATA_BYTES = 4096 * MIB
 HEADROOM_BYTES = 2048 * MIB
 DATA_KEY = "disk.dataPartition.size"
+MAIN_KEYS_KEY = "hw.mainKeys"
 
 
 def _initial_data_bytes(image_dir: Path, sdk: Path) -> tuple[str, int]:
@@ -51,8 +52,15 @@ def configure_userdata(avd: Path, sdk: Path, image: str) -> None:
     if config.is_symlink():
         raise ValueError("AVD configuration must be a regular owned file")
     lines = [line for line in config.read_text(encoding="utf-8").splitlines()
-             if line.partition("=")[0].strip() != DATA_KEY]
-    config.write_text("\n".join([*lines, f"{DATA_KEY}={size}"]) + "\n", encoding="utf-8")
+             if line.partition("=")[0].strip() not in {DATA_KEY, MAIN_KEYS_KEY}]
+    # avdmanager without --device can inherit hardware Back/Home keys. In that
+    # profile Android removes the navigation bar and its edge input monitor;
+    # setting navigation_mode=2 alone cannot make a predictive gesture possible.
+    # Select software navigation before boot, without changing density, image,
+    # graphics, animation policy or any application-side Back implementation.
+    config.write_text("\n".join([*lines, f"{DATA_KEY}={size}", f"{MAIN_KEYS_KEY}=no"]) + "\n",
+                      encoding="utf-8")
+    print("EMULATOR_NAVIGATION_CONFIG=" + json.dumps({MAIN_KEYS_KEY: "no"}), flush=True)
 
 
 def remove_disposable_avd(avd_home: Path, attempt: Path, *, process) -> None:

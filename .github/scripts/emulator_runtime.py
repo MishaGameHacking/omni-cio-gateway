@@ -16,6 +16,7 @@ RUNTIME_PROPERTIES = (
     "persist.sys.dalvik.vm.lib.2",
     "dalvik.vm.usejit",
     "dalvik.vm.usejitprofiles",
+    "qemu.hw.mainkeys",
 )
 
 
