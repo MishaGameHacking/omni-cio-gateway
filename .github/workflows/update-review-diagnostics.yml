@@ -24,6 +24,40 @@ jobs:
             // issue acceptance, test overrides or secret values in output.
             const project = 'MishaGameHacking_omni-cio-gateway';
             const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+            const headers = {Accept:'application/json'};
+            if (process.env.SONAR_READ_TOKEN) headers.Authorization = 'Bearer '+process.env.SONAR_READ_TOKEN;
+            async function readIssuePage(number, page) {
+              const endpoint = new URL('https://sonarcloud.io/api/issues/search');
+              endpoint.search = new URLSearchParams({componentKeys:project,pullRequest:String(number),
+                issueStatuses:'OPEN,CONFIRMED',sinceLeakPeriod:'true',ps:'500',p:String(page)}).toString();
+              const response = await fetch(endpoint,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(15000)});
+              if (!response.ok) throw new Error('Sonar issue inventory HTTP '+response.status);
+              const raw = await response.text();
+              if (raw.length>1048576) throw new Error('Response exceeds diagnostic limit');
+              const result = JSON.parse(raw);
+              const total = result.paging?.total ?? result.total;
+              if (!Number.isSafeInteger(total) || total<0 || total>2000 || !Array.isArray(result.issues)) {
+                throw new Error('Invalid or oversized Sonar issue inventory');
+              }
+              return {total,issues:result.issues};
+            }
+            async function readAllIssues(number) {
+              const issues = new Map();
+              let expectedTotal;
+              for (let page=1; page<=4; page++) {
+                const result = await readIssuePage(number,page);
+                expectedTotal ??= result.total;
+                if (result.total!==expectedTotal) throw new Error('Sonar inventory changed during paging');
+                for (const issue of result.issues) {
+                  if (typeof issue.key!=='string' || issues.has(issue.key)) throw new Error('Missing or duplicate issue identity');
+                  issues.set(issue.key,issue);
+                }
+                core.info('SONAR_READ_PAGE='+JSON.stringify({pr:number,page,total:result.total,issues:result.issues.length}));
+                if (issues.size===expectedTotal) return [...issues.values()];
+                if (result.issues.length===0) throw new Error('Incomplete Sonar issue inventory');
+              }
+              throw new Error('Sonar issue inventory exceeded page limit');
+            }
             const numbers = context.ref === 'refs/heads/codex/spectrum-3d-100' ? [880] : [831, 832, 833];
             for (const number of numbers) {
               const pr = (await github.rest.pulls.get({...context.repo, pull_number:number})).data;
@@ -41,30 +75,26 @@ jobs:
               core.info('EXACT_HEAD_QUALITY='+JSON.stringify({pr:number,head:pr.head.sha,check:check.id,conclusion:check.conclusion}));
               const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo,check_run_id:check.id,per_page:100});
               for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({pr:number,path:a.path,line:a.start_line,title:a.title,message:a.message}));
-              const endpoint = new URL('https://sonarcloud.io/api/issues/search');
-              endpoint.search = new URLSearchParams({componentKeys:project,pullRequest:String(number),resolved:'false',types:'BUG,VULNERABILITY',ps:'100'}).toString();
-              const headers = {Accept:'application/json'};
-              if (process.env.SONAR_READ_TOKEN) headers.Authorization = 'Bearer '+process.env.SONAR_READ_TOKEN;
               try {
-                const response = await fetch(endpoint,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(15000)});
-                if (!response.ok) {
-                  core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,status:response.status,token_configured:Boolean(process.env.SONAR_READ_TOKEN)}));
-                  continue;
-                }
-                const raw = await response.text();
-                if (raw.length>1048576) throw new Error('Response exceeds diagnostic limit');
-                const result = JSON.parse(raw);
+                const issues = await readAllIssues(number);
                 const after = (await github.rest.pulls.get({...context.repo,pull_number:number})).data;
                 if (after.head.sha!==pr.head.sha) {
                   core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,reason:'head_changed'}));
                   continue;
                 }
-                for (const issue of result.issues||[]) {
-                  const impacts = (issue.impacts||[]).filter(i=>['SECURITY','RELIABILITY'].includes(i.softwareQuality));
-                  if (['BUG','VULNERABILITY'].includes(issue.type)||impacts.length) core.info('QUALITY_REVIEW_FINDING='+JSON.stringify({pr:number,head:pr.head.sha,key:issue.key,rule:issue.rule,type:issue.type,impacts,component:issue.component,line:issue.line,message:issue.message}));
+                const expectedNew = /\[(\d+) New issues\]/.exec(check.output?.summary||'');
+                if (expectedNew && Number(expectedNew[1])!==issues.length) {
+                  throw new Error('Sonar API count disagrees with exact-head check');
                 }
-                core.info('SONAR_READ_PAGE='+JSON.stringify({pr:number,paging:result.paging,total:result.total,issues:(result.issues||[]).length}));
+                for (const issue of issues) {
+                  core.info('QUALITY_REVIEW_FINDING='+JSON.stringify({pr:number,head:pr.head.sha,key:issue.key,
+                    rule:issue.rule,type:issue.type,severity:issue.severity,impacts:issue.impacts||[],
+                    component:issue.component,line:issue.line,textRange:issue.textRange,
+                    message:issue.message,flows:issue.flows||[]}));
+                }
+                core.info('SONAR_COMPLETE_INVENTORY='+JSON.stringify({pr:number,head:pr.head.sha,check:check.id,
+                  issues:issues.length,unique:issues.length,all_types:true,complete:true}));
               } catch (error) {
-                core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,reason:error.name}));
+                core.setFailed('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,head:pr.head.sha,reason:error.message}));
               }
             }
