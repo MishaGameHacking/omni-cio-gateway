@@ -63,6 +63,19 @@ class ProfileDriverTests(unittest.TestCase):
         node = ET.Element("node", bounds="[10,20][50,60]")
         self.assertEqual(probe.node_bounds(node), (10, 20, 50, 60))
 
+    def test_button_state_belongs_to_the_parent_not_its_enabled_text(self):
+        control = ET.Element("node", {"package": probe.PACKAGE, "class": "android.widget.Button", "enabled": "false"})
+        ET.SubElement(control, "node", text=TOGGLE_TITLE, enabled="true")
+        self.assertIs(probe.button_label(control, TOGGLE_TITLE), control)
+        self.assertEqual(probe.button_label(control, TOGGLE_TITLE).get("enabled"), "false")
+        control.set("enabled", "true")
+        self.assertEqual(probe.button_label(control, TOGGLE_TITLE).get("enabled"), "true")
+
+    def test_disabled_text_alone_cannot_prove_an_action_is_blocked(self):
+        label = ET.Element("node", {"package": probe.PACKAGE, "class": "android.widget.TextView",
+                                    "enabled": "false", "text": TOGGLE_TITLE})
+        self.assertIsNone(probe.button_label(label, TOGGLE_TITLE))
+
     def test_invalid_and_invisible_bounds_are_rejected(self):
         for bounds in ("", "x10,20,50,60", "[-1,20][50,60]", "[10,20][10,60]", "[10,60][50,20]"):
             node = ET.Element("node", bounds=bounds)

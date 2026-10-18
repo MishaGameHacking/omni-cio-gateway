@@ -57,7 +57,11 @@ def exercise_analysis(probe, scenario, observed):
             probe.reveal("Платные обращения приостановлены.", area)
             probe.reveal("Модель пока недоступна: достигнут лимит расхода", area)
             checks = ["cooldown-not-new-analysis", "unresolved-cost-blocks-paid-run"]
-        if probe.reveal(RUN, area).get("enabled") != "false":
+        from profile_ui_probe import button_label
+
+        probe.reveal(RUN, area)
+        control = probe.wait_for(lambda: button_label(probe.tree(), RUN), "Paid-run action has no native Button")
+        if control.get("enabled") != "false":
             raise AssertionError("Unavailable analysis exposes an enabled paid-run action")
         return checks + ["unavailable-run-disabled"]
     if scenario != "ready":

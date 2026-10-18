@@ -11,6 +11,7 @@ from profile_launch import PACKAGE
 from profile_ui_probe import node_bounds
 
 SELECTED_HISTORY_VALUE = '901,75 ₽'
+DISCUSS_PERIOD = 'Обсудить этот период'
 
 
 AREA = "workspace-content"
@@ -211,7 +212,11 @@ def exercise_quotes(case):
     failed = _candle_query(case, "week", status=503)
     p.reveal("СИНТЕТИЧЕСКИЙ источник временно недоступен. Повторите чтение выбранной недели.", AREA)
     p.reveal(f"Показана предыдущая выборка: {month_before(case.day)} · {case.day} · day. Новая ещё не получена.", AREA)
-    blocked = p.reveal("Обсудить этот период", AREA)
+    from profile_ui_probe import button_label
+
+    p.reveal(DISCUSS_PERIOD, AREA)
+    blocked = p.wait_for(lambda: button_label(p.tree(), DISCUSS_PERIOD),
+                         "Stale-period discussion has no native Button")
     if blocked.get("enabled") != "false":
         raise AssertionError("Stale candle period can be passed to the assistant as current")
     case.capture("stale-week")
@@ -230,7 +235,7 @@ def exercise_quotes(case):
     expected = "О 98.125000001 · В 99.125000001 · Н 97.625000001 · З 98.375000001"
     if expected not in labels(node):
         raise AssertionError("The selected native OHLC table rounded or changed the source quotation")
-    p.tap("Обсудить этот период", AREA)
+    p.tap(DISCUSS_PERIOD, AREA)
     p.find("Ассистент")
     start, end = str(month_before(case.day)), str(case.day)
     context = {"mode": "instrument", "instrument_uid": BOND, "account_id": ACCOUNT_A,

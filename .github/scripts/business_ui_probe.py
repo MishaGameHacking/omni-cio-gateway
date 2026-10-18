@@ -25,6 +25,7 @@ ANSWER = "СИНТЕТИЧЕСКИЙ ОТВЕТ: тестовая доля ко�
 PARTIAL_ANSWER = "СИНТЕТИЧЕСКИЙ ОТВЕТ: часть исходных сведений отсутствует; точный вывод не подтверждён."
 UNCERTAIN = "Исход запроса к модели пока не подтверждён. Автоматического повторного запроса нет."
 CONFIRM_VERSION = "Подтвердить эту версию"
+RISK_SOURCE_LABEL = "Открыть синтетический источник"
 
 
 def labels(node):
@@ -167,7 +168,11 @@ class _BusinessCase:
             self.probe.reveal("Влияние на текущий портфель", "workspace-content")
             if self.scenario == "partial":
                 self.probe.reveal("Тест: источник части связей отсутствует; применение недоступно.", "workspace-content")
-                confirm = self.probe.reveal(CONFIRM_VERSION, "workspace-content")
+                from profile_ui_probe import button_label
+
+                self.probe.reveal(CONFIRM_VERSION, "workspace-content")
+                confirm = self.probe.wait_for(lambda: button_label(self.probe.tree(), CONFIRM_VERSION),
+                                              "Strategy confirmation has no native Button")
                 if confirm.get("enabled") != "false":
                     raise AssertionError("Incomplete strategy preview can be confirmed")
                 self.checks.append("incomplete-preview-blocks-confirm")
@@ -193,7 +198,7 @@ class _BusinessCase:
                 self.probe.reveal("Сверено по операциям: 2 ед.", "workspace-content")
                 # The only unbound synthetic operation has three units.
                 control = self.reveal_prefix("", checkable=True, suffix=" · 3 ед.")
-                if not any("3 ед." in label for label in labels(control)):
+                if not any("3 ед." in label for label in _control_labels(control)):
                     raise AssertionError("Unexpected reconciliation operation")
                 self.probe.tap_node(control)
                 self.probe.tap("Подтвердить связь выбранных операций", "workspace-content")
@@ -257,15 +262,17 @@ class _BusinessCase:
         raise AssertionError("Expected native business control is not visible: " + prefix)
 
     def ready_risk(self):
-        from profile_ui_probe import matching_node
+        from profile_ui_probe import checkable_label
 
         self.probe.tap("Создать список проверок", "workspace-content")
         self.probe.reveal("Проверить: Синтетическая компания", "workspace-content", direction="start")
-        control = self.probe.reveal("Открыть синтетический источник", "workspace-content")
+        self.probe.reveal(RISK_SOURCE_LABEL, "workspace-content")
+        control = self.probe.wait_for(lambda: checkable_label(self.probe.tree(), RISK_SOURCE_LABEL),
+                                      "Risk checklist has no native checkable control")
         if control.get("checkable") != "true" or control.get("checked") != "false":
             raise AssertionError("Risk checklist has no native unchecked state")
         self.probe.tap_node(control)
-        self.probe.wait_for(lambda: (node if (node := matching_node(self.probe.tree(), "Открыть синтетический источник")) is not None and node.get("checked") == "true" else None),
+        self.probe.wait_for(lambda: (node if (node := checkable_label(self.probe.tree(), RISK_SOURCE_LABEL)) is not None and node.get("checked") == "true" else None),
                        "Risk checklist mutation was not confirmed")
         self.checks.extend(("concentration-threshold", "create-checklist", "confirm-reviewed-step"))
 
@@ -291,8 +298,13 @@ class _BusinessCase:
                        "lost-response-blocks-repeat", "same-request-get-recovery-without-remount"))
 
 
+def _control_labels(node):
+    return [label for child in node.iter("node") if child.get("visible-to-user") != "false"
+            for label in labels(child)]
+
+
 def _matches_business_control(node, prefix, checkable, suffix):
     return (node.get("package") == "ru.omnicio.app.debug"
             and node.get("visible-to-user") != "false"
             and (not checkable or node.get("checkable") == "true")
-            and any(label.startswith(prefix) and label.endswith(suffix) for label in labels(node)))
+            and any(label.startswith(prefix) and label.endswith(suffix) for label in _control_labels(node)))

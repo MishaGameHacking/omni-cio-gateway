@@ -20,6 +20,15 @@ def frame(route="risk", scenario="partial", *, requests="3", errors="0", transpo
 
 
 class BusinessUiProbeTests(unittest.TestCase):
+    def test_operation_checkbox_keeps_its_quantity_label_in_an_unmerged_child(self):
+        quantity = " · 3 ед."
+        control = ET.Element("node", {"package": "ru.omnicio.app.debug", "checkable": "true"})
+        ET.SubElement(control, "node", text="18.10.2026" + quantity)
+        self.assertTrue(business._matches_business_control(control, "", True, quantity))
+        self.assertFalse(business._matches_business_control(control, "", True, " · 5 ед."))
+        control.set("checkable", "false")
+        self.assertFalse(business._matches_business_control(control, "", True, quantity))
+
     def test_supported_matrix_has_twenty_six_distinct_cases(self):
         self.assertEqual(len(business.CASES), 26)
         self.assertEqual(len(set(business.CASES)), 26)

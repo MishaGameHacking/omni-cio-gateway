@@ -41,13 +41,22 @@ def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
 
 def checkable_label(tree: ET.Element, text: str) -> ET.Element | None:
     """Resolve the native control, including labels in its unmerged children."""
+    return _native_label(tree, text, "checkable", "true")
+
+
+def button_label(tree: ET.Element, text: str) -> ET.Element | None:
+    """Read enabled state from the native Button, never from its text child."""
+    return _native_label(tree, text, "class", "android.widget.Button")
+
+
+def _native_label(tree: ET.Element, text: str, attribute: str, value: str) -> ET.Element | None:
     matches = [node for node in tree.iter("node")
                if node.get("package") == PACKAGE
                and node.get("visible-to-user") != "false"
-               and node.get("checkable") == "true"
+               and node.get(attribute) == value
                and matching_node(node, text) is not None]
     if len(matches) > 1:
-        raise AssertionError("Ambiguous native checkable label: " + text)
+        raise AssertionError("Ambiguous native control label: " + text)
     return matches[0] if matches else None
 
 
