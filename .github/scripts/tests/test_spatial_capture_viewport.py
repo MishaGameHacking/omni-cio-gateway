@@ -2,11 +2,12 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from profile_scroll import fully_visible_resource, reveal_resource_in_list
-from spatial_ui_probe import form_bounds, landscape_ready
+from spatial_ui_probe import form_bounds, landscape_ready, _SpatialSession
 
 
 def frame(bounds="[20,120][132,232]"):
@@ -20,6 +21,71 @@ def frame(bounds="[20,120][132,232]"):
 
 
 class CaptureViewportTests(unittest.TestCase):
+    def test_process_identity_requires_exactly_one_running_pid(self):
+        probe = Mock()
+        session = _SpatialSession(probe)
+        for output in ("", "0", "4120 5000", "4120\n5000", "unknown"):
+            with self.subTest(output=output), self.assertRaises(AssertionError):
+                probe.command.return_value = output
+                session.current_process()
+
+    def test_missing_or_restarted_app_cannot_pass_with_old_scene_metrics(self):
+        probe = Mock()
+        probe.command.return_value = "4120\n"
+        session = _SpatialSession(probe)
+        session.process_id = "4120"
+        session.assert_same_process()
+        probe.command.return_value = "5000\n"
+        with self.assertRaisesRegex(AssertionError, "restarted"):
+            session.assert_same_process()
+        probe.command.side_effect = RuntimeError("pidof returned 1")
+        with self.assertRaisesRegex(AssertionError, "no longer running"):
+            session.assert_same_process()
+
+    def test_ready_metrics_are_rejected_when_the_process_dies_during_tree_read(self):
+        probe = Mock()
+        probe.command.side_effect = ["4120", RuntimeError("pidof returned 1")]
+        probe.wait_for.side_effect = lambda read, _message: read()
+        session = _SpatialSession(probe)
+        session.process_id = "4120"
+        with patch("spatial_ui_probe.ready_spatial_metrics", return_value={"frames": 100}), \
+                self.assertRaisesRegex(AssertionError, "no longer running"):
+            session.metrics()
+        probe.tree.assert_called_once_with()
+
+    def test_controlled_fixture_restart_binds_the_new_process(self):
+        probe = Mock()
+        probe.command.side_effect = ["4120", "5000"]
+        session = _SpatialSession(probe)
+        session.process_id = "4120"
+        with patch("profile_launch.launch_profile", return_value={"fixture": "spatial"}) as launch:
+            report = session.launch()
+        launch.assert_called_once_with(probe.command, probe.tree, probe.wait_for, expected_screen="spatial")
+        self.assertEqual(session.process_id, "5000")
+        self.assertEqual(report, {"fixture": "spatial", "process_id": "5000"})
+
+    def test_next_scenario_does_not_restart_over_a_previous_crash(self):
+        probe = Mock()
+        probe.command.side_effect = RuntimeError("pidof returned 1")
+        session = _SpatialSession(probe)
+        session.process_id = "4120"
+        with patch("profile_launch.launch_profile") as launch, \
+                self.assertRaisesRegex(AssertionError, "no longer running"):
+            session.launch()
+        launch.assert_not_called()
+
+    def test_invalid_bounds_still_retain_diagnostic_image_and_fail(self):
+        probe = Mock()
+        probe.command.return_value = "4120\n"
+        probe.tree.return_value = frame("[51,113][163,134]")
+        session = _SpatialSession(probe)
+        session.process_id = "4120"
+        session.metrics = Mock(return_value={"density": 1})
+        session.settled = Mock(return_value={"frames": 4})
+        with self.assertRaisesRegex(AssertionError, "outside its current viewport"):
+            session.capture_form("spatial-dark", (9, 14, 24))
+        probe.capture.assert_called_once_with("spatial-dark")
+
     def test_rotation_waits_for_new_app_configuration_and_landscape_frame(self):
         tree = frame()
         tree.set("display-width", "640")

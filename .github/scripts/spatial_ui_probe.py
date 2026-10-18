@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import hashlib
+import re
 from pathlib import Path
 import time
 
@@ -13,6 +14,16 @@ from spatial_frame_evidence import (clipping_witness, mesh_witness, read_screens
 CANDIDATE_PACKAGE = 'ru.omnicio.app.debug'
 CLOSE_SPATIAL_WINDOW = 'Закрыть окно 3D'
 TOGGLE_LABEL = 'Тестовый переключатель'
+CLICK_RESULT = 'Нажатий: 1'
+
+
+def capture_layout(tree, identifier, density):
+    relevant = {"workspace-content", identifier}
+    names = relevant | {f"{CANDIDATE_PACKAGE}:id/{name}" for name in relevant}
+    nodes = [{key: node.get(key, "") for key in ("package", "resource-id", "bounds", "visible-to-user", "scrollable")}
+             for node in tree.iter("node")
+             if node.get("resource-id") in names]
+    print("SPATIAL_CAPTURE_LAYOUT=" + json.dumps({"density": density, "target": identifier, "nodes": nodes[:8]}), flush=True)
 
 
 def form_bounds(tree, density=1):
@@ -24,6 +35,7 @@ def form_bounds(tree, density=1):
         minimum = (112 * density - 1, 112 * density - 1) if identifier == "spatial-mesh-swatch" else (48 * density - 1, 48 * density - 1)
         target = fully_visible_resource(tree, identifier, "workspace-content", minimum)
         if target is None:
+            capture_layout(tree, identifier, density)
             raise AssertionError("Spatial capture target outside its current viewport: " + identifier)
         bounds.append(node_bounds(target))
     return tuple(bounds)
@@ -53,13 +65,13 @@ class _SpatialSession:
     def __init__(self, probe):
         self.probe = probe
         self.records = []
+        self.process_id = None
 
     def run(self):
-        from profile_launch import launch_profile
         from kernel_page_size import PAGE_BYTES, system_image
 
         self.probe.command("shell", "settings", "put", "system", "font_scale", "1.0")
-        startup = launch_profile(self.probe.command, self.probe.tree, self.probe.wait_for, expected_screen="spatial")
+        startup = self.launch()
         platform = {"sdk": int(self.probe.command("shell", "getprop", "ro.build.version.sdk").strip()),
                     "abi": self.probe.command("shell", "getprop", "ro.product.cpu.abi").strip(),
                     "page_size_bytes": int(self.probe.command("shell", "getconf", "PAGE_SIZE").strip())}
@@ -74,6 +86,7 @@ class _SpatialSession:
         self.rotation()
         self.large_font()
         self.policies()
+        self.assert_same_process()
         report = {"fixture": "debug_only", "screenshots": "actual_emulator_console",
                   "gpu_frame_time_measured": False, "platform": platform, "checks": self.records}
         folder = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/preview/ui-screens"
@@ -84,9 +97,40 @@ class _SpatialSession:
         (folder / "spatial-verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print("SPATIAL_UI_VERIFICATION=" + json.dumps(report, sort_keys=True), flush=True)
 
+    def launch(self):
+        from profile_launch import launch_profile
+
+        # Only the fixture's explicit force-stop may change this identity. Check
+        # the previous process before restarting so a crash cannot be hidden by
+        # the next font/policy scenario's clean launch.
+        if self.process_id is not None:
+            self.assert_same_process()
+        startup = launch_profile(self.probe.command, self.probe.tree, self.probe.wait_for, expected_screen="spatial")
+        self.process_id = self.current_process()
+        return {**startup, "process_id": self.process_id}
+
     def metrics(self, windows=1):
-        return self.probe.wait_for(lambda: ready_spatial_metrics(self.probe.tree(), windows),
-                              "Actual Filament scene did not become ready")
+        def observed():
+            self.assert_same_process()
+            actual = ready_spatial_metrics(self.probe.tree(), windows)
+            self.assert_same_process()
+            return actual
+        return self.probe.wait_for(observed, "Actual Filament scene did not become ready")
+
+    def current_process(self):
+        try:
+            value = self.probe.command("shell", "pidof", CANDIDATE_PACKAGE).strip()
+        except RuntimeError as error:
+            raise AssertionError("Spatial app process is no longer running; inspect native crash diagnostics") from error
+        if not value:
+            raise AssertionError("Spatial app process is no longer running; inspect native crash diagnostics")
+        if re.fullmatch(r"[1-9][0-9]*", value) is None:
+            raise AssertionError("Spatial app process identity is ambiguous")
+        return value
+
+    def assert_same_process(self):
+        if self.current_process() != self.process_id:
+            raise AssertionError("Spatial app process restarted during UI verification")
 
     def settled(self):
         deadline = time.monotonic() + 12
@@ -103,14 +147,18 @@ class _SpatialSession:
         raise AssertionError("Idle mesh scene continues submitting frames")
 
     def capture_form(self, name, background):
+        self.assert_same_process()
         density = self.metrics()["density"]
         self.probe.reveal_resource("spatial-mesh-swatch", "workspace-content", direction="start", for_capture=True,
                                    minimum_size=(112 * density - 1, 112 * density - 1))
         observed = self.settled()
+        self.assert_same_process()
         # Read both rectangles from ONE current frame. Revealing the next target
         # must never scroll the previous witness out of the captured viewport.
-        mesh, button = form_bounds(self.probe.tree(), density)
+        before = self.probe.tree()
         path = self.probe.capture(name)
+        self.assert_same_process()
+        mesh, button = form_bounds(before, density)
         if (mesh, button) != form_bounds(self.probe.tree(), density):
             raise AssertionError("Spatial evidence layout changed during capture")
         image = read_screenshot(path)
@@ -138,7 +186,7 @@ class _SpatialSession:
                 or min(right - left, bottom - top) / actual["density"] < 47.5:
             raise AssertionError("Mesh button lost native clickable semantics or 48dp hit area")
         self.probe.tap_node(action)
-        self.probe.find("Нажатий: 1")
+        self.probe.find(CLICK_RESULT)
         self.probe.reveal(TOGGLE_LABEL, "workspace-content")
         toggle = self.probe.wait_for(lambda: checkable_label(self.probe.tree(), TOGGLE_LABEL),
                                      "Mesh toggle has no native checkable control")
@@ -223,6 +271,7 @@ class _SpatialSession:
         rows = set()
 
         def scroll(direction):
+            self.assert_same_process()
             moved = reader.scroll_list("workspace-content", direction)
             tree = self.probe.tree()
             rows.update(_visible_scroll_rows(tree))
@@ -261,15 +310,15 @@ class _SpatialSession:
             # reveal and tap. Use the settled native tab hit target, then prove
             # the intended section/state BEFORE requesting Activity recreation.
             self.probe.tap_resource("profile-tabs-item-0", "profile-tabs", direction="start")
-            self.probe.find("Нажатий: 1")
+            self.probe.find(CLICK_RESULT)
             self.probe.capture("spatial-rotation-before")
             self.probe.command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
             self.probe.command("shell", "settings", "put", "system", "user_rotation", "1")
             self.probe.wait_for(lambda: landscape_ready(self.probe.tree()),
                                 "Recreated landscape app did not become ready")
             self.probe.capture("spatial-rotation-ready")
-            self.probe.reveal_resource("spatial-click-result", "workspace-content", direction="start")
-            self.probe.find("Нажатий: 1")
+            self.probe.reveal_resource("spatial-click-result", "workspace-content")
+            self.probe.find(CLICK_RESULT)
             self.probe.reveal("Включён", "workspace-content")
             edited = self.probe.reveal_resource("spatial-input", "workspace-content")
             if not any("3d" in node.get("text", "") for node in edited.iter("node")):
@@ -286,10 +335,8 @@ class _SpatialSession:
                     self.probe.command("shell", "settings", "delete", "system", key)
 
     def large_font(self):
-        from profile_launch import launch_profile
-
         self.probe.command("shell", "settings", "put", "system", "font_scale", "2.0")
-        launch_profile(self.probe.command, self.probe.tree, self.probe.wait_for, expected_screen="spatial")
+        self.launch()
         large = self.metrics()
         if not math.isclose(large.get("font-scale", 0.0), 2.0, rel_tol=0.0, abs_tol=1e-6):
             raise AssertionError("Spatial 200% scenario did not apply the actual font scale")
@@ -303,11 +350,9 @@ class _SpatialSession:
         self.probe.command("shell", "settings", "put", "system", "font_scale", "1.0")
 
     def policies(self):
-        from profile_launch import launch_profile
-
         from spatial_policy_probe import predictive_back, system_policies
 
-        launch_profile(self.probe.command, self.probe.tree, self.probe.wait_for, expected_screen="spatial")
+        self.launch()
         self.records.extend(system_policies(self.probe, self.metrics, self.settled))
         self.records.append(predictive_back(self.probe, self.metrics))
 

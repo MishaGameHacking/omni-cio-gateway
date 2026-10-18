@@ -297,6 +297,7 @@ def run_attempt(
         require_guest_angle, snapshot_system_graphics,
     )
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
+    from emulator_runtime import snapshot_runtime_environment
     from emulator_storage import configure_userdata, remove_disposable_avd
 
     avd_home = work / "avd"
@@ -571,6 +572,8 @@ def run_attempt(
                 flush=True,
             )
             verify_emulator_identity(device, name, api)
+            print("EMULATOR_RUNTIME_ENVIRONMENT=" + json.dumps(
+                snapshot_runtime_environment(device, sdk, api), sort_keys=True), flush=True)
             page_size = device("shell", "getconf", "PAGE_SIZE")
             try:
                 if page_size.returncode:

@@ -300,8 +300,9 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
         var rendered = false
         windows.forEach { window ->
             if (!window.hasSurface) return@forEach
-            moving = window.update(frameTimeNanos, colors) || moving
-            if (window.dirty > 0 || moving) {
+            val windowMoving = window.update(frameTimeNanos, colors)
+            moving = windowMoving || moving
+            if (window.dirty > 0 || windowMoving) {
                 if (window.render(frameTimeNanos)) { frames++; rendered = true } else skipped++
             }
         }
