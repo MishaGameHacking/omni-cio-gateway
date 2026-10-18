@@ -1,0 +1,67 @@
+name: Build reviewed 0.11.0 patch
+
+on:
+  push:
+    branches: [codex/source-repair-0-11]
+    paths: ['.github/maintenance/repair-0-11.json.gz']
+
+permissions:
+  contents: read
+
+jobs:
+  propose:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/codex/source-repair-0-11'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create proposed source commit without moving any branch
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const zlib = require('node:zlib');
+            const manifestPath = '.github/maintenance/repair-0-11.json.gz';
+            const {data: blob} = await github.rest.repos.getContent({...context.repo, path: manifestPath, ref: context.sha});
+            if (blob.type !== 'file' || blob.size > 100000) throw new Error('Invalid manifest');
+            const plan = JSON.parse(zlib.gunzipSync(Buffer.from(blob.content, 'base64'), {maxOutputLength: 500000}).toString('utf8'));
+            if (!/^[a-f0-9]{40}$/.test(plan.base) || !Array.isArray(plan.files) || plan.files.length < 1 || plan.files.length > 40) throw new Error('Invalid patch plan');
+            const {data: base} = await github.rest.git.getCommit({...context.repo, commit_sha: plan.base});
+            const entries = [], seen = new Set();
+            for (const file of plan.files) {
+              if (typeof file.path !== 'string' || file.path.includes('..') || !/^(backend\/|app\/src\/|docs\/|\.github\/scripts\/)/.test(file.path) || seen.has(file.path)) throw new Error('Invalid patch path');
+              seen.add(file.path);
+              let original;
+              try {
+                const response = await github.rest.repos.getContent({...context.repo, path: file.path, ref: plan.base});
+                original = response.data;
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+              let text;
+              if (file.sha) {
+                if (!original || original.type !== 'file' || original.sha !== file.sha || original.size > 1000000) throw new Error('Source lease mismatch: ' + file.path);
+                const {data: source} = await github.rest.git.getBlob({...context.repo, file_sha: file.sha});
+                text = Buffer.from(source.content, 'base64').toString('utf8');
+                if (!Array.isArray(file.replacements) || file.replacements.length > 40) throw new Error('Invalid replacements');
+                for (const edit of file.replacements) {
+                  if (typeof edit.before !== 'string' || !edit.before || typeof edit.after !== 'string' || !Number.isInteger(edit.count) || edit.count < 1) throw new Error('Invalid edit');
+                  const parts = text.split(edit.before);
+                  if (parts.length - 1 !== edit.count) throw new Error('Occurrence mismatch in ' + file.path + ': ' + (parts.length - 1) + ' instead of ' + edit.count);
+                  text = parts.join(edit.after);
+                }
+              } else {
+                if (original || typeof file.content !== 'string') throw new Error('New path already exists: ' + file.path);
+                text = file.content;
+              }
+              if (Buffer.byteLength(text) > 1000000) throw new Error('Patched source too large');
+              const {data: changed} = await github.rest.git.createBlob({...context.repo, content: text, encoding: 'utf-8'});
+              entries.push({path: file.path, mode: '100644', type: 'blob', sha: changed.sha});
+              core.info('REPAIRED_FILE=' + JSON.stringify({path:file.path,sha:changed.sha}));
+            }
+            const {data: tree} = await github.rest.git.createTree({...context.repo, base_tree: base.tree.sha, tree: entries});
+            const {data: commit} = await github.rest.git.createCommit({...context.repo, message: plan.message, tree: tree.sha, parents: [plan.base]});
+            core.info('PATCH_COMMIT=' + commit.sha);
+            core.info('PATCH_TREE=' + tree.sha);
+            await core.summary.addHeading('Proposed source commit').addRaw('Commit: `' + commit.sha + '`; parent: `' + plan.base + '`. No branch, deployment, release or check status was changed.').write();
