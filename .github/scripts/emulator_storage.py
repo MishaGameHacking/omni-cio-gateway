@@ -1,0 +1,43 @@
+"""Bound disposable AVD storage and remove only the stopped attempt's data."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import shutil
+
+MIB = 1024 * 1024
+DATA_BYTES = 4096 * MIB
+HEADROOM_BYTES = 2048 * MIB
+DATA_KEY = "disk.dataPartition.size"
+
+
+def configure_userdata(avd: Path, sdk: Path, image: str) -> None:
+    source = sdk.joinpath(*image.split(";"), "userdata.img")
+    if not source.is_file() or not source.resolve().is_relative_to(sdk.resolve()):
+        raise RuntimeError("Official userdata image is missing or outside the selected SDK")
+    # Never shrink an official initial image. Four GiB is ample for the APKs,
+    # Google services and synthetic fixtures; RAM and kernel page size are separate.
+    initial = source.stat().st_size
+    size = max(DATA_BYTES, ((initial + MIB - 1) // MIB) * MIB)
+    available = shutil.disk_usage(avd).free
+    print("EMULATOR_STORAGE=" + json.dumps({"initial_image_bytes": initial,
+          "data_partition_bytes": size, "free_bytes": available,
+          "required_with_headroom_bytes": size + HEADROOM_BYTES}), flush=True)
+    if available < size + HEADROOM_BYTES:
+        raise RuntimeError("Insufficient runner disk space for the disposable AVD and verification evidence")
+    config = avd / "config.ini"
+    if config.is_symlink():
+        raise ValueError("AVD configuration must be a regular owned file")
+    lines = [line for line in config.read_text(encoding="utf-8").splitlines()
+             if line.partition("=")[0].strip() != DATA_KEY]
+    config.write_text("\n".join([*lines, f"{DATA_KEY}={size}"]) + "\n", encoding="utf-8")
+
+
+def remove_disposable_avd(avd_home: Path, attempt: Path, *, process) -> None:
+    if process.poll() is None:
+        raise RuntimeError("Refusing to remove data of a running emulator")
+    if avd_home.is_symlink() or avd_home.name != "avd" or avd_home.resolve().parent != attempt.resolve():
+        raise ValueError("Refusing to remove AVD data outside its own attempt")
+    if avd_home.exists():
+        shutil.rmtree(avd_home)
+    print("EMULATOR_STORAGE_CLEANED=owned-stopped-attempt", flush=True)

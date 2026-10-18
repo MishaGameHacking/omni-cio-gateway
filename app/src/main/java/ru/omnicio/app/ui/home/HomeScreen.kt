@@ -200,6 +200,14 @@ private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, c
 
 @Composable
 internal fun InteractiveBalance(amount: MoneyAmount, hidden: Boolean, onCurrency: () -> Unit) {
+    HoldToRevealBalance(amount, hidden, onCurrency)
+    Text(if (hidden) "Нажмите для смены валюты. Удерживайте, чтобы увидеть только эту сумму; отпустите, чтобы скрыть." else "Нажмите на сумму: RUB → USD → EUR",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    WorkspaceGestureHint("balance-currency", "Валюта одним касанием", "Касание суммы меняет валюту RUB → USD → EUR. Скрытую сумму можно увидеть только на время удержания; настройка приватности сохраняется.")
+}
+
+@Composable
+internal fun HoldToRevealBalance(amount: MoneyAmount, hidden: Boolean, onCurrency: () -> Unit, modifier: Modifier = Modifier) {
     var revealed by remember { mutableStateOf(false) }
     val active = workspaceForeground()
     val select by rememberUpdatedState(onCurrency)
@@ -207,15 +215,12 @@ internal fun InteractiveBalance(amount: MoneyAmount, hidden: Boolean, onCurrency
     val text = if (hidden && !(revealed && active)) "••• •••" else
         "${decimalText(amount.value.toBigDecimal())} ${currencySymbol(amount.currency)}"
     Text(text, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
             onClick("Следующая валюта оценки") { select(); true }
         }.pointerInput(hidden, active) {
             detectTapGestures(onTap = { select() }, onLongPress = { if (hidden && active) revealed = true },
                 onPress = { try { tryAwaitRelease() } finally { revealed = false } })
         })
-    Text(if (hidden) "Нажмите для смены валюты. Удерживайте, чтобы увидеть только эту сумму; отпустите, чтобы скрыть." else "Нажмите на сумму: RUB → USD → EUR",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    WorkspaceGestureHint("balance-currency", "Валюта одним касанием", "Касание суммы меняет валюту RUB → USD → EUR. Скрытую сумму можно увидеть только на время удержания; настройка приватности сохраняется.")
 }
 
 @Composable

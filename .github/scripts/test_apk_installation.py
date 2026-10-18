@@ -297,6 +297,7 @@ def run_attempt(
         require_guest_angle, snapshot_system_graphics,
     )
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
+    from emulator_storage import configure_userdata, remove_disposable_avd
 
     avd_home = work / "avd"
     avd_home.mkdir(exist_ok=True)
@@ -330,6 +331,7 @@ def run_attempt(
     )
     if create.returncode:
         raise RuntimeError("AVD creation failed: " + create.stdout + create.stderr)
+    configure_userdata(avd_home / (name + ".avd"), sdk, image)
     acceleration = run([emulator, "-accel-check"])
     print("EMULATOR_ACCELERATION=" + acceleration.stdout.strip(), flush=True)
     port = free_emulator_port()
@@ -411,6 +413,7 @@ def run_attempt(
                 "ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"),
                 flush=True,
             )
+
             time.sleep(2)
             try:
                 wait = run(
@@ -653,6 +656,14 @@ def run_attempt(
                 )[-5000:],
                 flush=True,
             )
+            # The emulator has exited. Keep its log and JSON report, but release
+            # owned disk images before a retry, API36, or another runner's lease.
+            try:
+                remove_disposable_avd(avd_home, work, process=process)
+            except (OSError, ValueError) as cleanup_error:
+                print("EMULATOR_STORAGE_CLEANUP_FAILURE=" + type(cleanup_error).__name__, flush=True)
+                if not failed:
+                    raise
 
 
 def main() -> None:

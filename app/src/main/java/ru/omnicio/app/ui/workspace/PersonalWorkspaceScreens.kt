@@ -74,7 +74,8 @@ fun GoalsWorkspaceScreen(onBack: () -> Unit) {
                     Text(goal.text("title"), style = MaterialTheme.typography.titleLarge)
                     Text(PrivateValue(moneyText(goal.optJSONObject("current"))) + " из " + PrivateValue(moneyText(goal.optJSONObject("target"))))
                     val percent = goal.optString("progress_percent").toFloatOrNull()?.takeIf { it.isFinite() }
-                    if (percent != null) SpectrumProgressBar((percent / 100f).coerceIn(0f, 1f))
+                    if (percent != null && !LocalWorkspacePreferences.current.value.hideHomeBalance)
+                        SpectrumProgressBar((percent / 100f).coerceIn(0f, 1f))
                     Text("Резерв: " + PrivateValue(moneyText(goal.optJSONObject("reserve"))))
                     Text("Оценка: " + localMoment(goal.text("as_of", "ещё не получена")), style = MaterialTheme.typography.bodySmall)
                     Text("Прогресс учитывает полученный капитал после резерва. Будущие выплаты и прибыль не прибавляются.", style = MaterialTheme.typography.bodySmall)

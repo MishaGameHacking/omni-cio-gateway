@@ -28,7 +28,7 @@ PORTFOLIO_CASES = (
     ("quotes", "ready"), ("markets", "ready"), ("appearance", "ready"),
 )
 PORTFOLIO_SCREENS = {"portfolio-" + route for route, _ in PORTFOLIO_CASES}
-FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context"} | BUSINESS_SCREENS | PORTFOLIO_SCREENS
+FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy"} | BUSINESS_SCREENS | PORTFOLIO_SCREENS
 
 
 def validate_fixture(expected_screen: str | None, scenario: str | None = None) -> None:

@@ -36,6 +36,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val storage = remember(context) { EncryptedWorkspaceStore(context) }
     var configText by rememberSaveable(userId) { mutableStateOf(defaultStrategy().toString()) }
     var baseline by rememberSaveable(userId) { mutableStateOf(configText) }
+    var hasEditorState by rememberSaveable(userId) { mutableStateOf(false) }
     var loaded by remember(userId) { mutableStateOf(false) }
     var tab by rememberSaveable(userId) { mutableIntStateOf(0) }
     var preview by remember { mutableStateOf<JSONObject?>(null) }
@@ -57,9 +58,12 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     }
     LaunchedEffect(resource.data) {
         if (resource.data != null && !loaded) {
-            val restored = withContext(Dispatchers.IO) { storage.readJson(userId, "strategy_editor")?.optJSONObject("config") }
-            configText = (restored ?: active?.optJSONObject("config") ?: defaultStrategy()).toString()
-            baseline = active?.optJSONObject("config")?.toString() ?: defaultStrategy().toString()
+            if (!hasEditorState) {
+                val restored = withContext(Dispatchers.IO) { storage.readJson(userId, "strategy_editor")?.optJSONObject("config") }
+                configText = (restored ?: active?.optJSONObject("config") ?: defaultStrategy()).toString()
+                baseline = active?.optJSONObject("config")?.toString() ?: defaultStrategy().toString()
+                hasEditorState = true
+            }
             loaded = true
         }
     }
@@ -123,7 +127,7 @@ private fun defaultStrategy(): JSONObject = JSONObject().put("goal", "preservati
     .put("risk_level", "moderate").put("allowed_markets", JSONArray().put("MOEX"))
 
 internal fun validStrategy(config: JSONObject): Boolean {
-    val horizon = config.optInt("horizon_months", 0)
+    val horizon = config.opt("horizon_months") as? Int ?: return false
     val amount = config.optJSONObject("reserve")?.optString("amount")?.toBigDecimalOrNull()
     val limits = config.optJSONObject("limits") ?: return false
     return horizon in 1..600 && amount != null && amount.signum() >= 0 && limitTitles.keys.all {
@@ -141,9 +145,12 @@ private fun StrategyGoalEditor(config: JSONObject, edit: (JSONObject) -> Unit) {
         val riskLevels = listOf("conservative", "moderate", "aggressive")
         WorkspaceChoices("Отношение к риску", listOf("Консервативное", "Умеренное", "Высокое"),
             riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0)) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
-        WorkspaceTextInput(config.optInt("horizon_months", 36).toString(),
-            { raw -> raw.toIntOrNull()?.let { edit(JSONObject(config.toString()).put("horizon_months", it)) } },
-            "Горизонт, месяцев", Modifier.fillMaxWidth(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
+        WorkspaceTextInput(config.opt("horizon_months")?.toString().orEmpty(),
+            { raw ->
+                val draft = raw.take(4)
+                edit(JSONObject(config.toString()).put("horizon_months", draft.toIntOrNull() ?: draft))
+            },
+            "Горизонт, месяцев", Modifier.fillMaxWidth().testTag("strategy-horizon"), keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
         Text("Выбор цели не добавляет ожидаемую прибыль к капиталу. Доступность инструмента проверяется у брокера.")
     }
 }

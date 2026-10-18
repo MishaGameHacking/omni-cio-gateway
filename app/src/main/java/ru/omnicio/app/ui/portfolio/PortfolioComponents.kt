@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -148,7 +149,7 @@ internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = nul
     val focused by interaction.collectIsFocusedAsState()
     ru.omnicio.app.ui.spatial.SpatialSurface(color = LocalSpectrumPalette.current.card,
         state = when { pressed -> ru.omnicio.app.ui.spatial.SpatialState.Pressed; selected || focused -> ru.omnicio.app.ui.spatial.SpatialState.Selected; else -> ru.omnicio.app.ui.spatial.SpatialState.Idle },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("position-row-$sharedKey")
             .combinedClickable(interactionSource = interaction, indication = null, role = Role.Button,
                 onClick = rowClick, onLongClick = previewClick, onLongClickLabel = "Кратко о позиции", hapticFeedbackEnabled = false)
             .semantics(mergeDescendants = true) { this.selected = selected }) {

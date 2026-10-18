@@ -394,7 +394,13 @@ class ProfileProbe:
                 self.find("Ничего не найдено")
                 self.tap_visible("Сбросить")
                 self.find("Денежные средства")
+                from position_preview_probe import exercise_position_preview
+                exercise_position_preview(self)
         self.command("shell", "am", "force-stop", PACKAGE)
+
+    def balance_privacy(self):
+        from balance_privacy_probe import exercise_balance_privacy
+        exercise_balance_privacy(self)
 
     def spatial(self):
         from spatial_ui_probe import exercise_spatial
@@ -628,6 +634,7 @@ def exercise_checks(device, read_tree) -> dict:
         stages = (
             ("spatial-renderer", probe.spatial),
             ("session-context", probe.session_context),
+            ("balance-privacy", probe.balance_privacy),
             ("business-26-cases", probe.business),
             ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),

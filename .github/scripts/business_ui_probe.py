@@ -85,6 +85,7 @@ class _BusinessCase:
         self.impact_screenshot = None
         self.chat_recovery = None
         self.scenario_comparison = None
+        self.strategy_editor = None
 
     def observed(self):
         return self.probe.wait_for(
@@ -116,6 +117,7 @@ class _BusinessCase:
                         "checks": self.checks, "native_input_rotation": self.draft_rotation,
                         "chat_recovery": self.chat_recovery,
                         "scenario_comparison": self.scenario_comparison,
+                        "strategy_editor": self.strategy_editor,
                         "impact_screenshot": self.impact_screenshot + ".png" if self.impact_screenshot else None,
                         "renderer": renderer, "screenshot": name + ".png"}
         print("BUSINESS_UI_CASE_PASSED=" + self.route + "/" + self.scenario + ";font=" + str(self.font_scale), flush=True)
@@ -166,6 +168,10 @@ class _BusinessCase:
             self.checks.append("inactive-rules-explicit")
         else:
             self.probe.reveal("Действует версия 3", "workspace-content")
+            if self.scenario == "ready":
+                from strategy_editor_probe import exercise_strategy_editor
+                self.strategy_editor = exercise_strategy_editor(self.probe, self.font_scale)
+                self.checks.extend(("replace-whole-horizon", "empty-horizon-blocks-preview", "native-strategy-draft-rotation"))
             self.probe.tap("Рассчитать влияние", "workspace-content")
             self.probe.reveal("Влияние на текущий портфель", "workspace-content")
             if self.scenario == "partial":

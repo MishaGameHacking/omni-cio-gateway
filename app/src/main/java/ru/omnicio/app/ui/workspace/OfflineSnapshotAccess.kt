@@ -3,6 +3,7 @@ package ru.omnicio.app.ui.workspace
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import ru.omnicio.app.data.backend.AuthSessionStore
@@ -20,7 +21,7 @@ fun OfflineSnapshotAccess(gate: UpdateGateUi) {
     val context = LocalContext.current
     val blocked by ClientVersion.blocked.collectAsState()
     var cached by remember { mutableStateOf<OfflinePortfolio?>(null) }
-    var open by remember { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf(false) }
     val permitted = gate.decision == null && gate.error != null && !gate.checking && !blocked
     LaunchedEffect(permitted) {
         cached = if (permitted) SessionTransitions.run {

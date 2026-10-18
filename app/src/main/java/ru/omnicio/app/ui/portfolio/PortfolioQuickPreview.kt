@@ -11,6 +11,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.data.portfolio.PortfolioPosition
 import ru.omnicio.app.data.workspace.rememberPersonalWorkspace
@@ -23,7 +26,8 @@ import ru.omnicio.app.ui.workspace.WorkspaceGestureHint
 internal fun PortfolioQuickPreview(position: PortfolioPosition, accountName: String?, close: () -> Unit, open: () -> Unit) {
     ModalBottomSheet(onDismissRequest = close, dragHandle = null) {
         SpatialWindow(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
+            .verticalScroll(rememberScrollState()).navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             WorkspaceGestureHint("position-preview", "Краткий просмотр позиции",
                 "Удержание открывает эту сводку. Кнопка «Кратко» в строке делает то же самое; полная карточка доступна ниже.")
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
