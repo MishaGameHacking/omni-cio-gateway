@@ -95,7 +95,7 @@ class EmulatorLeaseTests(unittest.TestCase):
     def test_crash_buffer_is_read_with_a_deadline(self):
         device = Mock(return_value=Mock(stdout='synthetic diagnostic', returncode=0))
         lease.collect_runtime_failure(device)
-        self.assertEqual(device.call_args_list[0].args, ('logcat', '-d', '-b', 'crash', '-t', '100'))
+        self.assertEqual(device.call_args_list[0].args, ('logcat', '-d', '-b', 'crash', '-v', 'threadtime'))
         self.assertEqual(device.call_args_list[0].kwargs, {'timeout': 10})
 
     def test_empty_crash_buffer_keeps_package_exit_and_system_kill_evidence(self):
