@@ -58,6 +58,32 @@ RESUMED = "topResumedActivity=ActivityRecord{123 u0 " + ACTIVITY + " t12}"
 
 
 class ProfileLaunchTests(unittest.TestCase):
+    def test_foreground_timeout_requires_a_new_complete_pair_and_frame(self):
+        command = Mock(side_effect=[RESUMED, subprocess.TimeoutExpired("dumpsys", 4), RESUMED, RESUMED])
+        read_tree = Mock(side_effect=[tree(), tree()])
+        evidence = {}
+        self.assertIsNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+        self.assertEqual(evidence["foreground_after"], ["activity observation timed out"])
+        self.assertIsNotNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+        self.assertEqual(read_tree.call_count, 2)
+        self.assertEqual(command.call_count, 4)
+        command.assert_called_with("shell", "dumpsys", "-t", "2", "activity", "activities", timeout=4)
+
+    def test_incomplete_system_dump_cannot_authorize_a_frame(self):
+        read_tree = Mock(return_value=tree())
+        partial = RESUMED + "\n*** SERVICE 'activity' DUMP TIMEOUT (2s) EXPIRED ***"
+        command = Mock(return_value=partial)
+        self.assertIsNone(launch.profile_frame(command, read_tree, {}, "profile"))
+        read_tree.assert_not_called()
+
+    def test_expired_foreground_read_cannot_reuse_previous_identity(self):
+        command = Mock(side_effect=[subprocess.TimeoutExpired("dumpsys", 4), RESUMED, "other app"])
+        read_tree = Mock(return_value=tree())
+        evidence = {"foreground_before": [RESUMED], "foreground_after": [RESUMED]}
+        self.assertIsNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+        read_tree.assert_not_called()
+        self.assertIsNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+
     def test_generic_ready_marker_does_not_require_a_screen(self):
         self.assertIsNotNone(ready_marker(tree(screen=""), None, None))
         self.assertIsNone(ready_marker(tree(screen="", marker="not-ready"), None, None))

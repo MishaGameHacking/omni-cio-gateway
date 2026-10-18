@@ -204,11 +204,27 @@ def frame_observation(tree) -> dict:
             for node in nodes})[:8], "markers": markers}
 
 
+def _foreground_snapshot(command, evidence, key):
+    # A full system report exceeded the host deadline in run 39113762845 even
+    # after the fixture rendered. Bound this read-only observation on both
+    # sides; the existing readiness deadline still requires a fresh pair of
+    # complete foreground observations around a fresh accessibility frame.
+    try:
+        output = command("shell", "dumpsys", "-t", "2", "activity", "activities", timeout=4)
+    except subprocess.TimeoutExpired:
+        evidence[key] = ["activity observation timed out"]
+        return ""
+    if "DUMP TIMEOUT" in output:
+        evidence[key] = ["activity observation incomplete"]
+        return ""
+    evidence[key] = foreground_observation(output)
+    return output
+
+
 def profile_frame(command, read_tree, evidence, expected_screen: str | None = None, scenario: str | None = None,
                   run_id: str | None = None):
     evidence["stage"] = "foreground-before-tree"
-    before = command("shell", "dumpsys", "activity", "activities")
-    evidence["foreground_before"] = foreground_observation(before)
+    before = _foreground_snapshot(command, evidence, "foreground_before")
     if not profile_resumed(before):
         return None
     evidence["stage"] = "accessibility-tree"
@@ -224,8 +240,7 @@ def profile_frame(command, read_tree, evidence, expected_screen: str | None = No
         return None
     # A crash or focus change during the UI dump must not count as ready.
     evidence["stage"] = "foreground-after-tree"
-    after = command("shell", "dumpsys", "activity", "activities")
-    evidence["foreground_after"] = foreground_observation(after)
+    after = _foreground_snapshot(command, evidence, "foreground_after")
     return node if profile_resumed(after) else None
 
 
