@@ -29,9 +29,9 @@ class BusinessUiProbeTests(unittest.TestCase):
         control.set("checkable", "false")
         self.assertFalse(business._matches_business_control(control, "", True, quantity))
 
-    def test_supported_matrix_has_twenty_six_distinct_cases(self):
-        self.assertEqual(len(business.CASES), 26)
-        self.assertEqual(len(set(business.CASES)), 26)
+    def test_supported_matrix_has_thirty_distinct_cases(self):
+        self.assertEqual(len(business.CASES), 30)
+        self.assertEqual(len(set(business.CASES)), 30)
         self.assertEqual({scenario for route, scenario in business.CASES if route == "analysis"}, {"ready", "empty", "partial", "error"})
         self.assertEqual({route for route, state in business.CASES if state == "job"}, {"assistant", "plans"})
 

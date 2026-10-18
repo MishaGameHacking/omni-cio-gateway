@@ -645,7 +645,7 @@ def exercise_checks(device, read_tree) -> dict:
             ("session-context", probe.session_context),
             ("balance-privacy", probe.balance_privacy),
             ("goal-workflow", probe.goal_workflow),
-            ("business-26-cases", probe.business),
+            ("business-30-cases", probe.business),
             ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),
             ("workspace-interactions", probe.workspace),

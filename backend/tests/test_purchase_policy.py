@@ -234,10 +234,12 @@ def test_purchase_endpoint_archives_encrypted_reproducible_evidence_and_isolates
     archived = fixture['client'].get(path).json()
     assert archived['result'] == result
     assert purchases.digest(archived['inputs']) == result['input_digest']
-    assert archived['historical_only'] and archived['requires_new_check']
+    assert archived['historical_only']
+    assert archived['requires_new_check']
     with closing(backend.connect()) as db:
         raw = db.execute("SELECT payload_json FROM workspace_records WHERE kind='purchase_check'").fetchone()[0]
-    assert 'owned-a' not in raw and 'encrypted' in raw
+    assert 'owned-a' not in raw
+    assert 'encrypted' in raw
     backend.app.dependency_overrides[backend.current_user] = lambda: fixture['other']
     assert fixture['client'].get(path).status_code == 404
 

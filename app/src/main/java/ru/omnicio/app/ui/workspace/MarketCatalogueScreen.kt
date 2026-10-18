@@ -8,6 +8,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
@@ -29,13 +32,14 @@ internal fun MarketCatalogueScreen(onBack: () -> Unit) {
         (revision?.let { "&revision=${VolumeWorkspaceClient.encode(it)}" } ?: "")
     val resource = rememberWorkspaceResource(path)
     WorkspaceDetailPage("Каталог брокера", "Реальные инструменты за пределами вашего портфеля", onBack, SpectrumSymbol.Search) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+            .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 WorkspaceChoices("Тип", listOf("Облигации", "Акции", "Фонды"), kind) {
                     kind = it; offset = 0; revision = null
                 }
-                SpectrumTextField(draft, { draft = it.take(160) }, Modifier.fillMaxWidth(),
+                SpectrumTextField(draft, { draft = it.take(160) }, Modifier.fillMaxWidth().testTag("catalogue-query"),
                     label = { Text("Тикер, ISIN или название") }, singleLine = true)
                 SpectrumPrimaryButton("Найти", { query = draft.trim(); offset = 0; revision = null; resource.refresh() },
                     Modifier.fillMaxWidth(), !resource.busy)
@@ -70,7 +74,8 @@ internal fun MarketCatalogueScreen(onBack: () -> Unit) {
 private fun PurchaseCheckDialog(instrument: JSONObject, close: () -> Unit) {
     val snapshot = LocalPortfolioSnapshot.current
     val accounts = snapshot?.accounts.orEmpty()
-    val userId = LocalWorkspaceSession.current.userId
+    val session = LocalWorkspaceSession.current
+    val userId = session.userId
     val uid = instrument.text("uid")
     val rules = rememberWorkspaceResource("/workspace/strategy")
     val version = rules.data?.optJSONObject("active")?.optInt("version") ?: 0
@@ -82,7 +87,7 @@ private fun PurchaseCheckDialog(instrument: JSONObject, close: () -> Unit) {
     var lots by rememberSaveable(userId, uid) { mutableStateOf("1") }
     var price by rememberSaveable(userId, uid) { mutableStateOf("") }
     var result by remember { mutableStateOf<JSONObject?>(null) }
-    val context = listOf(userId.toString(), uid, accountId.orEmpty(), version.toString(), snapshot?.asOf.orEmpty())
+    val context = listOf(userId, session.token, uid, accountId.orEmpty(), version.toString(), snapshot?.asOf.orEmpty())
     var requestedContext by remember { mutableStateOf<List<String>?>(null) }
     LaunchedEffect(context) { result = null }
     val action = rememberWorkspaceAction { if (requestedContext == context) result = it }
@@ -92,10 +97,10 @@ private fun PurchaseCheckDialog(instrument: JSONObject, close: () -> Unit) {
         if (accounts.isNotEmpty()) WorkspaceChoices("Счёт", accounts.map { it.name }, accountIndex.coerceIn(accounts.indices)) {
             if (!action.busy) { accountId = accounts[it].id; result = null }
         }
-        SpectrumTextField(lots, { lots = it.take(7); result = null }, Modifier.fillMaxWidth(),
+        SpectrumTextField(lots, { lots = it.take(7); result = null }, Modifier.fillMaxWidth().testTag("purchase-lots"),
             label = { Text("Количество целых лотов") }, enabled = !action.busy)
         val priceLabel = if (instrument.text("instrument_type") == "bond") "Предельная цена, % номинала" else "Предельная цена за единицу"
-        SpectrumTextField(price, { price = it.replace(',', '.').take(30); result = null }, Modifier.fillMaxWidth(),
+        SpectrumTextField(price, { price = it.replace(',', '.').take(30); result = null }, Modifier.fillMaxWidth().testTag("purchase-price"),
             label = { Text(priceLabel) }, enabled = !action.busy)
         if (version == 0) Text("Сначала подтвердите стратегию и обновите портфель.")
         SpectrumPrimaryButton("Проверить ограничения", {

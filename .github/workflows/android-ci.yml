@@ -36,7 +36,7 @@ jobs:
       group: analyst-android-pr-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    # API35 16KB + API36, both upgrades, 52 business + 14 portfolio/font cases per API,
+    # API35 16KB + API36, both upgrades, 60 business + 14 portfolio/font cases per API,
     # native rendering and two-minute scroll checks plus the initial 1.7GB image.
     # Individual device commands and semantic assertions keep their short deadlines.
     timeout-minutes: 70

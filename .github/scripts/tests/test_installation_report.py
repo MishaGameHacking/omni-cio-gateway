@@ -129,7 +129,7 @@ class InstallationReportTests(unittest.TestCase):
             rows.append(measured_record(api, str(size), "a" * 64))
             next(row for row in rows if row["test"] == "debug_ui_fixture_install")["apk_sha256"] = "c" * 64
             next(row for row in rows if row["test"] == "profile_ui").update(
-                ui_suite=CURRENT_UI_SUITE, business_case_count=52, business_cases=sorted(BUSINESS_CASE_IDS),
+                ui_suite=CURRENT_UI_SUITE, business_case_count=60, business_cases=sorted(BUSINESS_CASE_IDS),
                 portfolio_case_count=14, portfolio_cases=sorted(PORTFOLIO_CASE_IDS),
                 fixture_apk_sha256="c" * 64)
             module.validate_results(rows, upgrade_required=True, profile_required=True, android_api=api)

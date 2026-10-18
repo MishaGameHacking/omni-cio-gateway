@@ -6,7 +6,7 @@ from dataclasses import asdict
 from contextlib import closing
 import json
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
@@ -170,7 +170,7 @@ def archive_check(user, result: dict, inputs: dict) -> str:
 
 
 @router.get("/checks/{identifier}", responses=HTTP_ERRORS)
-def historical_check(identifier: str, user: Any = Depends(backend.current_user)) -> dict:
+def historical_check(identifier: str, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     with closing(backend.connect()) as db:
         row = db.execute("SELECT payload_json FROM workspace_records WHERE user_id=? AND kind='purchase_check' AND id=?",
                          (int(user["id"]), identifier)).fetchone()
@@ -185,7 +185,7 @@ def historical_check(identifier: str, user: Any = Depends(backend.current_user))
 
 
 @router.post("/check", responses=HTTP_ERRORS)
-def check_purchase(payload: PurchaseCheck, user: Any = Depends(backend.current_user)) -> dict:
+def check_purchase(payload: PurchaseCheck, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
     return _check_purchase(payload, user)
 
 

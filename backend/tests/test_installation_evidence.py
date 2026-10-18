@@ -238,8 +238,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(checked['35']['runtime_16kb'])
         self.assertEqual(checked['36']['page_size_bytes'], 4096)
         self.assertFalse(checked['36']['runtime_16kb'])
-        self.assertEqual(checked['35']['business_case_count'], 52)
-        self.assertEqual(checked['36']['business_case_count'], 52)
+        self.assertEqual(checked['35']['business_case_count'], 60)
+        self.assertEqual(checked['36']['business_case_count'], 60)
         self.assertEqual(checked['35']['portfolio_case_count'], 14)
         self.assertEqual(checked['36']['portfolio_case_count'], 14)
         # Historical transcripts remain usable for recovery, never a new 3D release.
@@ -269,12 +269,14 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(field=field, value=value):
                 self.reject(data)
 
-    def test_new_release_requires_all_six_routes_and_both_native_font_sizes(self):
-        self.assertEqual(len(BUSINESS_CASE_IDS), 52)
+    def test_new_release_requires_all_seven_routes_and_both_native_font_sizes(self):
+        self.assertEqual(len(BUSINESS_CASE_IDS), 60)
+        self.assertEqual({f'catalogue/{state}@{font}' for state in ('ready', 'partial', 'empty', 'error') for font in (1, 2)},
+                         {case for case in BUSINESS_CASE_IDS if case.startswith('catalogue/')})
         self.assertEqual({f'analysis/{state}@{font}' for state in ('ready', 'partial', 'empty', 'error') for font in (1, 2)},
                          {case for case in BUSINESS_CASE_IDS if case.startswith('analysis/')})
         for field, value in (('ui_suite', 'old-profile-only'), ('business_case_count', 44),
-                             ('business_case_count', 52.0), ('business_case_count', True),
+                             ('business_case_count', 60.0), ('business_case_count', True),
                              ('business_cases', sorted(BUSINESS_CASE_IDS)[:-1]), ('business_cases', '52'),
                              ('fixture_apk_sha256', CANDIDATE), ('fixture_apk_sha256', None)):
             data = runtime_reports()

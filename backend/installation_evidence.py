@@ -10,7 +10,7 @@ import re
 CURRENT_UI_SUITE = 'spectrum-3d-100-v2'
 BUSINESS_CASE_IDS = frozenset(
     f'{route}/{scenario}@{font}'
-    for route in ('risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis')
+    for route in ('risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis', 'catalogue')
     for scenario in ('ready', 'empty', 'partial', 'error', 'job')
     if scenario != 'job' or route in ('assistant', 'plans')
     for font in (1, 2)

@@ -20,7 +20,7 @@ SYSTEM_PACKAGES = {"android", "com.android.systemui"}
 SYSTEM_UI_WAIT_IDS = {"android:id/aerr_wait", "aerr_wait"}
 SYSTEM_UI_WAIT_LABELS = {"Wait", "Подождать"}
 EMULATOR_MESSAGING_PACKAGE = "com.google.android.apps.messaging"
-BUSINESS_SCREENS = {"business-" + screen for screen in ("assistant", "risk", "plans", "strategy", "notifications", "analysis")}
+BUSINESS_SCREENS = {"business-" + screen for screen in ("assistant", "risk", "plans", "strategy", "notifications", "analysis", "catalogue")}
 BUSINESS_SCENARIOS = {"ready", "empty", "partial", "error", "job"}
 PORTFOLIO_CASES = (
     ("discovery", "ready"), ("dossier", "ready"),

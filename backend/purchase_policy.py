@@ -88,18 +88,23 @@ def exposure_amounts(snapshot: dict, now: datetime) -> tuple[dict, list[str]]:
         total += value
         if row.get("instrument_type") == "cash":
             continue
-        if not verified_identity(row.get("verified_identity"), now):
-            reasons.append("portfolio_identity_unverified")
-        keys = _row_keys(row)
-        for axis, identifier in keys.items():
-            if not identifier:
-                reasons.append("portfolio_" + axis + "_unknown")
-            else:
-                groups[axis][identifier] = groups[axis].get(identifier, ZERO) + value
+        reasons.extend(_add_position_exposures(row, value, groups, now))
     capital = decimal(snapshot.get("capital", {}).get("total"))
     if capital is None or abs(total - capital) > Decimal("0.01"):
         reasons.append("portfolio_total_not_reconciled")
     return groups, reasons
+
+
+def _add_position_exposures(row, value, groups, now):
+    reasons = []
+    if not verified_identity(row.get("verified_identity"), now):
+        reasons.append("portfolio_identity_unverified")
+    for axis, identifier in _row_keys(row).items():
+        if not identifier:
+            reasons.append("portfolio_" + axis + "_unknown")
+        else:
+            groups[axis][identifier] = groups[axis].get(identifier, ZERO) + value
+    return reasons
 
 
 def _quote_amount(value: dict, field: str, currency: str):
@@ -140,15 +145,9 @@ def _limits(groups: dict, candidate: dict, config: dict, total: Decimal, cost: D
     return observations, reasons
 
 
-@financial_context
-def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
-                    credit: dict, info: dict, quote: dict, capacity: dict,
-                    lots: int, observed_at: str, now: datetime | None = None) -> dict:
-    now = now or datetime.now(timezone.utc)
-    if type(lots) is not int or not 1 <= lots <= 1_000_000:
-        raise ValueError("whole_positive_lots_required")
+def _observation_reasons(snapshot, config, meta, identity, observed_at, now):
     currency = str(meta.get("currency", "")).upper()
-    reasons = instrument_reasons(meta, info, config) + credit_reasons(credit, meta.get("instrumentType"))
+    reasons = []
     lot = decimal(meta.get("lot"))
     if lot is None or lot <= 0 or lot % 1:
         reasons.append("instrument_lot_invalid")
@@ -160,29 +159,50 @@ def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
         reasons.append("candidate_identity_unverified")
     if currency != snapshot.get("currency") or currency != config.get("reserve", {}).get("currency"):
         reasons.append("currency_conversion_not_verified")
+    return reasons
+
+
+def _funding_and_concentrations(snapshot, config, meta, identity, groups, costs, cost_errors):
+    reasons, observations = [], []
+    reserve = decimal(config.get("reserve"))
+    if reserve is None or reserve < 0:
+        return observations, ["reserve_not_verified"]
+    if cost_errors:
+        return observations, reasons
+    paid, initial, available = costs["total"], costs["initial"], costs["available"]
+    if available - paid < reserve:
+        reasons.append("protected_reserve_would_be_spent")
+    # Upper bound: all excess above clean principal is treated as lost capital,
+    # and all-in cost as added exposure, including accrued interest.
+    total = decimal(snapshot.get("capital", {}).get("total"))
+    denominator = total - (paid - initial) if total is not None else ZERO
+    if denominator <= 0:
+        return observations, reasons + ["capital_after_costs_invalid"]
+    candidate = {"position": meta.get("uid"), "issuer": (identity or {}).get("issuer_id"),
+                 "group": (identity or {}).get("group_id"), "sector": meta.get("sector"),
+                 "currency": str(meta.get("currency", "")).upper()}
+    observations, breaches = _limits(groups, candidate, config, denominator, paid)
+    return observations, reasons + breaches
+
+
+@financial_context
+def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
+                    credit: dict, info: dict, quote: dict, capacity: dict,
+                    lots: int, observed_at: str, now: datetime | None = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    if type(lots) is not int or not 1 <= lots <= 1_000_000:
+        raise ValueError("whole_positive_lots_required")
+    currency = str(meta.get("currency", "")).upper()
+    reasons = instrument_reasons(meta, info, config) + credit_reasons(credit, meta.get("instrumentType"))
+    reasons.extend(_observation_reasons(snapshot, config, meta, identity, observed_at, now))
     costs, cost_errors = cost_basis(quote, capacity, currency, lots)
     reasons.extend(cost_errors)
     groups, group_errors = exposure_amounts(snapshot, now)
     reasons.extend(group_errors)
-    reserve = decimal(config.get("reserve"))
-    if reserve is None or reserve < 0:
-        reasons.append("reserve_not_verified")
-    total, paid, initial, available = decimal(snapshot.get("capital", {}).get("total")), costs["total"], costs["initial"], costs["available"]
-    observations = []
-    if not cost_errors and reserve is not None:
-        if available - paid < reserve:
-            reasons.append("protected_reserve_would_be_spent")
-        # Conservative bound: treat all amounts above clean principal (including
-        # accrued interest) as lost capital, and all-in cost as added exposure.
-        # This cannot make an inadmissible purchase pass by ignoring fees/ACI.
-        denominator = total - (paid - initial) if total is not None else ZERO
-        if denominator <= 0:
-            reasons.append("capital_after_costs_invalid")
-        else:
-            candidate = {"position": meta.get("uid"), "issuer": (identity or {}).get("issuer_id"),
-                         "group": (identity or {}).get("group_id"), "sector": meta.get("sector"), "currency": currency}
-            observations, breaches = _limits(groups, candidate, config, denominator, paid)
-            reasons.extend(breaches)
+    observations, financing_errors = _funding_and_concentrations(snapshot, config, meta, identity, groups, costs, cost_errors)
+    reasons.extend(financing_errors)
+    lot = decimal(meta.get("lot"))
+    paid, initial, available = costs["total"], costs["initial"], costs["available"]
     return {"policy_version": POLICY_VERSION, "constraints_passed": not reasons, "reasons": sorted(set(reasons)),
             "lots": lots, "quantity": text_number(lot * lots) if lot is not None else None,
             "total_cost": money(paid, currency), "clean_principal": money(initial, currency),

@@ -44,8 +44,9 @@ class CaptureViewportTests(unittest.TestCase):
         for bounds in ("[20,0][132,100]", "[20,90][132,202]", "[20,560][132,672]"):
             with self.subTest(bounds=bounds):
                 self.assertIsNone(fully_visible_resource(frame(bounds), "spatial-mesh-swatch", "workspace-content"))
+                observed = frame(bounds)
                 with self.assertRaisesRegex(AssertionError, "outside its current viewport"):
-                    form_bounds(frame(bounds))
+                    form_bounds(observed)
 
     def test_capture_reveals_even_when_accessibility_says_visible(self):
         frames = [frame("[20,0][132,100]"), frame()]

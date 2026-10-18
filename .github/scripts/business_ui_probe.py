@@ -15,7 +15,7 @@ from chat_recovery_ui_probe import chat_counters
 SYNTHETIC_LIMIT_CHANGE = 'Синтетическое изменение лимита'
 
 
-ROUTES = ("risk", "assistant", "plans", "strategy", "notifications", "analysis")
+ROUTES = ("risk", "assistant", "plans", "strategy", "notifications", "analysis", "catalogue")
 CASES = tuple((route, scenario) for route in ROUTES
               for scenario in ("ready", "empty", "partial", "error", "job")
               if scenario != "job" or route in {"assistant", "plans"})
@@ -104,7 +104,8 @@ class _BusinessCase:
         before = self.observed()
         scenarios = {"error": self.error, "job": self.job}
         routes = {"risk": self.risk, "strategy": self.strategy, "plans": self.plans,
-                  "notifications": self.notifications, "analysis": self.analysis, "assistant": self.assistant}
+                  "notifications": self.notifications, "analysis": self.analysis, "assistant": self.assistant,
+                  "catalogue": self.catalogue}
         handler = scenarios.get(self.scenario, routes[self.route])
         handler()
         actual = self.observed()
@@ -132,6 +133,10 @@ class _BusinessCase:
                        "Retry did not issue a new synthetic transport request")
         self.probe.reveal(ERROR, "workspace-content")
         self.checks.extend(("explicit-source-error", "retry-real-request"))
+
+    def catalogue(self):
+        from catalogue_ui_probe import exercise_catalogue
+        exercise_catalogue(self)
 
     def job(self):
         from profile_ui_probe import matching_node

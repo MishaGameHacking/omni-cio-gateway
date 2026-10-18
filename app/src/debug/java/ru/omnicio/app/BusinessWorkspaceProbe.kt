@@ -121,13 +121,14 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                     "strategy" -> LiveStrategyScreen(userId, onBack)
                     "notifications" -> NotificationEventsScreen(onBack)
                     "analysis" -> AnalysisTimelineScreen(onBack)
+                    "catalogue" -> MarketCatalogueScreen(onBack)
                 }
             }
         }
     }
 }
 
-internal val businessProbeRoutes = setOf("assistant", "risk", "plans", "strategy", "notifications", "analysis")
+internal val businessProbeRoutes = setOf("assistant", "risk", "plans", "strategy", "notifications", "analysis", "catalogue")
 internal val businessProbeScenarios = setOf("ready", "empty", "partial", "error", "job")
 private const val PROBE_AS_OF = "2026-10-17T10:00:00Z"
 private const val PROBE_ACCOUNT = "synthetic-account"
@@ -221,7 +222,8 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
             code = "synthetic_source_failure", status = 503, retryable = true)
         val endpoint = path.substringBefore('?')
         return try {
-            routeCore(path, endpoint, method, body)
+            catalogueProbeReply(path, method, body, scenario)
+                ?: routeCore(path, endpoint, method, body)
                 ?: routeRisks(endpoint, method, body)
                 ?: routeStrategy(endpoint, method, body)
                 ?: routePlans(endpoint, method, body)

@@ -91,13 +91,7 @@ def _create(payload: PlanCreate, user: Any) -> dict:
     position = next((p for p in state.positions(snapshot) if p["account_id"] == payload.account_id and p["instrument_uid"] == payload.instrument_uid), None)
     if not position:
         raise HTTPException(409, "manual_plan_verified_position_required")
-    lot = decimal(position["metadata"].get("lot"))
-    if lot is None or lot <= 0 or amount % lot != 0:
-        raise HTTPException(422, "manual_plan_lot_unverified_or_fractional")
-    held = decimal(position["quantity"])
-    blocked = decimal(position.get("blocked_quantity"))
-    if payload.side == "sell" and (held is None or blocked is None or position["blocked"] or amount > held - blocked):
-        raise HTTPException(409, "manual_plan_sell_quantity_not_verified")
+    lot, held = _verified_quantity(position, amount, payload.side)
     url = instrument_link(position["instrument_type"], position.get("ticker"), position["metadata"].get("isin"))
     if not url:
         raise HTTPException(409, "manual_plan_official_link_unavailable")
@@ -121,6 +115,17 @@ def _create(payload: PlanCreate, user: Any) -> dict:
         state.record(db, user_id, "manual_plan", result["id"], result)
         state.remember(db, user_id, payload.request_id, "manual_plan", request, result)
     return result
+
+
+def _verified_quantity(position, amount, side):
+    lot = decimal(position["metadata"].get("lot"))
+    if lot is None or lot <= 0 or amount % lot != 0:
+        raise HTTPException(422, "manual_plan_lot_unverified_or_fractional")
+    held = decimal(position["quantity"])
+    blocked = decimal(position.get("blocked_quantity"))
+    if side == "sell" and (held is None or blocked is None or position["blocked"] or amount > held - blocked):
+        raise HTTPException(409, "manual_plan_sell_quantity_not_verified")
+    return lot, held
 
 
 def _require_openable(plan: dict) -> None:
