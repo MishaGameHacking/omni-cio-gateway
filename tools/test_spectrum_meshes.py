@@ -3,15 +3,18 @@
 import hashlib
 import json
 import math
+import os
 import pathlib
 import struct
 import subprocess
 import tempfile
 import unittest
-from contextlib import ExitStack
+import zipfile
+from contextlib import ExitStack, contextmanager
 from unittest.mock import patch
 
 import generate_spectrum_meshes as catalogue
+import prepare_spectrum_checkout as preparation
 
 
 def decode(payload):
@@ -28,33 +31,135 @@ def decode(payload):
 
 
 class MeshCatalogueTest(unittest.TestCase):
-    def test_windows_git_checkout_preserves_generated_catalogue_and_glb_bytes(self):
-        """Exercise real Git autocrlf conversion, not a mocked Windows flag."""
+    @contextmanager
+    def reused_windows_checkout(self):
+        """Use actual commits and the same cleanup/checkout sequence as Actions."""
         root = pathlib.Path(__file__).resolve().parents[1]
         relative = pathlib.Path('app/src/main/assets/spectrum3d')
         paths = [relative / 'catalogue.json', relative / 'brand.glb']
         original = {path: (root / path).read_bytes() for path in paths}
         with tempfile.TemporaryDirectory(prefix='spectrum-checkout-') as folder:
-            checkout = pathlib.Path(folder)
+            checkout = pathlib.Path(folder).resolve()
             def git(*arguments):
-                return subprocess.run(['git', '-c', 'core.autocrlf=true', *arguments], cwd=checkout,
+                return subprocess.run(['git', '-c', 'core.autocrlf=true', '-c', 'commit.gpgsign=false',
+                                       '-c', 'user.name=Spectrum regression', '-c', 'user.email=spectrum@example.invalid',
+                                       *arguments], cwd=checkout,
                                       check=True, capture_output=True, timeout=15)
             git('init', '--quiet')
             (checkout / relative).mkdir(parents=True)
             for path, payload in original.items():
                 (checkout / path).write_bytes(payload)
             git('add', '--', *(path.as_posix() for path in paths))
+            git('commit', '--quiet', '-m', 'Assets before LF attributes')
+            previous = git('rev-parse', 'HEAD').stdout.decode().strip()
             (checkout / paths[0]).unlink()
             git('checkout-index', '--force', '--all')
-            # Reproduce the prior failure: unpinned JSON gains Windows CRLF.
             self.assertEqual(original[paths[0]].replace(b'\n', b'\r\n'), (checkout / paths[0]).read_bytes())
             (checkout / '.gitattributes').write_bytes((root / '.gitattributes').read_bytes())
             git('add', '--', '.gitattributes')
-            for path in paths:
-                (checkout / path).unlink()
-            git('checkout-index', '--force', '--all')
+            git('commit', '--quiet', '-m', 'Pin LF without changing the asset blob')
+            candidate = git('rev-parse', 'HEAD').stdout.decode().strip()
+            git('checkout', '--force', '--detach', previous)
+            git('clean', '-ffdx')
+            git('reset', '--hard', 'HEAD')
+            git('checkout', '--force', '--detach', candidate)
+            # No unlink after the attributes commit: this is the reused runner
+            # case the old fresh-file regression did not exercise.
+            self.assertEqual(git('status', '--porcelain', '--', paths[0].as_posix()).stdout, b'')
+            yield checkout, git, paths, original
+
+    def test_windows_git_checkout_preserves_generated_catalogue_and_glb_bytes(self):
+        with self.reused_windows_checkout() as (checkout, git, paths, original):
+            path = checkout / paths[0]
+            self.assertEqual(original[paths[0]].replace(b'\n', b'\r\n'), path.read_bytes())
+            # --force still skips the unchanged index entry in a reused worktree.
+            git('checkout-index', '--force', '--', paths[0].as_posix())
+            self.assertNotEqual(original[paths[0]], path.read_bytes())
+            before_head = git('rev-parse', 'HEAD').stdout
+            result = preparation.prepare_checkout(checkout)
+            self.assertTrue(result['repaired_checkout_crlf'])
+            self.assertEqual(result['before_crlf_count'], original[paths[0]].count(b'\n'))
+            self.assertEqual(git('rev-parse', 'HEAD').stdout, before_head)
+            self.assertEqual(git('diff', '--cached', '--name-only').stdout, b'')
             for path in paths:
                 self.assertEqual(original[path], (checkout / path).read_bytes(), str(path))
+            self.assertFalse(preparation.prepare_checkout(checkout)['repaired_checkout_crlf'])
+
+    def test_checkout_preparation_rejects_changed_content_without_regenerating_it(self):
+        with self.reused_windows_checkout() as (checkout, _, paths, _):
+            path = checkout / paths[0]
+            changed = path.read_bytes().replace(b'"version": 1', b'"version": 2', 1)
+            path.write_bytes(changed)
+            with self.assertRaisesRegex(ValueError, 'more than Git LF-to-CRLF'):
+                preparation.prepare_checkout(checkout)
+            self.assertEqual(path.read_bytes(), changed)
+
+    def test_checkout_preparation_rejects_a_staged_catalogue_from_another_revision(self):
+        with self.reused_windows_checkout() as (checkout, git, paths, _):
+            path = checkout / paths[0]
+            changed = path.read_bytes().replace(b'"version": 1', b'"version": 2', 1)
+            path.write_bytes(changed)
+            git('add', '--', paths[0].as_posix())
+            with self.assertRaisesRegex(ValueError, 'Staged catalogue differs'):
+                preparation.prepare_checkout(checkout)
+            self.assertEqual(path.read_bytes(), changed)
+
+    def test_checkout_preparation_never_overwrites_a_hardlink(self):
+        with self.reused_windows_checkout() as (checkout, _, paths, _):
+            path = checkout / paths[0]
+            before = path.read_bytes()
+            linked = checkout / 'other-catalogue.json'
+            os.link(path, linked)
+            with self.assertRaisesRegex(ValueError, 'one bounded regular file'):
+                preparation.prepare_checkout(checkout)
+            self.assertEqual(linked.read_bytes(), before)
+
+    @unittest.skipIf(os.name == 'nt', 'Windows symlink privileges are not assumed')
+    def test_checkout_preparation_never_follows_a_symlink(self):
+        with self.reused_windows_checkout() as (checkout, _, paths, _):
+            path = checkout / paths[0]
+            target = checkout / 'other-catalogue.json'
+            path.rename(target)
+            path.symlink_to(target)
+            before = target.read_bytes()
+            with self.assertRaisesRegex(ValueError, 'link or reparse point'):
+                preparation.prepare_checkout(checkout)
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_packaged_asset_check_requires_exact_bytes_even_for_semantically_equal_json(self):
+        assets = {'catalogue.json': (catalogue.DEST / 'catalogue.json').read_bytes(),
+                  'brand.glb': (catalogue.DEST / 'brand.glb').read_bytes()}
+        for altered in ('none', 'crlf', 'mesh-byte'):
+            with self.subTest(altered=altered), tempfile.TemporaryDirectory(prefix='spectrum-apk-') as folder:
+                apk = pathlib.Path(folder) / 'app-preview.apk'
+                with zipfile.ZipFile(apk, 'w') as archive:
+                    for name, original in assets.items():
+                        payload = original
+                        if altered == 'crlf' and name == 'catalogue.json':
+                            payload = original.replace(b'\n', b'\r\n')
+                            self.assertEqual(json.loads(payload), json.loads(original))
+                        if altered == 'mesh-byte' and name == 'brand.glb':
+                            payload = original[:-1] + bytes([original[-1] ^ 1])
+                        archive.writestr('assets/spectrum3d/' + name, payload)
+                before = apk.read_bytes()
+                if altered == 'none':
+                    catalogue.verify_packaged_assets(apk, assets)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'asset bytes differ'):
+                        catalogue.verify_packaged_assets(apk, assets)
+                self.assertEqual(apk.read_bytes(), before)
+
+    def test_packaged_asset_check_rejects_missing_duplicate_and_extra_entries(self):
+        assets = {'catalogue.json': b'{"version":1}\n', 'brand.glb': b'glTF\x00'}
+        for names in (['catalogue.json'], ['catalogue.json', 'brand.glb', 'brand.glb'],
+                      ['catalogue.json', 'brand.glb', 'unexpected.glb']):
+            with self.subTest(names=names), tempfile.TemporaryDirectory(prefix='spectrum-apk-') as folder:
+                apk = pathlib.Path(folder) / 'app-preview.apk'
+                with zipfile.ZipFile(apk, 'w') as archive:
+                    for name in names:
+                        archive.writestr('assets/spectrum3d/' + name, assets.get(name, b'other mesh'))
+                with self.assertRaisesRegex(ValueError, 'missing, duplicated or unexpected'):
+                    catalogue.verify_packaged_assets(apk, assets)
 
     def test_every_distributed_asset_has_finite_volume_normals_and_verified_digest(self):
         manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())

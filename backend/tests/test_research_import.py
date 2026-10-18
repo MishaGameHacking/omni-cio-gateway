@@ -6,8 +6,10 @@ import os
 from pathlib import Path
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -297,3 +299,48 @@ def test_bounded_reader_accepts_exact_limit_and_rejects_next_byte_before_databas
     with pytest.raises(EvidenceError, match='research_import_byte_limit'):
         cli.run(path.name, database=candidate, apply=True)
     assert not candidate.exists()
+
+
+def windows_stat_fixture(**changes):
+    # Synthetic metadata reproduces CPython #157671: pathname ctime means
+    # creation, descriptor ctime means metadata change, birthtime agrees.
+    values = dict(st_dev=7, st_ino=11, st_mode=stat.S_IFREG | 0o600, st_nlink=1,
+                  st_size=cli.MAX_BYTES, st_mtime_ns=200, st_ctime_ns=100, st_birthtime_ns=100)
+    return SimpleNamespace(**(values | changes))
+
+
+def test_windows_same_rewritten_file_accepts_distinct_ctime_with_matching_birthtime(monkeypatch):
+    monkeypatch.setattr(cli, 'os', SimpleNamespace(name='nt', path=os.path))
+    before = windows_stat_fixture()
+    opened = windows_stat_fixture(st_ctime_ns=300)
+    assert cli._same_document(before, opened)
+
+
+@pytest.mark.parametrize('changed_field', [
+    'st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_birthtime_ns',
+])
+def test_windows_clock_normalization_still_rejects_changed_file_metadata(monkeypatch, changed_field):
+    monkeypatch.setattr(cli, 'os', SimpleNamespace(name='nt', path=os.path))
+    before = windows_stat_fixture()
+    # All ctime values agree here: each changed field must independently reject
+    # a different file, hardlink, mode, size, content time or creation time.
+    changed_value = stat.S_IFDIR | 0o600 if changed_field == 'st_mode' else getattr(before, changed_field) + 1
+    opened = windows_stat_fixture(**{changed_field: changed_value})
+    assert not cli._same_document(before, opened)
+
+
+def test_posix_ctime_still_detects_metadata_change_even_when_birthtime_matches(monkeypatch):
+    monkeypatch.setattr(cli, 'os', SimpleNamespace(name='posix', path=os.path))
+    before = windows_stat_fixture()
+    assert not cli._same_document(before, windows_stat_fixture(st_ctime_ns=300))
+
+
+def test_legacy_windows_without_birthtime_keeps_creation_time_check(monkeypatch):
+    monkeypatch.setattr(cli, 'os', SimpleNamespace(name='nt', path=os.path))
+    before = windows_stat_fixture()
+    opened = windows_stat_fixture()
+    del before.st_birthtime_ns
+    del opened.st_birthtime_ns
+    assert cli._same_document(before, opened)
+    opened.st_ctime_ns += 1
+    assert not cli._same_document(before, opened)

@@ -72,7 +72,14 @@ def _reviewed_file(filename: str) -> tuple[Path, os.stat_result, os.stat_result]
 def _same_document(before: os.stat_result, opened: os.stat_result) -> bool:
     # Some filesystems reuse an unlinked inode immediately. Identity alone is
     # insufficient: also verify the captured type, links, length and timestamps.
-    fields = ('st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+    fields = ('st_mode', 'st_nlink', 'st_size', 'st_mtime_ns')
+    # CPython #157671: Windows lstat ctime can mean creation while fstat ctime
+    # means metadata change. Compare their explicit creation times instead;
+    # retain change-time checking on POSIX and the legacy Windows fallback.
+    if os.name == 'nt' and hasattr(before, 'st_birthtime_ns') and hasattr(opened, 'st_birthtime_ns'):
+        fields += ('st_birthtime_ns',)
+    else:
+        fields += ('st_ctime_ns',)
     return os.path.samestat(before, opened) and all(getattr(before, key) == getattr(opened, key) for key in fields)
 
 

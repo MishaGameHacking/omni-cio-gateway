@@ -24,7 +24,7 @@ runs:
       run: |
         py -3 tools\test_native_alignment.py
         if errorlevel 1 exit /b 1
-        py -3 tools\generate_spectrum_meshes.py --check
+        py -3 tools\generate_spectrum_meshes.py --check --check-apk
         if errorlevel 1 exit /b 1
         py -3 tools\test_spectrum_meshes.py
         if errorlevel 1 exit /b 1

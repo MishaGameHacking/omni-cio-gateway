@@ -2,7 +2,7 @@
 
 [Главный план](MASTER_PLAN.md) · [Главная страница](../README.md#development-plan)
 
-**Обновлено: 17.10.2026.** Начальная сверка кода:
+**Обновлено: 18.10.2026.** Начальная сверка кода:
 [`f1f234a`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/f1f234a5baa516a439cc745993bd5782dd9c5f5f).
 Владелец утвердил реализацию всего плана последовательными готовыми обновлениями.
 Сохранение плана не означает, что перечисленные функции уже разработаны.
@@ -20,13 +20,13 @@
 ## Проверка нового обновления 3D100
 
 - Реализация: [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880), версия `35 / 0.11.0`; preview package, сертификат и baseline `0.10.0 / 34` сохранены.
-- Последний завершённый GitHub прогон: [`4fa39fd`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/4fa39fd5388b5441059248ccefc681cafa488966). [Android CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39069831896) прошёл JVM, debug/preview/release, lint, 11 native-alignment тестов Windows, точные байты каталога и UI-driver. API 35 подтвердила 16 384 байта и обновление 34 → 35, но при запуске произошёл native SIGABRT в компиляции шейдера FXAA. Успешного полного runtime receipt нет; API 36 ещё не выполнялась.
-- [Backend CI того же SHA](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39069831774): **810 passed, 1 skipped, 337 subtests passed**. Sonar выявил `None` в launch-проверке и небезопасный путь CLI импорта. Новый срез добавляет явную проверку `None` и ограничивает импорт именем файла в фиксированном закрытом каталоге с проверкой ссылок, подмены и размера. Production зависимости и существующие данные сохранены.
-- Renderer использует MSAA 4 / 2 сэмпла вместо падающего FXAA; материалы, post-processing и настоящая геометрия сохранены. Следующий runtime должен подтвердить исправление. При сбое собираются ограниченные сообщения компилятора и точного UID приложения.
-- Локальная серверная проверка текущей линии: **838 pytest + 337 под-тестов** за 21,26 с. Android: **28 JVM**, debug APK, отдельный UI-driver и lint debug — успешно за **2 минуты 51 секунду**; исходники сборки сверены по SHA256. Android/релизные Python-сценарии: **435 passed, 1 skipped** из 436. Preview/release, Sonar и runtime должны пройти новый точный SHA.
-- Сверка каждого исходного критерия, точных файлов, тестов и границ: [3D100_EVIDENCE](3D100_EVIDENCE.md). В коде исправлены пропуски выбора график/таблица, дат и объекта рейтинга, конфликтующих чисел, нижних контекстных действий, сохранения выбранной выплаты и неизвестного результата платного сообщения. Применимые проверки нового GitHub SHA должны подтвердить этот срез.
-- Следующий runtime прогон включает API 35 с измеренными 16 КБ в официальной ps16k-среде, API 36 с 4096, обновление с `0.10.0 / 34`, реальные кадры Filament и receipt v2 с 52 business + 14 portfolio case/font IDs на каждой API. Статическая проверка ELF/ZIP не заменяет этот запуск.
-- Новый backend, APK и канал `0.11.0` пока не объявляются установленными. Физический телефон, TalkBack, нагрев и расход батареи фиксируются отдельно; x86_64 эмулятор не подтверждает физическое ARM-устройство.
+- Последний завершённый GitHub SHA: [`3276360`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/3276360d2e8d3553fdf63a45a9420ed2767d540b). Sonar — **Quality Gate passed**. [Android CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39096644235) прошёл все APK, JVM и lint за **8 минут 58 секунд** и 11 native-alignment тестов, затем остановился до эмулятора на JSON-каталоге в повторно используемом Windows checkout.
+- Новый срез проверяет точные байты canonical Git blob до сборки и каталог в готовом APK. Воспроизведён случай, когда Git считает старые CRLF-байты чистыми после добавления LF-атрибутов; иные отличия остаются ошибкой. Проверка генератора не ослабляется.
+- [Backend CI того же SHA](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39096644192): **1 failed, 835 passed, 2 skipped, 337 subtests passed**. Исправлено сравнение неодинаковой семантики `ctime` из `lstat`/`fstat` Windows ([CPython #157671](https://github.com/python/cpython/issues/157671)). На Windows используются явные времена создания, на POSIX сохранено время изменения метаданных. Все проверки идентичности, пути, ссылок, размера и атомарного импорта сохранены. Исправление прошло **53 целевых теста**.
+- Последний фактический runtime [`4fa39fd`](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39069831896) подтвердил API 35 / 16 384 байта и upgrade 34 → 35, затем упал в компиляции FXAA. В коде используется MSAA 4 / 2; последующий SHA ещё не дошёл до повторного runtime. Подтверждения кадров, полного receipt v2 и API 36 пока нет.
+- Последний локальный Android-срез: **28 JVM**, debug APK, UI-driver и lint debug за **2 минуты 51 секунду**; код Android после этого не менялся. Предыдущий полный backend: **838 pytest + 337 под-тестов**. Точные результаты, исходники и границы каждого из 100 критериев: [3D100_EVIDENCE](3D100_EVIDENCE.md). Полный локальный набор Android/релизных сценариев: **435 passed, 1 skipped**; mesh-набор — **14 passed**. Новый SHA должен пройти все применимые проверки заново.
+- Следующий runtime включает API 35 ps16k, API 36 / 4096, обновление с `0.10.0 / 34`, реальные кадры Filament и receipt v2 с **52 business + 14 portfolio case/font IDs на каждой API**.
+- Backend, APK и канал `0.11.0` ещё не объявляются установленными. Физический телефон, TalkBack, нагрев и расход батареи фиксируются отдельно.
 
 ## Правила статуса
 
