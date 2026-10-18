@@ -41,20 +41,29 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource(NOTIFICATION_PREFERENCES_PATH)
     val context = LocalContext.current
     var draft by rememberSaveable { mutableStateOf<String?>(null) }
+    var draftVersion by rememberSaveable { mutableStateOf<Int?>(null) }
     var preview by remember { mutableStateOf<JSONObject?>(null) }
     var applied by remember { mutableStateOf<String?>(null) }
     var delivery by remember { mutableStateOf(WorkspaceNotificationService.canNotify(context)) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         delivery = granted && WorkspaceNotificationService.schedule(context)
     }
-    val save = rememberWorkspaceAction { result ->
+    val save = rememberWorkspaceAction(onFailure = { failure ->
+        if (failure.reply.status == 409) resource.refresh()
+    }) { result ->
         draft = result.optJSONObject("preferences")?.toString(); resource.refresh(); preview = null
+        draftVersion = notificationPreferenceVersion(result)
         applied = result.optString("applied_at").takeIf(String::isNotBlank)
         val enabled = result.optJSONObject("preferences")?.optBoolean("enabled") == true
         if (!enabled) WorkspaceNotificationService.cancel(context) else delivery = WorkspaceNotificationService.schedule(context)
     }
     val simulate = rememberWorkspaceAction { preview = it }
-    LaunchedEffect(resource.data) { if (draft == null) draft = resource.data?.optJSONObject("preferences")?.toString() }
+    LaunchedEffect(resource.data) {
+        if (draft == null) {
+            draft = resource.data?.optJSONObject("preferences")?.toString()
+            draftVersion = notificationPreferenceVersion(resource.data)
+        }
+    }
     val foreground = workspaceForeground()
     LaunchedEffect(foreground) { if (foreground) delivery = WorkspaceNotificationService.canNotify(context) }
     val config = remember(draft) { draft?.let(::JSONObject) }
@@ -79,10 +88,19 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                     Text("Ночной интервал может переходить через полночь. Сервер проверяет тихие часы перед выдачей события устройству.")
                 } }
                 item { SpectrumCard(emphasized = true) {
-                    val valid = notificationRulesValid(settings)
-                    if (!valid) Text("Проверьте часовой пояс и время в формате 09:00.", color = MaterialTheme.colorScheme.error)
+                    val version = draftVersion
+                    val rulesValid = notificationRulesValid(settings)
+                    val valid = rulesValid && version != null && version == notificationPreferenceVersion(resource.data)
+                    if (!rulesValid) Text("Проверьте часовой пояс и время в формате 09:00. Утренний и вечерний обзоры должны приходить в разное время.", color = MaterialTheme.colorScheme.error)
+                    if (version == null) Text("Версия правил не получена. Обновите данные перед сохранением.")
+                    if (version != notificationPreferenceVersion(resource.data)) {
+                        Text("Правила изменились на другом устройстве. Загрузите их перед сохранением; текущий черновик будет заменён.")
+                        SpectrumSecondaryButton("Загрузить актуальные правила", {
+                            draft = null; draftVersion = null; preview = null; applied = null; resource.refresh()
+                        }, Modifier.fillMaxWidth(), !save.busy && !simulate.busy)
+                    }
                     SpectrumPrimaryButton("Применить правила", {
-                        save.perform(NOTIFICATION_PREFERENCES_PATH, JSONObject(settings.toString()).put("expected_version", resource.data?.optInt("version") ?: 0), "PUT")
+                        save.perform(NOTIFICATION_PREFERENCES_PATH, JSONObject(settings.toString()).put("expected_version", checkNotNull(version)), "PUT")
                     }, Modifier.fillMaxWidth(), valid && !save.busy && !simulate.busy)
                     SpectrumSecondaryButton("Проверить на прошлых событиях", { simulate.perform("/workspace/notifications/preview", JSONObject().put("preferences", settings)) },
                         Modifier.fillMaxWidth(), valid && !save.busy && !simulate.busy)
@@ -169,9 +187,12 @@ fun NotificationEventOverlay(id: String, onClose: () -> Unit) {
 
 private fun notificationTitle(event: JSONObject?) = event?.text("title", "Событие") ?: "Событие"
 
+private fun notificationPreferenceVersion(value: JSONObject?): Int? =
+    value?.optInt("version", -1)?.takeIf { it >= 0 }
+
 internal fun notificationRulesValid(value: JSONObject): Boolean = runCatching {
     ZoneId.of(value.getString("timezone"))
-    listOf("morning", "evening", "quiet_start", "quiet_end").all { key ->
+    value.getString("morning") != value.getString("evening") && listOf("morning", "evening", "quiet_start", "quiet_end").all { key ->
         val time = value.getString(key)
         if (!time.matches(Regex("\\d{2}:\\d{2}"))) false else { LocalTime.parse(time); true }
     }

@@ -123,8 +123,12 @@ def verify_emulator_identity(device, name: str, api: int) -> None:
 
 
 def collect_runtime_failure(device) -> None:
-    """Crash buffer and activity state, rather than only noisy general log tail."""
+    """Keep OS exit reasons even when SIGKILL leaves the crash buffer empty."""
     commands = (('logcat', '-d', '-b', 'crash', '-t', '100'),
+                ('shell', 'dumpsys', 'activity', 'exit-info', 'ru.omnicio.app.debug'),
+                ('logcat', '-d', '-b', 'events', '-v', 'threadtime',
+                 'am_kill:I', 'am_proc_died:I', 'am_crash:I', 'am_anr:I', '*:S'),
+                ('shell', 'dumpsys', 'meminfo'),
                 ('shell', 'dumpsys', 'activity', 'top'))
     for command in commands:
         try:

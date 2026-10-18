@@ -90,13 +90,25 @@ class EmulatorLeaseTests(unittest.TestCase):
     def test_diagnostic_failure_preserves_original_test(self):
         device = Mock(side_effect=TimeoutError('synthetic'))
         lease.collect_runtime_failure(device)
-        self.assertEqual(device.call_count, 2)
+        self.assertEqual(device.call_count, 5)
 
     def test_crash_buffer_is_read_with_a_deadline(self):
         device = Mock(return_value=Mock(stdout='synthetic diagnostic', returncode=0))
         lease.collect_runtime_failure(device)
         self.assertEqual(device.call_args_list[0].args, ('logcat', '-d', '-b', 'crash', '-t', '100'))
         self.assertEqual(device.call_args_list[0].kwargs, {'timeout': 10})
+
+    def test_empty_crash_buffer_keeps_package_exit_and_system_kill_evidence(self):
+        device = Mock(return_value=Mock(stdout='', returncode=0))
+        lease.collect_runtime_failure(device)
+        commands = [call.args for call in device.call_args_list]
+        self.assertIn(('shell', 'dumpsys', 'activity', 'exit-info', 'ru.omnicio.app.debug'), commands)
+        self.assertIn(('shell', 'dumpsys', 'meminfo'), commands)
+        event_command = next(command for command in commands if 'events' in command)
+        self.assertIn('am_kill:I', event_command)
+        self.assertIn('am_proc_died:I', event_command)
+        self.assertEqual('*:S', event_command[-1])
+        self.assertTrue(all(call.kwargs == {'timeout': 10} for call in device.call_args_list))
 
     @unittest.skipIf(os.name == 'nt', 'Windows symlink creation privilege is not assumed')
     def test_symlink_never_truncates_target(self):

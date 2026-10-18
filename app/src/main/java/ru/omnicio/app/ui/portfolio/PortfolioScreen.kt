@@ -47,6 +47,16 @@ private const val OperationsTitle = "Операции"
 private const val AnalyticsTitle = "Аналитика"
 private const val CashTitle = "Денежные средства"
 
+private val PositionSelectionSaver = Saver<PositionSelection?, List<String>>(
+    save = { it?.let { value -> listOf(value.accountId, value.positionId, value.virtual.toString()) } ?: emptyList() },
+    restore = { if (it.size == 3) PositionSelection(it[0], it[1], it[2].toBooleanStrictOrNull() ?: false) else null },
+)
+
+private fun matchingPositions(accounts: List<PortfolioAccount>, positionId: String, accountId: String?): List<PositionSelection> =
+    accounts.filter { accountId == null || it.id == accountId }.flatMap { account ->
+        account.positions.filter { it.id == positionId }.map { PositionSelection(account.id, it.id) }
+    }
+
 @Composable
 @OptIn(ExperimentalSharedTransitionApi::class)
 fun PortfolioScreen(
@@ -83,10 +93,7 @@ fun PortfolioScreen(
     var operationRequestKey by rememberSaveable { mutableIntStateOf(0) }
     var routeError by rememberSaveable { mutableStateOf<String?>(null) }
     var selectForSection by rememberSaveable { mutableStateOf<Int?>(null) }
-    var positionDetails by rememberSaveable(accessToken, stateSaver = Saver<PositionSelection?, List<String>>(
-        save = { it?.let { value -> listOf(value.accountId, value.positionId, value.virtual.toString()) } ?: emptyList() },
-        restore = { if (it.size == 3) PositionSelection(it[0], it[1], it[2].toBooleanStrictOrNull() ?: false) else null },
-    )) { mutableStateOf<PositionSelection?>(null) }
+    var positionDetails by rememberSaveable(accessToken, stateSaver = PositionSelectionSaver) { mutableStateOf<PositionSelection?>(null) }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
     val listState = rememberLazyListState()
@@ -94,8 +101,7 @@ fun PortfolioScreen(
     var initialPositionHandled by rememberSaveable(initialPositionId) { mutableStateOf(false) }
     LaunchedEffect(initialPositionId, snapshot) {
         if (!initialPositionHandled && initialPositionId != null && snapshot != null) {
-            val candidates = snapshot.accounts.filter { destination?.accountId == null || it.id == destination.accountId }
-                .flatMap { account -> account.positions.filter { it.id == initialPositionId }.map { PositionSelection(account.id, it.id) } }
+            val candidates = matchingPositions(snapshot.accounts, initialPositionId, destination?.accountId)
             if (candidates.size == 1) positionDetails = candidates.single()
             else { assetQuery = initialPositionId; accountId = null; overviewSection = 1 }
             initialPositionHandled = true
@@ -118,9 +124,7 @@ fun PortfolioScreen(
             }
                 target.query.isNotBlank() -> {
                 val accounts = snapshot?.accounts ?: return@LaunchedEffect
-                val exact = accounts.filter { target.accountId == null || it.id == target.accountId }.flatMap { account ->
-                    account.positions.filter { it.id == target.query }.map { PositionSelection(account.id, it.id) }
-                }
+                val exact = matchingPositions(accounts, target.query, target.accountId)
                 assetQuery = target.query; assetSector = target.sector; assetKind = target.kind; assetAccountId = target.accountId
                 accountId = null; overviewSection = 1
                 if (exact.size == 1) positionDetails = exact.single()

@@ -19,6 +19,7 @@ jobs:
         env:
           SONAR_READ_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
+          retries: 3
           script: |
             // GET-only source diagnostics. No cloud access, publishing,
             // issue acceptance, test overrides or secret values in output.

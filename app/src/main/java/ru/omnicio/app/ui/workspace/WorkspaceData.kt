@@ -145,16 +145,15 @@ fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
                     val requestBody = workspaceRequestBody(body, method, tracked)
                     checkpoint = requestBody?.optString("request_id")?.takeIf { tracked && it.isNotBlank() }
                     val requestId = checkpoint
-                    prepared = if (requestId == null) JobCheckpointPreparation(true) else withContext(Dispatchers.IO) {
-                        checkpoints.prepare(session.userId, requestId, path, requestBody)
-                    }
+                    prepared = prepareWorkspaceRequest(checkpoints, session.userId, requestId, path, requestBody)
                     if (!prepared.persisted) {
                         error = "Не удалось сохранить задание на устройстве. Сверьте сохранённые запросы; новый запрос не отправлен."
-                        if (userInitiated) feedback(SpatialHaptic.Rejected)
-                        failedCallback(WorkspaceRequestFailure(VolumeReply(error = error, code = "checkpoint_not_saved"), requestId, false))
+                        val failure = VolumeReply(error = error, code = "checkpoint_not_saved")
+                        reportActionFeedback(failure, feedback, method, userInitiated)
+                        failedCallback(WorkspaceRequestFailure(failure, requestId, false))
                         return@launch
                     }
-                    if (requestId != null) preparedCallback(requestId)
+                    requestId?.let(preparedCallback)
                     val reply = withContext(Dispatchers.IO) { client.request(session.token, path, method, requestBody) }
                     if (reply.signedOut) reauthenticate()
                     error = reply.error; ambiguous = reply.ambiguous
@@ -228,6 +227,12 @@ private suspend fun saveJobAcknowledgement(checkpoints: JobCheckpointStore, user
     if (requestId == null) return true
     val jobId = result.optString("job_id").takeIf { it.isNotBlank() && it != "null" } ?: return false
     return withContext(Dispatchers.IO) { checkpoints.save(userId, requestId, path, jobId) }
+}
+
+private suspend fun prepareWorkspaceRequest(checkpoints: JobCheckpointStore, userId: String,
+    requestId: String?, path: String, body: JSONObject?): JobCheckpointPreparation {
+    if (requestId == null) return JobCheckpointPreparation(true)
+    return withContext(Dispatchers.IO) { checkpoints.prepare(userId, requestId, path, body) }
 }
 
 private suspend fun discardRejectedCheckpoint(checkpoints: JobCheckpointStore, userId: String,

@@ -142,8 +142,8 @@ def _kernel_evidence(kernel, api, digest):
         raise InstallationEvidenceError('invalid_kernel_page_size_evidence')
     if _digest(kernel.get('apk_sha256')) != digest:
         raise InstallationEvidenceError('installation_artifact_mismatch')
-    return dict(page_size_bytes=expected_bytes, system_image=image,
-                runtime_16kb=expected_bytes == 16_384)
+    return {'page_size_bytes': expected_bytes, 'system_image': image,
+            'runtime_16kb': expected_bytes == 16_384}
 
 
 def _require_runtime_matrix(result):

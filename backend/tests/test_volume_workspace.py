@@ -423,6 +423,20 @@ def test_notification_preferences_are_applied_to_monitor_and_preview_sends_nothi
     assert ai.get_profile(int(fixture["user"]["id"]))["notify_briefs"] is False
 
 
+def test_stale_notification_draft_cannot_overwrite_another_device(fixture):
+    original = notifications.preferences(user=fixture["user"])
+    replacement = notifications.PreferencesWrite(expected_version=original["version"], enabled=False,
+                                                  morning="10:15")
+    saved = notifications.update_preferences(replacement, user=fixture["user"])
+    stale = notifications.PreferencesWrite(expected_version=original["version"], enabled=True,
+                                            morning="08:30")
+    with pytest.raises(HTTPException) as rejected:
+        notifications.update_preferences(stale, user=fixture["user"])
+    assert rejected.value.status_code == 409
+    assert notifications.preferences(user=fixture["user"]) == saved
+    assert ai.get_profile(int(fixture["user"]["id"]))["notify_critical"] is False
+
+
 def test_request_id_conflict_recovery_and_user_isolation(fixture):
     user_id = int(fixture["user"]["id"])
     first = jobs.enqueue(user_id, "durable-request-1", "refresh", {"currency": "RUB"})
