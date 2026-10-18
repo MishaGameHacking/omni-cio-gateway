@@ -7,7 +7,7 @@ import time
 from persistent_ui import FrameReader, read_exact
 
 BACK_REQUEST_FLAG = 0x40000000
-BACK_OPERATIONS = {"hold": 1, "cancel": 2, "commit": 3}
+BACK_OPERATIONS = {"hold": 1, "cancel": 2, "commit": 3, "advance": 4}
 
 
 def back_gesture(probe, operation: str) -> None:

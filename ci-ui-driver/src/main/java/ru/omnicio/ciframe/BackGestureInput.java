@@ -38,7 +38,7 @@ final class BackGestureInput implements AutoCloseable {
             sequence.cancel();
             return;
         }
-        if (operation != 1 && operation != 3) {
+        if (operation != 1 && operation != 3 && operation != 4) {
             throw new IOException("Unknown Back gesture operation");
         }
         requireFixture(root);
@@ -53,7 +53,8 @@ final class BackGestureInput implements AutoCloseable {
             if (!current.equals(display)) {
                 throw new IOException("Display changed during held Back touch");
             }
-            sequence.commit();
+            if (operation == 3) sequence.commit();
+            else sequence.advance();
         }
     }
 

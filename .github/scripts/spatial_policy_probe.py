@@ -7,6 +7,7 @@ import sys
 import time
 
 from predictive_back_input import back_gesture
+from emulator_user_setup import completed_emulator_setup
 
 NAVIGATION_OVERLAYS = {
     "com.android.internal.systemui.navbar.gestural",
@@ -82,6 +83,14 @@ def system_policies(probe, metrics, settled):
 
 
 def predictive_back(probe, metrics):
+    """Exercise Back in a completed user session on the owned disposable AVD."""
+    with completed_emulator_setup(probe) as setup:
+        result = _predictive_back(probe, metrics)
+        result["emulator_setup"] = setup
+        return result
+
+
+def _predictive_back(probe, metrics):
     """Inject public Android touch events at a measured edge, then cancel them."""
     overlay = active_navigation_overlay(probe.command("shell", "cmd", "overlay", "list"))
     scale = probe.command("shell", "settings", "get", "global", "animator_duration_scale").strip()
@@ -100,11 +109,27 @@ def predictive_back(probe, metrics):
         held = True
         back_gesture(probe, "hold")
 
-        def progressed():
-            actual = metrics()
-            return actual if actual.get("back-progress", 0) > .001 else None
+        advances = 0
+        last_observed = {}
 
-        progress = probe.wait_for(progressed, "System Back gesture never reached the production predictive handler")
+        def progressed():
+            nonlocal advances, last_observed
+            last_observed = metrics()
+            if last_observed.get("back-progress", 0) > .001:
+                return last_observed
+            # Android 15 may start app-side progress after the initial input has
+            # already been delivered. Keep moving the SAME held pointer along a
+            # bounded path; never restart DOWN or write progress into the app.
+            if advances < 16:
+                back_gesture(probe, "advance")
+                advances += 1
+            return None
+
+        try:
+            progress = probe.wait_for(progressed, "System Back gesture never reached the production predictive handler")
+        except Exception as failure:
+            _back_failure_diagnostics(probe, last_observed, advances, failure)
+            raise
         probe.capture("spatial-predictive-back-progress")
         back_gesture(probe, "cancel")
         held = False
@@ -146,3 +171,28 @@ def _cleanup_back(probe, held, overlay, scale, original):
         if original is None:
             raise errors[0]
         original.add_note("Back cleanup failed: " + ", ".join(type(error).__name__ for error in errors))
+
+
+def _back_failure_diagnostics(probe, observed, advances, original):
+    import json
+
+    print("BACK_LAST_OBSERVED=" + json.dumps({"runtime": observed, "advances": advances},
+                                            sort_keys=True), flush=True)
+    # Read only the system's Back/edge-handler state, not other apps' content.
+    commands = (("shell", "dumpsys", "activity", "service", "com.android.systemui/.SystemUIService"),
+                ("logcat", "-d", "-b", "main", "-b", "system", "-v", "brief",
+                 "ShellBackPreview:D", "WindowOnBackDispatcher:D", "SpectrumBack:D", "*:S"))
+    for command in commands:
+        try:
+            output = probe.command(*command, timeout=10)
+            lines = output.splitlines()
+            if command[0] == "shell":
+                wanted = ("BackAnimationController", "mEnableAnimations", "mBackGestureStarted",
+                          "mOnBackStartDispatched", "mThresholdCrossed", "mIsBackGestureAllowed",
+                          "mIsEnabled", "mAllowGesture", "mDisabledForQuickstep", "mInGestureNavMode",
+                          "Gesture [", "mTouchableArea", "mDisplaySize", "mEdgeWidth", "mLeftInset",
+                          "mRightInset", "mExcludeRegion", "mCurrentTracker", "mBackNavigationInfo")
+                lines = [line for line in lines if any(key in line for key in wanted)]
+            print("BACK_SYSTEM_DIAGNOSTIC=" + json.dumps([line[:600] for line in lines[-80:]]), flush=True)
+        except Exception as error:
+            original.add_note("Back diagnostics unavailable: " + type(error).__name__)

@@ -119,12 +119,28 @@ public final class BackGestureSequenceTest {
         clock.time = 2000;
         touch.close();
     }
+    private static void lateStartKeepsBoundedContinuousMovement() throws IOException {
+        Clock clock = new Clock();
+        List<Event> events = new ArrayList<>();
+        try (BackGestureSequence touch = sequence(clock, events)) {
+            touch.hold(320, 640);
+            for (int index = 0; index < 16; index++) touch.advance();
+            rejected(touch::advance);
+            check(events.size() == 29);
+            check(events.get(28).x <= 320f * .55f);
+            check(events.stream().allMatch(e -> e.down == 1000));
+            check(events.stream().filter(e -> e.action == BackGestureSequence.DOWN).count() == 1);
+            touch.cancel();
+        }
+    }
+
     public static void main(String[] args) throws IOException {
+        lateStartKeepsBoundedContinuousMovement();
         cancelAndCommit();
         closeCancelsOnlyHeldTouch();
         failedInjectionIsNotSuccess();
         failedTerminalEventKeepsCleanupState();
         invalidGeometryAndClock();
-        System.out.println("BACK_SEQUENCE_CASES=5");
+        System.out.println("BACK_SEQUENCE_CASES=6");
     }
 }

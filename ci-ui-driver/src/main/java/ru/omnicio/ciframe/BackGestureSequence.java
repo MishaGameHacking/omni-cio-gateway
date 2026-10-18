@@ -28,6 +28,7 @@ final class BackGestureSequence implements AutoCloseable {
     private float x;
     private float y;
     private int width;
+    private int advances;
 
     BackGestureSequence(Clock clock, Sink sink) {
         this.clock = clock;
@@ -47,6 +48,7 @@ final class BackGestureSequence implements AutoCloseable {
             throw new IOException("Invalid measured Back display bounds");
         }
         width = displayWidth;
+        advances = 0;
         x = 1f;
         y = displayHeight / 2f;
         downTime = clock.now();
@@ -58,6 +60,17 @@ final class BackGestureSequence implements AutoCloseable {
         // events in this process, without shell startup delays between samples.
         emit(DOWN);
         moveTo(width * .3f);
+    }
+
+    void advance() throws IOException {
+        requireHeld();
+        if (advances >= 16) {
+            throw new IOException("Back touch reached its bounded advance limit");
+        }
+        advances++;
+        clock.pause(STEP_MS);
+        x = width * (.3f + advances * .015f);
+        emit(MOVE);
     }
 
     void cancel() throws IOException {

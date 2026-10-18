@@ -14,7 +14,7 @@ ROOT = SCRIPTS.parents[1]
 sys.path.insert(0, str(SCRIPTS))
 from persistent_ui import FrameReader, REQUEST_SEQUENCE_MASK
 from predictive_back_input import back_gesture
-from spatial_policy_probe import predictive_back, _cleanup_back
+from spatial_policy_probe import predictive_back, _predictive_back, _cleanup_back
 
 
 class Socket:
@@ -131,7 +131,7 @@ class BackProbeTests(unittest.TestCase):
         metrics = Mock(side_effect=[{"motion": "Live"}, {"back-progress": .2},
                                     {"back-progress": 0}, {"back-progress": 0}])
         with patch("spatial_policy_probe.back_gesture") as gesture:
-            result = predictive_back(probe, metrics)
+            result = _predictive_back(probe, metrics)
         self.assertEqual([call.args[1] for call in gesture.call_args_list],
                          ["hold", "cancel", "hold", "commit"])
         self.assertEqual(result["commits_after_cancel"], 0)
@@ -146,8 +146,8 @@ class BackProbeTests(unittest.TestCase):
         metrics = Mock(side_effect=[{"motion": "Live"}, {"back-progress": 0}])
         with patch("spatial_policy_probe.back_gesture") as gesture:
             with self.assertRaisesRegex(AssertionError, "never reached the production"):
-                predictive_back(probe, metrics)
-        self.assertEqual([call.args[1] for call in gesture.call_args_list], ["hold", "cancel"])
+                _predictive_back(probe, metrics)
+        self.assertEqual([call.args[1] for call in gesture.call_args_list], ["hold", "advance", "cancel"])
         probe.reveal.assert_not_called()
         probe.capture.assert_not_called()
 
@@ -166,6 +166,22 @@ class BackProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(OSError, "restore failed"):
             _cleanup_back(probe, False, "original-overlay", "1", None)
         self.assertEqual(probe.command.call_count, 2)
+
+    def test_late_start_advances_same_pointer_before_accepting_real_progress(self):
+        probe = self.probe()
+        metrics = Mock(side_effect=[{"motion": "Live"}, {"back-progress": 0},
+                                    {"back-progress": .2}, {"back-progress": 0}, {"back-progress": 0}])
+        def wait(read, message):
+            for _ in range(2):
+                value = read()
+                if value is not None and value is not False:
+                    return value
+            raise AssertionError(message)
+        probe.wait_for.side_effect = wait
+        with patch("spatial_policy_probe.back_gesture") as gesture:
+            _predictive_back(probe, metrics)
+        self.assertEqual([call.args[1] for call in gesture.call_args_list],
+                         ["hold", "advance", "cancel", "hold", "commit"])
 
     def test_java_driver_routes_only_fixture_back_without_changing_frame_protocol(self):
         java = ROOT / "ci-ui-driver/src/main/java/ru/omnicio/ciframe"
@@ -199,7 +215,7 @@ class JavaBackSequenceTests(unittest.TestCase):
             result = subprocess.run([java, "-cp", output, "ru.omnicio.ciframe.BackGestureSequenceTest"],
                                     capture_output=True, text=True, timeout=10, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("BACK_SEQUENCE_CASES=5", result.stdout)
+            self.assertIn("BACK_SEQUENCE_CASES=6", result.stdout)
 
 
 if __name__ == "__main__":
