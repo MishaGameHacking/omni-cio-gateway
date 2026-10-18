@@ -516,7 +516,9 @@ def run_attempt(
                 # actual context above; neither a flag nor SF proves this path.
                 EMULATOR_FEATURES,
                 "-memory",
-                "2048",
+                # API35 ps16k + Google services exhausted 2GiB: exit-info
+                # recorded LOW_MEMORY even for the foreground candidate.
+                "4096",
                 "-cores",
                 "2",
                 "-accel",

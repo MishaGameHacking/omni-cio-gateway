@@ -89,15 +89,9 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                 } }
                 item { SpectrumCard(emphasized = true) {
                     val version = draftVersion
-                    val rulesValid = notificationRulesValid(settings)
-                    val valid = rulesValid && version != null && version == notificationPreferenceVersion(resource.data)
-                    if (!rulesValid) Text("Проверьте часовой пояс и время в формате 09:00. Утренний и вечерний обзоры должны приходить в разное время.", color = MaterialTheme.colorScheme.error)
-                    if (version == null) Text("Версия правил не получена. Обновите данные перед сохранением.")
-                    if (version != notificationPreferenceVersion(resource.data)) {
-                        Text("Правила изменились на другом устройстве. Загрузите их перед сохранением; текущий черновик будет заменён.")
-                        SpectrumSecondaryButton("Загрузить актуальные правила", {
-                            draft = null; draftVersion = null; preview = null; applied = null; resource.refresh()
-                        }, Modifier.fillMaxWidth(), !save.busy && !simulate.busy)
+                    val valid = NotificationRulesStatus(settings, version, notificationPreferenceVersion(resource.data),
+                        !save.busy && !simulate.busy && !resource.busy) {
+                        draft = null; draftVersion = null; preview = null; applied = null; resource.refresh()
                     }
                     SpectrumPrimaryButton("Применить правила", {
                         save.perform(NOTIFICATION_PREFERENCES_PATH, JSONObject(settings.toString()).put("expected_version", checkNotNull(version)), "PUT")
@@ -121,6 +115,20 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
             preview?.let { result -> item { NotificationPreview(result) } }
         }
     }
+}
+
+@Composable
+private fun NotificationRulesStatus(settings: JSONObject, version: Int?, currentVersion: Int?,
+    enabled: Boolean, reload: () -> Unit): Boolean {
+    val rulesValid = notificationRulesValid(settings)
+    if (!rulesValid) Text("Проверьте часовой пояс и время в формате 09:00. Утренний и вечерний обзоры должны приходить в разное время.",
+        color = MaterialTheme.colorScheme.error)
+    if (version == null) Text("Версия правил не получена. Обновите данные перед сохранением.")
+    if (version != currentVersion) {
+        Text("Правила изменились на другом устройстве. Загрузите их перед сохранением; текущий черновик будет заменён.")
+        SpectrumSecondaryButton("Загрузить актуальные правила", reload, Modifier.fillMaxWidth(), enabled)
+    }
+    return rulesValid && version != null && version == currentVersion
 }
 
 @Composable

@@ -39,6 +39,18 @@ def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
     return None
 
 
+def checkable_label(tree: ET.Element, text: str) -> ET.Element | None:
+    """Resolve the native control, including labels in its unmerged children."""
+    matches = [node for node in tree.iter("node")
+               if node.get("package") == PACKAGE
+               and node.get("visible-to-user") != "false"
+               and node.get("checkable") == "true"
+               and matching_node(node, text) is not None]
+    if len(matches) > 1:
+        raise AssertionError("Ambiguous native checkable label: " + text)
+    return matches[0] if matches else None
+
+
 def node_bounds(node: ET.Element) -> tuple[int, int, int, int]:
     match = re.fullmatch(
         r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]",

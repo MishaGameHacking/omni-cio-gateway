@@ -135,7 +135,9 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
                 LightManager.Builder(LightManager.Type.DIRECTIONAL)
                     .color(1f,.97f,.93f).intensity(95_000f).direction(-.4f,-.65f,-1f)
                     .castShadows(true).shadowOptions(LightManager.ShadowOptions().apply {
-                        mapSize=1024;shadowCascades=1;normalBias=.2f;shadowFarHint=1000f
+                        // Filament's full sampling-error bias prevents self-shadow
+                        // stripes on the broad orthographic card surfaces.
+                        mapSize=1024;shadowCascades=1;normalBias=1f;shadowFarHint=1000f
                     }).build(e,light)
                 ambient = IndirectLight.Builder().irradiance(1,floatArrayOf(.65f,.69f,.78f))
                     .intensity(24_000f).build(e)

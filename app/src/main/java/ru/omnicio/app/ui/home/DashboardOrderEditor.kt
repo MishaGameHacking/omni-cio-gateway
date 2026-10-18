@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
@@ -34,13 +35,39 @@ internal fun moveDashboardCard(order: List<String>, id: String, delta: Int): Lis
     return order.toMutableList().apply { removeAt(from); add(target, id) }
 }
 
+internal data class DashboardDragResult(val order: List<String>, val remaining: Float)
+
+/** Cross actual row centres: large text can make adjacent cards different heights. */
+internal fun dragDashboardCard(order: List<String>, id: String, distance: Float,
+    heights: Map<String, Float>, spacing: Float): DashboardDragResult {
+    var index = order.indexOf(id)
+    if (index < 0 || !distance.isFinite()) return DashboardDragResult(order, 0f)
+    val step = if (distance >= 0f) 1 else -1
+    val moving = order.toMutableList()
+    var remaining = distance
+    while (index + step in moving.indices) {
+        val currentHeight = heights[id] ?: break
+        val neighbourHeight = heights[moving[index + step]] ?: break
+        val threshold = (currentHeight + neighbourHeight) / 2f + spacing
+        if (threshold <= 0f || !threshold.isFinite() || remaining * step < threshold) break
+        moving[index] = moving[index + step]
+        index += step
+        moving[index] = id
+        // Swapping changes this row's centre by the full neighbour height.
+        remaining -= step * (neighbourHeight + spacing)
+    }
+    if (index + step !in moving.indices && remaining * step > 0f) remaining = 0f
+    return DashboardDragResult(moving, remaining)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy: Boolean, error: String?,
     onPreview: (List<String>) -> Unit, onSave: () -> Unit, onClose: () -> Unit) {
     val currentOrder by rememberUpdatedState(order)
     val change by rememberUpdatedState(onPreview)
-    val rowHeight = with(LocalDensity.current) { 76.dp.toPx() }
+    val spacing = with(LocalDensity.current) { 8.dp.toPx() }
+    val heights = remember { mutableStateMapOf<String, Float>() }
     var dragging by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onClose, dragHandle = null) {
         SpatialWindow(Modifier.fillMaxWidth()) {
@@ -54,7 +81,11 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
                 key(id) {
                     ru.omnicio.app.ui.spatial.SpatialSurface(color = if (dragging == id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                         state = if (dragging == id) ru.omnicio.app.ui.spatial.SpatialState.Selected else ru.omnicio.app.ui.spatial.SpatialState.Idle,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).dashboardDrag(id, busy, rowHeight, { currentOrder }, { change(it) }) { dragging = it }
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp)
+                            .onSizeChanged { heights[id] = it.height.toFloat() }
+                            .dashboardDrag(id, busy, spacing, { drift ->
+                                dragDashboardCard(currentOrder, id, drift, heights, spacing).also { change(it.order) }.remaining
+                            }) { dragging = it }
                             .semantics { stateDescription = "Позиция ${index + 1} из ${order.size}" }) {
                         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(28.dp), selected = dragging == id)
@@ -78,12 +109,11 @@ internal fun DashboardOrderEditor(order: List<String>, saved: List<String>, busy
 private fun Modifier.dashboardDrag(
     id: String,
     busy: Boolean,
-    rowHeight: Float,
-    currentOrder: () -> List<String>,
-    change: (List<String>) -> Unit,
+    spacing: Float,
+    move: (Float) -> Float,
     onDragging: (String?) -> Unit,
 ): Modifier =
-    pointerInput(id, busy, rowHeight) {
+    pointerInput(id, busy, spacing) {
         var drift = 0f
         if (!busy)
             detectDragGesturesAfterLongPress(
@@ -101,12 +131,7 @@ private fun Modifier.dashboardDrag(
                 },
                 onDrag = { changePointer, amount ->
                     changePointer.consume()
-                    drift += amount.y
-                    if (drift >= rowHeight || drift <= -rowHeight) {
-                        val step = if (drift > 0f) 1 else -1
-                        change(moveDashboardCard(currentOrder(), id, step))
-                        drift -= rowHeight * step
-                    }
+                    drift = move(drift + amount.y)
                 },
             )
     }

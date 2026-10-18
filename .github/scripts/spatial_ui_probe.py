@@ -12,6 +12,7 @@ from spatial_frame_evidence import (clipping_witness, mesh_witness, read_screens
 
 CANDIDATE_PACKAGE = 'ru.omnicio.app.debug'
 CLOSE_SPATIAL_WINDOW = 'Закрыть окно 3D'
+TOGGLE_LABEL = 'Тестовый переключатель'
 
 
 
@@ -87,7 +88,7 @@ class _SpatialSession:
         self.records.append(result)
 
     def native_controls(self):
-        from profile_ui_probe import node_bounds, DARK_BACKGROUND
+        from profile_ui_probe import checkable_label, node_bounds, DARK_BACKGROUND
 
         self.probe.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
         self.probe.palette(DARK_BACKGROUND)
@@ -100,12 +101,15 @@ class _SpatialSession:
             raise AssertionError("Mesh button lost native clickable semantics or 48dp hit area")
         self.probe.tap_node(action)
         self.probe.find("Нажатий: 1")
-        toggle = self.probe.reveal("Тестовый переключатель", "workspace-content")
+        self.probe.reveal(TOGGLE_LABEL, "workspace-content")
+        toggle = self.probe.wait_for(lambda: checkable_label(self.probe.tree(), TOGGLE_LABEL),
+                                     "Mesh toggle has no native checkable control")
         if toggle.get("checkable") != "true" or toggle.get("checked") != "false":
             raise AssertionError("Mesh toggle lost native unchecked state")
         self.probe.tap_node(toggle)
         self.probe.find("Включён")
-        checked = self.probe.reveal("Тестовый переключатель", "workspace-content")
+        checked = self.probe.wait_for(lambda: checkable_label(self.probe.tree(), TOGGLE_LABEL),
+                                      "Mesh toggle lost its native control after tapping")
         if checked.get("checked") != "true":
             raise AssertionError("Mesh toggle did not expose its checked state")
         self.probe.tap_resource("spatial-input", "workspace-content")

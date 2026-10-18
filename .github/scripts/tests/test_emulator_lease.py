@@ -107,7 +107,7 @@ class EmulatorLeaseTests(unittest.TestCase):
         event_command = next(command for command in commands if 'events' in command)
         self.assertIn('am_kill:I', event_command)
         self.assertIn('am_proc_died:I', event_command)
-        self.assertEqual('*:S', event_command[-1])
+        self.assertEqual(event_command[-1], '*:S')
         self.assertTrue(all(call.kwargs == {'timeout': 10} for call in device.call_args_list))
 
     @unittest.skipIf(os.name == 'nt', 'Windows symlink creation privilege is not assumed')

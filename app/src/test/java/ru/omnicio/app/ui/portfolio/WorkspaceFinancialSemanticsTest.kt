@@ -15,6 +15,18 @@ import ru.omnicio.app.data.portfolio.PortfolioPosition
 class WorkspaceFinancialSemanticsTest {
     private fun history(day: String, value: String) = HistoryPoint("${day}T12:00:00Z", BigDecimal(value))
 
+    @Test fun derivativeClassesDoNotLeakIntoOtherAssetsOrTheCashFilter() {
+        for (kind in listOf("futures", "option")) {
+            assertTrue(matchingKind(kind, kind))
+            assertTrue(matchingKind(kind, "all"))
+            assertFalse(matchingKind(kind, "other"))
+            assertFalse(matchingKind(kind, "cash"))
+        }
+        assertTrue(matchingKind("structured_product", "other"))
+        assertTrue(matchingKind("currency", "cash"))
+        assertFalse(matchingKind("currency", "other"))
+    }
+
     @Test fun dailyHistoryKeepsAnUnobservedDateSelectableWithoutInventingZero() {
         val result = historyBars(listOf(history("2026-10-01", "100.25"), history("2026-10-03", "105.75")), "day")!!
         assertEquals(3, result.bars.size)
