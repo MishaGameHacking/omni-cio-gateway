@@ -281,6 +281,10 @@ def run_attempt(
 ) -> list[dict[str, object]]:
     """Execute the complete publication-grade contract in one fresh AVD."""
     from artifact_test_identity import apk_digest, record_install
+    from emulator_graphics import (
+        EMULATOR_FEATURES, EMULATOR_GPU_MODE, read_filament_renderer,
+        require_guest_angle, snapshot_system_graphics,
+    )
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
 
     avd_home = work / "avd"
@@ -322,6 +326,7 @@ def run_attempt(
     log_path = work / "emulator.log"
     results: list[dict[str, object]] = []
     failed = True
+    system_graphics: dict[str, object] = {}
 
     last_uiautomator_dump_finished = 0.0
     process: subprocess.Popen[str] | None = None
@@ -431,6 +436,7 @@ def run_attempt(
             "test": label,
             "success": False,
             "apk_sha256": candidate_digest,
+            "system_graphics": system_graphics,
         }
         results.append(result)
         try:
@@ -452,6 +458,18 @@ def run_attempt(
             alive = device("shell", "pidof", "ru.omnicio.app.debug")
             if alive.returncode or not alive.stdout.strip():
                 raise RuntimeError(f"{label} process did not remain running")
+            identity = device("shell", "cmd", "package", "list", "packages", "-U",
+                              "ru.omnicio.app.debug", timeout=10)
+            uid = candidate_package_uid(identity.stdout) if identity.returncode == 0 else None
+            if uid is None:
+                raise RuntimeError("Could not identify the launched candidate's package UID")
+            # The UID can survive reinstalls/restarts: only this fresh pidof PID
+            # may supply the context header for this particular launch record.
+            renderer = read_filament_renderer(device, uid=uid, pid=alive.stdout.strip())
+            result["renderer"] = renderer
+            print("EMULATOR_FILAMENT_GLES=" + json.dumps(
+                {"launch": label, **renderer}, sort_keys=True), flush=True)
+            require_guest_angle(renderer)
             if apk_digest(apk) != candidate_digest:
                 raise RuntimeError("Candidate changed during emulator checks")
         except Exception as exc:
@@ -479,9 +497,13 @@ def run_attempt(
                 "-timezone",
                 "Etc/UTC",
                 "-gpu",
-                "swiftshader",
+                EMULATOR_GPU_MODE,
                 "-feature",
-                "-Vulkan",
+                # Guest ANGLE compiles the app's GLES and uses guest Vulkan.
+                # Windows host GLES can remain legacy SwiftShader even when a
+                # modern software Vulkan ICD is selected. Observe the app's
+                # actual context above; neither a flag nor SF proves this path.
+                EMULATOR_FEATURES,
                 "-memory",
                 "2048",
                 "-cores",
@@ -545,6 +567,8 @@ def run_attempt(
                 raise
             results.append(kernel)
             print("KERNEL_PAGE_SIZE=" + json.dumps(kernel, sort_keys=True), flush=True)
+            system_graphics = snapshot_system_graphics(device)
+            print("EMULATOR_SYSTEM_GRAPHICS=" + json.dumps(system_graphics, sort_keys=True), flush=True)
             package = "ru.omnicio.app.debug"
             if previous:
                 install("previous_clean_install", previous)

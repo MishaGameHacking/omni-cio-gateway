@@ -32,33 +32,44 @@ for white button labels in the light theme while initial shaders/assets load.
 
 ## Antialiasing and GLES compatibility
 
-Every window uses geometry MSAA (4 samples, 2 in the existing thermal/battery
-economy profile), with the standard resolve. FXAA is disabled. Post-processing
-remains enabled for tone mapping and gamma encoding; the PBR materials, directional
-light, shadows, transparent composition and exact orthographic geometry stay active.
+Every window retains the original FXAA with post-processing enabled for tone
+mapping and gamma encoding. PBR materials, directional light, shadows, transparent
+composition and exact orthographic geometry remain active. The temporary MSAA
+workaround has been removed: avoiding an individual shader cannot fix a general
+GLES compiler failure.
 
-The first [API 35 ps16k runtime](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39069831896)
-of candidate `4fa39fd` installed and upgraded successfully, measured
-`PAGE_SIZE=16384`, then aborted while compiling Filament's
-translucent `fxaa` program on the emulator's GLES 3.0 SwiftShader driver. The
-compiler's detailed InfoLog was absent from that run's general log tail. This
-is an observed shader failure, not an ELF/ZIP alignment failure.
+The [first API 35 ps16k runtime](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39069831896)
+of `4fa39fd` measured `PAGE_SIZE=16384`, installed/upgraded, then aborted compiling
+`fxaa`. The [subsequent runtime](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39099562552)
+of `81b0101` also passed source/package/alignment and installation checks, but its
+captured InfoLog rejected a structure constructor in `blitLow`. Both contexts
+reported the emulator's old GLES 3.0 SwiftShader 4.0.0.1 frontend. This is broader
+than antialiasing and is not an ELF/ZIP page-alignment failure.
 
-In pinned Filament 1.72.1, [PostProcessManager](https://github.com/google/filament/blob/v1.72.1/filament/src/PostProcessManager.cpp)
-registers material bytes during `init()` and loads/compiles the material lazily.
-[Renderer](https://github.com/google/filament/blob/v1.72.1/filament/src/details/Renderer.cpp)
-calls `fxaa()` only when the view enables FXAA. Selecting MSAA with `AntiAliasing.NONE`
-therefore avoids the failing program, while
-[View's MSAA API](https://github.com/google/filament/blob/v1.72.1/android/filament-android/src/main/java/com/google/android/filament/View.java)
-retains geometry antialiasing independently. No Java exception handler can recover
-an abort on Filament's native engine thread.
+The exact [Filament 1.72.1 `blitLow` material](https://github.com/google/filament/blob/v1.72.1/filament/src/materials/blitLow.mat),
+compiled with that release's official `matc`, produces a GLES 3.0 expression
+`PostProcessInputs(textureLod(...)).color` consistent with the captured constructor
+error. CI now requests `-gpu lavapipe -feature Vulkan,GuestAngle`. In the emulator's
+[37.2 source](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android/android-ui/modules/aemu-gl-init/src/android/opengl/emugl_config.cpp),
+Windows can fall back to legacy host GLES even when a modern software Vulkan ICD
+is selected. Guest ANGLE sends the app's unchanged OpenGL API through Vulkan, as
+implemented by Android's [EGL display](https://android.googlesource.com/platform/frameworks/native/+/refs/tags/android-platform-15.0.0_r21/opengl/libs/EGL/egl_display.cpp).
+No system Skia mode, advertised GLES version or feature queue is forced separately.
 
-The replacement must pass the complete next API 35/36 runtime before release.
-Existing mesh-pixel, contrast, clipping, motion, lifetime, long-scroll and upgrade
-checks remain mandatory. On failure, the runner now collects filtered main/system
-shader logs and the installed app's UID logs, which retain PID/TID even after an
-abort, in addition to the existing crash buffer. Output and command times are
-bounded; a diagnostic read never counts as a successful rendering test.
+The exact SDK images still have to demonstrate this route in the next API 35/36
+run. Before app launch, the runner records bounded system properties/compositor
+diagnostics. Each candidate launch additionally requires its own complete Filament
+GL vendor/renderer/version header, filtered by installed UID **and the freshly
+observed PID**; missing, conflicting or non-ANGLE/non-Vulkan context evidence fails.
+The actual renderer is retained inside the existing launch result, separately from
+requested flags and system-compositor observations. Neither a SurfaceFlinger line
+nor an offline parser test proves app rendering.
+
+The complete mesh-pixel, contrast, clipping, motion, lifetime, long-scroll, 16KB and
+upgrade checks remain mandatory. Failure diagnostics retain filtered main/system
+shader and installed-UID logs (including dead-process PID/TID) plus the crash
+buffer, without clearing logs. Output and command times are bounded. No Java
+exception handler can recover an abort on Filament's native engine thread.
 
 ## Motion, lifecycle and cost
 
