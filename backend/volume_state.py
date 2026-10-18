@@ -20,17 +20,17 @@ try:
     from . import app as backend, research_store
     from .ai_budget import transaction
     from .credit_evidence import Source
-    from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp
+    from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp, instrument_currency
 except ImportError:
     import app as backend
     import research_store
     from ai_budget import transaction
     from credit_evidence import Source
-    from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp
+    from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp, instrument_currency
 
 router = APIRouter(prefix="/workspace", tags=["Workspace state"])
 AXES = (("position", "Позиции"), ("issuer", "Эмитенты"), ("group", "Экономические группы"),
-        ("sector", "Отрасли"), ("currency", "Валюта оценки позиции"), ("country", "Страна основного риска"))
+        ("sector", "Отрасли"), ("currency", "Валюта инструмента и денег"), ("country", "Страна основного риска"))
 
 
 def encode(value: Any) -> str:
@@ -179,7 +179,7 @@ def _verified_identity(item: dict) -> dict:
 
 def _axis_identity(item: dict, axis: str) -> tuple:
     identity, metadata = _verified_identity(item), item.get("metadata") or {}
-    uid, currency = str(item.get("instrument_uid") or ""), (item.get("value") or {}).get("currency")
+    uid, currency = str(item.get("instrument_uid") or ""), instrument_currency(item)
     identities = {
         "position": (uid, item.get("title") or uid),
         "issuer": (identity.get("issuer_id"), identity.get("issuer_name") or identity.get("issuer_id")),
@@ -190,7 +190,7 @@ def _axis_identity(item: dict, axis: str) -> tuple:
     refs = list(item.get("source_ids", []))
     if axis in {"issuer", "group"}:
         refs.append(identity.get("source", {}).get("id"))
-    if axis in {"sector", "country"}:
+    if axis in {"sector", "country", "currency"}:
         refs.append((metadata.get("source") or {}).get("id"))
     return (*identities[axis], [ref for ref in refs if ref])
 

@@ -56,6 +56,16 @@ def timestamp(value: str) -> datetime:
         raise ValueError('timestamp_timezone_required') from None
 
 
+def instrument_currency(row: dict) -> str | None:
+    """Denomination is not the currency used to display a converted valuation."""
+    value = (row.get("metadata") or {}).get("instrument_currency")
+    if not value and row.get("instrument_type") == "cash":
+        uid = row.get("instrument_uid", "")
+        if isinstance(uid, str) and uid.startswith("cash:"):
+            value = uid[5:]
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Z]{3}", value) else None
+
+
 def decimal(value: Any) -> Decimal | None:
     if value is None or isinstance(value, (bool, float)):
         return None

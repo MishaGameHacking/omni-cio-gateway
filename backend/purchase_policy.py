@@ -6,10 +6,10 @@ from decimal import Decimal
 
 try:
     from .credit_evidence import Source
-    from .volume_contract import decimal, financial_context, money, text_number, timestamp, ZERO
+    from .volume_contract import decimal, financial_context, instrument_currency, money, text_number, timestamp, ZERO
 except ImportError:
     from credit_evidence import Source
-    from volume_contract import decimal, financial_context, money, text_number, timestamp, ZERO
+    from volume_contract import decimal, financial_context, instrument_currency, money, text_number, timestamp, ZERO
 
 POLICY_VERSION = "purchase-constraints-0.11.0-v1"
 AXES = ("position", "issuer", "group", "sector", "currency")
@@ -71,7 +71,7 @@ def _row_keys(row: dict) -> dict:
     identity, meta = row.get("verified_identity") or {}, row.get("metadata") or {}
     return {"position": row.get("instrument_uid"), "issuer": identity.get("issuer_id"),
             "group": identity.get("group_id"), "sector": meta.get("sector"),
-            "currency": meta.get("instrument_currency")}
+            "currency": instrument_currency(row)}
 
 
 def exposure_amounts(snapshot: dict, now: datetime) -> tuple[dict, list[str]]:
@@ -87,12 +87,21 @@ def exposure_amounts(snapshot: dict, now: datetime) -> tuple[dict, list[str]]:
         seen.add(key)
         total += value
         if row.get("instrument_type") == "cash":
+            reasons.extend(_add_cash_exposure(row, value, groups))
             continue
         reasons.extend(_add_position_exposures(row, value, groups, now))
     capital = decimal(snapshot.get("capital", {}).get("total"))
     if capital is None or abs(total - capital) > Decimal("0.01"):
         reasons.append("portfolio_total_not_reconciled")
     return groups, reasons
+
+
+def _add_cash_exposure(row, value, groups):
+    denomination = instrument_currency(row)
+    if denomination is None:
+        return ["portfolio_currency_unknown"]
+    groups["currency"][denomination] = groups["currency"].get(denomination, ZERO) + value
+    return []
 
 
 def _add_position_exposures(row, value, groups, now):
@@ -137,7 +146,11 @@ def _limits(groups: dict, candidate: dict, config: dict, total: Decimal, cost: D
             reasons.append("candidate_" + axis + "_unverified")
             continue
         before = groups[axis].get(key, ZERO)
-        share = (before + cost) / total * 100
+        # A same-currency purchase transfers cash into a security. Counting the
+        # purchase again would double count that currency. Keeping its pre-trade
+        # amount (capped at remaining capital) is conservative after costs.
+        after = min(before, total) if axis == "currency" else before + cost
+        share = after / total * 100
         observations.append({"axis": axis, "id": key, "amount_before": text_number(before),
                              "share_upper_bound_percent": text_number(share), "limit_percent": text_number(cap)})
         if share > cap:
@@ -162,7 +175,13 @@ def _observation_reasons(snapshot, config, meta, identity, observed_at, now):
     return reasons
 
 
-def _funding_and_concentrations(snapshot, config, meta, identity, groups, costs, cost_errors):
+def _snapshot_cash(snapshot, account_id, currency):
+    return sum((decimal(row.get("value")) or ZERO for row in snapshot.get("positions", [])
+        if row.get("instrument_type") == "cash" and row.get("account_id") == account_id
+        and instrument_currency(row) == currency), ZERO)
+
+
+def _funding_and_concentrations(snapshot, config, meta, identity, groups, costs, cost_errors, account_id):
     reasons, observations = [], []
     reserve = decimal(config.get("reserve"))
     if reserve is None or reserve < 0:
@@ -170,6 +189,10 @@ def _funding_and_concentrations(snapshot, config, meta, identity, groups, costs,
     if cost_errors:
         return observations, reasons
     paid, initial, available = costs["total"], costs["initial"], costs["available"]
+    currency = str(meta.get("currency", "")).upper()
+    observed_cash = _snapshot_cash(snapshot, account_id, currency)
+    if observed_cash < paid:
+        reasons.append("snapshot_cash_requires_refresh")
     if available - paid < reserve:
         reasons.append("protected_reserve_would_be_spent")
     # Upper bound: all excess above clean principal is treated as lost capital,
@@ -188,7 +211,7 @@ def _funding_and_concentrations(snapshot, config, meta, identity, groups, costs,
 @financial_context
 def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
                     credit: dict, info: dict, quote: dict, capacity: dict,
-                    lots: int, observed_at: str, now: datetime | None = None) -> dict:
+                    lots: int, account_id: str, observed_at: str, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     if type(lots) is not int or not 1 <= lots <= 1_000_000:
         raise ValueError("whole_positive_lots_required")
@@ -199,7 +222,7 @@ def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
     reasons.extend(cost_errors)
     groups, group_errors = exposure_amounts(snapshot, now)
     reasons.extend(group_errors)
-    observations, financing_errors = _funding_and_concentrations(snapshot, config, meta, identity, groups, costs, cost_errors)
+    observations, financing_errors = _funding_and_concentrations(snapshot, config, meta, identity, groups, costs, cost_errors, account_id)
     reasons.extend(financing_errors)
     lot = decimal(meta.get("lot"))
     paid, initial, available = costs["total"], costs["initial"], costs["available"]

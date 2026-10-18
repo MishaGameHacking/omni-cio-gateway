@@ -24,7 +24,7 @@
 индивидуальных рекомендаций остаётся незавершённым. Исходные данные и результат
 новой проверки хранятся зашифрованно, с версиями и проверкой владения.
 
-- Локально: **924 backend tests / 337 subtests**, **20 целевых 3D-script tests**.
+- Локально: **927 backend tests / 337 subtests**, **20 целевых 3D-script tests**.
   Это синтетические проверки, не live-брокер и не физический телефон.
 - [`24bef48`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/24bef4817fb1efe06655606b2f10425a7240d1cc):
   [Backend CI success](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39125146574);

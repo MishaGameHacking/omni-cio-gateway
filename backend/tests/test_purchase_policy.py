@@ -31,7 +31,7 @@ def inputs():
            "metadata": {"sector": "industry", "instrument_currency": "RUB"}}
     cash = {"account_id": "owned-a", "instrument_uid": "cash:RUB", "instrument_type": "cash",
             "value": {"amount": "9000", "currency": "RUB"}}
-    return {"now": now, "observed_at": now.isoformat(), "lots": 1,
+    return {"now": now, "observed_at": now.isoformat(), "lots": 1, "account_id": "owned-a",
         "snapshot": {"snapshot_id": "synthetic-snapshot", "as_of": now.isoformat(), "currency": "RUB",
             "positions": [row, cash], "capital": {"total": {"amount": "10000", "currency": "RUB"}},
             "position_coverage": {"complete": True}},
@@ -422,3 +422,38 @@ def test_missing_test_in_instrument_cannot_be_overridden_by_an_older_user_info()
     data['meta']['requiredTests'] = ['bond']
     data['info']['qualifiedForWorkWith'] = ['bond']
     assert 'broker_tests_not_confirmed' in policy.assess_purchase(**data)['reasons']
+
+
+def test_currency_includes_cash_without_double_counting_purchase():
+    data = inputs()
+    result = policy.assess_purchase(**data)
+    currency = next(row for row in result["concentrations"] if row["axis"] == "currency")
+    assert currency["amount_before"] == "10000"
+    assert Decimal(currency["share_upper_bound_percent"]) == 100
+    assert result["constraints_passed"]
+    data["config"]["limits"]["currency_percent"] = "50"
+    assert "currency_limit_exceeded" in policy.assess_purchase(**data)["reasons"]
+
+
+def test_currency_denominations_do_not_follow_display_valuation():
+    from backend import volume_state as state
+    data = inputs()
+    asset = data["snapshot"]["positions"][0]
+    asset["metadata"]["instrument_currency"] = "USD"
+    cash = data["snapshot"]["positions"][1]
+    cash["instrument_uid"] = "cash:EUR"
+    groups, errors = policy.exposure_amounts(data["snapshot"], data["now"])
+    assert not errors
+    assert groups["currency"] == {"USD": Decimal("1000"), "EUR": Decimal("9000")}
+    assert state._axis_identity(asset, "currency")[:2] == ("USD", "USD")
+    assert state._axis_identity(cash, "currency")[:2] == ("EUR", "EUR")
+    assert "snapshot_cash_requires_refresh" in policy.assess_purchase(**data)["reasons"]
+    del asset["metadata"]["instrument_currency"]
+    assert state._axis_identity(asset, "currency")[:2] == (None, None)
+    assert "portfolio_currency_unknown" in policy.assess_purchase(**data)["reasons"]
+
+
+def test_cash_on_another_account_does_not_validate_stale_funding_snapshot():
+    data = inputs()
+    data["snapshot"]["positions"][1]["account_id"] = "owned-b"
+    assert "snapshot_cash_requires_refresh" in policy.assess_purchase(**data)["reasons"]

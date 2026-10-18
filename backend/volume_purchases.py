@@ -219,7 +219,8 @@ def _check_purchase(payload: PurchaseCheck, user: Any) -> dict:
     now = datetime.now(timezone.utc)
     identity, credit = reviewed_credit(payload.instrument_uid, meta.get("instrumentType"), now)
     result = policy.assess_purchase(snapshot=snapshot, config=config, meta=meta, identity=identity,
-        credit=credit, info=info, quote=quote, capacity=limits, lots=payload.lots, observed_at=started.isoformat(), now=now)
+        credit=credit, info=info, quote=quote, capacity=limits, lots=payload.lots,
+        account_id=payload.account_id, observed_at=started.isoformat(), now=now)
     reasons = result["reasons"] + liquidity_reasons(book, trading, payload.limit_price, payload.lots, now)
     if not quoted_principal_matches(meta, price, quote, payload.lots):
         reasons.append("broker_price_unit_or_principal_mismatch")
