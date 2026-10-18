@@ -309,17 +309,15 @@ class _SpatialSession:
                         "reference_phone_fps_target_verified": False})
 
     def rotation(self):
-        old_rotation = self.probe.command("shell", "settings", "get", "system", "user_rotation").strip()
-        old_auto = self.probe.command("shell", "settings", "get", "system", "accelerometer_rotation").strip()
-        try:
-            # Scroll animations can move a partially visible text label between
-            # reveal and tap. Use the settled native tab hit target, then prove
-            # the intended section/state BEFORE requesting Activity recreation.
-            self.probe.tap_resource("profile-tabs-item-0", "profile-tabs", direction="start")
-            self.probe.find(CLICK_RESULT)
-            self.probe.capture("spatial-rotation-before")
-            self.probe.command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
-            self.probe.command("shell", "settings", "put", "system", "user_rotation", "1")
+        from emulator_rotation import physical_quarter_turn, landscape_frame
+
+        # Select a settled native tab before Activity recreation, not a moving
+        # text label. Rotate the physical AVD too: user_rotation alone leaves
+        # the console capture in a different coordinate system from Android.
+        self.probe.tap_resource("profile-tabs-item-0", "profile-tabs", direction="start")
+        self.probe.find(CLICK_RESULT)
+        self.probe.capture("spatial-rotation-before")
+        with physical_quarter_turn(self.probe.command):
             self.probe.wait_for(lambda: landscape_ready(self.probe.tree()),
                                 "Recreated landscape app did not become ready")
             self.probe.capture("spatial-rotation-ready")
@@ -329,16 +327,10 @@ class _SpatialSession:
             edited = self.probe.reveal_resource("spatial-input", "workspace-content")
             if not any("3d" in node.get("text", "") for node in edited.iter("node")):
                 raise AssertionError("Rotation lost native text input state")
-            picture = read_screenshot(self.probe.capture("spatial-rotation"))
-            if picture.width <= picture.height:
-                raise AssertionError("The requested rotation did not produce a landscape frame")
-            self.records.append({"scenario": "rotation", "native_state_retained": True, "runtime": self.metrics()})
-        finally:
-            for key, original in (("user_rotation", old_rotation), ("accelerometer_rotation", old_auto)):
-                if original in {"0", "1", "2", "3"}:
-                    self.probe.command("shell", "settings", "put", "system", key, original)
-                else:
-                    self.probe.command("shell", "settings", "delete", "system", key)
+            capture = landscape_frame(self.probe, landscape_ready, read_screenshot, "spatial-rotation")
+            self.records.append({"scenario": "rotation", "native_state_retained": True,
+                                 "capture_dimensions": capture, "runtime": self.metrics()})
+        self.metrics()
 
     def large_font(self):
         self.probe.command("shell", "settings", "put", "system", "font_scale", "2.0")

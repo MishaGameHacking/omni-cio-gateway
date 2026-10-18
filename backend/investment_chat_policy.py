@@ -85,7 +85,10 @@ def _follow_up(text: str) -> bool:
     return question in FOLLOW_UP
 
 DEFINITION = re.compile(r"^\s*(?:что\s+такое|что\s+означает|объясни\s+термин|what\s+is|define)\b", re.IGNORECASE)
-DEEP = re.compile(r"\b(?:дефолт\w*|банкрот\w*|ковенант\w*|реструктуризац\w*|платежеспособ\w*|default\w*|bankrupt\w*|covenant\w*|solvency)\b", re.IGNORECASE)
+DEEP = re.compile(
+    r"\b(?:дефолт|банкрот|ковенант|реструктуризац|платежеспособ|default|bankrupt|covenant)\w*\b"
+    r"|\bsolvency\b", re.IGNORECASE,
+)
 STANDARD = re.compile(
     r"\b(?:сравн\w*|проанализ\w*|анализ\w*|аудит\w*|проверь|"
     r"диверсифик\w*|ребаланс\w*|продать|продаж\w*|купить|покупк\w*|"
