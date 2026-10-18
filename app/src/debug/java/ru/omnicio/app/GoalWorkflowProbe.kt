@@ -1,12 +1,12 @@
 package ru.omnicio.app
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -25,7 +25,7 @@ private const val FIXTURE_TOKEN = "debug-goal-fixture"
 /** Production goal editor, with a disclosed lost-response fixture and no network client. */
 @Composable
 internal fun GoalWorkflowProbe(onBack: () -> Unit) {
-    val activity = LocalContext.current as ComponentActivity
+    val activity = LocalActivity.current as ComponentActivity
     val transport = remember(activity) { ViewModelProvider(activity)[GoalProbeTransport::class.java] }
     val marker by transport.marker.collectAsState()
     var revision by remember { mutableIntStateOf(0) }

@@ -212,13 +212,15 @@ private fun homeSnapshotChanges(baseline: JSONObject?, current: JSONObject): Lis
 @Composable
 private fun VisitCheckpointStatus(personal: PersonalWorkspaceController, saved: Boolean, retrySave: () -> Unit) {
     if (saved) return
-    if (personal.busy) {
-        Text("Сохраняем точку сравнения…")
-    } else if (personal.loaded) {
-        Notice(personal.error ?: "Точка текущего посещения ещё не сохранена.")
-        SpectrumSecondaryButton("Сохранить точку сравнения", retrySave, Modifier.fillMaxWidth())
-    } else if (personal.error != null) {
-        Notice(personal.error)
-        SpectrumSecondaryButton("Повторить чтение", personal.retry, Modifier.fillMaxWidth())
+    when {
+        personal.busy -> Text("Сохраняем точку сравнения…")
+        personal.loaded -> {
+            Notice(personal.error ?: "Точка текущего посещения ещё не сохранена.")
+            SpectrumSecondaryButton("Сохранить точку сравнения", retrySave, Modifier.fillMaxWidth())
+        }
+        personal.error != null -> {
+            Notice(personal.error)
+            SpectrumSecondaryButton("Повторить чтение", personal.retry, Modifier.fillMaxWidth())
+        }
     }
 }
