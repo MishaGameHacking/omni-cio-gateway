@@ -151,15 +151,50 @@ class MeshCatalogueTest(unittest.TestCase):
 
     def test_packaged_asset_check_rejects_missing_duplicate_and_extra_entries(self):
         assets = {'catalogue.json': b'{"version":1}\n', 'brand.glb': b'glTF\x00'}
-        for names in (['catalogue.json'], ['catalogue.json', 'brand.glb', 'brand.glb'],
-                      ['catalogue.json', 'brand.glb', 'unexpected.glb']):
+        cases = ((['catalogue.json'], ['assets/spectrum3d/brand.glb'], [], []),
+                 (['catalogue.json', 'brand.glb', 'brand.glb'], [], [], ['assets/spectrum3d/brand.glb']),
+                 (['catalogue.json', 'brand.glb', 'unexpected.glb'], [], ['assets/spectrum3d/unexpected.glb'], []))
+        for names, missing, unexpected, duplicates in cases:
             with self.subTest(names=names), tempfile.TemporaryDirectory(prefix='spectrum-apk-') as folder:
                 apk = pathlib.Path(folder) / 'app-preview.apk'
                 with zipfile.ZipFile(apk, 'w') as archive:
                     for name in names:
                         archive.writestr('assets/spectrum3d/' + name, assets.get(name, b'other mesh'))
-                with self.assertRaisesRegex(ValueError, 'missing, duplicated or unexpected'):
+                with self.assertRaisesRegex(ValueError, 'missing, duplicated or unexpected') as raised:
                     catalogue.verify_packaged_assets(apk, assets)
+                difference = json.loads(str(raised.exception).partition(': ')[2])
+                self.assertEqual(difference, {'expected_files': 2, 'actual_entries': len(names),
+                                             'missing': missing, 'unexpected': unexpected, 'duplicates': duplicates})
+
+    def test_runtime_source_tree_packages_exact_generated_assets_and_rejects_readme(self):
+        """Exercise real source bytes in a ZIP; the Android APK remains a separate CI gate."""
+        with tempfile.TemporaryDirectory(prefix='spectrum-source-package-') as folder:
+            temporary = pathlib.Path(folder)
+            generated = temporary / 'generated'
+            with patch.object(catalogue, 'DEST', generated):
+                catalogue.generate()
+            expected = {path.name: path.read_bytes() for path in generated.iterdir()}
+            self.assertEqual(len(expected), 91)
+            apk = temporary / 'app-preview.apk'
+            with zipfile.ZipFile(apk, 'w') as archive:
+                # Do not filter by extension: Android assets include documentation
+                # stored alongside models, which caused the extra-entry CI failure.
+                for path in sorted(catalogue.DEST.rglob('*')):
+                    if path.is_file():
+                        archive.writestr('assets/spectrum3d/' + path.relative_to(catalogue.DEST).as_posix(),
+                                         path.read_bytes())
+            catalogue.verify_packaged_assets(apk, expected)
+
+            with zipfile.ZipFile(apk, 'a') as archive:
+                archive.writestr('assets/spectrum3d/README.md',
+                                 (catalogue.ROOT / 'docs/SPECTRUM_3D_ASSETS.md').read_bytes())
+            before = apk.read_bytes()
+            with self.assertRaisesRegex(ValueError, 'missing, duplicated or unexpected') as raised:
+                catalogue.verify_packaged_assets(apk, expected)
+            difference = json.loads(str(raised.exception).partition(': ')[2])
+            self.assertEqual(difference, {'expected_files': 91, 'actual_entries': 92, 'missing': [],
+                                         'unexpected': ['assets/spectrum3d/README.md'], 'duplicates': []})
+            self.assertEqual(apk.read_bytes(), before)
 
     def test_every_distributed_asset_has_finite_volume_normals_and_verified_digest(self):
         manifest = json.loads((catalogue.DEST / 'catalogue.json').read_text())

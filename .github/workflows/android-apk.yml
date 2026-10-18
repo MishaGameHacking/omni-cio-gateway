@@ -220,14 +220,20 @@ jobs:
             const tag = `android-preview-${sha}`;
             const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
             const title = `Analyst AI ${version}`;
-            const releaseNotes = fs.readFileSync('docs/releases/0.11.0.md', 'utf8').trim();
+            const sourceDocs = `https://github.com/${owner}/${repo}/blob/${sha}/docs`;
+            const releaseNotes = ['3D100.md', '3D100_EVIDENCE.md', 'PLAN_STATUS.md'].reduce(
+              (text, file) => text.replaceAll(`(../${file})`, `(${sourceDocs}/${file})`),
+              fs.readFileSync('docs/releases/0.11.0.md', 'utf8').trim());
             if (!releaseNotes.includes('0.11.0') || !releaseNotes.includes('3D100')) throw new Error('Release notes do not identify this update');
             const body = [
               releaseNotes,
               'Signed, non-debuggable preview APK. Android 15+; application ID ru.omnicio.app.debug.',
               'Uses the existing test signing key, not a production-store signing key.',
-              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.10.0 preview, plus clean installation and full profile/education UI on Android 15 and 16 x86_64 emulators verified.',
-              'A successful emulator run does not claim that every physical-device configuration has been reproduced.',
+              'APK signature, ZIP/ELF alignment, DEX integrity, clean installation and launch, upgrade from 0.10.0 / 34 and post-upgrade launch were verified on Android 15/API 35 and Android 16/API 36 x86_64 emulators. Observed getconf PAGE_SIZE values: 16384 and 4096 bytes respectively.',
+              'The spectrum-3d-100-v2 UI receipt contains 52 business and 14 portfolio case/font IDs per API, alongside the native-rendering checks. Production UI components were exercised in a separate debug APK with synthetic data.',
+              'The attached apk-verification.json binds both emulator results to this preview APK SHA-256 and each UI receipt to the exact installed debug APK SHA-256 and case/font IDs.',
+              'These emulator checks do not verify a physical phone, physical ARM hardware with 16 KB pages, TalkBack gestures, heat, battery use, live broker or paid-model access, or installation through the in-app updater.',
+              `Source commit: ${sha}`,
               `SHA-256: ${hash}`,
               `Signing certificate SHA-256: ${report.certificate_sha256}`,
             ].join('\n\n');

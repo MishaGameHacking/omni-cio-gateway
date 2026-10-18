@@ -14,6 +14,7 @@ import math
 import pathlib
 import struct
 import zipfile
+from collections import Counter
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEST = ROOT / "app/src/main/assets/spectrum3d"
@@ -330,8 +331,15 @@ def verify_packaged_assets(apk, assets):
     with zipfile.ZipFile(apk) as archive:
         entries = [entry for entry in archive.infolist() if entry.filename.startswith(prefix) and not entry.is_dir()]
         expected_names = {prefix + name for name in assets}
-        if len(entries) != len(expected_names) or {entry.filename for entry in entries} != expected_names:
-            raise ValueError('Packaged 3D assets are missing, duplicated or unexpected')
+        counts = Counter(entry.filename for entry in entries)
+        actual_names = set(counts)
+        if len(entries) != len(expected_names) or actual_names != expected_names:
+            difference = {'expected_files': len(expected_names), 'actual_entries': len(entries),
+                          'missing': sorted(expected_names - actual_names),
+                          'unexpected': sorted(actual_names - expected_names),
+                          'duplicates': sorted(name for name, count in counts.items() if count > 1)}
+            raise ValueError('Packaged 3D assets are missing, duplicated or unexpected: '
+                             + json.dumps(difference, sort_keys=True))
         for entry in entries:
             expected = assets[entry.filename.removeprefix(prefix)]
             if entry.file_size != len(expected) or archive.read(entry) != expected:
