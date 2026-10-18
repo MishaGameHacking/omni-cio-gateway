@@ -60,7 +60,7 @@ async function retainAsset(github, repo, release, name, bytes, type) {
   return asset;
 }
 
-module.exports = async ({github, context, core}) => {
+module.exports = async function retainPrivateApk({github, context, core}) {
   const pr = context.payload.pull_request;
   if (context.eventName !== 'pull_request' || context.payload.repository?.private !== true ||
       pr?.head?.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {

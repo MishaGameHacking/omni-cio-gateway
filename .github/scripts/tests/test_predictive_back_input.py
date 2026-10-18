@@ -62,8 +62,9 @@ class BackInputTests(unittest.TestCase):
         probe, reader, connection = session(b"")
         with self.assertRaisesRegex(ValueError, "Unknown Back"):
             back_gesture(probe, "tap")
+        unowned = SimpleNamespace(read_tree=lambda: None)
         with self.assertRaisesRegex(ValueError, "owned frame session"):
-            back_gesture(SimpleNamespace(read_tree=lambda: None), "hold")
+            back_gesture(unowned, "hold")
         reader.broken = True
         with self.assertRaisesRegex(ConnectionError, "Failed UiAutomation"):
             back_gesture(probe, "hold")

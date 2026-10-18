@@ -13,7 +13,7 @@ class PrivateApkReviewTests(unittest.TestCase):
         if node is None:
             self.skipTest("Node is needed for private-APK publisher host regressions")
         test = Path(__file__).parent / "fixtures/private_apk_review.test.cjs"
-        result = subprocess.run([node, "--test", str(test)], capture_output=True,
+        result = subprocess.run([node, "--test", "--test-reporter=tap", str(test)], capture_output=True,
                                 text=True, timeout=30, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("# pass 8", result.stdout)
