@@ -90,12 +90,23 @@ def is_transient_adb_transport_failure(response_text: str) -> bool:
 
 
 def adb_transport_connected(adb: str, serial: str) -> bool:
-    """Independently distinguish a command timeout from an offline emulator."""
+    """Require a guest response, not just the server's cached transport state.
+
+    A hung guest can remain listed as ``device`` while installation, shell and
+    logcat all stop answering. Only a separate shell round trip distinguishes
+    that failure from a slow application/UI command on a healthy emulator.
+    """
     try:
         state = run([adb, "-s", serial, "get-state"], timeout=5)
+        if state.returncode != 0 or state.stdout.strip() != "device":
+            return False
+        heartbeat = run(
+            [adb, "-s", serial, "shell", "echo", "analyst-emulator-ready"],
+            timeout=5,
+        )
     except (subprocess.TimeoutExpired, OSError):
         return False
-    return state.returncode == 0 and state.stdout.strip() == "device"
+    return heartbeat.returncode == 0 and heartbeat.stdout.strip() == "analyst-emulator-ready"
 
 
 def classify_frame_failure(error: Exception, adb: str, serial: str, process) -> Exception:

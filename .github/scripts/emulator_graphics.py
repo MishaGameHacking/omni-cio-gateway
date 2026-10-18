@@ -10,7 +10,10 @@ import re
 import subprocess
 
 
-EMULATOR_GPU_MODE = "lavapipe"
+# Use SwiftShader's Vulkan implementation behind guest ANGLE. This is distinct
+# from the legacy direct SwiftShader GLES compiler that rejected Filament GLSL.
+# Lavapipe booted the API35 guest but stalled all guest commands during install.
+EMULATOR_GPU_MODE = "swiftshader"
 EMULATOR_FEATURES = "Vulkan,GuestAngle"
 MAX_LOG_CHARACTERS = 2 * 1024 * 1024
 _HEADER = re.compile(
@@ -25,7 +28,7 @@ _HEADER = re.compile(
 
 
 def _identity(value: str, label: str, minimum: int) -> str:
-    if not isinstance(value, str) or re.fullmatch(r"[0-9]{1,10}", value.strip()) is None:
+    if not isinstance(value, str) or re.fullmatch(r"\d{1,10}", value.strip(), flags=re.ASCII) is None:
         raise ValueError("Missing or ambiguous candidate " + label)
     number = int(value.strip())
     if not minimum <= number <= 2147483647:
@@ -86,13 +89,13 @@ def require_guest_angle(observed: dict[str, object]) -> None:
 
     This proves ANGLE's Vulkan path, not completed rendering or performance.
     The recorded renderer keeps the actual Vulkan device/driver string; the
-    requested Lavapipe CLI setting is never substituted for this observation.
+    requested CLI setting is never substituted for this observation.
     """
     renderer = observed.get("renderer")
     version = observed.get("version")
     if not isinstance(renderer, str) or not isinstance(version, str):
         raise ValueError("Missing actual Filament GLES renderer/version")
-    version_match = re.match(r"OpenGL ES ([0-9]+)\.([0-9]+)\b", version)
+    version_match = re.match(r"OpenGL ES (\d+)\.(\d+)\b", version, flags=re.ASCII)
     if version_match is None:
         raise ValueError("Invalid actual Filament GLES version")
     if (int(version_match.group(1)), int(version_match.group(2))) < (3, 0):

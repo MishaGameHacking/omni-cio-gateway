@@ -56,8 +56,9 @@ class EmulatorGraphicsTests(unittest.TestCase):
             (ANGLE, "OpenGL ES 2.0"),
             (ANGLE, "OpenGL ES unknown"),
         ):
+            prepared_argument_1 = observed(header(renderer, version=version))
             with self.subTest(renderer=renderer, version=version), self.assertRaises(ValueError):
-                require_guest_angle(observed(header(renderer, version=version)))
+                require_guest_angle(prepared_argument_1)
 
     def test_requested_flags_system_output_or_incomplete_headers_are_not_contexts(self):
         for text in (
@@ -79,12 +80,14 @@ class EmulatorGraphicsTests(unittest.TestCase):
                 observed(text)
 
     def test_conflicting_driver_headers_in_one_process_fail_closed(self):
+        prepared_argument_1 = header() + header(LEGACY)
         with self.assertRaisesRegex(ValueError, "conflicting"):
-            observed(header() + header(LEGACY))
+            observed(prepared_argument_1)
 
     def test_oversized_log_cannot_hide_conflicting_evidence_behind_truncation(self):
+        prepared_argument_1 = header() + "x" * MAX_LOG_CHARACTERS + header(LEGACY)
         with self.assertRaisesRegex(ValueError, "bounded"):
-            observed(header() + "x" * MAX_LOG_CHARACTERS + header(LEGACY))
+            observed(prepared_argument_1)
 
     def test_context_read_uses_both_current_uid_and_fresh_pid_without_clearing_logs(self):
         device = Mock(return_value=subprocess.CompletedProcess([], 0, header(), ""))
