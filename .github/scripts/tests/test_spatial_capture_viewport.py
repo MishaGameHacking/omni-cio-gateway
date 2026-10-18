@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from profile_scroll import fully_visible_resource, reveal_resource_in_list
-from spatial_ui_probe import form_bounds
+from spatial_ui_probe import form_bounds, landscape_ready
 
 
 def frame(bounds="[20,120][132,232]"):
@@ -20,6 +20,26 @@ def frame(bounds="[20,120][132,232]"):
 
 
 class CaptureViewportTests(unittest.TestCase):
+    def test_rotation_waits_for_new_app_configuration_and_landscape_frame(self):
+        tree = frame()
+        tree.set("display-width", "640")
+        tree.set("display-height", "320")
+        node = list(tree.iter("node"))[0]
+        marker = ("probe-spatial-engines:1;probe-spatial-windows:1;probe-spatial-frames:4;"
+                  "probe-spatial-meshes:3;probe-spatial-pending:0;probe-spatial-error:none;"
+                  "probe-spatial-motion:Off;probe-spatial-density:1;")
+        node.set("content-desc", marker + "probe-spatial-orientation:1")
+        self.assertIsNone(landscape_ready(tree))
+        node.set("content-desc", marker + "probe-spatial-orientation:2")
+        self.assertEqual(landscape_ready(tree)["frames"], 4)
+        tree.set("display-width", "320")
+        tree.set("display-height", "640")
+        self.assertIsNone(landscape_ready(tree))
+        tree.set("display-width", "640")
+        tree.set("display-height", "320")
+        node.set("package", "com.android.systemui")
+        self.assertIsNone(landscape_ready(tree))
+
     def test_offscreen_and_partial_logical_nodes_are_not_pixel_witnesses(self):
         for bounds in ("[20,0][132,100]", "[20,90][132,202]", "[20,560][132,672]"):
             with self.subTest(bounds=bounds):

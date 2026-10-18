@@ -20,13 +20,13 @@ try:
     from . import app as backend, research_store
     from .ai_budget import transaction
     from .credit_evidence import Source
-    from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context
+    from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp
 except ImportError:
     import app as backend
     import research_store
     from ai_budget import transaction
     from credit_evidence import Source
-    from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context
+    from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp
 
 router = APIRouter(prefix="/workspace", tags=["Workspace state"])
 AXES = (("position", "Позиции"), ("issuer", "Эмитенты"), ("group", "Экономические группы"),
@@ -238,7 +238,11 @@ def _coverage_state(complete: bool, known: int) -> str:
 def _observation_age(at: str | None) -> int | None:
     if not at:
         return None
-    return max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(at)).total_seconds()))
+    try:
+        age = (datetime.now(timezone.utc) - timestamp(at)).total_seconds()
+        return int(age) if age >= 0 else None
+    except ValueError:
+        return None
 
 
 def _exposure_axis(snapshot: dict | None, axis: str, label: str, limits: dict) -> tuple:
@@ -394,8 +398,8 @@ def _preview_strategy(payload: StrategyPreview, user: Any) -> dict:
     snapshot = saved_snapshot(user, config["reserve"]["currency"])
     if not snapshot:
         raise HTTPException(409, "workspace_refresh_required")
-    created = int(datetime.fromisoformat(snapshot["as_of"]).timestamp())
-    if int(time.time()) - created > 900:
+    age = _observation_age(snapshot.get("as_of"))
+    if age is None or age >= 900:
         raise HTTPException(409, "strategy_fresh_snapshot_required")
     risk = risk_data(user, config=config, snapshot=snapshot)
     total = decimal(snapshot.get("capital", {}).get("total"))
@@ -442,7 +446,7 @@ def confirm_strategy(payload: StrategyConfirm, user: Any = Depends(backend.curre
         if payload.expected_version != (active or {}).get("version", 0):
             raise HTTPException(409, "strategy_version_changed")
         preview = db.execute("SELECT * FROM workspace_strategy_previews WHERE id=? AND user_id=?", (payload.preview_id, user_id)).fetchone()
-        if preview is None or preview["consumed_at"] is not None or preview["expires_at"] < now or preview["expected_version"] != payload.expected_version:
+        if preview is None or preview["consumed_at"] is not None or preview["expires_at"] <= now or preview["expected_version"] != payload.expected_version:
             raise HTTPException(409, "strategy_preview_expired_or_changed")
         config = validate_config(json.loads(preview["config_json"]))
         current = db.execute("SELECT id,broker_key FROM workspace_snapshots WHERE user_id=? AND currency=?", (user_id, config["reserve"]["currency"])).fetchone()

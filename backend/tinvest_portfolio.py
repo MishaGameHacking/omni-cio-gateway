@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import ssl
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from cryptography.fernet import InvalidToken
@@ -10,8 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 try:  # Package import in tests.
     from . import app as backend
+    from .volume_contract import decimal as strict_decimal
 except ImportError:  # Top-level import under uvicorn from /opt/analyst-ai/backend.
     import app as backend  # type: ignore[no-redef]
+    from volume_contract import decimal as strict_decimal
 
 router = APIRouter()
 
@@ -65,14 +67,14 @@ CURRENCY_NAMES = {
 
 
 def _decimal(value: Any) -> Decimal:
-    if not isinstance(value, dict):
+    # Protobuf may omit an optional zero-valued allocation. A PRESENT malformed
+    # quotation must never silently erase capital, a position or its risk.
+    if value is None:
         return Decimal(0)
-    try:
-        units = Decimal(str(value.get("units", 0)))
-        nano = Decimal(str(value.get("nano", 0))) / Decimal(1_000_000_000)
-        return units + nano
-    except (InvalidOperation, TypeError, ValueError):
-        return Decimal(0)
+    amount = strict_decimal({"units": value.get("units", 0), "nano": value.get("nano", 0)}) if isinstance(value, dict) else None
+    if amount is None:
+        raise HTTPException(502, "tinvest_invalid_quotation")
+    return amount
 
 
 def _decimal_payload(value: Decimal) -> dict[str, int]:
@@ -89,8 +91,10 @@ def _money_payload(value: Decimal, currency: str) -> dict[str, Any]:
 
 
 def _money_decimal(value: Any) -> tuple[Decimal, str]:
-    if not isinstance(value, dict):
+    if value is None:
         return Decimal(0), ""
+    if not isinstance(value, dict):
+        raise HTTPException(502, "tinvest_invalid_money")
     return _decimal(value), str(value.get("currency") or "").upper()
 
 
@@ -206,7 +210,9 @@ def _portfolio_positions(
         ticker_value = str(raw.get("ticker") or raw.get("figi") or "").strip()
         ticker = ticker_value or None
         instrument_type = str(raw.get("instrumentType") or "").lower()
-        quantity = _decimal(raw.get("quantity"))
+        if raw.get("quantity") is None:
+            raise HTTPException(502, "tinvest_position_quantity_missing")
+        quantity = _decimal(raw["quantity"])
 
         current_value = None
         if instrument_type in {"share", "etf", "currency", "dfa"}:
@@ -324,7 +330,9 @@ def get_tinvest_portfolio(
                     {"accountId": account_id},
                 )
 
-                account_total, _ = _money_decimal(portfolio.get("totalAmountPortfolio"))
+                account_total, account_currency = _money_decimal(portfolio.get("totalAmountPortfolio"))
+                if account_currency != selected_currency:
+                    raise HTTPException(502, "tinvest_portfolio_total_currency_invalid")
                 total_value += account_total
 
                 expected_yield = portfolio.get("expectedYield")

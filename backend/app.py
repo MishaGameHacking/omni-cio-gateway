@@ -713,6 +713,8 @@ try:
     from .volume_plans import router as volume_plans_router
     from .volume_analysis import router as volume_analysis_router
     from .volume_monitor import router as volume_monitor_router
+    from .volume_catalogue import router as volume_catalogue_router
+    from .volume_purchases import router as volume_purchases_router
 except ImportError:
     from volume_workspace import router as volume_workspace_router
     from volume_state import router as volume_state_router
@@ -724,8 +726,11 @@ except ImportError:
     from volume_plans import router as volume_plans_router
     from volume_analysis import router as volume_analysis_router
     from volume_monitor import router as volume_monitor_router
+    from volume_catalogue import router as volume_catalogue_router
+    from volume_purchases import router as volume_purchases_router
 
 for volume_router in (volume_workspace_router, volume_state_router, volume_market_router,
                       volume_jobs_router, volume_chat_router, volume_notifications_router,
-                      volume_devices_router, volume_plans_router, volume_analysis_router, volume_monitor_router):
+                      volume_devices_router, volume_plans_router, volume_analysis_router, volume_monitor_router,
+                      volume_catalogue_router, volume_purchases_router):
     app.include_router(volume_router)

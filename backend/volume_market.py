@@ -40,6 +40,11 @@ READ_METHODS = {
     'shares': 'InstrumentsService/Shares', 'bonds': 'InstrumentsService/Bonds',
     'etfs': 'InstrumentsService/Etfs', 'currencies': 'InstrumentsService/Currencies',
     'futures': 'InstrumentsService/Futures', 'options': 'InstrumentsService/Options',
+    'user_info': 'UsersService/GetInfo',
+    'max_lots': 'OrdersService/GetMaxLots',
+    'order_price': 'OrdersService/GetOrderPrice',
+    'bond_by': 'InstrumentsService/BondBy',
+    'share_by': 'InstrumentsService/ShareBy',
 }
 _rate_lock = threading.Lock()
 _next_instrument_read: dict[tuple, float] = {}
@@ -51,6 +56,8 @@ def pace_instruments(scope: tuple) -> None:
     with _rate_lock:
         now = time.monotonic()
         due = max(now, _next_instrument_read.get(scope, now))
+        if due - now > 5:
+            raise HTTPException(429, 'instrument_request_queue_full')
         _next_instrument_read[scope] = due + 0.4
         if len(_next_instrument_read) > 256:
             expired = [key for key, deadline in _next_instrument_read.items() if deadline < now]
@@ -58,7 +65,7 @@ def pace_instruments(scope: tuple) -> None:
                 del _next_instrument_read[key]
     delay = due - now
     if delay > 0:
-        time.sleep(min(delay, 5))
+        time.sleep(delay)
 INTERVALS = {
     'minute': ('CANDLE_INTERVAL_1_MIN', 1, 2400),
     'five_minutes': ('CANDLE_INTERVAL_5_MIN', 7, 2400),

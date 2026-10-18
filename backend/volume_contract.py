@@ -158,8 +158,11 @@ def _quotation_decimal(value: dict) -> Decimal | None:
     try:
         if not re.fullmatch(r'-?\d{1,25}', str(units)) or not re.fullmatch(r'-?\d{1,9}', str(nano)):
             return None
+        integral, fractional = int(units), int(nano)
+        if not -(2**63) <= integral < 2**63 or integral * fractional < 0:
+            return None
         with localcontext(FINANCIAL_CONTEXT):
-            return Decimal(str(units)) + Decimal(str(nano)) / Decimal(1_000_000_000)
+            return Decimal(integral) + Decimal(fractional) / Decimal(1_000_000_000)
     except (InvalidOperation, ValueError, TypeError):
         return None
 

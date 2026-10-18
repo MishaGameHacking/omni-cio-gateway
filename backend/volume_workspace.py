@@ -54,7 +54,8 @@ def _position_identity(uid: str) -> tuple[dict | None, list]:
 
 def _position_metadata(raw: dict, position: dict) -> dict:
     keys = {"sector": "sector", "country_of_risk": "countryOfRisk", "country_of_risk_name": "countryOfRiskName",
-            "asset_uid": "assetUid", "lot": "lot", "exchange": "exchange", "isin": "isin"}
+            "asset_uid": "assetUid", "lot": "lot", "exchange": "exchange", "isin": "isin",
+            "instrument_currency": "currency"}
     return {**{name: raw.get(key) or position.get(key) for name, key in keys.items()}, "source": raw.get("_source")}
 
 

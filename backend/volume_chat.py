@@ -78,6 +78,8 @@ class ThreadCreate(state.RequestId):
 
 @router.post("/threads", responses=HTTP_ERRORS)
 def create_thread(payload: ThreadCreate, user: Any = Depends(backend.current_user)) -> dict:
+    if not payload.title.strip():
+        raise HTTPException(422, "chat_thread_title_required")
     user_id, request = int(user["id"]), payload.model_dump()
     with transaction(backend.connect) as db:
         existing = state.receipt(db, user_id, payload.request_id, "chat_thread", request)
@@ -338,6 +340,8 @@ def send_message(identifier: str, payload: MessageCreate, tasks: BackgroundTasks
 
 
 def validate_response(raw: dict, packet: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise GuardError("ai_chat_response_invalid")
     answer = raw.get("answer")
     if not isinstance(answer, str) or not answer.strip() or len(answer) > 16000:
         raise GuardError("ai_chat_response_invalid")
@@ -359,7 +363,9 @@ def validate_response(raw: dict, packet: dict) -> dict:
             "uncertainties": uncertainties, "actions": actions,
             "facts": packet["facts"], "sources": packet.get("sources", []), "coverage": packet.get("coverage", {}),
             "context_as_of": packet["as_of"], "tools_used": packet["tools_used"],
-            "snapshot_id": packet["snapshot_id"], "financial_values_are_source_records": True,
+            "snapshot_id": packet["snapshot_id"], "financial_values_are_source_records": False,
+            "source_facts_verified_separately": True, "answer_origin": "model_interpretation",
+            "evidence_links_validated": True, "claim_meaning_verified": False,
             "impact_hypothesis": impact_hypothesis}
 
 
@@ -535,11 +541,11 @@ def _add_executed_flow(item, sums, refs):
 def _validated_claims(raw_claims, facts):
     evidence, claims, uncertainties = [], [], []
     for claim in raw_claims:
-        if not isinstance(claim, dict) or not isinstance(claim.get("text"), str) or not isinstance(claim.get("fact_ids"), list):
+        if not isinstance(claim, dict) or not isinstance(claim.get("text"), str) or not claim["text"].strip() or len(claim["text"]) > 4000 or not isinstance(claim.get("fact_ids"), list) or not 1 <= len(claim["fact_ids"]) <= 80:
             raise GuardError("ai_chat_claims_invalid")
         if any(not isinstance(identifier, str) or identifier not in facts for identifier in claim["fact_ids"]):
             raise GuardError("ai_chat_evidence_not_in_context")
-        claims.append({"text": claim["text"][:4000], "fact_ids": claim["fact_ids"], "interpretation": True})
+        claims.append({"text": claim["text"], "fact_ids": list(dict.fromkeys(claim["fact_ids"])), "interpretation": True})
         _append_claim_evidence(claim["fact_ids"], facts, evidence)
         if isinstance(claim.get("uncertainty"), str) and claim["uncertainty"].strip():
             uncertainties.append(claim["uncertainty"][:2000])
@@ -579,7 +585,7 @@ def _append_claim_evidence(identifiers, facts, evidence):
 
 def _response_items(raw, field, error):
     items = raw.get(field, [])
-    if not isinstance(items, list):
+    if not isinstance(items, list) or len(items) > 80:
         raise GuardError(error)
     return items
 

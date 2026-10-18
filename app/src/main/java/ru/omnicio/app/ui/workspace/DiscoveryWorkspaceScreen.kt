@@ -147,7 +147,12 @@ fun DiscoveryWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit) {
     val selection = rememberSaveable(session.userId, saver = DiscoverySelection.saver) { DiscoverySelection() }
     var query by rememberSaveable(session.userId) { mutableStateOf("") }
     var category by rememberSaveable(session.userId) { mutableIntStateOf(0) }
+    var catalogue by rememberSaveable(session.userId) { mutableStateOf(false) }
     var shown by rememberSaveable(query, category) { mutableIntStateOf(30) }
+    if (catalogue) {
+        MarketCatalogueScreen { catalogue = false }
+        return
+    }
     if (selection.archiveId != null) {
         ResearchLibraryScreen(state, { selection.archiveId = null }, initialId = selection.archiveId)
         return
@@ -159,6 +164,9 @@ fun DiscoveryWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit) {
     val chosen = results.rows.filter { portfolioRowKey(it) in selection.chosenKeys }
     WorkspaceDetailPage("Найти и исследовать", "Активы, счета, выплаты и ваши рабочие материалы", onBack, SpectrumSymbol.Market) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            TextButton(onClick = { catalogue = true }, modifier = Modifier.padding(horizontal = 20.dp)) {
+                Text("Каталог брокера · найти новые активы")
+            }
             SpectrumTextField(query, { query = it.take(300) }, label = { Text("Поиск по приложению") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("discovery-query"))
             SpectrumTabs(listOf("Всё", "Активы", "Счета", "Выплаты", "Исследования", "Страницы", "Наблюдение", "Календарь"),
@@ -365,7 +373,7 @@ private fun DiscoveryPayout(row: JSONObject, onInstrument: (String) -> Unit) {
 }
 
 @Composable
-private fun DiscoveryDossier(uid: String, close: () -> Unit) {
+internal fun DiscoveryDossier(uid: String, close: () -> Unit) {
     val request = rememberWorkspaceRequest("/workspace/instruments/$uid/dossier")
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         SpatialWindow(Modifier.fillMaxSize()) {

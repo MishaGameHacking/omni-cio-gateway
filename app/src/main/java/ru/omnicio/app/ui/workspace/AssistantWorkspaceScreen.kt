@@ -162,6 +162,8 @@ private fun AssistantMessage(message: JSONObject, onPortfolio: () -> Unit, onAct
     val workspace = LocalWorkspaceNavigator.current
     SpectrumCard(emphasized = assistant) {
         Text(if (assistant) "Analyst AI" else "Вы", style = MaterialTheme.typography.labelLarge)
+        if (assistant) Text("Объяснение ИИ. Числа и основания проверяйте в связанных наблюдениях; выводы модели могут содержать ошибки.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(PrivateValue(message.text("text", "")), style = MaterialTheme.typography.bodyLarge)
         Text(localMoment(message.text("created_at", "")), style = MaterialTheme.typography.bodySmall)
         message.optJSONObject("impact_hypothesis")?.let { ImpactHypothesisPanel(it) }

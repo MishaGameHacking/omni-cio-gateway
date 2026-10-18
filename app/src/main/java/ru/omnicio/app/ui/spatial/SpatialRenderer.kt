@@ -185,8 +185,9 @@ internal class SpatialOwner(private val context: Context) : Choreographer.FrameC
 
     private data class AssetKey(val asset: SpatialAsset, val low: Boolean)
     internal inner class Lease(val pool: AssetPool, val instance: FilamentInstance, val materials: List<MaterialInstance>) {
-        // Filament reorders transform components at endFrame. Keep the stable
-        // entity; a cached component index can silently move a different mesh.
+        // Filament can reorder components while glTF instances/hierarchies are
+        // created or committed. Keep the stable entity; a cached component index
+        // can silently move a different mesh.
         val transform get() = requireNotNull(engine).transformManager.getInstance(instance.root)
         var taken=false
         fun release() { taken=false }

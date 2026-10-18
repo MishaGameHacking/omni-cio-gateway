@@ -17,6 +17,38 @@
 точные результаты и границы приёмки записаны в F01.4 / F22 ниже.
 Указатель актуальных и исторических документов: [docs/README](README.md).
 
+## Аудит 18.10.2026 — F01/F02–F09/F15/F20/F22/F23
+
+[Полный аудит, 30 направлений и применение идей Грэма](AUDIT_0.11.0_2026-10-18.md).
+Новые каталог и проверка покупки реализованы в рабочей ветке; полный конвейер
+индивидуальных рекомендаций остаётся незавершённым. Исходные данные и результат
+новой проверки хранятся зашифрованно, с версиями и проверкой владения.
+
+- Локально: **922 backend tests / 337 subtests**, **20 целевых 3D-script tests**.
+  Это синтетические проверки, не live-брокер и не физический телефон.
+- [`24bef48`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/24bef4817fb1efe06655606b2f10425a7240d1cc):
+  [Backend CI success](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39125146574);
+  [Android CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39125146599)
+  прошёл сборку/lint/upgrade/launch API35, но visual gate обнаружил обрезанную
+  область light mesh высотой 21 px. Эти результаты не являются полным runtime pass.
+- [`b5fae83`](https://github.com/MishaGameHacking/omni-cio-gateway/commit/b5fae83aeac296e4f9eed920ababbc1a3d97c8fd)
+  добавляет lookup transform по стабильному entity и обязательные размеры области
+  захвата. [Backend CI success](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39126425885).
+  [Android CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39126425892)
+  прошёл сборку/lint, upgrade/launch API35 и строгие dark/light mesh, dialog,
+  clipping, long-scroll проверки. Реальный light PNG просмотрен. Затем runtime
+  остановился на rotation: тест послал scroll до пересоздания app root.
+  Добавлено ожидание фактической landscape-конфигурации приложения; запрет
+  действий в чужом окне сохранён. API36 ещё не подтверждена.
+  Новый backend/каталог и исправление rotation ещё требуют CI
+  окончательного коммита; старые проверки не подменяют его.
+- Artifact storage quota остаётся исчерпанной; реальные synthetic screenshots
+  и отчёты доступны через записанные в CI Git blob refs. Исторические артефакты
+  не удалялись. Это ограничение хранения, не успешная публикация APK.
+
+Установленной версией остаётся **0.10.0 / 34**. Статусы прежних срезов ниже —
+исторические доказательства. Они не закрывают непроверенные сценарии нового кода.
+
 ## Исторический прогон 3D100 на 81b0101
 
 - Реализация: [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880), версия `35 / 0.11.0`; preview package, сертификат и baseline `0.10.0 / 34` сохранены.

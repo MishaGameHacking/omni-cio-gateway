@@ -47,6 +47,9 @@ def _current(plan: dict, user_id: int, db=None) -> dict:
     active = state.active_strategy(user_id, db)
     if plan["state"] != "done" and plan["strategy_version"] != (active or {}).get("version", 0):
         return {**plan, "state": "obsolete", "reason": "strategy_version_changed"}
+    age = state._observation_age(plan.get("as_of"))
+    if plan["state"] in {"calculated", "open_broker"} and not plan.get("opened_at") and (age is None or age >= 900):
+        return {**plan, "state": "obsolete", "reason": "plan_snapshot_expired"}
     return plan
 
 
@@ -80,6 +83,11 @@ def _create(payload: PlanCreate, user: Any) -> dict:
     if amount is None or amount <= 0:
         raise HTTPException(422, "manual_plan_quantity_invalid")
     snapshot = state.saved_snapshot(user)
+    age = state._observation_age((snapshot or {}).get("as_of"))
+    if age is None or age >= 900:
+        raise HTTPException(409, "manual_plan_fresh_snapshot_required")
+    if not payload.title.strip():
+        raise HTTPException(422, "manual_plan_title_required")
     position = next((p for p in state.positions(snapshot) if p["account_id"] == payload.account_id and p["instrument_uid"] == payload.instrument_uid), None)
     if not position:
         raise HTTPException(409, "manual_plan_verified_position_required")
@@ -100,7 +108,7 @@ def _create(payload: PlanCreate, user: Any) -> dict:
         active = state.active_strategy(user_id, db)
         if payload.strategy_version != (active or {}).get("version", 0):
             raise HTTPException(409, "strategy_version_changed")
-        result = {"id": uuid.uuid4().hex, "title": payload.title, "instrument_uid": payload.instrument_uid,
+        result = {"id": uuid.uuid4().hex, "title": payload.title.strip(), "instrument_uid": payload.instrument_uid,
                   "account_id": payload.account_id, "side": payload.side, "quantity": text_number(amount), "lot": text_number(lot),
                   "state": "calculated", "created_at": now_iso(), "opened_at": None, "broker_url": url,
                   "snapshot_id": snapshot["snapshot_id"], "as_of": snapshot["as_of"], "strategy_version": payload.strategy_version,
@@ -115,16 +123,26 @@ def _create(payload: PlanCreate, user: Any) -> dict:
     return result
 
 
+def _require_openable(plan: dict) -> None:
+    if plan["state"] in {"obsolete", "done"}:
+        raise HTTPException(409, "manual_plan_not_openable")
+    age = state._observation_age(plan.get("as_of"))
+    if age is None or age >= 900:
+        raise HTTPException(409, "manual_plan_fresh_snapshot_required")
+
+
 @router.post("/{identifier}/open-broker", responses=HTTP_ERRORS)
 def opened(identifier: str, payload: state.RequestId, user: Any = Depends(backend.current_user)) -> dict:
     request = {"id": identifier, **payload.model_dump()}
     with transaction(backend.connect) as db:
         previous = state.receipt(db, int(user["id"]), payload.request_id, "plan_open", request)
         if previous:
+            # Recover the same operation, but never revive an expired instruction.
+            current = _current(_plan(db, int(user["id"]), identifier), int(user["id"]), db)
+            _require_openable(current)
             return previous
         result = _current(_plan(db, int(user["id"]), identifier), int(user["id"]), db)
-        if result["state"] in {"obsolete", "done"}:
-            raise HTTPException(409, "manual_plan_not_openable")
+        _require_openable(result)
         result.update(state="open_broker", opened_at=result.get("opened_at") or now_iso(), execution_state="not_confirmed")
         state.record(db, int(user["id"]), "manual_plan", identifier, result)
         state.remember(db, int(user["id"]), payload.request_id, "plan_open", request, result)

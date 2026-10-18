@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -41,6 +42,7 @@ internal fun spatialProbeMarker(): String {
         "probe-spatial-cpu-p95:${stats.cpuSubmitP95Ms};probe-spatial-interval-p95:${stats.frameIntervalP95Ms};" +
         "probe-spatial-quality:${stats.quality};probe-spatial-density:${LocalDensity.current.density};" +
         "probe-spatial-font-scale:${LocalDensity.current.fontScale};" +
+        "probe-spatial-orientation:${LocalConfiguration.current.orientation};" +
         "probe-spatial-thermal:${owner?.thermalStatus ?: 0};probe-spatial-system-motion:${owner?.systemMotionEnabled == true};" +
         "probe-spatial-power-save:${owner?.powerSaveMode == true};" +
         "probe-spatial-back-progress:${LocalSpatialWindow.current?.localBackProgress ?: 0f}"

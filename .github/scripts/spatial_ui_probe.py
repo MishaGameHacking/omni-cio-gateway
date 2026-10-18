@@ -33,6 +33,22 @@ def exercise_spatial(probe):
     _SpatialSession(probe).run()
 
 
+def landscape_ready(tree):
+    """Observe the recreated app configuration before sending any scroll action.
+
+    Settings writes are asynchronous. An old portrait marker can still look
+    ready while the active accessibility root changes during recreation.
+    """
+    from profile_scroll import visible_resource
+
+    width = int(tree.get("display-width", "0"))
+    height = int(tree.get("display-height", "0"))
+    if not width > height > 0 or visible_resource(tree, "workspace-content") is None:
+        return None
+    actual = ready_spatial_metrics(tree)
+    return actual if actual is not None and actual.get("orientation") == "2" else None
+
+
 class _SpatialSession:
     def __init__(self, probe):
         self.probe = probe
@@ -244,7 +260,8 @@ class _SpatialSession:
             self.probe.tap("Форма 3D", "profile-tabs", direction="start")
             self.probe.command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
             self.probe.command("shell", "settings", "put", "system", "user_rotation", "1")
-            self.metrics()
+            self.probe.wait_for(lambda: landscape_ready(self.probe.tree()),
+                                "Recreated landscape app did not become ready")
             self.probe.reveal("Нажатий: 1", "workspace-content")
             self.probe.reveal("Включён", "workspace-content")
             edited = self.probe.reveal_resource("spatial-input", "workspace-content")

@@ -7,7 +7,7 @@ import time
 from collections import OrderedDict, defaultdict
 from contextlib import closing
 from datetime import date, datetime, time as day_time, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from threading import RLock
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,11 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 try:
     from . import app as backend
     from . import tinvest_portfolio as portfolio
+    from .volume_contract import decimal as strict_decimal
     from .ai_jobs import assert_current_owner_in
     from .monitoring_access import assert_monitoring_access_in, monitoring_active
 except ImportError:
     import app as backend
     import tinvest_portfolio as portfolio
+    from volume_contract import decimal as strict_decimal
     from ai_jobs import assert_current_owner_in
     from monitoring_access import assert_monitoring_access_in, monitoring_active
 
@@ -61,12 +63,7 @@ _request_locks = [RLock() for _ in range(32)]
 def number(value: Any) -> Decimal | None:
     if not isinstance(value, dict):
         return None
-    try:
-        result = Decimal(str(value.get("units", 0))) + Decimal(str(value.get("nano", 0))) / Decimal(10**9)
-        return result if result.is_finite() else None
-    except (InvalidOperation, ValueError, TypeError):
-        return None
-
+    return strict_decimal({"units": value.get("units", 0), "nano": value.get("nano", 0)})
 
 def money(value: Any) -> dict | None:
     amount = number(value)
