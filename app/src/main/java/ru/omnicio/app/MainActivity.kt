@@ -3,7 +3,6 @@ package ru.omnicio.app
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.runtime.*
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.json.JSONArray
 import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
@@ -44,6 +43,7 @@ import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
+import ru.omnicio.app.data.backend.SessionTransitions
 import ru.omnicio.app.data.market.optionalText
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
@@ -301,7 +301,6 @@ private fun AnalystAiApp(
     }
 
     val signedIn = authState as? AuthUiState.SignedIn
-    val scope = rememberCoroutineScope()
     val workspaceStore = remember(context) { EncryptedWorkspaceStore(context) }
     var knownUser by rememberSaveable { mutableStateOf<String?>(null) }
     var navigationRestored by remember(signedIn?.user?.telegramId) { mutableStateOf(false) }
@@ -310,7 +309,7 @@ private fun AnalystAiApp(
         if (authState is AuthUiState.SignedIn) {
             authState = AuthUiState.SignedOut("Подтвердите вход через Telegram. После входа в тот же аккаунт вы вернётесь к своему разделу.")
             tApiConfigured = false; brokerConnection = BrokerConnectionState.Checking
-            scope.launch(Dispatchers.IO) { signedIn?.user?.telegramId?.let { workspaceStore.deactivateUser(it) }; sessionStore.clear() }
+            SessionTransitions.submit { signedIn?.user?.telegramId?.let { workspaceStore.deactivateUser(it) }; sessionStore.clear() }
             ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
         }
     }
@@ -377,11 +376,12 @@ private fun AnalystAiApp(
                     onScreenshotsBlockedChange = { blocked -> screenshotsBlocked = blocked; onScreenshotsBlockedChange(blocked) },
                     onLogout = {
                         val userId = signedIn?.user?.telegramId
-                        scope.launch(Dispatchers.IO) {
+                        val appContext = context.applicationContext
+                        SessionTransitions.submit {
                             if (userId != null) workspaceStore.deactivateUser(userId)
                             sessionStore.clear()
                             if (userId != null) {
-                                OfflinePortfolioStore(context).clearSnapshots(userId)
+                                OfflinePortfolioStore(appContext).clearSnapshots(userId)
                                 workspaceStore.remove(userId, "navigation")
                                 workspaceStore.remove(userId, "navigation_detail")
                             }
@@ -710,8 +710,8 @@ private suspend fun exchangeTelegramSession(
     sessionStore: AuthSessionStore,
     context: android.content.Context,
     code: String,
-): AuthUiState {
-    return when (val result = withContext(Dispatchers.IO) { backend.exchangeTelegramCode(code) }) {
+): AuthUiState = SessionTransitions.run {
+    when (val result = backend.exchangeTelegramCode(code)) {
         is BackendResult.Success -> {
             val saved =
                 withContext(Dispatchers.IO) {
@@ -735,11 +735,11 @@ private suspend fun restoreAnalystSession(
     backend: AnalystBackendClient,
     sessionStore: AuthSessionStore,
     context: android.content.Context,
-): AuthUiState {
+): AuthUiState = SessionTransitions.run {
     val storedToken =
         withContext(Dispatchers.IO) { sessionStore.loadAccessToken() }
-            ?: return AuthUiState.SignedOut()
-    return when (val result = withContext(Dispatchers.IO) { backend.fetchMe(storedToken) }) {
+            ?: return@run AuthUiState.SignedOut()
+    when (val result = backend.fetchMe(storedToken)) {
         is BackendResult.Success -> {
             withContext(Dispatchers.IO) {
                 EncryptedWorkspaceStore(context).activateUser(result.value.telegramId)

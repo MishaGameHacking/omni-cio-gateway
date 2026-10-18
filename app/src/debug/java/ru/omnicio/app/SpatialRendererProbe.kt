@@ -56,6 +56,10 @@ internal fun SpatialRendererProbe() {
     var checked by rememberSaveable { mutableStateOf(false) }
     var clicks by rememberSaveable { mutableIntStateOf(0) }
     var input by rememberSaveable { mutableStateOf("native") }
+    var shadows by rememberSaveable { mutableStateOf(true) }
+    val renderWindow = LocalSpatialWindow.current
+    LaunchedEffect(renderWindow, shadows) { renderWindow?.setShadowReference(shadows) }
+    DisposableEffect(renderWindow) { onDispose { renderWindow?.setShadowReference(true) } }
     var dialog by remember { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var backScreen by rememberSaveable { mutableStateOf(false) }
@@ -103,6 +107,8 @@ internal fun SpatialRendererProbe() {
                     item { WorkspaceToggle("Тестовый переключатель", if (checked) "Включён" else "Выключен", checked, { checked = it }) }
                     item { SpectrumTextField(input, { input = it }, Modifier.fillMaxWidth().testTag("spatial-input"),
                         label = { Text("Нативное поле 3D") }, singleLine = true) }
+                    item { SpectrumTextButton(if (shadows) "Тени: включены" else "Тени: выключены",
+                        { shadows = !shadows }) }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             SpectrumTextButton("Тёмная модель", { theme.preview(ThemeMode.DARK) })

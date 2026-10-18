@@ -386,6 +386,12 @@ internal class SpatialRenderWindow(
         var opaque:Boolean?=null,var clip:Rect?=null)
 
     fun attach(texture: TextureView) {texture.isOpaque=false;ui.attachTo(texture)}
+    /** Controlled reference used only by the debug visual probe; normal windows keep shadows. */
+    internal fun setShadowReference(enabled: Boolean) {
+        if (destroyed) return
+        view.setShadowingEnabled(enabled)
+        owner.invalidate()
+    }
     fun updateLocalBackProgress(value: Float) {
         val next = if (owner.effectiveMotion == SpatialMotion.Off) 0f
             else value.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f

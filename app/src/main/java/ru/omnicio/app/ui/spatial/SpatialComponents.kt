@@ -73,9 +73,10 @@ fun SpatialField(
     SpatialSurface(modifier, SpatialSurfaceKind.Input,
         color = when { error -> palette.rose; focused -> palette.blue; else -> palette.cardStrong },
         state = state, emphasized = focused) {
-        if (error || focused) SpatialSurface(Modifier.padding(2.dp), SpatialSurfaceKind.Input,
+        // Keep the editor at the same composition location when focus/error changes.
+        // A conditional wrapper disposes the focused native editor and its IME session.
+        SpatialSurface(Modifier.padding(2.dp), SpatialSurfaceKind.Input,
             color = palette.cardStrong, state = state, content = content)
-        else content()
     }
 }
 

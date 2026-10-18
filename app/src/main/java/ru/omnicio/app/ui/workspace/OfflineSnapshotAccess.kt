@@ -5,9 +5,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.backend.AuthSessionStore
+import ru.omnicio.app.data.backend.SessionTransitions
 import ru.omnicio.app.data.workspace.OfflinePortfolio
 import ru.omnicio.app.data.workspace.OfflinePortfolioStore
 import ru.omnicio.app.data.updates.ClientVersion
@@ -24,7 +23,7 @@ fun OfflineSnapshotAccess(gate: UpdateGateUi) {
     var open by remember { mutableStateOf(false) }
     val permitted = gate.decision == null && gate.error != null && !gate.checking && !blocked
     LaunchedEffect(permitted) {
-        cached = if (permitted) withContext(Dispatchers.IO) {
+        cached = if (permitted) SessionTransitions.run {
             val session = AuthSessionStore(context)
             if (session.loadAccessToken() == null) null else session.loadCachedUser()?.telegramId?.let { OfflinePortfolioStore(context).read(it) }
         } else null

@@ -28,7 +28,7 @@ fun RiskWorkspaceScreen(onBack: () -> Unit) {
     val events = rememberWorkspaceResource("/workspace/risks/events?limit=100")
     val navigate = LocalWorkspaceNavigator.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var scenario by remember { mutableStateOf(false) }
+    var scenario by rememberSaveable { mutableStateOf(false) }
     val create = rememberWorkspaceAction { checks.refresh(); tab = 2 }
     WorkspaceDetailPage("Риски", "Покрытие, лимиты и проверяемые действия", onBack, SpectrumSymbol.Risk) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {

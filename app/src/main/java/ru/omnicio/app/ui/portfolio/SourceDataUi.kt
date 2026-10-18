@@ -43,7 +43,7 @@ fun SourceProvenance(sources: List<JSONObject>, sourceIds: List<String>? = null,
 private fun SourceLocation(url: String) {
     val uri = remember(url) { runCatching { URI(url) }.getOrNull() }
     val canOpen = uri?.scheme.equals("https", ignoreCase = true) &&
-        !uri?.host.isNullOrBlank() && uri?.userInfo == null
+        !uri?.host.isNullOrBlank() && uri.userInfo == null
     val uriHandler = LocalUriHandler.current
     var openFailed by remember(url) { mutableStateOf(false) }
     SelectionContainer { Text(url, style = MaterialTheme.typography.bodySmall) }

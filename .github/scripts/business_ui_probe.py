@@ -84,6 +84,7 @@ class _BusinessCase:
         self.draft_rotation = None
         self.impact_screenshot = None
         self.chat_recovery = None
+        self.scenario_comparison = None
 
     def observed(self):
         return self.probe.wait_for(
@@ -114,6 +115,7 @@ class _BusinessCase:
         record = {"case": self.route + "/" + self.scenario, "font_scale": self.font_scale, "before": before, "after": actual,
                         "checks": self.checks, "native_input_rotation": self.draft_rotation,
                         "chat_recovery": self.chat_recovery,
+                        "scenario_comparison": self.scenario_comparison,
                         "impact_screenshot": self.impact_screenshot + ".png" if self.impact_screenshot else None,
                         "renderer": renderer, "screenshot": name + ".png"}
         print("BUSINESS_UI_CASE_PASSED=" + self.route + "/" + self.scenario + ";font=" + str(self.font_scale), flush=True)
@@ -275,6 +277,10 @@ class _BusinessCase:
         self.probe.wait_for(lambda: (node if (node := checkable_label(self.probe.tree(), RISK_SOURCE_LABEL)) is not None and node.get("checked") == "true" else None),
                        "Risk checklist mutation was not confirmed")
         self.checks.extend(("concentration-threshold", "create-checklist", "confirm-reviewed-step"))
+        from risk_scenario_probe import exercise_scenario_comparison
+        self.scenario_comparison = exercise_scenario_comparison(self)
+        self.checks.extend(("scenario-empty-input-blocked", "scenario-draft-survives-rotation",
+                            "two-scenarios-one-baseline-exact-values"))
 
     def ready_assistant(self):
         from impact_ui_probe import exercise_impact

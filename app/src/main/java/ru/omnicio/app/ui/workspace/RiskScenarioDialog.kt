@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import org.json.JSONArray
 import org.json.JSONObject
@@ -52,7 +53,7 @@ fun RiskScenarioDialog(risks: JSONObject?, onClose: () -> Unit) {
             WorkspaceTextInput(current.text("target", ""), { edit("target", it.take(160)) }, "Код из источника или UID инструмента", Modifier.fillMaxWidth(), enabled = !action.busy)
         }
         WorkspaceTextInput(current.text("percent", ""), { edit("percent", it.replace(',', '.').replace('−', '-').take(12)) },
-            "Предположение, % (от −100 до 1000)", Modifier.fillMaxWidth(), enabled = !action.busy, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            "Предположение, % (от −100 до 1000)", Modifier.fillMaxWidth().testTag("scenario-percent"), enabled = !action.busy, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
         if (drafts.size < 4) SpectrumSecondaryButton("Добавить сценарий", {
             val id = ('A'..'D').first { letter -> drafts.none { it.text("id") == letter.toString() } }.toString()
             draftsText = JSONArray(draftsText).put(scenarioDraft(id)).toString(); selected = drafts.size; result = null
@@ -72,7 +73,7 @@ fun RiskScenarioDialog(risks: JSONObject?, onClose: () -> Unit) {
             Text("Сравнение в " + comparison.text("currency") + " · " + localMoment(comparison.text("as_of", "")), style = MaterialTheme.typography.titleMedium)
             comparison.records("scenarios").forEach { variant ->
                 val answer = variant.optJSONObject("result") ?: JSONObject()
-                SpectrumCard {
+                SpectrumCard(Modifier.testTag("scenario-result-" + variant.text("id"))) {
                     Text(variant.text("title"), style = MaterialTheme.typography.titleLarge)
                     answer.records("assumptions").forEach { assumption ->
                         val axis = assumption.text("axis")
@@ -80,11 +81,12 @@ fun RiskScenarioDialog(risks: JSONObject?, onClose: () -> Unit) {
                             (if (axis == "all") "" else " · " + assumption.text("id")) + ": " + assumption.text("percent") + "%")
                     }
                     Text("Исходный капитал: " + PrivateValue(moneyText(answer.optJSONObject("baseline"))))
-                    Text("Изменение: " + PrivateValue(moneyText(answer.optJSONObject("estimated_change"))))
+                    Text("Изменение оценённых позиций: " + PrivateValue(moneyText(answer.optJSONObject("estimated_change"))))
                     Text("После сценария: " + PrivateValue(moneyText(answer.optJSONObject("estimated_after"))))
                     Text("Изменение применено к " + answer.optInt("covered_positions") + " из " + answer.optInt("total_positions") + " позиций")
                     val unknown = answer.strings("uncovered_instrument_uids")
                     if (unknown.isNotEmpty()) Text("Для " + unknown.size + " инструментов не хватает проверенной оценки или модели расчёта. Полный итог не подтверждён.")
+                    if (!answer.optBoolean("complete")) Text("Расчёт неполный. Показанное изменение относится только к оценённым позициям; итог всего портфеля не подтверждён.")
                     Text("Оценка линейная: курсовые эффекты и модель производных инструментов не добавляются. Позиции за пределами выбранной области сохраняют текущую оценку.", style = MaterialTheme.typography.bodySmall)
                 }
             }

@@ -210,6 +210,7 @@ private fun notificationState(state: String): String = when (state) {
     "read" -> "Прочитано"; "suppressed" -> "Исключено правилами"; else -> "Состояние уточняется"
 }
 private fun notificationReason(reason: String) = when (reason) {
+    "rule_disabled" -> "Исключено выключенными правилами доставки"
     "quiet_hours" -> "Тихие часы"; "disabled" -> "Уведомления выключены"; "briefs_disabled" -> "Обзоры выключены"; "critical_disabled" -> "Критичные события выключены"
     "eligible", "matched" -> "Соответствует правилам"; else -> "Результат по сохранённым условиям"
 }
