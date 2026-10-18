@@ -47,17 +47,22 @@ class RotationTests(unittest.TestCase):
 
     def test_ui_failure_still_restores_pose(self):
         console = Console()
+        error = AssertionError("native state lost")
+        session = physical_quarter_turn(console)
         with self.assertRaisesRegex(AssertionError, "native state"):
-            with physical_quarter_turn(console):
-                raise AssertionError("native state lost")
+            with session:
+                raise error
         self.assertEqual(console.turns, 4)
         self.assertEqual(console.settings, console.initial)
 
     def test_rejected_rotation_is_not_success(self):
         console = Console(fail_turn=1)
+        session = physical_quarter_turn(console)
+        entered = False
         with self.assertRaisesRegex(RuntimeError, "rejected"):
-            with physical_quarter_turn(console):
-                self.fail("Rejected console rotation entered the UI scenario")
+            with session:
+                entered = True
+        self.assertFalse(entered)
         self.assertEqual(console.turns, 1)
         self.assertEqual(console.settings, console.initial)
 
@@ -81,9 +86,12 @@ class RotationTests(unittest.TestCase):
     def test_unreadable_settings_fail_before_any_mutation(self):
         console = Console()
         console.settings["user_rotation"] = "error"
+        session = physical_quarter_turn(console)
+        entered = False
         with self.assertRaises(ValueError):
-            with physical_quarter_turn(console):
-                self.fail("Invalid baseline was accepted")
+            with session:
+                entered = True
+        self.assertFalse(entered)
         self.assertTrue(all(call[2] == "get" for call in console.calls))
 
 
