@@ -38,5 +38,6 @@ internal fun catalogueProbeReply(path: String, method: String, body: JSONObject?
         .put("total_cost", JSONObject().put("amount", "952").put("currency", "RUB"))
         .put("cash_after", JSONObject().put("amount", "9048").put("currency", "RUB"))
         .put("reasons", JSONArray().apply { if (!allowed) put("protected_reserve_would_be_spent") })
-        .put("concentrations", JSONArray()).put("expires_at", "2026-10-18T10:01:00Z"))
+        .put("concentrations", JSONArray()).put("as_of", "2026-10-18T10:00:00Z")
+        .put("expires_at", "2026-10-18T10:01:00Z"))
 }

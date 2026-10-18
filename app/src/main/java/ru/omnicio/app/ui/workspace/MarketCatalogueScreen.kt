@@ -1,5 +1,6 @@
 package ru.omnicio.app.ui.workspace
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +14,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import kotlinx.coroutines.delay
 import ru.omnicio.app.data.workspace.VolumeWorkspaceClient
 import ru.omnicio.app.ui.spectrum.*
 
@@ -87,6 +89,7 @@ private fun PurchaseCheckDialog(instrument: JSONObject, close: () -> Unit) {
     var lots by rememberSaveable(userId, uid) { mutableStateOf("1") }
     var price by rememberSaveable(userId, uid) { mutableStateOf("") }
     var result by remember { mutableStateOf<JSONObject?>(null) }
+    var requestedAt by remember { mutableLongStateOf(0L) }
     val context = listOf(userId, session.token, uid, accountId.orEmpty(), version.toString(), snapshot?.asOf.orEmpty())
     var requestedContext by remember { mutableStateOf<List<String>?>(null) }
     LaunchedEffect(context) { result = null }
@@ -106,13 +109,14 @@ private fun PurchaseCheckDialog(instrument: JSONObject, close: () -> Unit) {
         SpectrumPrimaryButton("Проверить ограничения", {
             result = null
             requestedContext = context
+            requestedAt = SystemClock.elapsedRealtime()
             action.perform("/workspace/purchases/check", JSONObject().put("account_id", accounts[accountIndex].id)
                 .put("instrument_uid", instrument.text("uid")).put("lots", lots.toInt())
                 .put("limit_price", price).put("strategy_version", version))
         }, Modifier.fillMaxWidth(), !action.busy && accountIndex in accounts.indices && version > 0 &&
             (lots.toIntOrNull() ?: 0) in 1..1_000_000 && price.toBigDecimalOrNull()?.signum() == 1)
         WorkspaceActionState(action)
-        result?.let { value -> PurchaseCheckResult(value) }
+        result?.let { value -> PurchaseCheckResult(value, requestedAt) }
         Text("Проверка не отправляет заявку. Итоговая пригодность требует полного инвестиционного профиля и обоснования выбора.",
             style = MaterialTheme.typography.bodySmall)
         SpectrumSecondaryButton("Закрыть", close, Modifier.fillMaxWidth(), !action.busy)
@@ -120,8 +124,19 @@ private fun PurchaseCheckDialog(instrument: JSONObject, close: () -> Unit) {
 }
 
 @Composable
-private fun PurchaseCheckResult(value: JSONObject) {
-    Text(if (value.optBoolean("constraints_passed")) "Проверенные ограничения соблюдены" else "Покупка не прошла проверку",
+private fun PurchaseCheckResult(value: JSONObject, requestedAt: Long) {
+    var observedNow by remember(value) { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    val lifetime = remainingPurchaseCheckMillis(value.text("as_of"), value.text("expires_at"), requestedAt, observedNow)
+    LaunchedEffect(value, requestedAt) {
+        while (true) {
+            observedNow = SystemClock.elapsedRealtime()
+            val remaining = remainingPurchaseCheckMillis(value.text("as_of"), value.text("expires_at"), requestedAt, observedNow)
+            if (remaining == 0L) break
+            delay(minOf(remaining, 1_000L))
+        }
+    }
+    Text(if (lifetime == 0L) "Срок проверки истёк — повторите расчёт"
+        else if (value.optBoolean("constraints_passed")) "Проверенные ограничения соблюдены" else "Покупка не прошла проверку",
         style = MaterialTheme.typography.titleMedium)
     value.optJSONObject("total_cost")?.let { Text(PrivateValue("Оценка брокера: ${it.text("amount")} ${it.text("currency")}")) }
     value.optJSONObject("cash_after")?.let { Text(PrivateValue("Собственные деньги после покупки: ${it.text("amount")} ${it.text("currency")}")) }
