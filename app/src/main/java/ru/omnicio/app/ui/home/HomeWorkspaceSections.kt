@@ -152,11 +152,12 @@ internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWo
     // resolved from the encrypted store, not serialized into Activity state.
     var baselineVisit by rememberSaveable(user) { mutableStateOf<String?>(null) }
     var initialized by rememberSaveable(user) { mutableStateOf(false) }
+    val visitId = rememberSaveable(user) { java.time.Instant.now().toString() }
     LaunchedEffect(personal.loaded, user) {
         if (personal.loaded && !initialized) {
             baselineVisit = personal.data.optionalText("current_visit")
             initialized = true
-            personal.checkpointVisit(homeSnapshotCapture(snapshot))
+            personal.checkpointVisit(homeSnapshotCapture(snapshot), visitId)
         }
     }
     val baseline = when (baselineVisit) {
@@ -165,25 +166,16 @@ internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWo
         personal.data.optionalText("previous_visit") -> personal.data.optJSONObject("previous_snapshot")
         else -> null
     }
+    val checkpointSaved = visitId == personal.data.optionalText("current_visit") || visitId == personal.data.optionalText("previous_visit")
     val current = homeSnapshotCapture(snapshot)
-    val oldRows = baseline?.records("positions").orEmpty().associateBy { it.optString("key") }
-    val nowRows = current.records("positions").associateBy { it.optString("key") }
-    val changes = (oldRows.keys + nowRows.keys).mapNotNull { key ->
-        val old = oldRows[key]; val now = nowRows[key]
-        when {
-            old == null -> now?.let { "${it.optString("title")} · появилась в ${it.optString("account")}" }
-            now == null -> "${old.optString("title")} · отсутствует в текущем снимке"
-            old.optionalText("quantity") != now.optionalText("quantity") -> "${now.optString("title")} · изменилось количество"
-            old.optBoolean("blocked") != now.optBoolean("blocked") -> "${now.optString("title")} · изменились ограничения"
-            old.optionalText("value") != now.optionalText("value") || old.optionalText("currency") != now.optionalText("currency") -> "${now.optString("title")} · изменилась оценка"
-            else -> null
-        }
-    }
+    val changes = homeSnapshotChanges(baseline, current)
     SpectrumCard {
         Text("С прошлого посещения", style = MaterialTheme.typography.titleLarge)
+        VisitCheckpointStatus(personal, checkpointSaved) { personal.checkpointVisit(current, visitId) }
         when {
             !initialized -> Text("Читаем сохранённую точку сравнения…")
-            baselineVisit == null -> Text("Первая точка сравнения сохранена. При следующем посещении появятся фактические изменения.")
+            baselineVisit == null -> Text(if (checkpointSaved) "Первая точка сравнения сохранена. При следующем посещении появятся фактические изменения."
+                else "Сохранённой точки сравнения пока нет.")
             baseline == null -> Text("Исходная точка сравнения недоступна. Текущий снимок не подставлен вместо прежнего.")
             else -> {
             Notice("Сравниваем снимки ${baseline.optionalText("as_of") ?: baselineVisit} и ${snapshot.asOf ?: "без времени"}.")
@@ -198,5 +190,35 @@ internal fun ChangesSinceVisit(snapshot: PortfolioSnapshot, personal: PersonalWo
             Notice("Разница снимков не доказывает сделку, выплату или причину движения цены.")
             }
         }
+    }
+}
+
+private fun homeSnapshotChanges(baseline: JSONObject?, current: JSONObject): List<String> {
+    val oldRows = baseline?.records("positions").orEmpty().associateBy { it.optString("key") }
+    val nowRows = current.records("positions").associateBy { it.optString("key") }
+    return (oldRows.keys + nowRows.keys).mapNotNull { key ->
+        val old = oldRows[key]; val now = nowRows[key]
+        when {
+            old == null -> now?.let { "${it.optString("title")} · появилась в ${it.optString("account")}" }
+            now == null -> "${old.optString("title")} · отсутствует в текущем снимке"
+            old.optionalText("quantity") != now.optionalText("quantity") -> "${now.optString("title")} · изменилось количество"
+            old.optBoolean("blocked") != now.optBoolean("blocked") -> "${now.optString("title")} · изменились ограничения"
+            old.optionalText("value") != now.optionalText("value") || old.optionalText("currency") != now.optionalText("currency") -> "${now.optString("title")} · изменилась оценка"
+            else -> null
+        }
+    }
+}
+
+@Composable
+private fun VisitCheckpointStatus(personal: PersonalWorkspaceController, saved: Boolean, retrySave: () -> Unit) {
+    if (saved) return
+    if (personal.busy) {
+        Text("Сохраняем точку сравнения…")
+    } else if (personal.loaded) {
+        Notice(personal.error ?: "Точка текущего посещения ещё не сохранена.")
+        SpectrumSecondaryButton("Сохранить точку сравнения", retrySave, Modifier.fillMaxWidth())
+    } else if (personal.error != null) {
+        Notice(personal.error)
+        SpectrumSecondaryButton("Повторить чтение", personal.retry, Modifier.fillMaxWidth())
     }
 }

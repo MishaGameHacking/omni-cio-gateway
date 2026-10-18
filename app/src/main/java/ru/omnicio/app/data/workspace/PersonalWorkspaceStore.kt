@@ -123,10 +123,14 @@ class PersonalWorkspaceController internal constructor(
             it.put("current_snapshot", snapshot)
         }
     }
-    fun checkpointVisit(snapshot: JSONObject) = edit {
-        it.put("previous_visit", it.text("current_visit"))
-        it.put("previous_snapshot", it.optJSONObject("current_snapshot"))
-        it.put("current_visit", Instant.now().toString()).put("current_snapshot", snapshot)
+    fun checkpointVisit(snapshot: JSONObject, visitId: String) = edit {
+        // A retry after rotation must not turn this visit into its own baseline
+        // or replace a later visit that already retained this one as previous.
+        if (visitId != it.text("current_visit") && visitId != it.text("previous_visit")) {
+            it.put("previous_visit", it.text("current_visit"))
+            it.put("previous_snapshot", it.optJSONObject("current_snapshot"))
+            it.put("current_visit", visitId).put("current_snapshot", snapshot)
+        }
     }
 }
 

@@ -117,6 +117,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: ${{ github.token }}
+          retries: 3
           script: |
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
             let sonar = null;
