@@ -19,11 +19,13 @@ import uuid
 import httpx
 
 try:
+    from .model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from .ai_route_catalog import approved_candidates, CatalogError
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
     from .monitoring_access import assert_monitoring_access
 except ImportError:
+    from model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from ai_route_catalog import approved_candidates, CatalogError
     from ai_jobs import CURRENT_JOB, AnalysisQueue
@@ -76,8 +78,11 @@ def _unique_json_object(pairs) -> dict:
 
 def _model_json(value):
     try:
-        return json.loads(value, parse_constant=_reject_nonfinite,
+        text = checked_model_json_text(value)
+        return json.loads(text, parse_constant=_reject_nonfinite,
                           parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+    except ModelJsonLimitError as error:
+        raise GuardError(str(error)) from None
     except RecursionError:
         raise GuardError('ai_json_nesting_exceeded') from None
 
@@ -98,7 +103,7 @@ def _result_content(response: dict) -> dict:
     return content
 
 
-MAX_RESPONSE_BYTES = 512_000
+MAX_RESPONSE_BYTES = MAX_MODEL_JSON_BYTES
 GATEWAY = 'https://api.timeweb.ai/v1'
 
 
