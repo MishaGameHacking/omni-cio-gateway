@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+      - ".github/scripts/require_clean_sonar*.cjs"
       - ".github/scripts/deploy_timeweb_backend.sh"
       - ".github/workflows/timeweb-backend.yml"
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+      - ".github/scripts/require_clean_sonar*.cjs"
       - ".github/scripts/deploy_timeweb_backend.sh"
       - ".github/workflows/timeweb-backend.yml"
 
@@ -86,25 +88,28 @@ jobs:
           "%BACKEND_CI_VENV%\Scripts\python.exe" -c "from fastapi.testclient import TestClient; from backend.app import app; c=TestClient(app); c.__enter__(); r=c.get('/health'); assert r.status_code == 200 and r.json() == {'status':'ok'}; spec=c.get('/openapi.json'); assert spec.status_code == 200; c.__exit__(None,None,None)"
           if errorlevel 1 exit /b 1
 
-      - name: Read exact-head Sonar findings for remediation
+      - name: Require exact-head Sonar without new or accepted issues
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-        timeout-minutes: 2
+        timeout-minutes: 4
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
           script: |
+            const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
+            const { runTests } = require('./.github/scripts/require_clean_sonar.test.cjs');
+            core.info('SONAR_GATE_TESTS=' + runTests());
             const ref = context.payload.pull_request.head.sha;
             let sonar = null;
-            for (let attempt = 0; attempt < 12; attempt++) {
+            for (let attempt = 0; attempt < 24; attempt++) {
               const checks = await github.paginate(github.rest.checks.listForRef, {
                 ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
               });
-              sonar = checks.find(check => check.head_sha === ref && check.status === 'completed');
-              if (sonar) break;
+              sonar = newestSonarCheck(checks, ref);
+              if (sonar?.status === 'completed') break;
               await new Promise(resolve => setTimeout(resolve, 5000));
             }
-            if (!sonar) {
-              core.warning('Exact-head Sonar result is not ready; its independent required gate remains unchanged.');
+            if (!sonar || sonar.status !== 'completed') {
+              core.setFailed('Exact-head Sonar result is not ready: quality has not been verified.');
               return;
             }
             core.info('SONAR_CHECK=' + JSON.stringify({head:ref,id:sonar.id,conclusion:sonar.conclusion}));
@@ -118,3 +123,5 @@ jobs:
               }));
             }
             core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
+            assertCleanSonar(sonar, annotations, ref);
+            core.info('SONAR_ZERO_ISSUES_GATE=passed');

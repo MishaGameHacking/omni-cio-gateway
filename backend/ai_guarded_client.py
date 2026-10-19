@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -18,10 +19,14 @@ import uuid
 import httpx
 
 try:
+    from .bounded_ai_response import ACCEPT_ENCODING, ResponseBodyError, read_bounded_body
+    from .model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
     from .monitoring_access import assert_monitoring_access
 except ImportError:
+    from bounded_ai_response import ACCEPT_ENCODING, ResponseBodyError, read_bounded_body
+    from model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from ai_jobs import CURRENT_JOB, AnalysisQueue
     from monitoring_access import assert_monitoring_access
@@ -52,6 +57,36 @@ def _reject_nonfinite(_: str):
     raise GuardError('ai_nonfinite_json')
 
 
+def _finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise GuardError('ai_nonfinite_json')
+    mantissa = value.lower().partition('e')[0]
+    if parsed == 0 and any(character in '123456789' for character in mantissa):
+        raise GuardError('ai_numeric_underflow')
+    return parsed
+
+
+def _unique_json_object(pairs) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise GuardError('ai_duplicate_json_field')
+        result[key] = value
+    return result
+
+
+def _model_json(value):
+    try:
+        text = checked_model_json_text(value)
+        return json.loads(text, parse_constant=_reject_nonfinite,
+                          parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+    except ModelJsonLimitError as error:
+        raise GuardError(str(error)) from None
+    except RecursionError:
+        raise GuardError('ai_json_nesting_exceeded') from None
+
+
 def _result_content(response: dict) -> dict:
     choices = response.get('choices')
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -60,7 +95,7 @@ def _result_content(response: dict) -> dict:
     if not isinstance(message, dict) or not isinstance(message.get('content'), str):
         raise GuardError('ai_content_invalid')
     try:
-        content = json.loads(message['content'], parse_constant=_reject_nonfinite)
+        content = _model_json(message['content'])
     except (ValueError, TypeError):
         raise GuardError('ai_content_not_json') from None
     if not isinstance(content, dict):
@@ -68,7 +103,7 @@ def _result_content(response: dict) -> dict:
     return content
 
 
-MAX_RESPONSE_BYTES = 512_000
+MAX_RESPONSE_BYTES = MAX_MODEL_JSON_BYTES
 GATEWAY = 'https://api.timeweb.ai/v1'
 
 
@@ -212,15 +247,7 @@ class GuardedAIClient:
                 AnalysisQueue(self.connect).assert_owner(*job)
             assert_monitoring_access(self.connect)
             response = self._send(route, payload)
-            usage = self._usage(response)
-            returned = response.get('model')
-            cost = token_cost(usage.prompt_tokens, usage.completion_tokens, route.input_rate, route.output_rate)
-            if usage.prompt_tokens > input_bound or usage.completion_tokens > max_output_tokens:
-                self.ledger.uncertain(reservation, pause_reason='usage_over_ceiling')
-                raise GuardError('ai_usage_outside_reserved_bounds')
-            if not self.ledger.settle(reservation, model=returned, cost=cost,
-                                      input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens):
-                raise GuardError('ai_usage_requires_reconciliation')
+            usage, returned = self._account_usage(response, route, reservation, input_bound, max_output_tokens)
             # Accounting happens even if the content/JSON validation below fails.
             choices = response.get('choices')
             if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or choices[0].get('finish_reason') != 'stop':
@@ -236,27 +263,42 @@ class GuardedAIClient:
             # No refund for timeouts, missing usage or interrupted workers.
             self.ledger.uncertain(reservation)
 
+    def _account_usage(self, response, route, reservation, input_bound, output_bound):
+        """Keep charge evidence even when token bounds invalidate the answer."""
+        usage = self._usage(response)
+        returned = response.get('model')
+        try:
+            cost = token_cost(usage.prompt_tokens, usage.completion_tokens, route.input_rate, route.output_rate)
+        except BudgetDenied:
+            self.ledger.uncertain(reservation, pause_reason='unexpected_usage')
+            raise
+        if usage.prompt_tokens > input_bound or usage.completion_tokens > output_bound:
+            self.ledger.uncertain(reservation, pause_reason='usage_over_ceiling', observed_cost=cost)
+            raise GuardError('ai_usage_outside_reserved_bounds')
+        if not self.ledger.settle(reservation, model=returned, cost=cost,
+                                  input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens):
+            raise GuardError('ai_usage_requires_reconciliation')
+        return usage, returned
+
     def _send(self, route: Route, payload: dict) -> dict:
+        deadline = time.monotonic() + 60
         try:
             with httpx.Client(timeout=httpx.Timeout(45, connect=10), follow_redirects=False,
                               transport=self.transport) as client:
                 with client.stream('POST', route.url + '/chat/completions',
-                                   headers={'Authorization': 'Bearer ' + route.key, 'Accept': 'application/json'},
+                                   headers={'Authorization': 'Bearer ' + route.key, 'Accept': 'application/json',
+                                            'Accept-Encoding': ACCEPT_ENCODING},
                                    json=payload) as response:
                     if response.status_code != 200:
                         raise GuardError('ai_http_' + str(response.status_code), retryable=False)
-                    data = bytearray()
-                    deadline = time.monotonic() + 60
-                    for chunk in response.iter_bytes():
-                        if time.monotonic() > deadline:
-                            raise GuardError('ai_response_deadline')
-                        data.extend(chunk)
-                        if len(data) > MAX_RESPONSE_BYTES:
-                            raise GuardError('ai_response_too_large')
-            parsed = json.loads(data, parse_constant=_reject_nonfinite)
+                    data = read_bounded_body(response, limit=MAX_RESPONSE_BYTES,
+                                             deadline=deadline, clock=time.monotonic)
+            parsed = _model_json(data)
             if not isinstance(parsed, dict):
                 raise ValueError
             return parsed
+        except ResponseBodyError as error:
+            raise GuardError(str(error), retryable=False) from None
         except httpx.HTTPError:
             raise GuardError('ai_transport_outcome_unknown', retryable=False) from None
         except (ValueError, UnicodeError):
