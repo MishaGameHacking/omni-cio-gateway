@@ -24,13 +24,22 @@ def _context(probe, user, account="account-1", period="day"):
         probe.reveal(text, AREA, direction="start")
 
 
-def _signed_out_landscape(tree):
-    from native_input_evidence import display_geometry
+def _landscape_geometry(tree):
+    from native_input_evidence import PACKAGE, display_geometry
 
     width, height = display_geometry(tree)
-    closed = any(node.get("text") == CLOSED and node.get("visible-to-user") == "true"
-                 for node in tree.iter("node"))
-    return (width, height) if width > height and closed else None
+    workspace = any(node.get("resource-id") == AREA and node.get("package") == PACKAGE
+                    and node.get("visible-to-user") == "true" for node in tree.iter("node"))
+    return (width, height) if width > height and workspace else None
+
+
+def _signed_out_landscape(tree):
+    from native_input_evidence import PACKAGE
+
+    geometry = _landscape_geometry(tree)
+    closed = any(node.get("text") == CLOSED and node.get("package") == PACKAGE
+                 and node.get("visible-to-user") == "true" for node in tree.iter("node"))
+    return geometry if closed else None
 
 
 def _rotate_signed_out(probe, suffix):
@@ -42,8 +51,12 @@ def _rotate_signed_out(probe, suffix):
     # Use the same physical-AVD contract as the spatial scenario. A logical
     # user_rotation setting alone can leave the console PNG in portrait.
     with physical_quarter_turn(probe.command):
-        probe.wait_for(lambda: _signed_out_landscape(probe.tree()),
-                       "Signed-out Activity did not change to landscape")
+        # At font 200% the signed-out label may be below the landscape fold.
+        # Wait for our rotated workspace before scrolling, not for a label that
+        # can become visible only after that scroll. The frame gate below still
+        # requires the signed-out label before AND after an unmodified PNG.
+        probe.wait_for(lambda: _landscape_geometry(probe.tree()),
+                       "Session workspace did not change to landscape")
         probe.reveal(CLOSED, AREA, direction="start")
         landscape_frame(probe, _signed_out_landscape, read_screenshot,
                         "session-context-signed-out-rotation" + suffix)
