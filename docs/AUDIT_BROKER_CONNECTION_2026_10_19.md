@@ -64,9 +64,8 @@ its generic token message is retained in this backend-only change.
 
 The owner-only entry point reuses legacy initialization and discovers owned
 tables by user_id, so the new sidecar is included in its ownership checks.
-Full owner-factory integration still needs the full CI checkout. No existing
-owner binding, five-user legacy policy, scheduler, release gate or encryption key
-is changed by this patch.
+No existing owner binding, five-user legacy policy, scheduler, release gate or
+encryption key is changed by this patch.
 
 ## Tests and evidence scope
 
@@ -95,9 +94,7 @@ The committed HTTP tests use normal backend.app imports, not that local loader.
 Before the repair, seven HTTP race scenarios returned 200 where rejection was
 required. The invalid-header preflight scenario also failed. After the repair,
 all 14 HTTP methods and all 25 SQLite methods pass locally for both app variants;
-compileall passes. This does not replace full package integration on CI's pinned
-Python/dependency versions. Exact new-head CI and Sonar results must be read after
-publication; results from the baseline must not be relabelled as new-head success.
+compileall passes. Subsequent package integration is recorded separately below.
 
 Full-checkout commands:
 
@@ -107,20 +104,62 @@ python -m pytest backend/tests -q
 python -m compileall -q backend
 ```
 
-## Independent Android blocker and remaining work
+## First published heads and Sonar follow-up
 
-Android CI run `39290152464`, attempt 2, job `118197223039` built/linted all
-variants successfully. Its API35/16KB installation/UI validation subsequently
-failed after the BUDGET sheet. Crash buffer reports SIGSEGV/SEGV_ACCERR in
-FEngine::loop and libfilament-jni.so, beginning 17:27:01; subsequent uiautomator
-calls abort. This is a real native crash, not the earlier setup-java download
-failure. The exact native ownership/lifetime cause is NOT established by this
-broker repair; do not weaken the pixel/runtime gates to hide it.
+Code commits: development `e1711671b4d6b19809188e81d91d49ff9287a26a` and
+main-compatible `61ca5c1209665a2d76bc239aadc5722bd240c428`.
 
-Retained evidence commit: `bd5b7e0f24fd64e99e79010dcfbe4c0d2635a60dc`;
-branch path `ui-evidence/actions/run-39290152464-attempt-2` (78 files, 48 PNGs
-reported by the retention step). API36 was not reached; API37 migration and the
-physical Xiaomi remain unverified. No verified test APK was retained by this run.
+Development Backend CI #420, run `39299296882`, job `118219941062`, completed
+all package tests: **1439 passed, 2 skipped, 1338 subtests passed**, one existing
+Starlette/AnyIO deprecation warning. It also compiled all 275 tracked Python
+files, compiled backend and passed health/OpenAPI. However, the overall job
+correctly FAILED at the strict Sonar step: Sonar reported success but still had
+**two new annotations**, both in test_broker_connection_versions.py (160, 230).
+These results do not mean that head was all-green.
+
+Both annotations requested a single potentially throwing invocation inside an
+exception assertion. The authorization fixture call has now been moved outside
+those assertion blocks; only the operation being tested remains inside. All
+39 test methods and their original rejection assertions are retained. No skip,
+warning suppression, Sonar exclusion, severity change or gate relaxation is used.
+The same test correction applies to the main-compatible branch even though its
+older reporting-only Sonar step did not fail CI for those annotations. Full
+final-head CI and Sonar must be checked again after this test/doc follow-up.
+
+## Correction of the Android diagnosis
+
+**The earlier version of this document and a progress message incorrectly
+attributed run 39290152464 attempt 2 to an FEngine/Filament SIGSEGV after a BUDGET
+sheet. That attribution, its timestamp, the claimed evidence commit/path and
+file counts are withdrawn: they are not supported by this job's full log.**
+The ancillary Filament diagnosis in the e171167 commit message is likewise not
+an established finding. Git history is preserved; this correction supersedes it.
+No renderer modification is justified by that unsupported attribution.
+
+The actual log for job `118197223039` shows:
+
+- Build/lint completed; API35/16KB installation and launch checks ran.
+- The terminal assertion at **17:39:24 UTC** is
+  `Signed-out Activity did not change to landscape`, reached from
+  session_context_probe/profile_ui_probe. API36 was skipped after that failure.
+- The crash buffer contains **system_server / SettingsProvide** SIGSEGV at
+  **17:32:45**, followed by failures of system UI/phone and Google system apps.
+  This establishes failures in the emulator's system processes, not the precise
+  cause of the signed-out landscape assertion and not a Filament lifetime bug.
+- The retained spatial report records completed checks for mesh/contrast,
+  clipping, scroll, rotation, large font, motion/thermal policy and a real
+  predictive-back cancel/commit. They do not turn the failed complete UI run
+  into a successful acceptance result.
+
+Authoritative log:
+https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39290152464/job/118197223039
+
+The retention output identifies Git **blobs**, not the previously claimed branch:
+`install-api-35/install-results.json` -> `73578f7e3b0400c521567f7213b59ef5905e8b25`;
+`ui-screens/spatial-verification.json` -> `8aa59eb9625ecad98f0ac5a85ed8ec31fe2c5c7f`.
+These identifiers come directly from VERIFICATION_EVIDENCE for head f4b3dc9.
+The overall Android result remains failure. API37 and the physical Xiaomi are
+unverified; no complete runtime-validated APK is certified here.
 
 The old screenshot's node-test warning was already repaired before this baseline.
 The broader auth handoff, all dependencies, all authorization boundaries and

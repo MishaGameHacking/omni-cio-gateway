@@ -155,10 +155,11 @@ class ConnectionVersionTests(unittest.TestCase):
         self.assertEqual(self.stored(), b"original")
 
     def test_cross_user_session_cannot_capture_or_disconnect(self):
+        authorization = self.authorization()
         for action in (connections.begin_change, connections.disconnect):
             with self.subTest(action=action.__name__):
                 with self.assertRaisesRegex(connections.ConnectionChangeError, "invalid_session"):
-                    action(self.connect, 2, self.authorization())
+                    action(self.connect, 2, authorization)
         self.assertEqual(self.stored(2), b"original")
 
     def test_ticket_user_tampering_does_not_change_session_ownership(self):
@@ -225,10 +226,11 @@ class ConnectionVersionTests(unittest.TestCase):
                     connections.begin_change(self.connect, 1, value)
 
     def test_invalid_user_types_cannot_be_coerced(self):
+        authorization = self.authorization()
         for user_id in (True, 0, -1, 1.0, "1", None):
             with self.subTest(user_id=user_id):
                 with self.assertRaisesRegex(connections.ConnectionChangeError, "invalid_session"):
-                    connections.begin_change(self.connect, user_id, self.authorization())
+                    connections.begin_change(self.connect, user_id, authorization)
 
     def test_token_validation_does_not_echo_or_accept_header_controls(self):
         values = [None, "x" * 4097, "token\nsecret", "token\rsecret", "token\x00secret",
