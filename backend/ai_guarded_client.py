@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -52,6 +53,33 @@ def _reject_nonfinite(_: str):
     raise GuardError('ai_nonfinite_json')
 
 
+def _finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise GuardError('ai_nonfinite_json')
+    mantissa = value.lower().partition('e')[0]
+    if parsed == 0 and any(character in '123456789' for character in mantissa):
+        raise GuardError('ai_numeric_underflow')
+    return parsed
+
+
+def _unique_json_object(pairs) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise GuardError('ai_duplicate_json_field')
+        result[key] = value
+    return result
+
+
+def _model_json(value):
+    try:
+        return json.loads(value, parse_constant=_reject_nonfinite,
+                          parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+    except RecursionError:
+        raise GuardError('ai_json_nesting_exceeded') from None
+
+
 def _result_content(response: dict) -> dict:
     choices = response.get('choices')
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -60,7 +88,7 @@ def _result_content(response: dict) -> dict:
     if not isinstance(message, dict) or not isinstance(message.get('content'), str):
         raise GuardError('ai_content_invalid')
     try:
-        content = json.loads(message['content'], parse_constant=_reject_nonfinite)
+        content = _model_json(message['content'])
     except (ValueError, TypeError):
         raise GuardError('ai_content_not_json') from None
     if not isinstance(content, dict):
@@ -212,15 +240,7 @@ class GuardedAIClient:
                 AnalysisQueue(self.connect).assert_owner(*job)
             assert_monitoring_access(self.connect)
             response = self._send(route, payload)
-            usage = self._usage(response)
-            returned = response.get('model')
-            cost = token_cost(usage.prompt_tokens, usage.completion_tokens, route.input_rate, route.output_rate)
-            if usage.prompt_tokens > input_bound or usage.completion_tokens > max_output_tokens:
-                self.ledger.uncertain(reservation, pause_reason='usage_over_ceiling')
-                raise GuardError('ai_usage_outside_reserved_bounds')
-            if not self.ledger.settle(reservation, model=returned, cost=cost,
-                                      input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens):
-                raise GuardError('ai_usage_requires_reconciliation')
+            usage, returned = self._account_usage(response, route, reservation, input_bound, max_output_tokens)
             # Accounting happens even if the content/JSON validation below fails.
             choices = response.get('choices')
             if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or choices[0].get('finish_reason') != 'stop':
@@ -235,6 +255,23 @@ class GuardedAIClient:
         finally:
             # No refund for timeouts, missing usage or interrupted workers.
             self.ledger.uncertain(reservation)
+
+    def _account_usage(self, response, route, reservation, input_bound, output_bound):
+        """Keep charge evidence even when token bounds invalidate the answer."""
+        usage = self._usage(response)
+        returned = response.get('model')
+        try:
+            cost = token_cost(usage.prompt_tokens, usage.completion_tokens, route.input_rate, route.output_rate)
+        except BudgetDenied:
+            self.ledger.uncertain(reservation, pause_reason='unexpected_usage')
+            raise
+        if usage.prompt_tokens > input_bound or usage.completion_tokens > output_bound:
+            self.ledger.uncertain(reservation, pause_reason='usage_over_ceiling', observed_cost=cost)
+            raise GuardError('ai_usage_outside_reserved_bounds')
+        if not self.ledger.settle(reservation, model=returned, cost=cost,
+                                  input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens):
+            raise GuardError('ai_usage_requires_reconciliation')
+        return usage, returned
 
     def _send(self, route: Route, payload: dict) -> dict:
         try:
@@ -253,7 +290,7 @@ class GuardedAIClient:
                         data.extend(chunk)
                         if len(data) > MAX_RESPONSE_BYTES:
                             raise GuardError('ai_response_too_large')
-            parsed = json.loads(data, parse_constant=_reject_nonfinite)
+            parsed = _model_json(data)
             if not isinstance(parsed, dict):
                 raise ValueError
             return parsed
