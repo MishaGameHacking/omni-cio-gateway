@@ -9,7 +9,7 @@ it does not claim globally optimal returns. A live broker check is mandatory.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, ROUND_CEILING, ROUND_FLOOR, localcontext
 from typing import Sequence
 
@@ -52,9 +52,23 @@ def _integer(value: int, maximum: int = MAX_LOTS) -> None:
         raise ValueError("bounded_integer_required")
 
 
-def _aware(value: datetime) -> None:
+def _instant(value: datetime) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("timezone_aware_timestamp_required")
+    try:
+        return value.astimezone(timezone.utc)
+    except (OverflowError, ValueError) as error:
+        raise ValueError("timestamp_out_of_bounds") from error
+
+
+def _normalize_lifetime(record, seconds: int, error: str) -> None:
+    # Same-zone datetime comparisons ignore fold; use absolute instants before
+    # validating durations or freshness. Subtraction also avoids max-date overflow.
+    observed, expires = _instant(record.observed_at), _instant(record.expires_at)
+    if not timedelta(0) < expires - observed <= timedelta(seconds=seconds):
+        raise ValueError(error)
+    object.__setattr__(record, "observed_at", observed)
+    object.__setattr__(record, "expires_at", expires)
 
 
 def _number(value: Decimal) -> str:
@@ -74,10 +88,7 @@ class PlanContext:
         _integer(self.strategy_version, 2**31 - 1)
         if self.strategy_version == 0:
             raise ValueError("confirmed_strategy_required")
-        _aware(self.observed_at)
-        _aware(self.expires_at)
-        if not self.observed_at < self.expires_at <= self.observed_at + timedelta(seconds=300):
-            raise ValueError("snapshot_lifetime_invalid")
+        _normalize_lifetime(self, 300, "snapshot_lifetime_invalid")
 
 
 @dataclass(frozen=True)
@@ -150,10 +161,7 @@ class Candidate:
             _name(key)
         if len(set(self.risk_keys)) != len(self.risk_keys):
             raise ValueError("duplicate_risk_key")
-        _aware(self.observed_at)
-        _aware(self.expires_at)
-        if not self.observed_at < self.expires_at <= self.observed_at + timedelta(seconds=60):
-            raise ValueError("quote_lifetime_invalid")
+        _normalize_lifetime(self, 60, "quote_lifetime_invalid")
 
 
 def _principal(candidate: Candidate, lots: int) -> Decimal:
@@ -281,7 +289,7 @@ def plan_allocations(*, context: PlanContext, accounts: Sequence[AccountCash],
                      candidates: Sequence[Candidate], risk_capacities: Sequence[RiskCapacity],
                      now: datetime) -> dict:
     """Build a deterministic draft, never a trade permission or live advice."""
-    _aware(now)
+    now = _instant(now)
     if not isinstance(context, PlanContext) or not context.observed_at <= now < context.expires_at:
         raise ValueError("fresh_confirmed_snapshot_required")
     if any(not isinstance(items, (list, tuple)) or len(items) > MAX_ITEMS
