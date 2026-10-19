@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_CEILING
+from decimal import Context, Decimal, InvalidOperation, ROUND_CEILING
 import sqlite3
 import time
 from typing import Callable, Iterator
@@ -27,7 +27,14 @@ def micro_rub(value: str) -> int:
         amount = Decimal(value)
         if not amount.is_finite() or amount < 0 or amount > MAX_MONEY // SCALE:
             raise ValueError
-        return int((amount * SCALE).to_integral_value(rounding=ROUND_CEILING))
+        # Quantize before scaling: a default-context multiplication can erase
+        # a positive fractional micro-RUB before the final upward rounding.
+        # The validated maximum has 13 micro-RUB digits; precision 20 suffices
+        # for the quantized amount and its exact integer product independently
+        # of a caller's decimal precision, exponent limits or rounding mode.
+        context = Context(prec=20)
+        rounded = amount.quantize(Decimal("0.000001"), rounding=ROUND_CEILING, context=context)
+        return int(context.multiply(rounded, SCALE))
     except (InvalidOperation, ValueError, TypeError):
         raise BudgetDenied('ai_budget_invalid_money') from None
 

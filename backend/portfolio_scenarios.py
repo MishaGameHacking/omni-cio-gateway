@@ -7,7 +7,7 @@ missing-return imputation, security selection or brokerage execution occurs here
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, localcontext
 from collections.abc import Mapping, Sequence
 
@@ -53,7 +53,9 @@ def _fresh(as_of: datetime, now: datetime, max_age_seconds: int) -> None:
         raise ScenarioError("scenario_aware_timestamp_required")
     if type(max_age_seconds) is not int or not 1 <= max_age_seconds <= 604800:
         raise ScenarioError("scenario_freshness_policy_invalid")
-    age = (now - as_of).total_seconds()
+    # Same-tzinfo datetime subtraction uses wall time and ignores a DST fold.
+    # Freshness must compare instants, including repeated/missing local hours.
+    age = (now.astimezone(timezone.utc) - as_of.astimezone(timezone.utc)).total_seconds()
     if not 0 <= age <= max_age_seconds:
         raise ScenarioError("scenario_snapshot_stale_or_future")
 

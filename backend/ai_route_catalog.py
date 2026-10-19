@@ -84,11 +84,17 @@ def approved_candidates(tier: str, env: Mapping[str, str], *, now: int) -> tuple
     raw = env.get(CATALOG_KEY, "")
     if not raw:
         return (Candidate(tier.upper()),)  # Existing three-slot configuration.
-    if not isinstance(raw, str) or len(raw.encode()) > 32000:
+    if not isinstance(raw, str):
+        raise CatalogError("ai_catalog_too_large")
+    try:
+        byte_count = len(raw.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise CatalogError("ai_catalog_encoding_invalid") from None
+    if byte_count > 32000:
         raise CatalogError("ai_catalog_too_large")
     try:
         rows = json.loads(raw, object_pairs_hook=_unique_object)
-    except (ValueError, TypeError) as error:
+    except (ValueError, TypeError, RecursionError) as error:
         raise CatalogError("ai_catalog_json_invalid") from error
     if not isinstance(rows, list) or not 1 <= len(rows) <= 32:
         raise CatalogError("ai_catalog_size_invalid")
