@@ -17,6 +17,7 @@ from fastapi import HTTPException
 import pytest
 from backend.ai_policy import AnalysisTier
 from backend.ai_route_catalog import Candidate, CatalogError
+from backend.model_json_limits import ModelJsonLimitError, checked_model_json_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,6 +37,7 @@ def guard():
     names = ["GuardError", "_reject_nonfinite", "_finite_float", "_unique_json_object", "_model_json", "_result_content", "reject", "configured_route", "GuardedAIClient"]
     return definitions("ai_guarded_client.py", names, {
         "json": json, "math": math, "Route": SimpleNamespace, "CatalogError": CatalogError,
+        "ModelJsonLimitError": ModelJsonLimitError, "checked_model_json_text": checked_model_json_text,
         "token_cost": lambda inputs, outputs, in_rate, out_rate: inputs * in_rate + outputs * out_rate,
     })
 
@@ -60,6 +62,12 @@ def test_finite_json_is_preserved(guard):
 def test_model_content_uses_the_same_strict_decoder(guard, content):
     with pytest.raises(guard["GuardError"]):
         guard["_result_content"]({"choices": [{"message": {"content": content}}]})
+
+
+def test_isolated_parser_uses_real_depth_limit(guard):
+    text = '[' * 65 + '0' + ']' * 65
+    with pytest.raises(guard["GuardError"], match="ai_json_nesting_exceeded"):
+        guard["_model_json"](text)
 
 
 def test_selector_minimizes_total_cost_not_input_price_only(guard):

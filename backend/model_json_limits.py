@@ -50,9 +50,8 @@ def _check_containers(text: str) -> None:
             expected.append(_CLOSING[character])
             if len(expected) > MAX_MODEL_JSON_DEPTH:
                 raise ModelJsonLimitError("ai_json_nesting_exceeded")
-        elif character in "]}":
-            if not expected or expected.pop() != character:
-                raise ValueError("Mismatched JSON container")
+        elif character in "]}" and (not expected or expected.pop() != character):
+            raise ValueError("Mismatched JSON container")
         index += 1
     if expected:
         raise ValueError("Unclosed JSON container")
