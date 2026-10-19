@@ -26,9 +26,10 @@ from jwt import PyJWKClient
 from pydantic import BaseModel
 
 try:
-    from . import client_updates
+    from . import client_updates, broker_connections
 except ImportError:
     import client_updates
+    import broker_connections
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/var/lib/analyst-ai/backend.db"))
 TELEGRAM_CLIENT_ID = os.environ["TELEGRAM_CLIENT_ID"]
@@ -157,6 +158,7 @@ def init_db() -> None:
         db.commit()
 
     client_updates.initialize(connect)
+    broker_connections.initialize(connect)
 
 
 def hash_token(value: str) -> str:
@@ -296,6 +298,13 @@ def mobile_login_result(
         },
     )
 
+
+@app.exception_handler(broker_connections.ConnectionChangeError)
+async def connection_change_error(_: Request, error: broker_connections.ConnectionChangeError):
+    return JSONResponse(
+        status_code=error.status_code, content={"detail": error.code},
+        headers={"Cache-Control": NO_STORE_PRIVATE},
+    )
 
 @app.exception_handler(sqlite3.IntegrityError)
 async def database_integrity_error(
@@ -554,8 +563,9 @@ def tinvest_ssl_context() -> ssl.SSLContext:
 @app.post(
     "/tinvest/token",
     responses={
-        400: {"description": "The T-Invest token is empty."},
+        400: {"description": "The T-Invest token is empty or has invalid format."},
         401: {"description": "Analyst AI session is invalid or expired."},
+        409: {"description": "The broker connection changed while the token was being verified."},
         422: {"description": "T-Invest rejected the access token."},
         502: {"description": "Unexpected response from T-Invest."},
         503: {"description": "T-Invest is unavailable or its TLS connection failed."},
@@ -565,10 +575,10 @@ def tinvest_ssl_context() -> ssl.SSLContext:
 def save_tinvest_token(
     payload: TInvestTokenPayload,
     user: sqlite3.Row = Depends(current_user),
+    authorization: str | None = Header(default=None),
 ) -> dict[str, bool]:
-    token = payload.token.strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="empty_tinvest_token")
+    token = broker_connections.validated_token(payload.token)
+    change = broker_connections.begin_change(connect, int(user["id"]), authorization)
 
     try:
         with httpx.Client(
@@ -626,12 +636,7 @@ def save_tinvest_token(
 
     # Save only a successfully validated token, never the raw upstream payload.
     encrypted = FERNET.encrypt(token.encode())
-    with closing(connect()) as db:
-        db.execute(
-            "UPDATE users SET tinvest_token_encrypted = ?, updated_at = ? WHERE id = ?",
-            (encrypted, int(time.time()), user["id"]),
-        )
-        db.commit()
+    broker_connections.commit_change(connect, change, encrypted)
 
     return {"connected": True}
 
@@ -642,13 +647,11 @@ def save_tinvest_token(
         401: {"description": "Analyst AI session is missing, invalid, or expired."},
     },
 )
-def delete_tinvest_token(user: sqlite3.Row = Depends(current_user)) -> dict[str, bool]:
-    with closing(connect()) as db:
-        db.execute(
-            "UPDATE users SET tinvest_token_encrypted = NULL, updated_at = ? WHERE id = ?",
-            (int(time.time()), user["id"]),
-        )
-        db.commit()
+def delete_tinvest_token(
+    user: sqlite3.Row = Depends(current_user),
+    authorization: str | None = Header(default=None),
+) -> dict[str, bool]:
+    broker_connections.disconnect(connect, int(user["id"]), authorization)
     return {"connected": False}
 
 try:
