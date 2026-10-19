@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -18,10 +19,12 @@ import uuid
 import httpx
 
 try:
+    from .model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
     from .monitoring_access import assert_monitoring_access
 except ImportError:
+    from model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from ai_jobs import CURRENT_JOB, AnalysisQueue
     from monitoring_access import assert_monitoring_access
@@ -52,6 +55,36 @@ def _reject_nonfinite(_: str):
     raise GuardError('ai_nonfinite_json')
 
 
+def _finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise GuardError('ai_nonfinite_json')
+    mantissa = value.lower().partition('e')[0]
+    if parsed == 0 and any(character in '123456789' for character in mantissa):
+        raise GuardError('ai_numeric_underflow')
+    return parsed
+
+
+def _unique_json_object(pairs) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise GuardError('ai_duplicate_json_field')
+        result[key] = value
+    return result
+
+
+def _model_json(value):
+    try:
+        text = checked_model_json_text(value)
+        return json.loads(text, parse_constant=_reject_nonfinite,
+                          parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+    except ModelJsonLimitError as error:
+        raise GuardError(str(error)) from None
+    except RecursionError:
+        raise GuardError('ai_json_nesting_exceeded') from None
+
+
 def _result_content(response: dict) -> dict:
     choices = response.get('choices')
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -60,7 +93,7 @@ def _result_content(response: dict) -> dict:
     if not isinstance(message, dict) or not isinstance(message.get('content'), str):
         raise GuardError('ai_content_invalid')
     try:
-        content = json.loads(message['content'], parse_constant=_reject_nonfinite)
+        content = _model_json(message['content'])
     except (ValueError, TypeError):
         raise GuardError('ai_content_not_json') from None
     if not isinstance(content, dict):
@@ -68,7 +101,7 @@ def _result_content(response: dict) -> dict:
     return content
 
 
-MAX_RESPONSE_BYTES = 512_000
+MAX_RESPONSE_BYTES = MAX_MODEL_JSON_BYTES
 GATEWAY = 'https://api.timeweb.ai/v1'
 
 
@@ -253,7 +286,7 @@ class GuardedAIClient:
                         data.extend(chunk)
                         if len(data) > MAX_RESPONSE_BYTES:
                             raise GuardError('ai_response_too_large')
-            parsed = json.loads(data, parse_constant=_reject_nonfinite)
+            parsed = _model_json(data)
             if not isinstance(parsed, dict):
                 raise ValueError
             return parsed
