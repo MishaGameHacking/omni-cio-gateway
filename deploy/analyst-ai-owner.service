@@ -1,0 +1,28 @@
+[Unit]
+Description=Analyst AI 0.11.0 single-owner backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=analyst-ai
+Group=analyst-ai
+WorkingDirectory=/opt/analyst-ai/backend
+EnvironmentFile=/etc/analyst-ai/backend.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/analyst-ai/venv/bin/uvicorn owner_app:create_app --factory --host 127.0.0.1 --port 8080 --workers 1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+StateDirectory=analyst-ai
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/analyst-ai
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
