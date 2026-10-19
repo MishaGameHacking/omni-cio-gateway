@@ -5,6 +5,7 @@ on:
     branches: [codex/spectrum-3d-100]
     paths:
       - '.github/scripts/owner_cloud_inventory.py'
+      - '.github/scripts/owner_rebuild_inventory.py'
       - '.github/workflows/owner-cloud-inventory.yml'
   workflow_dispatch:
 
@@ -24,12 +25,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          path: owner-inventory-source
       - name: Read resource metadata without deployment or deletion
         shell: cmd
+        working-directory: owner-inventory-source
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: '1'
         run: |
           py -3 .github\scripts\owner_cloud_inventory.py
+          if errorlevel 1 exit /b 1
+      - name: Inspect current tariffs and recovery metadata only
+        shell: cmd
+        working-directory: owner-inventory-source
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          GH_READ_TOKEN: ${{ github.token }}
+          TELEGRAM_CLIENT_ID: ${{ secrets.TELEGRAM_CLIENT_ID }}
+          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
+          FERNET_KEY: ${{ secrets.FERNET_KEY }}
+          OWNER_TELEGRAM_SUB: ${{ secrets.OWNER_TELEGRAM_SUB }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: '1'
+        run: |
+          py -3 .github\scripts\owner_rebuild_inventory.py
           if errorlevel 1 exit /b 1
