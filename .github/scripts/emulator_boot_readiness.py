@@ -6,7 +6,6 @@ Google packages, application callbacks, UI assertions or retry rules are changed
 from contextlib import contextmanager
 import json
 import re
-import sys
 import time
 
 from emulator_user_setup import completed_emulator_setup
@@ -61,9 +60,8 @@ def _same_server(probe, expected):
         raise RuntimeError(f"Android system_server restarted: {expected} -> {actual}")
 
 
-def _verify_server_on_exit(probe, server):
+def _verify_server_on_exit(probe, server, failure):
     """Keep a primary test failure even when exit diagnostics also fail."""
-    failure = sys.exc_info()[1]
     try:
         _same_server(probe, server)
     except Exception as error:
@@ -84,6 +82,7 @@ def prepared_emulator_session(device, name, api):
     _verify_target(probe, name, api)
     server = _server_pid(probe)
     started = time.monotonic()
+    failure = None
     try:
         with completed_emulator_setup(probe) as setup:
             barriers = []
@@ -100,11 +99,21 @@ def prepared_emulator_session(device, name, api):
             print("EMULATOR_BOOT_READY=" + json.dumps(receipt, sort_keys=True), flush=True)
             try:
                 yield receipt
+            except BaseException as error:
+                # Preserve interrupts/close as well as ordinary app failures.
+                failure = error
+                raise
             finally:
-                _verify_server_on_exit(probe, server)
+                _verify_server_on_exit(probe, server, failure)
+    except BaseException as error:
+        # Include preparation, exit verification and setup restoration failures.
+        failure = error
+        raise
     finally:
-        # Run after setup restoration, including exceptions and generator close.
-        # A body or cleanup error must never produce a successful receipt.
-        _verify_server_on_exit(probe, server)
-    receipt["system_server_unchanged"] = True
-    print("EMULATOR_SESSION_VERIFIED=" + json.dumps(receipt, sort_keys=True), flush=True)
+        _verify_server_on_exit(probe, server, failure)
+        if failure is None:
+            # Only a normal body AND successful cleanup can complete the receipt.
+            # Explicit failure state never mistakes a caller's active except
+            # block for an exception thrown by this emulator session.
+            receipt["system_server_unchanged"] = True
+            print("EMULATOR_SESSION_VERIFIED=" + json.dumps(receipt, sort_keys=True), flush=True)

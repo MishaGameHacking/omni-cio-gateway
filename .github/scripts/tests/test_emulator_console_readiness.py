@@ -172,6 +172,37 @@ class ConsoleReadinessTests(unittest.TestCase):
         self.assertEqual(device.flags["user_setup_complete"], "0")
         self.assertEqual(len(error.__notes__), 2)
 
+    def test_callers_handled_exception_cannot_hide_exit_verification_failure(self):
+        device = ConsoleDevice()
+        try:
+            raise LookupError("Already handled by caller")
+        except LookupError as previous:
+            with self.assertRaisesRegex(RuntimeError, "restarted"), prepare(device) as receipt:
+                device.pid = "999"
+            self.assertFalse(receipt["system_server_unchanged"])
+            self.assertFalse(hasattr(previous, "__notes__"))
+        self.assertEqual(device.flags["user_setup_complete"], "0")
+
+    def test_callers_handled_exception_does_not_hide_setup_restoration_failure(self):
+        device = ConsoleDevice()
+        try:
+            raise LookupError("Already handled by caller")
+        except LookupError as previous:
+            with self.assertRaises(RuntimeError), prepare(device) as receipt:
+                device.fail_restore = True
+            self.assertFalse(receipt["system_server_unchanged"])
+            self.assertFalse(hasattr(previous, "__notes__"))
+
+    def test_session_inside_callers_except_can_still_complete_normally(self):
+        device = ConsoleDevice()
+        try:
+            raise LookupError("Already handled by caller")
+        except LookupError:
+            with prepare(device) as receipt:
+                pass
+        self.assertTrue(receipt["system_server_unchanged"])
+        self.assertEqual(device.flags["user_setup_complete"], "0")
+
     def test_early_return_still_requires_complete_cleanup(self):
         device = ConsoleDevice()
 

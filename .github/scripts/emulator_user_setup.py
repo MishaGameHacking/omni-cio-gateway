@@ -7,7 +7,6 @@ from the overlay name. This module is never shipped in the application.
 from contextlib import contextmanager
 import json
 import re
-import sys
 
 SETTINGS = (("global", "device_provisioned"), ("secure", "user_setup_complete"))
 
@@ -54,6 +53,7 @@ def completed_emulator_setup(probe):
     original = {name: _read(probe, namespace, name) for namespace, name in SETTINGS}
     print("BACK_EMULATOR_SETUP_BEFORE=" + json.dumps(original, sort_keys=True), flush=True)
     changed = []
+    failure = None
     try:
         for namespace, name in SETTINGS:
             if original[name] != "1":
@@ -65,5 +65,9 @@ def completed_emulator_setup(probe):
             raise AssertionError("Android setup did not complete on the disposable emulator")
         print("BACK_EMULATOR_SETUP_READY=" + json.dumps(observed, sort_keys=True), flush=True)
         yield observed
+    except BaseException as error:
+        # Track only this setup context, never a caller's handled exception.
+        failure = error
+        raise
     finally:
-        _restore(probe, changed, original, sys.exc_info()[1])
+        _restore(probe, changed, original, failure)
