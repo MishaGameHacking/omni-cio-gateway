@@ -59,6 +59,9 @@ def _finite_float(value: str) -> float:
     parsed = float(value)
     if not math.isfinite(parsed):
         raise GuardError('ai_nonfinite_json')
+    mantissa = value.lower().partition('e')[0]
+    if parsed == 0 and any(character in '123456789' for character in mantissa):
+        raise GuardError('ai_numeric_underflow')
     return parsed
 
 
@@ -72,8 +75,11 @@ def _unique_json_object(pairs) -> dict:
 
 
 def _model_json(value):
-    return json.loads(value, parse_constant=_reject_nonfinite,
-                      parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+    try:
+        return json.loads(value, parse_constant=_reject_nonfinite,
+                          parse_float=_finite_float, object_pairs_hook=_unique_json_object)
+    except RecursionError:
+        raise GuardError('ai_json_nesting_exceeded') from None
 
 
 def _result_content(response: dict) -> dict:
@@ -271,15 +277,7 @@ class GuardedAIClient:
             # an unknown provider charge or cause an automatic paid replay.
             sent = True
             response = self._send(route, payload)
-            usage = self._usage(response)
-            returned = response.get('model')
-            cost = token_cost(usage.prompt_tokens, usage.completion_tokens, route.input_rate, route.output_rate)
-            if usage.prompt_tokens > input_bound or usage.completion_tokens > max_output_tokens:
-                self.ledger.uncertain(reservation, pause_reason='usage_over_ceiling')
-                raise GuardError('ai_usage_outside_reserved_bounds')
-            if not self.ledger.settle(reservation, model=returned, cost=cost,
-                                      input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens):
-                raise GuardError('ai_usage_requires_reconciliation')
+            usage, returned = self._account_usage(response, route, reservation, input_bound, max_output_tokens)
             # Accounting happens even if the content/JSON validation below fails.
             choices = response.get('choices')
             if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or choices[0].get('finish_reason') != 'stop':
@@ -302,6 +300,23 @@ class GuardedAIClient:
         finally:
             # No refund for timeouts, missing usage or interrupted workers.
             self.ledger.uncertain(reservation)
+
+    def _account_usage(self, response, route, reservation, input_bound, output_bound):
+        """Keep charge evidence even when token bounds invalidate the answer."""
+        usage = self._usage(response)
+        returned = response.get('model')
+        try:
+            cost = token_cost(usage.prompt_tokens, usage.completion_tokens, route.input_rate, route.output_rate)
+        except BudgetDenied:
+            self.ledger.uncertain(reservation, pause_reason='unexpected_usage')
+            raise
+        if usage.prompt_tokens > input_bound or usage.completion_tokens > output_bound:
+            self.ledger.uncertain(reservation, pause_reason='usage_over_ceiling', observed_cost=cost)
+            raise GuardError('ai_usage_outside_reserved_bounds')
+        if not self.ledger.settle(reservation, model=returned, cost=cost,
+                                  input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens):
+            raise GuardError('ai_usage_requires_reconciliation')
+        return usage, returned
 
     def _send(self, route: Route, payload: dict) -> dict:
         try:

@@ -138,15 +138,23 @@ class MoneyLedger:
                 VALUES (?,?,?,?,?,?,?,'reserved',?,?)''',
                 (key, user_id, day, route, model, ceiling, ceiling, now, now))
 
-    def uncertain(self, key: str, *, pause_reason: str | None = None) -> None:
+    def uncertain(self, key: str, *, pause_reason: str | None = None,
+                  observed_cost: int | None = None) -> None:
+        # This is a conservative priced observation, never a provider invoice.
+        # Validate before writing: invalid evidence cannot partially change state.
+        if observed_cost is not None and (type(observed_cost) is not int or not 0 <= observed_cost <= MAX_MONEY):
+            raise BudgetDenied('ai_budget_invalid_usage')
+        if pause_reason and pause_reason not in {'model_mismatch', 'usage_over_ceiling', 'unexpected_usage'}:
+            raise BudgetDenied('ai_budget_invalid_pause')
         now = int(time.time())
         with transaction(self.connect) as db:
-            db.execute("UPDATE ai_money_reservations SET state='uncertain',updated_at=? "
-                       "WHERE request_key=? AND state='reserved'", (now, key))
+            # Concurrent/late observations can only increase an unresolved amount.
+            # Cleanup after settle must not reopen a completed reservation.
+            db.execute("UPDATE ai_money_reservations SET state='uncertain',"
+                       "charge=MAX(charge,COALESCE(?,charge)),updated_at=? "
+                       "WHERE request_key=? AND state IN ('reserved','uncertain')",
+                       (observed_cost, now, key))
             if pause_reason:
-                # Fixed codes only; do not save provider messages or secrets.
-                if pause_reason not in {'model_mismatch', 'usage_over_ceiling', 'unexpected_usage'}:
-                    raise BudgetDenied('ai_budget_invalid_pause')
                 db.execute("INSERT OR IGNORE INTO ai_money_control VALUES ('paused',?,?)", (pause_reason, now))
 
     def settle(self, key: str, *, model: str, cost: int, input_tokens: int,
@@ -183,7 +191,7 @@ class MoneyLedger:
             spent = self._spent(db, day, user_id)
             unresolved = db.execute("SELECT COUNT(*) FROM ai_money_reservations WHERE user_id=? AND state IN ('reserved','uncertain')", (user_id,)).fetchone()[0]
             paused = bool(db.execute("SELECT 1 FROM ai_money_control WHERE name='paused'").fetchone())
-        return {'day': day, 'timezone': 'Europe/Moscow', 'estimated_and_reserved_rub': str(Decimal(spent) / SCALE),
+        return {'day': day, 'timezone': 'Europe/Moscow', 'estimated_and_reserved_rub': _rub_text(spent),
                 'unresolved_attempts': unresolved, 'paid_calls_paused': paused, 'provider_invoice_reconciled': False}
 
 
@@ -191,7 +199,19 @@ def _validate_reservation(user_id, key, route, model, ceiling, user_cap, project
     values = (ceiling, user_cap, project_cap)
     if any(type(v) is not int or not 0 < v <= MAX_MONEY for v in values):
         raise BudgetDenied('ai_budget_disabled_or_invalid')
-    if type(user_id) is not int or user_id <= 0 or not key or len(key) > 180:
+    if type(user_id) is not int or user_id <= 0 or not _bounded_label(key, 180):
         raise BudgetDenied('ai_budget_invalid_identity')
-    if not route or not model or len(route) > 200 or len(model) > 200:
+    if not _bounded_label(route, 200) or not _bounded_label(model, 200):
         raise BudgetDenied('ai_budget_invalid_route')
+
+
+def _rub_text(value: int) -> str:
+    """Format integer micro-RUB exactly, independent of caller Decimal settings."""
+    whole, fraction = divmod(value, SCALE)
+    if fraction == 0:
+        return str(whole)
+    return f"{whole}.{fraction:06d}".rstrip('0')
+
+
+def _bounded_label(value, limit: int) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= limit
