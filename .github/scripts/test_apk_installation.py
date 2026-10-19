@@ -298,6 +298,7 @@ def run_attempt(
     )
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
     from emulator_runtime import snapshot_runtime_environment
+    from emulator_boot_readiness import prepared_emulator_session
     from emulator_storage import configure_userdata, remove_disposable_avd
 
     avd_home = work / "avd"
@@ -572,43 +573,45 @@ def run_attempt(
                 flush=True,
             )
             verify_emulator_identity(device, name, api)
-            print("EMULATOR_RUNTIME_ENVIRONMENT=" + json.dumps(
-                snapshot_runtime_environment(device, sdk, api), sort_keys=True), flush=True)
-            page_size = device("shell", "getconf", "PAGE_SIZE")
-            try:
-                if page_size.returncode:
-                    raise RuntimeError("The booted kernel could not report its page size")
-                kernel = measured_record(api, page_size.stdout, candidate_digest)
-            except (RuntimeError, ValueError):
-                results.append({"test": "kernel_page_size", "success": False,
-                                "android_api": api, "system_image": image,
-                                "observed": page_size.stdout.strip()[:80]})
-                raise
-            results.append(kernel)
-            print("KERNEL_PAGE_SIZE=" + json.dumps(kernel, sort_keys=True), flush=True)
-            system_graphics = snapshot_system_graphics(device)
-            print("EMULATOR_SYSTEM_GRAPHICS=" + json.dumps(system_graphics, sort_keys=True), flush=True)
-            package = "ru.omnicio.app.debug"
-            if previous:
-                install("previous_clean_install", previous)
-                install("upgrade_to_candidate", apk, update=True)
-                launch_candidate("upgrade_bootstrap_launch")
-                removed = device("uninstall", package)
-                if removed.returncode or "Success" not in removed.stdout:
-                    raise RuntimeError(
-                        "Could not reset disposable emulator package"
-                    )
-            install("candidate_clean_install", apk)
-            launch_candidate("bootstrap_activity_launch")
-            if api in {35, 36} and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
-                from profile_ui_probe import exercise
+            with prepared_emulator_session(device, name, api) as preparation:
+                print("EMULATOR_RUNTIME_ENVIRONMENT=" + json.dumps(
+                    snapshot_runtime_environment(device, sdk, api), sort_keys=True), flush=True)
+                page_size = device("shell", "getconf", "PAGE_SIZE")
+                try:
+                    if page_size.returncode:
+                        raise RuntimeError("The booted kernel could not report its page size")
+                    kernel = measured_record(api, page_size.stdout, candidate_digest)
+                except (RuntimeError, ValueError):
+                    results.append({"test": "kernel_page_size", "success": False,
+                                    "android_api": api, "system_image": image,
+                                    "observed": page_size.stdout.strip()[:80]})
+                    raise
+                kernel["emulator_preparation"] = preparation
+                results.append(kernel)
+                print("KERNEL_PAGE_SIZE=" + json.dumps(kernel, sort_keys=True), flush=True)
+                system_graphics = snapshot_system_graphics(device)
+                print("EMULATOR_SYSTEM_GRAPHICS=" + json.dumps(system_graphics, sort_keys=True), flush=True)
+                package = "ru.omnicio.app.debug"
+                if previous:
+                    install("previous_clean_install", previous)
+                    install("upgrade_to_candidate", apk, update=True)
+                    launch_candidate("upgrade_bootstrap_launch")
+                    removed = device("uninstall", package)
+                    if removed.returncode or "Success" not in removed.stdout:
+                        raise RuntimeError(
+                            "Could not reset disposable emulator package"
+                        )
+                install("candidate_clean_install", apk)
+                launch_candidate("bootstrap_activity_launch")
+                if api in {35, 36} and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+                    from profile_ui_probe import exercise
 
-                debug_apk = (
-                    Path(__file__).resolve().parents[2]
-                    / "app/build/outputs/apk/debug/app-debug.apk"
-                )
-                install("debug_ui_fixture_install", debug_apk, update=True)
-                record_profile_check(device, results, exercise)
+                    debug_apk = (
+                        Path(__file__).resolve().parents[2]
+                        / "app/build/outputs/apk/debug/app-debug.apk"
+                    )
+                    install("debug_ui_fixture_install", debug_apk, update=True)
+                    record_profile_check(device, results, exercise)
             failed = False
             return results
         except Exception as original:
