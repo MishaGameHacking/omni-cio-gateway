@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timezone
-from decimal import Decimal, Inexact, Rounded, ROUND_DOWN, localcontext
+from decimal import Decimal, Inexact, InvalidOperation, Rounded, ROUND_DOWN, localcontext
 from fractions import Fraction
 import sqlite3
 
@@ -23,18 +23,27 @@ def test_micro_rub_is_exact_upward_rounding(value):
 
 
 @pytest.mark.parametrize("precision", [2, 6, 28, 60])
-def test_conversion_does_not_inherit_callers_precision_or_traps(precision):
+@pytest.mark.parametrize("inherited_invalid", [False, True], ids=["clean-flags", "existing-flag"])
+def test_conversion_does_not_inherit_callers_precision_or_traps(precision, inherited_invalid):
     with localcontext() as context:
         context.prec = precision
         context.rounding = ROUND_DOWN
         context.Emax = 2
         context.traps[Inexact] = True
         context.traps[Rounded] = True
+        # Decimal flags are sticky and localcontext inherits them. Exercise both
+        # states explicitly, rather than depending on the previous test's flags.
+        context.clear_flags()
+        context.flags[InvalidOperation] = inherited_invalid
+        original_flags = dict(context.flags)
+        original_traps = dict(context.traps)
         result = micro_rub("1234.500000000000000000000000000001")
         assert result == 1_234_500_001
         assert context.prec == precision
         assert context.rounding == ROUND_DOWN
-        assert not any(context.flags.values())
+        assert context.Emax == 2
+        assert dict(context.flags) == original_flags
+        assert dict(context.traps) == original_traps
 
 
 @pytest.mark.parametrize("value", ["NaN", "sNaN", "Infinity", "-0.1", "1000000.0000001", "bad", None])
