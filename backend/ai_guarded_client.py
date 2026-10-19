@@ -19,12 +19,14 @@ import uuid
 import httpx
 
 try:
+    from .bounded_ai_response import ACCEPT_ENCODING, ResponseBodyError, read_bounded_body
     from .model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from .ai_route_catalog import approved_candidates, CatalogError
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
     from .monitoring_access import assert_monitoring_access
 except ImportError:
+    from bounded_ai_response import ACCEPT_ENCODING, ResponseBodyError, read_bounded_body
     from model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
     from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
     from ai_route_catalog import approved_candidates, CatalogError
@@ -324,26 +326,24 @@ class GuardedAIClient:
         return usage, returned
 
     def _send(self, route: Route, payload: dict) -> dict:
+        deadline = time.monotonic() + 60
         try:
             with httpx.Client(timeout=httpx.Timeout(45, connect=10), follow_redirects=False,
                               transport=self.transport) as client:
                 with client.stream('POST', route.url + '/chat/completions',
-                                   headers={'Authorization': 'Bearer ' + route.key, 'Accept': 'application/json'},
+                                   headers={'Authorization': 'Bearer ' + route.key, 'Accept': 'application/json',
+                                            'Accept-Encoding': ACCEPT_ENCODING},
                                    json=payload) as response:
                     if response.status_code != 200:
                         raise GuardError('ai_http_' + str(response.status_code), retryable=False)
-                    data = bytearray()
-                    deadline = time.monotonic() + 60
-                    for chunk in response.iter_bytes():
-                        if time.monotonic() > deadline:
-                            raise GuardError('ai_response_deadline')
-                        data.extend(chunk)
-                        if len(data) > MAX_RESPONSE_BYTES:
-                            raise GuardError('ai_response_too_large')
+                    data = read_bounded_body(response, limit=MAX_RESPONSE_BYTES,
+                                             deadline=deadline, clock=time.monotonic)
             parsed = _model_json(data)
             if not isinstance(parsed, dict):
                 raise ValueError
             return parsed
+        except ResponseBodyError as error:
+            raise GuardError(str(error), retryable=False) from None
         except httpx.HTTPError:
             raise GuardError('ai_transport_outcome_unknown', retryable=False) from None
         except (ValueError, UnicodeError):
