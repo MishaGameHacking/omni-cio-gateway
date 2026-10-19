@@ -18,6 +18,7 @@ try:
 except ImportError:
     from owner_access import DENIED, OwnerConfigurationError, OwnerIdentity, bind_owner
 
+NO_STORE = "no-store, private"
 MESSAGE = "Эта установка Analyst AI доступна только её владельцу."
 
 
@@ -28,13 +29,13 @@ def _denial(request: Request):
             '<!doctype html><html lang="ru"><meta name="viewport" content="width=device-width">'
             '<title>Analyst AI</title><p>' + MESSAGE + '</p><a href="' + link
             + '">Вернуться в Analyst AI</a></html>', status_code=403,
-            headers={"Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer",
+            headers={"Cache-Control": NO_STORE, "Referrer-Policy": "no-referrer",
                      "Content-Security-Policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"},
         )
     payload = {"detail": DENIED, "message": MESSAGE}
     if request.url.path == "/auth/telegram/complete":
         payload["deep_link"] = link
-    return JSONResponse(payload, status_code=403, headers={"Cache-Control": "no-store, private"})
+    return JSONResponse(payload, status_code=403, headers={"Cache-Control": NO_STORE})
 
 
 def configure_app(app: FastAPI, connect: Callable, initialize: Callable,
@@ -70,7 +71,7 @@ def configure_app(app: FastAPI, connect: Callable, initialize: Callable,
         # Uvicorn --lifespan off must not accidentally bypass owner binding.
         if not app.state.single_owner_ready:
             return JSONResponse({"detail": "owner_installation_not_ready"}, status_code=503,
-                                headers={"Cache-Control": "no-store, private"})
+                                headers={"Cache-Control": NO_STORE})
         return await call_next(request)
 
     @app.exception_handler(sqlite3.IntegrityError)
@@ -80,7 +81,7 @@ def configure_app(app: FastAPI, connect: Callable, initialize: Callable,
         if original_integrity is not None:
             return await original_integrity(request, error)
         return JSONResponse({"detail": "database_integrity_error"}, status_code=500,
-                            headers={"Cache-Control": "no-store, private"})
+                            headers={"Cache-Control": NO_STORE})
 
     app.router.lifespan_context = owner_lifespan
     return app

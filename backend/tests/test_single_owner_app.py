@@ -59,7 +59,7 @@ class OwnerAppTests(unittest.TestCase):
             denied = client.post("/auth/telegram/complete?subject=visitor")
             self.assertEqual(denied.status_code, 403)
             self.assertEqual(denied.json()["detail"], "owner_access_denied")
-            self.assertNotIn('\"owner\"', denied.text)
+            self.assertNotIn('"owner"', denied.text)
             self.assertEqual(client.post("/auth/telegram/complete?subject=owner").status_code, 200)
         self.assertEqual(self.started, [True])
         self.assertEqual(self.stopped, [True])
@@ -72,8 +72,9 @@ class OwnerAppTests(unittest.TestCase):
                     db.execute("INSERT INTO queued VALUES (1,999)")
 
     def test_cannot_rebind_an_existing_application(self):
+        identity = OwnerIdentity("another")
         with self.assertRaises(OwnerConfigurationError):
-            configure_app(self.app, self.connect, self.initialize, OwnerIdentity("another"))
+            configure_app(self.app, self.connect, self.initialize, identity)
 
     def test_repeated_configuration_does_not_stack_middleware(self):
         count = len(self.app.user_middleware)
@@ -85,9 +86,10 @@ class OwnerAppTests(unittest.TestCase):
         with closing(self.connect()) as db:
             db.execute("INSERT INTO users VALUES (1,'someone-else')")
             db.commit()
+        client = TestClient(self.app)
+        self.addCleanup(client.close)
         with self.assertRaises(OwnerConfigurationError):
-            with TestClient(self.app):
-                self.fail("startup must reject foreign data")
+            client.__enter__()
         self.assertEqual(self.started, [])
 
 

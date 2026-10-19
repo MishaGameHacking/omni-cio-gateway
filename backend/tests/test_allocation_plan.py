@@ -92,8 +92,9 @@ class AllocationTests(unittest.TestCase):
 
     def test_expired_snapshot_cannot_generate_a_draft(self):
         items = [candidate()]
+        expired_at = NOW + timedelta(seconds=300)
         with self.assertRaises(ValueError):
-            plan(items, now=NOW + timedelta(seconds=300))
+            plan(items, now=expired_at)
 
     def test_duplicate_account_or_instrument_refused(self):
         item = candidate()
@@ -114,6 +115,17 @@ class AllocationTests(unittest.TestCase):
             item = candidate(**changes)
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 plan([item])
+
+    def test_same_instrument_has_consistent_lot_size_across_accounts(self):
+        items = [candidate(), candidate(account_id="second", lot_size=1)]
+        accounts = [AccountCash("main", "RUB", "10000", "0"), AccountCash("second", "RUB", "10000", "0")]
+        with self.assertRaisesRegex(ValueError, "instrument_metadata_conflict"):
+            plan(items, accounts=accounts)
+
+    def test_mutable_or_nonstring_currency_and_side_are_rejected(self):
+        for field in ("currency", "side"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                candidate(**{field: []})
 
     def test_estimate_is_not_a_trade_permission_or_optimality_claim(self):
         result = plan([candidate()])

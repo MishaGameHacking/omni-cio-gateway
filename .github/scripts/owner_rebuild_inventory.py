@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
 CLOUD = 'https://api.timeweb.cloud/api/v1'
 REPO = 'https://api.github.com/repos/MishaGameHacking/omni-cio-gateway'
 LIMIT = 4 * 1024 * 1024
+CATALOGUE_FIELDS = ('id', 'name', 'location', 'availability_zone', 'cpu', 'ram',
+                    'disk', 'price', 'prices', 'requirements', 'type', 'is_available',
+                    'available', 'network', 'bandwidth', 'disk_type', 'cpu_frequency',
+                    'family', 'version', 'version_codename')
+RECOVERY_TERMS = ('backup', '.db', '.sqlite', '.enc', '.age')
 
 
 class ProbeError(RuntimeError):
@@ -32,13 +38,13 @@ def read_json(url: str, token: str):
             raw = response.read(LIMIT + 1)
     except urllib.error.HTTPError as error:
         raise ProbeError('http_' + str(error.code)) from None
-    except (OSError, urllib.error.URLError):
+    except OSError:
         raise ProbeError('transport_failed') from None
     if len(raw) > LIMIT:
         raise ProbeError('response_limit')
     try:
         return json.loads(raw)
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise ProbeError('invalid_json') from None
 
 
@@ -53,59 +59,79 @@ def select_fields(item: dict, fields: tuple[str, ...]) -> dict:
     return {key: item[key] for key in fields if key in item}
 
 
+def _small_preset(entry: dict) -> bool:
+    cpu, ram = entry.get('cpu'), entry.get('ram')
+    return (type(cpu) in (int, float) and type(ram) in (int, float)
+            and 0 < cpu <= 2 and 0 < ram <= 2048)
+
+
+def _safe_unavailable(code) -> dict:
+    known = {'unapproved_api', 'redirect_refused', 'transport_failed', 'response_limit', 'invalid_json'}
+    if isinstance(code, str) and (code in known or re.fullmatch(r'http_[1-5]\d{2}', code, re.ASCII)):
+        return {'unavailable': code}
+    return {'unavailable': 'catalogue_unavailable'}
+
+
+def _catalogue_section(label: str, payload) -> dict:
+    if not isinstance(payload, dict):
+        return {'unavailable': 'invalid_catalogue_shape'}
+    if set(payload) == {'unavailable'}:
+        return _safe_unavailable(payload['unavailable'])
+    for key, entries in payload.items():
+        if isinstance(entries, list):
+            selected = [select_fields(entry, CATALOGUE_FIELDS) for entry in entries
+                        if isinstance(entry, dict) and (label != 'presets' or _small_preset(entry))]
+            return {key: selected}
+    # Never echo an unexpected raw response (which can contain sensitive fields).
+    return {'unavailable': 'catalogue_entries_missing'}
+
+
 def catalogue(token: str) -> dict:
-    result = {}
-    fields = ('id', 'name', 'location', 'availability_zone', 'cpu', 'ram',
-              'disk', 'price', 'prices', 'requirements', 'type', 'is_available',
-              'available', 'network', 'bandwidth', 'disk_type', 'cpu_frequency')
     endpoints = (('presets', '/presets/servers'),
                  ('configurators', '/configurator/servers'),
                  ('os', '/os/servers'))
-    for label, path in endpoints:
-        payload = safe_get(CLOUD + path, token)
-        result[label] = payload
-        if not isinstance(payload, dict):
+    return {label: _catalogue_section(label, safe_get(CLOUD + path, token))
+            for label, path in endpoints}
+
+
+def _named_match(entry, field: str, terms: tuple[str, ...]) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    name = entry.get(field)
+    return isinstance(name, str) and any(term in name.lower() for term in terms)
+
+
+def _tree_candidates(tree, ref: str) -> list:
+    entries = tree.get('tree', []) if isinstance(tree, dict) else []
+    if not isinstance(entries, list):
+        return []
+    return [select_fields(entry, ('path', 'size', 'sha')) | {'ref': ref} for entry in entries
+            if _named_match(entry, 'path', RECOVERY_TERMS) and entry.get('type') == 'blob']
+
+
+def _release_candidates(releases: list) -> list:
+    selected = []
+    for release in releases:
+        if not isinstance(release, dict) or not isinstance(release.get('assets'), list):
             continue
-        for key, entries in payload.items():
-            if not isinstance(entries, list):
-                continue
-            selected = []
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                if label == 'presets':
-                    cpu, ram = entry.get('cpu'), entry.get('ram')
-                    if type(cpu) not in (int, float) or type(ram) not in (int, float):
-                        continue
-                    if cpu > 2 or ram > 2048:
-                        continue
-                selected.append(select_fields(entry, fields + ('family', 'version', 'version_codename')))
-            result[label] = {key: selected}
-            break
-    return result
+        selected.extend(select_fields(asset, ('id', 'name', 'size', 'created_at'))
+                        for asset in release['assets']
+                        if _named_match(asset, 'name', RECOVERY_TERMS + ('.tar', '.tgz')))
+    return selected
 
 
 def backup_metadata(token: str, sha: str) -> dict:
     candidates = []
     for ref in ('main', sha):
         tree = safe_get(REPO + '/git/trees/' + ref + '?recursive=1', token)
-        entries = tree.get('tree', []) if isinstance(tree, dict) else []
-        for entry in entries:
-            path = entry.get('path', '')
-            lower = path.lower()
-            if entry.get('type') == 'blob' and any(term in lower for term in ('backup', '.db', '.sqlite', '.enc', '.age')):
-                candidates.append(select_fields(entry, ('path', 'size', 'sha')) | {'ref': ref})
+        candidates.extend(_tree_candidates(tree, ref))
     assets = []
     release_scan_complete = False
     for page in range(1, 6):
         releases = safe_get(REPO + '/releases?per_page=100&page=' + str(page), token)
         if not isinstance(releases, list):
             break
-        for release in releases:
-            for asset in release.get('assets', []):
-                name = asset.get('name', '').lower()
-                if any(term in name for term in ('backup', '.db', '.sqlite', '.enc', '.age', '.tar', '.tgz')):
-                    assets.append(select_fields(asset, ('id', 'name', 'size', 'created_at')))
+        assets.extend(_release_candidates(releases))
         if len(releases) < 100:
             release_scan_complete = True
             break

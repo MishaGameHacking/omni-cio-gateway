@@ -43,7 +43,7 @@ def _name(value: str) -> str:
 
 
 def _currency(value: str) -> None:
-    if value not in {"RUB", "USD", "EUR"}:
+    if not isinstance(value, str) or value not in {"RUB", "USD", "EUR"}:
         raise ValueError("supported_currency_required")
 
 
@@ -133,7 +133,7 @@ class Candidate:
         for value in (self.account_id, self.instrument_uid, self.source_id):
             _name(value)
         _currency(self.currency)
-        if self.side not in {"buy", "sell"}:
+        if not isinstance(self.side, str) or self.side not in {"buy", "sell"}:
             raise ValueError("buy_or_sell_required")
         for value in (self.priority, self.lot_size, self.broker_max_lots, self.visible_lots):
             _integer(value)
@@ -198,7 +198,7 @@ def _initial_resources(accounts, risks):
 
 
 def _validate_candidates(candidates, cash, risk):
-    seen, directions = set(), {}
+    seen, instruments = set(), {}
     for candidate in candidates:
         if not isinstance(candidate, Candidate):
             raise ValueError("validated_candidate_required")
@@ -208,14 +208,25 @@ def _validate_candidates(candidates, cash, risk):
         seen.add(key)
         if (candidate.account_id, candidate.currency) not in cash:
             raise ValueError("account_currency_not_verified")
-        old_side = directions.setdefault(candidate.instrument_uid, candidate.side)
-        if old_side != candidate.side:
-            raise ValueError("opposing_actions_for_same_instrument")
-        if candidate.side == "buy" and not candidate.risk_keys:
-            raise ValueError("joint_risk_capacity_required")
-        for key in candidate.risk_keys:
-            if key not in risk or risk[key][0] != candidate.currency:
-                raise ValueError("risk_capacity_currency_not_verified")
+        _verify_instrument(candidate, instruments)
+        _verify_risk_keys(candidate, risk)
+
+
+def _verify_instrument(candidate, instruments):
+    identity = (candidate.side, candidate.currency, candidate.lot_size)
+    previous = instruments.setdefault(candidate.instrument_uid, identity)
+    if previous[0] != identity[0]:
+        raise ValueError("opposing_actions_for_same_instrument")
+    if previous[1:] != identity[1:]:
+        raise ValueError("instrument_metadata_conflict")
+
+
+def _verify_risk_keys(candidate, risk):
+    if candidate.side == "buy" and not candidate.risk_keys:
+        raise ValueError("joint_risk_capacity_required")
+    for key in candidate.risk_keys:
+        if key not in risk or risk[key][0] != candidate.currency:
+            raise ValueError("risk_capacity_currency_not_verified")
 
 
 def _buy_lots(candidate, cash, reserves, risk):

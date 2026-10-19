@@ -34,13 +34,13 @@ def read_api(token: str, path: str) -> dict:
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
         raise InventoryError('timeweb_http_' + str(error.code)) from None
-    except (urllib.error.URLError, OSError, TimeoutError):
+    except OSError:
         raise InventoryError('timeweb_transport_error') from None
     if len(raw) > MAX_BYTES:
         raise InventoryError('inventory_response_too_large')
     try:
         value = json.loads(raw)
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise InventoryError('inventory_invalid_json') from None
     if not isinstance(value, dict):
         raise InventoryError('inventory_invalid_shape')
