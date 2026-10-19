@@ -29,11 +29,14 @@ def _saved_settings(command):
 
 
 def _restore(command, turned, saved):
+    # ADB may raise OSError or TimeoutExpired, not only RuntimeError. Collect
+    # ordinary cleanup failures so every restore is attempted and the caller
+    # can preserve its primary UI failure. Interrupts are never consumed here.
     errors = []
     for _ in range(3 if turned else 0):
         try:
             _rotate(command)
-        except RuntimeError as error:
+        except Exception as error:
             errors.append(str(error))
     for key, value in saved.items():
         try:
@@ -41,7 +44,7 @@ def _restore(command, turned, saved):
                 command("shell", "settings", "delete", "system", key)
             else:
                 command("shell", "settings", "put", "system", key, value)
-        except RuntimeError as error:
+        except Exception as error:
             errors.append(str(error))
     return errors
 

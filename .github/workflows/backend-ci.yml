@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "**/*.py"
       - ".github/workflows/backend-ci.yml"
       - ".github/scripts/deploy_timeweb_backend.sh"
       - ".github/workflows/timeweb-backend.yml"
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "**/*.py"
       - ".github/workflows/backend-ci.yml"
       - ".github/scripts/deploy_timeweb_backend.sh"
       - ".github/workflows/timeweb-backend.yml"
@@ -57,6 +59,12 @@ jobs:
           "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --no-cache-dir -r backend\requirements-dev.txt
           if errorlevel 1 exit /b 1
           echo BACKEND_CI_VENV=%VENV%>>"%GITHUB_ENV%"
+
+      - name: Audit syntax of all tracked Python sources
+        shell: cmd
+        run: |
+          "%BACKEND_CI_VENV%\Scripts\python.exe" .github\scripts\audit_python_sources.py
+          if errorlevel 1 exit /b 1
 
       - name: Compile backend
         shell: cmd

@@ -102,11 +102,21 @@ fun SpatialWindow(modifier: Modifier = Modifier, content: @Composable BoxScope.(
             AndroidView(
                 factory = { context -> TextureView(context).also(window::attach) },
                 modifier = Modifier.matchParentSize().onGloballyPositioned {
-                    window.origin = it.localToWindow(Offset.Zero)
-                    window.density = density
-                    owner?.invalidate()
+                    val origin = it.localToWindow(Offset.Zero)
+                    // Layout observation is not a scene change. Repeated equal
+                    // coordinates must not restart a settled native render loop.
+                    if (spatialPlacementChanged(window.origin, window.density, origin, density)) {
+                        window.origin = origin
+                        window.density = density
+                        owner?.invalidate()
+                    }
                 },
-                update = { window.density = density },
+                update = {
+                    if (spatialPlacementChanged(window.origin, window.density, window.origin, density)) {
+                        window.density = density
+                        owner?.invalidate()
+                    }
+                },
             )
         }
         CompositionLocalProvider(LocalSpatialWindow provides window) { content() }

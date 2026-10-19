@@ -49,12 +49,17 @@ class AnalysisQueue:
                     error_code TEXT,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
+                    cancel_requested_at INTEGER,
                     UNIQUE(user_id,bucket)
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS ai_work_one_outstanding_user
                     ON ai_work_jobs(user_id) WHERE status IN ('queued','running');
                 CREATE INDEX IF NOT EXISTS ai_work_due ON ai_work_jobs(status,due_at);
             ''')
+            # executescript commits independently. Acquire the write reservation
+            # AFTER it, before reading the legacy schema, so two starting
+            # workers cannot both attempt the same ADD COLUMN migration.
+            db.execute('BEGIN IMMEDIATE')
             columns = {row[1] for row in db.execute('PRAGMA table_info(ai_work_jobs)')}
             if 'cancel_requested_at' not in columns:
                 db.execute('ALTER TABLE ai_work_jobs ADD COLUMN cancel_requested_at INTEGER')
