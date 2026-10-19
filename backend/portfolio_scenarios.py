@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import (
+    Context, Decimal, DivisionByZero, InvalidOperation, Overflow,
+    ROUND_HALF_EVEN, localcontext,
+)
 from collections.abc import Mapping, Sequence
 
 ONE = Decimal(1)
@@ -122,8 +125,12 @@ def assess_scenarios(weights: Mapping[str, Decimal], scenarios: Sequence[JointSc
     """
     _fresh(as_of, now, max_age_seconds)
     keys = _scenario_shape(weights, scenarios, horizon_days)
-    with localcontext() as ctx:
-        ctx.prec = 34
+    # Own the complete arithmetic policy, not only its precision. Worker/task
+    # contexts can carry different rounding, exponent bounds and signal traps.
+    # A fresh Context also isolates flags between concurrent requests.
+    with localcontext(Context(prec=34, rounding=ROUND_HALF_EVEN, Emin=-999999,
+                              Emax=999999, capitals=1, clamp=0, flags=[],
+                              traps=[InvalidOperation, DivisionByZero, Overflow])):
         normalized_weights = _unit_weights([weights[key] for key in keys], "scenario_weights_not_unit_sum")
         probabilities = _unit_weights([row.probability for row in scenarios], "scenario_probabilities_not_unit_sum")
         cost, inflation, alpha = map(number, (all_in_cost_rate, inflation_rate, confidence))

@@ -82,10 +82,12 @@ def approved_candidates(tier: str, env: Mapping[str, str], *, now: int) -> tuple
     if not isinstance(tier, str) or tier not in TIERS:
         raise CatalogError("ai_route_invalid_tier")
     raw = env.get(CATALOG_KEY, "")
-    if not raw:
-        return (Candidate(tier.upper()),)  # Existing three-slot configuration.
+    # Reject invalid configuration types before testing for an empty value.
+    # False/None/0/empty containers must not silently enable legacy routes.
     if not isinstance(raw, str):
         raise CatalogError("ai_catalog_too_large")
+    if raw == "":
+        return (Candidate(tier.upper()),)  # Existing three-slot configuration.
     try:
         byte_count = len(raw.encode("utf-8"))
     except UnicodeEncodeError:
