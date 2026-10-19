@@ -18,7 +18,7 @@ CENT = Decimal("0.01")
 MAX_LOTS = 1_000_000
 MAX_ITEMS = 100
 CONTEXT = Context(prec=64)
-VERSION = "allocation-draft-0.11.0-v1"
+VERSION = "allocation-draft-0.11.0-v2"
 
 
 def _amount(value) -> Decimal:
@@ -237,36 +237,35 @@ def _verify_risk_keys(candidate, risk):
             raise ValueError("risk_capacity_currency_not_verified")
 
 
-def _buy_lots(candidate, cash, reserves, risk):
+def _buy_lots(candidate, cash, reserves, risk, limit):
     key = (candidate.account_id, candidate.currency)
     budget = min(cash[key] - reserves[key], candidate.target_value - candidate.current_value,
                  *(risk[name][1] for name in candidate.risk_keys))
     if budget <= 0:
         return 0
-    limit = min(candidate.broker_max_lots, candidate.visible_lots)
     return _maximum_affordable(candidate, budget, limit)
 
 
-def _sell_lots(candidate):
+def _sell_lots(candidate, limit):
     gap = max(ZERO, candidate.current_value - candidate.target_value)
     desired = int((gap / _principal(candidate, 1)).to_integral_value(rounding=ROUND_FLOOR))
     free = int(((candidate.held_units - candidate.blocked_units) / candidate.lot_size)
                .to_integral_value(rounding=ROUND_FLOOR))
-    lots = min(desired, free, candidate.broker_max_lots, candidate.visible_lots)
+    lots = min(desired, free, limit)
     if lots > 0 and _fees(candidate, lots) >= _principal(candidate, lots):
         return 0
     return lots
 
 
-def _allocate(candidate, cash, reserves, risk, now):
+def _allocate(candidate, cash, reserves, risk, now, limit):
     key = (candidate.account_id, candidate.currency)
     before = cash[key]
     fresh = candidate.observed_at <= now < candidate.expires_at
     if not fresh:
         lots, reason = 0, "quote_stale_or_future"
     else:
-        lots = (_buy_lots(candidate, cash, reserves, risk) if candidate.side == "buy"
-                else _sell_lots(candidate))
+        lots = (_buy_lots(candidate, cash, reserves, risk, limit) if candidate.side == "buy"
+                else _sell_lots(candidate, limit))
         reason = "whole_lot_target_draft" if lots else "no_feasible_whole_lot_within_target"
     principal, fee = _principal(candidate, lots), _fees(candidate, lots)
     if lots and candidate.side == "buy":
@@ -285,6 +284,30 @@ def _allocate(candidate, cash, reserves, risk, now):
             "quote_as_of": candidate.observed_at.isoformat(), "quote_expires_at": candidate.expires_at.isoformat()}
 
 
+def _shared_liquidity(candidates, now):
+    # Account-specific buying power is independent; the market's visible depth
+    # is not. Without price-level data, use a conservative common lower bound
+    # across fresh observations instead of adding or reusing their volumes.
+    remaining = {}
+    for candidate in candidates:
+        if candidate.observed_at <= now < candidate.expires_at:
+            uid = candidate.instrument_uid
+            remaining[uid] = min(remaining.get(uid, candidate.visible_lots), candidate.visible_lots)
+    return remaining
+
+
+def _allocate_lines(candidates, cash, reserves, risk, now):
+    remaining = _shared_liquidity(candidates, now)
+    lines = []
+    for candidate in sorted(candidates, key=lambda item: (item.priority, item.account_id, item.instrument_uid)):
+        uid = candidate.instrument_uid
+        limit = min(candidate.broker_max_lots, remaining.get(uid, 0))
+        line = _allocate(candidate, cash, reserves, risk, now, limit)
+        remaining[uid] = remaining.get(uid, 0) - line["lots"]
+        lines.append(line)
+    return lines
+
+
 def plan_allocations(*, context: PlanContext, accounts: Sequence[AccountCash],
                      candidates: Sequence[Candidate], risk_capacities: Sequence[RiskCapacity],
                      now: datetime) -> dict:
@@ -298,8 +321,7 @@ def plan_allocations(*, context: PlanContext, accounts: Sequence[AccountCash],
     with localcontext(CONTEXT):
         cash, reserves, risk = _initial_resources(accounts, risk_capacities)
         _validate_candidates(candidates, cash, risk)
-        ordered = sorted(candidates, key=lambda item: (item.priority, item.account_id, item.instrument_uid))
-        lines = [_allocate(candidate, cash, reserves, risk, now) for candidate in ordered]
+        lines = _allocate_lines(candidates, cash, reserves, risk, now)
         return {"version": VERSION, "state": "draft", "snapshot_id": context.snapshot_id,
                 "strategy_version": context.strategy_version, "created_at": now.isoformat(),
                 "expires_at": min([context.expires_at, *(c.expires_at for c in candidates)]).isoformat(),
@@ -307,4 +329,5 @@ def plan_allocations(*, context: PlanContext, accounts: Sequence[AccountCash],
                 "optimality_claimed": False, "requires_fresh_broker_validation": True,
                 "fees_basis": "configured_fixed_and_rate_estimate_rounded_up",
                 "sale_proceeds_available_for_buys": False,
+                "liquidity_basis": "shared_instrument_minimum_fresh_depth",
                 "risk_capacity_remaining": {key: _number(value[1]) for key, value in sorted(risk.items())}}
