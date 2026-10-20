@@ -14,6 +14,7 @@ from unittest.mock import patch
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.testclient import TestClient
 from backend import client_updates as updates
+from backend.client_updates import ReleaseUnavailable
 from backend.release_publication import publish
 from backend.tests.android_runtime_fixtures import publication_report
 
@@ -74,7 +75,7 @@ class UpdateTests(unittest.TestCase):
         with self.assertRaises(ReleaseUnavailable):
             publish(self.root, self.apk, incomplete, expected_certificate=CERT)
         result = publish(self.root, self.apk, evidence, expected_certificate=CERT)
-        self.assertEqual(result.min_android_api, 37)
+        self.assertEqual(result.min_sdk, 37)
 
     def enforce(self, version='23', token='test', uid=1, package='ru.omnicio.app.debug'):
         return updates.enforce(self.connect, user_id=uid, authorization='Bearer '+token,

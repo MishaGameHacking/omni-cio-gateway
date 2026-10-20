@@ -18,6 +18,7 @@ class PrepareSdkTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'SDK with spaces'
         self.root.mkdir()
+        self.root = self.root.resolve(strict=True)
         name = 'android.exe' if os.name == 'nt' else 'android'
         self.cli = self.root / 'cmdline-tools/latest/bin' / name
         self.cli.parent.mkdir(parents=True)
@@ -88,7 +89,7 @@ class PrepareSdkTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_explicit_external_native_cli_is_supported(self):
-        other = Path(self.temp.name) / self.cli.name
+        other = Path(self.temp.name).resolve(strict=True) / self.cli.name
         other.write_bytes(b'test-only')
         with patch.dict(os.environ, {'ANDROID_CLI_PATH': str(other)}):
             self.assertEqual(sdk._cli(self.root), other)
@@ -163,6 +164,35 @@ class PrepareSdkTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 sdk.prepare(self.cli, runtime=False)
         run.assert_not_called()
+
+
+    def test_official_api_base_notation_is_accepted(self):
+        package = sdk.required_sdk_packages()[0]
+        self.write_package(package)
+        properties = self.root.joinpath(*package.split(';')) / 'source.properties'
+        properties.write_text('AndroidVersion.ApiLevel=37.0\nAndroidVersion.PreviewSdkInt=0\n', encoding='utf-8')
+        sdk._verify_package(self.root, package)
+
+    def test_other_api_minor_and_preview_metadata_are_rejected(self):
+        package = sdk.required_sdk_packages()[0]
+        self.write_package(package)
+        path = self.root.joinpath(*package.split(';')) / 'source.properties'
+        invalid = ('AndroidVersion.ApiLevel=37.1\n', 'AndroidVersion.ApiLevel=36.0\n',
+                   'AndroidVersion.ApiLevel=37.00\n', 'AndroidVersion.ApiLevel=3.7e1\n',
+                   'AndroidVersion.ApiLevel=37.0\nAndroidVersion.PreviewSdkInt=1\n',
+                   'AndroidVersion.ApiLevel=37.0\nAndroidVersion.BetaVersion=beta1\n')
+        for metadata in invalid:
+            path.write_text(metadata, encoding='utf-8')
+            with self.subTest(metadata=metadata), self.assertRaises(RuntimeError):
+                sdk._verify_package(self.root, package)
+
+    def test_equivalent_parent_alias_is_normalized(self):
+        package = sdk.required_sdk_packages()[0]
+        self.write_package(package)
+        child = self.root / 'child'
+        child.mkdir()
+        sdk._verify_package(child / '..', package)
+
 
 
 if __name__ == '__main__':

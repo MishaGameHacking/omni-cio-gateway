@@ -66,6 +66,7 @@ def _properties(path: Path) -> dict[str, str]:
 
 
 def _verify_package(root: Path, package: str) -> None:
+    root = root.resolve(strict=True)
     directory = root.joinpath(*package.split(';'))
     for relative in _payloads(package):
         path = directory / relative
@@ -79,10 +80,14 @@ def _verify_package(root: Path, package: str) -> None:
 
 def _verify_platform_metadata(directory: Path, package: str) -> None:
     properties = _properties(directory / 'source.properties')
-    if properties.get('AndroidVersion.ApiLevel') != str(COMPILE_SDK):
+    if properties.get('AndroidVersion.ApiLevel') not in {str(COMPILE_SDK), f'{COMPILE_SDK}.0'}:
         raise RuntimeError('Installed SDK package API does not match the project')
     if properties.get('AndroidVersion.CodeName', 'REL') not in {'', 'REL'}:
         raise RuntimeError('Preview SDK package cannot replace the required release')
+    if properties.get('AndroidVersion.PreviewSdkInt', '0') != '0':
+        raise RuntimeError('Preview SDK integer cannot replace the required release')
+    if properties.get('AndroidVersion.BetaVersion', ''):
+        raise RuntimeError('Beta SDK package cannot replace the required release')
     if package.startswith('system-images;') and properties.get('SystemImage.Abi') != 'x86_64':
         raise RuntimeError('Installed emulator image has an unexpected ABI')
 

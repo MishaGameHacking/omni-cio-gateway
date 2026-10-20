@@ -30,7 +30,7 @@ def test_every_version_requires_and_accepts_both_current_runtime_installations(t
     report = publication_report(apk, version)
     result = publish(tmp_path / 'releases', apk, report, expected_certificate=CERTIFICATE, now=100)
     assert result.version_code == version
-    assert result.min_android_api == 37
+    assert result.min_sdk == 37
     assert ReleaseChannel(tmp_path / 'releases').current(PACKAGE) == result
 
 
