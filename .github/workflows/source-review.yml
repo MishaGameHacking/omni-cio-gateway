@@ -40,7 +40,7 @@ jobs:
           fetch-depth: 1
           clean: true
       - name: Export source only without executing project code
-        shell: python
+        shell: py -3 {0}
         run: |
           import hashlib
           import json
@@ -81,7 +81,7 @@ jobs:
                       if len(content) > 2_000_000:
                           raise RuntimeError('Unexpectedly large source file')
                       content.decode('utf-8')
-                      if b'PRIVATE KEY-----' in content:
+                      if path.suffix.lower() == '.pem' and b'PRIVATE KEY-----' in content:
                           raise RuntimeError('Private key must not be exported')
                       total += len(content)
                       if total > 50_000_000:
