@@ -1,0 +1,61 @@
+name: Android 17 migration source audit
+on:
+  push:
+    branches: [audit/android17-migration-20261020]
+    paths: [.github/workflows/android17-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - name: Read exact development source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 6c04c78f3453979df336197d744b17b45636f89d
+          path: development
+          persist-credentials: false
+      - name: Read exact main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 97149a309361aa0db0da3c07d2e7342f23d3cc8b
+          path: baseline-main
+          persist-credentials: false
+      - name: Archive tracked sources only for the private audit
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const cp = require('node:child_process');
+            const crypto = require('node:crypto');
+            const destination = path.join(process.env.RUNNER_TEMP, 'android17-source-' + context.runId);
+            fs.mkdirSync(destination, {recursive:true});
+            for (const [folder, expected] of [['development','6c04c78f3453979df336197d744b17b45636f89d'], ['baseline-main','97149a309361aa0db0da3c07d2e7342f23d3cc8b']]) {
+              const cwd = path.join(process.env.GITHUB_WORKSPACE, folder);
+              const sha = cp.execFileSync('git', ['rev-parse', 'HEAD'], {cwd, encoding:'utf8'}).trim();
+              if (sha !== expected) throw new Error('Source revision mismatch');
+              const target = path.join(destination, folder + '.zip');
+              cp.execFileSync('git', ['archive', '--format=zip', '--output=' + target, 'HEAD'], {cwd});
+              const bytes = fs.readFileSync(target);
+              core.info(JSON.stringify({folder, sha, bytes:bytes.length, sha256:crypto.createHash('sha256').update(bytes).digest('hex')}));
+            }
+            core.exportVariable('AUDIT_SOURCE_DIR', destination);
+      - name: Read available stable SDK packages without installing or changing devices
+        shell: cmd
+        run: |
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --channel=0 --list > "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"android-37" /C:"build-tools;37" /C:"emulator " "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+      - name: Retain source archives for one-day private audit
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: android17-source-${{ github.run_id }}
+          path: ${{ env.AUDIT_SOURCE_DIR }}/*.zip
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
