@@ -95,10 +95,19 @@ class FrameProtocolTests(unittest.TestCase):
             self.assertFalse(any("install" in call.args for call in device.call_args_list))
 
     def test_disposable_check_accepts_owned_supported_api(self):
-        for api in ("35", "36"):
-            device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in ("analyst-install-123-2\nOK", "1", api)])
-            frames.assert_disposable(device)
+        values = ("analyst-install-123-2\nOK", "1", "37")
+        device = Mock(side_effect=[Mock(returncode=0, stdout=value) for value in values])
+        frames.assert_disposable(device)
+        self.assertEqual(device.call_count, 3)
+
+    def test_other_guest_versions_cannot_reuse_current_runtime_evidence(self):
+        for api in ("35", "36", "38", "37.0", "", "unknown"):
+            values = ("analyst-install-123-2\nOK", "1", api)
+            device = Mock(side_effect=[Mock(returncode=0, stdout=value) for value in values])
+            with self.subTest(api=api), self.assertRaises(ValueError):
+                frames.assert_disposable(device)
             self.assertEqual(device.call_count, 3)
+            self.assertFalse(any("install" in call.args for call in device.call_args_list))
 
     def test_checked_preserves_both_output_streams_and_code(self):
         device = Mock(return_value=Mock(returncode=7, stdout="stdout error", stderr="stderr error"))
@@ -169,7 +178,7 @@ class FrameReadinessTests(unittest.TestCase):
         reader = frames.FrameReader(stream)
         with patch.object(frames.time, "sleep"), self.assertRaises(ConnectionError):
             reader.ready_tree()
-        self.assertEqual(len(stream.sent), 2)
+        self.assertEqual(len(stream.sent), 1)
         self.assertTrue(reader.broken)
 
     def test_does_not_wait_for_desired_package_or_hide_wrong_screen(self):
