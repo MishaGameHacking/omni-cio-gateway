@@ -1,0 +1,38 @@
+name: Review Android 17 workflow changes
+on:
+  push:
+    branches: [audit/android17-project-20261020]
+    paths: [.github/workflows/android17-workflow-review.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read the exact source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Prepare only reviewed workflow changes
+        shell: cmd
+        run: |
+          py -3 tools\prepare_android17_workflows.py
+          if errorlevel 1 exit /b 1
+          git diff --check
+          if errorlevel 1 exit /b 1
+          git diff -- .github/workflows/android-ci.yml .github/workflows/android-apk.yml
+          if errorlevel 1 exit /b 1
+      - name: Store reviewed text as Git blobs without updating any workflow or branch
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('node:fs');
+            for (const file of ['.github/workflows/android-ci.yml', '.github/workflows/android-apk.yml']) {
+              const content = fs.readFileSync(file, 'utf8');
+              if (Buffer.byteLength(content) > 100000) throw new Error('Unexpected workflow size');
+              const blob = (await github.rest.git.createBlob({...context.repo, content, encoding:'utf-8'})).data;
+              core.info('REVIEWED_WORKFLOW_BLOB=' + JSON.stringify({path:file,sha:blob.sha,source:context.sha}));
+            }
