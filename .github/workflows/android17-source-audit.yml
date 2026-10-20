@@ -1,0 +1,45 @@
+name: Android 17 migration inventory
+on:
+  push:
+    branches: [audit/android17-20261020]
+    paths: [.github/workflows/android17-source-audit.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/audit/android17-20261020'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Read tracked Android contracts without changing source or services
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('node:fs');
+            const cp = require('node:child_process');
+            const paths = cp.execFileSync('git', ['ls-files', '-z'], {encoding:'utf8'}).split('\0').filter(Boolean);
+            const pattern = /minSdk|compileSdk|targetSdk|android-(?:35|36|37)|API\s?(?:35|36|37)|Android\s?(?:15|16|17)|SDK_INT|VERSION_CODES|minimum_android|install-api-|ANDROID_API|api_level/;
+            for (const file of paths) {
+              if (!/\.(?:py|kt|kts|java|xml|ya?ml|properties|toml|md|sh|cjs)$/.test(file)) continue;
+              if (fs.lstatSync(file).isSymbolicLink()) throw new Error('Unexpected source symlink');
+              const lines = fs.readFileSync(file, 'utf8').split('\n');
+              const matches = lines.flatMap((line, index) => pattern.test(line) ? [{line:index + 1, text:line.slice(0,600)}] : []);
+              if (matches.length) core.info('PLATFORM_SOURCE=' + JSON.stringify({path:file,matches}));
+            }
+            core.info('SOURCE_HEAD=' + cp.execFileSync('git', ['rev-parse','HEAD'], {encoding:'utf8'}).trim());
+      - name: Inspect installed SDK package availability (read only)
+        shell: cmd
+        run: |
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not exist "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" exit /b 1
+          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --list > "%RUNNER_TEMP%\android17-package-inventory.txt"
+          if errorlevel 1 exit /b 1
+          findstr /C:"android-37" /C:"build-tools;37" /C:"platform-tools " /C:"emulator " "%RUNNER_TEMP%\android17-package-inventory.txt"
+          if errorlevel 1 exit /b 1
