@@ -1,0 +1,27 @@
+name: Android 17 SDK inventory
+
+on:
+  push:
+    branches: [audit/android17-project-20261020]
+    paths: [.github/workflows/android17-sdk-inventory.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - name: Inspect official stable SDK catalogue without changing devices
+        shell: cmd
+        run: |
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
+          if not exist "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" exit /b 1
+          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --list --channel=0 > "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+          if errorlevel 1 exit /b 1
+          findstr /L /C:"platforms;android-37" /C:"build-tools;37" /C:"system-images;android-37;" "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+          if errorlevel 1 exit /b 1
