@@ -9,17 +9,35 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: private-source-review
+  cancel-in-progress: true
+
 jobs:
   snapshot:
     name: Export tracked text sources for the 2D refactor
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
     steps:
-      - name: Checkout without retained credentials
+      - name: Read pinned main snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: 97149a309361aa0db0da3c07d2e7342f23d3cc8b
+          path: main-source
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
+          clean: true
+      - name: Read pinned development snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0d5d406193e4d5a26b3336877eecc31a3ccfdd3c
+          path: development-source
+          persist-credentials: false
+          fetch-depth: 1
           clean: true
       - name: Export source only without executing project code
         shell: python
@@ -35,14 +53,15 @@ jobs:
               'main': '97149a309361aa0db0da3c07d2e7342f23d3cc8b',
               'development': '0d5d406193e4d5a26b3336877eecc31a3ccfdd3c',
           }
-          allowed = {'.py', '.kt', '.kts', '.java', '.xml', '.json', '.md', '.txt',
+          allowed = {'.py', '.kt', '.kts', '.java', '.xml', '.json', '.md', '.txt', '.pem',
                      '.yml', '.yaml', '.toml', '.properties', '.cjs', '.js', '.sh', '.bat'}
           archive = Path(os.environ['RUNNER_TEMP']) / 'analyst-source-review.zip'
           manifest = []
           total = 0
           with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as output:
               for label, revision in revisions.items():
-                  entries = subprocess.run(['git', 'ls-tree', '-r', '-z', revision],
+                  checkout = Path(os.environ['GITHUB_WORKSPACE']) / (label + '-source')
+                  entries = subprocess.run(['git', 'ls-tree', '-r', '-z', revision], cwd=checkout,
                       check=True, capture_output=True, timeout=30).stdout.split(b'\0')
                   for entry in filter(None, entries):
                       metadata, raw_path = entry.split(b'\t', 1)
@@ -57,11 +76,13 @@ jobs:
                       if any(part.startswith('.env') or part.lower() in {'secrets', 'credentials', 'keystores'}
                              for part in path.parts):
                           continue
-                      content = subprocess.run(['git', 'cat-file', 'blob', blob],
+                      content = subprocess.run(['git', 'cat-file', 'blob', blob], cwd=checkout,
                           check=True, capture_output=True, timeout=15).stdout
                       if len(content) > 2_000_000:
                           raise RuntimeError('Unexpectedly large source file')
                       content.decode('utf-8')
+                      if b'PRIVATE KEY-----' in content:
+                          raise RuntimeError('Private key must not be exported')
                       total += len(content)
                       if total > 50_000_000:
                           raise RuntimeError('Source export size exceeded')
