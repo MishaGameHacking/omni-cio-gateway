@@ -10,50 +10,21 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
     steps:
-      - name: Read exact development source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 6c04c78f3453979df336197d744b17b45636f89d
-          path: development
-          persist-credentials: false
-      - name: Inspect tracked migration consumers
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        with:
-          script: |
-            const fs = require('node:fs');
-            const path = require('node:path');
-            const cp = require('node:child_process');
-            const cwd = path.join(process.env.GITHUB_WORKSPACE, 'development');
-            const files = cp.execFileSync('git', ['ls-files', '-z'], {cwd, encoding:'utf8'}).split('\0').filter(Boolean);
-            const source = /\.(?:py|kt|kts|xml|yml|cjs|toml|properties)$/;
-            const needles = /(?:minSdk|targetSdk|compileSdk|build-tools|sdkmanager|avdmanager|installation_evidence|install-api-|ui-screens-api|android[- _]?(?:15|16|35|36)|\b(?:api|API)\s*[=<>:!]+\s*(?:35|36)|\b(?:35|36):|\bVERSION_CODES\b|SDK_INT|startActivityForResult|onBackPressed\(|AsyncTask|launchWhen)/i;
-            let matches = 0;
-            for (const name of files) {
-              if (!source.test(name) || name.includes('/tests/') || name.includes('/test/') || name.startsWith('docs/')) continue;
-              const body = fs.readFileSync(path.join(cwd, name), 'utf8');
-              body.split(/\r?\n/).forEach((line, i) => {
-                if (needles.test(line)) {
-                  matches++;
-                  if (matches <= 250) core.info(`MIGRATION_SOURCE ${name}:${i+1}: ${line.slice(0,500)}`);
-                }
-              });
-            }
-            core.info('MIGRATION_SOURCE_MATCHES=' + matches);
-            for (const name of files.filter(n => n.includes('test') && /(?:installation|distribution|kernel_page|release_gate|apk|android|native)/i.test(n))) core.info('MIGRATION_TEST_FILE=' + name);
       - name: Set up supported JDK
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: '17'
-      - name: Inspect modern Android CLI
+      - name: Inspect installed modern Android CLI contracts
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
           if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
           if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
-          dir /b "%SDK_ROOT%\cmdline-tools\latest\bin\android*"
-          call "%SDK_ROOT%\cmdline-tools\latest\bin\android.bat" --sdk="%SDK_ROOT%" sdk install --help
+          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --version
           if errorlevel 1 exit /b 1
-          call "%SDK_ROOT%\cmdline-tools\latest\bin\android.bat" --sdk="%SDK_ROOT%" emulator create --help
+          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --sdk="%SDK_ROOT%" sdk install --help
+          if errorlevel 1 exit /b 1
+          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --sdk="%SDK_ROOT%" emulator create --help
           if errorlevel 1 exit /b 1
