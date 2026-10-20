@@ -15,12 +15,13 @@ jobs:
         with:
           ref: 6c04c78f3453979df336197d744b17b45636f89d
           persist-credentials: false
+          clean: true
       - name: Set up supported JDK
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install the inspected stable Android 17 platform and inspect device profiles
+      - name: Select SDK and install inspected stable platform
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
@@ -29,15 +30,21 @@ jobs:
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
           echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
           echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
-          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --no-metrics --sdk="%SDK_ROOT%" emulator create --list-profiles
-          if errorlevel 1 exit /b 1
           "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --no-metrics --sdk="%SDK_ROOT%" sdk --ignore-outdated-xmls install "platforms/android-37.0@2" "build-tools/37.0.0"
           if errorlevel 1 exit /b 1
-      - name: Apply SDK-only compilation probe without changing a branch or release
+      - name: Apply SDK-only probe and verify canonical wrapper without publishing a release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs = require('node:fs');
+            const cp = require('node:child_process');
+            const crypto = require('node:crypto');
+            const file = 'gradle/wrapper/gradle-wrapper.jar';
+            const bytes = cp.execFileSync('git', ['show', 'HEAD:' + file]);
+            const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+            if (digest !== '238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5') throw new Error('Committed wrapper hash mismatch');
+            core.info('WRAPPER_COMMITTED_SHA256=' + digest);
+            fs.writeFileSync(file, bytes);
             for (const file of ['app/build.gradle.kts', 'ci-ui-driver/build.gradle.kts']) {
               let text = fs.readFileSync(file, 'utf8');
               for (const [before, after] of [['compileSdk = 36', 'compileSdk = 37\n    buildToolsVersion = "37.0.0"'], ['minSdk = 35', 'minSdk = 37'], ['targetSdk = 36', 'targetSdk = 37']]) {
@@ -49,7 +56,9 @@ jobs:
       - name: Compile Android 17 application and separate UI driver
         shell: cmd
         run: |
-          py -3 .github\scripts\prepare_spectrum_checkout.py
+          py -3 tools\prepare_spectrum_checkout.py
+          if errorlevel 1 exit /b 1
+          call gradlew.bat --version
           if errorlevel 1 exit /b 1
           call gradlew.bat --no-daemon --max-workers=2 :app:compileDebugKotlin :app:compilePreviewKotlin :ci-ui-driver:assembleDebug
           if errorlevel 1 exit /b 1
