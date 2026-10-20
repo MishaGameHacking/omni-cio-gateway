@@ -26,7 +26,7 @@ jobs:
           if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
           echo SDK_ROOT=%SDK_ROOT%
-          if exist "%SDK_ROOT%\cmdline-tools\latest\bin\android.bat" goto tools_ready
+          if exist "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" goto tools_ready
           set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
           curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
           if errorlevel 1 exit /b 1
@@ -39,14 +39,13 @@ jobs:
           if errorlevel 1 exit /b 1
           if not exist "%SDK_ROOT%\cmdline-tools\latest" move "%SDK_ROOT%\cmdline-tools\cmdline-tools" "%SDK_ROOT%\cmdline-tools\latest"
           :tools_ready
-          dir /b "%SDK_ROOT%\cmdline-tools\latest\bin\android*"
-          set "ANDROID_CLI=%SDK_ROOT%\cmdline-tools\latest\bin\android.bat"
+          set "ANDROID_CLI=%SDK_ROOT%\cmdline-tools\latest\bin\android.exe"
           if not exist "%ANDROID_CLI%" exit /b 1
-          call "%ANDROID_CLI%" --version
+          "%ANDROID_CLI%" --version
           if errorlevel 1 exit /b 1
-          call "%ANDROID_CLI%" --sdk="%SDK_ROOT%" sdk list ".*android-37.*"
+          "%ANDROID_CLI%" --sdk="%SDK_ROOT%" sdk list ".*android-37.*"
           if errorlevel 1 exit /b 1
-          call "%ANDROID_CLI%" emulator create --help
+          "%ANDROID_CLI%" emulator create --help
           if errorlevel 1 exit /b 1
-          call "%ANDROID_CLI%" sdk install --help
+          "%ANDROID_CLI%" sdk install --help
           if errorlevel 1 exit /b 1
