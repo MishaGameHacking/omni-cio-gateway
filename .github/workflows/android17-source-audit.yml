@@ -20,7 +20,7 @@ jobs:
       - name: Checkout reviewed migration templates
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ec44340fda38a0108f83a2c3ea0c5db9753adfc8
+          ref: 13649cdd5729b7fdc03728c534c2d5d8db92814c
           path: migration
           persist-credentials: false
           clean: true
@@ -29,6 +29,8 @@ jobs:
         shell: cmd
         run: |
           py -3 migration\.migration\apply.py --source source --templates migration\.migration
+          if errorlevel 1 exit /b 1
+          py -3 migration\.migration\followup.py --source source --templates migration\.migration
           if errorlevel 1 exit /b 1
       - name: Create isolated test environment
         id: environment
@@ -64,7 +66,7 @@ jobs:
         run: |
           "%AUDIT_PYTHON%" -m pytest .github\scripts\tests -q --tb=short
           if errorlevel 1 exit /b 1
-      - name: Retain proposed code objects for review without moving any branch or publishing an APK
+      - name: Retain proposed source blobs without moving branches or publishing APK
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -73,18 +75,14 @@ jobs:
             const path = require('node:path');
             const cwd = path.join(process.env.GITHUB_WORKSPACE, 'source');
             const files = JSON.parse(fs.readFileSync(path.join(cwd, '.migration-result.json'), 'utf8'));
-            const base = '6c04c78f3453979df336197d744b17b45636f89d';
-            const parent = await github.rest.git.getCommit({...context.repo, commit_sha:base});
             const entries = [];
             for (const name of files) {
               if (name.startsWith('/') || name.includes('..') || !/^[a-zA-Z0-9_.\/-]+$/.test(name)) throw new Error('Unsafe migration path');
               const content = fs.readFileSync(path.join(cwd, name), 'utf8');
               if (Buffer.byteLength(content) > 300000) throw new Error('Migration file exceeds bound');
-              entries.push({path:name, mode:'100644', type:'blob', content});
+              const blob = await github.rest.git.createBlob({...context.repo, content, encoding:'utf-8'});
+              entries.push({path:name, mode:'100644', type:'blob', sha:blob.data.sha});
             }
-            const tree = await github.rest.git.createTree({...context.repo, base_tree:parent.data.tree.sha, tree:entries});
-            const commit = await github.rest.git.createCommit({...context.repo, tree:tree.data.sha, parents:[base],
-              message:'feat(android17): migrate supported runtime, SDK tooling and exact APK validation to API37'});
-            core.info('MIGRATION_PROPOSED_COMMIT=' + commit.data.sha);
+            core.info('MIGRATION_SOURCE_BLOBS=' + JSON.stringify(entries));
             core.info('MIGRATION_FILE_COUNT=' + entries.length);
             core.info('No branch moved, merge performed, model invoked or release deployed.');
