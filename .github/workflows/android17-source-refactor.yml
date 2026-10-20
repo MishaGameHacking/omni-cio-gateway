@@ -38,12 +38,12 @@ jobs:
           if errorlevel 1 exit /b 1
           git diff --stat
           if errorlevel 1 exit /b 1
-      - name: Commit generated source changes for independent review
+      - name: Commit only source files within this token's permissions
         shell: cmd
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); assert rows,'no generated changes'; subprocess.run(['git','add','--',*[r['path'] for r in rows]],check=True)"
+          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); paths=[r['path'] for r in rows if not r['path'].startswith('.github/workflows/')]; assert paths,'no generated source changes'; subprocess.run(['git','add','--',*paths],check=True)"
           if errorlevel 1 exit /b 1
           git diff --cached --check
           if errorlevel 1 exit /b 1
@@ -52,3 +52,4 @@ jobs:
           git push origin HEAD:refs/heads/audit/android17-project-20261020
           if errorlevel 1 exit /b 1
           git log -1 --format=GENERATED_ANDROID17_COMMIT=%%H
+          git diff -- .github/workflows/android-ci.yml .github/workflows/android-apk.yml
