@@ -12,6 +12,7 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 from check_native_alignment import NativeAlignmentError, check_elf, inspect_native_archive
+from apk_signature_report import read_signature, validate_signature
 
 
 class InvalidAPK(ValueError):
@@ -126,12 +127,12 @@ def main() -> None:
     if match is None:
         raise InvalidAPK("Expected versionCode missing")
     report = inspect_archive(apk)
-    signature = fixed_file(directory, "signature.txt").read_text(encoding="utf-8")
+    signature = read_signature(fixed_file(directory, "signature.txt"))
     alignment = fixed_file(directory, "alignment.txt").read_text(encoding="utf-8")
     badging = fixed_file(directory, "badging.txt").read_text(encoding="utf-8")
     manifest = fixed_file(directory, "manifest.txt").read_text(encoding="utf-8")
-    require("Verified using v2 scheme (APK Signature Scheme v2): true" in signature, "APK v2 signature missing")
-    require(re.findall(r"Signer #\d+ certificate SHA-256 digest: ([0-9a-f]+)", signature) == [expected], "Signing certificate changed")
+    identity = validate_signature(signature, expected)
+    print("APK_SIGNING_IDENTITY=" + json.dumps(identity, sort_keys=True), flush=True)
     require("Verification successful" in alignment, "APK alignment not verified")
     report.update(check_manifest(badging, manifest, int(match.group(1)), True))
     report.update({"sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size,
