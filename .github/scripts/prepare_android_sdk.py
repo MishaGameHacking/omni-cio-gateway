@@ -17,12 +17,15 @@ from backend.android_runtime_contract import COMPILE_SDK, required_sdk_packages
 
 TOOL_TIMEOUT_SECONDS = 600
 MAX_PROPERTIES_BYTES = 65_536
+SOURCE_PROPERTIES = 'source.properties'
 
 
 def _cli(root: Path) -> Path:
     configured = os.environ.get('ANDROID_CLI_PATH')
-    executable = (Path(configured) if configured else root / 'cmdline-tools' /
-                  'latest' / 'bin' / ('android.exe' if os.name == 'nt' else 'android'))
+    name = 'android.exe' if os.name == 'nt' else 'android'
+    executable = root / 'cmdline-tools' / 'latest' / 'bin' / name
+    if configured:
+        executable = Path(configured)
     if not executable.is_absolute() or not executable.is_file():
         raise RuntimeError('Current Android CLI is required; configure an absolute ANDROID_CLI_PATH')
     if executable.suffix.lower() in {'.bat', '.cmd'}:
@@ -34,11 +37,11 @@ def _payloads(package: str) -> tuple[str, ...]:
     suffix = '.exe' if os.name == 'nt' else ''
     family = package.split(';', 1)[0]
     required = {
-        'platforms': ('android.jar', 'source.properties'),
+        'platforms': ('android.jar', SOURCE_PROPERTIES),
         'build-tools': (f'aapt{suffix}', f'aapt2{suffix}', f'zipalign{suffix}', 'lib/apksigner.jar'),
         'platform-tools': (f'adb{suffix}',),
         'emulator': (f'emulator{suffix}',),
-        'system-images': ('system.img', 'source.properties'),
+        'system-images': ('system.img', SOURCE_PROPERTIES),
     }
     if family not in required:
         raise ValueError('Unsupported SDK package family')
@@ -79,7 +82,7 @@ def _verify_package(root: Path, package: str) -> None:
 
 
 def _verify_platform_metadata(directory: Path, package: str) -> None:
-    properties = _properties(directory / 'source.properties')
+    properties = _properties(directory / SOURCE_PROPERTIES)
     if properties.get('AndroidVersion.ApiLevel') not in {str(COMPILE_SDK), f'{COMPILE_SDK}.0'}:
         raise RuntimeError('Installed SDK package API does not match the project')
     if properties.get('AndroidVersion.CodeName', 'REL') not in {'', 'REL'}:
