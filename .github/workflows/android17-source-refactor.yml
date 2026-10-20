@@ -25,14 +25,14 @@ jobs:
           persist-credentials: true
           clean: true
           fetch-depth: 1
-      - name: Verify exact source and prepare bounded contract changes
+      - name: Verify exact source and prepare bounded fixture changes
         shell: cmd
         env:
           EXPECTED_HEAD: ${{ github.sha }}
         run: |
           py -3 -c "import os,subprocess; h=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(); assert h==os.environ['EXPECTED_HEAD'],'branch advanced; do not overwrite'"
           if errorlevel 1 exit /b 1
-          py -3 tools\migrate_android17_contract.py
+          py -3 tools\migrate_android17_tests.py
           if errorlevel 1 exit /b 1
           git diff --check
           if errorlevel 1 exit /b 1
@@ -48,7 +48,7 @@ jobs:
           if errorlevel 1 exit /b 1
           git diff --cached --check
           if errorlevel 1 exit /b 1
-          git commit -m "refactor(release): require Android17 runtime matrix on every new publication"
+          git commit -m "test(android): update current-platform fixtures and retain adversarial assertions"
           if errorlevel 1 exit /b 1
           git push origin HEAD:refs/heads/audit/android17-project-20261020
           if errorlevel 1 exit /b 1
@@ -78,3 +78,10 @@ jobs:
           set "AI_EXTERNAL_PROCESSING_APPROVED=false"
           "%VENV%\Scripts\python.exe" -m pytest backend\tests -q
           if errorlevel 1 exit /b 1
+      - name: Inventory remaining active platform references
+        if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
+        shell: cmd
+        run: |
+          git grep -n -E "Android 1[56]|API ?3[56]|android-3[56]|minSdk.*3[56]|targetSdk.*3[56]" -- app ci-ui-driver backend .github README.md
+          if errorlevel 2 exit /b 1
+          exit /b 0
