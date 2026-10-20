@@ -293,7 +293,7 @@ class DriverSourceTests(unittest.TestCase):
         self.assertIn('android:testOnly="true"', manifest)
         self.assertIn('android:targetPackage="ru.omnicio.ciframe"', manifest)
         self.assertNotIn("uses-permission", manifest)
-        self.assertIn("minSdk = 35", build)
+        self.assertIn("minSdk = 37", build)
         self.assertIn("it.enable = false", build)
         self.assertIn("isMinifyEnabled = true", build)
         self.assertIn("isShrinkResources = true", build)

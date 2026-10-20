@@ -79,17 +79,19 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 2)
         self.assertNotIn("if defined PREVIOUS_APK goto upgrade", self.action)
 
-    def test_both_supported_android_versions_run_full_ui(self):
-        for api in (35, 36):
-            self.assertIn(f'--api {api}', self.action)
-            image = 'google_apis_ps16k' if api == 35 else 'google_apis'
-            self.assertIn(f'system-images;android-{api};{image};x86_64', self.action)
+    def test_both_current_os_page_size_profiles_run_full_ui(self):
+        for size in (4096, 16384):
+            self.assertIn(f'--api 37 --page-bytes {size}', self.action)
+            self.assertIn(f'install-api37-{size}', self.action)
+        contract = (ROOT / 'backend/android_runtime_contract.py').read_text(encoding='utf-8')
+        self.assertIn('RuntimeProfile(37, 4096, "google_apis")', contract)
+        self.assertIn('RuntimeProfile(37, 16384, "google_apis_ps16k")', contract)
         validator = (ROOT / '.github/scripts/validate_distribution.py').read_text(encoding='utf-8')
-        self.assertIn('[checked_installation(35), checked_installation(36)]', validator)
+        self.assertIn('checked_installation(p.api, p.page_size_bytes)', validator)
         self.assertIn('upgrade_required=True', validator)
-        self.assertIn('android_api=api', validator)
-        self.assertIn('require_runtime_16kb=True', validator)
-        self.assertIn('if api in {35, 36} and os.getenv', self.installer)
+        self.assertIn('android_api=profile.api, page_size_bytes=profile.page_size_bytes', validator)
+        self.assertIn("'profile_ui_required': True", validator)
+        self.assertNotIn('if api in {35, 36}', self.installer)
         self.assertIn('device("shell", "getconf", "PAGE_SIZE")', self.installer)
         self.assertLess(self.installer.index('page_size = device'),
                         self.installer.index('install("previous_clean_install", previous)'))
