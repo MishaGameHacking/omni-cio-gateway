@@ -7,12 +7,13 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from emulator_boot_readiness import PACKAGE_BARRIERS, prepared_emulator_session
+from backend.android_runtime_contract import MIN_SDK, RUNTIME_PROFILES
 
 
 class Device:
     def __init__(self):
         self.name = "analyst-install-123-1"
-        self.api = "35"
+        self.api = str(MIN_SDK)
         self.qemu = "1"
         self.user = "0"
         self.pid = "580"
@@ -60,7 +61,7 @@ class Device:
 class BootReadinessTests(unittest.TestCase):
     def prepare(self, device, **kwargs):
         return prepared_emulator_session(device, kwargs.get("name", "analyst-install-123-1"),
-                                         kwargs.get("api", 35))
+                                         kwargs.get("api", MIN_SDK))
 
     def test_both_barriers_precede_body_and_setup_is_kept_until_exit(self):
         device = Device()
@@ -74,15 +75,17 @@ class BootReadinessTests(unittest.TestCase):
         self.assertTrue(all(timeout == (70 if args[:3] == ("shell", "cmd", "package") else 15)
                             for args, timeout in device.calls))
 
-    def test_android16_uses_same_barriers_without_changing_jit(self):
-        device = Device()
-        device.api = "36"
-        with self.prepare(device, api=36):
-            pass
-        self.assertFalse(any("setprop" in args or "root" in args for args, _ in device.calls))
+    def test_current_profiles_use_same_barriers_without_changing_jit(self):
+        for profile in RUNTIME_PROFILES:
+            device = Device()
+            device.api = str(profile.api)
+            with self.subTest(profile=profile.key), self.prepare(device, api=profile.api) as receipt:
+                self.assertEqual(receipt["package_barriers"], list(PACKAGE_BARRIERS))
+            self.assertTrue(receipt["system_server_unchanged"])
+            self.assertFalse(any("setprop" in args or "root" in args for args, _ in device.calls))
 
     def test_wrong_avd_api_phone_and_secondary_user_fail_before_mutations(self):
-        for field, value in (("name", "another-avd"), ("api", "36"), ("qemu", "0"), ("user", "10")):
+        for field, value in (("name", "another-avd"), ("api", str(MIN_SDK - 1)), ("qemu", "0"), ("user", "10")):
             with self.subTest(field=field):
                 device = Device()
                 setattr(device, field, value)
@@ -91,7 +94,7 @@ class BootReadinessTests(unittest.TestCase):
                 self.assertFalse(any("put" in args for args, _ in device.calls))
 
     def test_invalid_arguments_never_access_a_device(self):
-        for kwargs in ({"name": "analyst-install-1-1;reboot"}, {"api": True}, {"api": 34}):
+        for kwargs in ({"name": "analyst-install-1-1;reboot"}, {"api": True}, {"api": MIN_SDK - 1}):
             device = Device()
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError), self.prepare(device, **kwargs):
                 self.fail("Must not enter body")

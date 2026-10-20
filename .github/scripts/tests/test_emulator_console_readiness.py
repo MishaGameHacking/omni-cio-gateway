@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from emulator_boot_readiness import prepared_emulator_session
 from test_emulator_boot_readiness import Device
+from backend.android_runtime_contract import MIN_SDK
 
 NAME = "analyst-install-123-1"
 SERVER_COMMAND = ("shell", "pidof", "system_server")
@@ -36,7 +37,7 @@ class ConsoleDevice(Device):
 
 
 def prepare(device, name=NAME):
-    return prepared_emulator_session(device, name, 35)
+    return prepared_emulator_session(device, name, MIN_SDK)
 
 
 class ConsoleReadinessTests(unittest.TestCase):

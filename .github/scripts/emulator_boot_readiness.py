@@ -5,8 +5,13 @@ Google packages, application callbacks, UI assertions or retry rules are changed
 """
 from contextlib import contextmanager
 import json
+from pathlib import Path
 import re
+import sys
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from backend.android_runtime_contract import RUNTIME_PROFILES
 
 from emulator_user_setup import completed_emulator_setup
 
@@ -27,7 +32,7 @@ class _DeviceProbe:
 def _verify_target(probe, name, api):
     if not isinstance(name, str) or re.fullmatch(r"analyst-install-\d+-[12]", name, re.ASCII) is None:
         raise ValueError("Preparation requires the exact owned AVD name")
-    if type(api) is not int or api not in {35, 36}:
+    if type(api) is not int or not any(profile.api == api for profile in RUNTIME_PROFILES):
         raise ValueError("Preparation requires the supported Android matrix")
     output = probe.command("emu", "avd", "name")
     if len(output) > 4096:
