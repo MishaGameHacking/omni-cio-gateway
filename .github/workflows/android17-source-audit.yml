@@ -8,23 +8,48 @@ permissions:
 jobs:
   source:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
+      - name: Checkout audited baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 6c04c78f3453979df336197d744b17b45636f89d
+          persist-credentials: false
       - name: Set up supported JDK
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: '17'
-      - name: Inspect installed modern Android CLI contracts
+      - name: Install the inspected stable Android 17 platform and inspect device profiles
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
           if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
           if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
-          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --version
+          echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
+          echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
+          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --no-metrics --sdk="%SDK_ROOT%" emulator create --list-profiles
           if errorlevel 1 exit /b 1
-          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --sdk="%SDK_ROOT%" sdk install --help
+          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --no-metrics --sdk="%SDK_ROOT%" sdk --ignore-outdated-xmls install "platforms/android-37.0@2" "build-tools/37.0.0"
           if errorlevel 1 exit /b 1
-          "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" --sdk="%SDK_ROOT%" emulator create --help
+      - name: Apply SDK-only compilation probe without changing a branch or release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('node:fs');
+            for (const file of ['app/build.gradle.kts', 'ci-ui-driver/build.gradle.kts']) {
+              let text = fs.readFileSync(file, 'utf8');
+              for (const [before, after] of [['compileSdk = 36', 'compileSdk = 37\n    buildToolsVersion = "37.0.0"'], ['minSdk = 35', 'minSdk = 37'], ['targetSdk = 36', 'targetSdk = 37']]) {
+                if (text.split(before).length !== 2) throw new Error('Unexpected SDK declaration: ' + file);
+                text = text.replace(before, after);
+              }
+              fs.writeFileSync(file, text);
+            }
+      - name: Compile Android 17 application and separate UI driver
+        shell: cmd
+        run: |
+          py -3 .github\scripts\prepare_spectrum_checkout.py
+          if errorlevel 1 exit /b 1
+          call gradlew.bat --no-daemon --max-workers=2 :app:compileDebugKotlin :app:compilePreviewKotlin :ci-ui-driver:assembleDebug
           if errorlevel 1 exit /b 1
