@@ -8,6 +8,7 @@ on:
       - "tools/**"
       - "ci-ui-driver/**"
       - "backend/installation_evidence.py"
+      - "backend/android_runtime_contract.py"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
@@ -37,7 +38,7 @@ jobs:
       queue: max
       cancel-in-progress: false
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    # Full API35 16KB/API36 upgrade + 60 business and 14 portfolio/font cases per API, native
+    # Full API37 16KB/4KB upgrade + 60 business and 14 portfolio/font cases per API, native
     # rendering and long-scroll gates. Per-command/assertion deadlines are unchanged.
     timeout-minutes: 70
     # Applies before checkout cleans generated Kotlin class paths on Windows.
@@ -89,10 +90,10 @@ jobs:
           echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
           echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
 
-      - name: Ensure Android SDK 36 is installed
+      - name: Ensure Android SDK 37 is installed
         shell: cmd
         run: |
-          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
+          if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\android.exe" goto tools_ready
           set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
           curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
           if errorlevel 1 exit /b 1
@@ -107,12 +108,7 @@ jobs:
           move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
           if errorlevel 1 exit /b 1
           :tools_ready
-          set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
-          set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
-          (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
-          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
-          if errorlevel 1 exit /b 1
-          call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
+          py -3 .github\scripts\prepare_android_sdk.py --sdk "%ANDROID_SDK_ROOT%"
           if errorlevel 1 exit /b 1
 
       - name: Test APK verification rules
@@ -148,7 +144,7 @@ jobs:
           call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assemblePreview --stacktrace
           if errorlevel 1 exit /b 1
 
-      - name: Verify upgrade, clean install, launch, and profile UI on Android 15 and 16
+      - name: Verify upgrade, clean install, launch, and profile UI on Android 17 with both page-size profiles
         uses: ./.github/actions/check-apk
         env:
           RUN_PROFILE_UI_TESTS: "1"
@@ -158,8 +154,8 @@ jobs:
         run: |
           if not exist "app\build\outputs\apk\preview\app-preview.apk" exit /b 1
           if not exist "app\build\outputs\apk\preview\apk-verification.json" exit /b 1
-          if not exist "app\build\outputs\apk\preview\install-api-36\install-results.json" exit /b 1
-          if not exist "app\build\outputs\apk\preview\install-api-35\install-results.json" exit /b 1
+          if not exist "app\build\outputs\apk\preview\install-api37-4096\install-results.json" exit /b 1
+          if not exist "app\build\outputs\apk\preview\install-api37-16384\install-results.json" exit /b 1
           if not exist "app\build\outputs\apk\preview\ui-screens\*.png" exit /b 1
 
       # Actions artifact storage is optional retention, not release validation.
@@ -174,8 +170,8 @@ jobs:
           path: |
             app/build/outputs/apk/preview/app-preview.apk
             app/build/outputs/apk/preview/apk-verification.json
-            app/build/outputs/apk/preview/install-api-36/install-results.json
-            app/build/outputs/apk/preview/install-api-35/install-results.json
+            app/build/outputs/apk/preview/install-api37-4096/install-results.json
+            app/build/outputs/apk/preview/install-api37-16384/install-results.json
             app/build/outputs/apk/preview/ui-screens/*.png
           if-no-files-found: error
           retention-days: 1
