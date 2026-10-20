@@ -1,0 +1,54 @@
+name: Apply reviewed Android 17 source refactor
+
+on:
+  push:
+    branches: [audit/android17-project-20261020]
+    paths: [.github/workflows/android17-source-refactor.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android17-source-refactor
+  cancel-in-progress: false
+
+jobs:
+  refactor:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - name: Checkout only the migration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: audit/android17-project-20261020
+          persist-credentials: true
+          clean: true
+          fetch-depth: 1
+      - name: Verify exact source and prepare bounded changes
+        shell: cmd
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          py -3 -c "import os,subprocess; h=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(); assert h==os.environ['EXPECTED_HEAD'],'branch advanced; do not overwrite'"
+          if errorlevel 1 exit /b 1
+          py -3 tools\migrate_android17.py
+          if errorlevel 1 exit /b 1
+          git diff --check
+          if errorlevel 1 exit /b 1
+          git diff --stat
+          if errorlevel 1 exit /b 1
+      - name: Commit generated source changes for independent review
+        shell: cmd
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); assert rows,'no generated changes'; subprocess.run(['git','add','--',*[r['path'] for r in rows]],check=True)"
+          if errorlevel 1 exit /b 1
+          git diff --cached --check
+          if errorlevel 1 exit /b 1
+          git commit -m "refactor(android): migrate modules, transport policy and runtime axes to API37"
+          if errorlevel 1 exit /b 1
+          git push origin HEAD:refs/heads/audit/android17-project-20261020
+          if errorlevel 1 exit /b 1
+          git log -1 --format=GENERATED_ANDROID17_COMMIT=%%H
