@@ -27,7 +27,7 @@ def check_dex(data: bytes) -> str:
     require(len(data) >= 112, "Truncated DEX header")
     version = data[4:7].decode("ascii", errors="replace")
     require(data[:4] == b"dex\n" and data[7] == 0, "Invalid DEX magic")
-    require(version in {"035", "037", "038", "039", "040"}, "Unsupported DEX version for the Android 15+ build")
+    require(version in {"035", "037", "038", "039", "040"}, "Unsupported DEX format in the current Android build")
     size, header, endian = struct.unpack_from("<III", data, 32)
     require(size == len(data) and header == 112 and endian == 0x12345678, "Invalid DEX header")
     # Required DEX identifier, NOT a trust mechanism. apksigner verifies authenticity.
@@ -78,20 +78,26 @@ def manifest_flag(xmltree: str, name: str) -> bool:
     return match is not None and int(match.group(1), 16) != 0
 
 
+def _sdk_value(badging: str, field: str) -> int:
+    matches = re.findall(r"^" + re.escape(field) + r":'([0-9]+)'$", badging, re.MULTILINE)
+    require(len(matches) == 1, "Missing or ambiguous SDK metadata")
+    return int(matches[0])
+
+
 def check_manifest(badging: str, xmltree: str, version: int, non_debuggable: bool) -> dict:
     package = re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging, re.M)
     if package is None:
         raise InvalidAPK("Package metadata missing")
     require(package.group(1) == "ru.omnicio.app.debug", "Unexpected application ID")
     require(int(package.group(2)) == version, "Wrong versionCode")
-    require("sdkVersion:'35'" in badging, "Unexpected minimum Android version")
-    require("targetSdkVersion:'36'" in badging, "Unexpected target Android version")
+    require(_sdk_value(badging, "sdkVersion") == 37, "Unexpected minimum Android version")
+    require(_sdk_value(badging, "targetSdkVersion") == 37, "Unexpected target Android version")
     require(not manifest_flag(xmltree, "testOnly"), "testOnly APK cannot be distributed")
     require(not re.search(r"A: (?:android:)?(?:split|isSplitRequired)[(=]", xmltree), "Split APK is not standalone")
     if non_debuggable:
         require(not manifest_flag(xmltree, "debuggable"), "Distributed preview must not be debuggable")
     return {"package": package.group(1), "version_code": version, "version_name": package.group(3),
-            "min_sdk": 35, "target_sdk": 36, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False}
+            "min_sdk": 37, "target_sdk": 37, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False}
 
 
 def output_directory() -> Path:

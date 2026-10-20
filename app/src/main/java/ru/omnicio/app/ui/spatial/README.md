@@ -56,7 +56,7 @@ is selected. Guest ANGLE sends the app's unchanged OpenGL API through Vulkan, as
 implemented by Android's [EGL display](https://android.googlesource.com/platform/frameworks/native/+/refs/tags/android-platform-15.0.0_r21/opengl/libs/EGL/egl_display.cpp).
 No system Skia mode, advertised GLES version or feature queue is forced separately.
 
-The exact SDK images still have to demonstrate this route in the next API 35/36
+The exact SDK images still have to demonstrate this route in the next API37 4KB/16KB
 run. Before app launch, the runner records bounded system properties/compositor
 diagnostics. Each candidate launch additionally requires its own complete Filament
 GL vendor/renderer/version header, filtered by installed UID **and the freshly
@@ -114,7 +114,7 @@ these counters as a passed device benchmark. Targets for reference-device runs:
 responsive first data frame before model loading; no continued idle submissions;
 60fps interaction at standard quality, 30fps in economy; no retained activity or
 surface after repeated rotation/background cycles. Validate targets using Perfetto
-and actual API 35/36 devices/emulators, including an Android 15 16KB environment.
+and actual API37 devices/emulators, with independently measured 4KB and 16KB environments.
 
 Filament 1.72.1's native build requests a 16384-byte maximum ELF page size. This
 source-level fact does not prove the final APK: inspect packaged ELF segments and

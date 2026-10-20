@@ -14,7 +14,7 @@ function fixture(options = {}) {
   const destination = path.join(root, 'app/build/outputs/apk/preview');
   fs.mkdirSync(destination, {recursive: true});
   const apk = Buffer.from('synthetic APK bytes for publisher unit test only');
-  const report = {package: 'ru.omnicio.app.debug', version_code: 35,
+  const report = {min_sdk: 37, target_sdk: 37, package: 'ru.omnicio.app.debug', version_code: 35,
     version_name: '0.11.0-preview', debuggable: false, test_only: false, signature_v2: true,
     certificate_sha256: 'bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1',
     device_install_test: 'passed_on_emulators_not_a_physical_phone', bytes: apk.length,
@@ -27,6 +27,7 @@ function fixture(options = {}) {
   const release = {id: 2, assets: [], draft: true, html_url: 'https://github.com/test/repo/releases/2'};
   const listReleases = () => {};
   const listForRef = () => {};
+  const listAnnotations = () => {};
   const listWorkflowRunsForRepo = () => {};
   const github = {rest: {repos: {
     listReleases,
@@ -40,10 +41,18 @@ function fixture(options = {}) {
     },
     getReleaseAsset: async value => ({data: options.corruptReadback ? Buffer.from('corrupt') : assets.get(value.asset_id)}),
     updateRelease: async value => { writes.push(['update', value]); return {data: release}; },
-  }, checks: {listForRef}, actions: {listWorkflowRunsForRepo},
+  }, checks: {listForRef, listAnnotations}, actions: {listWorkflowRunsForRepo},
   pulls: {get: async () => ({data: {state: 'open', head: {sha: options.stale ? 'd'.repeat(40) : head}, base: {sha: base}}})}},
   paginate: async route => {
-    if (route === listForRef) return [{id: 7, name: 'SonarCloud Code Analysis', status: 'completed', conclusion: options.sonar || 'success'}];
+    if (route === listForRef) {
+      const check = {id: 7, head_sha: options.wrongHead ? base : head,
+        name: 'SonarCloud Code Analysis', app: {slug: options.fakeApp ? 'github-actions' : 'sonarqubecloud'},
+        status: 'completed', conclusion: options.sonar || 'success',
+        output: {annotations_count: options.annotation ? 1 : 0,
+          summary: `[${options.newIssues || 0} New issues](https://example.invalid/new)\n[${options.acceptedIssues || 0} Accepted issues](https://example.invalid/accepted)`}};
+      return options.newerPending ? [check, {...check, id: 9, status: 'in_progress', conclusion: null}] : [check];
+    }
+    if (route === listAnnotations) return options.annotation ? [{annotation_level: 'warning'}] : [];
     if (route === listWorkflowRunsForRepo) return [{id: 8, name: 'Backend CI', status: 'completed', conclusion: options.backend || 'success'}];
     if (route === listReleases) return [];
     throw new Error('Unexpected API route');
@@ -100,7 +109,7 @@ test('stale PR cannot attach bytes as a current verified candidate', async () =>
 test('failed Sonar or backend prevents APK retention', async () => {
   for (const options of [{sonar: 'failure'}, {backend: 'failure'}]) {
     await run(options, async f => {
-      await assert.rejects(retain(f), /must pass/);
+      await assert.rejects(retain(f), /sonar_quality_gate_not_successful|must pass/);
       assert.deepEqual(f.writes, []);
     });
   }
@@ -126,6 +135,38 @@ test('missing evidence fails without a release write', async () => {
   await run({}, async f => {
     fs.unlinkSync(path.join(f.root, 'app/build/outputs/apk/preview/apk-verification.json'));
     await assert.rejects(retain(f), /ENOENT/);
+    assert.deepEqual(f.writes, []);
+  });
+});
+
+test('old, future-target and malformed platform reports cannot produce a current draft', async () => {
+  for (const report of [{min_sdk: 35}, {min_sdk: 36}, {min_sdk: '37'}, {min_sdk: null},
+      {target_sdk: 36}, {target_sdk: 38}, {target_sdk: '37'}, {target_sdk: null}]) {
+    await run({report}, async f => {
+      await assert.rejects(retain(f), /exact current Android platform/);
+      assert.deepEqual(f.writes, []);
+    });
+  }
+});
+test('a similarly named check from another app or SHA cannot authorize retention', async () => {
+  for (const options of [{fakeApp: true}, {wrongHead: true}]) {
+    await run(options, async f => {
+      await assert.rejects(retain(f), /sonar_exact_head_result_missing/);
+      assert.deepEqual(f.writes, []);
+    });
+  }
+});
+test('successful gate with annotations or nonzero issue counts remains blocked', async () => {
+  for (const options of [{annotation: true}, {newIssues: 1}, {acceptedIssues: 1}]) {
+    await run(options, async f => {
+      await assert.rejects(retain(f), /sonar_annotations_not_clean_or_incomplete|sonar_summary_zero_issues_not_confirmed/);
+      assert.deepEqual(f.writes, []);
+    });
+  }
+});
+test('new pending analysis cannot reuse an older successful analysis', async () => {
+  await run({newerPending: true}, async f => {
+    await assert.rejects(retain(f), /sonar_quality_gate_not_successful/);
     assert.deepEqual(f.writes, []);
   });
 });

@@ -54,9 +54,9 @@ def _runtime_properties(output: str) -> dict:
     return {key: parsed.get(key) for key in RUNTIME_PROPERTIES}
 
 
-def snapshot_runtime_environment(device, sdk: Path, api: int) -> dict:
+def snapshot_runtime_environment(device, sdk: Path, api: int, *, page_size_bytes: int = 4096) -> dict:
     """Record the installed versions, never alter JIT or relabel a failing run."""
-    image = system_image(api)
+    image = system_image(api, page_size_bytes)
     report = {
         "system_image": image,
         "sdk_packages": {

@@ -1,5 +1,4 @@
-"""Synthetic parser cases; none of these tests claims to boot an emulator."""
-from copy import deepcopy
+"""Page size is measured independently for each supported current-OS profile."""
 from pathlib import Path
 import sys
 import unittest
@@ -7,42 +6,65 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from kernel_page_size import measured_record, system_image, validate_record
 
+DIGEST = 'a' * 64
+
 
 class KernelPageSizeTests(unittest.TestCase):
-    def test_actual_output_is_required_for_each_fixed_matrix_entry(self):
-        for api, size in ((35, 16384), (36, 4096)):
-            row = measured_record(api, f"{size}\r\n", "a" * 64)
-            validate_record(row, api)
-            self.assertEqual(size, row["page_size_bytes"])
-            self.assertEqual("getconf PAGE_SIZE", row["command"])
-        self.assertIn("google_apis_ps16k", system_image(35))
-        self.assertNotIn("ps16k", system_image(36))
+    def test_both_page_sizes_on_same_api_are_real_measurements(self):
+        for pages in (4096, 16384):
+            record = measured_record(37, str(pages) + '\r\n', DIGEST, page_size_bytes=pages)
+            validate_record(record, 37, page_size_bytes=pages)
+            self.assertEqual(record['page_size_bytes'], pages)
+            self.assertEqual(record['android_api'], 37)
+            self.assertIn('android-37.0;', record['system_image'])
 
-    def test_4kb_cannot_masquerade_as_android15_runtime_16kb(self):
-        for value in ("4096", "", "16384\n4096", "16384 bytes", "16384.0", "true"):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                measured_record(35, value, "a" * 64)
-        for api in (34, 37, "35", True, 35.0):
+    def test_other_page_size_cannot_substitute_for_requested_profile(self):
+        for requested, actual in ((4096, 16384), (16384, 4096)):
+            output = str(actual)
+            with self.assertRaises(ValueError):
+                measured_record(37, output, DIGEST, page_size_bytes=requested)
+
+    def test_unsupported_os_and_coercions_are_rejected(self):
+        for api in (35, 36, 38, '37', True, 37.0):
             with self.subTest(api=api), self.assertRaises(ValueError):
                 system_image(api)
+        for pages in (0, 8192, '4096', True, 4096.0):
+            with self.subTest(pages=pages), self.assertRaises(ValueError):
+                system_image(37, pages)
 
-    def test_every_identity_and_measurement_field_is_checked(self):
-        row = measured_record(35, "16384", "a" * 64)
-        for field, value in (("android_api", 36), ("android_api", "35"),
-                             ("abi", "arm64-v8a"), ("system_image", system_image(36)),
-                             ("page_size_bytes", "16384"), ("page_size_bytes", 4096),
-                             ("command", "ELF alignment"), ("success", 1),
-                             ("apk_sha256", "not-a-digest")):
-            altered = deepcopy(row)
-            altered[field] = value
-            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
-                validate_record(altered, 35)
-        for field in row:
-            altered = deepcopy(row)
-            del altered[field]
-            with self.subTest(missing=field), self.assertRaises(ValueError):
-                validate_record(altered, 35)
+    def test_distinct_profiles_have_distinct_official_image_ids(self):
+        self.assertEqual(system_image(37, 4096), 'system-images;android-37.0;google_apis;x86_64')
+        self.assertEqual(system_image(37, 16384), 'system-images;android-37.0;google_apis_ps16k;x86_64')
+
+    def test_fields_cannot_be_missing_or_tampered(self):
+        for pages in (4096, 16384):
+            original = measured_record(37, str(pages), DIGEST, page_size_bytes=pages)
+            for key in original:
+                missing = {k: v for k, v in original.items() if k != key}
+                wrong = dict(original, **{key: None})
+                with self.subTest(page=pages, key=key):
+                    with self.assertRaises(ValueError):
+                        validate_record(missing, 37, page_size_bytes=pages)
+                    with self.assertRaises(ValueError):
+                        validate_record(wrong, 37, page_size_bytes=pages)
+
+    def test_numeric_types_and_success_flag_are_not_coerced(self):
+        for key, value in (('success', 1), ('android_api', 37.0), ('page_size_bytes', 4096.0)):
+            original = measured_record(37, '4096', DIGEST)
+            original[key] = value
+            with self.assertRaises(ValueError):
+                validate_record(original, 37)
+
+    def test_bad_guest_output_is_not_a_valid_observation(self):
+        for output in (None, 4096, '4096\n16384', 'page_size_bytes=4096', '', '0'):
+            with self.assertRaises(ValueError):
+                measured_record(37, output, DIGEST)
+
+    def test_bad_artifact_digest_is_rejected(self):
+        for digest in (None, '', 'A' * 64, '../artifact'):
+            with self.assertRaises(ValueError):
+                measured_record(37, '4096', digest)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

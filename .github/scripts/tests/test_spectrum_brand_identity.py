@@ -40,12 +40,12 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
         self.assertEqual(gradient.get(ANDROID + "endColor"), "#030C17")
         self.assertFalse(background.findall(".//bitmap"))
 
-    def test_android_16_live_ui_candidate_has_a_unique_upgrade_code(self):
+    def test_android_17_live_ui_candidate_has_a_unique_upgrade_code(self):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
         self.assertIsNotNone(version)
         self.assertEqual(int(version.group(1)), 35)
-        for sdk in ("compileSdk = 36", "minSdk = 35", "targetSdk = 36"):
+        for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
         self.assertIn('versionName = "0.11.0"', gradle)
         self.assertNotIn('versionName = "0.7.6"', gradle)
@@ -61,7 +61,7 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
             "Версия ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             profile,
         )
-        self.assertIn("для Android 15 и новее", profile)
+        self.assertIn("для Android 17 и новее", profile)
         self.assertNotIn("Android 13+", profile)
         self.assertNotIn("Версия 0.7.1-preview", profile)
 

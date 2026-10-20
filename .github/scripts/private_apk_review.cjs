@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {newestSonarCheck, assertCleanSonar} = require('./require_clean_sonar.cjs');
 
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
@@ -18,6 +19,9 @@ function readInside(root, relative, limit) {
 }
 
 function validateBytes(report, apk) {
+  if (report.min_sdk !== 37 || report.target_sdk !== 37) {
+    throw new Error('Private APK requires the exact current Android platform');
+  }
   if (report.package !== 'ru.omnicio.app.debug' || report.version_code !== 35 ||
       report.version_name !== '0.11.0-preview' || report.debuggable !== false ||
       report.test_only !== false || report.signature_v2 !== true ||
@@ -31,11 +35,10 @@ function validateBytes(report, apk) {
 async function qualityChecks(github, context, head) {
   const checks = await github.paginate(github.rest.checks.listForRef,
     {...context.repo, ref: head, per_page: 100});
-  const sonar = checks.filter(check => check.name === 'SonarCloud Code Analysis')
-    .sort((a, b) => b.id - a.id)[0];
-  if (sonar?.status !== 'completed' || sonar.conclusion !== 'success') {
-    throw new Error('Exact-head Sonar must pass before retaining a device-test APK');
-  }
+  const sonar = newestSonarCheck(checks, head);
+  const annotations = sonar ? await github.paginate(github.rest.checks.listAnnotations,
+    {...context.repo, check_run_id: sonar.id, per_page: 100}) : [];
+  assertCleanSonar(sonar, annotations, head);
   const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
     {...context.repo, head_sha: head, event: 'pull_request', per_page: 100});
   const backend = runs.filter(run => run.name === 'Backend CI')
@@ -91,8 +94,8 @@ module.exports = async function retainPrivateApk({github, context, core}) {
   const body = [
     'Только ручная проверка владельцем. 0.11.0 ещё в разработке; это не завершённый выпуск.',
     'Не публиковать этот draft и не переносить APK в канал обновления Timeweb.',
-    'Неотладочный preview: Android 15+, прежний package ru.omnicio.app.debug и сертификат.',
-    'Проверены установка, обновление с 0.10.0/34 и запуск на API35/16KB и API36; полный UI проверен в отдельной debug-сборке на синтетических данных.',
+    'Неотладочный preview: Android 17+, прежний package ru.omnicio.app.debug и сертификат.',
+    'Проверены установка, обновление с 0.10.0/34 и запуск на API37 с измеренными страницами 16KB и 4KB; полный UI проверен в отдельной debug-сборке на синтетических данных.',
     'Физический телефон, live-брокер, платные модели и незавершённые функции 0.11.0 этим не подтверждены. Сервер не обновлялся; новые backend-функции могут быть недоступны.',
     `PR head: ${head}; tested merge: ${context.sha}; Android run: ${context.runId}.`,
     `Sonar check: ${quality.sonar}; Backend CI: ${quality.backend}.`,

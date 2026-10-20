@@ -5,12 +5,13 @@ plugins {
 
 android {
     namespace = "ru.omnicio.app"
-    compileSdk = 36
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "ru.omnicio.app"
-        minSdk = 35
-        targetSdk = 36
+        minSdk = 37
+        targetSdk = 37
         // Preserve the installed preview identity; each published update has a new code.
         versionCode = 35
         versionName = "0.11.0"

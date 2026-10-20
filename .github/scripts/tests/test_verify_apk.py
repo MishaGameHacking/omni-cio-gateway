@@ -10,7 +10,7 @@ from verify_apk import InvalidAPK, check_dex, check_elf64, check_manifest, manif
 
 BADGING = (
     "package: name='ru.omnicio.app.debug' versionCode='20' versionName='0.4.2-preview'\n"
-    "sdkVersion:'35'\ntargetSdkVersion:'36'"
+    "sdkVersion:'37'\ntargetSdkVersion:'37'"
 )
 
 

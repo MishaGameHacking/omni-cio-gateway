@@ -9,13 +9,13 @@ ROOT = Path(__file__).resolve().parents[3]
 NATIVE = ROOT / "app/src/main/java/ru/omnicio/app"
 
 
-class Android16LiveSpectrumTests(unittest.TestCase):
+class Android17LiveSpectrumTests(unittest.TestCase):
     def source(self, relative: str) -> str:
         return (NATIVE / relative).read_text(encoding="utf-8")
 
-    def test_candidate_identity_and_sdk_support_android_15_plus(self):
+    def test_candidate_identity_and_sdk_support_android_17_plus(self):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
-        for sdk in ("compileSdk = 36", "minSdk = 35", "targetSdk = 36"):
+        for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
         self.assertIn("versionCode = 35", gradle)
         self.assertIn('versionName = "0.11.0"', gradle)

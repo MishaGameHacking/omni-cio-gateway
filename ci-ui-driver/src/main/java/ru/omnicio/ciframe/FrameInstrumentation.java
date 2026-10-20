@@ -7,7 +7,6 @@ import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Xml;
@@ -352,13 +351,8 @@ public final class FrameInstrumentation extends Instrumentation {
         xml.endTag(null, "node");
     }
 
-    @SuppressWarnings("deprecation")
     private static boolean checkedState(AccessibilityNodeInfo node) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            return node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE;
-        }
-        // Public API35 contract; getChecked() only exists from API36.
-        return node.isChecked();
+        return node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE;
     }
 
     private static final class BoundedOutput extends FilterOutputStream {

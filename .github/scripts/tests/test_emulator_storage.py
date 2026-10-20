@@ -23,7 +23,7 @@ class EmulatorStorageTests(unittest.TestCase):
         self.original = "hw.ramSize=4096\ndisk.dataPartition.size=12G\ndisk.dataPartition.size = 10G\ntag.id=ps16k\n"
         self.config.write_text(self.original, encoding="utf-8")
         self.sdk = self.root / "sdk"
-        self.image = "system-images;android-35;google_apis_ps16k;x86_64"
+        self.image = "system-images;android-37.0;google_apis_ps16k;x86_64"
         self.source = self.sdk.joinpath(*self.image.split(";"), "userdata.img")
         self.source.parent.mkdir(parents=True)
         self.source.write_bytes(b"initial")

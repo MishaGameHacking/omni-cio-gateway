@@ -9,7 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from emulator_storage import configure_userdata, DATA_BYTES, HEADROOM_BYTES
 
-IMAGE = "system-images;android-35;google_apis_ps16k;x86_64"
+IMAGE = "system-images;android-37.0;google_apis_ps16k;x86_64"
 
 
 class SoftwareNavigationConfigTests(unittest.TestCase):

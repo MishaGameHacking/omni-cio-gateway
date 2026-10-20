@@ -2,11 +2,12 @@
 plugins { alias(libs.plugins.android.application) }
 android {
     namespace = "ru.omnicio.ciframe"
-    compileSdk = 36
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
     defaultConfig {
         applicationId = "ru.omnicio.ciframe"
-        minSdk = 35
-        targetSdk = 36
+        minSdk = 37
+        targetSdk = 37
         versionCode = 1
         versionName = "1"
     }

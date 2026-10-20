@@ -1,4 +1,4 @@
-"""No-device regressions; these do not replace the real API35/API36 UI gate."""
+"""No-device regressions; these do not replace the real API37 4KB/16KB UI gate."""
 import sys
 import unittest
 from pathlib import Path

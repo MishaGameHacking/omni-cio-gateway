@@ -1,11 +1,11 @@
-"""Android 16-only manifest contract and modern navigation/security defaults."""
+"""Android 17-only manifest contract and modern navigation/security defaults."""
 from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-class Android16ManifestTests(unittest.TestCase):
+class Android17ManifestTests(unittest.TestCase):
     def test_manifest_uses_strict_intent_matching_and_predictive_back(self):
         manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(
             encoding="utf-8"
