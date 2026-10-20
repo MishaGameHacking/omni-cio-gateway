@@ -9,6 +9,7 @@ import re
 import subprocess
 
 MAX_RESULT_BYTES = 4096
+SHA256 = re.compile(r"[0-9a-f]{64}", re.ASCII)
 FIELDS = {"schema", "tool", "android_api", "apk_sha256", "bytes",
           "certificate_sha256", "signers", "signature_v2"}
 
@@ -33,9 +34,9 @@ def _constant(_):
 def validate_identity(raw: bytes, expected: str, digest: str, size: int) -> dict:
     if not isinstance(raw, bytes) or not 1 <= len(raw) <= MAX_RESULT_BYTES:
         raise SigningIdentityError("invalid_signing_result_size")
-    if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+    if not isinstance(expected, str) or SHA256.fullmatch(expected) is None:
         raise SigningIdentityError("invalid_signing_pin")
-    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+    if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
         raise SigningIdentityError("invalid_apk_digest")
     if type(size) is not int or not 1 <= size <= 268_435_456:
         raise SigningIdentityError("invalid_apk_size")
@@ -73,7 +74,7 @@ def verify_signing(apk: Path, expected: str) -> dict:
     java = _configured_file("JAVA_HOME", "bin/java.exe" if os.name == "nt" else "bin/java")
     jar = _configured_file("ANDROID_SDK_ROOT", "build-tools/37.0.0/lib/apksigner.jar")
     source = Path(__file__).with_name("VerifyApkSigning.java").resolve(strict=True)
-    if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+    if not isinstance(expected, str) or SHA256.fullmatch(expected) is None:
         raise SigningIdentityError("invalid_signing_pin")
     size = apk.stat().st_size
     if not 1 <= size <= 268_435_456:
