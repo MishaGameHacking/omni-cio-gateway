@@ -24,6 +24,7 @@ from backend.release_publication import publish
 from backend.monitoring_access import monitoring_connection
 from backend.portfolio_details import record_history
 from backend.tests.test_autonomous_ai import sample_snapshot
+from backend.tests.android_runtime_fixtures import publication_report
 
 
 class ApplicationUpdateTests(unittest.TestCase):
@@ -64,6 +65,7 @@ class ApplicationUpdateTests(unittest.TestCase):
             'signature_v2':True,'zipalign_16kb':True,'debuggable':False,'test_only':False,
             'package':'ru.omnicio.app.debug','version_code':version,'version_name':str(version),'min_sdk':36,
             'installation_evidence':{'apk_sha256':sha,'36':checks}}
+        evidence = publication_report(evidence)
         return publish(self.root/'releases',apk,evidence,expected_certificate='c'*64)
 
     def headers(self, version=23):

@@ -15,6 +15,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.testclient import TestClient
 from backend import client_updates as updates
 from backend.release_publication import publish
+from backend.tests.android_runtime_fixtures import publication_report
 
 CERT = 'c' * 64
 
@@ -54,30 +55,26 @@ class UpdateTests(unittest.TestCase):
             'upgrade_launch': True,
             'launch': True,
         }
-        return {'sha256': sha, 'bytes': self.apk.stat().st_size, 'certificate_sha256': CERT,
+        return publication_report({'sha256': sha, 'bytes': self.apk.stat().st_size, 'certificate_sha256': CERT,
                 'signature_v2': True, 'zipalign_16kb': True, 'test_only': False, 'debuggable': False,
                 'package': 'ru.omnicio.app.debug', 'version_code': version, 'version_name': '0.6.0-preview',
-                'min_sdk': 36, 'installation_evidence': {'apk_sha256': sha, '36': checks}}
+                'min_sdk': 36, 'installation_evidence': {'apk_sha256': sha, '36': checks}})
 
-    def test_android15_release_requires_both_real_transcripts(self):
-        from backend.tests.test_installation_evidence import android15_report, reports
-        from backend.installation_evidence import from_ci_reports
-        report = self.evidence(24)
-        report['min_sdk'] = 35
-        with self.assertRaises(updates.ReleaseUnavailable):
-            publish(self.root, self.apk, report, expected_certificate=CERT)
-        transcripts = [android15_report(), *reports()]
-        for run in transcripts:
-            for record in run['results']:
-                if 'apk_sha256' in record and record['test'] != 'previous_clean_install':
-                    record['apk_sha256'] = report['sha256']
-        report['installation_tests'] = transcripts
-        report['installation_evidence'] = from_ci_reports(transcripts, report['sha256'])
-        release = publish(self.root, self.apk, report, expected_certificate=CERT)
-        self.assertEqual(release.min_sdk, 35)
-        report['min_sdk'] = 34
-        with self.assertRaises(updates.ReleaseUnavailable):
-            publish(self.root, self.apk, report, expected_certificate=CERT)
+    def test_current_release_requires_exact_os_and_complete_runtime_transcripts(self):
+        evidence = self.evidence(24)
+        incomplete = dict(evidence)
+        incomplete.pop('installation_tests')
+        with self.assertRaises(ReleaseUnavailable):
+            publish(self.root, self.apk, incomplete, expected_certificate=CERT)
+        for minimum in (34, 35, 36, 38, '37', True):
+            invalid = dict(evidence, min_sdk=minimum)
+            with self.subTest(minimum=minimum), self.assertRaises(ReleaseUnavailable):
+                publish(self.root, self.apk, invalid, expected_certificate=CERT)
+        incomplete = dict(evidence, installation_tests=evidence['installation_tests'][:1])
+        with self.assertRaises(ReleaseUnavailable):
+            publish(self.root, self.apk, incomplete, expected_certificate=CERT)
+        result = publish(self.root, self.apk, evidence, expected_certificate=CERT)
+        self.assertEqual(result.min_android_api, 37)
 
     def enforce(self, version='23', token='test', uid=1, package='ru.omnicio.app.debug'):
         return updates.enforce(self.connect, user_id=uid, authorization='Bearer '+token,
@@ -157,9 +154,9 @@ class UpdateTests(unittest.TestCase):
             if kind == 'missing':
                 del report['installation_evidence']
             elif kind == 'failed':
-                report['installation_evidence']['36']['launch'] = False
+                report['installation_evidence']['runtimes']['api37-4096']['launch'] = False
             elif kind == 'missing_upgrade_launch':
-                del report['installation_evidence']['36']['upgrade_launch']
+                del report['installation_evidence']['runtimes']['api37-4096']['upgrade_launch']
             else:
                 report['installation_evidence']['apk_sha256'] = 'f'*64
             with self.assertRaises(updates.ReleaseUnavailable):
