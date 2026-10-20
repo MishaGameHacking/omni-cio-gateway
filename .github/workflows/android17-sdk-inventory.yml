@@ -18,7 +18,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Inspect official stable SDK catalogue without starting devices
+      - name: Inspect Android CLI and official Android 17 catalogue
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
@@ -26,7 +26,7 @@ jobs:
           if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
           echo SDK_ROOT=%SDK_ROOT%
-          if exist "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
+          if exist "%SDK_ROOT%\cmdline-tools\latest\bin\android.bat" goto tools_ready
           set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
           curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
           if errorlevel 1 exit /b 1
@@ -37,10 +37,16 @@ jobs:
           if not exist "%SDK_ROOT%\cmdline-tools" mkdir "%SDK_ROOT%\cmdline-tools"
           tar.exe -xf "%TOOLS_ZIP%" -C "%SDK_ROOT%\cmdline-tools"
           if errorlevel 1 exit /b 1
-          move "%SDK_ROOT%\cmdline-tools\cmdline-tools" "%SDK_ROOT%\cmdline-tools\latest"
-          if errorlevel 1 exit /b 1
+          if not exist "%SDK_ROOT%\cmdline-tools\latest" move "%SDK_ROOT%\cmdline-tools\cmdline-tools" "%SDK_ROOT%\cmdline-tools\latest"
           :tools_ready
-          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --list --channel=0 > "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+          dir /b "%SDK_ROOT%\cmdline-tools\latest\bin\android*"
+          set "ANDROID_CLI=%SDK_ROOT%\cmdline-tools\latest\bin\android.bat"
+          if not exist "%ANDROID_CLI%" exit /b 1
+          call "%ANDROID_CLI%" --version
           if errorlevel 1 exit /b 1
-          findstr /L /C:"platforms;android-37" /C:"build-tools;37" /C:"system-images;android-37;" "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+          call "%ANDROID_CLI%" --sdk="%SDK_ROOT%" sdk list ".*android-37.*"
+          if errorlevel 1 exit /b 1
+          call "%ANDROID_CLI%" emulator create --help
+          if errorlevel 1 exit /b 1
+          call "%ANDROID_CLI%" sdk install --help
           if errorlevel 1 exit /b 1
