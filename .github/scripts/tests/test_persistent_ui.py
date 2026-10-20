@@ -178,7 +178,7 @@ class FrameReadinessTests(unittest.TestCase):
         reader = frames.FrameReader(stream)
         with patch.object(frames.time, "sleep"), self.assertRaises(ConnectionError):
             reader.ready_tree()
-        self.assertEqual(len(stream.sent), 1)
+        self.assertEqual(len(stream.sent), 2)
         self.assertTrue(reader.broken)
 
     def test_does_not_wait_for_desired_package_or_hide_wrong_screen(self):
