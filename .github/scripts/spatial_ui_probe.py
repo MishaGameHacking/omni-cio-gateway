@@ -10,6 +10,7 @@ import time
 
 from spatial_frame_evidence import (clipping_witness, mesh_witness, read_screenshot,
                                     ready_spatial_metrics, white_label_contrast)
+from spatial_runtime_evidence import observe_runtime
 
 CANDIDATE_PACKAGE = 'ru.omnicio.app.debug'
 CLOSE_SPATIAL_WINDOW = 'Закрыть окно 3D'
@@ -68,16 +69,9 @@ class _SpatialSession:
         self.process_id = None
 
     def run(self):
-        from kernel_page_size import PAGE_BYTES, system_image
-
         self.probe.command("shell", "settings", "put", "system", "font_scale", "1.0")
         startup = self.launch()
-        platform = {"sdk": int(self.probe.command("shell", "getprop", "ro.build.version.sdk").strip()),
-                    "abi": self.probe.command("shell", "getprop", "ro.product.cpu.abi").strip(),
-                    "page_size_bytes": int(self.probe.command("shell", "getconf", "PAGE_SIZE").strip())}
-        platform["system_image"] = system_image(platform["sdk"])
-        if platform["abi"] != "x86_64" or platform["page_size_bytes"] != PAGE_BYTES[platform["sdk"]]:
-            raise AssertionError("The mesh runtime does not match the required Android userspace page-size matrix")
+        platform = observe_runtime(self.probe.command)
         self.records = [{"scenario": "force-stopped-fixture-startup", **startup}]
         self.native_controls()
         self.motion_and_window()
