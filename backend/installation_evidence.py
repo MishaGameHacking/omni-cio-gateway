@@ -1,11 +1,16 @@
-"""Validate the actual Android 15/16 CI transcript; never infer installation from a build.
+"""Validate complete current-Android runtime evidence, not a successful build.
 
-This is an operator-supplied test record, NOT signed device attestation. These
-records prove only the recorded adb/emulator checks, not in-app self-update.
+These are operator-supplied records, not signed device attestation. Historical
+reports cannot certify a new target by changing a label or dropping a profile.
 """
 from __future__ import annotations
 
 import re
+
+try:
+    from .android_runtime_contract import RUNTIME_PROFILES, runtime_profile
+except ImportError:
+    from android_runtime_contract import RUNTIME_PROFILES, runtime_profile
 
 CURRENT_UI_SUITE = 'spectrum-3d-100-v2'
 BUSINESS_CASE_IDS = frozenset(
@@ -24,10 +29,15 @@ PORTFOLIO_CASE_IDS = frozenset(
     )
     for font in (1, 2)
 )
+REQUIRED_TESTS = frozenset({
+    'kernel_page_size', 'previous_clean_install', 'upgrade_to_candidate',
+    'upgrade_bootstrap_launch', 'candidate_clean_install',
+    'bootstrap_activity_launch', 'debug_ui_fixture_install', 'profile_ui',
+})
 
 
 class InstallationEvidenceError(ValueError):
-    """An incomplete, ambiguous or wrong-artifact transcript cannot publish."""
+    """Incomplete, ambiguous or wrong-artifact evidence cannot authorize release."""
 
 
 def _digest(value: object) -> str:
@@ -37,14 +47,14 @@ def _digest(value: object) -> str:
 
 
 def _results(raw: object) -> dict[str, dict]:
-    if not isinstance(raw, list) or not 1 <= len(raw) <= 32:
+    if not isinstance(raw, list) or len(raw) != len(REQUIRED_TESTS):
         raise InstallationEvidenceError('invalid_installation_results')
     indexed = {}
     for result in raw:
         if not isinstance(result, dict) or result.get('success') is not True:
             raise InstallationEvidenceError('failed_or_incomplete_installation_test')
         name = result.get('test')
-        if not isinstance(name, str) or not name or name in indexed:
+        if not isinstance(name, str) or name not in REQUIRED_TESTS or name in indexed:
             raise InstallationEvidenceError('ambiguous_installation_test')
         indexed[name] = result
     return indexed
@@ -61,7 +71,6 @@ def _case_receipt(record: dict, group: str, expected: frozenset[str]) -> int:
 
 
 def validate_ui_receipt(record: object, fixture_digest: str) -> dict[str, int]:
-    """Require both completed case/font matrices bound to the installed debug APK."""
     if not isinstance(record, dict) or record.get('ui_suite') != CURRENT_UI_SUITE:
         raise InstallationEvidenceError('current_ui_suite_evidence_required')
     counts = {
@@ -73,84 +82,62 @@ def validate_ui_receipt(record: object, fixture_digest: str) -> dict[str, int]:
     return counts
 
 
-def _one_emulator(run: dict, digest: str) -> dict:
-    if run.get('abi') != 'x86_64' or type(run.get('profile_ui_required')) is not bool:
+def _runtime(run: dict):
+    if run.get('abi') != 'x86_64' or run.get('profile_ui_required') is not True:
         raise InstallationEvidenceError('unrecognized_emulator_evidence')
+    try:
+        return runtime_profile(run.get('android_api'), run.get('page_size_bytes'))
+    except ValueError as error:
+        raise InstallationEvidenceError('unrecognized_runtime_profile') from error
+
+
+def _kernel_evidence(record: dict, profile, digest: str) -> None:
+    expected = {'android_api': profile.api, 'abi': 'x86_64',
+                'system_image': profile.image, 'page_size_bytes': profile.page_size_bytes,
+                'command': 'getconf PAGE_SIZE'}
+    if any(type(record.get(key)) is not type(value) or record.get(key) != value
+           for key, value in expected.items()):
+        raise InstallationEvidenceError('invalid_kernel_page_size_evidence')
+    if _digest(record.get('apk_sha256')) != digest:
+        raise InstallationEvidenceError('installation_artifact_mismatch')
+
+
+def _one_emulator(run: dict, digest: str) -> tuple[str, dict]:
+    profile = _runtime(run)
     records = _results(run.get('results'))
-    api = run['android_api']
-    required = {'candidate_clean_install'}
-    upgrade = {'previous_clean_install', 'upgrade_to_candidate', 'upgrade_bootstrap_launch'}
-    performed_upgrade = api == 36 or bool(records.keys() & upgrade)
-    if performed_upgrade:
-        required |= upgrade
-    # Historical 0.10 evidence used clean-only API35 because 0.9 required API36.
-    # New CI requires the complete upgrade group on both supported APIs. Preserve
-    # historical recovery while never promoting a partial group to success.
-    launches = {'activity_launch', 'bootstrap_activity_launch'} & records.keys()
-    if not required <= records.keys() or len(launches) != 1:
-        raise InstallationEvidenceError('installation_evidence_incomplete')
-    bound = required - {'previous_clean_install'} | launches
+    bound = REQUIRED_TESTS - {'previous_clean_install', 'debug_ui_fixture_install', 'profile_ui'}
     for name in bound:
         if _digest(records[name].get('apk_sha256')) != digest:
             raise InstallationEvidenceError('installation_artifact_mismatch')
-    if performed_upgrade and _digest(records['previous_clean_install'].get('apk_sha256')) == digest:
+    if _digest(records['previous_clean_install'].get('apk_sha256')) == digest:
         raise InstallationEvidenceError('upgrade_reinstalled_same_artifact')
-    if not run['profile_ui_required'] or not {'debug_ui_fixture_install', 'profile_ui'} <= records.keys():
-        raise InstallationEvidenceError('profile_ui_evidence_missing')
-    checked = {
-        'clean_install': True,
-        'upgrade': performed_upgrade,
-        'upgrade_launch': performed_upgrade,
-        'launch': True,
+    fixture = _digest(records['debug_ui_fixture_install'].get('apk_sha256'))
+    counts = validate_ui_receipt(records['profile_ui'], fixture)
+    _kernel_evidence(records['kernel_page_size'], profile, digest)
+    return profile.key, {
+        'clean_install': True, 'upgrade': True, 'upgrade_launch': True, 'launch': True,
+        'android_api': profile.api, 'abi': 'x86_64', 'system_image': profile.image,
+        'page_size_bytes': profile.page_size_bytes, 'fixture_apk_sha256': fixture, **counts,
     }
-    profile = records['profile_ui']
-    if 'ui_suite' in profile:
-        checked.update(validate_ui_receipt(
-            profile, records['debug_ui_fixture_install'].get('apk_sha256')))
-    if 'kernel_page_size' in records:
-        checked.update(_kernel_evidence(records['kernel_page_size'], api, digest))
-    return checked
 
 
-def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_16kb: bool = False) -> dict:
-    """Reduce checked transcripts; preserve old API36 releases for verified recovery."""
+def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_16kb: bool = True) -> dict:
+    """Both current-OS page-size profiles are mandatory; no reduced publication path."""
     digest = _digest(apk_sha256)
-    if not isinstance(installations, list) or len(installations) not in (1, 2):
-        raise InstallationEvidenceError('android_16_evidence_required')
-    result = {'apk_sha256': digest}
+    if require_runtime_16kb is not True:
+        raise InstallationEvidenceError('full_runtime_matrix_required')
+    if not isinstance(installations, list) or len(installations) != len(RUNTIME_PROFILES):
+        raise InstallationEvidenceError('full_runtime_matrix_required')
+    runtimes = {}
     for run in installations:
         if not isinstance(run, dict):
             raise InstallationEvidenceError('invalid_emulator_report')
-        api = run.get('android_api')
-        if type(api) is not int or api not in (35, 36) or str(api) in result:
-            raise InstallationEvidenceError('ambiguous_android_version')
-        result[str(api)] = _one_emulator(run, digest)
-    if "36" not in result:
-        raise InstallationEvidenceError("android_16_evidence_required")
-    if require_runtime_16kb:
-        _require_runtime_matrix(result)
-    return result
-
-
-def _kernel_evidence(kernel, api, digest):
-    image = f"system-images;android-{api};{'google_apis_ps16k' if api == 35 else 'google_apis'};x86_64"
-    expected_bytes = 16_384 if api == 35 else 4_096
-    if type(kernel.get('android_api')) is not int or kernel['android_api'] != api \
-            or kernel.get('abi') != 'x86_64' or kernel.get('system_image') != image \
-            or type(kernel.get('page_size_bytes')) is not int or kernel['page_size_bytes'] != expected_bytes \
-            or kernel.get('command') != 'getconf PAGE_SIZE':
-        raise InstallationEvidenceError('invalid_kernel_page_size_evidence')
-    if _digest(kernel.get('apk_sha256')) != digest:
-        raise InstallationEvidenceError('installation_artifact_mismatch')
-    return {'page_size_bytes': expected_bytes, 'system_image': image,
-            'runtime_16kb': expected_bytes == 16_384}
-
-
-def _require_runtime_matrix(result):
-    for api, size in (('35', 16_384), ('36', 4_096)):
-        checked = result.get(api, {})
-        if checked.get('page_size_bytes') != size or checked.get('upgrade') is not True \
-                or checked.get('upgrade_launch') is not True \
-                or checked.get('business_case_count') != len(BUSINESS_CASE_IDS) \
-                or checked.get('portfolio_case_count') != len(PORTFOLIO_CASE_IDS):
-            raise InstallationEvidenceError('android_runtime_page_size_evidence_required')
+        key, checked = _one_emulator(run, digest)
+        if key in runtimes:
+            raise InstallationEvidenceError('duplicate_runtime_profile')
+        runtimes[key] = checked
+    if set(runtimes) != {profile.key for profile in RUNTIME_PROFILES}:
+        raise InstallationEvidenceError('full_runtime_matrix_required')
+    if len({checked['fixture_apk_sha256'] for checked in runtimes.values()}) != 1:
+        raise InstallationEvidenceError('different_ui_fixture_artifacts')
+    return {'schema_version': 2, 'apk_sha256': digest, 'runtimes': runtimes}
