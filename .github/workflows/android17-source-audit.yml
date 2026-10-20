@@ -42,15 +42,6 @@ jobs:
               core.info(JSON.stringify({folder, sha, bytes:bytes.length, sha256:crypto.createHash('sha256').update(bytes).digest('hex')}));
             }
             core.exportVariable('AUDIT_SOURCE_DIR', destination);
-      - name: Read available stable SDK packages without installing or changing devices
-        shell: cmd
-        run: |
-          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
-          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
-          if not defined SDK_ROOT set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
-          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --channel=0 --list > "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
-          if errorlevel 1 exit /b 1
-          findstr /I /C:"android-37" /C:"build-tools;37" /C:"emulator " "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
       - name: Retain source archives for one-day private audit
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
@@ -59,3 +50,20 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      - name: Set up supported JDK
+        if: ${{ !cancelled() }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Read available stable SDK packages without installing or changing devices
+        if: ${{ !cancelled() }}
+        shell: cmd
+        run: |
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
+          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --channel=0 --list > "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"android-37" /C:"build-tools;37" /C:"emulator " "%RUNNER_TEMP%\android17-sdk-catalogue.txt"
