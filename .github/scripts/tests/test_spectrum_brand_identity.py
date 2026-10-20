@@ -61,7 +61,7 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
             "Версия ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             profile,
         )
-        self.assertIn("для Android 15 и новее", profile)
+        self.assertIn("для Android 17 и новее", profile)
         self.assertNotIn("Android 13+", profile)
         self.assertNotIn("Версия 0.7.1-preview", profile)
 

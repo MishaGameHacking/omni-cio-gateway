@@ -16,7 +16,7 @@ class PrivateApkReviewTests(unittest.TestCase):
         result = subprocess.run([node, "--test", "--test-reporter=tap", str(test)], capture_output=True,
                                 text=True, timeout=30, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("# pass 8", result.stdout)
+        self.assertIn("# pass 12", result.stdout)
 
     def test_retention_follows_existing_complete_emulator_gate(self):
         source = (ROOT / ".github/workflows/android-ci.yml").read_text(encoding="utf-8")
