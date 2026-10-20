@@ -1,0 +1,60 @@
+name: Android 17 build audit
+
+on:
+  push:
+    branches: [audit/android17-project-20261020]
+    paths: [.github/workflows/android17-build-audit.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android17-build-audit
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+    steps:
+      - name: Checkout the exact audit commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Set up supported JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Validate wrapper and prepare canonical assets
+        shell: cmd
+        run: |
+          certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\android17-wrapper.sha256"
+          if errorlevel 1 exit /b 1
+          findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\android17-wrapper.sha256" >nul
+          if errorlevel 1 exit /b 1
+          py -3 tools\prepare_spectrum_checkout.py
+          if errorlevel 1 exit /b 1
+      - name: Install the current platform using Android CLI
+        shell: cmd
+        run: |
+          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+          if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+          if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
+          if not exist "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" exit /b 1
+          py -3 .github\scripts\prepare_android_sdk.py --sdk "%SDK_ROOT%"
+          if errorlevel 1 exit /b 1
+          echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
+          echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
+      - name: Compile unit tests and lint every distributable variant and driver
+        shell: cmd
+        run: |
+          call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
+          if errorlevel 1 exit /b 1
+      - name: Record scope of this build-only check
+        shell: cmd
+        run: |
+          echo This build does not certify installation, runtime UI, physical hardware or publication.
+          git rev-parse HEAD
