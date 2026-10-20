@@ -1,0 +1,38 @@
+name: Android 17 active-source inventory
+on:
+  push:
+    branches: [audit/android17-project-20261020]
+    paths: [.github/workflows/android17-active-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/audit/android17-project-20261020'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Inspect current source without modifying files or services
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs = require('node:fs');
+            const cp = require('node:child_process');
+            const paths = cp.execFileSync('git',['ls-files','-z'],{encoding:'utf8'}).split('\0').filter(Boolean);
+            const platform = /Android\s?1[56]|API\s?3[56]|android-3[56]|install-api-3[56]|ui-screens-api3[56]|minSdk\s*=\s*3[0-6]|targetSdk\s*=\s*3[0-6]|compileSdk\s*=\s*3[0-6]/;
+            const calls = /SDK_INT|VERSION_CODES|systemUiVisibility|setStatusBarColor|navigationBarColor|overridePendingTransition|onBackPressed|startActivityForResult|getSerializableExtra|screenOrientation|usesCleartextTraffic|getDeclared(Field|Method)|suppressUnsupportedCompileSdk/;
+            for (const file of paths) {
+              if (!/^(app\/|ci-ui-driver\/|backend\/|\.github\/|README\.md$|AGENTS\.md$)/.test(file)) continue;
+              if (!/\.(py|kt|kts|java|xml|ya?ml|properties|md|cjs)$/.test(file)) continue;
+              if (fs.lstatSync(file).isSymbolicLink()) throw new Error('Unexpected source symlink');
+              const matches = fs.readFileSync(file,'utf8').split('\n').flatMap((text,index) => {
+                const oldPlatform = platform.test(text);
+                const candidateCall = /\.(kt|java|xml)$/.test(file) && calls.test(text);
+                return oldPlatform || candidateCall ? [{line:index+1,text:text.slice(0,500)}] : [];
+              });
+              if (matches.length) core.info('ACTIVE_PLATFORM_REVIEW=' + JSON.stringify({path:file,matches}));
+            }
+            core.info('AUDITED_SOURCE=' + cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim());
