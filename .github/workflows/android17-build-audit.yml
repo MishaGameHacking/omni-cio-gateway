@@ -3,7 +3,14 @@ name: Android 17 build audit
 on:
   push:
     branches: [audit/android17-project-20261020]
-    paths: [.github/workflows/android17-build-audit.yml]
+    paths:
+      - .github/workflows/android17-build-audit.yml
+      - .github/scripts/prepare_android_sdk.py
+      - backend/android_runtime_contract.py
+      - app/**
+      - ci-ui-driver/**
+      - gradle/**
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,18 +39,17 @@ jobs:
         run: |
           certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\android17-wrapper.sha256"
           if errorlevel 1 exit /b 1
-          findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\android17-wrapper.sha256" >nul
+          findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\android17-wrapper.sha256" > "%RUNNER_TEMP%\android17-wrapper-match.txt"
           if errorlevel 1 exit /b 1
           py -3 tools\prepare_spectrum_checkout.py
           if errorlevel 1 exit /b 1
-      - name: Install the current platform using Android CLI
+      - name: Install and verify current platform using Android CLI
         shell: cmd
         run: |
           set "SDK_ROOT=%ANDROID_SDK_ROOT%"
           if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
           if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
           if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
-          if not exist "%SDK_ROOT%\cmdline-tools\latest\bin\android.exe" exit /b 1
           py -3 .github\scripts\prepare_android_sdk.py --sdk "%SDK_ROOT%"
           if errorlevel 1 exit /b 1
           echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
