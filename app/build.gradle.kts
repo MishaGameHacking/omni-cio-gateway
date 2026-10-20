@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "ru.omnicio.app"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "ru.omnicio.app"

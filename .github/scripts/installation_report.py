@@ -24,7 +24,7 @@ def validate_current_ui(profile: dict, fixture: dict) -> None:
 
 
 def validate_results(results: object, *, upgrade_required: bool, profile_required: bool,
-                     android_api: int | None = None) -> None:
+                     android_api: int | None = None, page_size_bytes: int = 4096) -> None:
     """Accept exactly the checks requested for this run, with explicit success."""
     if not isinstance(results, list):
         raise ValueError("Invalid installation report")
@@ -49,7 +49,7 @@ def validate_results(results: object, *, upgrade_required: bool, profile_require
     if set(names) != expected:
         raise ValueError("Missing or unexpected installation tests")
     if android_api is not None:
-        validate_record(next(item for item in results if item["test"] == TEST_NAME), android_api)
+        validate_record(next(item for item in results if item["test"] == TEST_NAME), android_api, page_size_bytes=page_size_bytes)
         if profile_required:
             validate_current_ui(next(item for item in results if item["test"] == "profile_ui"),
                                 next(item for item in results if item["test"] == "debug_ui_fixture_install"))

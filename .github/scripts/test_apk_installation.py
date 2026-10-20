@@ -289,6 +289,7 @@ def run_attempt(
     api: int,
     work: Path,
     attempt: int,
+    page_size_bytes: int = 4096,
 ) -> list[dict[str, object]]:
     """Execute the complete publication-grade contract in one fresh AVD."""
     from artifact_test_identity import apk_digest, record_install
@@ -316,7 +317,7 @@ def run_attempt(
     name = f"analyst-install-{os.getpid()}-{attempt}"
     from kernel_page_size import measured_record, system_image
 
-    image = system_image(api)
+    image = system_image(api, page_size_bytes)
     create = run(
         [
             manager,
@@ -521,7 +522,7 @@ def run_attempt(
                 # actual context above; neither a flag nor SF proves this path.
                 EMULATOR_FEATURES,
                 "-memory",
-                # API35 ps16k + Google services exhausted 2GiB: exit-info
+                # current OS ps16k + Google services exhausted 2GiB: exit-info
                 # recorded LOW_MEMORY even for the foreground candidate.
                 "4096",
                 "-cores",
@@ -575,12 +576,12 @@ def run_attempt(
             verify_emulator_identity(device, name, api)
             with prepared_emulator_session(device, name, api) as preparation:
                 print("EMULATOR_RUNTIME_ENVIRONMENT=" + json.dumps(
-                    snapshot_runtime_environment(device, sdk, api), sort_keys=True), flush=True)
+                    snapshot_runtime_environment(device, sdk, api, page_size_bytes=page_size_bytes), sort_keys=True), flush=True)
                 page_size = device("shell", "getconf", "PAGE_SIZE")
                 try:
                     if page_size.returncode:
                         raise RuntimeError("The booted kernel could not report its page size")
-                    kernel = measured_record(api, page_size.stdout, candidate_digest)
+                    kernel = measured_record(api, page_size.stdout, candidate_digest, page_size_bytes=page_size_bytes)
                 except (RuntimeError, ValueError):
                     results.append({"test": "kernel_page_size", "success": False,
                                     "android_api": api, "system_image": image,
@@ -603,7 +604,7 @@ def run_attempt(
                         )
                 install("candidate_clean_install", apk)
                 launch_candidate("bootstrap_activity_launch")
-                if api in {35, 36} and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+                if os.getenv("RUN_PROFILE_UI_TESTS") == "1":
                     from profile_ui_probe import exercise
 
                     debug_apk = (
@@ -663,7 +664,7 @@ def run_attempt(
                 flush=True,
             )
             # The emulator has exited. Keep its log and JSON report, but release
-            # owned disk images before a retry, API36, or another runner's lease.
+            # owned disk images before a retry, other page-size profile, or another runner's lease.
             try:
                 remove_disposable_avd(avd_home, work, process=process)
             except (OSError, ValueError) as cleanup_error:
@@ -679,7 +680,8 @@ def main() -> None:
     parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--sdk", required=True, type=Path)
-    parser.add_argument("--api", default=36, type=int)
+    parser.add_argument("--api", type=int, choices=(37,), default=37)
+    parser.add_argument("--page-bytes", type=int, choices=(4096, 16384), default=4096)
     parser.add_argument("--work-dir", required=True, type=Path)
     args = parser.parse_args()
 
@@ -702,6 +704,7 @@ def main() -> None:
                 api=args.api,
                 work=attempt_work,
                 attempt=attempt,
+                page_size_bytes=args.page_bytes,
             )
         except Exception:
             report = attempt_work / "install-results.json"
