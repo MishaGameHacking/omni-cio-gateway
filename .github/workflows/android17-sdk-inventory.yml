@@ -43,9 +43,7 @@ jobs:
           if not exist "%ANDROID_CLI%" exit /b 1
           "%ANDROID_CLI%" --version
           if errorlevel 1 exit /b 1
-          "%ANDROID_CLI%" --sdk="%SDK_ROOT%" sdk list --all ".*37.*"
+          "%ANDROID_CLI%" --sdk="%SDK_ROOT%" sdk list --all "*37*"
           if errorlevel 1 exit /b 1
-          "%ANDROID_CLI%" sdk list --help
-          if errorlevel 1 exit /b 1
-          "%ANDROID_CLI%" emulator create --list-profiles
+          "%ANDROID_CLI%" --sdk="%SDK_ROOT%" sdk list --all "*ps16k*"
           if errorlevel 1 exit /b 1
