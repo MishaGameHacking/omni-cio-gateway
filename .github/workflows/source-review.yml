@@ -1,6 +1,9 @@
 name: Private source review
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/source-review.yml']
   workflow_dispatch:
 
 permissions:
