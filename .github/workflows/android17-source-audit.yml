@@ -16,30 +16,36 @@ jobs:
         with:
           persist-credentials: false
           clean: true
-      - name: Read tracked Android contracts without changing source or services
+      - name: Inspect current CLI and installed API37 metadata without editing SDK
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs = require('node:fs');
+            const path = require('node:path');
             const cp = require('node:child_process');
-            const paths = cp.execFileSync('git', ['ls-files', '-z'], {encoding:'utf8'}).split('\0').filter(Boolean);
-            const pattern = /minSdk|compileSdk|targetSdk|android-(?:35|36|37)|API\s?(?:35|36|37)|Android\s?(?:15|16|17)|SDK_INT|VERSION_CODES|minimum_android|install-api-|ANDROID_API|api_level/;
-            for (const file of paths) {
-              if (!/\.(?:py|kt|kts|java|xml|ya?ml|properties|toml|md|sh|cjs)$/.test(file)) continue;
-              if (fs.lstatSync(file).isSymbolicLink()) throw new Error('Unexpected source symlink');
-              const lines = fs.readFileSync(file, 'utf8').split('\n');
-              const matches = lines.flatMap((line, index) => pattern.test(line) ? [{line:index + 1, text:line.slice(0,600)}] : []);
-              if (matches.length) core.info('PLATFORM_SOURCE=' + JSON.stringify({path:file,matches}));
+            const candidates = [process.env.ANDROID_SDK_ROOT,process.env.ANDROID_HOME,
+              path.join(process.env.LOCALAPPDATA, 'Android','Sdk'),
+              path.join(process.env.RUNNER_TOOL_CACHE, 'AndroidSdk','sdk')].filter(Boolean);
+            const root = candidates.find(value => fs.existsSync(path.join(value,'cmdline-tools','latest','bin','android.exe')));
+            if (!root) throw new Error('No configured SDK with current native Android CLI');
+            core.info('SDK_ROOT=' + root);
+            for (const family of ['platforms','system-images']) {
+              const folder = path.join(root,family);
+              if (fs.existsSync(folder)) core.info('SDK_DIRECTORIES=' + JSON.stringify({family,entries:fs.readdirSync(folder)}));
             }
-            core.info('SOURCE_HEAD=' + cp.execFileSync('git', ['rev-parse','HEAD'], {encoding:'utf8'}).trim());
-      - name: Inspect installed SDK package availability (read only)
-        shell: cmd
-        run: |
-          set "SDK_ROOT=%ANDROID_SDK_ROOT%"
-          if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
-          if not defined SDK_ROOT set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
-          if not exist "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" exit /b 1
-          call "%SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root="%SDK_ROOT%" --list > "%RUNNER_TEMP%\android17-package-inventory.txt"
-          if errorlevel 1 exit /b 1
-          findstr /C:"android-37" /C:"build-tools;37" /C:"platform-tools " /C:"emulator " "%RUNNER_TEMP%\android17-package-inventory.txt"
-          if errorlevel 1 exit /b 1
+            const packages = ['platforms/android-37.0','platforms/android-37','build-tools/37.0.0',
+              'system-images/android-37.0/google_apis/x86_64','system-images/android-37.0/google_apis_ps16k/x86_64'];
+            for (const packagePath of packages) {
+              for (const name of ['source.properties','package.xml']) {
+                const file = path.join(root,packagePath,name);
+                if (!fs.existsSync(file)) { core.info('SDK_METADATA_MISSING=' + packagePath + '/' + name); continue; }
+                if (fs.statSync(file).size > 65536) throw new Error('SDK metadata unexpectedly large');
+                core.info('SDK_METADATA=' + JSON.stringify({package:packagePath,name,text:fs.readFileSync(file,'utf8')}));
+              }
+            }
+            const cli = path.join(root,'cmdline-tools','latest','bin','android.exe');
+            for (const args of [['--version'],['--sdk='+root,'sdk','list','--all','*37*']]) {
+              const result = cp.spawnSync(cli,args,{encoding:'utf8',timeout:120000,maxBuffer:1048576});
+              core.info('SDK_CLI=' + JSON.stringify({args,status:result.status,stdout:result.stdout,stderr:result.stderr}));
+              if (result.error || result.status !== 0) throw new Error('Current CLI inventory failed');
+            }
