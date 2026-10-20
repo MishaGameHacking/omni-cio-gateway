@@ -16,7 +16,7 @@ jobs:
   refactor:
     if: github.repository == 'MishaGameHacking/omni-cio-gateway'
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Checkout only the migration branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -25,20 +25,21 @@ jobs:
           persist-credentials: true
           clean: true
           fetch-depth: 1
-      - name: Verify exact source and prepare bounded changes
+      - name: Verify exact source and prepare bounded contract changes
         shell: cmd
         env:
           EXPECTED_HEAD: ${{ github.sha }}
         run: |
           py -3 -c "import os,subprocess; h=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(); assert h==os.environ['EXPECTED_HEAD'],'branch advanced; do not overwrite'"
           if errorlevel 1 exit /b 1
-          py -3 tools\migrate_android17.py
+          py -3 tools\migrate_android17_contract.py
           if errorlevel 1 exit /b 1
           git diff --check
           if errorlevel 1 exit /b 1
           git diff --stat
           if errorlevel 1 exit /b 1
-      - name: Commit only source files within this token's permissions
+      - name: Commit generated source changes for independent review
+        id: changes
         shell: cmd
         run: |
           git config user.name "github-actions[bot]"
@@ -47,9 +48,33 @@ jobs:
           if errorlevel 1 exit /b 1
           git diff --cached --check
           if errorlevel 1 exit /b 1
-          git commit -m "refactor(android): migrate modules, transport policy and runtime axes to API37"
+          git commit -m "refactor(release): require Android17 runtime matrix on every new publication"
           if errorlevel 1 exit /b 1
           git push origin HEAD:refs/heads/audit/android17-project-20261020
           if errorlevel 1 exit /b 1
           git log -1 --format=GENERATED_ANDROID17_COMMIT=%%H
-          git diff -- .github/workflows/android-ci.yml .github/workflows/android-apk.yml
+      - name: Test all APK and emulator verification rules
+        if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
+        shell: cmd
+        run: |
+          py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -q
+          if errorlevel 1 exit /b 1
+      - name: Test all backend scenarios on the generated commit
+        if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
+        shell: cmd
+        run: |
+          set "VENV=%RUNNER_TEMP%\android17-backend-tests"
+          if exist "%VENV%" rmdir /s /q "%VENV%"
+          py -3 -m venv "%VENV%"
+          if errorlevel 1 exit /b 1
+          "%VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check -r backend\requirements-dev.txt
+          if errorlevel 1 exit /b 1
+          set "TELEGRAM_CLIENT_ID=123456"
+          set "TELEGRAM_CLIENT_SECRET=test-only"
+          set "BACKEND_PUBLIC_URL=https://example.invalid"
+          set "DATABASE_PATH=%RUNNER_TEMP%\android17-backend-tests.sqlite3"
+          set "FERNET_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          set "ANALYSIS_SCHEDULER_ENABLED=false"
+          set "AI_EXTERNAL_PROCESSING_APPROVED=false"
+          "%VENV%\Scripts\python.exe" -m pytest backend\tests -q
+          if errorlevel 1 exit /b 1
