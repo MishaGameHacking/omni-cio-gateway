@@ -21,38 +21,21 @@ jobs:
           persist-credentials: true
           clean: true
           fetch-depth: 1
-      - name: Apply exact reviewed corrections without modifying history or SDK
+      - name: Apply only exact reviewed source fragments
         shell: cmd
         run: |
-          py -3 tools\repair_android17_contracts.py
+          py -3 tools\finish_android17_surface.py
           if errorlevel 1 exit /b 1
           git diff --check
           if errorlevel 1 exit /b 1
           git diff --stat
           if errorlevel 1 exit /b 1
-      - name: Commit only the reviewed migration files
-        id: changes
-        shell: cmd
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); paths=[r['path'] for r in rows]; assert len(paths)==6; assert all(not p.startswith('.github/workflows/') for p in paths); subprocess.run(['git','add','--',*paths],check=True)"
-          if errorlevel 1 exit /b 1
-          git diff --cached --check
-          if errorlevel 1 exit /b 1
-          git commit -m "fix(android): validate official API37 metadata and enforce current runtime in UI driver"
-          if errorlevel 1 exit /b 1
-          git push origin HEAD:refs/heads/audit/android17-project-20261020
-          if errorlevel 1 exit /b 1
-          git log -1 --format=GENERATED_ANDROID17_COMMIT=%%H
       - name: Test every APK and emulator verification rule
-        if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
         shell: cmd
         run: |
           py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -q
           if errorlevel 1 exit /b 1
-      - name: Test all backend scenarios on generated source
-        if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
+      - name: Test all backend scenarios before committing
         shell: cmd
         run: |
           set "VENV=%RUNNER_TEMP%\android17-backend-tests"
@@ -70,7 +53,19 @@ jobs:
           set "AI_EXTERNAL_PROCESSING_APPROVED=false"
           "%VENV%\Scripts\python.exe" -m pytest backend\tests -q
           if errorlevel 1 exit /b 1
-      - name: Ensure tests did not mutate source
-        if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
+      - name: Commit only the successfully tested source paths
         shell: cmd
-        run: git diff --exit-code
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); paths=[r['path'] for r in rows]; assert len(paths)==18; assert all(not p.startswith('.github/workflows/') for p in paths); subprocess.run(['git','add','--',*paths],check=True)"
+          if errorlevel 1 exit /b 1
+          git diff --cached --check
+          if errorlevel 1 exit /b 1
+          git commit -m "refactor(android): use current device policy and strict platform-bound private APK retention"
+          if errorlevel 1 exit /b 1
+          git push origin HEAD:refs/heads/audit/android17-project-20261020
+          if errorlevel 1 exit /b 1
+          git log -1 --format=GENERATED_ANDROID17_COMMIT=%%H
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
