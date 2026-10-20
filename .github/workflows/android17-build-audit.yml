@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/android17-build-audit.yml
       - .github/scripts/prepare_android_sdk.py
+      - .github/scripts/persistent_ui.py
+      - .github/scripts/tests/test_persistent_ui.py
       - backend/android_runtime_contract.py
       - app/**
       - ci-ui-driver/**
@@ -42,6 +44,11 @@ jobs:
           findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\android17-wrapper.sha256" > "%RUNNER_TEMP%\android17-wrapper-match.txt"
           if errorlevel 1 exit /b 1
           py -3 tools\prepare_spectrum_checkout.py
+          if errorlevel 1 exit /b 1
+      - name: Verify all APK and emulator rules before building
+        shell: cmd
+        run: |
+          py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -q
           if errorlevel 1 exit /b 1
       - name: Install and verify current platform using Android CLI
         shell: cmd
