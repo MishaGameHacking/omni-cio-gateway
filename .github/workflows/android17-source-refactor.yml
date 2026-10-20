@@ -1,65 +1,57 @@
 name: Apply reviewed Android 17 source refactor
-
 on:
   push:
     branches: [audit/android17-project-20261020]
     paths: [.github/workflows/android17-source-refactor.yml]
-
 permissions:
   contents: write
-
 concurrency:
   group: android17-source-refactor
   cancel-in-progress: false
-
 jobs:
   refactor:
-    if: github.repository == 'MishaGameHacking/omni-cio-gateway'
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/audit/android17-project-20261020'
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 12
     steps:
-      - name: Checkout only the migration branch
+      - name: Checkout exact reviewed migration source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: audit/android17-project-20261020
+          ref: ${{ github.sha }}
           persist-credentials: true
           clean: true
           fetch-depth: 1
-      - name: Verify exact source and prepare bounded fixture changes
+      - name: Apply exact reviewed corrections without modifying history or SDK
         shell: cmd
-        env:
-          EXPECTED_HEAD: ${{ github.sha }}
         run: |
-          py -3 -c "import os,subprocess; h=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(); assert h==os.environ['EXPECTED_HEAD'],'branch advanced; do not overwrite'"
-          if errorlevel 1 exit /b 1
-          py -3 tools\migrate_android17_tests.py
+          py -3 tools\repair_android17_contracts.py
           if errorlevel 1 exit /b 1
           git diff --check
           if errorlevel 1 exit /b 1
           git diff --stat
           if errorlevel 1 exit /b 1
-      - name: Commit generated source changes for independent review
+      - name: Commit only the reviewed migration files
         id: changes
         shell: cmd
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); paths=[r['path'] for r in rows if not r['path'].startswith('.github/workflows/')]; assert paths,'no generated source changes'; subprocess.run(['git','add','--',*paths],check=True)"
+          py -3 -c "import json,subprocess; rows=json.load(open('.git/android17-refactor.json',encoding='utf-8')); paths=[r['path'] for r in rows]; assert len(paths)==6; assert all(not p.startswith('.github/workflows/') for p in paths); subprocess.run(['git','add','--',*paths],check=True)"
           if errorlevel 1 exit /b 1
           git diff --cached --check
           if errorlevel 1 exit /b 1
-          git commit -m "test(android): update current-platform fixtures and retain adversarial assertions"
+          git commit -m "fix(android): validate official API37 metadata and enforce current runtime in UI driver"
           if errorlevel 1 exit /b 1
           git push origin HEAD:refs/heads/audit/android17-project-20261020
           if errorlevel 1 exit /b 1
           git log -1 --format=GENERATED_ANDROID17_COMMIT=%%H
-      - name: Test all APK and emulator verification rules
+      - name: Test every APK and emulator verification rule
         if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
         shell: cmd
         run: |
           py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -q
           if errorlevel 1 exit /b 1
-      - name: Test all backend scenarios on the generated commit
+      - name: Test all backend scenarios on generated source
         if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
         shell: cmd
         run: |
@@ -78,10 +70,7 @@ jobs:
           set "AI_EXTERNAL_PROCESSING_APPROVED=false"
           "%VENV%\Scripts\python.exe" -m pytest backend\tests -q
           if errorlevel 1 exit /b 1
-      - name: Inventory remaining active platform references
+      - name: Ensure tests did not mutate source
         if: ${{ !cancelled() && steps.changes.outcome == 'success' }}
         shell: cmd
-        run: |
-          git grep -n -E "Android 1[56]|API ?3[56]|android-3[56]|minSdk.*3[56]|targetSdk.*3[56]" -- app ci-ui-driver backend .github README.md
-          if errorlevel 2 exit /b 1
-          exit /b 0
+        run: git diff --exit-code
