@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
+from pathlib import Path
 import re
 import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
+import zipfile
 
 from timeweb_actions_probe import (
     BASE_URL, MAX_BYTES, NoRedirect, ProbeError, decode_response, read_catalog,
@@ -22,6 +25,12 @@ MAX_MONTHLY_RUB = 1
 OBJECT_KEY = "ci-handoff.zip"
 MAX_ARCHIVE_BYTES = 512 * 1024**2
 OWNER_MARKER = "Analyst AI temporary private CI transfer "
+FILES = (
+    "app/build/outputs/apk/preview/app-preview.apk",
+    "app/build/outputs/apk/debug/app-debug.apk",
+    "ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk",
+    "previous.apk",
+)
 
 
 def identity() -> tuple[str, str]:
@@ -173,16 +182,97 @@ def probe(token: str) -> None:
     print("TIMEWEB_TRANSFER_PROBE=private_readback_passed", flush=True)
 
 
-def cleanup(token: str) -> None:
+def regular_file(root: Path, relative: str) -> Path:
+    path = root / relative
+    if path.is_symlink() or not path.resolve().is_relative_to(root):
+        raise ProbeError("transfer_file_escapes_checkout")
+    for parent in path.parents:
+        if parent == root:
+            break
+        if parent.is_symlink():
+            raise ProbeError("transfer_link_refused")
+    return path
+
+
+def pack(root: Path, previous: Path) -> bytes:
+    identity()
+    buffer = io.BytesIO()
+    manifest = {"head": os.environ["GITHUB_SHA"], "files": {}}
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        total = 0
+        for name in FILES:
+            source = previous if name == "previous.apk" else regular_file(root, name)
+            if source.is_symlink() or not source.is_file():
+                raise ProbeError("transfer_source_missing_or_link")
+            size = source.stat().st_size
+            total += size
+            if size <= 0 or total > MAX_ARCHIVE_BYTES - MAX_BYTES:
+                raise ProbeError("transfer_payload_size_invalid")
+            data = source.read_bytes()
+            if len(data) != size:
+                raise ProbeError("transfer_source_changed")
+            manifest["files"][name] = {"bytes": size, "sha256": hashlib.sha256(data).hexdigest()}
+            archive.writestr(name, data)
+        archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+    return buffer.getvalue()
+
+
+def unpack(data: bytes, root: Path) -> None:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        entries = archive.infolist()
+        if (len(entries) != len(FILES) + 1 or {entry.filename for entry in entries} != {*FILES, "manifest.json"}
+                or sum(entry.file_size for entry in entries) > MAX_ARCHIVE_BYTES
+                or archive.getinfo("manifest.json").file_size > MAX_BYTES):
+            raise ProbeError("transfer_archive_members_invalid")
+        manifest = decode_response(archive.read("manifest.json"))
+        if manifest.get("head") != os.environ.get("GITHUB_SHA") or set(manifest.get("files", {})) != set(FILES):
+            raise ProbeError("transfer_manifest_identity_mismatch")
+        payload = {}
+        for name in FILES:
+            content = archive.read(name)
+            record = manifest["files"][name]
+            if record != {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}:
+                raise ProbeError("transfer_manifest_digest_mismatch")
+            payload[name] = content
+        # Validate all content before creating any output. No archive paths are extracted.
+        for name, content in payload.items():
+            destination = regular_file(root, name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+
+
+def upload(token: str) -> None:
+    root = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+    data = pack(root, Path(os.environ["PREVIOUS_APK"]).resolve(strict=True))
+    digest = hashlib.sha256(data).hexdigest()
+    bucket = create_bucket(token)
+    s3 = client(bucket)
+    require_private(s3, bucket)
+    s3.put_object(Bucket=bucket["name"], Key=OBJECT_KEY, Body=data, ACL="private")
+    read_bytes(s3, bucket, expected_hash=digest)
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+        output.write("archive_sha256=" + digest + "\n")
+    print("TIMEWEB_TRANSFER_UPLOAD=" + json.dumps({"sha256": digest, "bytes": len(data)}), flush=True)
+
+
+def download(token: str) -> None:
+    digest = os.environ.get("TRANSFER_SHA256", "")
+    if not re.fullmatch(r"[a-f0-9]{64}", digest):
+        raise ProbeError("transfer_expected_digest_required")
     bucket = find_bucket(token)
     if bucket is None:
-        print("TIMEWEB_TRANSFER_CLEANUP=verified_absent", flush=True)
-        return
+        raise ProbeError("transfer_bucket_missing")
     s3 = client(bucket)
-    listing = s3.list_objects_v2(Bucket=bucket["name"], MaxKeys=2)
-    if listing.get("IsTruncated") or any(item.get("Key") != OBJECT_KEY for item in listing.get("Contents", [])):
-        raise ProbeError("transfer_cleanup_unexpected_objects")
-    s3.delete_object(Bucket=bucket["name"], Key=OBJECT_KEY)
+    require_private(s3, bucket)
+    data = read_bytes(s3, bucket, expected_hash=digest)
+    root = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+    unpack(data, root)
+    with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+        output.write("PREVIOUS_APK=" + str(root / "previous.apk") + "\n")
+    print("TIMEWEB_TRANSFER_DOWNLOAD=exact_head_and_file_hashes_verified", flush=True)
+
+
+def delete_bucket(token: str, bucket: dict) -> None:
     path = "/api/v1/storages/buckets/" + str(bucket["id"])
     storage_request(token, "DELETE", path)
     for _ in range(6):
@@ -197,20 +287,67 @@ def cleanup(token: str) -> None:
     raise ProbeError("transfer_deletion_not_confirmed")
 
 
+def cleanup_empty(token: str) -> None:
+    """Recover only an owned bucket with control-plane confirmation of zero objects."""
+    bucket = find_bucket(token)
+    if bucket is None:
+        print("TIMEWEB_TRANSFER_CLEANUP=verified_absent", flush=True)
+        return
+    if type(bucket.get("object_amount")) is not int or bucket["object_amount"] != 0:
+        raise ProbeError("transfer_cleanup_bucket_not_empty")
+    delete_bucket(token, bucket)
+
+
+def diagnose(token: str) -> None:
+    bucket = find_bucket(token)
+    if bucket is None:
+        raise ProbeError("transfer_bucket_missing")
+    print("TIMEWEB_TRANSFER_METADATA=" + json.dumps({
+        "id": bucket["id"], "endpoint": endpoint(bucket.get("hostname")),
+        "object_amount": bucket.get("object_amount") if type(bucket.get("object_amount")) is int else None,
+    }), flush=True)
+    require_private(client(bucket), bucket)
+    print("TIMEWEB_TRANSFER_PRIVATE_ACL=passed", flush=True)
+
+
+def cleanup(token: str) -> None:
+    bucket = find_bucket(token)
+    if bucket is None:
+        print("TIMEWEB_TRANSFER_CLEANUP=verified_absent", flush=True)
+        return
+    s3 = client(bucket)
+    listing = s3.list_objects_v2(Bucket=bucket["name"], MaxKeys=2)
+    if listing.get("IsTruncated") or any(item.get("Key") != OBJECT_KEY for item in listing.get("Contents", [])):
+        raise ProbeError("transfer_cleanup_unexpected_objects")
+    s3.delete_object(Bucket=bucket["name"], Key=OBJECT_KEY)
+    delete_bucket(token, bucket)
+
+
+def error_summary(error: Exception) -> dict:
+    result = {"code": str(error) if isinstance(error, ProbeError) else type(error).__name__}
+    response = getattr(error, "response", {})
+    if type(response) is dict:
+        code = response.get("Error", {}).get("Code")
+        if isinstance(code, str) and re.fullmatch(r"[A-Za-z\d]{1,64}", code, re.ASCII):
+            result["s3_code"] = code
+    operation = getattr(error, "operation_name", None)
+    if isinstance(operation, str) and re.fullmatch(r"[A-Za-z]{1,64}", operation):
+        result["operation"] = operation
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("probe", "cleanup"))
+    commands = {"probe": probe, "cleanup": cleanup, "upload": upload, "download": download,
+                "cleanup-empty": cleanup_empty, "diagnose": diagnose}
+    parser.add_argument("command", choices=commands)
     args = parser.parse_args()
     try:
         token = validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
-        if args.command == "probe":
-            probe(token)
-        else:
-            cleanup(token)
+        commands[args.command](token)
     except Exception as error:
         # SDK exceptions can contain request URLs and credentials. Never echo them.
-        code = str(error) if isinstance(error, ProbeError) else type(error).__name__
-        print("TIMEWEB_TRANSFER_ERROR=" + code, flush=True)
+        print("TIMEWEB_TRANSFER_ERROR=" + json.dumps(error_summary(error), sort_keys=True), flush=True)
         return 1
     return 0
 

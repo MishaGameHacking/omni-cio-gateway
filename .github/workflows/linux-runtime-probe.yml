@@ -18,6 +18,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  recover-empty-transfer:
+    if: contains(github.event.head_commit.message, '[timeweb-transfer-recover]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare pinned recovery environment
+        id: environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci-transfer"
+          "$RUNNER_TEMP/ci-transfer/bin/python" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools/ci-transfer-requirements.txt
+          "$RUNNER_TEMP/ci-transfer/bin/python" -m unittest discover -s tools/tests -p 'test_timeweb_*.py'
+      - name: Diagnose the empty bucket from the failed synthetic probe
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: env GITHUB_RUN_ID=39561653615 GITHUB_RUN_ATTEMPT=1 GITHUB_SHA=ddb8516c789b45dd644672fa369a204b3f1bb6f8 "$RUNNER_TEMP/ci-transfer/bin/python" tools/timeweb_ci_transfer.py diagnose
+      - name: Remove only that verified empty probe bucket
+        if: always() && steps.environment.outcome == 'success'
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: env GITHUB_RUN_ID=39561653615 GITHUB_RUN_ATTEMPT=1 GITHUB_SHA=ddb8516c789b45dd644672fa369a204b3f1bb6f8 "$RUNNER_TEMP/ci-transfer/bin/python" tools/timeweb_ci_transfer.py cleanup-empty
   private-transfer:
     if: contains(github.event.head_commit.message, '[timeweb-transfer-probe]')
     runs-on: ubuntu-24.04
