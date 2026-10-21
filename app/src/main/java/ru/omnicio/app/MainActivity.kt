@@ -192,6 +192,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchTelegramLogin() {
+        if (!BackendConfig.isConfigured) {
+            pendingAuthError.value = BackendConfig.UNAVAILABLE_MESSAGE
+            return
+        }
         redirectReceivedForCurrentLogin = false
         lastHandledRedirect = null
         pendingAuthError.value = null

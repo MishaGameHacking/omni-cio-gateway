@@ -68,12 +68,15 @@ class ProfileUiProbeActivity : ComponentActivity() {
                         .semantics { contentDescription = readinessMarker },
                 ) {
                     CompositionLocalProvider(LocalWorkspaceNavigator provides { if (it == WorkspaceRoute.Appearance) appearanceOpen = true }) {
-                    if (appearanceOpen) AppearanceScreen { appearanceOpen = false }
-                    else if (screen != "profile") {
+                    when {
+                    appearanceOpen -> AppearanceScreen { appearanceOpen = false }
+                    screen != "profile" -> {
                         SpectrumDashboardProbe(screen)
-                    } else if (educationOpen) {
+                    }
+                    educationOpen -> {
                         EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
-                    } else {
+                    }
+                    else -> {
                         ProfileScreen(
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
                             tApiConfigured = false, screenshotsBlocked = screenshotsBlocked,
@@ -81,6 +84,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
                             onPortfolioClick = {}, onOpenTApi = {},
                             onOpenEducation = { educationOpen = true }, onLogout = {},
                         )
+                    }
                     }
 
                     }

@@ -41,6 +41,12 @@ runs:
         call gradlew.bat :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
         if errorlevel 1 exit /b 1
 
+    - name: Release verified build intermediates before preparing the emulator
+      shell: cmd
+      run: |
+        py -3 .github\scripts\release_build_intermediates.py
+        if errorlevel 1 exit /b 1
+
     - name: Prepare official Android emulator images
       shell: cmd
       run: |

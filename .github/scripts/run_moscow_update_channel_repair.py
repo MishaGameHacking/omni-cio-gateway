@@ -110,7 +110,7 @@ def apply_release_identity(source: str) -> str:
 
 def apply_child_environment_prefixes(source: str) -> tuple[str, dict[str, int]]:
     """Replace only the four audited child-process environment prefixes."""
-    counts = {prefix: 0 for prefix, _ in PREFIX_REPLACEMENTS}
+    counts = dict.fromkeys((prefix for prefix, _ in PREFIX_REPLACEMENTS), 0)
     output: list[str] = []
     for line in source.splitlines(keepends=True):
         for prefix, replacement in PREFIX_REPLACEMENTS:

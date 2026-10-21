@@ -101,17 +101,17 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
         onDiscard = { draft = baseline; leaving = false; finish() })
 }
 
-internal fun strategyChanges(before: StrategyDraft, after: StrategyDraft): List<String> = buildList {
-    if (before.goal != after.goal) add("Цель")
-    if (before.horizon != after.horizon) add("Горизонт")
-    if (before.market != after.market) add("Рынок")
-    if (before.ratings != after.ratings) add("Допустимые рейтинги")
-    if (before.reserve != after.reserve) add("Резерв: ${before.reserve}% → ${after.reserve}%")
-    if (before.companyLimit != after.companyLimit) add("Компания: ${before.companyLimit}% → ${after.companyLimit}%")
-    if (before.sectorLimit != after.sectorLimit) add("Отрасль: ${before.sectorLimit}% → ${after.sectorLimit}%")
-    if (before.reinvest != after.reinvest) add("Распределение поступлений")
-    if (before.currencyIncome != after.currencyIncome) add("Валютная привязка")
-}
+internal fun strategyChanges(before: StrategyDraft, after: StrategyDraft): List<String> = listOfNotNull(
+    if (before.goal != after.goal) "Цель" else null,
+    if (before.horizon != after.horizon) "Горизонт" else null,
+    if (before.market != after.market) "Рынок" else null,
+    if (before.ratings != after.ratings) "Допустимые рейтинги" else null,
+    if (before.reserve != after.reserve) "Резерв: ${before.reserve}% → ${after.reserve}%" else null,
+    if (before.companyLimit != after.companyLimit) "Компания: ${before.companyLimit}% → ${after.companyLimit}%" else null,
+    if (before.sectorLimit != after.sectorLimit) "Отрасль: ${before.sectorLimit}% → ${after.sectorLimit}%" else null,
+    if (before.reinvest != after.reinvest) "Распределение поступлений" else null,
+    if (before.currencyIncome != after.currencyIncome) "Валютная привязка" else null,
+)
 
 @Composable
 private fun DraftSlider(title: String, description: String, value: Int, range: ClosedFloatingPointRange<Float>, onChange: (Int) -> Unit) {

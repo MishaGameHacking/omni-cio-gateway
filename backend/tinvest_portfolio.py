@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ssl
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Annotated, Any
 
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -185,47 +185,46 @@ def _position_title(position: dict[str, Any], ticker: str | None) -> str:
     return INSTRUMENT_TYPE_NAMES.get(instrument_type, "Инструмент")
 
 
+def _portfolio_position(raw):
+    if not isinstance(raw, dict):
+        return None
+    identifier = str(
+        raw.get("instrumentUid")
+        or raw.get("positionUid")
+        or raw.get("figi")
+        or ""
+    ).strip()
+    if not identifier:
+        return None
+    ticker_value = str(raw.get("ticker") or raw.get("figi") or "").strip()
+    ticker = ticker_value or None
+    instrument_type = str(raw.get("instrumentType") or "").lower()
+    quantity = _decimal(raw.get("quantity"))
+
+    current_value = None
+    if instrument_type in {"share", "etf", "currency", "dfa"}:
+        price, price_currency = _money_decimal(raw.get("currentPrice"))
+        if price_currency and quantity != 0:
+            current_value = _money_payload(price * quantity, price_currency)
+
+    return {
+        "id": identifier,
+        "title": _position_title(raw, ticker),
+        "ticker": ticker,
+        "quantity": _decimal_payload(quantity),
+        "currentValue": current_value,
+        # Position expectedYield is an absolute result, not a percentage.
+        "expectedYieldPercent": None,
+    }
+
+
 def _portfolio_positions(
     portfolio: dict[str, Any],
     positions: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    for raw in portfolio.get("positions") or []:
-        if not isinstance(raw, dict):
-            continue
-        identifier = str(
-            raw.get("instrumentUid")
-            or raw.get("positionUid")
-            or raw.get("figi")
-            or ""
-        ).strip()
-        if not identifier:
-            continue
-        ticker_value = str(raw.get("ticker") or raw.get("figi") or "").strip()
-        ticker = ticker_value or None
-        instrument_type = str(raw.get("instrumentType") or "").lower()
-        quantity = _decimal(raw.get("quantity"))
-
-        current_value = None
-        if instrument_type in {"share", "etf", "currency", "dfa"}:
-            price, price_currency = _money_decimal(raw.get("currentPrice"))
-            if price_currency and quantity != 0:
-                current_value = _money_payload(price * quantity, price_currency)
-
-        result.append(
-            {
-                "id": identifier,
-                "title": _position_title(raw, ticker),
-                "ticker": ticker,
-                "quantity": _decimal_payload(quantity),
-                "currentValue": current_value,
-                # Position expectedYield is an absolute result, not a percentage.
-                "expectedYieldPercent": None,
-            }
-        )
-        seen.add(identifier)
+    result = [item for raw in portfolio.get("positions") or []
+              if (item := _portfolio_position(raw)) is not None]
+    seen = {item["id"] for item in result}
 
     for raw_money in positions.get("money") or []:
         if not isinstance(raw_money, dict):
@@ -258,14 +257,16 @@ def _portfolio_positions(
         401: {"description": "Analyst AI session is invalid or expired."},
         409: {"description": "T-Invest API is not connected."},
         422: {"description": "T-Invest rejected the stored token."},
+        500: {"description": "Stored T-Invest token cannot be decrypted."},
         502: {"description": "Unexpected response from T-Invest."},
         503: {"description": "T-Invest is unavailable or rate limited."},
         504: {"description": "T-Invest request timed out."},
     },
 )
 def get_tinvest_portfolio(
-    currency: str = Query(default="RUB"),
-    user: Any = Depends(backend.current_user),
+    currency: Annotated[str, Query()] = "RUB",
+    *,
+    user: Annotated[Any, Depends(backend.current_user)],
 ) -> dict[str, Any]:
     selected_currency = currency.upper().strip()
     if selected_currency not in SUPPORTED_CURRENCIES:
@@ -287,83 +288,82 @@ def get_tinvest_portfolio(
             verify=ssl_context,
             follow_redirects=False,
         ) as client:
-            accounts_payload = _post_tinvest(
-                client,
-                backend.TINVEST_ACCOUNTS_URL,
-                token,
-                {},
-            )
-            raw_accounts = accounts_payload.get("accounts")
-            if not isinstance(raw_accounts, list):
-                raise HTTPException(status_code=502, detail="tinvest_invalid_response")
-
-            account_results: list[dict[str, Any]] = []
-            total_value = Decimal(0)
-            total_profit = Decimal(0)
-            total_cost_basis = Decimal(0)
-            all_yields_known = True
-            allocation_totals = {field: Decimal(0) for _, field in ALLOCATION_FIELDS}
-
-            for account in raw_accounts:
-                if not isinstance(account, dict) or not _is_readable_account(account):
-                    continue
-                account_id = str(account.get("id") or "").strip()
-                if not account_id:
-                    continue
-
-                portfolio = _post_tinvest(
-                    client,
-                    TINVEST_PORTFOLIO_URL,
-                    token,
-                    {"accountId": account_id, "currency": selected_currency},
-                )
-                positions = _post_tinvest(
-                    client,
-                    TINVEST_POSITIONS_URL,
-                    token,
-                    {"accountId": account_id},
-                )
-
-                account_total, _ = _money_decimal(portfolio.get("totalAmountPortfolio"))
-                total_value += account_total
-
-                expected_yield = portfolio.get("expectedYield")
-                account_percent = (
-                    _decimal(expected_yield)
-                    if isinstance(expected_yield, dict)
-                    else None
-                )
-                if account_percent is None:
-                    all_yields_known = False
-                else:
-                    account_profit = _all_time_profit(account_total, account_percent)
-                    if account_profit is None:
-                        all_yields_known = False
-                    else:
-                        total_profit += account_profit
-                        total_cost_basis += account_total - account_profit
-
-                for _, field in ALLOCATION_FIELDS:
-                    allocation_value, _ = _money_decimal(portfolio.get(field))
-                    allocation_totals[field] += allocation_value
-
-                account_results.append(
-                    {
-                        "id": account_id,
-                        "name": _account_name(account),
-                        "totalValue": _money_payload(account_total, selected_currency),
-                        "expectedYieldPercent": (
-                            _decimal_payload(account_percent)
-                            if account_percent is not None
-                            else None
-                        ),
-                        "positions": _portfolio_positions(portfolio, positions),
-                    }
-                )
+            portfolios = _read_account_portfolios(client, token, selected_currency)
     except (RuntimeError, ssl.SSLError):
         backend.logger.exception("Unable to initialize verified T-Invest TLS")
         raise HTTPException(status_code=503, detail="tinvest_tls_error") from None
 
+    return _aggregate_portfolios(portfolios, selected_currency)
+
+
+def _read_account_portfolios(client, token, selected_currency):
+    accounts_payload = _post_tinvest(
+        client,
+        backend.TINVEST_ACCOUNTS_URL,
+        token,
+        {},
+    )
+    raw_accounts = accounts_payload.get("accounts")
+    if not isinstance(raw_accounts, list):
+        raise HTTPException(status_code=502, detail="tinvest_invalid_response")
+
+    result = []
+    for account in raw_accounts:
+        if not isinstance(account, dict) or not _is_readable_account(account):
+            continue
+        account_id = str(account.get("id") or "").strip()
+        if not account_id:
+            continue
+        portfolio = _post_tinvest(client, TINVEST_PORTFOLIO_URL, token,
+                                  {"accountId": account_id, "currency": selected_currency})
+        positions = _post_tinvest(client, TINVEST_POSITIONS_URL, token, {"accountId": account_id})
+        result.append((account, account_id, portfolio, positions))
+    return result
+
+
+def _portfolio_yield(portfolio, account_total):
+    expected_yield = portfolio.get("expectedYield")
+    account_percent = _decimal(expected_yield) if isinstance(expected_yield, dict) else None
+    account_profit = None if account_percent is None else _all_time_profit(account_total, account_percent)
+    return account_percent, account_profit
+
+
+def _aggregate_portfolios(portfolios, selected_currency):
+    account_results: list[dict[str, Any]] = []
+    total_value = Decimal(0)
+    total_profit = Decimal(0)
+    total_cost_basis = Decimal(0)
+    all_yields_known = True
+    allocation_totals = {field: Decimal(0) for _, field in ALLOCATION_FIELDS}
+
+    for account, account_id, portfolio, positions in portfolios:
+        account_total, _ = _money_decimal(portfolio.get("totalAmountPortfolio"))
+        total_value += account_total
+
+        account_percent, account_profit = _portfolio_yield(portfolio, account_total)
+        if account_profit is None:
+            all_yields_known = False
+        else:
+            total_profit += account_profit
+            total_cost_basis += account_total - account_profit
+
+        for _, field in ALLOCATION_FIELDS:
+            allocation_value, _ = _money_decimal(portfolio.get(field))
+            allocation_totals[field] += allocation_value
+
+        account_results.append(
+            {
+                "id": account_id,
+                "name": _account_name(account),
+                "totalValue": _money_payload(account_total, selected_currency),
+                "expectedYieldPercent": (
+                    _decimal_payload(account_percent)
+                    if account_percent is not None
+                    else None
+                ),
+                "positions": _portfolio_positions(portfolio, positions),
+            }
+        )
     total_percent: Decimal | None = None
     total_profit_payload: dict[str, Any] | None = None
     if account_results and all_yields_known:
@@ -374,6 +374,21 @@ def get_tinvest_portfolio(
             else Decimal(0)
         )
 
+    allocations = _allocation_payload(allocation_totals, total_value)
+
+    return {
+        "currency": selected_currency,
+        "totalValue": _money_payload(total_value, selected_currency),
+        "expectedYieldAmount": total_profit_payload,
+        "expectedYieldPercent": (
+            _decimal_payload(total_percent) if total_percent is not None else None
+        ),
+        "accounts": account_results,
+        "allocations": allocations,
+    }
+
+
+def _allocation_payload(allocation_totals, total_value):
     allocations = []
     if total_value != 0:
         for title, field in ALLOCATION_FIELDS:
@@ -389,13 +404,4 @@ def get_tinvest_portfolio(
                 }
             )
 
-    return {
-        "currency": selected_currency,
-        "totalValue": _money_payload(total_value, selected_currency),
-        "expectedYieldAmount": total_profit_payload,
-        "expectedYieldPercent": (
-            _decimal_payload(total_percent) if total_percent is not None else None
-        ),
-        "accounts": account_results,
-        "allocations": allocations,
-    }
+    return allocations

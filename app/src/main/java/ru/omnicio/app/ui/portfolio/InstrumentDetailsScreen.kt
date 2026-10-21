@@ -1,6 +1,7 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
@@ -46,28 +47,7 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
                     SpectrumTabs(listOf("Позиция", "Исследование", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
                     LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(20.dp),
                         verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                        if (position.blocked) item(key = "restriction") { SpectrumCard(emphasized = true) {
-                            Text("Есть ограничения у брокера", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-                            Text("Возможность сделки уточните в Т‑Инвестициях.")
-                            DataRow("Заблокировано", position.blockedQuantity.quantityText())
-                        } }
-                        if (section == 0) {
-                            item(key = "position-summary") { InstrumentPositionSummary(position) }
-                            item(key = "strategy-check") { WorkspaceEmpty("Соответствие стратегии",
-                                "Проверка действующих правил для этой бумаги ещё не подключена. Заключение не получено.") }
-                            if (position.instrumentType == "bond") item { DetailFold("Погашение и ближайший купон") {
-                                Text("Условия выпуска не получены. Календарь опубликованных выплат доступен в вашем счёте.")
-                            } }
-                            if (position.instrumentType == "share") item { DetailFold("Корпоративные события") {
-                                Text("Проверенные события показаны в исследовании, если источник их предоставил.")
-                            } }
-                        }
-                        if (section == 1) item {
-                            if (session.token.isBlank()) WorkspaceEmpty("Исследование недоступно", "Нужен действующий сеанс и сведения из источников.")
-                            else PortfolioResearchPanel(session.token, instrumentId = position.id, showRefresh = false)
-                            ContextQuestion(position.id)
-                        }
-                        if (section == 2) item(key = "instrument-identifiers") { InstrumentPassport(position) }
+                        instrumentSections(position, section, session.token)
                     }
                 }
                 }
@@ -114,4 +94,30 @@ private fun InstrumentPassport(position: PortfolioPosition) {
                             BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin, copyOnly = true)
                             Notice("Перед сделкой сверьте название и ISIN у брокера.")
                             }
+}
+
+
+private fun LazyListScope.instrumentSections(position: PortfolioPosition, section: Int, token: String) {
+    if (position.blocked) item(key = "restriction") { SpectrumCard(emphasized = true) {
+        Text("Есть ограничения у брокера", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+        Text("Возможность сделки уточните в Т‑Инвестициях.")
+        DataRow("Заблокировано", position.blockedQuantity.quantityText())
+    } }
+    if (section == 0) {
+        item(key = "position-summary") { InstrumentPositionSummary(position) }
+        item(key = "strategy-check") { WorkspaceEmpty("Соответствие стратегии",
+            "Проверка действующих правил для этой бумаги ещё не подключена. Заключение не получено.") }
+        if (position.instrumentType == "bond") item { DetailFold("Погашение и ближайший купон") {
+            Text("Условия выпуска не получены. Календарь опубликованных выплат доступен в вашем счёте.")
+        } }
+        if (position.instrumentType == "share") item { DetailFold("Корпоративные события") {
+            Text("Проверенные события показаны в исследовании, если источник их предоставил.")
+        } }
+    }
+    if (section == 1) item {
+        if (token.isBlank()) WorkspaceEmpty("Исследование недоступно", "Нужен действующий сеанс и сведения из источников.")
+        else PortfolioResearchPanel(token, instrumentId = position.id, showRefresh = false)
+        ContextQuestion(position.id)
+    }
+    if (section == 2) item(key = "instrument-identifiers") { InstrumentPassport(position) }
 }

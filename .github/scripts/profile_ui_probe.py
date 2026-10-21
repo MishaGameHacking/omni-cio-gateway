@@ -357,7 +357,7 @@ class ProfileProbe:
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
                 from profile_scroll import visible_resource
-                search = self.wait_for(lambda: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
+                search = self.wait_for(lambda visible_resource=visible_resource: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
                 self.tap_node(search)
                 self.command("shell", "input", "text", "NO_SUCH_ASSET")
                 self.command("shell", "input", "keyevent", "BACK")
@@ -386,8 +386,9 @@ class ProfileProbe:
                 self.tap("Сохранить черновик", "workspace-content")
                 self.find("Черновик сохранён")
             elif screen == "ux100":
-                self.reveal("Отложить", "workspace-content")
-                self.tap("Отложить", "workspace-content")
+                # A label can be reported outside the clipped viewport during scroll.
+                # Use the exact button, clipped to its list and stable for three frames.
+                self.tap_resource("plan-defer-fixture", "workspace-content")
                 self.tap_visible("Нужно подумать")
                 self.find("Отложено: Нужно подумать · изменить")
                 self.tap_visible("График")
@@ -466,7 +467,7 @@ class ProfileProbe:
         self.capture("system-light")
 
     def dialogs(self, capture_evidence=True):
-        self.tap("Безопасность")
+        self.tap_resource("profile-security-action")
         self.find(CONFIRM_LABEL)
         if capture_evidence:
             self.capture("security")
@@ -487,7 +488,7 @@ class ProfileProbe:
 
     def section_scroll_reset(self):
         self.tab(SETTINGS_LABEL)
-        self.tap("Безопасность")
+        self.tap_resource("profile-security-action")
         self.find(CONFIRM_LABEL)
         self.tap_visible(CONFIRM_LABEL)
         self.tab(INFO_LABEL)
@@ -550,6 +551,18 @@ def exercise(device) -> None:
         exercise_checks(device, read_tree)
 
 
+def run_stage(probe, test):
+    """Keep the original UI failure even when its diagnostic capture also fails."""
+    try:
+        test()
+    except (AssertionError, RuntimeError, ValueError, OSError):
+        try:
+            probe.capture("failure")
+        except Exception as error:
+            print("PROFILE_FAILURE_CAPTURE_UNAVAILABLE=" + type(error).__name__, flush=True)
+        raise
+
+
 def exercise_checks(device, read_tree) -> None:
     """Run the unchanged screen assertions with an explicitly scoped frame source."""
     probe = ProfileProbe(device)
@@ -579,7 +592,7 @@ def exercise_checks(device, read_tree) -> None:
         )
         for name, test in stages:
             print("PROFILE_UI_STAGE=" + name, flush=True)
-            test()
+            run_stage(probe, test)
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
             "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,"

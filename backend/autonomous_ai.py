@@ -106,24 +106,30 @@ class RefreshRequest(BaseModel):
     reason: str = Field(default="manual", max_length=40)
 
 
+BONDS_TITLE = "Облигации"
+FUNDS_TITLE = "Фонды"
+SHARES_TITLE = "Акции"
+CASH_TITLE = "Валюта и деньги"
+BEGIN_WRITE = "BEGIN IMMEDIATE"
+
 TARGET_ALLOCATIONS: dict[str, dict[str, float]] = {
     "conservative": {
-        "Облигации": 50.0,
-        "Фонды": 25.0,
-        "Акции": 20.0,
-        "Валюта и деньги": 5.0,
+        BONDS_TITLE: 50.0,
+        FUNDS_TITLE: 25.0,
+        SHARES_TITLE: 20.0,
+        CASH_TITLE: 5.0,
     },
     "moderate": {
-        "Акции": 40.0,
-        "Облигации": 30.0,
-        "Фонды": 25.0,
-        "Валюта и деньги": 5.0,
+        SHARES_TITLE: 40.0,
+        BONDS_TITLE: 30.0,
+        FUNDS_TITLE: 25.0,
+        CASH_TITLE: 5.0,
     },
     "aggressive": {
-        "Акции": 60.0,
-        "Фонды": 25.0,
-        "Облигации": 10.0,
-        "Валюта и деньги": 5.0,
+        SHARES_TITLE: 60.0,
+        FUNDS_TITLE: 25.0,
+        BONDS_TITLE: 10.0,
+        CASH_TITLE: 5.0,
     },
 }
 
@@ -287,24 +293,28 @@ def _money_value(payload: Any) -> float:
     return _decimal_value(payload.get("value"))
 
 
-def _snapshot_features(snapshot: Mapping[str, Any]) -> dict[str, Any]:
-    positions: list[dict[str, Any]] = []
-    cash: list[dict[str, Any]] = []
+def _snapshot_positions(snapshot):
     for account in snapshot.get("accounts") or []:
         if not isinstance(account, dict):
             continue
         for position in account.get("positions") or []:
-            if not isinstance(position, dict):
-                continue
-            item = {
-                "id": str(position.get("id") or ""),
-                "ticker": position.get("ticker"),
-                "quantity": round(_decimal_value(position.get("quantity")), 8),
-            }
-            if item["id"].startswith("cash:"):
-                cash.append(item)
-            else:
-                positions.append(item)
+            if isinstance(position, dict):
+                yield position
+
+
+def _snapshot_features(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    positions: list[dict[str, Any]] = []
+    cash: list[dict[str, Any]] = []
+    for position in _snapshot_positions(snapshot):
+        item = {
+            "id": str(position.get("id") or ""),
+            "ticker": position.get("ticker"),
+            "quantity": round(_decimal_value(position.get("quantity")), 8),
+        }
+        if item["id"].startswith("cash:"):
+            cash.append(item)
+        else:
+            positions.append(item)
     allocations = []
     for allocation in snapshot.get("allocations") or []:
         if isinstance(allocation, dict):
@@ -344,7 +354,7 @@ def _save_snapshot(user_id: int, snapshot: Mapping[str, Any]) -> tuple[str, str]
         _canonical(_snapshot_features(snapshot)).encode("utf-8")
     ).hexdigest()
     with closing(backend.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_WRITE)
         assert_current_owner_in(db)
         assert_monitoring_access_in(db)
         db.execute(
@@ -399,7 +409,7 @@ def _reserve_budget(user_id: int, now: datetime, tier: AnalysisTier) -> bool:
     column, limit = limits[tier]
     day_key = _analysis_day(now)
     with closing(backend.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_WRITE)
         db.execute(
             "INSERT OR IGNORE INTO analysis_budget_usage(user_id, day_key) VALUES (?, ?)",
             (user_id, day_key),
@@ -468,21 +478,16 @@ def _critical_risk(snapshot: Mapping[str, Any], profile: Mapping[str, Any]) -> t
     currency = str(total_money.get("currency") or "").upper()
     values: dict[str, float] = {}
     titles: dict[str, str] = {}
-    for account in snapshot.get("accounts") or []:
-        if not isinstance(account, dict):
+    for position in _snapshot_positions(snapshot):
+        identifier = str(position.get("id") or "")
+        money = position.get("currentValue") or {}
+        if not identifier or identifier.startswith("cash:") or not isinstance(money, dict):
             continue
-        for position in account.get("positions") or []:
-            if not isinstance(position, dict):
-                continue
-            identifier = str(position.get("id") or "")
-            money = position.get("currentValue") or {}
-            if not identifier or identifier.startswith("cash:") or not isinstance(money, dict):
-                continue
-            # Never add unlike currencies or treat a whole asset class as one issuer.
-            if str(money.get("currency") or "").upper() != currency:
-                continue
-            values[identifier] = values.get(identifier, 0.0) + abs(_money_value(money))
-            titles[identifier] = str(position.get("title") or position.get("ticker") or identifier)
+        # Never add unlike currencies or treat a whole asset class as one issuer.
+        if str(money.get("currency") or "").upper() != currency:
+            continue
+        values[identifier] = values.get(identifier, 0.0) + abs(_money_value(money))
+        titles[identifier] = str(position.get("title") or position.get("ticker") or identifier)
     if total > 0 and values:
         identifier, value = max(values.items(), key=lambda item: item[1])
         share = value / total * 100.0
@@ -504,7 +509,6 @@ def _signals(
     material_digest: str,
     profile: Mapping[str, Any],
     now: datetime,
-    force: bool,
 ) -> tuple[AnalysisSignals, str | None]:
     morning, evening = _schedule_flags(user_id, now, bool(profile["notify_briefs"]))
     previous_material = str(previous_row["material_digest"]) if previous_row else None
@@ -578,7 +582,6 @@ def _context(
 def _fallback_report(
     decision: AnalysisDecision,
     snapshot: Mapping[str, Any],
-    profile: Mapping[str, Any],
     now: datetime,
     risk_message: str | None,
 ) -> AnalysisReport | None:
@@ -652,7 +655,7 @@ def _record_run(
 ) -> str:
     run_id = str(uuid.uuid4())
     with closing(backend.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_WRITE)
         assert_current_owner_in(db)
         assert_monitoring_access_in(db)
         db.execute(
@@ -690,9 +693,12 @@ def _insert_card(
     source_id: str,
 ) -> str:
     card_id = str(uuid.uuid4())
-    kind = "risk" if report.severity in {"warning", "critical"} else (
-        "brief" if decision.reason in {AnalysisReason.MORNING_BRIEF, AnalysisReason.EVENING_BRIEF} else "portfolio"
-    )
+    if report.severity in {"warning", "critical"}:
+        kind = "risk"
+    elif decision.reason in {AnalysisReason.MORNING_BRIEF, AnalysisReason.EVENING_BRIEF}:
+        kind = "brief"
+    else:
+        kind = "portfolio"
     evidence = [asdict(item) for item in report.evidence]
     if not evidence:
         evidence = [
@@ -703,7 +709,7 @@ def _insert_card(
             }
         ]
     with closing(backend.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_WRITE)
         assert_current_owner_in(db)
         assert_monitoring_access_in(db)
         db.execute(
@@ -744,7 +750,6 @@ def _insert_card(
 def run_user_analysis(
     user_id: int,
     *,
-    force: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     init_autonomous_db()
@@ -757,11 +762,11 @@ def run_user_analysis(
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
 
     with monitoring_connection(user_id, user["tinvest_token_encrypted"]):
-        return _run_connected_analysis(user_id, user, current_time, force)
+        return _run_connected_analysis(user_id, user, current_time)
 
 
 def _run_connected_analysis(
-    user_id: int, user: sqlite3.Row, current_time: datetime, force: bool,
+    user_id: int, user: sqlite3.Row, current_time: datetime,
 ) -> dict[str, Any]:
     # Android readiness gates interactive API access, never server monitoring.
     assert_monitoring_access(backend.connect)
@@ -794,7 +799,6 @@ def _run_connected_analysis(
         material_digest=material_digest,
         profile=profile,
         now=current_time,
-        force=force,
     )
     budget = _budget(user_id, current_time)
     decision = decide_analysis(signals, budget)
@@ -839,11 +843,11 @@ def _run_connected_analysis(
         state = "completed"
     except (TimewebAIError, GuardError, BudgetDenied) as exc:
         error_code = getattr(exc, "code", str(exc))
-        report = _fallback_report(decision, snapshot, profile, current_time, risk_message)
+        report = _fallback_report(decision, snapshot, current_time, risk_message)
     except Exception as exc:
         logger.exception("AI analysis failed safely for user %s", user_id)
         error_code = type(exc).__name__
-        report = _fallback_report(decision, snapshot, profile, current_time, risk_message)
+        report = _fallback_report(decision, snapshot, current_time, risk_message)
 
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
@@ -881,7 +885,7 @@ def _acquire_lease(name: str, ttl_seconds: int) -> bool:
     now = int(time.time())
     expires = now + ttl_seconds
     with closing(backend.connect()) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute(BEGIN_WRITE)
         row = db.execute(
             "SELECT owner, expires_at FROM scheduler_leases WHERE name = ?",
             (name,),
@@ -976,7 +980,7 @@ def read_profile(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str,
     return get_profile(int(user["id"]))
 
 
-@router.put("/profile")
+@router.put("/profile", responses={400: {"description": "At least one allowed market is required."}})
 def update_profile(
     payload: ProfileUpdate,
     user: sqlite3.Row = Depends(backend.current_user),
@@ -1061,7 +1065,7 @@ def pulse(
     return {"cards": [_card_payload(row) for row in rows]}
 
 
-@router.post("/cards/{card_id}/read")
+@router.post("/cards/{card_id}/read", responses={404: {"description": "Card does not exist for this user."}})
 def mark_card_read(
     card_id: str,
     user: sqlite3.Row = Depends(backend.current_user),
@@ -1078,7 +1082,10 @@ def mark_card_read(
     return {"read": True}
 
 
-@router.post("/refresh", status_code=202)
+@router.post("/refresh", status_code=202, responses={
+    409: {"description": "T-Invest API is not connected."},
+    503: {"description": "Analysis scheduler is disabled."},
+})
 def refresh(
     _: RefreshRequest,
     user: sqlite3.Row = Depends(backend.current_user),
@@ -1188,7 +1195,7 @@ def ideas(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
 
     current = _allocation_map(snapshot)
     target = TARGET_ALLOCATIONS[profile["risk_level"]]
-    cash_share = current.get("Валюта и деньги", 0.0)
+    cash_share = current.get(CASH_TITLE, 0.0)
     investable = max(0.0, cash_share - float(profile["min_cash_percent"]))
     if investable < 1.0:
         return {
@@ -1200,7 +1207,7 @@ def ideas(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
 
     gaps = []
     for asset_class, target_share in target.items():
-        if asset_class == "Валюта и деньги":
+        if asset_class == CASH_TITLE:
             continue
         current_share = current.get(asset_class, 0.0)
         gap = max(0.0, target_share - current_share)

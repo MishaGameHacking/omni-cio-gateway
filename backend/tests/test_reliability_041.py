@@ -123,8 +123,8 @@ class AnalysisReliabilityTests(unittest.TestCase):
         self.assertEqual(result['state'], 'queued')
         self.assertEqual(result['tier'], 'none')
         with patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot()), patch.object(ai, 'analyze_if_needed') as analyze:
-            ai.run_user_analysis(self.user_id, force=True, now=self.now)
-            result = ai.run_user_analysis(self.user_id, force=True, now=self.now)
+            ai.run_user_analysis(self.user_id, now=self.now)
+            result = ai.run_user_analysis(self.user_id, now=self.now)
         self.assertEqual(result['state'], 'skipped')
         analyze.assert_not_called()
 

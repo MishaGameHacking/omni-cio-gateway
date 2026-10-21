@@ -1,4 +1,20 @@
-# Timeweb Actions import: implementation and observed access blocker
+# Timeweb Actions import and CI capacity
+
+## Current observation — 21 October 2026
+
+The owner authorized CI infrastructure and requested the cheapest suitable option
+worldwide. Standard free GitHub Ubuntu has now passed real KVM, disk and Android
+17 SDK/image preparation. The signing identity remains on the existing Windows
+host. Full signed-APK runtime acceptance is still required.
+
+The read-only Timeweb preflight succeeded on retry. Subsequent explicit capacity
+experiments created and removed one temporary VM; complete IP inventory confirmed
+zero retained addresses. Private S3 transport failed before any APK upload; later
+complete inventories confirmed both empty test buckets absent. No credential or
+permission was changed. See [the dated hosting decision and evidence](CI_HOSTING_DECISION_2026-10-21.md).
+
+The original read-only preflight below remains read-only. Disposable resource
+experiments are separate, explicitly triggered workflows in PR #880.
 
 The owner requested a public HTTPS URL from which the GPT editor can import the
 corrected Timeweb schema. The owner permits direct main changes, Timeweb usage
@@ -10,8 +26,9 @@ certify an APK.
 
 `integrations/timeweb/projects.openapi.json` describes exactly one GET action,
 `listTimewebProjects`. It includes explicit `components.schemas`, internal
-references and Bearer authentication. It contains no credential values. This
-private repository is a source copy, **not** a public import URL. An authenticated
+references and Bearer authentication. It contains no credential values. The owner confirmed on 21 October 2026 that this repository is public.
+Its source visibility does not establish successful access to Timeweb or an
+application deployment. An authenticated
 GitHub raw URL, expiring token URL or sandbox attachment is not a durable public
 URL for GPT Actions.
 
@@ -71,7 +88,7 @@ The requirements file belongs to the probe, not the production backend.
 }
 ```
 
-The final workflow is **failed**, not green: offline tests passed but live access
+The initial attempt was **failed**, not green (the successful retry is documented above): offline tests passed but live access
 was denied. We do not suppress this failure. There is no observed inventory, no
 public import URL and no evidence that the account has no resources. Original
 error bodies were deliberately not logged, so the precise denial policy or
