@@ -42,9 +42,10 @@ async function find(github, repo, id) {
 async function inaccessibleWithoutAuth(repo, suffix, anonymousFetch) {
   const url = `https://api.github.com/repos/${repo.owner}/${repo.repo}/${suffix}`;
   const response = await anonymousFetch(url, {redirect: 'manual',
-    headers: {accept: 'application/octet-stream'}, signal: AbortSignal.timeout(20000)});
+    headers: {accept: suffix.startsWith('releases/assets/')
+      ? 'application/octet-stream' : 'application/vnd.github+json'}, signal: AbortSignal.timeout(20000)});
   await response.body?.cancel();
-  if (response.status !== 404) throw new Error('CI draft must return 404 without authentication');
+  if (response.status !== 404) throw new Error('CI draft must return 404 without authentication; received HTTP ' + response.status);
 }
 
 async function absent(call) {
