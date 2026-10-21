@@ -10,6 +10,15 @@ import timeweb_ci_catalog as catalog
 
 
 class CatalogTests(unittest.TestCase):
+    def test_ip_audit_never_emits_addresses_or_accepts_incomplete_inventory(self):
+        payload = {"ips": [{"ip": "private-output", "resource_id": None},
+                           {"ip": "private-output", "resource_id": 17}], "meta": {"total": 2}}
+        self.assertEqual(catalog.floating_ip_summary(payload), {
+            "count": 2, "complete": True, "unbound_count": 1, "server_ids": [17]})
+        payload["meta"]["total"] = 3
+        with self.assertRaisesRegex(probe.ProbeError, "incomplete_ip_inventory"):
+            catalog.floating_ip_summary(payload)
+
     def test_filters_capacity_orders_price_and_only_emits_safe_fields(self):
         good = {"id": 2, "cpu": 4, "ram": 8192, "disk": 81920, "price": 2000}
         larger = dict(good, id=3, ram=16384, price=3000, root_pass="not-for-output")
