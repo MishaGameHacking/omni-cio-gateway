@@ -25,11 +25,15 @@ MAX_MONTHLY_RUB = 1
 OBJECT_KEY = "ci-handoff.zip"
 MAX_ARCHIVE_BYTES = 512 * 1024**2
 OWNER_MARKER = "Analyst AI temporary private CI transfer "
+HTTPS_PREFIX = "https://"
+PREVIOUS_FILE = "previous.apk"
+MANIFEST_FILE = "manifest.json"
+CLEANUP_CONFIRMED = "TIMEWEB_TRANSFER_CLEANUP=verified_absent"
 FILES = (
     "app/build/outputs/apk/preview/app-preview.apk",
     "app/build/outputs/apk/debug/app-debug.apk",
     "ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk",
-    "previous.apk",
+    PREVIOUS_FILE,
 )
 
 
@@ -65,7 +69,19 @@ def storage_request(token: str, method: str, path: str, body=None) -> dict:
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
         code = error.code
+        try:
+            failure = decode_response(error.read(MAX_BYTES + 1))
+        except ProbeError:
+            failure = {}
         error.close()
+        symbol = failure.get("error_code")
+        if code != 404:
+            report = {"status": code}
+            if isinstance(symbol, str) and re.fullmatch(r"[a-z_]{1,64}", symbol):
+                report["error_code"] = symbol
+            message = json.dumps(failure.get("message", "")).lower()
+            report["delete_permission_mentioned"] = "is_able_to_delete" in message
+            print("TIMEWEB_STORAGE_HTTP=" + json.dumps(report, sort_keys=True), flush=True)
         raise ProbeError("storage_http_" + str(code)) from None
     except OSError as error:
         raise ProbeError(transport_error_code(error)) from None
@@ -102,8 +118,11 @@ def select_offer(document: dict) -> dict:
 
 
 def create_bucket(token: str) -> dict:
-    if find_bucket(token) is not None:
-        raise ProbeError("transfer_bucket_already_exists")
+    document = read_resource(token, "buckets")
+    if not summarize("buckets", document)["complete"]:
+        raise ProbeError("transfer_inventory_incomplete")
+    if any(item.get("name", "").startswith("analyst-ci-") for item in document["buckets"]):
+        raise ProbeError("transfer_earlier_bucket_requires_cleanup")
     projects = summarize("projects", read_resource(token, "projects"))
     if PROJECT_ID not in projects["ids"]:
         raise ProbeError("transfer_project_not_visible")
@@ -124,13 +143,13 @@ def create_bucket(token: str) -> dict:
 def endpoint(hostname: str) -> str:
     if not isinstance(hostname, str):
         raise ProbeError("transfer_endpoint_invalid")
-    value = hostname if hostname.startswith("https://") else "https://" + hostname
+    value = hostname if hostname.startswith(HTTPS_PREFIX) else HTTPS_PREFIX + hostname
     parsed = urlsplit(value)
     if (parsed.scheme != "https" or parsed.username or parsed.password or parsed.port
             or parsed.path not in ("", "/") or parsed.query or parsed.fragment
             or not re.fullmatch(r"[a-z\d.-]+\.twcstorage\.ru", parsed.hostname or "", re.ASCII)):
         raise ProbeError("transfer_endpoint_invalid")
-    return "https://" + parsed.hostname
+    return HTTPS_PREFIX + parsed.hostname
 
 
 def client(bucket: dict):
@@ -143,7 +162,10 @@ def client(bucket: dict):
     url = endpoint(bucket.get("hostname"))
     access = validated_token(bucket.get("access_key", ""))
     secret = validated_token(bucket.get("secret_key", ""))
-    return boto3.client("s3", endpoint_url=url, region_name="ru-1",
+    region = bucket.get("location")
+    if not isinstance(region, str) or not re.fullmatch(r"[a-z]{2}-\d", region, re.ASCII):
+        raise ProbeError("transfer_region_missing")
+    return boto3.client("s3", endpoint_url=url, region_name=region,
                         aws_access_key_id=access, aws_secret_access_key=secret,
                         config=Config(signature_version="s3v4", connect_timeout=10,
                                       read_timeout=120, retries={"max_attempts": 2},
@@ -201,7 +223,7 @@ def pack(root: Path, previous: Path) -> bytes:
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
         total = 0
         for name in FILES:
-            source = previous if name == "previous.apk" else regular_file(root, name)
+            source = previous if name == PREVIOUS_FILE else regular_file(root, name)
             if source.is_symlink() or not source.is_file():
                 raise ProbeError("transfer_source_missing_or_link")
             size = source.stat().st_size
@@ -213,18 +235,18 @@ def pack(root: Path, previous: Path) -> bytes:
                 raise ProbeError("transfer_source_changed")
             manifest["files"][name] = {"bytes": size, "sha256": hashlib.sha256(data).hexdigest()}
             archive.writestr(name, data)
-        archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+        archive.writestr(MANIFEST_FILE, json.dumps(manifest, sort_keys=True))
     return buffer.getvalue()
 
 
 def unpack(data: bytes, root: Path) -> None:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         entries = archive.infolist()
-        if (len(entries) != len(FILES) + 1 or {entry.filename for entry in entries} != {*FILES, "manifest.json"}
+        if (len(entries) != len(FILES) + 1 or {entry.filename for entry in entries} != {*FILES, MANIFEST_FILE}
                 or sum(entry.file_size for entry in entries) > MAX_ARCHIVE_BYTES
-                or archive.getinfo("manifest.json").file_size > MAX_BYTES):
+                or archive.getinfo(MANIFEST_FILE).file_size > MAX_BYTES):
             raise ProbeError("transfer_archive_members_invalid")
-        manifest = decode_response(archive.read("manifest.json"))
+        manifest = decode_response(archive.read(MANIFEST_FILE))
         if manifest.get("head") != os.environ.get("GITHUB_SHA") or set(manifest.get("files", {})) != set(FILES):
             raise ProbeError("transfer_manifest_identity_mismatch")
         payload = {}
@@ -268,7 +290,7 @@ def download(token: str) -> None:
     root = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
     unpack(data, root)
     with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
-        output.write("PREVIOUS_APK=" + str(root / "previous.apk") + "\n")
+        output.write("PREVIOUS_APK=" + str(root / PREVIOUS_FILE) + "\n")
     print("TIMEWEB_TRANSFER_DOWNLOAD=exact_head_and_file_hashes_verified", flush=True)
 
 
@@ -280,7 +302,7 @@ def delete_bucket(token: str, bucket: dict) -> None:
             storage_request(token, "GET", path)
         except ProbeError as error:
             if str(error) == "storage_http_404":
-                print("TIMEWEB_TRANSFER_CLEANUP=verified_absent", flush=True)
+                print(CLEANUP_CONFIRMED, flush=True)
                 return
             raise
         time.sleep(5)
@@ -291,7 +313,7 @@ def cleanup_empty(token: str) -> None:
     """Recover only an owned bucket with control-plane confirmation of zero objects."""
     bucket = find_bucket(token)
     if bucket is None:
-        print("TIMEWEB_TRANSFER_CLEANUP=verified_absent", flush=True)
+        print(CLEANUP_CONFIRMED, flush=True)
         return
     if type(bucket.get("object_amount")) is not int or bucket["object_amount"] != 0:
         raise ProbeError("transfer_cleanup_bucket_not_empty")
@@ -305,6 +327,9 @@ def diagnose(token: str) -> None:
     print("TIMEWEB_TRANSFER_METADATA=" + json.dumps({
         "id": bucket["id"], "endpoint": endpoint(bucket.get("hostname")),
         "object_amount": bucket.get("object_amount") if type(bucket.get("object_amount")) is int else None,
+        "access_key_present": bool(bucket.get("access_key")),
+        "secret_key_present": bool(bucket.get("secret_key")),
+        "secret_key_appears_masked": "*" in str(bucket.get("secret_key", "")),
     }), flush=True)
     require_private(client(bucket), bucket)
     print("TIMEWEB_TRANSFER_PRIVATE_ACL=passed", flush=True)
@@ -313,7 +338,7 @@ def diagnose(token: str) -> None:
 def cleanup(token: str) -> None:
     bucket = find_bucket(token)
     if bucket is None:
-        print("TIMEWEB_TRANSFER_CLEANUP=verified_absent", flush=True)
+        print(CLEANUP_CONFIRMED, flush=True)
         return
     s3 = client(bucket)
     listing = s3.list_objects_v2(Bucket=bucket["name"], MaxKeys=2)

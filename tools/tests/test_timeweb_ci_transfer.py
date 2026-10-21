@@ -30,8 +30,9 @@ class TransferTests(unittest.TestCase):
                 bad = io.BytesIO(data)
                 with zipfile.ZipFile(bad, "a") as archive:
                     archive.writestr("../escape", "unexpected")
+                invalid_data = bad.getvalue()
                 with self.assertRaisesRegex(transfer.ProbeError, "members_invalid"):
-                    transfer.unpack(bad.getvalue(), target)
+                    transfer.unpack(invalid_data, target)
             with patch.dict(os.environ, {"GITHUB_SHA": "b" * 40}), self.assertRaisesRegex(transfer.ProbeError, "identity_mismatch"):
                 transfer.unpack(data, target)
             self.assertFalse((root / "escape").exists())
