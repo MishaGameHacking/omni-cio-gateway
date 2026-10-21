@@ -11,7 +11,7 @@ permissions:
   pull-requests: read
 jobs:
   diagnostics:
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: ubuntu-24.04
     timeout-minutes: 6
     steps:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -83,6 +83,7 @@ jobs:
             if (context.ref === 'refs/heads/codex/spectrum-3d-100') targets.push({pullRequest:'880'});
             for (const target of targets) {
               const head = await resolveHead(target);
+              await readFailedChecks(head);
               let check;
               for (let attempt=0; attempt<36; attempt++) {
                 const checks = await github.paginate(github.rest.checks.listForRef, {...context.repo,ref:head,per_page:100});
