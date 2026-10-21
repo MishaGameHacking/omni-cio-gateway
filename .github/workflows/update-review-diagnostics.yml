@@ -103,7 +103,7 @@ jobs:
               for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({...target,path:a.path,line:a.start_line,title:a.title,message:a.message}));
               try {
                 const newIssues = await readAllIssues(target,true);
-                const expectedNew = /\[(\d+) New issues\]/.exec(check.output?.summary||'');
+                const expectedNew = /\[(\d+) New issues?\]/.exec(check.output?.summary||'');
                 if (!expectedNew || Number(expectedNew[1])!==newIssues.length) {
                   throw new Error('Sonar API count disagrees with exact-head check');
                 }
