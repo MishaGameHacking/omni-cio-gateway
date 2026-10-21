@@ -9,7 +9,6 @@ on:
 permissions:
   contents: read
   checks: read
-  actions: read
   pull-requests: read
 jobs:
   diagnostics:
@@ -98,39 +97,5 @@ jobs:
                   issues:issues.length,unique:issues.length,all_types:true,complete:true}));
               } catch (error) {
                 core.setFailed('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,head:pr.head.sha,reason:error.message}));
-              }
-            }
-
-      - name: Read failure evidence from the last Android runtime check
-        if: always()
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        with:
-          script: |
-            // Read-only diagnostic of the existing failed job. Keep runtime
-            // gates unchanged and expose only bounded error/evidence excerpts.
-            const jobId = 118611852404;
-            const response = await github.rest.actions.downloadJobLogsForWorkflowRun({
-              ...context.repo, job_id: jobId,
-            });
-            const log = typeof response.data === 'string'
-              ? response.data : Buffer.from(response.data).toString('utf8');
-            if (Buffer.byteLength(log, 'utf8') > 64 * 1024 * 1024) {
-              throw new Error('Android diagnostic log exceeds the read limit');
-            }
-            const lines = log.split(/\r?\n/);
-            const selected = new Set();
-            const pattern = /##\[error\]|Traceback \(most recent call last\)|AssertionError|RuntimeError|TimeoutError|Fatal signal|FATAL EXCEPTION/;
-            for (let index = 0; index < lines.length; index++) {
-              if (!pattern.test(lines[index])) continue;
-              for (let row = Math.max(0, index - 8); row <= Math.min(lines.length - 1, index + 16); row++) selected.add(row);
-            }
-            core.info('ANDROID_FAILURE_JOB=' + jobId);
-            for (const row of [...selected].sort((a, b) => a - b).slice(-250)) {
-              core.info('ANDROID_FAILURE_LINE=' + JSON.stringify({line: row + 1, text: lines[row].slice(0, 3000)}));
-            }
-            for (const line of lines) {
-              if (line.includes('VERIFICATION_EVIDENCE=') && !line.includes("core.info(")) {
-                if (line.length > 160000) throw new Error('Evidence index exceeds diagnostic limit');
-                core.info(line);
               }
             }

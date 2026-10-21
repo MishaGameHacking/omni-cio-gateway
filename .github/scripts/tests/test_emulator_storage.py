@@ -39,11 +39,23 @@ class EmulatorStorageTests(unittest.TestCase):
                          f"hw.ramSize=4096\ntag.id=ps16k\ndisk.dataPartition.size={DATA_BYTES}\nhw.mainKeys=no\n")
 
     def test_official_initial_image_is_never_shrunk(self):
-        with self.source.open("r+b") as source:
-            source.truncate(DATA_BYTES + 1)
-        self.configure(DATA_BYTES + HEADROOM_BYTES + 1024 * 1024)
+        # NTFS does not promise sparse allocation for truncate(): the old
+        # fixture exhausted the runner by allocating more than four GiB.
+        # Supply the measured source size at the I/O boundary; exercise the
+        # real rounding, free-space check and config write below that boundary.
+        with patch("emulator_storage._initial_data_bytes",
+                   return_value=("userdata.img", DATA_BYTES + 1)):
+            self.configure(DATA_BYTES + HEADROOM_BYTES + 1024 * 1024)
         self.assertIn(f"disk.dataPartition.size={DATA_BYTES + 1024 * 1024}\n",
                       self.config.read_text(encoding="utf-8"))
+
+    def test_large_initial_image_still_requires_its_full_capacity_and_headroom(self):
+        required = DATA_BYTES + 1024 * 1024 + HEADROOM_BYTES
+        with patch("emulator_storage._initial_data_bytes",
+                   return_value=("userdata.img", DATA_BYTES + 1)):
+            with self.assertRaisesRegex(RuntimeError, "Insufficient runner disk space"):
+                self.configure(required - 1)
+        self.assertEqual(self.config.read_text(encoding="utf-8"), self.original)
 
     def test_insufficient_space_fails_before_rewriting_configuration(self):
         with self.assertRaisesRegex(RuntimeError, "Insufficient runner disk space"):
