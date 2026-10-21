@@ -10,6 +10,21 @@ Main остаётся `973f294`; обход правила и публикаци
 
 **APK по запросу владельца — F01/F22/F23:** готовится совместимый
 0.11.0-preview / 35 в приватном draft GitHub после полной проверки.
+На `d90b56d`, [run `39622346910`](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39622346910)
+/ runtime `119304493162`, прошли build/lint, установка/upgrade API37/16КБ,
+Filament, контекст, баланс и полный workflow целей font100/font200. Первый
+risk/ready case выявил точную оставшуюся причину: в landscape 640×320 новое
+окно 73 содержит видимое enabled EditText с правильным числом, focus=true,
+selection=0/0, но keyboard-visible=false. Возврат в portrait прошёл; снимок
+`b27bdf877d0e9a56f0ca02d3014d07295da8edf5` показывает открытую клавиатуру и
+сохранённый курсор. Текущий кандидат явно вызывает SoftwareKeyboardController.show
+после получения native focus в готовом окне; read-only поле не открывает IME.
+Это исправление приложения, проверки IME/focus/caret не ослаблены. Основание:
+[официальный SoftwareKeyboardController](https://developer.android.com/reference/kotlin/androidx/compose/ui/platform/SoftwareKeyboardController).
+Backend `39622346939`: 1446 tests / 1382 subtests; Sonar check `119291666221`
+и полный inventory `39623131560` — 0 OPEN/CONFIRMED в PR. Cleanup `119309966258`
+успешен. Полная матрица нового кандидата и выдача APK ещё не подтверждены.
+
 На `7f5c72b`, run `39614968981` / runtime `119279154337`, снова прошли
 установка/upgrade API37/16КБ, Filament, контекст, баланс и цели обоих шрифтов.
 Риск-сценарий прошёл распознавание disabled Button и ввод обоих предположений,

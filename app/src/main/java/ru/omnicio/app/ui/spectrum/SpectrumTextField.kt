@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -52,6 +53,7 @@ fun SpectrumTextField(
     var receiveFocusEvents by remember { mutableStateOf(false) }
     val requester = remember { FocusRequester() }
     val viewport = remember { BringIntoViewRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     val window = LocalWindowInfo.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // Only focus and cursor offsets are saveable here. The caller owns the text:
@@ -69,6 +71,11 @@ fun SpectrumTextField(
             withFrameNanos { }
             viewport.bringIntoView()
             requester.requestFocus()
+            snapshotFlow { focused }.first { it }
+            // Focus may already be restored by the new Dialog. In that case
+            // requestFocus emits no new focus event to reopen its input method.
+            withFrameNanos { }
+            if (!readOnly) keyboard?.show()
         }
         receiveFocusEvents = true
     }
