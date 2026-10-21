@@ -1,0 +1,51 @@
+name: Timeweb Actions preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integrations/timeweb/projects.openapi.json"
+      - "tools/timeweb_actions_probe.py"
+      - "tools/tests/test_timeweb_actions_probe.py"
+      - ".github/workflows/timeweb-actions-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeweb-actions-read-only-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate Actions schema and discover existing hosting
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Test read-only probe before credentials are available
+        shell: cmd
+        run: |
+          py -3 -m unittest discover -s tools\tests -p "test_timeweb_actions_probe.py" -v
+          if errorlevel 1 exit /b 1
+
+      - name: Read Timeweb resource identifiers without changing anything
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, '[timeweb-actions-probe]')
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          py -3 tools\timeweb_actions_probe.py
+          if errorlevel 1 exit /b 1

@@ -1,0 +1,93 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Timeweb Cloud Projects",
+    "version": "1.0.1",
+    "description": "Read available projects without modifying cloud resources."
+  },
+  "servers": [
+    {
+      "url": "https://api.timeweb.cloud"
+    }
+  ],
+  "security": [
+    {
+      "TimewebBearer": []
+    }
+  ],
+  "paths": {
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "listTimewebProjects",
+        "summary": "Получить список проектов Timeweb",
+        "description": "Возвращает доступные проекты. Не изменяет ресурсы.",
+        "x-openai-isConsequential": false,
+        "responses": {
+          "200": {
+            "description": "Список проектов получен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Токен отсутствует или недействителен"
+          },
+          "403": {
+            "description": "Недостаточно прав"
+          },
+          "429": {
+            "description": "Превышена частота запросов"
+          },
+          "500": {
+            "description": "Ошибка сервиса Timeweb"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProjectsResponse": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            }
+          },
+          "response_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "securitySchemes": {
+      "TimewebBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
