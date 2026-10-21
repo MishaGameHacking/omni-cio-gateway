@@ -49,7 +49,8 @@ class AndroidReleaseConcurrencyTests(unittest.TestCase):
         )
 
         self.assertIn("Delete only this run private CI handoff and verify absence", self.ci)
-        self.assertIn("if: always() && github.event.pull_request.head.repo.full_name == github.repository", self.ci)
+        self.assertIn("if: always() && ((github.event_name == 'pull_request'", self.ci)
+        self.assertIn("github.ref == 'refs/heads/main'", self.ci)
 
     def test_host_wide_os_lease_serializes_actual_emulator_access(self) -> None:
         self.assertIn("with exclusive_emulator():", self.install_driver)
@@ -58,7 +59,8 @@ class AndroidReleaseConcurrencyTests(unittest.TestCase):
         self.assertIn("Four runners on one laptop", self.lease)
 
     def test_gradle_wrapper_is_verified_without_flaky_setup_action(self) -> None:
-        for workflow in (self.ci, self.release):
+        self.assertIn("uses: ./.github/workflows/android-ci.yml", self.release)
+        for workflow in (self.ci,):
             self.assertNotIn("gradle/actions/setup-gradle@", workflow)
             self.assertIn("Verify pinned Gradle wrapper", workflow)
             self.assertIn(self.WRAPPER_SHA256, workflow)

@@ -12,14 +12,15 @@ REFERENCE_DIGEST = "3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a
 class DistributableApkWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.workflow = WORKFLOW.read_text(encoding="utf-8")
+        cls.caller = WORKFLOW.read_text(encoding="utf-8")
+        cls.workflow = (ROOT / ".github/workflows/android-ci.yml").read_text(encoding="utf-8")
         cls.action = ACTION.read_text(encoding="utf-8")
         cls.installer = INSTALLER.read_text(encoding="utf-8")
 
     def test_workflow_builds_debug_fixture_and_preview(self):
         self.assertIn(":app:assembleDebug", self.workflow)
         self.assertIn(":app:assemblePreview", self.workflow)
-        self.assertIn('RUN_PROFILE_UI_TESTS: "1"', self.workflow)
+        self.assertIn("RUN_PROFILE_UI_TESTS: '1'", self.workflow)
 
     def test_workflow_pins_the_real_installed_reference_apk(self):
         self.assertIn("Analyst-AI-0.10.0-preview-0a894dd.apk", self.workflow)
@@ -29,9 +30,9 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertNotIn("Analyst-AI-0.5.1-preview", self.workflow)
 
     def test_verification_finishes_before_artifact_retention(self):
-        verification = self.workflow.index("uses: ./.github/actions/check-apk")
+        verification = self.workflow.index("python3 .github/scripts/validate_distribution.py")
         assertion = self.workflow.index("- name: Assert verified APK and evidence are present")
-        retention = self.workflow.index("uses: actions/upload-artifact@")
+        retention = self.workflow.index("- name: Retain APK and verification evidence when storage is available")
         self.assertLess(verification, assertion)
         self.assertLess(assertion, retention)
 
@@ -45,16 +46,20 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         )
         assertion_block = self.workflow[assertion:retention_start]
         retention_block = self.workflow[retention_start:retention_end]
-        self.assertIn('if not exist "app\\build\\outputs\\apk\\preview\\app-preview.apk" exit /b 1', assertion_block)
-        self.assertIn('if not exist "app\\build\\outputs\\apk\\preview\\apk-verification.json" exit /b 1', assertion_block)
+        self.assertIn("app-preview.apk", assertion_block)
+        self.assertIn("apk-verification.json", assertion_block)
+        self.assertIn(".is_file()", assertion_block)
+        self.assertIn("raise RuntimeError", assertion_block)
         self.assertIn("id: retain_apk", retention_block)
+        self.assertIn("github.ref == 'refs/heads/main'", retention_block)
+        self.assertIn("[publish-apk]", retention_block)
         self.assertIn("continue-on-error: true", retention_block)
         self.assertIn("if-no-files-found: error", retention_block)
         self.assertIn("retention-days: 1", retention_block)
         self.assertIn("if: steps.retain_apk.outcome == 'failure'", self.workflow)
 
     def test_release_is_explicit_and_independent_of_optional_artifact_storage(self):
-        retention = self.workflow.index("uses: actions/upload-artifact@")
+        retention = self.workflow.index("- name: Retain APK and verification evidence when storage is available")
         publication = self.workflow.index("- name: Publish verified APK to GitHub Releases")
         self.assertLess(retention, publication)
         release_block = self.workflow[publication:]
@@ -69,9 +74,21 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn("hash !== report.sha256", release_block)
 
     def test_validation_source_changes_retrigger_main_apk(self):
-        self.assertIn('- ".github/scripts/**"', self.workflow)
-        self.assertIn('- "backend/installation_evidence.py"', self.workflow)
-        self.assertIn('- "tools/**"', self.workflow)
+        self.assertIn('- ".github/scripts/**"', self.caller)
+        self.assertIn('- "backend/installation_evidence.py"', self.caller)
+        self.assertIn('- "tools/**"', self.caller)
+
+    def test_main_reuses_the_complete_linux_runtime_and_cleanup(self):
+        self.assertIn("uses: ./.github/workflows/android-ci.yml", self.caller)
+        self.assertNotIn("runs-on:", self.caller)
+        self.assertIn("workflow_call:", self.workflow)
+        runtime = self.workflow[self.workflow.index("  runtime:"):self.workflow.index("  cleanup:")]
+        self.assertIn("runs-on: ubuntu-24.04", runtime)
+        self.assertIn("test_apk_installation.py", runtime)
+        publication = runtime[runtime.index("- name: Publish verified APK to GitHub Releases"):]
+        self.assertLess(publication.index("require_main_release.cjs"), publication.index("createRelease"))
+        self.assertLess(publication.index("command:'cleanup'"), publication.index("createRelease"))
+        self.assertIn("needs.cleanup.result", self.workflow)
 
     def test_composite_action_is_fail_closed_and_always_tests_upgrade(self):
         self.assertIn("PREVIOUS_APK is required", self.action)

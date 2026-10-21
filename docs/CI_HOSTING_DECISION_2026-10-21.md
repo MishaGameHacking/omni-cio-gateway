@@ -94,8 +94,8 @@ release привязан к исходной вершине ветки, а ма�
 Старый head не может выдать актуальный device-test APK: проверяется текущий PR.
 
 Матрица установки, обновления, UI, настоящего 3D, подписи и Sonar сохраняется.
-Локальные правила проходят: 687 CI tests (3 skip) в 3D-ветке и 398 (1 skip)
-в ремонте main; общий Node handoff — 8 tests.
+Локальные правила проходят: 688 CI tests (3 skip) в 3D-ветке и 399 (1 skip)
+в ремонте main; Node handoff и explicit-release guards — 15 tests.
 Полный успешный runtime ещё не подтверждён; начатая сборка не считается приёмкой.
 Исправлено отдельное условие device-test retention в 3D-ветке: публичность
 исходников больше не вызывает безусловный отказ обычного CI. Явно запрошенный
@@ -162,3 +162,40 @@ Backend на Linux уже прошёл: `39571150953` (1446 tests / 1382 subtest
 - [Timeweb: удаление сервера и отдельного IP](https://timeweb.cloud/docs/cloud-servers/manage-servers/delete-server).
 
 - [GitHub: workflow scope при создании release](https://github.blog/changelog/2023-11-02-github-actions-enforcing-workflow-scope-when-creating-a-release/).
+
+## Полная проверка ремонта main и единый запуск после merge
+
+`9f037a637705f1e4e38eb5f29222dff55f54afbe` прошёл весь
+[Android CI39575670524](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39575670524),
+включая runtime119143905718, cleanup119148773979 и итог119148855045.
+Preview SHA-256: `cb5da54561629bb63b3fb2f53f22bfccf0e95c51e2b8f1918b5becd8942cd96d`.
+На API35 и36 прошли все UI-этапы, включая диалоги и шрифт200%; на API36
+подтверждено обновление с прежнего0.9.0. Это историческая матрица main.
+
+В 3D-ветке `92054c2fbcbbd750465ed96908946bcbe3d3bb64`,
+[39575661435](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39575661435),
+job119147868605, прошли spatial-renderer, session-context при font1.0/2.0
+(включая смену пользователя и явный выход) и balance-privacy. На goal-workflow
+проверка подтверждения удаления пошла через прокрутку списка и потеряла
+UiAutomation. Вероятна гонка при открытии модального окна; это проверит повторный запуск. Screenshot failure.png показывает открытое
+подтверждение. Теперь этот шаг ждёт видимую кнопку активного диалога, как другие
+модальные действия. Счётчики одного создания/нулевого остатка после удаления
+сохранены. Полная матрица API37 пока не пройдена.
+
+Перед merge найден второй Windows-runtime: прежний android-apk.yml запускался
+после push main и снова требовал отсутствующее место. Теперь он вызывает
+android-ci.yml как локальный reusable workflow того же коммита. Сборка и подпись
+остаются на Windows, полные матрицы и validate_distribution — на Ubuntu,
+private handoff и обязательная очистка общие. Проверки не пропускаются.
+
+Backend CI запускается для каждого main/PR head, чтобы явный выпуск имел
+проверенный backend именно этого SHA. До внешней передачи APK release guard
+требует явный main-запрос, zero-issue Sonar, успешный последний Backend CI и
+неизменившуюся main; private handoff должен быть удалён. Обычный merge сохраняет
+диагностические отчёты, но не загружает APK в публичный Actions artifact и не
+публикует release. Существующий явный release-путь сохранён; повторные изменённые
+байты versionCode34 отклоняются. В 3D release notes исправлены прежние неверные
+Android15/16 на фактический API37 и60 business case/font IDs.
+
+Локально проверены 399/688 CI tests и15 Node tests, YAML и встроенный JavaScript.
+Этот перенос требует нового полного CI на последнем коммите перед merge.
