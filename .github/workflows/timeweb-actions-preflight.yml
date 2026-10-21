@@ -25,6 +25,9 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"
     steps:
