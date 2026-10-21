@@ -71,7 +71,12 @@ def _case(probe, scale):
     probe.command("shell", "input", "text", TITLE)
     suffix = "-font-200" if math.isclose(scale, 2.0) else ""
     draft = rotate_focused_draft(probe, TITLE, "goal-draft-rotation" + suffix)
+    # At 200% the IME can cover the next editor after the rotation restores.
+    # Dismiss only an observed keyboard, then require the new native focus
+    # before typing so a missed tap cannot alter the preserved title draft.
+    probe.dismiss_keyboard()
     probe.tap_resource("goal-amount", AREA)
+    probe.wait_for(lambda: focused_editor(probe.tree(), ""), "Goal amount did not receive native input focus")
     probe.command("shell", "input", "text", "500000")
     probe.wait_for(lambda: focused_editor(probe.tree(), "500000"), "Goal amount did not enter the native editor")
     probe.dismiss_keyboard()

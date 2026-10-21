@@ -4,21 +4,6 @@ name: Android CI
   pull_request:
     branches:
     - main
-    paths:
-    - app/**
-    - tools/**
-    - backend/android_runtime_contract.py
-    - ci-ui-driver/**
-    - build.gradle.kts
-    - settings.gradle.kts
-    - gradle.properties
-    - gradle/**
-    - gradlew
-    - gradlew.bat
-    - .github/workflows/android-ci.yml
-    - .github/workflows/android-apk.yml
-    - .github/scripts/**
-    - .github/actions/check-apk/**
 permissions:
   contents: read
 concurrency:
@@ -514,7 +499,7 @@ jobs:
       contents: write
   verify:
     name: Android debug and release build
-    if: always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
+    if: always()
     needs:
     - transfer-preflight
     - build

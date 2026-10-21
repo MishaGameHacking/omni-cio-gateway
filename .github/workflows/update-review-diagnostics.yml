@@ -26,10 +26,11 @@ jobs:
             const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
             const headers = {Accept:'application/json'};
             if (process.env.SONAR_READ_TOKEN) headers.Authorization = 'Bearer '+process.env.SONAR_READ_TOKEN;
-            async function readIssuePage(target, page) {
+            async function readIssuePage(target, page, newCodeOnly) {
               const endpoint = new URL('https://sonarcloud.io/api/issues/search');
               endpoint.search = new URLSearchParams({componentKeys:project,...target,
-                issueStatuses:'OPEN,CONFIRMED',sinceLeakPeriod:'true',ps:'500',p:String(page)}).toString();
+                issueStatuses:'OPEN,CONFIRMED',...(newCodeOnly ? {sinceLeakPeriod:'true'} : {}),
+                ps:'500',p:String(page)}).toString();
               const response = await fetch(endpoint,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(15000)});
               if (!response.ok) throw new Error('Sonar issue inventory HTTP '+response.status);
               const raw = await response.text();
@@ -41,18 +42,19 @@ jobs:
               }
               return {total,issues:result.issues};
             }
-            async function readAllIssues(target) {
+            async function readAllIssues(target, newCodeOnly) {
               const issues = new Map();
               let expectedTotal;
               for (let page=1; page<=4; page++) {
-                const result = await readIssuePage(target,page);
+                const result = await readIssuePage(target,page,newCodeOnly);
                 expectedTotal ??= result.total;
                 if (result.total!==expectedTotal) throw new Error('Sonar inventory changed during paging');
                 for (const issue of result.issues) {
                   if (typeof issue.key!=='string' || issues.has(issue.key)) throw new Error('Missing or duplicate issue identity');
                   issues.set(issue.key,issue);
                 }
-                core.info('SONAR_READ_PAGE='+JSON.stringify({...target,page,total:result.total,issues:result.issues.length}));
+                core.info('SONAR_READ_PAGE='+JSON.stringify({...target,page,total:result.total,
+                  issues:result.issues.length,scope:newCodeOnly ? 'new_code' : 'all_open_and_confirmed'}));
                 if (issues.size===expectedTotal) return [...issues.values()];
                 if (result.issues.length===0) throw new Error('Incomplete Sonar issue inventory');
               }
@@ -100,12 +102,17 @@ jobs:
               const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo,check_run_id:check.id,per_page:100});
               for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({...target,path:a.path,line:a.start_line,title:a.title,message:a.message}));
               try {
-                const issues = await readAllIssues(target);
-                if (await resolveHead(target)!==head) throw new Error('Head changed while reading inventory');
+                const newIssues = await readAllIssues(target,true);
                 const expectedNew = /\[(\d+) New issues\]/.exec(check.output?.summary||'');
-                if (!expectedNew || Number(expectedNew[1])!==issues.length) {
+                if (!expectedNew || Number(expectedNew[1])!==newIssues.length) {
                   throw new Error('Sonar API count disagrees with exact-head check');
                 }
+                const issues = await readAllIssues(target,false);
+                const allKeys = new Set(issues.map(issue => issue.key));
+                if (!newIssues.every(issue => allKeys.has(issue.key))) {
+                  throw new Error('New-code findings are missing from the complete inventory');
+                }
+                if (await resolveHead(target)!==head) throw new Error('Head changed while reading inventory');
                 for (const issue of issues) {
                   core.info('QUALITY_REVIEW_FINDING='+JSON.stringify({...target,head,key:issue.key,
                     rule:issue.rule,type:issue.type,severity:issue.severity,impacts:issue.impacts||[],
@@ -113,7 +120,8 @@ jobs:
                     message:issue.message,flows:issue.flows||[]}));
                 }
                 core.info('SONAR_COMPLETE_INVENTORY='+JSON.stringify({...target,head,check:check.id,
-                  issues:issues.length,unique:issues.length,all_types:true,complete:true}));
+                  issues:issues.length,new_issues:newIssues.length,unique:issues.length,
+                  scope:'all_open_and_confirmed',all_types:true,complete:true}));
               } catch (error) {
                 core.setFailed('SONAR_READ_UNAVAILABLE='+JSON.stringify({...target,head,reason:error.message}));
               }
