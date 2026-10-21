@@ -29,6 +29,7 @@ HTTPS_PREFIX = "https://"
 PREVIOUS_FILE = "previous.apk"
 MANIFEST_FILE = "manifest.json"
 CLEANUP_CONFIRMED = "TIMEWEB_TRANSFER_CLEANUP=verified_absent"
+HIDDEN_CREDENTIAL = "hidden-by-api-key-policy"
 FILES = (
     "app/build/outputs/apk/preview/app-preview.apk",
     "app/build/outputs/apk/debug/app-debug.apk",
@@ -45,6 +46,24 @@ def identity() -> tuple[str, str]:
             or not re.fullmatch(r"[a-f0-9]{40}", head)):
         raise ProbeError("transfer_identity_required")
     return "analyst-ci-" + run + "-" + attempt, OWNER_MARKER + head
+
+
+def report_storage_error(error: urllib.error.HTTPError) -> None:
+    try:
+        failure = decode_response(error.read(MAX_BYTES + 1))
+    except ProbeError:
+        failure = {}
+    finally:
+        error.close()
+    if error.code == 404:
+        return
+    report = {"status": error.code}
+    symbol = failure.get("error_code")
+    if isinstance(symbol, str) and re.fullmatch(r"[a-z_]{1,64}", symbol):
+        report["error_code"] = symbol
+    message = json.dumps(failure.get("message", "")).lower()
+    report["delete_permission_mentioned"] = "is_able_to_delete" in message
+    print("TIMEWEB_STORAGE_HTTP=" + json.dumps(report, sort_keys=True), flush=True)
 
 
 def storage_request(token: str, method: str, path: str, body=None) -> dict:
@@ -68,21 +87,8 @@ def storage_request(token: str, method: str, path: str, body=None) -> dict:
                 raise ProbeError("encoded_response_refused")
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
-        code = error.code
-        try:
-            failure = decode_response(error.read(MAX_BYTES + 1))
-        except ProbeError:
-            failure = {}
-        error.close()
-        symbol = failure.get("error_code")
-        if code != 404:
-            report = {"status": code}
-            if isinstance(symbol, str) and re.fullmatch(r"[a-z_]{1,64}", symbol):
-                report["error_code"] = symbol
-            message = json.dumps(failure.get("message", "")).lower()
-            report["delete_permission_mentioned"] = "is_able_to_delete" in message
-            print("TIMEWEB_STORAGE_HTTP=" + json.dumps(report, sort_keys=True), flush=True)
-        raise ProbeError("storage_http_" + str(code)) from None
+        report_storage_error(error)
+        raise ProbeError("storage_http_" + str(error.code)) from None
     except OSError as error:
         raise ProbeError(transport_error_code(error)) from None
     return decode_response(raw) if raw else {}
@@ -160,12 +166,16 @@ def matching_secret(document: dict, access: str) -> str:
     if len(matches) != 1:
         raise ProbeError("transfer_matching_storage_user_missing")
     secret = validated_token(matches[0].get("secret_key", ""))
+    if secret == HIDDEN_CREDENTIAL:
+        raise ProbeError("transfer_credentials_hidden_by_token_policy")
     if "*" in secret:
         raise ProbeError("transfer_storage_key_masked")
     return secret
 
 
 def client(token: str, bucket: dict):
+    if HIDDEN_CREDENTIAL in (bucket.get("access_key"), bucket.get("secret_key")):
+        raise ProbeError("transfer_credentials_hidden_by_token_policy")
     import boto3
     from botocore.config import Config
 
@@ -319,13 +329,9 @@ def delete_bucket(token: str, bucket: dict) -> None:
             raise
         refusal = error
     for _ in range(6):
-        try:
-            storage_request(token, "GET", path)
-        except ProbeError as error:
-            if str(error) == "storage_http_404":
-                print(CLEANUP_CONFIRMED, flush=True)
-                return
-            raise
+        if find_bucket(token) is None:
+            print(CLEANUP_CONFIRMED, flush=True)
+            return
         time.sleep(5)
     if refusal is not None:
         raise refusal
@@ -353,6 +359,8 @@ def diagnose(token: str) -> None:
         "access_key_present": bool(bucket.get("access_key")),
         "secret_key_present": bool(bucket.get("secret_key")),
         "secret_key_appears_masked": "*" in str(bucket.get("secret_key", "")),
+        "credentials_hidden_by_policy": HIDDEN_CREDENTIAL in (
+            bucket.get("access_key"), bucket.get("secret_key")),
     }), flush=True)
     require_private(client(token, bucket), bucket)
     print("TIMEWEB_TRANSFER_PRIVATE_ACL=passed", flush=True)

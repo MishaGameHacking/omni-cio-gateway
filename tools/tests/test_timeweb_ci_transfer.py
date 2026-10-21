@@ -23,6 +23,13 @@ class TransferTests(unittest.TestCase):
         with self.assertRaisesRegex(transfer.ProbeError, "storage_key_masked"):
             transfer.matching_secret(masked, "selected")
 
+    def test_hidden_credentials_stop_before_any_other_credential_lookup(self):
+        bucket = {"secret_key": transfer.HIDDEN_CREDENTIAL}
+        with patch.object(transfer, "read_path") as read:
+            with self.assertRaisesRegex(transfer.ProbeError, "hidden_by_token_policy"):
+                transfer.client("synthetic-token", bucket)
+        read.assert_not_called()
+
     def test_archive_binds_exact_head_and_rejects_extra_members_before_writing(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -55,11 +62,12 @@ class TransferTests(unittest.TestCase):
         delete.assert_not_called()
 
     def test_delete_refusal_is_not_hidden_without_independent_absence(self):
-        with patch.object(transfer, "storage_request", side_effect=[
-                transfer.ProbeError("storage_http_403"), transfer.ProbeError("storage_http_404")]):
+        with patch.object(transfer, "storage_request", side_effect=transfer.ProbeError("storage_http_403")), \
+                patch.object(transfer, "find_bucket", return_value=None):
             transfer.delete_bucket("synthetic-token", {"id": 17})
-        response = [transfer.ProbeError("storage_http_403")] + [{"bucket": {"id": 17}}] * 6
-        with patch.object(transfer, "storage_request", side_effect=response), patch.object(transfer.time, "sleep"):
+        with patch.object(transfer, "storage_request", side_effect=transfer.ProbeError("storage_http_403")), \
+                patch.object(transfer, "find_bucket", return_value={"id": 17}), \
+                patch.object(transfer.time, "sleep"):
             with self.assertRaisesRegex(transfer.ProbeError, "storage_http_403"):
                 transfer.delete_bucket("synthetic-token", {"id": 17})
 
