@@ -15,8 +15,8 @@ from urllib.parse import urlsplit
 import zipfile
 
 from timeweb_actions_probe import (
-    BASE_URL, MAX_BYTES, NoRedirect, ProbeError, decode_response, read_catalog,
-    read_resource, summarize, transport_error_code, validated_token, verified_ssl_context,
+    BASE_URL, MAX_BYTES, STORAGE_USERS_PATH, NoRedirect, ProbeError, decode_response, read_catalog,
+    read_path, read_resource, summarize, transport_error_code, validated_token, verified_ssl_context,
 )
 from timeweb_ci_catalog import storage_offers
 
@@ -152,7 +152,20 @@ def endpoint(hostname: str) -> str:
     return HTTPS_PREFIX + parsed.hostname
 
 
-def client(bucket: dict):
+def matching_secret(document: dict, access: str) -> str:
+    users = document.get("users")
+    if type(users) is not list or any(type(user) is not dict for user in users):
+        raise ProbeError("transfer_storage_users_invalid")
+    matches = [user for user in users if user.get("access_key") == access]
+    if len(matches) != 1:
+        raise ProbeError("transfer_matching_storage_user_missing")
+    secret = validated_token(matches[0].get("secret_key", ""))
+    if "*" in secret:
+        raise ProbeError("transfer_storage_key_masked")
+    return secret
+
+
+def client(token: str, bucket: dict):
     import boto3
     from botocore.config import Config
 
@@ -161,7 +174,9 @@ def client(bucket: dict):
         truststore.inject_into_ssl()
     url = endpoint(bucket.get("hostname"))
     access = validated_token(bucket.get("access_key", ""))
-    secret = validated_token(bucket.get("secret_key", ""))
+    # The documented credential endpoint supplies the matching S3 user's key.
+    # Never choose another user, rotate a key or print any returned credentials.
+    secret = matching_secret(read_path(token, STORAGE_USERS_PATH), access)
     region = bucket.get("location")
     if not isinstance(region, str) or not re.fullmatch(r"[a-z]{2}-\d", region, re.ASCII):
         raise ProbeError("transfer_region_missing")
@@ -194,7 +209,7 @@ def require_private(s3, bucket: dict) -> None:
 
 def probe(token: str) -> None:
     bucket = create_bucket(token)
-    s3 = client(bucket)
+    s3 = client(token, bucket)
     require_private(s3, bucket)
     payload = b"Analyst AI private CI transport probe\n"
     s3.put_object(Bucket=bucket["name"], Key=OBJECT_KEY, Body=payload, ACL="private")
@@ -268,7 +283,7 @@ def upload(token: str) -> None:
     data = pack(root, Path(os.environ["PREVIOUS_APK"]).resolve(strict=True))
     digest = hashlib.sha256(data).hexdigest()
     bucket = create_bucket(token)
-    s3 = client(bucket)
+    s3 = client(token, bucket)
     require_private(s3, bucket)
     s3.put_object(Bucket=bucket["name"], Key=OBJECT_KEY, Body=data, ACL="private")
     read_bytes(s3, bucket, expected_hash=digest)
@@ -284,7 +299,7 @@ def download(token: str) -> None:
     bucket = find_bucket(token)
     if bucket is None:
         raise ProbeError("transfer_bucket_missing")
-    s3 = client(bucket)
+    s3 = client(token, bucket)
     require_private(s3, bucket)
     data = read_bytes(s3, bucket, expected_hash=digest)
     root = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
@@ -296,7 +311,13 @@ def download(token: str) -> None:
 
 def delete_bucket(token: str, bucket: dict) -> None:
     path = "/api/v1/storages/buckets/" + str(bucket["id"])
-    storage_request(token, "DELETE", path)
+    refusal = None
+    try:
+        storage_request(token, "DELETE", path)
+    except ProbeError as error:
+        if str(error) != "storage_http_403":
+            raise
+        refusal = error
     for _ in range(6):
         try:
             storage_request(token, "GET", path)
@@ -306,6 +327,8 @@ def delete_bucket(token: str, bucket: dict) -> None:
                 return
             raise
         time.sleep(5)
+    if refusal is not None:
+        raise refusal
     raise ProbeError("transfer_deletion_not_confirmed")
 
 
@@ -331,7 +354,7 @@ def diagnose(token: str) -> None:
         "secret_key_present": bool(bucket.get("secret_key")),
         "secret_key_appears_masked": "*" in str(bucket.get("secret_key", "")),
     }), flush=True)
-    require_private(client(bucket), bucket)
+    require_private(client(token, bucket), bucket)
     print("TIMEWEB_TRANSFER_PRIVATE_ACL=passed", flush=True)
 
 
@@ -340,7 +363,10 @@ def cleanup(token: str) -> None:
     if bucket is None:
         print(CLEANUP_CONFIRMED, flush=True)
         return
-    s3 = client(bucket)
+    if type(bucket.get("object_amount")) is int and bucket["object_amount"] == 0:
+        delete_bucket(token, bucket)
+        return
+    s3 = client(token, bucket)
     listing = s3.list_objects_v2(Bucket=bucket["name"], MaxKeys=2)
     if listing.get("IsTruncated") or any(item.get("Key") != OBJECT_KEY for item in listing.get("Contents", [])):
         raise ProbeError("transfer_cleanup_unexpected_objects")
