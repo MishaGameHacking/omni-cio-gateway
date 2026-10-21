@@ -106,8 +106,10 @@ module.exports = async function retainPrivateApk({github, context, core, anonymo
     {...context.repo, per_page: 100});
   let release = releases.find(item => item.tag_name === tag);
   if (!release) {
+    // Match the proven private handoff: use the current named branch head.
+    // Keep the actual tested merge separately in the receipt and release body.
     release = (await github.rest.repos.createRelease({...context.repo, tag_name: tag,
-      target_commitish: context.sha, name: 'Analyst AI 0.11.0 — ручная проверка, не выпуск',
+      target_commitish: head, name: 'Analyst AI 0.11.0 — ручная проверка, не выпуск',
       body: body + '\n\nUpload verification pending.', draft: true, prerelease: true,
       make_latest: 'false'})).data;
   }

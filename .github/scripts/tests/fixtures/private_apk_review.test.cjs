@@ -86,6 +86,8 @@ test('verified bytes remain a draft after upload and independent read-back', asy
     await retain(f);
     const changes = f.writes.filter(([kind]) => kind === 'create' || kind === 'update');
     assert.equal(changes.length, 2);
+    assert.equal(changes[0][1].target_commitish, head);
+    assert.match(changes[0][1].body, new RegExp(`tested merge: ${merge}`));
     for (const [, value] of changes) {
       assert.equal(value.draft, true);
       assert.equal(value.make_latest, 'false');
