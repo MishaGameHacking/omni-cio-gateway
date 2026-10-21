@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import java.time.Instant
 import kotlinx.coroutines.delay
@@ -56,7 +57,7 @@ private fun ActionPlanCard(action: PlanAction, openBroker: (PlanAction) -> Unit)
         }
         if (action.status == PlanActionStatus.Proposed && !expired) {
             SpectrumPrimaryButton("Проверить в приложении брокера", { if (expires?.isAfter(Instant.now()) == true) openBroker(action) }, Modifier.fillMaxWidth())
-            TextButton(onClick = { defer = true }) { Text(if (reason == null) "Отложить" else "Отложено: $reason · изменить") }
+            TextButton(onClick = { defer = true }, modifier = Modifier.testTag("plan-defer-${action.id}")) { Text(if (reason == null) "Отложить" else "Отложено: $reason · изменить") }
             if (reason != null) TextButton(onClick = { reason = null }) { Text("Вернуть в план") }
         }
         Text("Переход к брокеру не подтверждает исполнение. Состояние сделки должно поступить от брокера.", style = MaterialTheme.typography.bodySmall)
