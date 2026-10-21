@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,6 +50,7 @@ private fun checkpointMatches(point: JSONObject, request: ChatRequestSnapshot): 
         body.optString("tier") == request.tier && body.optJSONObject("context")?.toString() == request.context
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     onActions: () -> Unit, onStrategy: () -> Unit) {
@@ -134,7 +137,9 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
             estimateAction.perform("/workspace/chat/estimate", request.payload())
         }
     }
-    WorkspaceDetailPage("Ассистент", "Объяснения с проверяемыми основаниями", onBack, SpectrumSymbol.Analyst) { padding ->
+    // Preserve room for the native editor in landscape with large system text.
+    val subtitle = if (WindowInsets.isImeVisible) "" else "Объяснения с проверяемыми основаниями"
+    WorkspaceDetailPage("Ассистент", subtitle, onBack, SpectrumSymbol.Analyst) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
@@ -374,7 +379,10 @@ private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
 private fun AssistantComposer(question: String, tier: Int, loading: Boolean, needsRecovery: Boolean,
     busy: Boolean, valid: Boolean, approvedDeep: Boolean, onTier: (Int) -> Unit,
     onQuestion: (String) -> Unit, onSend: () -> Unit) {
-    SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    // The parent consumes the page/IME insets. Keep this bounded viewport
+    // scrollable so native focus can reveal the editor on short/large-font windows.
+    SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+        .verticalScroll(rememberScrollState())) {
                     if (loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
                     else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
                     DetailFold("Глубина ответа: " + listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP)[tier]) {

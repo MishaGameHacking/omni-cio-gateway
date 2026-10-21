@@ -128,7 +128,8 @@ def _wait_rotation(probe, read, message, phase, text):
 
 def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
     """Rotate the real Activity while the unsent native editor retains its caret."""
-    before = probe.wait_for(lambda: focused_editor(probe.tree(), text), "Draft did not enter the native focused editor")
+    before = _wait_rotation(probe, lambda: focused_editor(probe.tree(), text),
+                            "Draft did not enter the native focused editor", "before", text)
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     expected = max(0, before["selection_end"] - 2)

@@ -314,7 +314,7 @@ class _BusinessCase:
 
     def ready_assistant(self):
         from impact_ui_probe import exercise_impact
-        from native_input_evidence import rotate_focused_draft
+        from native_input_evidence import empty_editor_focused, keyboard_visible, rotate_focused_draft
         from chat_recovery_ui_probe import exercise_chat_recovery
 
         self.impact_screenshot = "business-assistant-impact" + ("-font-200" if math.isclose(self.font_scale, 2.0) else "")
@@ -324,6 +324,11 @@ class _BusinessCase:
         self.probe.tap("Показать синтетическую дату", "workspace-content")
         self.probe.wait_for(lambda observe=self.observed: (value if (value := observe())["navigation"] == "history:synthetic-history:synthetic-account:2026-10-17T10:00:00Z" else None), "History evidence lost its date/account")
         self.probe.tap_visible("Ваш вопрос")
+        def ready_editor():
+            tree = self.probe.tree()
+            return empty_editor_focused(tree) and keyboard_visible(tree)
+
+        self.probe.wait_for(ready_editor, "Assistant question is not visible and focused above the keyboard")
         self.probe.command("shell", "input", "text", "UIprobe")
         rotation_name = "business-assistant-draft-rotation" + ("-font-200" if math.isclose(self.font_scale, 2.0) else "")
         self.draft_rotation = rotate_focused_draft(self.probe, "UIprobe", rotation_name)

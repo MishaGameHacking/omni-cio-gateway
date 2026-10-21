@@ -480,10 +480,7 @@ def _allocation_map(snapshot: Mapping[str, Any]) -> dict[str, float]:
     return result
 
 
-def _critical_risk(snapshot: Mapping[str, Any], profile: Mapping[str, Any]) -> tuple[bool, str | None]:
-    total_money = snapshot.get("totalValue") or {}
-    total = _money_value(total_money)
-    currency = str(total_money.get("currency") or "").upper()
+def _position_exposures(snapshot: Mapping[str, Any], currency: str) -> tuple[dict[str, float], dict[str, str]]:
     values: dict[str, float] = {}
     titles: dict[str, str] = {}
     for position in _snapshot_positions(snapshot):
@@ -496,6 +493,14 @@ def _critical_risk(snapshot: Mapping[str, Any], profile: Mapping[str, Any]) -> t
             continue
         values[identifier] = values.get(identifier, 0.0) + abs(_money_value(money))
         titles[identifier] = str(position.get("title") or position.get("ticker") or identifier)
+    return values, titles
+
+
+def _critical_risk(snapshot: Mapping[str, Any], profile: Mapping[str, Any]) -> tuple[bool, str | None]:
+    total_money = snapshot.get("totalValue") or {}
+    total = _money_value(total_money)
+    currency = str(total_money.get("currency") or "").upper()
+    values, titles = _position_exposures(snapshot, currency)
     if total > 0 and values:
         identifier, value = max(values.items(), key=lambda item: item[1])
         share = value / total * 100.0

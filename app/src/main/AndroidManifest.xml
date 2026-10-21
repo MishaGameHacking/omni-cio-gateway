@@ -39,6 +39,7 @@
             android:name=".MainActivity"
             android:enableOnBackInvokedCallback="true"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop" />
         <receiver android:name=".data.updates.InstallResultReceiver" android:exported="false" />
         <service android:name=".data.notifications.WorkspaceNotificationService"
