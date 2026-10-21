@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import json
 
 PACKAGE = "ru.omnicio.app.debug"
 
@@ -106,6 +107,25 @@ def focused_editor(tree, expected_text: str, selection: tuple[int, int] | None =
             "accessibility_focused": node.get("accessibility-focused") == "true"}
 
 
+def _wait_rotation(probe, read, message, phase, text):
+    """Keep the first failed frame observable even when restoration also fails."""
+    try:
+        return probe.wait_for(read, message)
+    except (AssertionError, RuntimeError):
+        tree = probe.tree()
+        editors = [{key: node.get(key, "") for key in
+                    ("class", "resource-id", "bounds", "visible-to-user", "focused", "enabled",
+                     "selection-start", "selection-end")}
+                   | {"expected_text_matches": node.get("text") == text}
+                   for node in tree.iter("node")
+                   if node.get("package") == PACKAGE and node.get("editable") == "true"]
+        print("NATIVE_ROTATION_FAILURE=" + json.dumps({"phase": phase,
+              "frame": {key: tree.get(key, "") for key in
+                        ("display-width", "display-height", "active-window-id", "keyboard-visible")},
+              "editors": editors}, sort_keys=True), flush=True)
+        raise
+
+
 def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
     """Rotate the real Activity while the unsent native editor retains its caret."""
     before = probe.wait_for(lambda: focused_editor(probe.tree(), text), "Draft did not enter the native focused editor")
@@ -138,7 +158,8 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
             return {"editor": editor, "width": width, "height": height,
                     "window_id": active_window_id(tree), "keyboard_visible": True} if editor is not None else None
 
-        after = probe.wait_for(rotated, "Rotation lost the unsent native question, input focus or exact caret offset")
+        after = _wait_rotation(probe, rotated,
+                               "Rotation lost the unsent native question, input focus or exact caret offset", "rotated", text)
         rotated_window = after["window_id"]
         probe.capture(name)
         return {"scenario": "unsent-question-focus-caret-rotation", "before": before,
@@ -156,4 +177,4 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
                 return None
             return recreated_editor(tree, text, (expected, expected), rotated_window, dialog=dialog)
 
-        probe.wait_for(restored, "Restoring device rotation lost the focused draft/caret")
+        _wait_rotation(probe, restored, "Restoring device rotation lost the focused draft/caret", "restored", text)

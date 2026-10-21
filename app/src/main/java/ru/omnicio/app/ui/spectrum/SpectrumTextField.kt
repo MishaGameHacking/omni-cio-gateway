@@ -1,6 +1,8 @@
 package ru.omnicio.app.ui.spectrum
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -12,10 +14,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.flow.first
 import ru.omnicio.app.ui.spatial.SpatialField
 
 /** The editor remains a native accessible text field; focus/error surfaces are actual meshes. */
@@ -45,22 +51,38 @@ fun SpectrumTextField(
     var composition by remember { mutableStateOf<TextRange?>(null) }
     var receiveFocusEvents by remember { mutableStateOf(false) }
     val requester = remember { FocusRequester() }
+    val viewport = remember { BringIntoViewRequester() }
+    val window = LocalWindowInfo.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     // Only focus and cursor offsets are saveable here. The caller owns the text:
     // password/token fields must never copy their value into a saved-state Bundle.
     val editor = TextFieldValue(value,
         selection = TextRange(selectionStart.coerceIn(0, value.length), selectionEnd.coerceIn(0, value.length)),
         composition = composition?.takeIf { it.min >= 0 && it.max <= value.length })
     LaunchedEffect(Unit) {
-        if (restoreFocus && enabled) requester.requestFocus()
+        if (restoreFocus && enabled) {
+            // A recreated Dialog can compose before its new Window gains focus.
+            // Also reveal editors below the restored scroll position before
+            // starting input; a landscape viewport may be much shorter.
+            lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
+            snapshotFlow { window.isWindowFocused }.first { it }
+            withFrameNanos { }
+            viewport.bringIntoView()
+            requester.requestFocus()
+        }
         receiveFocusEvents = true
     }
     SpatialField(modifier.semantics(mergeDescendants = true) {}, focused, isError, enabled) {
         OutlinedTextField(editor, { next ->
             selectionStart = next.selection.start; selectionEnd = next.selection.end; composition = next.composition
             if (next.text != value) onValueChange(next.text)
-        }, Modifier.fillMaxWidth().focusRequester(requester).onFocusChanged {
+        }, Modifier.fillMaxWidth().bringIntoViewRequester(viewport).focusRequester(requester).onFocusChanged {
             focused = it.isFocused
-            if (receiveFocusEvents) restoreFocus = it.isFocused
+            // Losing an inactive/disposed Window is not a user focus change.
+            // Do not overwrite the saved editor identity during recreation.
+            if (receiveFocusEvents && window.isWindowFocused && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                restoreFocus = it.isFocused
+            }
         },
             enabled = enabled, readOnly = readOnly, label = label, placeholder = placeholder,
             trailingIcon = trailingIcon, supportingText = supportingText, isError = isError,

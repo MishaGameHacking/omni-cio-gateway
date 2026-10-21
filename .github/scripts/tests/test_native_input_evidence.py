@@ -2,7 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 SPEC = importlib.util.spec_from_file_location("native_input_evidence", Path(__file__).resolve().parents[1] / "native_input_evidence.py")
@@ -21,6 +21,23 @@ def frame(**changes):
 
 
 class NativeInputEvidenceTests(unittest.TestCase):
+    def test_failed_rotation_records_native_state_without_text_and_still_fails(self):
+        root = frame(text="private draft", focused="false")
+        root.set("keyboard-visible", "false")
+        probe = Mock()
+        probe.tree.return_value = root
+        failure = AssertionError("focus lost")
+        probe.wait_for.side_effect = failure
+        with patch("builtins.print") as output:
+            with self.assertRaises(AssertionError) as caught:
+                native._wait_rotation(probe, lambda: None, "missing", "rotated", "private draft")
+        self.assertIs(caught.exception, failure)
+        observed = output.call_args.args[0]
+        self.assertNotIn("private draft", observed)
+        self.assertIn('"keyboard-visible": "false"', observed)
+        self.assertIn('"focused": "false"', observed)
+        self.assertIn('"expected_text_matches": true', observed)
+
     def test_activity_may_keep_window_but_must_recompose_to_observed_orientation(self):
         root = frame()
         root.set("active-window-id", "17")
