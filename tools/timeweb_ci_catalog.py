@@ -6,7 +6,7 @@ import math
 import os
 import re
 
-from timeweb_actions_probe import ProbeError, read_catalog
+from timeweb_actions_probe import FLOATING_IPS_PATH, ProbeError, read_catalog, read_path
 
 
 def positive_number(value):
@@ -61,6 +61,20 @@ def ubuntu_images(document: dict) -> list[dict]:
     return result
 
 
+def floating_ip_summary(document: dict) -> dict:
+    """Report possible retained charges without exposing addresses or comments."""
+    items = document.get("ips")
+    meta = document.get("meta")
+    if type(items) is not list or type(meta) is not dict or type(meta.get("total")) is not int:
+        raise ProbeError("invalid_ip_inventory")
+    if meta["total"] != len(items) or any(type(item) is not dict for item in items):
+        raise ProbeError("incomplete_ip_inventory")
+    return {"count": len(items), "complete": True,
+            "unbound_count": sum(item.get("resource_id") is None for item in items),
+            "server_ids": sorted({item["resource_id"] for item in items
+                                  if type(item.get("resource_id")) is int})}
+
+
 def main() -> int:
     try:
         token = os.environ.get("TIMEWEB_CLOUD_TOKEN", "")
@@ -69,6 +83,7 @@ def main() -> int:
             "kvm_verified": False,
             "presets": candidate_presets(read_catalog(token, "presets")),
             "os": ubuntu_images(read_catalog(token, "os")),
+            "floating_ips": floating_ip_summary(read_path(token, FLOATING_IPS_PATH)),
         }
         print("TIMEWEB_CI_CATALOG=" + json.dumps(report, sort_keys=True), flush=True)
     except ProbeError as error:
