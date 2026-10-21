@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import socket
+import ssl
 import urllib.error
 import urllib.request
 
@@ -82,9 +84,27 @@ def read_resource(token: str, resource: str) -> dict:
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
         raise ProbeError("timeweb_http_" + str(error.code)) from None
-    except OSError:
-        raise ProbeError("timeweb_transport_error") from None
+    except OSError as error:
+        raise ProbeError(transport_error_code(error)) from None
     return decode_response(raw)
+
+
+def transport_error_code(error: OSError) -> str:
+    """Classify known failures without printing exception text or URLs."""
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    categories = (
+        (ssl.SSLCertVerificationError, "tls_certificate_verification_failed"),
+        (ssl.SSLError, "tls_handshake_failed"),
+        (socket.gaierror, "dns_lookup_failed"),
+        (TimeoutError, "connection_timeout"),
+        (ConnectionRefusedError, "connection_refused"),
+        (ConnectionResetError, "connection_reset"),
+        (PermissionError, "connection_denied"),
+    )
+    for error_type, code in categories:
+        if isinstance(reason, error_type):
+            return "timeweb_" + code
+    return "timeweb_transport_error"
 
 
 def summarize(resource: str, document: dict) -> dict:

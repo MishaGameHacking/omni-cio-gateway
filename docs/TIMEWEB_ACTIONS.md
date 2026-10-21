@@ -36,7 +36,7 @@ a fixed diagnostic instead of presenting an empty account as successful access.
 ## Local tests
 
 ```text
-python -m unittest discover -s tools/tests -p "test_timeweb_actions_probe.py" -v
+python -m unittest discover -s tools/tests -p "test_timeweb_*.py" -v
 ```
 
 The initial offline run passed 26 methods using mocked HTTP, not a live Timeweb
@@ -52,3 +52,16 @@ Project requirements remain a personal Android 17+ investment chat with a
 professional 2D interface. The helper is infrastructure tooling, not the app's
 chat or broker API. The previous Telegram/server/app callback and session tests
 remain part of application acceptance; this probe does not validate them.
+
+## First real probe (2026-10-21 UTC)
+
+Commit `92326c41b451909471375c0e3f44ec63176d68fd`, Actions run
+`39530920225`, job `118996350506`: all 26 tests passed on the Windows runner.
+The secret was present (masked); the live read failed with
+`TIMEWEB_ACTIONS_ERROR=timeweb_transport_error`. This is NOT an HTTP 401/403
+result and does not establish whether the credential is authorized. No inventory
+or public URL was obtained. TLS verification was not disabled.
+
+The follow-up categorizes DNS, certificate, handshake, timeout and connection
+errors using exception types only, without printing their messages or adding
+a retry. Local follow-up suite: 29 passing methods.

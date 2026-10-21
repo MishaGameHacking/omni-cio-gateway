@@ -6,7 +6,7 @@ on:
     paths:
       - "integrations/timeweb/projects.openapi.json"
       - "tools/timeweb_actions_probe.py"
-      - "tools/tests/test_timeweb_actions_probe.py"
+      - "tools/tests/test_timeweb_*.py"
       - ".github/workflows/timeweb-actions-preflight.yml"
   workflow_dispatch:
 
@@ -36,7 +36,7 @@ jobs:
       - name: Test read-only probe before credentials are available
         shell: cmd
         run: |
-          py -3 -m unittest discover -s tools\tests -p "test_timeweb_actions_probe.py" -v
+          py -3 -m unittest discover -s tools\tests -p "test_timeweb_*.py" -v
           if errorlevel 1 exit /b 1
 
       - name: Read Timeweb resource identifiers without changing anything
