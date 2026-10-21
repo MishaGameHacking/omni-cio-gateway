@@ -21,9 +21,9 @@ from timeweb_actions_probe import (
 from timeweb_ci_catalog import candidate_presets, ubuntu_images
 
 PROJECT_ID = 2941515
-PRESET_ID = 2581
+PRESET_ID = 4245
 OS_ID = 99
-MAX_MONTHLY_RUB = 5120
+MAX_MONTHLY_RUB = 6800
 OWNER_MARKER = "Analyst AI disposable Android capacity check"
 REMOTE_PROBE = r'''import fcntl, json, os, pathlib, shutil
 cpu = pathlib.Path('/proc/cpuinfo').read_text()
@@ -173,6 +173,8 @@ def wait_probe(token: str, server_id: int, name: str, root: Path, host_public: s
     ssh = shutil.which("ssh")
     if not ssh:
         raise ProbeError("ssh_missing")
+    config = root / "ssh_config"
+    config.write_text("", encoding="utf-8")
     deadline = time.monotonic() + 420
     while time.monotonic() < deadline:
         server = owned_server(request(token, "GET", f"/api/v1/servers/{server_id}"), name)
@@ -180,7 +182,7 @@ def wait_probe(token: str, server_id: int, name: str, root: Path, host_public: s
         if address:
             hosts = root / "known_hosts"
             hosts.write_text(address + " " + host_public + "\n", encoding="utf-8")
-            command = [ssh, "-F", "none", "-i", str(root / "client"),
+            command = [ssh, "-F", str(config), "-i", str(root / "client"),
                        "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
                        "-o", "StrictHostKeyChecking=yes", "-o", "HostKeyAlgorithms=ssh-ed25519",
                        "-o", "UserKnownHostsFile=" + str(hosts), "-o", "ConnectTimeout=10",
