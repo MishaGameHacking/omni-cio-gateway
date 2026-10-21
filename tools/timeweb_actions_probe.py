@@ -101,7 +101,9 @@ def read_resource(token: str, resource: str) -> dict:
                 raise ProbeError("encoded_response_refused")
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
-        raise ProbeError("timeweb_http_" + str(error.code)) from None
+        code = error.code
+        error.close()
+        raise ProbeError("timeweb_http_" + str(code)) from None
     except OSError as error:
         raise ProbeError(transport_error_code(error)) from None
     return decode_response(raw)
@@ -146,8 +148,15 @@ def summarize(resource: str, document: dict) -> dict:
 
 def inventory(token: str) -> dict:
     token = validated_token(token)
-    resources = {name: summarize(name, read_resource(token, name)) for name in ENDPOINTS}
+    resources, failures = {}, {}
+    for name in ENDPOINTS:
+        try:
+            resources[name] = summarize(name, read_resource(token, name))
+        except ProbeError as error:
+            # A denied projects endpoint does not establish server/S3 access.
+            failures[name] = str(error)
     return {"kind": "timeweb_actions_hosting_preflight", "resources": resources,
+            "failed_resources": failures,
             "scope": "Only token-visible resources; completeness requires matching meta.total.",
             "resource_changes": False, "public_schema_published": False,
             "ready_for_import": False}
@@ -198,6 +207,8 @@ def main() -> int:
         print("TIMEWEB_ACTIONS_SCHEMA=" + json.dumps(validate_schema(), sort_keys=True), flush=True)
         report = inventory(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         print("TIMEWEB_ACTIONS_PREFLIGHT=" + json.dumps(report, sort_keys=True), flush=True)
+        if report["failed_resources"]:
+            return 1
     except ProbeError as error:
         print("TIMEWEB_ACTIONS_ERROR=" + str(error), file=sys.stderr, flush=True)
         return 1
