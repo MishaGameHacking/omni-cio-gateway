@@ -21,6 +21,18 @@ def frame(**changes):
 
 
 class NativeInputEvidenceTests(unittest.TestCase):
+    def test_activity_may_keep_window_but_must_recompose_to_observed_orientation(self):
+        root = frame()
+        root.set("active-window-id", "17")
+        root.set("keyboard-visible", "true")
+        marker = ET.SubElement(root, "node", {"package": native.PACKAGE, "visible-to-user": "true",
+                                              "content-desc": "probe-spatial-orientation:2;probe-run:test"})
+        self.assertIsNone(native.recreated_editor(root, "UIprobe", (5, 5), 17, dialog=False))
+        marker.set("content-desc", "probe-spatial-orientation:1;probe-run:test")
+        self.assertIsNotNone(native.recreated_editor(root, "UIprobe", (5, 5), 17, dialog=False))
+        marker.set("package", "other.app")
+        self.assertIsNone(native.recreated_editor(root, "UIprobe", (5, 5), 17, dialog=False))
+
     def test_rotation_waits_for_recreated_window_and_actual_ime(self):
         root = frame()
         root.set("active-window-id", "17")

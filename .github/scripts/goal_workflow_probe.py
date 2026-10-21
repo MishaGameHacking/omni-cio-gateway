@@ -69,7 +69,7 @@ def _case(probe, scale):
     probe.tap_resource("goal-title", AREA, direction="start")
     probe.command("shell", "input", "text", TITLE)
     suffix = "-font-200" if math.isclose(scale, 2.0) else ""
-    draft = rotate_focused_draft(probe, TITLE, "goal-draft-rotation" + suffix)
+    draft = rotate_focused_draft(probe, TITLE, "goal-draft-rotation" + suffix, dialog=True)
     # At 200% the IME can cover the next editor after the rotation restores.
     # Dismiss only an observed keyboard, then require the new native focus
     # before typing so a missed tap cannot alter the preserved title draft.

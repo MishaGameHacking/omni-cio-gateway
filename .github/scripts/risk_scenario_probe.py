@@ -62,7 +62,7 @@ def exercise_scenario_comparison(case):
     probe.tap("Сценарий B", AREA, direction="start")
     _enter_percent(probe, "5")
     suffix = "-font-200" if math.isclose(case.font_scale, 2.0) else ""
-    rotation = rotate_focused_draft(probe, "5", "business-risk-scenario-rotation" + suffix)
+    rotation = rotate_focused_draft(probe, "5", "business-risk-scenario-rotation" + suffix, dialog=True)
     probe.dismiss_keyboard()
     before = case.observed()["requests"]
     probe.tap(COMPARE, AREA)

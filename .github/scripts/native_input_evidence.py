@@ -40,9 +40,23 @@ def active_window_id(tree) -> int:
     return int(value)
 
 
-def recreated_editor(tree, text, selection, previous_window):
-    """Global display geometry can change before the old Activity is replaced."""
-    if active_window_id(tree) == previous_window or not keyboard_visible(tree):
+def _activity_orientation(tree):
+    for node in tree.iter("node"):
+        if node.get("package") != PACKAGE or node.get("visible-to-user") != "true":
+            continue
+        match = re.search(r"(?:^|;)probe-spatial-orientation:([12])(?:;|$)", node.get("content-desc", ""))
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def recreated_editor(tree, text, selection, previous_window, *, dialog=True):
+    """Observe new dialog or updated Activity content, plus the actual IME."""
+    window = active_window_id(tree)
+    width, height = display_geometry(tree)
+    orientation = 2 if width > height else 1
+    ready = window != previous_window if dialog else _activity_orientation(tree) == orientation
+    if not ready or not keyboard_visible(tree):
         return None
     return focused_editor(tree, text, selection)
 
@@ -92,7 +106,7 @@ def focused_editor(tree, expected_text: str, selection: tuple[int, int] | None =
             "accessibility_focused": node.get("accessibility-focused") == "true"}
 
 
-def rotate_focused_draft(probe, text: str, name: str) -> dict:
+def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
     """Rotate the real Activity while the unsent native editor retains its caret."""
     before = probe.wait_for(lambda: focused_editor(probe.tree(), text), "Draft did not enter the native focused editor")
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
@@ -120,7 +134,7 @@ def rotate_focused_draft(probe, text: str, name: str) -> dict:
             width, height = display_geometry(tree)
             if (width > height) == original_landscape:
                 return None
-            editor = recreated_editor(tree, text, (expected, expected), original_window)
+            editor = recreated_editor(tree, text, (expected, expected), original_window, dialog=dialog)
             return {"editor": editor, "width": width, "height": height,
                     "window_id": active_window_id(tree), "keyboard_visible": True} if editor is not None else None
 
@@ -140,6 +154,6 @@ def rotate_focused_draft(probe, text: str, name: str) -> dict:
             tree = probe.tree()
             if display_geometry(tree) != original_geometry:
                 return None
-            return recreated_editor(tree, text, (expected, expected), rotated_window)
+            return recreated_editor(tree, text, (expected, expected), rotated_window, dialog=dialog)
 
         probe.wait_for(restored, "Restoring device rotation lost the focused draft/caret")
