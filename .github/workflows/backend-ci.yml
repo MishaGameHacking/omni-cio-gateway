@@ -18,7 +18,7 @@ jobs:
   test:
     name: Backend smoke test
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       TELEGRAM_CLIENT_ID: "123456"
       TELEGRAM_CLIENT_SECRET: test-only
@@ -70,7 +70,7 @@ jobs:
 
       - name: Read exact-head Sonar findings for remediation
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-        timeout-minutes: 3
+        timeout-minutes: 22
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
@@ -80,13 +80,13 @@ jobs:
             core.info('SONAR_GATE_TESTS=' + runTests());
             const ref = context.payload.pull_request.head.sha;
             let sonar = null;
-            for (let attempt = 0; attempt < 24; attempt++) {
+            for (let attempt = 0; attempt < 120; attempt++) {
               const checks = await github.paginate(github.rest.checks.listForRef, {
                 ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
               });
               sonar = newestSonarCheck(checks, ref);
               if (sonar?.status === 'completed') break;
-              await new Promise(resolve => setTimeout(resolve, 5000));
+              await new Promise(resolve => setTimeout(resolve, 10000));
             }
             if (!sonar || sonar.status !== 'completed') {
               core.setFailed('Exact-head Sonar result is not ready: quality has not been verified.');

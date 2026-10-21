@@ -31,8 +31,10 @@ import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.DarkSpectrumPalette
 import ru.omnicio.app.ui.spectrum.LightSpectrumPalette
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
+import ru.omnicio.app.ui.spectrum.LocalEditorRestorationOwner
 import ru.omnicio.app.ui.spatial.SpatialSceneRoot
 import ru.omnicio.app.ui.spatial.SpatialMotion
+import java.util.UUID
 
 enum class ThemeMode(val title: String) {
     SYSTEM("Как в системе"), LIGHT("Светлая"), DARK("Тёмная");
@@ -177,6 +179,7 @@ fun AnalystTheme(content: @Composable () -> Unit) {
 private fun AnalystThemeContent(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val activity = LocalActivity.current
+    val editorRestorationOwner = remember { UUID.randomUUID().toString() }
     val preferences = remember(context) {
         context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
@@ -220,6 +223,7 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         preferences.edit().putBoolean("spectrum_motion", enabled).apply()
     }
     CompositionLocalProvider(
+        LocalEditorRestorationOwner provides editorRestorationOwner,
         LocalThemePreference provides themePreference,
         LocalSpectrumMotionPreference provides motionPreference,
         LocalSpectrumPalette provides workspacePalette(if (dark) DarkSpectrumPalette else LightSpectrumPalette,

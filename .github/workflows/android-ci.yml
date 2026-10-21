@@ -99,8 +99,14 @@ jobs:
       run: |
         py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
         if errorlevel 1 exit /b 1
+    - name: Lint and build all Android variants
+      shell: cmd
+      run: |
+        call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
+        if errorlevel 1 exit /b 1
     - name: Report exact-head Sonar findings for remediation
       if: always()
+      timeout-minutes: 22
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
@@ -109,7 +115,9 @@ jobs:
           const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
           const ref = context.payload.pull_request?.head?.sha || context.sha;
           let sonar = null;
-          for (let attempt = 0; attempt < 18; attempt++) {
+          // Automatic analysis can queue while Gradle builds. Keep the exact-head
+          // gate before any APK handoff; a timeout still fails verification.
+          for (let attempt = 0; attempt < 120; attempt++) {
             const checks = await github.paginate(github.rest.checks.listForRef, {
               ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
             });
@@ -130,11 +138,6 @@ jobs:
           }
           core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
           assertCleanSonar(sonar, annotations, ref);
-    - name: Lint and build all Android variants
-      shell: cmd
-      run: |
-        call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
-        if errorlevel 1 exit /b 1
     - name: Download installed 0.10.0 APK for exact upgrade compatibility test
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:

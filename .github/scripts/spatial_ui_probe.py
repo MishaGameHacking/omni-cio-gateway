@@ -209,9 +209,12 @@ class _SpatialSession:
 
     def motion_and_window(self):
         from profile_ui_probe import LIGHT_BACKGROUND
+        from native_input_evidence import keyboard_visible
 
         self.probe.tap("Светлая модель", "workspace-content")
         self.probe.palette(LIGHT_BACKGROUND)
+        self.probe.wait_for(lambda: not keyboard_visible(self.probe.tree()),
+                            "Theme selection reopened the explicitly dismissed keyboard")
         self.capture_form("spatial-light", (245, 248, 255))
         for choice, motion in (("SUBDUED", "Subdued"), ("OFF", "Off")):
             self.probe.tap(choice, "workspace-content")
