@@ -301,3 +301,27 @@ Python-скриптов и `git diff --check`; эти проверки не за
 старое при нуле новых, несовпадающий счётчик, отсутствующий новый ключ в полном
 списке, изменившийся head, 501 запись и неизвестный summary. Все ожидаемые
 успехи/отказы подтверждены; новое состояние обеих веток требует полного CI.
+
+## Проверенный main и восстановленная цель при font200
+
+`ea6d1ee9c5237e3f4fb5913bc577976334a9784e` прошёл все семь checks 11:28 UTC:
+[Android 39589357732](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39589357732),
+Backend и Sonar. Runtime `119190870737` проверил полный UI/font200 на API35/36
+и обновление на API36; cleanup `119195278709` подтвердил verified_absent.
+Preview SHA-256 `4a203c17ef386bad0fd18624e2b56d838a70c6b3195028616b2c1f9160582812`,
+APK report blob `86f00e5de4fa1bb0b4dc9d2c5fcd695271a092e9`. Main не слит из-за
+прежнего V10 правила; APK не опубликован.
+
+3D `ca574d11348092593dd49b3861a34b8133027ab1`,
+[39589355833](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39589355833),
+runtime `119192862868`: native empty focus больше не вызывает ложный отказ.
+Цель прошла font100 целиком; при font200 прошли ввод суммы, draft/pending rotation.
+Затем тест получил `Recovered goal editor did not close`. Просмотренный
+failure.png (blob `4465de47fcd5a23af2cdd50f4f49104b84168606`) показывает уже
+закрытый редактор и карточку GoalDraft, 100000 RUB из 500000 RUB. Кнопка изменения
+находится ниже viewport. Исправлена пассивная проверка видимости: сначала
+требуются прежние точные счётчики posts=2/creates=1/records=1/same-request=true
+из active-window страницы (вне Dialog), затем штатный bounded reveal кнопки.
+Проверка одного неизменного запроса, название, native caret/rotation и удаление
+остаются обязательными. Новый полный runtime ещё нужен; cleanup `119196366405`
+успешен. Backend/Sonar и полная диагностика ca574d1 успешны: все OPEN/CONFIRMED=0.

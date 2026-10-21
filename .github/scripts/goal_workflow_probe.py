@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 
 from native_input_evidence import display_geometry, empty_editor_focused, focused_editor, rotate_focused_draft
-from profile_scroll import visible_label
 
 AREA = "workspace-content"
 TITLE = "GoalDraft"
@@ -84,8 +83,10 @@ def _case(probe, scale):
     _pending(probe)
     _rotate_pending(probe, suffix)
     probe.tap(RECOVER, AREA)
-    probe.wait_for(lambda: visible_label(probe.tree(), "Изменить цель"), "Recovered goal editor did not close")
+    # The marker belongs to the page in the active window, outside the dialog.
+    # At 200% its recovered card's edit button is below the viewport.
     observed = _trace(probe, ("2", "1", "1", "true"))
+    probe.reveal("Изменить цель", AREA)
     probe.reveal(TITLE, AREA, direction="start")
     probe.capture("goal-recovered" + suffix)
     probe.tap("Удалить цель", AREA)
