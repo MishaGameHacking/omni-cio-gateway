@@ -1,4 +1,14 @@
-# Timeweb Actions import: implementation and observed access blocker
+# Timeweb Actions import and CI capacity
+
+## Current observation — 21 October 2026
+
+The owner explicitly authorized Timeweb use to resolve Android CI capacity.
+Run `39532595104`, attempt 2, job `119078058564` completed successfully:
+37 offline tests and three live GET requests. The token sees one project and
+zero servers/buckets, with complete totals. The earlier 403 is historical.
+The new `Timeweb Android capacity` workflow reads current VM offers and Ubuntu
+images without creating resources. Actual nested KVM and graphics support must
+be measured before a server can be accepted for APK runtime verification.
 
 The owner requested a public HTTPS URL from which the GPT editor can import the
 corrected Timeweb schema. The owner permits direct main changes, Timeweb usage
@@ -90,8 +100,9 @@ do not conclude from this result that the owner never granted permissions.
 
 After identifying a suitable existing endpoint, publish **only** the public
 schema there, verify HTTPS and the unauthenticated response bytes, then supply
-that observed URL. Do not expose this private repository, create a paid server
-just for a tiny schema, extract the Actions secret, or invent an endpoint.
+that observed URL. The source repository is public; account secrets remain
+private. Do not create a paid server just for a tiny schema or invent an endpoint.
+The separately authorized Android CI capacity is a different workload.
 
 ## Test scope
 
@@ -105,8 +116,8 @@ Backend/Android/Sonar acceptance suite and cannot certify main as entirely green
 No installation, emulator execution, physical-phone run, new APK, live backend
 change, broker transaction or successful schema publication is claimed.
 
-Project requirements remain a personal Android 17+ investment chat with a
-professional 2D interface. This helper is infrastructure tooling, not the app's
+Project requirements remain a personal Android 17+ investment application with
+a real Filament/GLB 3D interface and native accessible text/input. This helper is infrastructure tooling, not the app's
 chat or broker API. Telegram/server/app callback and session tests remain part
 of application acceptance; this probe does not validate them.
 

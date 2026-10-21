@@ -1,0 +1,51 @@
+name: Timeweb Android capacity
+
+on:
+  push:
+    branches: [codex/spectrum-3d-100]
+    paths:
+      - tools/timeweb_*.py
+      - tools/tests/test_timeweb_*.py
+      - .github/workflows/timeweb-ci.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analyst-timeweb-ci-capacity
+  cancel-in-progress: false
+
+jobs:
+  catalog:
+    if: contains(github.event.head_commit.message, '[timeweb-ci-catalog]')
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Prepare native TLS and test before loading credentials
+        shell: cmd
+        run: |
+          set "PROBE_ENV=%RUNNER_TEMP%\analyst-timeweb-ci-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
+          echo PROBE_ENV=%PROBE_ENV%>>"%GITHUB_ENV%"
+          py -3 -m venv "%PROBE_ENV%"
+          if errorlevel 1 exit /b 1
+          "%PROBE_ENV%\Scripts\python.exe" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools\timeweb-actions-requirements.txt
+          if errorlevel 1 exit /b 1
+          "%PROBE_ENV%\Scripts\python.exe" -m unittest discover -s tools\tests -p "test_timeweb_*.py" -v
+          if errorlevel 1 exit /b 1
+      - name: Read available server offers and OS images
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          "%PROBE_ENV%\Scripts\python.exe" tools\timeweb_ci_catalog.py
+          if errorlevel 1 exit /b 1
