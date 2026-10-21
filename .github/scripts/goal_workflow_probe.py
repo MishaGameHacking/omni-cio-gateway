@@ -91,8 +91,8 @@ def _case(probe, scale):
     probe.capture("goal-recovered" + suffix)
     probe.tap("Удалить цель", AREA)
     probe.tap_visible("Удалить")
-    probe.find("Выберите первую цель")
     _trace(probe, ("2", "1", "0", "true"))
+    probe.reveal("Выберите первую цель", AREA, direction="start")
     return {"font_scale": scale, "draft_rotation": draft, "recovery": observed,
             "pending_survives_rotation": True, "confirmed_delete": True}
 
