@@ -21,9 +21,9 @@ from timeweb_actions_probe import (
 from timeweb_ci_catalog import candidate_presets, ubuntu_images
 
 PROJECT_ID = 2941515
-PRESET_ID = 6763
+PRESET_ID = 2581
 OS_ID = 99
-MAX_MONTHLY_RUB = 2900
+MAX_MONTHLY_RUB = 5120
 OWNER_MARKER = "Analyst AI disposable Android capacity check"
 REMOTE_PROBE = r'''import fcntl, json, os, pathlib, shutil
 cpu = pathlib.Path('/proc/cpuinfo').read_text()
