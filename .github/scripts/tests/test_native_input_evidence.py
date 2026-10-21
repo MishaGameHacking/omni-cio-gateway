@@ -93,8 +93,9 @@ class NativeInputEvidenceTests(unittest.TestCase):
 
     def test_empty_focus_rejects_missing_mixed_or_out_of_range_selection(self):
         for start, end in (("", ""), ("-1", "0"), ("0", "-1"), ("1", "1"), ("false", "0")):
+            root = frame(text="", **{"selection-start": start, "selection-end": end})
             with self.subTest(start=start, end=end), self.assertRaises(AssertionError):
-                native.empty_editor_focused(frame(text="", **{"selection-start": start, "selection-end": end}))
+                native.empty_editor_focused(root)
 
     def test_android_utf16_offsets_and_public_display_geometry(self):
         root = frame(text="A\U0001f310B", **{"selection-start": "4", "selection-end": "4"})
