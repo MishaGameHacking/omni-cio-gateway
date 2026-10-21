@@ -74,7 +74,17 @@ Accept в анонимной проверке; черновик удалён. Ф
 [39565256916](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39565256916),
 job `119105877704`, прошла: приватный upload/readback, анонимный HTTP 404 и
 подтверждённая очистка. Sonar точного коммита: 0 новых, 0 принятых, 0 hotspots.
-Началась сборка подписанных входных APK для полного runtime.
+Сборка и lint подписанных APK завершились, но повторное создание draft в job
+`119105949926` вернуло HTTP 403: к этому моменту ветка ушла с `97227a4`.
+GitHub требует дополнительный workflow scope для коммита с изменёнными workflows
+без существующего branch/tag ref. Runtime не запускался; cleanup успешен.
+
+Исправлен порядок: preflight создаёт один закрытый draft, проверяет synthetic
+upload/readback и удаляет только synthetic asset. Сборка загружает APK в этот же
+проверенный пустой draft; повторного создания release после сборки нет. Для PR
+release привязан к исходной вершине ветки, а манифест и тело отдельно связывают
+фактически тестируемый merge SHA. Позднее продвижение ветки не меняет эти байты.
+Полная очистка draft остаётся в обязательном завершающем job. Права не расширены.
 
 Для main ремонтная ветка отдельно сохраняет прежнюю матрицу API35/36 и проверку
 обновления с 0.9.0. Её результаты не подтверждают текущую 3D-линию API37.
@@ -88,7 +98,7 @@ job `119105877704`, прошла: приватный upload/readback, анони
 
 Матрица установки, обновления, UI, настоящего 3D, подписи и Sonar сохраняется.
 Локальные правила проходят: 682 CI tests (3 skip) в 3D-ветке и 393 (1 skip)
-в ремонте main; общий Node handoff — 7 tests.
+в ремонте main; общий Node handoff — 8 tests.
 Полный успешный runtime ещё не подтверждён; начатая сборка не считается приёмкой.
 Исправлено отдельное условие device-test retention в 3D-ветке: публичность
 исходников больше не вызывает безусловный отказ обычного CI. Явно запрошенный
@@ -102,3 +112,5 @@ job `119105877704`, прошла: приватный upload/readback, анони
 - [Timeweb: S3 и тарификация](https://timeweb.cloud/services/s3-storage).
 - [Timeweb: параметры токена и скрытие реквизитов](https://timeweb.cloud/docs/account-management/token).
 - [Timeweb: удаление сервера и отдельного IP](https://timeweb.cloud/docs/cloud-servers/manage-servers/delete-server).
+
+- [GitHub: workflow scope при создании release](https://github.blog/changelog/2023-11-02-github-actions-enforcing-workflow-scope-when-creating-a-release/).

@@ -28,8 +28,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-    env:
-      CI_TRANSFER_KIND: probe
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       id: checkout
@@ -42,9 +40,9 @@ jobs:
     - name: Verify synthetic draft handoff and unauthenticated denial
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'probe'});
-    - name: Remove this run's temporary draft and confirm absence
-      if: always() && steps.checkout.outcome == 'success'
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+    - name: Remove the temporary draft immediately if preparation fails
+      if: failure() && steps.checkout.outcome == 'success'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
