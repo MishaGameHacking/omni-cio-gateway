@@ -62,7 +62,7 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     var exposureId by rememberSaveable { mutableStateOf<String?>(null) }
     val exposureRequest = rememberWorkspaceRequest(parameters = mapOf("currency" to snapshot.totalValue.currency), refreshKey = LocalWorkspaceRefreshKey.current)
     val exposureAxis = exposureRequest.json?.sectionData("exposures")?.records("axes")?.firstOrNull {
-        it.optString("id") == if (group == 3) "issuer" else if (group == 4) "group" else ""
+        it.optString("id") == exposureAxisId(group)
     }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selectedKeys by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
@@ -84,9 +84,8 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     val kinds = listOf("all", "bond", "share", "etf", "cash", "futures", "option", "other")
     val labels = listOf("Все", "Облигации", "Акции", "Фонды", "Деньги", "Фьючерсы", "Опционы", "Прочие")
     val candidates = remember(snapshot, query, kind, sector, order, accountId, onlyWatched, personal.data, exposureId, exposureAxis) {
-        portfolioRows(snapshot, query, kind, sector, order, accountId)
-            .filter { !onlyWatched || it.position.id in personal.watches.map { watch -> watch.uid } }
-            .filter { exposureId == null || exposureMembership(exposureAxis, it.position.id).any { entry -> entry.optString("id") == exposureId } }
+        filterPortfolioCandidates(portfolioRows(snapshot, query, kind, sector, order, accountId),
+            onlyWatched, personal.watches.map { it.uid }.toSet(), exposureId, exposureAxis)
     }
     var frozenOrder by rememberSaveable(query, kind, sector, order, accountId, onlyWatched, exposureId) { mutableStateOf<List<String>?>(null) }
     val lookup = candidates.associateBy(::portfolioRowKey)
@@ -97,16 +96,7 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     val restricted = rows.filter { it.position.blocked }
     val cash = rows.filter { it.position.instrumentType in setOf("cash", "currency") && !it.position.blocked }
     val assets = rows.filter { !it.position.blocked && it.position.instrumentType !in setOf("cash", "currency") }
-    val groups = assets.groupBy { row -> when (group) {
-        1 -> row.position.company?.takeIf(String::isNotBlank) ?: "Компания не указана"
-        2 -> row.position.sector?.takeIf(String::isNotBlank) ?: "Отрасль не указана"
-        3, 4 -> exposureMembership(exposureAxis, row.position.id).let { memberships -> when {
-            memberships.isEmpty() -> "Связь не подтверждена"
-            memberships.size == 1 -> memberships.first().optionalText("label") ?: "Имя не получено"
-            else -> "Несколько подтверждённых связей"
-        } }
-        else -> row.account.name
-    } }
+    val groups = assets.groupBy { portfolioGroupLabel(it, group, exposureAxis) }
     val changed = accountId != null || query.isNotBlank() || kind != "all" || sector != null || group != 0 || order != 0 || onlyWatched || exposureId != null
     Column(modifier.fillMaxWidth()) {
         SpectrumTextField(query, { query = it }, label = { Text("Название, тикер или ISIN") }, singleLine = true,
@@ -131,50 +121,22 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
             } }
         }
         if (accountId != null && snapshot.accounts.none { it.id == accountId }) Notice("Счёт сохранённого фильтра сейчас недоступен. Выберите другой счёт или сбросьте фильтр.")
-        if (selecting) SpectrumCard(Modifier.padding(horizontal = 20.dp)) {
-            Text("Выбрано ${chosen.size} из 20", style = MaterialTheme.typography.titleMedium)
-            if (chosen.size != selectedKeys.size) Text("Часть выбранных позиций исчезла из текущих данных и не включена в итог.")
-            chosen.mapNotNull { it.position.currentValue }.groupBy { it.currency }.forEach { (currency, amounts) ->
-                DataRow("Стоимость выбранного", PrivateValue("${decimalText(amounts.sumOf { it.value.toBigDecimal() })} ${currencySymbol(currency)}"))
-                val total = snapshot.totalValue.takeIf { it.currency == currency }?.value?.toBigDecimal()
-                if (total != null && total.signum() > 0) DataRow("Доля текущего капитала", PrivateValue("${decimalText(amounts.sumOf { it.value.toBigDecimal() }.multiply(java.math.BigDecimal(100)).divide(total, 4, java.math.RoundingMode.HALF_UP))}%"))
-            }
-            if (chosen.any { it.position.currentValue == null }) Text("Итог неполный: есть позиции без оценки.")
-            Row {
-                TextButton(onClick = { comparing = true }, enabled = chosen.size in 2..3) { Text("Сравнить 2–3") }
-                TextButton(onClick = { batchReason = "" }, enabled = chosen.isNotEmpty()) { Text("Наблюдать") }
-                TextButton(onClick = { selectedKeys = arrayListOf() }) { Text("Сбросить") }
-            }
-            if (chosen.isNotEmpty()) {
-                SaveResearchButton(comparisonArchive(chosen), "Выбранные позиции (${chosen.size})",
-                    source = "T‑Invest · выбранные позиции по счетам", observedAt = snapshot.asOf)
-                DetailFold("Выбранные позиции") { chosen.forEach { Text("${it.position.title} · ${it.account.name}") } }
-            }
-        }
+        if (selecting) PortfolioSelectionCard(chosen, selectedKeys.size, snapshot,
+            onCompare = { comparing = true }, onWatch = { batchReason = "" },
+            onClear = { selectedKeys = arrayListOf() })
         personal.error?.let { Text(it, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error) }
         if (accountId != null || kind != "all" || sector != null || group != 0 || order != 0) Text(
-            listOfNotNull(snapshot.accounts.firstOrNull { it.id == accountId }?.name, labels[kinds.indexOf(kind).coerceAtLeast(0)], sector?.let { if (it == "__unknown__") "Отрасль не указана" else it },
-                listOf("По счетам", "По названиям компаний", "По отраслям", "По подтверждённым эмитентам", "По подтверждённым группам")[group],
-                listOf("Сначала ограничения", "По стоимости", "По доле", "По названию")[order]).joinToString(" · "),
+            portfolioFilterDescription(snapshot, accountId, labels[kinds.indexOf(kind).coerceAtLeast(0)], sector, group, order),
             Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"), state = listState,
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             if (group in 3..4) item(key = "verified-exposures") { VerifiedExposurePanel(exposureRequest, exposureAxis, exposureId) { exposureId = it } }
-            if (rows.isEmpty()) item { WorkspaceEmpty(if (changed) "Ничего не найдено" else "Активов пока нет",
-                if (changed) "Измените запрос или условия поиска." else "Счёт подключён. Полученные позиции появятся здесь.") }
+            portfolioEmptyState(rows.isEmpty(), changed)
             restrictedRows(restricted, snapshot, showRestricted, { showRestricted = !showRestricted }, open, selectedKeys.toSet())
             cashRows(cash, snapshot, showCash, { showCash = !showCash }, open, selectedKeys.toSet())
-            if (group == 1) item { Notice("Здесь объединены одинаковые названия из данных брокера. Для проверенных отношений выберите «Проверенные эмитенты» или «Проверенные группы».") }
-            if (order in 1..2 && rows.any { it.position.currentValue?.currency != snapshot.totalValue.currency }) item {
-                Notice("Сначала — оценки в ${snapshot.totalValue.currency}. Несопоставимые валюты и неизвестные значения расположены ниже.")
-            }
+            portfolioRowNotices(group, order, rows, snapshot.totalValue.currency)
             assetGroups(groups, group, snapshot, open, selectedKeys.toSet())
-            if (snapshot.accounts.any { it.virtualPositions.isNotEmpty() }) item { DetailFold("Виртуальные позиции") {
-                val destination = LocalPortfolioDestination.current
-                snapshot.accounts.filter { it.virtualPositions.isNotEmpty() }.forEach { account ->
-                    TextButton(onClick = { destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("${account.name} · ${account.virtualPositions.size}") }
-                }
-            } }
+            virtualPositionRows(snapshot)
         }
     }
     if (filtersOpen) AlertDialog(onDismissRequest = { filtersOpen = false }, title = { Text("Состав портфеля") }, text = {
@@ -200,6 +162,83 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
         confirmButton = { TextButton(onClick = {
             personal.watchMany(chosen.map { it.position.id to it.position.title }, batchReason ?: ""); batchReason = null
         }, enabled = !batchReason.isNullOrBlank()) { Text("Добавить") } }, dismissButton = { TextButton(onClick = { batchReason = null }) { Text("Отмена") } })
+}
+
+private fun exposureAxisId(group: Int): String = when (group) {
+    3 -> "issuer"
+    4 -> "group"
+    else -> ""
+}
+
+private fun filterPortfolioCandidates(rows: List<PortfolioRow>, onlyWatched: Boolean,
+    watched: Set<String>, exposureId: String?, exposureAxis: org.json.JSONObject?): List<PortfolioRow> =
+    rows.filter { !onlyWatched || it.position.id in watched }
+        .filter { exposureId == null || exposureMembership(exposureAxis, it.position.id).any { entry -> entry.optString("id") == exposureId } }
+
+private fun portfolioGroupLabel(row: PortfolioRow, group: Int, exposureAxis: org.json.JSONObject?): String = when (group) {
+    1 -> row.position.company?.takeIf(String::isNotBlank) ?: "Компания не указана"
+    2 -> row.position.sector?.takeIf(String::isNotBlank) ?: "Отрасль не указана"
+    3, 4 -> exposureMembership(exposureAxis, row.position.id).let { memberships -> when {
+        memberships.isEmpty() -> "Связь не подтверждена"
+        memberships.size == 1 -> memberships.first().optionalText("label") ?: "Имя не получено"
+        else -> "Несколько подтверждённых связей"
+    } }
+    else -> row.account.name
+}
+
+private fun portfolioFilterDescription(snapshot: PortfolioSnapshot, accountId: String?, kindLabel: String,
+    sector: String?, group: Int, order: Int): String =
+    listOfNotNull(snapshot.accounts.firstOrNull { it.id == accountId }?.name, kindLabel,
+        sector?.let { if (it == "__unknown__") "Отрасль не указана" else it },
+        listOf("По счетам", "По названиям компаний", "По отраслям", "По подтверждённым эмитентам", "По подтверждённым группам")[group],
+        listOf("Сначала ограничения", "По стоимости", "По доле", "По названию")[order]).joinToString(" · ")
+
+@Composable
+private fun PortfolioSelectionCard(chosen: List<PortfolioRow>, selectedCount: Int, snapshot: PortfolioSnapshot,
+    onCompare: () -> Unit, onWatch: () -> Unit, onClear: () -> Unit) {
+    SpectrumCard(Modifier.padding(horizontal = 20.dp)) {
+        Text("Выбрано ${chosen.size} из 20", style = MaterialTheme.typography.titleMedium)
+        if (chosen.size != selectedCount) Text("Часть выбранных позиций исчезла из текущих данных и не включена в итог.")
+        chosen.mapNotNull { it.position.currentValue }.groupBy { it.currency }.forEach { (currency, amounts) ->
+            DataRow("Стоимость выбранного", PrivateValue("${decimalText(amounts.sumOf { it.value.toBigDecimal() })} ${currencySymbol(currency)}"))
+            val total = snapshot.totalValue.takeIf { it.currency == currency }?.value?.toBigDecimal()
+            if (total != null && total.signum() > 0) DataRow("Доля текущего капитала", PrivateValue("${decimalText(amounts.sumOf { it.value.toBigDecimal() }.multiply(java.math.BigDecimal(100)).divide(total, 4, java.math.RoundingMode.HALF_UP))}%"))
+        }
+        if (chosen.any { it.position.currentValue == null }) Text("Итог неполный: есть позиции без оценки.")
+        Row {
+            TextButton(onClick = onCompare, enabled = chosen.size in 2..3) { Text("Сравнить 2–3") }
+            TextButton(onClick = onWatch, enabled = chosen.isNotEmpty()) { Text("Наблюдать") }
+            TextButton(onClick = onClear) { Text("Сбросить") }
+        }
+        if (chosen.isNotEmpty()) {
+            SaveResearchButton(comparisonArchive(chosen), "Выбранные позиции (${chosen.size})",
+                source = "T‑Invest · выбранные позиции по счетам", observedAt = snapshot.asOf)
+            DetailFold("Выбранные позиции") { chosen.forEach { Text("${it.position.title} · ${it.account.name}") } }
+        }
+    }
+}
+
+private fun LazyListScope.portfolioEmptyState(empty: Boolean, filtered: Boolean) {
+    if (empty) item {
+        WorkspaceEmpty(if (filtered) "Ничего не найдено" else "Активов пока нет",
+            if (filtered) "Измените запрос или условия поиска." else "Счёт подключён. Полученные позиции появятся здесь.")
+    }
+}
+
+private fun LazyListScope.portfolioRowNotices(group: Int, order: Int, rows: List<PortfolioRow>, currency: String) {
+    if (group == 1) item { Notice("Здесь объединены одинаковые названия из данных брокера. Для проверенных отношений выберите «Проверенные эмитенты» или «Проверенные группы».") }
+    if (order in 1..2 && rows.any { it.position.currentValue?.currency != currency }) item {
+        Notice("Сначала — оценки в $currency. Несопоставимые валюты и неизвестные значения расположены ниже.")
+    }
+}
+
+private fun LazyListScope.virtualPositionRows(snapshot: PortfolioSnapshot) {
+    if (snapshot.accounts.any { it.virtualPositions.isNotEmpty() }) item { DetailFold("Виртуальные позиции") {
+        val destination = LocalPortfolioDestination.current
+        snapshot.accounts.filter { it.virtualPositions.isNotEmpty() }.forEach { account ->
+            TextButton(onClick = { destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("${account.name} · ${account.virtualPositions.size}") }
+        }
+    } }
 }
 
 internal fun portfolioRowKey(row: PortfolioRow): String = "${row.account.id}:${row.position.id}"

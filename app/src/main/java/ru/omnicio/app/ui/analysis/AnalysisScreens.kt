@@ -530,26 +530,8 @@ private fun AnalysisProfileContent(
                         )
                     }
                 }
-                val valid = supportedProfile(profile)
-                if (!valid) {
-                    item {
-                        ErrorCard(
-                            "Профиль содержит неподдерживаемые настройки. Повторите загрузку.",
-                            { reload++ },
-                            pendingSave == null,
-                        )
-                    }
-                }
-                if (dirty) item { Text("Есть несохранённые изменения. Они применятся к следующим проверкам после сохранения.") }
-                item(key = "save") {
-                    SpectrumPrimaryButton(
-                        text = if (pendingSave != null) "Сохраняем…" else "Сохранить профиль",
-                        onClick = { pendingSave = profile },
-                        enabled = pendingSave == null && valid && dirty,
-                        modifier = Modifier.fillMaxWidth(),
-                        symbol = SpectrumSymbol.Analyst,
-                    )
-                }
+                profileSaveControls(supportedProfile(profile), pendingSave != null, dirty,
+                    onReload = { reload++ }, onSave = { pendingSave = profile })
             }
         }
     }
@@ -578,6 +560,23 @@ private fun AnalysisProfileContent(
         } finally {
             pendingSave = null
         }
+    }
+}
+
+private fun LazyListScope.profileSaveControls(valid: Boolean, saving: Boolean, dirty: Boolean,
+    onReload: () -> Unit, onSave: () -> Unit) {
+    if (!valid) item {
+        ErrorCard("Профиль содержит неподдерживаемые настройки. Повторите загрузку.", onReload, !saving)
+    }
+    if (dirty) item { Text("Есть несохранённые изменения. Они применятся к следующим проверкам после сохранения.") }
+    item(key = "save") {
+        SpectrumPrimaryButton(
+            text = if (saving) "Сохраняем…" else "Сохранить профиль",
+            onClick = onSave,
+            enabled = !saving && valid && dirty,
+            modifier = Modifier.fillMaxWidth(),
+            symbol = SpectrumSymbol.Analyst,
+        )
     }
 }
 

@@ -34,7 +34,7 @@ def definitions(path, names, namespace):
 
 @pytest.fixture
 def guard():
-    names = ["GuardError", "_reject_nonfinite", "_finite_float", "_unique_json_object", "_model_json", "_result_content", "reject", "_encoded_messages", "configured_route", "GuardedAIClient"]
+    names = ["GuardError", "_reject_nonfinite", "_finite_float", "_unique_json_object", "_model_json", "_result_content", "reject", "_encoded_messages", "_assert_complete_response", "configured_route", "GuardedAIClient"]
     return definitions("ai_guarded_client.py", names, {
         "json": json, "math": math, "Route": SimpleNamespace, "CatalogError": CatalogError,
         "ModelJsonLimitError": ModelJsonLimitError, "checked_model_json_text": checked_model_json_text,

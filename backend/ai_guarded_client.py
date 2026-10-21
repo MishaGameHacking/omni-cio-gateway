@@ -233,6 +233,12 @@ def _encoded_messages(messages, max_output_tokens):
     return encoded
 
 
+def _assert_complete_response(response):
+    choices = response.get('choices')
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or choices[0].get('finish_reason') != 'stop':
+        raise GuardError('ai_incomplete_response')
+
+
 class GuardedAIClient:
     def __init__(self, user_id: int, connect, *, transport=None, env=None,
                  attempt_id=None, budget_guard=None, before_send=None, after_response=None, route_guard=None):
@@ -296,9 +302,7 @@ class GuardedAIClient:
             response = self._send(route, payload)
             usage, returned = self._account_usage(response, route, reservation, input_bound, max_output_tokens)
             # Accounting happens even if the content/JSON validation below fails.
-            choices = response.get('choices')
-            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or choices[0].get('finish_reason') != 'stop':
-                raise GuardError('ai_incomplete_response')
+            _assert_complete_response(response)
             content = _result_content(response)
             if job:
                 AnalysisQueue(self.connect).assert_owner(*job)
