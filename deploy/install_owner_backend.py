@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from http.client import HTTPConnection, HTTPSConnection, HTTPException
 from ipaddress import IPv4Address
 import json
 import os
@@ -16,11 +17,10 @@ import re
 import secrets
 import shutil
 import socket
+import ssl
 import stat
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +28,7 @@ INSTALL = Path('/opt/analyst-ai')
 CONFIG = Path('/etc/analyst-ai')
 STATE = Path('/var/lib/analyst-ai')
 UNIT = Path('/etc/systemd/system/analyst-ai-owner.service')
+INPUT_CONFIG = Path('/root/analyst-ai-owner.json')
 REQUIRED = ('TELEGRAM_CLIENT_ID', 'TELEGRAM_CLIENT_SECRET', 'ANALYST_OWNER_TELEGRAM_SUB', 'BACKEND_PUBLIC_URL', 'EXPECTED_PUBLIC_IPV4')
 
 
@@ -42,7 +43,7 @@ def validated_config(values: dict) -> dict[str, str]:
         value = values[name]
         if not isinstance(value, str) or not 1 <= len(value) <= 4096 or any(ord(c) < 33 or ord(c) > 126 for c in value):
             raise InstallError('configuration_value_invalid')
-    if not re.fullmatch(r'[1-9][0-9]{0,19}', values['TELEGRAM_CLIENT_ID'], re.ASCII):
+    if not re.fullmatch(r'[1-9]\d{0,19}', values['TELEGRAM_CLIENT_ID'], re.ASCII):
         raise InstallError('numeric_telegram_client_id_required')
     # OIDC sub is an opaque, case-sensitive identity. Telegram's profile id
     # is a different claim; never derive or normalize the owner subject from it.
@@ -57,21 +58,33 @@ def validated_config(values: dict) -> dict[str, str]:
     url = urlsplit(values['BACKEND_PUBLIC_URL'])
     host = url.hostname or ''
     if (url.scheme != 'https' or url.netloc != host or url.path or url.query or url.fragment
-            or len(host) > 253 or not re.fullmatch(r'[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?', host)
-            or re.fullmatch(r'[0-9.]+', host)
-            or '.' not in host or any(not part or len(part) > 63 or part.startswith('-') or part.endswith('-') for part in host.split('.'))
+            or not valid_hostname(host)
             or host == '176.98.178.81.sslip.io'):
         raise InstallError('new_https_hostname_required')
     return dict(values)
 
 
-def load_config(path: Path) -> dict[str, str]:
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 16384:
-        raise InstallError('configuration_must_be_root_owned_0600_regular_file')
+def valid_hostname(host: str) -> bool:
+    if len(host) > 253 or '.' not in host or host.replace('.', '').isdecimal():
+        return False
+    return all(re.fullmatch(r'[a-z\d-]{1,63}', part, re.ASCII) and
+               part[0].isalnum() and part[-1].isalnum() for part in host.split('.'))
+
+
+def load_config() -> dict[str, str]:
+    # Fixed root-owned path, opened atomically without following a symlink.
+    # CLI input never chooses a file for the privileged installer to read.
+    descriptor = os.open(INPUT_CONFIG, os.O_RDONLY | os.O_NOFOLLOW)
     try:
-        return validated_config(json.loads(path.read_text(encoding='utf-8')))
-    except (ValueError, UnicodeError):
+        with os.fdopen(descriptor, 'r', encoding='utf-8') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 16384:
+                raise InstallError('configuration_must_be_root_owned_0600_regular_file')
+            document = source.read(16385)
+            if len(document) > 16384:
+                raise InstallError('configuration_too_large')
+            return validated_config(json.loads(document))
+    except ValueError:
         raise InstallError('invalid_configuration_json') from None
 
 
@@ -102,7 +115,8 @@ def source_files() -> list[Path]:
 def check_target() -> None:
     if os.geteuid() != 0:
         raise InstallError('root_required_on_verified_new_vm')
-    os_release = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+    os_release = {key: value for line in Path('/etc/os-release').read_text().splitlines() if '=' in line
+                  for key, value in [line.split('=', 1)]}
     if os_release.get('ID', '').strip('"') != 'ubuntu' or os_release.get('VERSION_ID', '').strip('"') != '24.04':
         raise InstallError('ubuntu_24_04_required')
     if any(path.exists() or path.is_symlink() for path in (INSTALL, CONFIG, STATE, UNIT, Path('/etc/caddy'))):
@@ -111,31 +125,46 @@ def check_target() -> None:
         raise InstallError('five_gib_free_disk_required')
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise InstallError('health_redirect_refused')
+class LocalTLSConnection(HTTPSConnection):
+    """Verify this VM's certificate using SNI, without configurable destinations."""
+
+    def __init__(self, hostname: str):
+        if not valid_hostname(hostname):
+            raise InstallError('invalid_tls_hostname')
+        super().__init__('127.0.0.1', 443, timeout=5)
+        self.public_hostname = hostname
+
+    def connect(self):
+        raw = socket.create_connection(('127.0.0.1', 443), timeout=5)
+        try:
+            self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=self.public_hostname)
+        except BaseException:
+            raw.close()
+            raise
 
 
-def probe(base_url: str) -> bool:
-    opener = urllib.request.build_opener(NoRedirect())
+def probe(hostname: str | None = None) -> bool:
+    # Requests are always to this VM. No config URL, proxy environment, redirect,
+    # file scheme or alternate network destination is accepted by this probe.
+    connection = LocalTLSConnection(hostname) if hostname else HTTPConnection('127.0.0.1', 8080, timeout=5)
+    headers = {'Host': hostname} if hostname else {}
     try:
-        with opener.open(base_url + '/health', timeout=5) as response:
+        connection.request('GET', '/health', headers=headers)
+        with connection.getresponse() as response:
             if response.status != 200 or json.loads(response.read(1024)) != {'status': 'ok'}:
                 return False
-        try:
-            with opener.open(base_url + '/workspace', timeout=5):
-                return False
-        except urllib.error.HTTPError as error:
-            status = error.code
-            error.close()
-            return status == 401
-    except (OSError, ValueError, InstallError):
+        connection.request('GET', '/workspace', headers=headers)
+        with connection.getresponse() as response:
+            return response.status == 401
+    except (OSError, ValueError, HTTPException):
         return False
+    finally:
+        connection.close()
 
 
-def wait_healthy(base_url: str) -> None:
+def wait_healthy(hostname: str | None = None) -> None:
     for _ in range(30):
-        if probe(base_url):
+        if probe(hostname):
             return
         time.sleep(2)
     raise InstallError('health_or_authentication_probe_failed')
@@ -182,7 +211,7 @@ def install(values: dict[str, str]) -> None:
     run(['systemctl', 'daemon-reload'])
     try:
         run(['systemctl', 'start', 'analyst-ai-owner'])
-        wait_healthy('http://127.0.0.1:8080')
+        wait_healthy()
         caddy_file = CONFIG / 'Caddyfile'
         write_new(caddy_file, hostname + ' {\n\treverse_proxy 127.0.0.1:8080\n}\n', 0o644)
         # caddy service can read the proxy config without reading backend.env.
@@ -193,22 +222,21 @@ def install(values: dict[str, str]) -> None:
         write_new(dropin / 'analyst-ai.conf', '[Service]\nExecStart=\nExecStart=/usr/bin/caddy run --config /etc/analyst-ai/Caddyfile\nExecReload=\nExecReload=/usr/bin/caddy reload --config /etc/analyst-ai/Caddyfile --force\n', 0o644)
         run(['systemctl', 'daemon-reload'])
         run(['systemctl', 'restart', 'caddy'])
-        wait_healthy(values['BACKEND_PUBLIC_URL'])
+        wait_healthy(hostname)
         run(['systemctl', 'enable', 'analyst-ai-owner', 'caddy'])
     except (InstallError, OSError, subprocess.SubprocessError):
         # A failed fresh install stays stopped; retain state/key for diagnosis.
         run(['systemctl', 'stop', 'analyst-ai-owner'])
         raise
-    print('OWNER_BACKEND_INSTALL=healthy_authenticated_single_worker')
+    print('OWNER_BACKEND_INSTALL=local_health_auth_and_tls_verified_external_check_pending')
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--install', action='store_true')
     options = parser.parse_args()
     try:
-        values = load_config(options.config)
+        values = load_config()
         source_files()
         if options.install:
             install(values)

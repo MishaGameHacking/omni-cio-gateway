@@ -31,7 +31,10 @@ Actions variables нашла TELEGRAM_CLIENT_ID: первоначальный in
 читал его из secrets; workflow исправлен на vars. OWNER_TELEGRAM_SUB отсутствует.
 `deploy/install_owner_backend.py` подготовлен для нового Ubuntu24.04: проверка
 DNS/локального IP, отказ замены данных, новый Fernet на VM, один owner worker,
-Caddy HTTPS, health+anonymous401; 9 локальных boundary tests успешны.
+Caddy HTTPS, health+anonymous401; 11 локальных boundary tests успешны.
+После Sonar-проверки установщик ограничен фиксированным root-owned файлом
+с атомарным отказом symlink; health/TLS проверяют только loopback. Внешняя
+проверка доступности обязательна отдельно перед подключением APK.
 Исправлено ошибочное приравнивание обычного Telegram ID к OIDC `sub`:
 установщик сохраняет точный opaque subject длиной до 256 ASCII-символов,
 не вычисляет его из `id` и не выбирает первого посетителя. Для привязки нужен

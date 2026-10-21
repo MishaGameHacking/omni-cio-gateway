@@ -49,7 +49,7 @@ use a verified SSH host key. Point the new HTTPS hostname to that VM and approve
 the new Telegram OIDC origin/redirect in BotFather. Do not reuse the deleted
 `176.98.178.81.sslip.io` endpoint as proof of ownership or send credentials to it.
 
-On that VM, supply a root-owned mode-0600 JSON file with exactly these fields:
+On that VM, supply `/root/analyst-ai-owner.json`, a root-owned mode-0600 regular JSON file (not a symlink), with exactly these fields:
 
 - `TELEGRAM_CLIENT_ID`
 - `TELEGRAM_CLIENT_SECRET`
@@ -60,20 +60,20 @@ On that VM, supply a root-owned mode-0600 JSON file with exactly these fields:
 From the reviewed checkout, validate without installing:
 
 ```sh
-sudo python3 deploy/install_owner_backend.py --config /root/owner-backend.json
+sudo python3 deploy/install_owner_backend.py
 ```
 
 Install on the verified new VM:
 
 ```sh
-sudo python3 deploy/install_owner_backend.py --config /root/owner-backend.json --install
+sudo python3 deploy/install_owner_backend.py --install
 ```
 
 The installer verifies DNS and the VM's actual interface, refuses existing app
 data, installs packaged Caddy/Python, creates a dedicated unprivileged account,
 and uses `owner_app:create_app --factory --workers 1`. Backend binds loopback;
 Caddy provides HTTPS. `/health` must succeed and anonymous `/workspace` must
-return 401 both locally and through HTTPS. Failure stops the new backend and
+return 401 both on loopback HTTP and on local TLS with the public hostname's certificate verified. The probe only connects to fixed loopback addresses; file configuration cannot redirect it to another host. An independent request from outside the VM must still confirm public reachability, TLS, health and anonymous denial before connecting the APK. Failure stops the new backend and
 retains its data/key for inspection. It never reports a stopped install as ready.
 Local config tests are not live Timeweb, TLS or Telegram login verification.
 

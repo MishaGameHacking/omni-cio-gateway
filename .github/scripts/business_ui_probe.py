@@ -32,6 +32,18 @@ def labels(node):
     return [part.strip() for value in (node.get("text", ""), node.get("content-desc", "")) for part in value.splitlines() if part.strip()]
 
 
+def _business_counters(parts):
+    keys = ("requests", "contract-errors", "scenario-compares")
+    if any(not re.fullmatch(r"\d+", parts.get(key, "")) for key in keys):
+        raise AssertionError("Invalid observed business transport counters")
+    counts = {key: int(parts[key]) for key in keys}
+    if counts["contract-errors"]:
+        raise AssertionError("The real screen submitted an invalid fixture contract")
+    if counts["scenario-compares"] > counts["requests"]:
+        raise AssertionError("Scenario comparison count exceeds actual requests")
+    return counts
+
+
 def business_marker(tree, route, scenario):
     """Require exact fixture identity, its real request count and zero rejects."""
     if (route, scenario) not in CASES:
@@ -42,18 +54,12 @@ def business_marker(tree, route, scenario):
         parts = {key: value for part in node.get("content-desc", "").split(";") if ":" in part for key, value in [part.split(":", 1)]}
         if parts.get("business-probe") != route + "/" + scenario or parts.get("transport") != "synthetic":
             continue
-        if any(not re.fullmatch(r"\d+", parts.get(key, ""))
-               for key in ("requests", "contract-errors", "scenario-compares")):
-            raise AssertionError("Invalid observed business transport counters")
-        if int(parts["contract-errors"]):
-            raise AssertionError("The real screen submitted an invalid fixture contract")
-        if int(parts["scenario-compares"]) > int(parts["requests"]):
-            raise AssertionError("Scenario comparison count exceeds actual requests")
-        if int(parts["requests"]) > 0:
-            return {"route": route, "scenario": scenario, "requests": int(parts["requests"]),
-                    "scenario_comparisons": int(parts["scenario-compares"]),
+        counts = _business_counters(parts)
+        if counts["requests"] > 0:
+            return {"route": route, "scenario": scenario, "requests": counts["requests"],
+                    "scenario_comparisons": counts["scenario-compares"],
                     "contract_errors": 0, "navigation": parts.get("navigation", "none"),
-                    **chat_counters(parts, int(parts["requests"]), scenario)}
+                    **chat_counters(parts, counts["requests"], scenario)}
     return None
 
 

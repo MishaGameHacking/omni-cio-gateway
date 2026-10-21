@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from unittest.mock import MagicMock
-from urllib.error import HTTPError
 
 SOURCE = Path(__file__).resolve().parents[2] / 'deploy/install_owner_backend.py'
 SPEC = importlib.util.spec_from_file_location('owner_installer', SOURCE)
@@ -38,16 +37,18 @@ class OwnerInstallationTests(unittest.TestCase):
         cases += [('ANALYST_OWNER_TELEGRAM_SUB', 'x' * 257), ('ANALYST_OWNER_TELEGRAM_SUB', 'subject with whitespace'),
                   ('EXPECTED_PUBLIC_IPV4', '127.0.0.1')]
         for name, value in cases:
+            candidate = configuration() | {name: value}
             with self.subTest(name=name, value=value), self.assertRaises(installer.InstallError):
-                installer.validated_config(configuration() | {name: value})
+                installer.validated_config(candidate)
 
     def test_oidc_subject_is_preserved_and_never_derived_from_numeric_profile_id(self):
         for subject in ('1234123412341234123', 'opaque:Owner-A_9', 'x' * 256):
             with self.subTest(subject=subject):
                 values = configuration() | {'ANALYST_OWNER_TELEGRAM_SUB': subject}
                 self.assertEqual(installer.validated_config(values)['ANALYST_OWNER_TELEGRAM_SUB'], subject)
+        profile_only = configuration() | {'TELEGRAM_PROFILE_ID': '987654321'}
         with self.assertRaises(installer.InstallError):
-            installer.validated_config(configuration() | {'TELEGRAM_PROFILE_ID': '987654321'})
+            installer.validated_config(profile_only)
 
     def test_environment_is_data_and_never_copies_install_target(self):
         config = configuration() | {'TELEGRAM_CLIENT_SECRET': 'synthetic"$value\\tail'}
@@ -68,15 +69,16 @@ class OwnerInstallationTests(unittest.TestCase):
     @patch.object(installer.socket, 'getaddrinfo')
     @patch.object(installer.subprocess, 'run')
     def test_dns_and_actual_interface_must_match_same_new_vm(self, run, dns):
+        values = configuration()
         dns.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('1.1.1.1', 443))]
         run.return_value = subprocess.CompletedProcess([], 0, b'[{"addr_info":[{"local":"1.1.1.1"}]}]')
-        installer.check_address(configuration())
+        installer.check_address(values)
         run.return_value = subprocess.CompletedProcess([], 0, b'[{"addr_info":[{"local":"8.8.8.8"}]}]')
         with self.assertRaisesRegex(installer.InstallError, 'not_assigned'):
-            installer.check_address(configuration())
+            installer.check_address(values)
         dns.return_value.append((socket.AF_INET6, socket.SOCK_STREAM, 6, '', ('2606:4700::1111', 443, 0, 0)))
         with self.assertRaisesRegex(installer.InstallError, 'dns_does_not_identify'):
-            installer.check_address(configuration())
+            installer.check_address(values)
 
     def test_source_package_contains_real_owner_factory(self):
         names = {path.name for path in installer.source_files()}
@@ -87,21 +89,51 @@ class OwnerInstallationTests(unittest.TestCase):
     @patch.object(installer, 'check_target', side_effect=installer.InstallError('existing_installation_refused_no_data_replaced'))
     @patch.object(installer, 'run')
     def test_existing_installation_blocks_every_command(self, run, _check):
+        values = configuration()
         with self.assertRaises(installer.InstallError):
-            installer.install(configuration())
+            installer.install(values)
         run.assert_not_called()
 
-    @patch.object(installer.urllib.request, 'build_opener')
-    def test_health_success_never_accepts_anonymous_workspace_access(self, factory):
-        response = MagicMock()
-        response.__enter__.return_value.status = 200
-        response.__enter__.return_value.read.return_value = b'{"status":"ok"}'
-        factory.return_value.open.side_effect = [response, response]
-        self.assertFalse(installer.probe('https://new.example.com'))
-        for status in (401, 403, 404, 503):
-            factory.return_value.open.side_effect = [response, HTTPError('https://new.example.com/workspace', status, 'test', {}, None)]
+    @patch.object(installer, 'HTTPConnection')
+    def test_health_success_never_accepts_anonymous_workspace_access_or_redirects(self, factory):
+        health = MagicMock()
+        health.__enter__.return_value.status = 200
+        health.__enter__.return_value.read.return_value = b'{"status":"ok"}'
+        workspace = MagicMock()
+        for status in (200, 301, 401, 403, 404, 503):
+            workspace.__enter__.return_value.status = status
+            factory.return_value.getresponse.side_effect = [health, workspace]
             with self.subTest(status=status):
-                self.assertEqual(installer.probe('https://new.example.com'), status == 401)
+                self.assertEqual(installer.probe(), status == 401)
+            factory.assert_called_with('127.0.0.1', 8080, timeout=5)
+            factory.return_value.close.assert_called()
+
+    @patch.object(installer.ssl, 'create_default_context')
+    @patch.object(installer.socket, 'create_connection')
+    def test_tls_probe_pins_loopback_and_checks_certificate_for_configured_hostname(self, connect, tls):
+        connection = installer.LocalTLSConnection('new.example.com')
+        connection.connect()
+        connect.assert_called_once_with(('127.0.0.1', 443), timeout=5)
+        tls.return_value.wrap_socket.assert_called_once_with(connect.return_value, server_hostname='new.example.com')
+        tls.return_value.wrap_socket.side_effect = installer.ssl.SSLError('synthetic invalid certificate')
+        with self.assertRaises(installer.ssl.SSLError):
+            connection.connect()
+        connect.return_value.close.assert_called_once()
+
+    def test_fixed_config_file_rejects_symlinks_and_unsafe_permissions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'private.json'
+            source.write_text(json.dumps(configuration()))
+            source.chmod(0o600)
+            with patch.object(installer, 'INPUT_CONFIG', source):
+                self.assertEqual(installer.load_config(), configuration())
+                source.chmod(0o644)
+                with self.assertRaises(installer.InstallError):
+                    installer.load_config()
+            link = Path(folder) / 'link.json'
+            link.symlink_to(source)
+            with patch.object(installer, 'INPUT_CONFIG', link), self.assertRaises(OSError):
+                installer.load_config()
 
 
 if __name__ == '__main__':
