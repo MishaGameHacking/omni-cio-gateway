@@ -31,18 +31,17 @@ def chat_counters(parts, requests, scenario):
 
 
 def native_send_button(tree, *, enabled):
-    """The native Button state, not an explanatory label, controls repeat input."""
-    from profile_ui_probe import node_bounds
-    for node in tree.iter("node"):
-        if node.get("package") != PACKAGE or node.get("visible-to-user") != "true" \
-                or node.get("class") != "android.widget.Button" or node.get("enabled") != str(enabled).lower():
-            continue
-        if not any(SEND in [part.strip() for part in child.get("text", "").splitlines() + child.get("content-desc", "").splitlines()]
-                   for child in node.iter("node") if child.get("visible-to-user") == "true"):
-            continue
-        node_bounds(node)
-        return node
-    return None
+    """The native action owner's state controls repeat input."""
+    from profile_ui_probe import button_label, node_bounds
+    node = button_label(tree, SEND)
+    if node is None or node.get("visible-to-user") != "true" \
+            or node.get("enabled") != str(enabled).lower():
+        return None
+    if not any(SEND in [part.strip() for part in child.get("text", "").splitlines() + child.get("content-desc", "").splitlines()]
+               for child in node.iter("node") if child.get("visible-to-user") == "true"):
+        return None
+    node_bounds(node)
+    return node
 
 
 def accepted_single_request(value):

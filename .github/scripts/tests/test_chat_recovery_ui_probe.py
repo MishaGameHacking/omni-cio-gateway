@@ -68,6 +68,16 @@ class ChatRecoveryEvidenceTests(unittest.TestCase):
         node.set("package", "other.app")
         self.assertIsNone(native_send_button(root, enabled=True))
 
+    def test_compose_send_reads_disabled_parent_not_enabled_role_child(self):
+        control = ET.Element("node", {"package": "ru.omnicio.app.debug", "visible-to-user": "true",
+                                      "class": "android.view.View", "clickable": "true", "enabled": "false",
+                                      "bounds": "[20,100][300,160]"})
+        ET.SubElement(control, "node", {"visible-to-user": "true", "text": "Отправить", "enabled": "true"})
+        ET.SubElement(control, "node", {"package": "ru.omnicio.app.debug", "visible-to-user": "true",
+                                       "class": "android.widget.Button", "clickable": "false", "enabled": "true"})
+        self.assertIs(native_send_button(control, enabled=False), control)
+        self.assertIsNone(native_send_button(control, enabled=True))
+
 
 if __name__ == "__main__":
     unittest.main()

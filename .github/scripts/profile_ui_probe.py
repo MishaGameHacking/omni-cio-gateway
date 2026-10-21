@@ -45,8 +45,36 @@ def checkable_label(tree: ET.Element, text: str) -> ET.Element | None:
 
 
 def button_label(tree: ET.Element, text: str) -> ET.Element | None:
-    """Read enabled state from the native Button, never from its text child."""
-    return _native_label(tree, text, "class", "android.widget.Button")
+    """Read the action owner's state, including Compose's separate role child.
+
+    Compose exposes a non-leaf clickable as View, with a direct, unlabelled
+    Button child for Role.Button. That child has no click action or Disabled
+    property; enabled must be read from its clickable parent, not the role or
+    text child. A label or arbitrary clickable without a button role is not
+    evidence of a button.
+    """
+    matches = [node for node in tree.iter("node")
+               if node.get("package") == PACKAGE
+               and node.get("visible-to-user") != "false"
+               and _owns_button_role(node)
+               and matching_node(node, text) is not None]
+    if len(matches) > 1:
+        raise AssertionError("Ambiguous native control label: " + text)
+    return matches[0] if matches else None
+
+
+def _owns_button_role(node: ET.Element) -> bool:
+    if node.get("class") == "android.widget.Button":
+        return True
+    if node.get("class") != "android.view.View" or node.get("clickable") != "true":
+        return False
+    return any(child.get("class") == "android.widget.Button"
+               and child.get("package") == PACKAGE
+               and child.get("visible-to-user") != "false"
+               and child.get("clickable") == "false"
+               and not child.get("text") and not child.get("content-desc")
+               and len(child) == 0
+               for child in node)
 
 
 def _native_label(tree: ET.Element, text: str, attribute: str, value: str) -> ET.Element | None:

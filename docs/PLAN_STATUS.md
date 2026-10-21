@@ -10,6 +10,22 @@ Main остаётся `973f294`; обход правила и публикаци
 
 **APK по запросу владельца — F01/F22/F23:** готовится совместимый
 0.11.0-preview / 35 в приватном draft GitHub после полной проверки.
+На `b1389fd`, run `39609995259` / runtime `119262375498`, прошли установка,
+обновление и запуск API37/16КБ, Filament, контекст, баланс, полный сценарий целей
+при font100/font200. Повороты сохраняют IME/каретку, два POST дают одну запись,
+удаление подтверждено при обоих шрифтах. Отчёт целей — blob
+`873dcf197eaad294f4682c1ed44ca1a8b2c446ce`.
+Первый business case `risk/ready;font=1.0` остановился на поиске native Button.
+Снимок `9647c54baeb3c7f0b764621ab7f0083e0e72b12e` показывает видимую отключённую
+кнопку. AndroidX сохраняет clickable/enabled у родителя View, а Role.Button
+для непустого Compose control выносит в отдельный прямой child без OnClick.
+Селектор теперь учитывает эту структуру и читает состояние только у владельца
+действия; чужая, скрытая, вложенная или подписанная соседняя роль не подходит.
+Та же поправка применяется к отправке чата. Источник:
+[AndroidX accessibility delegate](https://android.googlesource.com/platform/frameworks/support/+/refs/heads/androidx-main/compose/ui/ui/src/androidMain/kotlin/androidx/compose/ui/platform/AndroidComposeViewAccessibilityDelegateCompat.android.kt).
+Sonar/Backend этого head и cleanup `119267722942` успешны; второй профиль ещё не
+запускался, APK не сохранён. Новый полный прогон обязателен.
+
 Создание device-test draft привязано к текущему исходному head именованной ветки,
 как уже работающий приватный CI handoff. Фактически проверенный merge SHA остаётся
 отдельно в теле и квитанции; хеш APK и полная матрица не подменяются. Это устраняет
