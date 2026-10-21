@@ -145,6 +145,7 @@ fun ProfileScreen(
                                     title = "Безопасность",
                                     subtitle = "Вход и доступ к портфелю",
                                     spectrum = SpectrumSymbol.Risk,
+                                    modifier = Modifier.testTag("profile-security-action"),
                                 ) {
                                     dialog = "security"
                                 }
@@ -363,6 +364,7 @@ private fun ProfileAction(
     title: String,
     subtitle: String,
     spectrum: SpectrumSymbol,
+    modifier: Modifier = Modifier,
     badge: String? = null,
     danger: Boolean = false,
     onClick: () -> Unit,
@@ -370,7 +372,7 @@ private fun ProfileAction(
     val motion = LocalSpectrumMotionPreference.current
     val palette = LocalSpectrumPalette.current
     SpectrumCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         onClick = onClick,
     ) {
         Row(
