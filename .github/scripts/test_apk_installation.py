@@ -217,6 +217,7 @@ def run_attempt(
     """Execute the complete publication-grade contract in one fresh AVD."""
     from artifact_test_identity import apk_digest, record_install
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
+    from emulator_storage import configure_userdata, remove_disposable_avd
 
     avd_home = work / "avd"
     avd_home.mkdir(exist_ok=True)
@@ -248,6 +249,7 @@ def run_attempt(
     )
     if create.returncode:
         raise RuntimeError("AVD creation failed: " + create.stdout + create.stderr)
+    configure_userdata(avd_home / (name + ".avd"), sdk, image)
     acceleration = run([emulator, "-accel-check"])
     print("EMULATOR_ACCELERATION=" + acceleration.stdout.strip(), flush=True)
     port = free_emulator_port()
@@ -531,6 +533,14 @@ def run_attempt(
                 )[-5000:],
                 flush=True,
             )
+
+            # Retain logs/receipts, release only this stopped attempt's images.
+            try:
+                remove_disposable_avd(avd_home, work, process=process)
+            except (OSError, ValueError) as cleanup_error:
+                print("EMULATOR_STORAGE_CLEANUP_FAILURE=" + type(cleanup_error).__name__, flush=True)
+                if not failed:
+                    raise
 
 
 def main() -> None:
