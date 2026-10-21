@@ -188,5 +188,43 @@ class AutonomousAITests(unittest.TestCase):
         self.assertEqual(second["state"], "skipped")
 
 
+class CriticalRiskTests(unittest.TestCase):
+    def test_same_position_across_accounts_is_combined(self):
+        snapshot = sample_snapshot(stock_share=30)
+        other = sample_snapshot(stock_share=20)["accounts"][0]
+        snapshot["accounts"].append(other)
+        critical, reason = ai._critical_risk(snapshot, {"max_position_percent": 30})
+        self.assertTrue(critical)
+        self.assertIn("Проверенный актив — 50.0%", reason)
+
+    def test_distinct_positions_are_not_combined_as_one_issuer(self):
+        snapshot = sample_snapshot(stock_share=30)
+        other = sample_snapshot(stock_share=30)["accounts"][0]
+        other["positions"][0]["id"] = "share-2"
+        snapshot["accounts"].append(other)
+        self.assertEqual(ai._critical_risk(snapshot, {"max_position_percent": 30}), (False, None))
+
+    def test_foreign_currency_and_cash_cannot_inflate_position_exposure(self):
+        snapshot = sample_snapshot(stock_share=90)
+        positions = snapshot["accounts"][0]["positions"]
+        positions[0]["currentValue"]["currency"] = "USD"
+        positions[1]["currentValue"]["value"]["units"] = 90_000
+        self.assertEqual(ai._critical_risk(snapshot, {"max_position_percent": 30}), (False, None))
+
+    def test_threshold_boundary_and_cap_are_preserved(self):
+        for share, maximum, expected in [(44, 30, False), (45, 30, True), (79, 75, False), (80, 75, True)]:
+            with self.subTest(share=share, maximum=maximum):
+                critical, _ = ai._critical_risk(sample_snapshot(stock_share=share), {"max_position_percent": maximum})
+                self.assertEqual(critical, expected)
+
+    def test_loss_remains_visible_without_a_positive_total(self):
+        snapshot = sample_snapshot(stock_share=90)
+        snapshot["totalValue"]["value"]["units"] = 0
+        snapshot["expectedYieldPercent"]["units"] = -25
+        critical, reason = ai._critical_risk(snapshot, {"max_position_percent": 30})
+        self.assertTrue(critical)
+        self.assertIn("Отрицательный результат портфеля", reason)
+
+
 if __name__ == "__main__":
     unittest.main()
