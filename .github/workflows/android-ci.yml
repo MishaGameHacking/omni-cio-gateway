@@ -23,7 +23,7 @@ jobs:
         persist-credentials: false
     - name: Test private handoff boundaries without credentials
       run: |
-        node --test .github/scripts/ci_private_transfer.test.cjs .github/scripts/require_main_release.test.cjs
+        node --test .github/scripts/ci_private_transfer.test.cjs .github/scripts/require_main_release.test.cjs .github/scripts/authoritative_merge_gate.test.cjs
         python3 -m unittest discover -s tools/tests -p 'test_*.py'
     - name: Verify synthetic draft handoff and unauthenticated denial
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -494,3 +494,25 @@ jobs:
             exit 1
           fi
         done
+  merge-gate:
+    # The name is required by the existing Protect main rule (GitHub Actions).
+    name: V10 authoritative merge gate
+    needs: [verify]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Require current Android, backend and Sonar evidence
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        ANDROID_RESULT: ${{ needs.verify.result }}
+      with:
+        script: await require('./.github/scripts/authoritative_merge_gate.cjs').verify({github, context, core, androidResult:process.env.ANDROID_RESULT});
