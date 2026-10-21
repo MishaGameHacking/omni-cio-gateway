@@ -1,5 +1,6 @@
 name: Android CI
 'on':
+  workflow_call:
   pull_request:
     branches:
     - main
@@ -23,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   transfer-preflight:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -35,7 +36,7 @@ jobs:
         persist-credentials: false
     - name: Test private handoff boundaries without credentials
       run: |
-        node --test .github/scripts/ci_private_transfer.test.cjs
+        node --test .github/scripts/ci_private_transfer.test.cjs .github/scripts/require_main_release.test.cjs
         python3 -m unittest discover -s tools/tests -p 'test_*.py'
     - name: Verify synthetic draft handoff and unauthenticated denial
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -49,7 +50,7 @@ jobs:
     name: Verify private CI handoff before building
   build:
     name: Build with the existing signing identity
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
     runs-on:
     - self-hosted
     - Windows
@@ -134,7 +135,7 @@ jobs:
         retries: 3
         script: |
           const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
-          const ref = context.payload.pull_request.head.sha;
+          const ref = context.payload.pull_request?.head?.sha || context.sha;
           let sonar = null;
           for (let attempt = 0; attempt < 18; attempt++) {
             const checks = await github.paginate(github.rest.checks.listForRef, {
@@ -320,25 +321,153 @@ jobs:
             }
             records.push({name, blob_sha:blob.sha, preview_base64_blob_sha, sha256, bytes:bytes.length});
           }
-          core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request.head.sha, run:context.runId, records}));
+          core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request?.head?.sha || context.sha, run:context.runId, records}));
           await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
     - name: Upload optional synthetic Spectrum screenshots
       if: always()
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: spectrum-ui-${{ github.event.pull_request.head.sha }}
+        name: spectrum-ui-${{ github.event.pull_request.head.sha || github.sha }}
         path: app/build/outputs/apk/preview/ui-screens/*.png
         if-no-files-found: warn
         retention-days: 1
         compression-level: 0
+    - name: Assert verified APK and evidence are present
+      run: |
+        python3 - <<'PYCODE'
+        from pathlib import Path
+        base = Path('app/build/outputs/apk/preview')
+        required = ['app-preview.apk', 'apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json']
+        if any(not (base / name).is_file() for name in required) or not list((base / 'ui-screens').glob('*.png')):
+            raise RuntimeError('Verified APK or required runtime evidence is missing')
+        PYCODE
+
+    - name: Verify explicit release quality before sharing any APK
+      if: >-
+        github.ref == 'refs/heads/main' &&
+        (github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'push' &&
+          contains(github.event.head_commit.message, '[publish-apk]')))
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: |
+          const quality = await require('./.github/scripts/require_main_release.cjs')({github, context});
+          core.info('MAIN_RELEASE_QUALITY=' + JSON.stringify(quality));
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const base = 'app/build/outputs/apk/preview/';
+          const report = JSON.parse(fs.readFileSync(base + 'apk-verification.json', 'utf8'));
+          const bytes = fs.readFileSync(base + 'app-preview.apk');
+          if (!Number.isSafeInteger(report.version_code) || report.version_code <= 34 ||
+              report.device_install_test !== 'passed_on_emulators_not_a_physical_phone' ||
+              crypto.createHash('sha256').update(bytes).digest('hex') !== report.sha256) {
+            throw new Error('Unverified or previously published APK identity cannot be shared');
+          }
+          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+    - name: Retain APK and verification evidence when storage is available
+      id: retain_apk
+      if: >-
+        github.ref == 'refs/heads/main' &&
+        (github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'push' &&
+          contains(github.event.head_commit.message, '[publish-apk]')))
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: Analyst-AI-${{ github.sha }}
+        path: |
+          app/build/outputs/apk/preview/app-preview.apk
+          app/build/outputs/apk/preview/apk-verification.json
+          app/build/outputs/apk/preview/install-api-36/install-results.json
+          app/build/outputs/apk/preview/install-api-35/install-results.json
+          app/build/outputs/apk/preview/ui-screens/*.png
+        if-no-files-found: error
+        retention-days: 1
+        compression-level: 0
+
+    - name: Report unavailable optional Actions retention
+      if: steps.retain_apk.outcome == 'failure'
+      run: |
+        echo ::warning::Verified APK retention in GitHub Actions storage failed, usually because the repository artifact quota is full. Build, installation, UI, and release-integrity gates remain authoritative.
+
+
+    - name: Publish verified APK to GitHub Releases
+      if: >-
+        github.ref == 'refs/heads/main' &&
+        (github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'push' &&
+          contains(github.event.head_commit.message, '[publish-apk]')))
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const quality = await require('./.github/scripts/require_main_release.cjs')({github, context});
+          core.info('MAIN_RELEASE_QUALITY=' + JSON.stringify(quality));
+          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+          const sha = context.sha;
+          const reportPath = 'app/build/outputs/apk/preview/apk-verification.json';
+          const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          // Code 34 belongs to the installed 0.10.0 preview. Changed bytes must use a newer code.
+          if (!Number.isSafeInteger(report.version_code) || report.version_code <= 34) {
+            throw new Error('A new versionCode is required before publishing changed APK bytes');
+          }
+          const data = fs.readFileSync('app/build/outputs/apk/preview/app-preview.apk');
+          const hash = crypto.createHash('sha256').update(data).digest('hex');
+          if (hash !== report.sha256 || report.device_install_test !== 'passed_on_emulators_not_a_physical_phone') {
+            throw new Error('APK was not fully validated or changed after validation');
+          }
+          const version = report.version_name;
+          const tag = `android-preview-${sha}`;
+          const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
+          const title = `Analyst AI ${version}`;
+          const releaseNotes = fs.readFileSync('docs/releases/0.10.0.md', 'utf8').trim();
+          if (!releaseNotes.includes('0.10.0') || !releaseNotes.includes('F01.4')) throw new Error('Release notes do not identify this update');
+          const body = [
+            releaseNotes,
+            'Signed, non-debuggable preview APK. Android 15+; application ID ru.omnicio.app.debug.',
+            'Uses the existing test signing key, not a production-store signing key.',
+            'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.9.0 preview, plus clean installation and full profile/education UI on Android 15 and 16 x86_64 emulators verified.',
+            'A successful emulator run does not claim that every physical-device configuration has been reproduced.',
+            `SHA-256: ${hash}`,
+            `Signing certificate SHA-256: ${report.certificate_sha256}`,
+          ].join('\n\n');
+          const releases = await github.paginate(github.rest.repos.listReleases, {owner, repo, per_page:100});
+          let release = releases.find(r => r.tag_name === tag);
+          if (!release) {
+            release = (await github.rest.repos.createRelease({owner, repo, tag_name:tag, target_commitish:sha, name:title, body, draft:true, prerelease:true, make_latest:'false'})).data;
+          }
+          if (!release.draft) {
+            if (!release.assets.some(a => a.name === assetName)) throw new Error('Immutable release missing APK');
+            core.notice(`APK already published: ${release.html_url}`);
+            return;
+          }
+          const files = [[assetName, data, 'application/vnd.android.package-archive'], ['apk-verification.json', fs.readFileSync(reportPath), 'application/json']];
+          for (const [name, bytes, type] of files) {
+            for (const asset of release.assets.filter(a => a.name === name)) {
+              await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id:asset.id});
+            }
+            const asset = (await github.rest.repos.uploadReleaseAsset({owner, repo, release_id:release.id, name, data:bytes, headers:{'content-type':type,'content-length':bytes.length}})).data;
+            const downloaded = await github.rest.repos.getReleaseAsset({owner, repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
+            const received = Buffer.from(downloaded.data);
+            if (received.length !== bytes.length || !crypto.createHash('sha256').update(received).digest().equals(crypto.createHash('sha256').update(bytes).digest())) {
+              throw new Error('Release upload read-back integrity mismatch');
+            }
+          }
+          release = (await github.rest.repos.updateRelease({owner, repo, release_id:release.id, name:title, body, draft:false, prerelease:true, make_latest:'false'})).data;
+          core.notice(`APK published and verified: ${release.html_url}`);
+          await core.summary.addHeading(title).addRaw(`APK SHA-256: ${hash}\n\n${body}`).write();
   cleanup:
     name: Delete only this run's private CI transfer
     needs:
     - transfer-preflight
     - build
     - runtime
-    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -355,7 +484,7 @@ jobs:
       contents: write
   verify:
     name: Android debug and release build
-    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
     needs:
     - transfer-preflight
     - build

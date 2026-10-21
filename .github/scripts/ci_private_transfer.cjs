@@ -11,6 +11,7 @@ function identity(context, env) {
   const attempt = env.GITHUB_RUN_ATTEMPT;
   const repository = `${context.repo.owner}/${context.repo.repo}`;
   const sameRepositoryEvent = context.eventName === 'push' ||
+    (context.eventName === 'workflow_dispatch' && context.ref === 'refs/heads/main') ||
     (context.eventName === 'pull_request' && context.payload.pull_request?.head?.repo?.full_name === repository);
   const target = context.eventName === 'pull_request' ? context.payload.pull_request?.head?.sha : context.sha;
   if (!sameRepositoryEvent || !/^[a-f0-9]{40}$/.test(context.sha) || !/^[a-f0-9]{40}$/.test(target) ||

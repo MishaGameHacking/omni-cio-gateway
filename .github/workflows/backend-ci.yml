@@ -3,20 +3,8 @@ name: Backend CI
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
-      - ".github/scripts/require_clean_sonar*.cjs"
-      - ".github/scripts/deploy_timeweb_backend.sh"
-      - ".github/workflows/timeweb-backend.yml"
   push:
     branches: [main]
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
-      - ".github/scripts/require_clean_sonar*.cjs"
-      - ".github/scripts/deploy_timeweb_backend.sh"
-      - ".github/workflows/timeweb-backend.yml"
 
 permissions:
   contents: read

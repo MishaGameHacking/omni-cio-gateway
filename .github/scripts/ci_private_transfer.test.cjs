@@ -124,3 +124,12 @@ test('upload reuses the prepared draft and never creates another release after b
     fs.rmSync(folder, {recursive: true, force: true});
   }
 });
+
+
+test('manual handoff is limited to main and keeps the exact tested commit', () => {
+  const f = fixture();
+  const context = {...f.context, eventName: 'workflow_dispatch', ref: 'refs/heads/main'};
+  assert.equal(transfer.identity(context, f.env).head, f.context.sha);
+  context.ref = 'refs/heads/feature';
+  assert.throws(() => transfer.identity(context, f.env), /same-repository/);
+});
