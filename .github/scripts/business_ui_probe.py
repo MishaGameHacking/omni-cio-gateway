@@ -231,6 +231,7 @@ class _BusinessCase:
             else:
                 self.probe.reveal("Расчёт подготовлен", "workspace-content")
                 self.probe.tap("Подготовить план", "workspace-content", direction="start")
+                self.probe.find("Подготовить действие")
                 self.probe.tap("Синтетическая акция", "workspace-content")
                 self.probe.tap("Количество единиц инструмента", "workspace-content")
                 self.probe.command("shell", "input", "text", "5")
@@ -248,14 +249,29 @@ class _BusinessCase:
             self.probe.reveal(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
             self.probe.reveal("Ожидает подходящего времени" if self.scenario == "partial" else "Устройство сообщило о показе", "workspace-content")
             if self.scenario == "ready":
-                self.probe.tap(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
-                self.probe.tap("Отметить прочитанным", "workspace-content")
-                node = self.probe.reveal(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
-                if "Прочитано" not in labels(node):
-                    raise AssertionError("The selected event did not change to read")
-                self.checks.append("read-ack-same-event")
+                self.mark_notification_read()
             else:
                 self.checks.append("pending-is-not-delivered")
+
+    def mark_notification_read(self):
+        from native_input_evidence import active_window_id
+        from profile_scroll import visible_label
+
+        original_window = active_window_id(self.probe.tree())
+        self.probe.tap(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
+        self.probe.wait_for(lambda: active_window_id(self.probe.tree()) != original_window,
+                            "Notification dialog did not become the active window")
+        self.probe.tap("Отметить прочитанным", "workspace-content")
+        self.probe.wait_for(lambda: active_window_id(self.probe.tree()) == original_window,
+                            "Notification dialog did not close after acknowledgement")
+        self.probe.reveal(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
+
+        def acknowledged_event():
+            node = visible_label(self.probe.tree(), SYNTHETIC_LIMIT_CHANGE)
+            return node if node is not None and "Прочитано" in labels(node) else None
+
+        self.probe.wait_for(acknowledged_event, "The selected event did not change to read")
+        self.checks.append("read-ack-same-event")
 
     def analysis(self):
         from analysis_ui_probe import exercise_analysis
