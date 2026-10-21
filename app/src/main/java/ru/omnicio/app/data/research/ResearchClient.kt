@@ -12,8 +12,7 @@ class ResearchClient {
     fun read(token: String): BackendResult<JSONObject> {
         var connection: HttpsURLConnection? = null
         return try {
-            connection = URI(BackendConfig.BASE_URL + "/analysis/research").toURL()
-                .openConnection() as HttpsURLConnection
+            connection = BackendConfig.openConnection(URI(BackendConfig.BASE_URL + "/analysis/research"))
             connection.apply {
                 requestMethod = "GET"
                 instanceFollowRedirects = false

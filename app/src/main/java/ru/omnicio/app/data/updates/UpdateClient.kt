@@ -22,7 +22,7 @@ class UpdateClient {
     private companion object { val downloadLock = Mutex() }
 
     private fun connect(path: String): HttpsURLConnection =
-        (UpdateProtocol.requestUri(BackendConfig.BASE_URL, path).toURL().openConnection() as HttpsURLConnection).apply {
+        BackendConfig.openConnection(UpdateProtocol.requestUri(BackendConfig.BASE_URL, path)).apply {
             configureUpdateTransport()
             ClientVersion.attach(this)
         }
