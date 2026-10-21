@@ -1,0 +1,104 @@
+name: Private source review
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/source-review.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-source-review
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    name: Export tracked text sources for the 2D refactor
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+    steps:
+      - name: Read pinned main snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 97149a309361aa0db0da3c07d2e7342f23d3cc8b
+          path: main-source
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+      - name: Read pinned development snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0d5d406193e4d5a26b3336877eecc31a3ccfdd3c
+          path: development-source
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+      - name: Export source only without executing project code
+        shell: py -3 {0}
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import subprocess
+          import zipfile
+
+          revisions = {
+              'main': '97149a309361aa0db0da3c07d2e7342f23d3cc8b',
+              'development': '0d5d406193e4d5a26b3336877eecc31a3ccfdd3c',
+          }
+          allowed = {'.py', '.kt', '.kts', '.java', '.xml', '.json', '.md', '.txt', '.pem',
+                     '.yml', '.yaml', '.toml', '.properties', '.cjs', '.js', '.sh', '.bat'}
+          archive = Path(os.environ['RUNNER_TEMP']) / 'analyst-source-review.zip'
+          manifest = []
+          total = 0
+          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as output:
+              for label, revision in revisions.items():
+                  checkout = Path(os.environ['GITHUB_WORKSPACE']) / (label + '-source')
+                  entries = subprocess.run(['git', 'ls-tree', '-r', '-z', revision], cwd=checkout,
+                      check=True, capture_output=True, timeout=30).stdout.split(b'\0')
+                  for entry in filter(None, entries):
+                      metadata, raw_path = entry.split(b'\t', 1)
+                      mode, kind, blob = metadata.decode('ascii').split()
+                      path = PurePosixPath(raw_path.decode('utf-8'))
+                      if kind != 'blob' or mode not in {'100644', '100755'}:
+                          continue
+                      if path.is_absolute() or '..' in path.parts or '\\' in str(path):
+                          raise RuntimeError('Invalid tracked source path')
+                      if path.suffix.lower() not in allowed:
+                          continue
+                      if any(part.startswith('.env') or part.lower() in {'secrets', 'credentials', 'keystores'}
+                             for part in path.parts):
+                          continue
+                      content = subprocess.run(['git', 'cat-file', 'blob', blob], cwd=checkout,
+                          check=True, capture_output=True, timeout=15).stdout
+                      if len(content) > 2_000_000:
+                          raise RuntimeError('Unexpectedly large source file')
+                      content.decode('utf-8')
+                      if path.suffix.lower() == '.pem' and b'PRIVATE KEY-----' in content:
+                          raise RuntimeError('Private key must not be exported')
+                      total += len(content)
+                      if total > 50_000_000:
+                          raise RuntimeError('Source export size exceeded')
+                      name = f'{label}/{path}'
+                      output.writestr(name, content)
+                      manifest.append({'path': name, 'blob': blob,
+                          'sha256': hashlib.sha256(content).hexdigest(), 'bytes': len(content)})
+              output.writestr('source-manifest.json', json.dumps(
+                  {'revisions': revisions, 'files': manifest}, indent=2))
+          print('SOURCE_REVIEW_FILES=' + str(len(manifest)))
+          print('SOURCE_REVIEW_SHA256=' + hashlib.sha256(archive.read_bytes()).hexdigest())
+      - name: Retain private short-lived source snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: analyst-source-review
+          path: ${{ runner.temp }}/analyst-source-review.zip
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0

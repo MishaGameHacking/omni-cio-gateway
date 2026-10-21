@@ -1,0 +1,65 @@
+name: Timeweb Actions preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integrations/timeweb/projects.openapi.json"
+      - "tools/timeweb_actions_probe.py"
+      - "tools/timeweb-actions-requirements.txt"
+      - "tools/tests/test_timeweb_*.py"
+      - ".github/workflows/timeweb-actions-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeweb-actions-read-only-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate Actions schema and discover existing hosting
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Prepare isolated native TLS environment
+        shell: cmd
+        run: |
+          set "PROBE_ENV=%RUNNER_TEMP%\analyst-timeweb-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
+          echo PROBE_ENV=%PROBE_ENV%>>"%GITHUB_ENV%"
+          py -3 -m venv "%PROBE_ENV%"
+          if errorlevel 1 exit /b 1
+          "%PROBE_ENV%\Scripts\python.exe" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools\timeweb-actions-requirements.txt
+          if errorlevel 1 exit /b 1
+
+      - name: Test read-only probe before credentials are available
+        shell: cmd
+        run: |
+          "%PROBE_ENV%\Scripts\python.exe" -m unittest discover -s tools\tests -p "test_timeweb_*.py" -v
+          if errorlevel 1 exit /b 1
+
+      - name: Read Timeweb resource identifiers without changing anything
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, '[timeweb-actions-probe]')
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          "%PROBE_ENV%\Scripts\python.exe" tools\timeweb_actions_probe.py
+          if errorlevel 1 exit /b 1
