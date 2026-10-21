@@ -109,7 +109,7 @@ async function prepare(args) {
 async function upload(args) {
   const {github, context, core, id, bytes, anonymousFetch} = args;
   const release = await find(github, context.repo, id);
-  if (!release || release.assets.length !== 0) throw new Error('Empty preflight-owned CI draft is required');
+  if (release?.assets.length !== 0) throw new Error('Empty preflight-owned CI draft is required');
   await inaccessibleWithoutAuth(context.repo, `releases/${release.id}`, anonymousFetch);
   await storeBytes(args, release);
   core.setOutput('archive_sha256', digest(bytes));

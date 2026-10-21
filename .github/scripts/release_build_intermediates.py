@@ -1,4 +1,4 @@
-"""Release only this checkout's reproducible intermediates after all APK builds.
+"""Release only this checkout's reproducible intermediates after APK builds.
 
 APKs, test/lint reports, mappings, runtime evidence, SDKs, shared Gradle caches
 and other runner workspaces are never cleanup targets. The runtime capacity
@@ -6,6 +6,7 @@ check remains mandatory after cleanup; this cannot manufacture a passing UI run.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -48,11 +49,16 @@ def _regular_path(root: Path, relative: str) -> Path:
     return path
 
 
-def _apk_digests(root: Path) -> dict[str, str]:
+def _apk_digests(root: Path, *, allow_incomplete: bool = False) -> dict[str, str]:
     result = {}
     for relative in APKS:
-        path = _regular_path(root, relative)
-        if not path.is_file() or path.stat().st_size == 0:
+        try:
+            path = _regular_path(root, relative)
+        except FileNotFoundError:
+            if allow_incomplete:
+                continue
+            raise
+        if not path.is_file() or (not allow_incomplete and path.stat().st_size == 0):
             raise ValueError("All built APKs must exist before releasing intermediates")
         with path.open("rb") as source:
             result[relative] = hashlib.file_digest(source, "sha256").hexdigest()
@@ -72,7 +78,7 @@ def _validate_target(root: Path, relative: str) -> Path | None:
     return target
 
 
-def release_intermediates(root: Path = ROOT) -> dict[str, object]:
+def release_intermediates(root: Path = ROOT, *, allow_incomplete: bool = False) -> dict[str, object]:
     root = root.resolve(strict=True)
     repository = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"], cwd=root,
@@ -90,7 +96,7 @@ def release_intermediates(root: Path = ROOT) -> dict[str, object]:
     # prefix too, including traversal, lstat and removal of generated classes.
     if os.name == "nt":
         root = Path(extended_windows_path(str(root)))
-    before = _apk_digests(root)
+    before = _apk_digests(root, allow_incomplete=allow_incomplete)
     # Validate ALL targets before deleting any. Never follow a link to a shared
     # dependency, a neighboring runner, a source tree or an evidence directory.
     targets = [target for name in INTERMEDIATES
@@ -102,11 +108,16 @@ def release_intermediates(root: Path = ROOT) -> dict[str, object]:
         _validate_target(root, relative)
         shutil.rmtree(target)
         removed.append(relative)
-    if _apk_digests(root) != before:
+    if _apk_digests(root, allow_incomplete=allow_incomplete) != before:
         raise RuntimeError("APK bytes changed while releasing build intermediates")
-    return {"removed": removed, "apk_sha256": before,
+    return {"removed": removed, "apk_sha256": before, "allow_incomplete_build": allow_incomplete,
             "free_bytes_before": free_before, "free_bytes_after": shutil.disk_usage(root).free}
 
 
 if __name__ == "__main__":
-    print("BUILD_INTERMEDIATES_RELEASED=" + json.dumps(release_intermediates(), sort_keys=True), flush=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--allow-incomplete-build", action="store_true",
+                        help="After a failed build, preserve and hash every APK that exists")
+    args = parser.parse_args()
+    print("BUILD_INTERMEDIATES_RELEASED=" + json.dumps(
+        release_intermediates(allow_incomplete=args.allow_incomplete_build), sort_keys=True), flush=True)

@@ -66,6 +66,31 @@ class ReleaseIntermediatesTests(unittest.TestCase):
             release_intermediates(self.root)
         self.assert_intermediates_preserved()
 
+    def test_failed_build_cleanup_preserves_partial_apks_and_reports(self):
+        (self.root / APKS[-1]).unlink()
+        self.write(APKS[-2], b"")
+        report = self.write("app/build/reports/lint-errors.txt", b"original build failure")
+        before = {p: (self.root / p).read_bytes() for p in APKS[:-1]}
+        receipt = release_intermediates(self.root, allow_incomplete=True)
+        self.assertEqual(set(receipt["removed"]), set(INTERMEDIATES))
+        self.assertEqual(set(receipt["apk_sha256"]), set(before))
+        self.assertEqual({p: (self.root / p).read_bytes() for p in before}, before)
+        self.assertFalse((self.root / APKS[-1]).exists())
+        self.assertEqual(report.read_bytes(), b"original build failure")
+
+    def test_failed_build_mode_still_refuses_links_in_apk_paths(self):
+        apk = self.root / APKS[-1]
+        apk.unlink()
+        outside = self.write("outside.apk", b"unrelated")
+        try:
+            apk.symlink_to(outside)
+        except OSError:
+            self.skipTest("Host does not permit symlink creation")
+        with self.assertRaisesRegex(ValueError, "links and reparse"):
+            release_intermediates(self.root, allow_incomplete=True)
+        self.assert_intermediates_preserved()
+        self.assertEqual(outside.read_bytes(), b"unrelated")
+
     def test_nested_link_prevents_all_removal_and_preserves_its_target(self):
         outside = self.write("preserved.bin", b"private-fixture")
         link = self.root / INTERMEDIATES[-1] / "link"

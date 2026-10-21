@@ -70,6 +70,7 @@ jobs:
       archive_sha256: ${{ steps.transfer.outputs.archive_sha256 }}
     steps:
     - name: Checkout source
+      id: checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
@@ -166,9 +167,10 @@ jobs:
           fs.writeFileSync(dest, bytes);
           core.exportVariable('PREVIOUS_APK', dest);
     - name: Release only this checkout's reproducible build intermediates
+      if: always() && steps.checkout.outcome == 'success'
       shell: cmd
       run: |
-        py -3 .github\scripts\release_build_intermediates.py
+        py -3 .github\scripts\release_build_intermediates.py --allow-incomplete-build
         if errorlevel 1 exit /b 1
     - name: Test private CI transport boundaries
       shell: cmd
