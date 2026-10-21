@@ -32,7 +32,15 @@ def candidate_presets(document: dict) -> list[dict]:
         if isinstance(location, str) and re.fullmatch(r"[a-z]{2}-\d", location, re.ASCII):
             selected["location"] = location
         candidates.append(selected)
-    return sorted(candidates, key=lambda item: (item["price"], item["id"]))[:8]
+    # Include other regions: globally cheapest entries can all be sold out.
+    selected = []
+    per_location = {}
+    for item in sorted(candidates, key=lambda entry: (entry["price"], entry["id"])):
+        location = item.get("location", "unspecified")
+        if per_location.get(location, 0) < 2:
+            selected.append(item)
+            per_location[location] = per_location.get(location, 0) + 1
+    return selected
 
 
 def ubuntu_images(document: dict) -> list[dict]:
