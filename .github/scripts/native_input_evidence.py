@@ -33,6 +33,20 @@ def display_geometry(tree) -> tuple[int, int]:
     return int(values[0]), int(values[1])
 
 
+def active_window_id(tree) -> int:
+    value = tree.get("active-window-id", "")
+    if re.fullmatch(r"\d{1,10}", value) is None:
+        raise AssertionError("Missing public active-window identity")
+    return int(value)
+
+
+def recreated_editor(tree, text, selection, previous_window):
+    """Global display geometry can change before the old Activity is replaced."""
+    if active_window_id(tree) == previous_window or not keyboard_visible(tree):
+        return None
+    return focused_editor(tree, text, selection)
+
+
 def _focused_editor_node(tree, expected_text: str):
     matches = [node for node in tree.iter("node")
                if node.get("package") == PACKAGE and node.get("visible-to-user") == "true"
@@ -86,7 +100,14 @@ def rotate_focused_draft(probe, text: str, name: str) -> dict:
     expected = max(0, before["selection_end"] - 2)
     before = probe.wait_for(lambda: focused_editor(probe.tree(), text, (expected, expected)),
                             "Native cursor did not move within the unsent question")
-    original_geometry = display_geometry(probe.tree())
+    def input_window():
+        tree = probe.tree()
+        return tree if keyboard_visible(tree) else None
+
+    initial = probe.wait_for(input_window, "Focused draft did not show its native input-method window")
+    original_geometry = display_geometry(initial)
+    original_window = active_window_id(initial)
+    rotated_window = None
     original_landscape = original_geometry[0] > original_geometry[1]
     rotation = probe.command("shell", "settings", "get", "system", "user_rotation").strip()
     automatic = probe.command("shell", "settings", "get", "system", "accelerometer_rotation").strip()
@@ -99,10 +120,12 @@ def rotate_focused_draft(probe, text: str, name: str) -> dict:
             width, height = display_geometry(tree)
             if (width > height) == original_landscape:
                 return None
-            editor = focused_editor(tree, text, (expected, expected))
-            return {"editor": editor, "width": width, "height": height} if editor is not None else None
+            editor = recreated_editor(tree, text, (expected, expected), original_window)
+            return {"editor": editor, "width": width, "height": height,
+                    "window_id": active_window_id(tree), "keyboard_visible": True} if editor is not None else None
 
         after = probe.wait_for(rotated, "Rotation lost the unsent native question, input focus or exact caret offset")
+        rotated_window = after["window_id"]
         probe.capture(name)
         return {"scenario": "unsent-question-focus-caret-rotation", "before": before,
                 "after": after, "screenshot": name + ".png", "screen_reader_perception_verified": False}
@@ -117,6 +140,6 @@ def rotate_focused_draft(probe, text: str, name: str) -> dict:
             tree = probe.tree()
             if display_geometry(tree) != original_geometry:
                 return None
-            return focused_editor(tree, text, (expected, expected))
+            return recreated_editor(tree, text, (expected, expected), rotated_window)
 
         probe.wait_for(restored, "Restoring device rotation lost the focused draft/caret")

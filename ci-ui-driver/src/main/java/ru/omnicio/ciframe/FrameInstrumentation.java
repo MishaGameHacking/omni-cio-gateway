@@ -278,6 +278,7 @@ public final class FrameInstrumentation extends Instrumentation {
         Rect display = windows.getMaximumWindowMetrics().getBounds();
         attr(xml, "display-width", Integer.toString(display.width()));
         attr(xml, "display-height", Integer.toString(display.height()));
+        attr(xml, "active-window-id", Integer.toString(root.getWindowId()));
         attr(xml, "keyboard-visible", Boolean.toString(keyboardVisible(automation, display)));
         writeNode(xml, root, display, 0, new int[] {0});
         xml.endTag(null, "hierarchy");

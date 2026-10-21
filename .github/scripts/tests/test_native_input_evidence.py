@@ -21,6 +21,24 @@ def frame(**changes):
 
 
 class NativeInputEvidenceTests(unittest.TestCase):
+    def test_rotation_waits_for_recreated_window_and_actual_ime(self):
+        root = frame()
+        root.set("active-window-id", "17")
+        root.set("keyboard-visible", "true")
+        self.assertIsNone(native.recreated_editor(root, "UIprobe", (5, 5), 17))
+        root.set("active-window-id", "18")
+        root.set("keyboard-visible", "false")
+        self.assertIsNone(native.recreated_editor(root, "UIprobe", (5, 5), 17))
+        root.set("keyboard-visible", "true")
+        self.assertIsNotNone(native.recreated_editor(root, "UIprobe", (5, 5), 17))
+        self.assertIsNone(native.recreated_editor(root, "UIprobe", (3, 3), 17))
+        root[0].set("focused", "false")
+        self.assertIsNone(native.recreated_editor(root, "UIprobe", (5, 5), 17))
+        for value in ("", "-1", "unknown"):
+            root.set("active-window-id", value)
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                native.active_window_id(root)
+
     def test_keyboard_back_is_never_sent_without_a_visible_input_method(self):
         root = frame()
         root.set("keyboard-visible", "false")
