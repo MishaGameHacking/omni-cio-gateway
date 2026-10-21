@@ -276,16 +276,25 @@ class _BusinessCase:
 
     def ready_risk(self):
         from profile_ui_probe import checkable_label
+        from profile_scroll import visible_resource
 
         self.probe.tap("Создать список проверок", "workspace-content")
         self.probe.reveal("Проверить: Синтетическая компания", "workspace-content", direction="start")
-        self.probe.reveal(RISK_SOURCE_LABEL, "workspace-content")
-        control = self.probe.wait_for(lambda: checkable_label(self.probe.tree(), RISK_SOURCE_LABEL),
+        control_id = "risk-check-synthetic-check-1-step-source"
+        self.probe.reveal_resource(control_id, "workspace-content")
+
+        def current_control():
+            row = visible_resource(self.probe.tree(), control_id)
+            return checkable_label(row, RISK_SOURCE_LABEL) if row is not None else None
+
+        control = self.probe.wait_for(current_control,
                                       "Risk checklist has no native checkable control")
         if control.get("checkable") != "true" or control.get("checked") != "false":
             raise AssertionError("Risk checklist has no native unchecked state")
-        self.probe.tap_node(control)
-        self.probe.wait_for(lambda: (node if (node := checkable_label(self.probe.tree(), RISK_SOURCE_LABEL)) is not None and node.get("checked") == "true" else None),
+        # A scroll is asynchronous. Tap only this new record's control after
+        # three stable frames, clipped to the current list viewport.
+        self.probe.tap_resource(control_id, "workspace-content")
+        self.probe.wait_for(lambda: (node if (node := current_control()) is not None and node.get("checked") == "true" else None),
                        "Risk checklist mutation was not confirmed")
         self.checks.extend(("concentration-threshold", "create-checklist", "confirm-reviewed-step"))
         from risk_scenario_probe import exercise_scenario_comparison

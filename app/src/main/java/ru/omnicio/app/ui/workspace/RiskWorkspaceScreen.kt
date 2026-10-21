@@ -93,7 +93,8 @@ private fun RiskCheck(check: JSONObject, onChanged: () -> Unit) {
             }
             EvidenceLinks(check.records("sources"))
         } }
-        check.records("steps").forEach { step -> WorkspaceToggle(step.text("title"), "Отметка о вашем просмотре", step.text("state") == "reviewed") { reviewed ->
+        check.records("steps").forEach { step -> WorkspaceToggle(step.text("title"), "Отметка о вашем просмотре", step.text("state") == "reviewed",
+            Modifier.testTag("risk-check-${check.text("id")}-step-${step.text("id")}")) { reviewed ->
             action.perform(riskChecksPath + "/" + VolumeWorkspaceClient.encode(check.text("id")),
                 JSONObject().put("step_id", step.text("id")).put("state", if (reviewed) "reviewed" else "pending"), "PATCH")
         } }

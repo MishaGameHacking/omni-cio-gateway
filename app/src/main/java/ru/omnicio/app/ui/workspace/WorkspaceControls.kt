@@ -30,8 +30,8 @@ fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick
 }
 
 @Composable
-fun WorkspaceToggle(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+fun WorkspaceToggle(title: String, detail: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
+    Row(modifier.fillMaxWidth().heightIn(min = 56.dp)
         .toggleable(checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {

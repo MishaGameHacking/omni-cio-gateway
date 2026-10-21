@@ -106,7 +106,7 @@ internal fun SpatialRendererProbe() {
                         SpectrumPrimaryButton("Проверить нажатие", { clicks++ }, Modifier.fillMaxWidth().testTag("spatial-action"))
                         Text("Нажатий: $clicks", Modifier.testTag("spatial-click-result"))
                     }
-                    item { WorkspaceToggle("Тестовый переключатель", if (checked) "Включён" else "Выключен", checked, { checked = it }) }
+                    item { WorkspaceToggle("Тестовый переключатель", if (checked) "Включён" else "Выключен", checked) { checked = it } }
                     item { SpectrumTextField(input, { input = it }, Modifier.fillMaxWidth().testTag("spatial-input"),
                         label = { Text("Нативное поле 3D") }, singleLine = true) }
                     item { SpectrumTextButton(if (shadows) "Тени: включены" else "Тени: выключены",
