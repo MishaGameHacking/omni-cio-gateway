@@ -7,6 +7,8 @@ on:
       - .github/workflows/linux-runtime-probe.yml
       - tools/timeweb_*.py
       - tools/ci_host_capacity.py
+      - tools/ci-transfer-requirements.txt
+      - tools/tests/test_timeweb_ci_transfer.py
 
 permissions:
   contents: read
@@ -16,6 +18,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  private-transfer:
+    if: contains(github.event.head_commit.message, '[timeweb-transfer-probe]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare pinned transfer dependencies without credentials
+        id: environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci-transfer"
+          "$RUNNER_TEMP/ci-transfer/bin/python" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools/ci-transfer-requirements.txt
+          "$RUNNER_TEMP/ci-transfer/bin/python" -m unittest discover -s tools/tests -p 'test_timeweb_*.py'
+      - name: Verify private synthetic transfer within a one-ruble monthly tariff
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: '"$RUNNER_TEMP/ci-transfer/bin/python" tools/timeweb_ci_transfer.py probe'
+      - name: Delete this run's synthetic object and bucket and verify absence
+        if: always() && steps.environment.outcome == 'success'
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: '"$RUNNER_TEMP/ci-transfer/bin/python" tools/timeweb_ci_transfer.py cleanup'
   prepare:
     if: contains(github.event.head_commit.message, '[linux-runtime-probe]')
     runs-on: ubuntu-24.04
@@ -26,7 +51,8 @@ jobs:
           persist-credentials: false
       - name: Measure hardware and test the read-only catalogue
         run: |
-          sudo python3 tools/ci_host_capacity.py
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          python3 tools/ci_host_capacity.py
           python3 -m unittest discover -s tools/tests -p 'test_timeweb_*.py'
       - name: Audit retained IPs and compare small private-transfer storage offers
         env:
