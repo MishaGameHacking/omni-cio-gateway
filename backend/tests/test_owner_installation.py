@@ -1,6 +1,7 @@
 """First-install boundary tests; no cloud order or server mutation."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -121,11 +122,20 @@ class OwnerInstallationTests(unittest.TestCase):
         connect.return_value.close.assert_called_once()
 
     def test_fixed_config_file_rejects_symlinks_and_unsafe_permissions(self):
+        actual_fstat = os.fstat
+
+        def root_metadata(descriptor):
+            # CI is unprivileged. Simulate only file ownership; the descriptor,
+            # real file type, mode, size and O_NOFOLLOW behavior are unchanged.
+            fields = list(actual_fstat(descriptor))
+            fields[4] = 0
+            return os.stat_result(fields)
+
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / 'private.json'
             source.write_text(json.dumps(configuration()))
             source.chmod(0o600)
-            with patch.object(installer, 'INPUT_CONFIG', source):
+            with patch.object(installer, 'INPUT_CONFIG', source), patch.object(installer.os, 'fstat', side_effect=root_metadata):
                 self.assertEqual(installer.load_config(), configuration())
                 source.chmod(0o644)
                 with self.assertRaises(installer.InstallError):
@@ -134,6 +144,18 @@ class OwnerInstallationTests(unittest.TestCase):
             link.symlink_to(source)
             with patch.object(installer, 'INPUT_CONFIG', link), self.assertRaises(OSError):
                 installer.load_config()
+
+    def test_non_root_owner_is_rejected_even_with_private_mode(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'private.json'
+            source.write_text(json.dumps(configuration()))
+            source.chmod(0o600)
+            metadata = list(source.stat())
+            metadata[4] = 1000
+            metadata = os.stat_result(metadata)
+            with patch.object(installer, 'INPUT_CONFIG', source), patch.object(installer.os, 'fstat', return_value=metadata):
+                with self.assertRaises(installer.InstallError):
+                    installer.load_config()
 
 
 if __name__ == '__main__':
