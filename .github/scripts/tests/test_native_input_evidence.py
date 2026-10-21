@@ -73,6 +73,29 @@ class NativeInputEvidenceTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             native.focused_editor(root, "UIprobe")
 
+    def test_empty_compose_editor_focus_does_not_invent_a_native_caret(self):
+        for offset in ("-1", "0"):
+            root = frame(text="", **{"selection-start": offset, "selection-end": offset})
+            with self.subTest(offset=offset):
+                self.assertTrue(native.empty_editor_focused(root))
+        root = frame(text="", **{"selection-start": "-1", "selection-end": "-1"})
+        with self.assertRaises(AssertionError):
+            native.focused_editor(root, "", (0, 0))
+        for changes in ({"focused": "false"}, {"editable": "false"}, {"enabled": "false"},
+                        {"package": "other.app"}, {"visible-to-user": "false"}, {"text": "UIprobe"}):
+            changed = ET.fromstring(ET.tostring(root))
+            changed[0].attrib.update(changes)
+            with self.subTest(changes=changes):
+                self.assertFalse(native.empty_editor_focused(changed))
+        root.append(ET.fromstring(ET.tostring(root[0])))
+        with self.assertRaises(AssertionError):
+            native.empty_editor_focused(root)
+
+    def test_empty_focus_rejects_missing_mixed_or_out_of_range_selection(self):
+        for start, end in (("", ""), ("-1", "0"), ("0", "-1"), ("1", "1"), ("false", "0")):
+            with self.subTest(start=start, end=end), self.assertRaises(AssertionError):
+                native.empty_editor_focused(frame(text="", **{"selection-start": start, "selection-end": end}))
+
     def test_android_utf16_offsets_and_public_display_geometry(self):
         root = frame(text="A\U0001f310B", **{"selection-start": "4", "selection-end": "4"})
         self.assertEqual(4, native.focused_editor(root, "A\U0001f310B")["selection_start"])

@@ -33,7 +33,7 @@ def display_geometry(tree) -> tuple[int, int]:
     return int(values[0]), int(values[1])
 
 
-def focused_editor(tree, expected_text: str, selection: tuple[int, int] | None = None):
+def _focused_editor_node(tree, expected_text: str):
     matches = [node for node in tree.iter("node")
                if node.get("package") == PACKAGE and node.get("visible-to-user") == "true"
                and node.get("editable") == "true" and node.get("focused") == "true"
@@ -42,7 +42,26 @@ def focused_editor(tree, expected_text: str, selection: tuple[int, int] | None =
         raise AssertionError("Two native editors claim the same focused draft")
     if not matches:
         return None
-    node = matches[0]
+    return matches[0]
+
+
+def empty_editor_focused(tree) -> bool:
+    """Observe input focus before typing; Compose omits selection for empty text."""
+    node = _focused_editor_node(tree, "")
+    if node is None:
+        return False
+    raw = [node.get("selection-start", ""), node.get("selection-end", "")]
+    # AndroidComposeViewAccessibilityDelegateCompat sets text selection only
+    # when iterable text is non-empty. Do not invent a caret for its -1/-1.
+    if raw not in (["-1", "-1"], ["0", "0"]):
+        raise AssertionError("Empty native editor exposes an invalid selection")
+    return True
+
+
+def focused_editor(tree, expected_text: str, selection: tuple[int, int] | None = None):
+    node = _focused_editor_node(tree, expected_text)
+    if node is None:
+        return None
     raw = [node.get("selection-start", ""), node.get("selection-end", "")]
     if any(re.fullmatch(r"\d+", value) is None for value in raw):
         raise AssertionError("Focused native editor does not expose a real caret/selection")

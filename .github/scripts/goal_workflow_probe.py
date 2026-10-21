@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import re
 
-from native_input_evidence import display_geometry, focused_editor, rotate_focused_draft
+from native_input_evidence import display_geometry, empty_editor_focused, focused_editor, rotate_focused_draft
 from profile_scroll import visible_label
 
 AREA = "workspace-content"
@@ -76,7 +76,7 @@ def _case(probe, scale):
     # before typing so a missed tap cannot alter the preserved title draft.
     probe.dismiss_keyboard()
     probe.tap_resource("goal-amount", AREA)
-    probe.wait_for(lambda: focused_editor(probe.tree(), ""), "Goal amount did not receive native input focus")
+    probe.wait_for(lambda: empty_editor_focused(probe.tree()), "Goal amount did not receive native input focus")
     probe.command("shell", "input", "text", "500000")
     probe.wait_for(lambda: focused_editor(probe.tree(), "500000"), "Goal amount did not enter the native editor")
     probe.dismiss_keyboard()

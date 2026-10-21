@@ -250,3 +250,38 @@ Goal workflow прошёл обычный шрифт, включая восст�
 и ожидание фокуса пустого нативного поля до ввода. Исходные проверки сохранения,
 курсора, одного создания и удаления записи остаются обязательными. Повтор полного
 runtime нужен; cleanup `119165350542` уже подтвердил удаление временного draft.
+
+## Проверка 10:48–10:51 UTC и пустой нативный ввод
+
+Ремонт main `0629b2cee18e5a159234da10b9e07d01df0f636b` полностью прошёл
+[39584602806](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39584602806),
+включая runtime `119174801535`, cleanup `119179121930` и итог `119179188628`.
+Все семь checks точного SHA успешны, в том числе Backend и Sonar.
+Проверены полный UI/font200 на API35/36 и обновление с 0.9.0 на API36.
+Preview SHA-256 `51a485570dc04ad77d2a0207701282d5a541290ea014929c26db412e12dfde17`,
+APK report blob `eb7ca99439f6869d6da1fc06e0c116b0becf8a16`.
+Это проверенные непубличные байты, не новый выпуск; main остаётся `973f294`
+из-за описанного выше обязательного V10-статуса.
+
+3D `3bee18c8112185971b1bb7e9fca4952930581887`,
+[39584613921](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39584613921),
+runtime `119176767255`: API37/16384, установка, обновление, spatial-renderer,
+session-context и balance-privacy прошли. В сценарии цели новый pre-input assert
+завершился `Focused native editor does not expose a real caret/selection`.
+Просмотрен failure.png (blob `c3314349252c74ebec3992431915aae1c6755f2d`): название
+сохранено, пустая сумма в фокусе, открыта цифровая клавиатура. Это другая причина,
+чем прежний промах касания при font200. Полный goal workflow ещё не пройден.
+
+[Исходник AndroidX](https://android.googlesource.com/platform/frameworks/support/+/refs/heads/androidx-main/compose/ui/ui/src/androidMain/kotlin/androidx/compose/ui/platform/AndroidComposeViewAccessibilityDelegateCompat.android.kt)
+устанавливает text selection только для непустого iterable text. Отдельная
+проверка пустого поля теперь требует нативные focus/editable/enabled/visible и
+пустой текст, допускает только пары публичных offsets `-1/-1` либо `0/0` и не
+объявляет отсутствующую каретку измеренной. Та же ошибка исправлена в двух
+сценариях пустого горизонта стратегии и вводе процента риска. После ввода и при
+rotation прежний `focused_editor` по-прежнему требует настоящие UTF-16 offsets.
+Потеря фокуса, неоднозначность, некорректные offsets и чужое окно отклоняются.
+Исходные goal retry/idempotency/delete assertions и обе матрицы сохранены;
+исправление требует нового полного CI. Временный draft завершённого прогона
+удалён cleanup `119180415881`.
+Локально прошли 13 тестов native-input/business/risk, компиляция изменённых
+Python-скриптов и `git diff --check`; эти проверки не заменяют runtime.
