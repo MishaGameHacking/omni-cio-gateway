@@ -65,6 +65,23 @@ def decode_response(raw: bytes) -> dict:
     return result
 
 
+def native_tls_context():
+    try:
+        from truststore import SSLContext
+    except ImportError:
+        raise ProbeError("native_tls_dependency_missing") from None
+    return SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+
+def verified_ssl_context():
+    # Use Windows CryptoAPI chain building, never an unverified fallback.
+    context = native_tls_context() if sys.platform == "win32" else ssl.create_default_context()
+    if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
+        raise ProbeError("tls_verification_required")
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
 def read_resource(token: str, resource: str) -> dict:
     if resource not in ENDPOINTS:
         raise ProbeError("unapproved_endpoint")
@@ -75,7 +92,8 @@ def read_resource(token: str, resource: str) -> dict:
         "Accept-Encoding": "identity",
     }, method="GET")
     try:
-        opener = urllib.request.build_opener(NoRedirect())
+        opener = urllib.request.build_opener(
+            NoRedirect(), urllib.request.HTTPSHandler(context=verified_ssl_context()))
         with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
             if response.status != 200:
                 raise ProbeError("unexpected_http_status")

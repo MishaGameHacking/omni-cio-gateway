@@ -40,5 +40,35 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(build.return_value.open.call_count, 1)
 
 
+    def test_windows_uses_native_verified_context(self):
+        context = probe.ssl.create_default_context()
+        with patch.object(probe.sys, "platform", "win32"), patch.object(probe, "native_tls_context", return_value=context) as native:
+            actual = probe.verified_ssl_context()
+        native.assert_called_once_with()
+        self.assertIs(actual, context)
+        self.assertTrue(actual.check_hostname)
+        self.assertEqual(actual.verify_mode, probe.ssl.CERT_REQUIRED)
+        self.assertEqual(actual.minimum_version, probe.ssl.TLSVersion.TLSv1_2)
+
+    def test_unverified_context_cannot_be_used(self):
+        context = probe.ssl.SSLContext(probe.ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        with patch.object(probe.sys, "platform", "win32"), patch.object(probe, "native_tls_context", return_value=context):
+            with self.assertRaisesRegex(probe.ProbeError, "tls_verification_required"):
+                probe.verified_ssl_context()
+
+    def test_missing_native_dependency_has_no_insecure_fallback(self):
+        with patch.dict(sys.modules, {"truststore": None}):
+            with self.assertRaisesRegex(probe.ProbeError, "native_tls_dependency_missing"):
+                probe.native_tls_context()
+
+    def test_non_windows_uses_verified_standard_context(self):
+        with patch.object(probe.sys, "platform", "linux"), patch.object(probe, "native_tls_context") as native:
+            actual = probe.verified_ssl_context()
+        native.assert_not_called()
+        self.assertTrue(actual.check_hostname)
+        self.assertEqual(actual.verify_mode, probe.ssl.CERT_REQUIRED)
+
+
 if __name__ == "__main__":
     unittest.main()
