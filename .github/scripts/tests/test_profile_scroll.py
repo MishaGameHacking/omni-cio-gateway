@@ -70,6 +70,30 @@ class ProfileScrollTests(unittest.TestCase):
         self.assertEqual(target.get("bounds"), "[20,410][300,470]")
         swipe.assert_called_once()
 
+    def test_fitted_list_button_can_be_tapped_without_authorizing_scroll(self):
+        frame = self.button_frame("[20,350][300,410]")
+        for node in frame.iter("node"):
+            if node.get("resource-id") == "education-content":
+                node.set("scrollable", "false")
+        swipe = Mock()
+        target = module.reveal_resource_in_list(
+            lambda: frame, swipe, "lesson-toggle-start-plan", resource_id="education-content", for_tap=True,
+        )
+        self.assertEqual(target.get("bounds"), "[20,350][300,410]")
+        self.assertIsNone(module._scroll_area(frame, "education-content"))
+        swipe.assert_not_called()
+
+    def test_missing_button_in_fitted_list_cannot_scroll_another_area(self):
+        frame = tree(resource="education-content")
+        for node in frame.iter("node"):
+            node.set("scrollable", "false")
+        swipe = Mock()
+        target = module.reveal_resource_in_list(
+            lambda: frame, swipe, "missing", resource_id="education-content", for_tap=True,
+        )
+        self.assertIsNone(target)
+        swipe.assert_not_called()
+
     def test_tap_rectangle_is_clipped_to_visible_viewport(self):
         frame = self.button_frame("[20,440][300,530]")
         target = module.tappable_resource(frame, "lesson-toggle-start-plan", "education-content")

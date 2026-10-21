@@ -69,7 +69,7 @@ def tappable_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Elem
     clickable=true, so the caller must assert the resulting interaction state.
     """
     target = visible_resource(tree, target_id)
-    viewport = _scroll_area(tree, list_id)
+    viewport = _list_area(tree, list_id, require_scrollable=False)
     if target is None or viewport is None:
         return None
     if target.get("enabled") == "false":
@@ -122,13 +122,17 @@ def settled_resource(read_tree, target_id: str, list_id: str, max_frames: int = 
 
 
 def _scroll_area(tree: ET.Element, resource_id: str):
+    return _list_area(tree, resource_id, require_scrollable=True)
+
+
+def _list_area(tree: ET.Element, resource_id: str, *, require_scrollable: bool):
     names = {resource_id, f"{PACKAGE}:id/{resource_id}"}
     candidates = [
         node
         for node in tree.iter("node")
         if node.get("package") == PACKAGE
         and node.get("resource-id") in names
-        and node.get("scrollable") == "true"
+        and (not require_scrollable or node.get("scrollable") == "true")
         and node.get("visible-to-user") != "false"
     ]
     # Ambiguous simultaneous lists must not pick an arbitrary scroll target.

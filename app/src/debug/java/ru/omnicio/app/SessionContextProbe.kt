@@ -36,7 +36,8 @@ internal fun SessionContextProbe() {
         if (current == null) {
             Text("Тестовый сеанс закрыт")
             for (identity in listOf("A", "B")) {
-                SpectrumSecondaryButton("Войти как $identity", { user = identity }, Modifier.fillMaxWidth())
+                SpectrumSecondaryButton("Войти как $identity", { user = identity },
+                    Modifier.fillMaxWidth().testTag("session-login-$identity"))
             }
         } else state.Content("synthetic-context-$current") {
             var account by rememberSaveable { mutableStateOf("account-1") }
@@ -44,9 +45,12 @@ internal fun SessionContextProbe() {
             Text("Пользователь: $current")
             Text("Счёт: $account")
             Text("Период: $period")
-            SpectrumSecondaryButton("Изменить контекст", { account = "account-2"; period = "month" }, Modifier.fillMaxWidth())
-            SpectrumSecondaryButton("Истечение сеанса", { user = null }, Modifier.fillMaxWidth())
-            SpectrumSecondaryButton("Явный выход", { state.forget(); user = null }, Modifier.fillMaxWidth())
+            SpectrumSecondaryButton("Изменить контекст", { account = "account-2"; period = "month" },
+                Modifier.fillMaxWidth().testTag("session-context-change"))
+            SpectrumSecondaryButton("Истечение сеанса", { user = null },
+                Modifier.fillMaxWidth().testTag("session-expire"))
+            SpectrumSecondaryButton("Явный выход", { state.forget(); user = null },
+                Modifier.fillMaxWidth().testTag("session-logout"))
         }
     }
 }

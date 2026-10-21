@@ -12,16 +12,19 @@ import math
 from pathlib import Path
 
 AREA = "workspace-content"
-EXPIRE = "Истечение сеанса"
-LOGIN_A = "Войти как A"
-LOGIN_B = "Войти как B"
 CLOSED = "Тестовый сеанс закрыт"
-CHANGE = "Изменить контекст"
+EXPIRE = "session-expire"
+LOGIN_A = "session-login-A"
+LOGIN_B = "session-login-B"
+CHANGE = "session-context-change"
 
 
 def _context(probe, user, account="account-1", period="day"):
     for text in ("Пользователь: " + user, "Счёт: " + account, "Период: " + period):
-        probe.reveal(text, AREA, direction="start")
+        try:
+            probe.reveal(text, AREA, direction="start")
+        except AssertionError as error:
+            raise AssertionError("Synthetic session context was not restored: " + text) from error
 
 
 def _landscape_geometry(tree):
@@ -97,28 +100,28 @@ def _case(probe, scale):
     probe.command("shell", "settings", "put", "system", "font_scale", str(scale))
     launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="session-context")
     _context(probe, "A")
-    probe.tap(CHANGE, AREA)
+    probe.tap_resource(CHANGE, AREA)
     _context(probe, "A", "account-2", "month")
-    probe.tap(EXPIRE, AREA)
+    probe.tap_resource(EXPIRE, AREA)
     suffix = "-font-200" if math.isclose(scale, 2.0) else ""
     _rotate_signed_out(probe, suffix)
-    probe.tap(LOGIN_A, AREA)
+    probe.tap_resource(LOGIN_A, AREA)
     _context(probe, "A", "account-2", "month")
     name = "session-context-restored" + suffix
     probe.capture(name)
     metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Session context did not render")
     if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0.0, abs_tol=1e-6):
         raise AssertionError("Session context did not use the requested font scale")
-    probe.tap(EXPIRE, AREA)
-    probe.tap(LOGIN_B, AREA)
+    probe.tap_resource(EXPIRE, AREA)
+    probe.tap_resource(LOGIN_B, AREA)
     _context(probe, "B")
-    probe.tap(CHANGE, AREA)
-    probe.tap(EXPIRE, AREA)
-    probe.tap(LOGIN_A, AREA)
+    probe.tap_resource(CHANGE, AREA)
+    probe.tap_resource(EXPIRE, AREA)
+    probe.tap_resource(LOGIN_A, AREA)
     _context(probe, "A")
-    probe.tap(CHANGE, AREA)
-    probe.tap("Явный выход", AREA)
-    probe.tap(LOGIN_A, AREA)
+    probe.tap_resource(CHANGE, AREA)
+    probe.tap_resource("session-logout", AREA)
+    probe.tap_resource(LOGIN_A, AREA)
     _context(probe, "A")
     return {"font_scale": scale, "same_user_restored_after_rotation": True,
             "different_user_isolated": True, "previous_user_evicted": True,

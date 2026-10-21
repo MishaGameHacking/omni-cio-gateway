@@ -98,7 +98,7 @@ class CaptureTransportTests(unittest.TestCase):
     def test_full_dialog_stage_still_requires_all_three_screenshots(self):
         probe = ui.ProfileProbe(Mock())
         version_tree = ET.fromstring('<hierarchy><node text="Версия 0.7.0" /></hierarchy>')
-        with patch.object(probe, 'tap'), patch.object(probe, 'find'), \
+        with patch.object(probe, 'tap_resource'), patch.object(probe, 'find'), \
                 patch.object(probe, 'tap_visible'), patch.object(probe, 'horizontal_info'), \
                 patch.object(probe, 'tap_profile_content'), patch.object(probe, 'tree', return_value=version_tree), \
                 patch.object(probe, 'capture') as capture:
