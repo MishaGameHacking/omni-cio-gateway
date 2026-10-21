@@ -17,9 +17,11 @@ concurrency:
 
 jobs:
   catalog:
-    if: contains(github.event.head_commit.message, '[timeweb-ci-catalog]')
+    if: >-
+      contains(github.event.head_commit.message, '[timeweb-ci-catalog]') ||
+      contains(github.event.head_commit.message, '[timeweb-ci-probe]')
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
+    timeout-minutes: 15
     env:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.longpaths
@@ -48,4 +50,20 @@ jobs:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
         run: |
           "%PROBE_ENV%\Scripts\python.exe" tools\timeweb_ci_catalog.py
+          if errorlevel 1 exit /b 1
+      - name: Measure KVM on one disposable Timeweb VM
+        if: contains(github.event.head_commit.message, '[timeweb-ci-probe]')
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          "%PROBE_ENV%\Scripts\python.exe" tools\timeweb_ci_capacity.py probe
+          if errorlevel 1 exit /b 1
+      - name: Delete only this run's VM and verify absence
+        if: always() && contains(github.event.head_commit.message, '[timeweb-ci-probe]')
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          "%PROBE_ENV%\Scripts\python.exe" tools\timeweb_ci_capacity.py cleanup
           if errorlevel 1 exit /b 1
