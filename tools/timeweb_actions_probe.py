@@ -22,6 +22,7 @@ ENDPOINTS = {
 CATALOG_ENDPOINTS = {
     "presets": "/api/v1/presets/servers",
     "os": "/api/v1/os/servers",
+    "storage": "/api/v1/presets/storages",
 }
 FLOATING_IPS_PATH = "/api/v1/floating-ips"
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "integrations/timeweb/projects.openapi.json"

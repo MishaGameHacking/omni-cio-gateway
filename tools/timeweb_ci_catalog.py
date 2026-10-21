@@ -75,6 +75,24 @@ def floating_ip_summary(document: dict) -> dict:
                                   if type(item.get("resource_id")) is int})}
 
 
+def storage_offers(document: dict) -> list[dict]:
+    items = document.get("storages_presets")
+    if type(items) is not list:
+        raise ProbeError("invalid_storage_catalog")
+    result = []
+    for item in items:
+        if type(item) is not dict or not all(positive_number(item.get(key)) for key in ("id", "disk", "price")):
+            raise ProbeError("invalid_storage_offer")
+        if 1024 <= item["disk"] <= 10240:
+            selected = {key: item[key] for key in ("id", "disk", "price")}
+            for key in ("location", "storage_class"):
+                value = item.get(key)
+                if isinstance(value, str) and re.fullmatch(r"[a-z_\d-]{1,32}", value, re.ASCII):
+                    selected[key] = value
+            result.append(selected)
+    return sorted(result, key=lambda offer: (offer["price"], offer["id"]))
+
+
 def main() -> int:
     try:
         token = os.environ.get("TIMEWEB_CLOUD_TOKEN", "")
@@ -84,6 +102,7 @@ def main() -> int:
             "presets": candidate_presets(read_catalog(token, "presets")),
             "os": ubuntu_images(read_catalog(token, "os")),
             "floating_ips": floating_ip_summary(read_path(token, FLOATING_IPS_PATH)),
+            "storage_offers": storage_offers(read_catalog(token, "storage")),
         }
         print("TIMEWEB_CI_CATALOG=" + json.dumps(report, sort_keys=True), flush=True)
     except ProbeError as error:
