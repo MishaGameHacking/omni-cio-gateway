@@ -1,9 +1,9 @@
-name: Read current updater quality findings
+name: Read current update quality findings
 on:
   push:
     branches:
-      - feature/mandatory-updates-quant-research
-      - feature/spectrum-ui-risk-update
+      - main
+      - codex/spectrum-3d-100
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,51 +18,111 @@ jobs:
         env:
           SONAR_READ_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
+          retries: 3
           script: |
             // GET-only source diagnostics. No cloud access, publishing,
             // issue acceptance, test overrides or secret values in output.
             const project = 'MishaGameHacking_omni-cio-gateway';
             const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-            for (const number of [831, 832, 833]) {
-              const pr = (await github.rest.pulls.get({...context.repo, pull_number:number})).data;
+            const headers = {Accept:'application/json'};
+            if (process.env.SONAR_READ_TOKEN) headers.Authorization = 'Bearer '+process.env.SONAR_READ_TOKEN;
+            async function readIssuePage(target, page, newCodeOnly) {
+              const endpoint = new URL('https://sonarcloud.io/api/issues/search');
+              endpoint.search = new URLSearchParams({componentKeys:project,...target,
+                issueStatuses:'OPEN,CONFIRMED',...(newCodeOnly ? {sinceLeakPeriod:'true'} : {}),
+                ps:'500',p:String(page)}).toString();
+              const response = await fetch(endpoint,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(15000)});
+              if (!response.ok) throw new Error('Sonar issue inventory HTTP '+response.status);
+              const raw = await response.text();
+              if (raw.length>1048576) throw new Error('Response exceeds diagnostic limit');
+              const result = JSON.parse(raw);
+              const total = result.paging?.total ?? result.total;
+              if (!Number.isSafeInteger(total) || total<0 || total>2000 || !Array.isArray(result.issues)) {
+                throw new Error('Invalid or oversized Sonar issue inventory');
+              }
+              return {total,issues:result.issues};
+            }
+            async function readAllIssues(target, newCodeOnly) {
+              const issues = new Map();
+              let expectedTotal;
+              for (let page=1; page<=4; page++) {
+                const result = await readIssuePage(target,page,newCodeOnly);
+                expectedTotal ??= result.total;
+                if (result.total!==expectedTotal) throw new Error('Sonar inventory changed during paging');
+                for (const issue of result.issues) {
+                  if (typeof issue.key!=='string' || issues.has(issue.key)) throw new Error('Missing or duplicate issue identity');
+                  issues.set(issue.key,issue);
+                }
+                core.info('SONAR_READ_PAGE='+JSON.stringify({...target,page,total:result.total,
+                  issues:result.issues.length,scope:newCodeOnly ? 'new_code' : 'all_open_and_confirmed'}));
+                if (issues.size===expectedTotal) return [...issues.values()];
+                if (result.issues.length===0) throw new Error('Incomplete Sonar issue inventory');
+              }
+              throw new Error('Sonar issue inventory exceeded page limit');
+            }
+            async function resolveHead(target) {
+              if (target.branch) {
+                return (await github.rest.repos.getBranch({...context.repo,branch:target.branch})).data.commit.sha;
+              }
+              return (await github.rest.pulls.get({...context.repo,pull_number:Number(target.pullRequest)})).data.head.sha;
+            }
+            async function readFailedChecks(ref) {
+              if (!/^[a-f0-9]{40}$/.test(ref || '')) return;
+              const checks = await github.paginate(github.rest.checks.listForRef, {...context.repo,ref,per_page:100});
+              for (const check of checks.filter(item => item.app?.slug==='github-actions' &&
+                  ['failure','timed_out','cancelled'].includes(item.conclusion))) {
+                const annotations = await github.paginate(github.rest.checks.listAnnotations,
+                  {...context.repo,check_run_id:check.id,per_page:100});
+                core.info('FAILED_CHECK='+JSON.stringify({head:ref,id:check.id,name:check.name,conclusion:check.conclusion}));
+                for (const item of annotations) core.info('CI_FAILURE_FINDING='+JSON.stringify({head:ref,
+                  check:check.id,path:item.path,line:item.start_line,title:item.title,message:item.message}));
+              }
+            }
+            await readFailedChecks(context.payload.before);
+            // Repository visibility and Sonar visibility are separate. This reads only
+            // the already-connected project; a denied inventory is never treated as zero.
+            const targets = [{branch:'main'}];
+            if (context.ref === 'refs/heads/codex/spectrum-3d-100') targets.push({pullRequest:'880'});
+            for (const target of targets) {
+              const head = await resolveHead(target);
+              await readFailedChecks(head);
               let check;
-              for (let attempt=0; attempt<12; attempt++) {
-                const checks = (await github.rest.checks.listForRef({...context.repo, ref:pr.head.sha, per_page:100})).data.check_runs;
-                check = checks.find(item=>item.name==='SonarCloud Code Analysis');
+              for (let attempt=0; attempt<36; attempt++) {
+                const checks = await github.paginate(github.rest.checks.listForRef, {...context.repo,ref:head,per_page:100});
+                check = checks.filter(item => item.head_sha===head && item.name==='SonarCloud Code Analysis' &&
+                  item.app?.id===12526 && item.app?.slug==='sonarqubecloud').sort((a,b)=>b.id-a.id)[0];
                 if (check?.status==='completed') break;
                 await wait(5000);
               }
               if (!check || check.status!=='completed') {
-                core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,head:pr.head.sha,reason:'analysis_pending'}));
+                core.setFailed('SONAR_READ_UNAVAILABLE='+JSON.stringify({...target,head,reason:'analysis_pending'}));
                 continue;
               }
-              core.info('EXACT_HEAD_QUALITY='+JSON.stringify({pr:number,head:pr.head.sha,check:check.id,conclusion:check.conclusion}));
+              core.info('EXACT_HEAD_QUALITY='+JSON.stringify({...target,head,check:check.id,conclusion:check.conclusion}));
               const annotations = await github.paginate(github.rest.checks.listAnnotations, {...context.repo,check_run_id:check.id,per_page:100});
-              for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({pr:number,path:a.path,line:a.start_line,title:a.title,message:a.message}));
-              const endpoint = new URL('https://sonarcloud.io/api/issues/search');
-              endpoint.search = new URLSearchParams({componentKeys:project,pullRequest:String(number),resolved:'false',ps:'100'}).toString();
-              const headers = {Accept:'application/json'};
-              if (process.env.SONAR_READ_TOKEN) headers.Authorization = 'Bearer '+process.env.SONAR_READ_TOKEN;
+              for (const a of annotations) core.info('QUALITY_FINDING='+JSON.stringify({...target,path:a.path,line:a.start_line,title:a.title,message:a.message}));
               try {
-                const response = await fetch(endpoint,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(15000)});
-                if (!response.ok) {
-                  core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,status:response.status,token_configured:Boolean(process.env.SONAR_READ_TOKEN)}));
-                  continue;
+                const newIssues = await readAllIssues(target,true);
+                const expectedNew = /\[(\d+) New issues\]/.exec(check.output?.summary||'');
+                if (!expectedNew || Number(expectedNew[1])!==newIssues.length) {
+                  throw new Error('Sonar API count disagrees with exact-head check');
                 }
-                const raw = await response.text();
-                if (raw.length>1048576) throw new Error('Response exceeds diagnostic limit');
-                const result = JSON.parse(raw);
-                const after = (await github.rest.pulls.get({...context.repo,pull_number:number})).data;
-                if (after.head.sha!==pr.head.sha) {
-                  core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,reason:'head_changed'}));
-                  continue;
+                const issues = await readAllIssues(target,false);
+                const allKeys = new Set(issues.map(issue => issue.key));
+                if (!newIssues.every(issue => allKeys.has(issue.key))) {
+                  throw new Error('New-code findings are missing from the complete inventory');
                 }
-                for (const issue of result.issues||[]) {
-                  const security = (issue.impacts||[]).filter(i=>i.softwareQuality==='SECURITY');
-                  if (issue.type==='VULNERABILITY'||security.length) core.info('SECURITY_REVIEW_FINDING='+JSON.stringify({pr:number,head:pr.head.sha,key:issue.key,rule:issue.rule,type:issue.type,security,component:issue.component,line:issue.line,message:issue.message}));
+                if (await resolveHead(target)!==head) throw new Error('Head changed while reading inventory');
+                for (const issue of issues) {
+                  core.info('QUALITY_REVIEW_FINDING='+JSON.stringify({...target,head,key:issue.key,
+                    rule:issue.rule,type:issue.type,severity:issue.severity,impacts:issue.impacts||[],
+                    component:issue.component,line:issue.line,textRange:issue.textRange,
+                    message:issue.message,flows:issue.flows||[]}));
                 }
-                core.info('SONAR_READ_PAGE='+JSON.stringify({pr:number,paging:result.paging,total:result.total,issues:(result.issues||[]).length}));
+                core.info('SONAR_COMPLETE_INVENTORY='+JSON.stringify({...target,head,check:check.id,
+                  issues:issues.length,new_issues:newIssues.length,unique:issues.length,
+                  scope:'all_open_and_confirmed',all_types:true,complete:true}));
               } catch (error) {
-                core.info('SONAR_READ_UNAVAILABLE='+JSON.stringify({pr:number,reason:error.name}));
+                core.setFailed('SONAR_READ_UNAVAILABLE='+JSON.stringify({...target,head,reason:error.message}));
               }
             }
