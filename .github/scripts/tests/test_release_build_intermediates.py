@@ -1,12 +1,13 @@
 """Exercise cleanup ownership and immutable APK preservation with real files."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from release_build_intermediates import APKS, INTERMEDIATES, release_intermediates
+from release_build_intermediates import APKS, INTERMEDIATES, extended_windows_path, release_intermediates
 
 
 class ReleaseIntermediatesTests(unittest.TestCase):
@@ -81,6 +82,27 @@ class ReleaseIntermediatesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact checkout root"):
             release_intermediates(self.root / "app")
         self.assert_intermediates_preserved()
+
+    def test_generated_class_path_longer_than_windows_max_path_is_removed(self):
+        root = Path(extended_windows_path(str(self.root))) if os.name == "nt" else self.root
+        generated = root / INTERMEDIATES[0]
+        for index in range(4):
+            generated /= "generated_package_" + str(index) + "_" + "x" * 60
+        generated.mkdir(parents=True)
+        generated /= "AccountOperationsKt$invokeSuspend$lambda$sortedByDescending$1.class"
+        generated.write_bytes(b"compiled-class")
+        self.assertGreater(len(str(generated)), 260)
+        receipt = release_intermediates(self.root)
+        self.assertEqual(set(receipt["removed"]), set(INTERMEDIATES))
+        self.assertFalse(generated.exists())
+        for relative in APKS:
+            self.assertEqual((self.root / relative).read_bytes(), b"immutable-apk-fixture")
+
+    def test_windows_drive_unc_and_already_extended_paths_keep_identity(self):
+        self.assertEqual(extended_windows_path("C:\\runner\\checkout"), "\\\\?\\C:\\runner\\checkout")
+        self.assertEqual(extended_windows_path("\\\\server\\share\\checkout"), "\\\\?\\UNC\\server\\share\\checkout")
+        existing = "\\\\?\\C:\\runner\\checkout"
+        self.assertEqual(extended_windows_path(existing), existing)
 
 
 if __name__ == "__main__":

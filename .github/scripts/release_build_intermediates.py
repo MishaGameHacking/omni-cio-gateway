@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import stat
@@ -24,6 +25,15 @@ APKS = (
     "app/build/outputs/apk/preview/app-preview.apk",
     "ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk",
 )
+
+
+def extended_windows_path(value: str) -> str:
+    """Use Win32 extended paths without changing the validated target identity."""
+    if value.startswith("\\\\?\\"):
+        return value
+    if value.startswith("\\\\"):
+        value = "UNC\\" + value[2:]
+    return "\\\\?\\" + value
 
 
 def _regular_path(root: Path, relative: str) -> Path:
@@ -76,6 +86,10 @@ def release_intermediates(root: Path = ROOT) -> dict[str, object]:
     ).stdout
     if tracked:
         raise ValueError("Build cleanup refuses a target containing tracked source")
+    # Git longpaths only affects Git. Python's Win32 calls need the extended
+    # prefix too, including traversal, lstat and removal of generated classes.
+    if os.name == "nt":
+        root = Path(extended_windows_path(str(root)))
     before = _apk_digests(root)
     # Validate ALL targets before deleting any. Never follow a link to a shared
     # dependency, a neighboring runner, a source tree or an evidence directory.
