@@ -27,7 +27,6 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"
-      PROBE_ENV: ${{ runner.temp }}\analyst-timeweb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -38,6 +37,8 @@ jobs:
       - name: Prepare isolated native TLS environment
         shell: cmd
         run: |
+          set "PROBE_ENV=%RUNNER_TEMP%\analyst-timeweb-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
+          echo PROBE_ENV=%PROBE_ENV%>>"%GITHUB_ENV%"
           py -3 -m venv "%PROBE_ENV%"
           if errorlevel 1 exit /b 1
           "%PROBE_ENV%\Scripts\python.exe" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools\timeweb-actions-requirements.txt
