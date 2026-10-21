@@ -18,7 +18,7 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
         var connection: HttpsURLConnection? = null
         var dispatched = false
         return try {
-            connection = URI(baseUrl + path).toURL().openConnection() as HttpsURLConnection
+            connection = BackendConfig.openConnection(URI(baseUrl + path))
             connection.requestMethod = method
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 10_000

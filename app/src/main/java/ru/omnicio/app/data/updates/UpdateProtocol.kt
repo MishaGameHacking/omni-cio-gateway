@@ -1,10 +1,11 @@
 package ru.omnicio.app.data.updates
 
 import java.net.URI
+import ru.omnicio.app.data.backend.BackendConfig
 
 /** One wire contract for the updater and Spectrum; version headers are not authentication. */
 object UpdateProtocol {
-    const val HOST = "176.98.178.81.sslip.io"
+    const val HOST = BackendConfig.HOST
     const val PACKAGE_HEADER = "X-Analyst-Package"
     const val CODE_HEADER = "X-Analyst-Version-Code"
     const val MAX_MANIFEST_BYTES = 16_384

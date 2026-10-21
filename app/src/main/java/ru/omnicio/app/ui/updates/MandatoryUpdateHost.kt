@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.data.backend.AuthSessionStore
+import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.updates.*
 import ru.omnicio.app.ui.theme.AnalystTheme
 
@@ -89,7 +90,9 @@ fun MandatoryUpdateHost(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 current = false
-                feedback = feedback.policyChecked("Не удалось проверить актуальность версии. Проверьте интернет и повторите попытку.")
+                feedback = feedback.policyChecked(if (BackendConfig.isConfigured)
+                    "Не удалось проверить актуальность версии. Проверьте интернет и повторите попытку."
+                else BackendConfig.UNAVAILABLE_MESSAGE)
             } finally { checking = false }
             delay(60_000)
         }

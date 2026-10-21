@@ -79,11 +79,15 @@ Local config tests are not live Timeweb, TLS or Telegram login verification.
 
 ## APK connection and remaining acceptance
 
-Update both `BackendConfig.BASE_URL` and `UpdateProtocol.HOST` only after the new
-hostname is verified. Keep the strict HTTPS/same-host update checks. Run the full
+Set the single `BackendConfig.HOST` only after the new hostname, owner binding,
+external health/authentication and Telegram redirect are verified. Backend and
+updates share this origin. The current source deliberately blocks connections
+before creating a transport while the host is unconfigured; the retired host
+cannot be used as a fallback. Keep the strict HTTPS/same-host update checks. Run the full
 exact-head Android API37 4 KB/16 KB matrix and Backend/Sonar gates again. Install
-and test the signed APK on the owner's phone. The current candidate still points
-at the retired address; a UI preview alone does not restore server functions.
+and test the signed APK on the owner's phone. The current candidate has no active server; a UI preview alone does not restore
+server functions. The pending-installation JVM tests must be updated to validate
+the verified configured origin when the deployment is actually ready.
 
 This installer does not publish an APK, change an update channel, create model
 charges, restore a database or send trading orders. Old Moscow/Kazakhstan deploy

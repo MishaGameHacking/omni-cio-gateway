@@ -2,7 +2,6 @@ package ru.omnicio.app.data.backend
 
 import java.net.HttpURLConnection
 import java.net.URI
-import javax.net.ssl.HttpsURLConnection
 import org.json.JSONArray
 import org.json.JSONObject
 import ru.omnicio.app.data.portfolio.ApiDecimal
@@ -143,7 +142,7 @@ class AnalystBackendClient(
         body: String? = null,
     ): BackendResult<String> {
         val connection = runCatching {
-            (URI(baseUrl + path).toURL().openConnection() as HttpsURLConnection).apply {
+            BackendConfig.openConnection(URI(baseUrl + path)).apply {
                 requestMethod = method
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS

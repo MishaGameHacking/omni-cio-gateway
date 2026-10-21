@@ -28,8 +28,7 @@ class WorkspaceClient {
         }
         var connection: HttpsURLConnection? = null
         return try {
-            connection = URI(BackendConfig.BASE_URL + path + if (query.isEmpty()) "" else "?$query").toURL()
-                .openConnection() as HttpsURLConnection
+            connection = BackendConfig.openConnection(URI(BackendConfig.BASE_URL + path + if (query.isEmpty()) "" else "?$query"))
             connection.apply {
                 requestMethod = "GET"; instanceFollowRedirects = false
                 connectTimeout = 10_000; readTimeout = 45_000

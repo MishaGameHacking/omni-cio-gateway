@@ -33,7 +33,7 @@ class PortfolioDataClient {
     private fun get(token: String, path: String): BackendResult<JSONObject> {
         var connection: HttpsURLConnection? = null
         return try {
-            connection = URI(BackendConfig.BASE_URL + path).toURL().openConnection() as HttpsURLConnection
+            connection = BackendConfig.openConnection(URI(BackendConfig.BASE_URL + path))
             ru.omnicio.app.data.updates.ClientVersion.attach(connection)
             connection.requestMethod = "GET"
             connection.instanceFollowRedirects = false
