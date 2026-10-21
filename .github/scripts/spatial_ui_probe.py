@@ -338,10 +338,15 @@ class _SpatialSession:
         self.probe.reveal("Проверить нажатие", "workspace-content")
         self.probe.capture("spatial-large-font")
         self.probe.tap("Открыть окно 3D", "workspace-content")
-        self.probe.reveal(CLOSE_SPATIAL_WINDOW, "workspace-content")
+        # Opening a modal replaces the active accessibility root asynchronously.
+        # Do not send a workspace scroll using a frame from before that switch.
+        self.probe.find_all(("Отдельное окно 3D", CLOSE_SPATIAL_WINDOW))
+        opened = self.metrics(windows=2)
         self.probe.capture("spatial-dialog-large-font")
-        self.probe.tap(CLOSE_SPATIAL_WINDOW, "workspace-content")
-        self.records.append({"scenario": "font-200-controls-and-dialog", "runtime": large})
+        self.probe.tap_visible(CLOSE_SPATIAL_WINDOW)
+        closed = self.metrics(windows=1)
+        self.records.append({"scenario": "font-200-controls-and-dialog", "runtime": large,
+                             "open": opened, "closed": closed})
         self.probe.command("shell", "settings", "put", "system", "font_scale", "1.0")
 
     def policies(self):

@@ -18,7 +18,12 @@ These are authenticated catalogue observations, not capacity reservations or a
 claim of total cost. Start with the 1 GB candidate for one ASGI worker; measure
 memory/disk after installation and representative requests before using it for
 owner data. Models run remotely. Do not buy Android CI/GPU capacity for backend.
-Confirm current capacity, IPv4 price and the total recurring cost before order.
+The official public calculator (https://timeweb.cloud/prices, checked 21 October
+2026) lists a public IPv4 at 200 RUB/month and automated backups at 6 RUB per
+GB/month. Combined with the authenticated 350 RUB preset, 550 RUB/month is an
+estimate before backups, not an account-specific order quote. The IP documentation
+(https://timeweb.cloud/docs/public-ip) says the actual price is shown at order.
+Confirm current capacity and the total recurring cost in the account before order.
 
 ## Configuration still required
 
