@@ -65,13 +65,12 @@ async function readBackend(github, context, identity) {
   return newestBackendRun(data.workflow_runs, identity);
 }
 
-async function waitForBackend(github, context, identity, sleep) {
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const backend = await readBackend(github, context, identity);
-    if (backend?.status === 'completed') return backend;
-    if (attempt < 59) await sleep(10000);
-  }
-  throw new Error('merge_gate_backend_not_ready');
+async function waitForBackend(github, context, identity, sleep, attempt = 0) {
+  const backend = await readBackend(github, context, identity);
+  if (backend?.status === 'completed') return backend;
+  if (attempt >= 59) throw new Error('merge_gate_backend_not_ready');
+  await sleep(10000);
+  return waitForBackend(github, context, identity, sleep, attempt + 1);
 }
 
 async function verify({ github, context, core, androidResult, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
