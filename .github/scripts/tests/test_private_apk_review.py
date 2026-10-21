@@ -20,13 +20,15 @@ class PrivateApkReviewTests(unittest.TestCase):
 
     def test_retention_follows_existing_complete_emulator_gate(self):
         source = (ROOT / ".github/workflows/android-ci.yml").read_text(encoding="utf-8")
-        validation = source.index("uses: ./.github/actions/check-apk")
+        validation = source.index("python3 .github/scripts/validate_distribution.py")
         retention = source.index("- name: Retain requested device-test APK as a private draft")
         self.assertLess(validation, retention)
         self.assertIn("if: success()", source[retention:])
         self.assertNotIn("continue-on-error", source[retention:])
-        self.assertIn('RUN_PROFILE_UI_TESTS: "1"', source[:retention])
-        self.assertIn("- name: Record synthetic UI evidence and reports\n        if: always()", source)
+        self.assertIn("RUN_PROFILE_UI_TESTS: '1'", source[:retention])
+        for pages in (4096, 16384):
+            self.assertIn(f'--api 37 --page-bytes {pages}', source[:validation])
+        self.assertIn("- name: Record synthetic UI evidence and reports\n      if: always()", source)
 
 
 if __name__ == "__main__":

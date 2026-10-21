@@ -83,10 +83,19 @@ test('an existing orphan tag is never deleted or reused', async () => {
   assert.deepEqual(f.writes, []);
 });
 
-test('foreign repository and non-push identities fail before API calls', () => {
+test('foreign repository and unsupported identities fail before API calls', () => {
   const f = fixture();
   for (const change of [{eventName: 'pull_request'}, {sha: 'branch-name'},
     {payload: {repository: {full_name: 'foreign/repo'}}}]) {
     assert.throws(() => transfer.identity({...f.context, ...change}, f.env), /same-repository/);
   }
+});
+
+test('same-repository PR uses the tested merge identity while a fork is refused', () => {
+  const f = fixture();
+  const context = {...f.context, eventName: 'pull_request', payload: {...f.context.payload,
+    pull_request: {head: {repo: {full_name: 'test/repo'}}}}};
+  assert.equal(transfer.identity(context, f.env).head, f.context.sha);
+  context.payload.pull_request.head.repo.full_name = 'foreign/repo';
+  assert.throws(() => transfer.identity(context, f.env), /same-repository/);
 });

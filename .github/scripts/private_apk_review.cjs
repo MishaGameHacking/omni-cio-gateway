@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {newestSonarCheck, assertCleanSonar} = require('./require_clean_sonar.cjs');
+const {inaccessibleWithoutAuth} = require('./ci_private_transfer.cjs');
 
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
@@ -63,11 +64,11 @@ async function retainAsset(github, repo, release, name, bytes, type) {
   return asset;
 }
 
-module.exports = async function retainPrivateApk({github, context, core}) {
+module.exports = async function retainPrivateApk({github, context, core, anonymousFetch = fetch}) {
   const pr = context.payload.pull_request;
-  if (context.eventName !== 'pull_request' || context.payload.repository?.private !== true ||
+  if (context.eventName !== 'pull_request' ||
       pr?.head?.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
-    throw new Error('Device-test retention requires a same-repository private PR');
+    throw new Error('Device-test retention requires a same-repository PR');
   }
   const head = pr.head.sha;
   if (!/^[a-f0-9]{40}$/.test(head) || !/^[a-f0-9]{40}$/.test(context.sha)) {
@@ -111,8 +112,10 @@ module.exports = async function retainPrivateApk({github, context, core}) {
       make_latest: 'false'})).data;
   }
   if (!release.draft) throw new Error('Refusing to modify a published release');
+  await inaccessibleWithoutAuth(context.repo, `releases/${release.id}`, anonymousFetch);
   const asset = await retainAsset(github, context.repo, release, name, apk,
     'application/vnd.android.package-archive');
+  await inaccessibleWithoutAuth(context.repo, `releases/assets/${asset.id}`, anonymousFetch);
   await retainAsset(github, context.repo, release, 'apk-verification.json', reportBytes, 'application/json');
   release = (await github.rest.repos.updateRelease({...context.repo, release_id: release.id,
     body: body + '\n\nAPK и отчёт повторно скачаны из GitHub; размеры и SHA-256 совпали.',

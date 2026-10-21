@@ -2,13 +2,19 @@
 
 ## Current observation — 21 October 2026
 
-The owner explicitly authorized Timeweb use to resolve Android CI capacity.
-Run `39532595104`, attempt 2, job `119078058564` completed successfully:
-37 offline tests and three live GET requests. The token sees one project and
-zero servers/buckets, with complete totals. The earlier 403 is historical.
-The new `Timeweb Android capacity` workflow reads current VM offers and Ubuntu
-images without creating resources. Actual nested KVM and graphics support must
-be measured before a server can be accepted for APK runtime verification.
+The owner authorized CI infrastructure and requested the cheapest suitable option
+worldwide. Standard free GitHub Ubuntu has now passed real KVM, disk and Android
+17 SDK/image preparation. The signing identity remains on the existing Windows
+host. Full signed-APK runtime acceptance is still required.
+
+The read-only Timeweb preflight succeeded on retry. Subsequent explicit capacity
+experiments created and removed one temporary VM; complete IP inventory confirmed
+zero retained addresses. Private S3 transport failed before any APK upload; later
+complete inventories confirmed both empty test buckets absent. No credential or
+permission was changed. See [the dated hosting decision and evidence](CI_HOSTING_DECISION_2026-10-21.md).
+
+The original read-only preflight below remains read-only. Disposable resource
+experiments are separate, explicitly triggered workflows in PR #880.
 
 The owner requested a public HTTPS URL from which the GPT editor can import the
 corrected Timeweb schema. The owner permits direct main changes, Timeweb usage
@@ -82,7 +88,7 @@ The requirements file belongs to the probe, not the production backend.
 }
 ```
 
-The final workflow is **failed**, not green: offline tests passed but live access
+The initial attempt was **failed**, not green (the successful retry is documented above): offline tests passed but live access
 was denied. We do not suppress this failure. There is no observed inventory, no
 public import URL and no evidence that the account has no resources. Original
 error bodies were deliberately not logged, so the precise denial policy or

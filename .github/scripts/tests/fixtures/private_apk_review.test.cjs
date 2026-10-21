@@ -62,7 +62,11 @@ function fixture(options = {}) {
       head: {sha: head, repo: {full_name: 'test/repo'}}, base: {sha: base}}}};
   const core = {notice: () => {}, info: value => writes.push(['info', value]),
     summary: {addHeading() {return this;}, addRaw() {return this;}, async write() {}}};
-  return {root, github, context, core, writes, report, apk};
+  const anonymousFetch = async (_url, request) => {
+    assert.equal(request.headers.authorization, undefined);
+    return {status: options.publicDraft ? 200 : 404};
+  };
+  return {root, github, context, core, writes, report, apk, anonymousFetch};
 }
 
 async function run(options, check) {
@@ -94,10 +98,18 @@ test('verified bytes remain a draft after upload and independent read-back', asy
 test('a normal commit never creates a private APK', async () => {
   await run({noRequest: true}, async f => { await retain(f); assert.deepEqual(f.writes, []); });
 });
-test('public repository is rejected before release operations', async () => {
+test('public source repository can retain only an inaccessible verified draft', async () => {
   await run({public: true}, async f => {
-    await assert.rejects(retain(f), /same-repository private PR/);
+    await retain(f);
+    assert.equal(f.writes.find(([kind]) => kind === 'create')[1].draft, true);
+  });
+  await run({public: true, noRequest: true}, async f => {
+    await retain(f);
     assert.deepEqual(f.writes, []);
+  });
+  await run({public: true, publicDraft: true}, async f => {
+    await assert.rejects(retain(f), /404 without authentication/);
+    assert.equal(f.writes.some(([kind]) => kind === 'asset'), false);
   });
 });
 test('stale PR cannot attach bytes as a current verified candidate', async () => {
