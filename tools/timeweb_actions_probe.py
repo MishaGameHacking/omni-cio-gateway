@@ -23,6 +23,7 @@ CATALOG_ENDPOINTS = {
     "presets": "/api/v1/presets/servers",
     "os": "/api/v1/os/servers",
 }
+FLOATING_IPS_PATH = "/api/v1/floating-ips"
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "integrations/timeweb/projects.openapi.json"
 
 
@@ -100,7 +101,7 @@ def read_catalog(token: str, resource: str) -> dict:
 
 
 def read_path(token: str, path: str) -> dict:
-    if path not in (*ENDPOINTS.values(), *CATALOG_ENDPOINTS.values()):
+    if path not in (*ENDPOINTS.values(), *CATALOG_ENDPOINTS.values(), FLOATING_IPS_PATH):
         raise ProbeError("unapproved_endpoint")
     token = validated_token(token)
     request = urllib.request.Request(BASE_URL + path, headers={
