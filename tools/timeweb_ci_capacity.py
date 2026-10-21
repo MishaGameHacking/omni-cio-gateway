@@ -21,7 +21,7 @@ from timeweb_actions_probe import (
 from timeweb_ci_catalog import candidate_presets, ubuntu_images
 
 PROJECT_ID = 2941515
-PRESET_ID = 6753
+PRESET_ID = 6763
 OS_ID = 99
 MAX_MONTHLY_RUB = 2900
 OWNER_MARKER = "Analyst AI disposable Android capacity check"
@@ -50,7 +50,7 @@ print(json.dumps(result, sort_keys=True))
 def identity() -> str:
     run = os.environ.get("GITHUB_RUN_ID", "")
     attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
-    if not re.fullmatch(r"[0-9]{1,20}", run) or not re.fullmatch(r"[0-9]{1,5}", attempt):
+    if not re.fullmatch(r"\d{1,20}", run, re.ASCII) or not re.fullmatch(r"\d{1,5}", attempt, re.ASCII):
         raise ProbeError("github_run_identity_required")
     return "analyst-ci-" + run + "-" + attempt
 
@@ -82,7 +82,7 @@ def error_details(raw: bytes) -> dict:
 
 def request(token: str, method: str, path: str, body=None) -> dict:
     allowed = (method == "POST" and path == "/api/v1/servers") or (
-        method in {"GET", "DELETE"} and re.fullmatch(r"/api/v1/servers/[1-9][0-9]{0,15}", path))
+        method in {"GET", "DELETE"} and re.fullmatch(r"/api/v1/servers/[1-9]\d{0,15}", path, re.ASCII))
     if not allowed:
         raise ProbeError("unapproved_capacity_request")
     token = validated_token(token)
@@ -229,6 +229,21 @@ def probe(token: str) -> None:
             raise ProbeError("capacity_nested_kvm_unavailable")
 
 
+def delete_and_verify(token: str, server_id: int) -> None:
+    path = f"/api/v1/servers/{server_id}"
+    request(token, "DELETE", path)
+    # A deletion acknowledgement can require Telegram confirmation; verify absence.
+    for _ in range(6):
+        try:
+            request(token, "GET", path)
+        except ProbeError as error:
+            if str(error) == "timeweb_http_404":
+                return
+            raise
+        time.sleep(5)
+    raise ProbeError("capacity_deletion_not_confirmed")
+
+
 def cleanup(token: str) -> None:
     state = state_path()
     if not state.exists():
@@ -248,19 +263,7 @@ def cleanup(token: str) -> None:
         server = owned_server({"server": matches[0]}, name)
         if record.get("server_id") not in (None, server["id"]):
             raise ProbeError("capacity_cleanup_id_mismatch")
-        path = f"/api/v1/servers/{server['id']}"
-        request(token, "DELETE", path)
-        # A deletion acknowledgement can require Telegram confirmation; verify absence.
-        for _ in range(6):
-            try:
-                request(token, "GET", path)
-            except ProbeError as error:
-                if str(error) == "timeweb_http_404":
-                    break
-                raise
-            time.sleep(5)
-        else:
-            raise ProbeError("capacity_deletion_not_confirmed")
+        delete_and_verify(token, server["id"])
     state.unlink()
     print("TIMEWEB_CAPACITY_CLEANUP=verified_absent", flush=True)
 

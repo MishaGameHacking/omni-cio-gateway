@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 
 from timeweb_actions_probe import ProbeError, read_catalog
 
@@ -26,7 +27,11 @@ def candidate_presets(document: dict) -> list[dict]:
         if item["cpu"] < 4 or item["ram"] < 8192 or item["disk"] < 81920:
             continue
         # Project names, passwords, IPs and arbitrary response fields never leave here.
-        candidates.append({key: item[key] for key in fields})
+        selected = {key: item[key] for key in fields}
+        location = item.get("location")
+        if isinstance(location, str) and re.fullmatch(r"[a-z]{2}-\d", location, re.ASCII):
+            selected["location"] = location
+        candidates.append(selected)
     return sorted(candidates, key=lambda item: (item["price"], item["id"]))[:8]
 
 
