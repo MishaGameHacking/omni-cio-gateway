@@ -254,58 +254,80 @@ class GuardedClientTests(DatabaseCase):
 
     def test_missing_agent_key_does_not_fall_back_to_global_key(self):
         self.env.update({'AI_TRANSPORT':'agents','TIMEWEB_AI_FAST_BASE_URL':'https://agent.timeweb.cloud/api/v1/cloud-ai/agents/abc/v1'})
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
 
     def test_admin_token_is_never_used_for_inference(self):
         self.env.pop('TIMEWEB_AI_TOKEN')
         self.env['TIMEWEB_CLOUD_TOKEN']='MUST-NOT-LEAVE'
         self.env['TIMEWEB_CLOUD_API_KEY']='MUST-NOT-LEAVE'
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
 
     def test_approval_required_before_any_spend(self):
         self.env.pop('AI_EXTERNAL_PROCESSING_APPROVED')
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
         self.assertEqual(self.ledger.user_summary(1)['unresolved_attempts'], 0)
 
     def test_region_mismatch_is_rejected(self):
         self.env['AI_FAST_PROCESSING_REGION']='US'
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
 
     def test_prices_bound_to_model(self):
         self.env['AI_MODEL_FAST']='new-model'
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
 
     def test_expired_prices_do_not_allow_a_free_estimate(self):
         self.env['AI_FAST_PRICING_VALID_UNTIL']='2020-01-01T00:00:00Z'
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
 
     def test_zero_ruble_budget_is_not_unlimited(self):
         self.env['AI_USER_DAILY_RUB']='0'
-        with self.assertRaises(GuardError): self.run_call(self.client())
+        client = self.client()
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.requests, [])
 
     def test_missing_usage_keeps_full_reservation(self):
-        with self.assertRaises(GuardError): self.run_call(self.client(model_response(usage=None)))
+        client = self.client(model_response(usage=None))
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.ledger.user_summary(1)['unresolved_attempts'], 1)
         self.assertEqual(len(self.requests), 1)
 
     def test_bad_output_is_still_charged(self):
         bad = model_response(choices=[{'finish_reason':'stop','message':{'content':'not JSON'}}])
-        with self.assertRaises(GuardError): self.run_call(self.client(bad))
+        client = self.client(bad)
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.ledger.user_summary(1)['estimated_and_reserved_rub'], '0.0006')
 
     def test_model_mismatch_halts_further_paid_attempts(self):
-        with self.assertRaises(GuardError): self.run_call(self.client(model_response(model='unexpected')))
+        client = self.client(model_response(model='unexpected'))
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertTrue(self.ledger.user_summary(1)['paid_calls_paused'])
 
     def test_redirect_is_not_followed(self):
-        with self.assertRaises(GuardError): self.run_call(self.client(status=302))
+        client = self.client(status=302)
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(len(self.requests), 1)
         self.assertEqual(self.ledger.user_summary(1)['unresolved_attempts'], 1)
 
@@ -317,7 +339,9 @@ class GuardedClientTests(DatabaseCase):
 
     def test_incomplete_output_not_delivered(self):
         bad = model_response(choices=[{'finish_reason':'length','message':{'content':'{"ok":true}'}}])
-        with self.assertRaises(GuardError): self.run_call(self.client(bad))
+        client = self.client(bad)
+        with self.assertRaises(GuardError):
+            self.run_call(client)
         self.assertEqual(self.ledger.user_summary(1)['estimated_and_reserved_rub'], '0.0006')
 
     def test_endpoint_allowlist_rejects_insecure_variants(self):
@@ -334,8 +358,9 @@ class GuardedClientTests(DatabaseCase):
         job = self.queue.claim(at=now)
         context = CURRENT_JOB.set((job['id'],job['owner']))
         try:
+            client = self.client()
             with self.assertRaisesRegex(GuardError, 'reconciliation'):
-                self.run_call(self.client())
+                self.run_call(client)
         finally:
             CURRENT_JOB.reset(context)
         self.assertEqual(self.requests, [])

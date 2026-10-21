@@ -2,6 +2,7 @@ package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -106,24 +107,7 @@ internal fun PortfolioDashboard(
                             )
                         }
                     } else {
-                        snapshot.accounts.forEach { account ->
-                            item(key = "account-heading:${account.id}") {
-                                PortfolioAccountLink(account) { onOpenAccount(account) }
-                            }
-                            items(account.positions, key = { "position:${account.id}:${it.id}" }) { position ->
-                                SpectrumCard {
-                                    PositionLine(position) { onPositionClick(account.id, position) }
-                                }
-                            }
-                            if (account.positions.isEmpty()) {
-                                item(key = "empty-account:${account.id}") { Notice("В этом счёте пока нет позиций.") }
-                            }
-                            if (account.virtualPositions.isNotEmpty()) {
-                                item(key = "virtual:${account.id}") {
-                                    SpectrumSecondaryButton("Виртуальные позиции счёта", { onOpenAccount(account) }, Modifier.fillMaxWidth())
-                                }
-                            }
-                        }
+                        accountPositionRows(snapshot, onOpenAccount, onPositionClick)
                     }
                     if (snapshot.accounts.isEmpty()) {
                         item(key = "empty") { SpectrumCard { Text("Доступных счетов не найдено") } }
@@ -248,3 +232,28 @@ private fun PortfolioHistorySection(
 }
 
 
+
+private fun LazyListScope.accountPositionRows(
+    snapshot: PortfolioSnapshot,
+    onOpenAccount: (PortfolioAccount) -> Unit,
+    onPositionClick: (String, PortfolioPosition) -> Unit,
+) {
+    snapshot.accounts.forEach { account ->
+        item(key = "account-heading:${account.id}") {
+            PortfolioAccountLink(account) { onOpenAccount(account) }
+        }
+        items(account.positions, key = { "position:${account.id}:${it.id}" }) { position ->
+            SpectrumCard {
+                PositionLine(position) { onPositionClick(account.id, position) }
+            }
+        }
+        if (account.positions.isEmpty()) {
+            item(key = "empty-account:${account.id}") { Notice("В этом счёте пока нет позиций.") }
+        }
+        if (account.virtualPositions.isNotEmpty()) {
+            item(key = "virtual:${account.id}") {
+                SpectrumSecondaryButton("Виртуальные позиции счёта", { onOpenAccount(account) }, Modifier.fillMaxWidth())
+            }
+        }
+    }
+}

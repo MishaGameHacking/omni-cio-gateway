@@ -7,6 +7,7 @@ It does not modify the backend, environment, database, firewall, or DNS.
 from __future__ import annotations
 
 import json
+from ipaddress import IPv4Address
 import os
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ import urllib.request
 
 API_BASE = "https://api.timeweb.cloud/api/v1"
 SERVER_ID = "9334503"
-EXPECTED_IP = "176.98.178.81"
+EXPECTED_IP = os.environ.get("EXPECTED_MOSCOW_IP", "")
 
 
 def request(token: str, method: str, path: str, body: dict | None = None) -> dict:
@@ -42,7 +43,7 @@ def request(token: str, method: str, path: str, body: dict | None = None) -> dic
             last = RuntimeError(f"Timeweb {method} {path}: HTTP {exc.code}: {detail}")
             if exc.code not in {408, 429, 500, 502, 503, 504}:
                 raise last from exc
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+        except OSError as exc:
             last = RuntimeError(f"Timeweb {method} {path}: {type(exc).__name__}")
         if attempt == 5:
             raise last or RuntimeError("Timeweb request failed")
@@ -69,6 +70,9 @@ def numeric_id(payload: dict) -> int:
 
 
 def verify_server(token: str) -> None:
+    # Validate the explicitly configured target before any cloud/SSH operation.
+    if str(IPv4Address(EXPECTED_IP)) != EXPECTED_IP:
+        raise ValueError("Expected Moscow IPv4 address must be canonical")
     server = request(token, "GET", f"/servers/{SERVER_ID}")
     ips = request(token, "GET", f"/servers/{SERVER_ID}/ips")
     serialized = json.dumps([server, ips], ensure_ascii=False)
@@ -129,6 +133,7 @@ echo "DIAG_PYTHON=present"
 "$PYTHON_BIN" - <<'PROBE_PY'
 from __future__ import annotations
 import json
+from ipaddress import IPv4Address
 import socket
 import ssl
 import urllib.request

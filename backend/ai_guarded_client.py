@@ -197,6 +197,14 @@ def _configured_label(label: str, env, now: int) -> Route:
         reject('ai_model_identifier_missing_or_invalid')
     if env.get(prefix + 'PRICING_MODEL') != model:
         reject('ai_model_price_binding_required')
+    input_rate, output_rate, allowance, expires_at = _configured_prices(env, prefix, now)
+    parameter = env.get(prefix + 'TOKEN_PARAMETER', '')
+    if parameter not in {'max_tokens','max_completion_tokens'}:
+        reject('ai_token_parameter_required')
+    return Route(mode, url, key, model, input_rate, output_rate, allowance, parameter, region, expires_at)
+
+
+def _configured_prices(env, prefix, now):
     try:
         expires = datetime.fromisoformat(env.get(prefix + 'PRICING_VALID_UNTIL', '').replace('Z', '+00:00'))
         if expires.tzinfo is None or not now < expires.timestamp() <= now + 7 * 86400:
@@ -208,10 +216,21 @@ def _configured_label(label: str, env, now: int) -> Route:
             raise ValueError
     except (KeyError, ValueError, BudgetDenied):
         reject('ai_prices_missing_stale_or_invalid')
-    parameter = env.get(prefix + 'TOKEN_PARAMETER', '')
-    if parameter not in {'max_tokens','max_completion_tokens'}:
-        reject('ai_token_parameter_required')
-    return Route(mode, url, key, model, input_rate, output_rate, allowance, parameter, region, int(expires.timestamp()))
+    return input_rate, output_rate, allowance, int(expires.timestamp())
+
+
+def _encoded_messages(messages, max_output_tokens):
+    if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
+        reject('ai_output_limit_invalid')
+    if not messages or len(messages) > 4:
+        reject('ai_messages_invalid')
+    for message in messages:
+        if not isinstance(message, dict) or set(message) != {'role','content'} or message['role'] not in {'system','user','assistant'} or not isinstance(message['content'], str):
+            reject('ai_messages_invalid')
+    encoded = json.dumps(list(messages), ensure_ascii=False, allow_nan=False).encode()
+    if len(encoded) > 110_000:
+        reject('ai_context_too_large')
+    return encoded
 
 
 class GuardedAIClient:
@@ -243,16 +262,7 @@ class GuardedAIClient:
 
     def _complete(self, tier, messages, max_output_tokens: int):
         assert_monitoring_access(self.connect)
-        if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
-            reject('ai_output_limit_invalid')
-        if not messages or len(messages) > 4:
-            reject('ai_messages_invalid')
-        for message in messages:
-            if not isinstance(message, dict) or set(message) != {'role','content'} or message['role'] not in {'system','user','assistant'} or not isinstance(message['content'], str):
-                reject('ai_messages_invalid')
-        encoded = json.dumps(list(messages), ensure_ascii=False, allow_nan=False).encode()
-        if len(encoded) > 110_000:
-            reject('ai_context_too_large')
+        encoded = _encoded_messages(messages, max_output_tokens)
         route = self.check_ready(tier, input_bytes=len(encoded), max_output_tokens=max_output_tokens)
         # Conservative configurable estimate, not a tokenizer/invoice guarantee.
         input_bound = len(encoded) + route.input_allowance
@@ -328,16 +338,18 @@ class GuardedAIClient:
     def _send(self, route: Route, payload: dict) -> dict:
         deadline = time.monotonic() + 60
         try:
-            with httpx.Client(timeout=httpx.Timeout(45, connect=10), follow_redirects=False,
-                              transport=self.transport) as client:
-                with client.stream('POST', route.url + '/chat/completions',
+            with (
+                httpx.Client(timeout=httpx.Timeout(45, connect=10), follow_redirects=False,
+                              transport=self.transport) as client,
+                client.stream('POST', route.url + '/chat/completions',
                                    headers={'Authorization': 'Bearer ' + route.key, 'Accept': 'application/json',
                                             'Accept-Encoding': ACCEPT_ENCODING},
-                                   json=payload) as response:
-                    if response.status_code != 200:
-                        raise GuardError('ai_http_' + str(response.status_code), retryable=False)
-                    data = read_bounded_body(response, limit=MAX_RESPONSE_BYTES,
-                                             deadline=deadline, clock=time.monotonic)
+                                   json=payload) as response,
+            ):
+                if response.status_code != 200:
+                    raise GuardError('ai_http_' + str(response.status_code), retryable=False)
+                data = read_bounded_body(response, limit=MAX_RESPONSE_BYTES,
+                                         deadline=deadline, clock=time.monotonic)
             parsed = _model_json(data)
             if not isinstance(parsed, dict):
                 raise ValueError
@@ -346,7 +358,7 @@ class GuardedAIClient:
             raise GuardError(str(error), retryable=False) from None
         except httpx.HTTPError:
             raise GuardError('ai_transport_outcome_unknown', retryable=False) from None
-        except (ValueError, UnicodeError):
+        except ValueError:
             raise GuardError('ai_response_not_json') from None
 
     @staticmethod

@@ -11,6 +11,8 @@ import re
 import subprocess
 import time
 
+BOUNDS_PATTERN = r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]"
+
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 MARKER = "probe-refresh-tests:15"
@@ -93,7 +95,7 @@ def ready_marker(tree, expected_screen: str | None = None, scenario: str | None 
         components = set(node.get("content-desc", "").split(";"))
         if not required.issubset(components):
             continue
-        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+        bounds = re.fullmatch(BOUNDS_PATTERN, node.get("bounds", ""))
         if bounds is not None:
             left, top, right, bottom = map(int, bounds.groups())
             if right > left and bottom > top:
@@ -114,7 +116,7 @@ def system_ui_wait_action(tree):
         resource_id = node.get("resource-id", "")
         if resource_id not in SYSTEM_UI_WAIT_IDS and not (_exact_labels(node) & SYSTEM_UI_WAIT_LABELS):
             continue
-        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+        bounds = re.fullmatch(BOUNDS_PATTERN, node.get("bounds", ""))
         if bounds is None:
             continue
         left, top, right, bottom = map(int, bounds.groups())
@@ -144,7 +146,7 @@ def dismiss_confirmed_system_ui_anr(command, tree, evidence) -> bool:
     action = system_ui_wait_action(tree)
     if action is None or not _system_ui_anr_visible(command):
         return False
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", action.get("bounds", ""))
+    match = re.fullmatch(BOUNDS_PATTERN, action.get("bounds", ""))
     if match is None:
         raise AssertionError("Confirmed System UI ANR Wait action has invalid bounds")
     left, top, right, bottom = map(int, match.groups())

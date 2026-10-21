@@ -196,8 +196,10 @@ class ProfileLaunchTests(unittest.TestCase):
 
     def test_unknown_screen_is_rejected_before_adb(self):
         command = Mock()
+        mock_argument = Mock()
+        mock_argument_next = Mock()
         with self.assertRaises(ValueError):
-            launch_profile(command, Mock(), Mock(), expected_screen="other")
+            launch_profile(command, mock_argument, mock_argument_next, expected_screen="other")
         command.assert_not_called()
 
     def test_supported_statuses(self):

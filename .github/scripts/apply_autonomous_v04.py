@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+AUTONOMOUS_PATH = "backend/autonomous_ai.py"
 
 
 def read(path: str) -> str:
@@ -30,7 +31,7 @@ def append_once(path: str, marker: str, block: str) -> None:
 
 # Keep the scheduler portable on Windows CI images that do not bundle IANA tzdata.
 replace_once(
-    "backend/autonomous_ai.py",
+    AUTONOMOUS_PATH,
     """from datetime import UTC, datetime
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo""",
@@ -38,7 +39,7 @@ from zoneinfo import ZoneInfo""",
 from typing import Any, Mapping""",
 )
 replace_once(
-    "backend/autonomous_ai.py",
+    AUTONOMOUS_PATH,
     'MOSCOW = ZoneInfo("Europe/Moscow")',
     'MOSCOW = timezone(timedelta(hours=3), name="Europe/Moscow")',
 )
@@ -46,7 +47,7 @@ replace_once(
 # A material critical event bypasses cooldown, but an unchanged warning must not
 # be repeated by every five-minute scheduler cycle.
 replace_once(
-    "backend/autonomous_ai.py",
+    AUTONOMOUS_PATH,
     """    last = _last_analysis(user_id)
     minutes_since = None
     if last is not None:
@@ -68,7 +69,7 @@ replace_once(
 """,
 )
 replace_once(
-    "backend/autonomous_ai.py",
+    AUTONOMOUS_PATH,
     '            critical_risk=critical and bool(profile["notify_critical"]),',
     '            critical_risk=(critical and bool(profile["notify_critical"]) and not recent_same_risk),',
 )

@@ -77,8 +77,9 @@ class ControlsIntegrationTests(unittest.TestCase):
             backend.app.dependency_overrides.pop(backend.current_user, None)
 
     def test_disabled_scheduler_is_not_a_false_queued_success(self):
+        request = ai.RefreshRequest()
         with patch.object(ai, 'SCHEDULER_ENABLED', False), self.assertRaises(HTTPException) as error:
-            ai.refresh(ai.RefreshRequest(), user=self.user)
+            ai.refresh(request, user=self.user)
         self.assertEqual(error.exception.status_code, 503)
 
     def test_scheduler_drains_through_real_analysis_without_live_model(self):
@@ -110,8 +111,9 @@ class ControlsIntegrationTests(unittest.TestCase):
         job = self.queue.claim(at=now-1000)
         context = CURRENT_JOB.set((job['id'], job['owner']))
         try:
+            snapshot = sample_snapshot()
             with self.assertRaises(LeaseLost):
-                ai._save_snapshot(self.user_id, sample_snapshot())
+                ai._save_snapshot(self.user_id, snapshot)
         finally:
             CURRENT_JOB.reset(context)
         with closing(backend.connect()) as db:
@@ -121,8 +123,9 @@ class ControlsIntegrationTests(unittest.TestCase):
         now = int(time.time())
         self.queue.enqueue(self.user_id, at=now-1000)
         job = self.queue.claim(at=now-1000)
+        ledger = MoneyLedger(backend.connect)
         with self.assertRaisesRegex(BudgetDenied, 'lease'):
-            MoneyLedger(backend.connect).reserve(user_id=self.user_id, key='stale', route='synthetic', model='test', ceiling=1, user_cap=10, project_cap=10,
+            ledger.reserve(user_id=self.user_id, key='stale', route='synthetic', model='test', ceiling=1, user_cap=10, project_cap=10,
                                                 job=(job['id'],job['owner']))
         self.assertEqual(MoneyLedger(backend.connect).user_summary(self.user_id)['unresolved_attempts'], 0)
 
@@ -136,8 +139,10 @@ class ControlsIntegrationTests(unittest.TestCase):
         self.assertFalse(result['spending']['provider_invoice_reconciled'])
 
     def test_engine_requires_explicit_guarded_transport_for_paid_work(self):
+        signals = AnalysisSignals(morning_due=True,digest_changed=True)
+        budget = AnalysisBudget(1,1,1)
         with self.assertRaisesRegex(AnalysisValidationError, 'explicit_client'):
-            analyze_if_needed(signals=AnalysisSignals(morning_due=True,digest_changed=True), budget=AnalysisBudget(1,1,1),
+            analyze_if_needed(signals=signals, budget=budget,
                               context={'sources':[{'id':'synthetic','as_of':'2026-10-13T00:00:00Z'}]})
         result = analyze_if_needed(signals=AnalysisSignals(), budget=AnalysisBudget(1,1,1), context={})
         self.assertIsNone(result.report)

@@ -48,11 +48,13 @@ class EmulatorFailureTests(unittest.TestCase):
     def test_screenshot_timeout_is_recorded_and_propagated(self):
         results = []
         error = subprocess.TimeoutExpired("screencap", 15)
+        mock_argument = Mock()
+        mock_argument_next = Mock(side_effect=error)
         with self.assertRaises(subprocess.TimeoutExpired) as raised:
             installation.record_profile_check(
-                Mock(),
+                mock_argument,
                 results,
-                Mock(side_effect=error),
+                mock_argument_next,
             )
         self.assertIs(raised.exception, error)
         self.assertEqual(
@@ -69,11 +71,13 @@ class EmulatorFailureTests(unittest.TestCase):
     def test_assertion_is_not_swallowed(self):
         results = [{"test": "candidate_clean_install", "success": True}]
         error = AssertionError("incorrect palette")
+        mock_argument = Mock()
+        mock_argument_next = Mock(side_effect=error)
         with self.assertRaises(AssertionError):
             installation.record_profile_check(
-                Mock(),
+                mock_argument,
                 results,
-                Mock(side_effect=error),
+                mock_argument_next,
             )
         self.assertTrue(results[0]["success"])
         self.assertFalse(results[1]["success"])

@@ -43,6 +43,10 @@ import ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator
 import ru.omnicio.app.ui.spatial.SpatialToggleVisual
 import ru.omnicio.app.ui.spatial.rememberSpatialHapticClick
 
+private const val CRITICAL_LABEL = "Критично"
+private const val WARNING_LABEL = "Внимание"
+private const val WATCH_LABEL = "Наблюдение"
+
 @Composable
 internal fun AnalysisScaffold(
     selected: AnalystTab,
@@ -133,15 +137,15 @@ internal fun RiskOverviewCard(entries: List<InsightCard>) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth < 330.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SpectrumMetricPill("Критично", critical.toString(), Modifier.fillMaxWidth(), MaterialTheme.colorScheme.error)
-                    SpectrumMetricPill("Внимание", warning.toString(), Modifier.fillMaxWidth(), palette.amber)
-                    SpectrumMetricPill("Наблюдение", watch.toString(), Modifier.fillMaxWidth(), palette.violet)
+                    SpectrumMetricPill(CRITICAL_LABEL, critical.toString(), Modifier.fillMaxWidth(), MaterialTheme.colorScheme.error)
+                    SpectrumMetricPill(WARNING_LABEL, warning.toString(), Modifier.fillMaxWidth(), palette.amber)
+                    SpectrumMetricPill(WATCH_LABEL, watch.toString(), Modifier.fillMaxWidth(), palette.violet)
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SpectrumMetricPill("Критично", critical.toString(), Modifier.weight(1f), MaterialTheme.colorScheme.error)
-                    SpectrumMetricPill("Внимание", warning.toString(), Modifier.weight(1f), palette.amber)
-                    SpectrumMetricPill("Наблюдение", watch.toString(), Modifier.weight(1f), palette.violet)
+                    SpectrumMetricPill(CRITICAL_LABEL, critical.toString(), Modifier.weight(1f), MaterialTheme.colorScheme.error)
+                    SpectrumMetricPill(WARNING_LABEL, warning.toString(), Modifier.weight(1f), palette.amber)
+                    SpectrumMetricPill(WATCH_LABEL, watch.toString(), Modifier.weight(1f), palette.violet)
                 }
             }
         }
@@ -189,9 +193,9 @@ internal fun InsightCardView(
         else -> palette.cyan
     }
     val label = when (card.severity) {
-        "critical" -> "Критично"
-        "warning" -> "Внимание"
-        "watch" -> "Наблюдение"
+        "critical" -> CRITICAL_LABEL
+        "warning" -> WARNING_LABEL
+        "watch" -> WATCH_LABEL
         "info" -> "Информация"
         else -> "Категория не подтверждена"
     }

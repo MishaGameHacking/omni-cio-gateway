@@ -575,7 +575,7 @@ def tinvest_ssl_context() -> ssl.SSLContext:
         context = ssl.create_default_context(cafile=certifi.where())
         context.load_verify_locations(cadata=certificate_bytes.decode("ascii"))
         return context
-    except (OSError, ValueError, ssl.SSLError, UnicodeDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         raise RuntimeError("T-Invest trusted certificate configuration is invalid") from exc
 
 

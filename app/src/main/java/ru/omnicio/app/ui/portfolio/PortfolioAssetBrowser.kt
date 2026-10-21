@@ -162,17 +162,7 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
             if (group in 3..4) item(key = "verified-exposures") { VerifiedExposurePanel(exposureRequest, exposureAxis, exposureId) { exposureId = it } }
             if (rows.isEmpty()) item { WorkspaceEmpty(if (changed) "Ничего не найдено" else "Активов пока нет",
                 if (changed) "Измените запрос или условия поиска." else "Счёт подключён. Полученные позиции появятся здесь.") }
-            if (restricted.isNotEmpty()) {
-                item { SpectrumCard {
-                    Text("Ограниченные активы · ${restricted.size}", style = MaterialTheme.typography.titleMedium)
-                    Text("Условия сделки уточняются у брокера.", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { showRestricted = !showRestricted }) { Text(if (showRestricted) "Свернуть" else "Посмотреть ограничения") }
-                } }
-                if (showRestricted) items(restricted, key = { "restricted:${it.account.id}:${it.position.id}" }) { row ->
-                    PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name,
-                        selected = portfolioRowKey(row) in selectedKeys, sharedKey = portfolioRowKey(row)) { open(row.account.id, row.position) }
-                }
-            }
+            restrictedRows(restricted, snapshot, showRestricted, { showRestricted = !showRestricted }, open, selectedKeys.toSet())
             cashRows(cash, snapshot, showCash, { showCash = !showCash }, open, selectedKeys.toSet())
             if (group == 1) item { Notice("Здесь объединены одинаковые названия из данных брокера. Для проверенных отношений выберите «Проверенные эмитенты» или «Проверенные группы».") }
             if (order in 1..2 && rows.any { it.position.currentValue?.currency != snapshot.totalValue.currency }) item {
@@ -288,5 +278,23 @@ private fun AssetGroupValues(entries: List<PortfolioRow>, group: Int) {
                 )
             }
         if (values.size != entries.size) Notice("Часть выпусков без оценки; сумма неполная.")
+    }
+}
+
+
+private fun LazyListScope.restrictedRows(
+    restricted: List<PortfolioRow>, snapshot: PortfolioSnapshot, showRestricted: Boolean,
+    onToggle: () -> Unit, onPosition: (String, PortfolioPosition) -> Unit, selectedKeys: Set<String>,
+) {
+    if (restricted.isNotEmpty()) {
+        item { SpectrumCard {
+            Text("Ограниченные активы · ${restricted.size}", style = MaterialTheme.typography.titleMedium)
+            Text("Условия сделки уточняются у брокера.", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onToggle) { Text(if (showRestricted) "Свернуть" else "Посмотреть ограничения") }
+        } }
+        if (showRestricted) items(restricted, key = { "restricted:${it.account.id}:${it.position.id}" }) { row ->
+            PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name,
+                selected = portfolioRowKey(row) in selectedKeys, sharedKey = portfolioRowKey(row)) { onPosition(row.account.id, row.position) }
+        }
     }
 }

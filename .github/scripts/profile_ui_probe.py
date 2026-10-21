@@ -392,7 +392,7 @@ class ProfileProbe:
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
                 from profile_scroll import visible_resource
-                search = self.wait_for(lambda: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
+                search = self.wait_for(lambda visible_resource=visible_resource: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
                 self.tap_node(search)
                 self.command("shell", "input", "text", "NO_SUCH_ASSET")
                 self.dismiss_keyboard()

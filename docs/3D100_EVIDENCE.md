@@ -1,5 +1,11 @@
 # 3D100 — код, сценарии и границы проверки
 
+**Текущая приёмка, 21.10.2026:** минимальная и целевая ОС кандидата — Android17
+/ API37; обязательны полные проверки для страниц 4096 и 16384 байта.
+Приведённые ниже протоколы API35/36 и прежние численные результаты сохраняются
+как история соответствующих коммитов. Они не закрывают текущую матрицу.
+Актуальные исправления и проверки — в [PLAN_STATUS](PLAN_STATUS.md#repair-2026-10-21).
+
 **Дополнение 18.10.2026:** [аудит инвестиционной логики, 30 решений и границы](AUDIT_0.11.0_2026-10-18.md).
 `24bef48` сохранил строгий visual gate, который выявил уже обрезанные accessibility bounds.
 `b5fae83` требует полный размер модели и получает transform handle по entity при записи.
@@ -1625,7 +1631,7 @@ rotation. Новый тест ждёт landscape-конфигурацию сам
 
 ## 3D100
 
-**Совместимость.** Surface/lifecycle/restart/rotation/update, Android15+, native16KB и честная граница физической проверки.
+**Совместимость.** Surface/lifecycle/restart/rotation/update, API37 / 4КБ и 16КБ и честная граница физической проверки.
 
 Canonical checkout до сборки: [prepare_spectrum_checkout.py](../tools/prepare_spectrum_checkout.py). Проверка готового APK сверяет catalogue и все 90 GLB: [generate_spectrum_meshes.py](../tools/generate_spectrum_meshes.py); regression повторного checkout и повреждённых пакетов — [test_spectrum_meshes.py](../tools/test_spectrum_meshes.py).
 

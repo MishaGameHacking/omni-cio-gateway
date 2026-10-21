@@ -10,8 +10,9 @@ certify an APK.
 
 `integrations/timeweb/projects.openapi.json` describes exactly one GET action,
 `listTimewebProjects`. It includes explicit `components.schemas`, internal
-references and Bearer authentication. It contains no credential values. This
-private repository is a source copy, **not** a public import URL. An authenticated
+references and Bearer authentication. It contains no credential values. The owner confirmed on 21 October 2026 that this repository is public.
+Its source visibility does not establish successful access to Timeweb or an
+application deployment. An authenticated
 GitHub raw URL, expiring token URL or sandbox attachment is not a durable public
 URL for GPT Actions.
 

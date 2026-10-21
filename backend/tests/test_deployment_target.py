@@ -30,16 +30,19 @@ class DeploymentTargetTests(unittest.TestCase):
         self.assertEqual(select(inventory({'id': 2, 'name': 'other'}, {'id': 42, 'name': NAME}), NAME), 42)
 
     def test_missing_server_does_not_provision(self):
+        servers = inventory()
         with self.assertRaisesRegex(RuntimeError, 'no server will be ordered'):
-            select(inventory(), NAME)
+            select(servers, NAME)
 
     def test_duplicate_names_are_rejected(self):
+        servers = inventory({'id': 1, 'name': NAME}, {'id': 2, 'name': NAME})
         with self.assertRaises(RuntimeError):
-            select(inventory({'id': 1, 'name': NAME}, {'id': 2, 'name': NAME}), NAME)
+            select(servers, NAME)
 
     def test_nested_object_is_not_mistaken_for_server(self):
+        servers = inventory({'id': 1, 'name': 'other', 'extra': {'id': 2, 'name': NAME}})
         with self.assertRaises(RuntimeError):
-            select(inventory({'id': 1, 'name': 'other', 'extra': {'id': 2, 'name': NAME}}), NAME)
+            select(servers, NAME)
 
     def test_invalid_inventory_is_rejected(self):
         for payload in (None, [], {}, {'servers': {}}, {'servers': [None]}, inventory('bad')):
@@ -60,8 +63,9 @@ class DeploymentTargetTests(unittest.TestCase):
 
     def test_invalid_id_is_rejected(self):
         for identifier in (None, True, False, '42', 42.0, -42, 0):
+            servers = inventory({'id': identifier, 'name': NAME})
             with self.subTest(identifier=identifier), self.assertRaises(RuntimeError):
-                select(inventory({'id': identifier, 'name': NAME}), NAME)
+                select(servers, NAME)
 
     def test_only_temporary_ssh_key_post_calls_remain(self):
         calls = [node for tree in TREES for node in ast.walk(tree)

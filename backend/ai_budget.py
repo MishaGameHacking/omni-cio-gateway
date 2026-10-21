@@ -57,14 +57,11 @@ def day_key(at: int) -> str:
 
 @contextmanager
 def transaction(connect: Connect) -> Iterator[sqlite3.Connection]:
-    with closing(connect()) as db:
-        try:
-            db.execute('BEGIN IMMEDIATE')
-            yield db
-            db.commit()
-        except BaseException:
-            db.rollback()
-            raise
+    # SQLite commits on normal exit and rolls back even BaseException or a
+    # failed commit. closing() then releases the connection on every path.
+    with closing(connect()) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        yield db
 
 
 class MoneyLedger:

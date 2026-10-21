@@ -256,8 +256,18 @@ private fun HomeNextStep(state: PortfolioUiState, snapshot: PortfolioSnapshot?, 
                                     color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                             }
                         }
-                        SpectrumPrimaryButton(if (waiting) "Получаем данные…" else if (state is PortfolioUiState.Error) "Проверить подключение" else if (snapshot == null) "Подключить портфель" else if (snapshot.warnings.isNotEmpty()) "Посмотреть риски" else "Посмотреть анализ",
-                            if (snapshot == null) onConnect else if (snapshot.warnings.isNotEmpty()) onOpenRisk else onOpenRecommendations, Modifier.fillMaxWidth(), enabled = !waiting)
+                        SpectrumPrimaryButton(when {
+                            waiting -> "Получаем данные…"
+                            state is PortfolioUiState.Error -> "Проверить подключение"
+                            snapshot == null -> "Подключить портфель"
+                            snapshot.warnings.isNotEmpty() -> "Посмотреть риски"
+                            else -> "Посмотреть анализ"
+                        },
+                            when {
+                                snapshot == null -> onConnect
+                                snapshot.warnings.isNotEmpty() -> onOpenRisk
+                                else -> onOpenRecommendations
+                            }, Modifier.fillMaxWidth(), enabled = !waiting)
                     }
 }
 

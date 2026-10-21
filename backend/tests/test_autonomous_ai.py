@@ -116,11 +116,10 @@ class AutonomousAITests(unittest.TestCase):
         with closing(backend.connect()) as db:
             return db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
 
-    def test_force_refresh_does_not_invent_a_transaction(self) -> None:
+    def test_manual_refresh_does_not_invent_a_transaction(self) -> None:
         with patch.object(ai, "get_tinvest_portfolio", return_value=sample_snapshot()):
             result = ai.run_user_analysis(
                 self.user_id,
-                force=True,
                 now=datetime(2026, 10, 12, 9, 0, tzinfo=UTC),
             )
         self.assertEqual(result["state"], "skipped")
@@ -134,12 +133,10 @@ class AutonomousAITests(unittest.TestCase):
         with patch.object(ai, "get_tinvest_portfolio", return_value=snapshot):
             ai.run_user_analysis(
                 self.user_id,
-                force=True,
                 now=datetime(2026, 10, 12, 9, 0, tzinfo=UTC),
             )
             result = ai.run_user_analysis(
                 self.user_id,
-                force=False,
                 now=datetime(2026, 10, 12, 12, 0, tzinfo=UTC),
             )
         self.assertEqual(result["state"], "skipped")
@@ -171,7 +168,6 @@ class AutonomousAITests(unittest.TestCase):
         with patch.object(ai, "get_tinvest_portfolio", return_value=snapshot):
             result = ai.run_user_analysis(
                 self.user_id,
-                force=False,
                 now=datetime(2026, 10, 12, 12, 0, tzinfo=UTC),
             )
         self.assertEqual(result["tier"], "premium")
@@ -182,12 +178,10 @@ class AutonomousAITests(unittest.TestCase):
         with patch.object(ai, "get_tinvest_portfolio", return_value=snapshot):
             first = ai.run_user_analysis(
                 self.user_id,
-                force=False,
                 now=datetime(2026, 10, 12, 12, 0, tzinfo=UTC),
             )
             second = ai.run_user_analysis(
                 self.user_id,
-                force=False,
                 now=datetime(2026, 10, 12, 13, 0, tzinfo=UTC),
             )
         self.assertEqual(first["reason"], "risk_event")

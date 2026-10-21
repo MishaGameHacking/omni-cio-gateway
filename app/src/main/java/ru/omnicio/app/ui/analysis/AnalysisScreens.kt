@@ -530,9 +530,7 @@ private fun AnalysisProfileContent(
                         )
                     }
                 }
-                val valid = profileLimitsValid(profile.maxPositionPercent, profile.minCashPercent) &&
-                    profile.riskLevel in setOf("conservative", "moderate", "aggressive") &&
-                    profile.horizon in setOf("short", "medium", "long")
+                val valid = supportedProfile(profile)
                 if (!valid) {
                     item {
                         ErrorCard(
@@ -687,3 +685,8 @@ internal fun visibleInsights(entries: List<InsightCard>, selected: AnalystTab, s
             else -> card.isRead || !active
         }
     }.sortedWith(compareBy<InsightCard> { when (it.severity) { "critical" -> 0; "warning" -> 1; else -> 2 } }.thenByDescending { it.createdAt })
+
+private fun supportedProfile(profile: AnalysisProfile): Boolean =
+    profileLimitsValid(profile.maxPositionPercent, profile.minCashPercent) &&
+        profile.riskLevel in setOf("conservative", "moderate", "aggressive") &&
+        profile.horizon in setOf("short", "medium", "long")
