@@ -477,8 +477,9 @@ class ProfileProbe:
                 self.tap("Сохранить черновик", "workspace-content")
                 self.find("Черновик сохранён")
             elif screen == "ux100":
-                self.reveal("Отложить", "workspace-content")
-                self.tap("Отложить", "workspace-content")
+                # A label can be reported outside the clipped viewport during scroll.
+                # Use the exact button, clipped to its list and stable for three frames.
+                self.tap_resource("plan-defer-fixture", "workspace-content")
                 self.tap_visible("Нужно подумать")
                 self.find("Отложено: Нужно подумать · изменить")
                 self.tap_visible("График")
