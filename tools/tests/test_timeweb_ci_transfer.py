@@ -10,6 +10,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import timeweb_ci_transfer as transfer
+import ci_apk_archive as apk_archive
 
 
 class TransferTests(unittest.TestCase):
@@ -36,22 +37,22 @@ class TransferTests(unittest.TestCase):
             source, target = root / "source", root / "target"
             source.mkdir()
             target.mkdir()
-            for name in transfer.FILES:
+            for name in apk_archive.FILES:
                 path = source / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(("synthetic-" + name).encode())
-            with patch.dict(os.environ, {"GITHUB_SHA": "a" * 40}), patch.object(transfer, "identity"):
-                data = transfer.pack(source, source / "previous.apk")
-                transfer.unpack(data, target)
-                self.assertEqual((source / transfer.FILES[0]).read_bytes(), (target / transfer.FILES[0]).read_bytes())
+            with patch.dict(os.environ, {"GITHUB_SHA": "a" * 40}):
+                data = apk_archive.pack(source, source / "previous.apk")
+                apk_archive.unpack(data, target)
+                self.assertEqual((source / apk_archive.FILES[0]).read_bytes(), (target / apk_archive.FILES[0]).read_bytes())
                 bad = io.BytesIO(data)
                 with zipfile.ZipFile(bad, "a") as archive:
                     archive.writestr("../escape", "unexpected")
                 invalid_data = bad.getvalue()
                 with self.assertRaisesRegex(transfer.ProbeError, "members_invalid"):
-                    transfer.unpack(invalid_data, target)
+                    apk_archive.unpack(invalid_data, target)
             with patch.dict(os.environ, {"GITHUB_SHA": "b" * 40}), self.assertRaisesRegex(transfer.ProbeError, "identity_mismatch"):
-                transfer.unpack(data, target)
+                apk_archive.unpack(data, target)
             self.assertFalse((root / "escape").exists())
 
     def test_empty_recovery_rejects_nonempty_owned_bucket(self):

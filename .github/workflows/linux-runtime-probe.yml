@@ -7,6 +7,9 @@ on:
       - .github/workflows/linux-runtime-probe.yml
       - tools/timeweb_*.py
       - tools/ci_host_capacity.py
+      - .github/scripts/ci_private_transfer.cjs
+      - .github/scripts/ci_private_transfer.test.cjs
+      - tools/ci_apk_archive.py
       - tools/ci-transfer-requirements.txt
       - tools/tests/test_timeweb_ci_transfer.py
 
@@ -18,6 +21,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  github-transfer:
+    if: contains(github.event.head_commit.message, '[github-transfer-probe]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      CI_TRANSFER_KIND: probe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        id: checkout
+        with:
+          persist-credentials: false
+      - name: Test private handoff boundaries without credentials
+        run: |
+          node --test .github/scripts/ci_private_transfer.test.cjs
+          python3 -m unittest discover -s tools/tests -p 'test_timeweb_*.py'
+      - name: Verify synthetic draft handoff and unauthenticated denial
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'probe'});
+      - name: Remove this run's temporary draft and confirm absence
+        if: always() && steps.checkout.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
   recover-empty-transfer:
     if: contains(github.event.head_commit.message, '[timeweb-transfer-recover]')
     runs-on: ubuntu-24.04

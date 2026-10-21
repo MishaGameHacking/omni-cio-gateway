@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -12,30 +11,22 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
-import zipfile
 
 from timeweb_actions_probe import (
     BASE_URL, MAX_BYTES, STORAGE_USERS_PATH, NoRedirect, ProbeError, decode_response, read_catalog,
     read_path, read_resource, summarize, transport_error_code, validated_token, verified_ssl_context,
 )
 from timeweb_ci_catalog import storage_offers
+from ci_apk_archive import MAX_ARCHIVE_BYTES, pack, unpack
 
 PROJECT_ID = 2941515
 MAX_MONTHLY_RUB = 1
 OBJECT_KEY = "ci-handoff.zip"
-MAX_ARCHIVE_BYTES = 512 * 1024**2
 OWNER_MARKER = "Analyst AI temporary private CI transfer "
 HTTPS_PREFIX = "https://"
-PREVIOUS_FILE = "previous.apk"
-MANIFEST_FILE = "manifest.json"
 CLEANUP_CONFIRMED = "TIMEWEB_TRANSFER_CLEANUP=verified_absent"
 HIDDEN_CREDENTIAL = "hidden-by-api-key-policy"
-FILES = (
-    "app/build/outputs/apk/preview/app-preview.apk",
-    "app/build/outputs/apk/debug/app-debug.apk",
-    "ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk",
-    PREVIOUS_FILE,
-)
+
 
 
 def identity() -> tuple[str, str]:
@@ -228,64 +219,6 @@ def probe(token: str) -> None:
         raise ProbeError("transfer_readback_mismatch")
     print("TIMEWEB_TRANSFER_PROBE=private_readback_passed", flush=True)
 
-
-def regular_file(root: Path, relative: str) -> Path:
-    path = root / relative
-    if path.is_symlink() or not path.resolve().is_relative_to(root):
-        raise ProbeError("transfer_file_escapes_checkout")
-    for parent in path.parents:
-        if parent == root:
-            break
-        if parent.is_symlink():
-            raise ProbeError("transfer_link_refused")
-    return path
-
-
-def pack(root: Path, previous: Path) -> bytes:
-    identity()
-    buffer = io.BytesIO()
-    manifest = {"head": os.environ["GITHUB_SHA"], "files": {}}
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
-        total = 0
-        for name in FILES:
-            source = previous if name == PREVIOUS_FILE else regular_file(root, name)
-            if source.is_symlink() or not source.is_file():
-                raise ProbeError("transfer_source_missing_or_link")
-            size = source.stat().st_size
-            total += size
-            if size <= 0 or total > MAX_ARCHIVE_BYTES - MAX_BYTES:
-                raise ProbeError("transfer_payload_size_invalid")
-            data = source.read_bytes()
-            if len(data) != size:
-                raise ProbeError("transfer_source_changed")
-            manifest["files"][name] = {"bytes": size, "sha256": hashlib.sha256(data).hexdigest()}
-            archive.writestr(name, data)
-        archive.writestr(MANIFEST_FILE, json.dumps(manifest, sort_keys=True))
-    return buffer.getvalue()
-
-
-def unpack(data: bytes, root: Path) -> None:
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        entries = archive.infolist()
-        if (len(entries) != len(FILES) + 1 or {entry.filename for entry in entries} != {*FILES, MANIFEST_FILE}
-                or sum(entry.file_size for entry in entries) > MAX_ARCHIVE_BYTES
-                or archive.getinfo(MANIFEST_FILE).file_size > MAX_BYTES):
-            raise ProbeError("transfer_archive_members_invalid")
-        manifest = decode_response(archive.read(MANIFEST_FILE))
-        if manifest.get("head") != os.environ.get("GITHUB_SHA") or set(manifest.get("files", {})) != set(FILES):
-            raise ProbeError("transfer_manifest_identity_mismatch")
-        payload = {}
-        for name in FILES:
-            content = archive.read(name)
-            record = manifest["files"][name]
-            if record != {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}:
-                raise ProbeError("transfer_manifest_digest_mismatch")
-            payload[name] = content
-        # Validate all content before creating any output. No archive paths are extracted.
-        for name, content in payload.items():
-            destination = regular_file(root, name)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(content)
 
 
 def upload(token: str) -> None:

@@ -5,8 +5,8 @@ name: Android Linux verification
     - codex/spectrum-3d-100
     paths:
     - .github/workflows/android-linux-ci.yml
-    - tools/timeweb_ci_transfer.py
-    - tools/ci-transfer-requirements.txt
+    - .github/scripts/ci_private_transfer.cjs
+    - tools/ci_apk_archive.py
 permissions:
   contents: read
 concurrency:
@@ -22,7 +22,7 @@ jobs:
     - X64
     - omni-cio-ci
     permissions:
-      contents: read
+      contents: write
       checks: read
       actions: read
     timeout-minutes: 40
@@ -40,9 +40,11 @@ jobs:
         clean: true
     - name: Prepare canonical 3D catalogue before packaging
       shell: cmd
-      run: |
-        py -3 tools\prepare_spectrum_checkout.py
+      run: 'py -3 tools\prepare_spectrum_checkout.py
+
         if errorlevel 1 exit /b 1
+
+        '
     - name: Set up JDK 17
       uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
       with:
@@ -50,105 +52,127 @@ jobs:
         java-version: '17'
     - name: Verify pinned Gradle wrapper
       shell: cmd
-      run: |
-        certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\gradle-wrapper.sha256"
+      run: 'certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\gradle-wrapper.sha256"
+
         if errorlevel 1 exit /b 1
+
         findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\gradle-wrapper.sha256" >nul
+
         if errorlevel 1 exit /b 1
+
         call gradlew.bat --version
+
         if errorlevel 1 exit /b 1
+
+        '
     - name: Choose Android SDK root
       shell: cmd
-      run: |
-        set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+      run: 'set "SDK_ROOT=%ANDROID_SDK_ROOT%"
+
         if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
+
         if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
+
         if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
+
         echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
+
         echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
+
+        '
     - name: Ensure Android SDK 37 is installed
       shell: cmd
-      run: |
-        py -3 .github\scripts\prepare_android_sdk.py --sdk "%ANDROID_SDK_ROOT%"
+      run: 'py -3 .github\scripts\prepare_android_sdk.py --sdk "%ANDROID_SDK_ROOT%"
+
         if errorlevel 1 exit /b 1
+
+        '
     - name: Test APK verification rules
       shell: cmd
-      run: |
-        py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
+      run: 'py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
+
         if errorlevel 1 exit /b 1
+
+        '
     - name: Report exact-head Sonar findings for remediation
       if: always()
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
         retries: 3
-        script: |
-          const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
-          const ref = context.sha;
-          let sonar = null;
-          for (let attempt = 0; attempt < 18; attempt++) {
-            const checks = await github.paginate(github.rest.checks.listForRef, {
-              ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
-            });
-            sonar = newestSonarCheck(checks, ref);
-            if (sonar?.status === 'completed') break;
-            await new Promise(resolve => setTimeout(resolve, 10000));
-          }
-          if (!sonar || sonar.status !== 'completed') {
-            core.setFailed('Exact-head Sonar result is not ready: quality has not been verified.');
-            return;
-          }
-          core.info('SONAR_CHECK=' + JSON.stringify({head:ref,id:sonar.id,conclusion:sonar.conclusion}));
-          const annotations = await github.paginate(github.rest.checks.listAnnotations, {
-            ...context.repo, check_run_id: sonar.id, per_page: 100,
-          });
-          for (const item of annotations) {
-            core.warning('SONAR_ANNOTATION ' + JSON.stringify({path:item.path,start_line:item.start_line,end_line:item.end_line,level:item.annotation_level,title:item.title,message:item.message}));
-          }
-          core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
-          assertCleanSonar(sonar, annotations, ref);
+        script: "const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');\nconst ref = context.sha;\n\
+          let sonar = null;\nfor (let attempt = 0; attempt < 18; attempt++) {\n  const checks = await github.paginate(github.rest.checks.listForRef,\
+          \ {\n    ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,\n  });\n  sonar = newestSonarCheck(checks, ref);\n\
+          \  if (sonar?.status === 'completed') break;\n  await new Promise(resolve => setTimeout(resolve, 10000));\n}\nif (!sonar || sonar.status\
+          \ !== 'completed') {\n  core.setFailed('Exact-head Sonar result is not ready: quality has not been verified.');\n  return;\n}\ncore.info('SONAR_CHECK='\
+          \ + JSON.stringify({head:ref,id:sonar.id,conclusion:sonar.conclusion}));\nconst annotations = await github.paginate(github.rest.checks.listAnnotations,\
+          \ {\n  ...context.repo, check_run_id: sonar.id, per_page: 100,\n});\nfor (const item of annotations) {\n  core.warning('SONAR_ANNOTATION\
+          \ ' + JSON.stringify({path:item.path,start_line:item.start_line,end_line:item.end_line,level:item.annotation_level,title:item.title,message:item.message}));\n\
+          }\ncore.info('SONAR_ANNOTATION_COUNT=' + annotations.length);\nassertCleanSonar(sonar, annotations, ref);\n"
     - name: Lint and build all Android variants
       shell: cmd
-      run: |
-        call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
+      run: 'call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview
+        :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
+
         if errorlevel 1 exit /b 1
+
+        '
     - name: Download installed 0.10.0 APK for exact upgrade compatibility test
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
-        script: |
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto');
-          const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b'})).data;
-          const asset = release.assets.find(a => a.name === 'Analyst-AI-0.10.0-preview-0a894dd.apk');
-          if (!asset) throw new Error('0.10.0 reference APK missing');
-          const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
+        script: 'const fs = require(''fs'');
+
+          const path = require(''path'');
+
+          const crypto = require(''crypto'');
+
+          const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:''android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b''})).data;
+
+          const asset = release.assets.find(a => a.name === ''Analyst-AI-0.10.0-preview-0a894dd.apk'');
+
+          if (!asset) throw new Error(''0.10.0 reference APK missing'');
+
+          const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:''application/octet-stream''}});
+
           const bytes = Buffer.from(response.data);
-          if (crypto.createHash('sha256').update(bytes).digest('hex') !== '3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3') throw new Error('0.10.0 reference APK checksum mismatch');
+
+          if (crypto.createHash(''sha256'').update(bytes).digest(''hex'') !== ''3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3'')
+          throw new Error(''0.10.0 reference APK checksum mismatch'');
+
           const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
+
           fs.writeFileSync(dest, bytes);
-          core.exportVariable('PREVIOUS_APK', dest);
+
+          core.exportVariable(''PREVIOUS_APK'', dest);
+
+          '
     - name: Release only this checkout's reproducible build intermediates
       shell: cmd
-      run: |
-        py -3 .github\scripts\release_build_intermediates.py
+      run: 'py -3 .github\scripts\release_build_intermediates.py
+
         if errorlevel 1 exit /b 1
-    - name: Prepare pinned private transfer dependencies
+
+        '
+    - name: Test private CI transport boundaries
       shell: cmd
-      run: |
-        py -3 -m venv "%RUNNER_TEMP%\ci-transfer"
+      run: 'node --test .github\scripts\ci_private_transfer.test.cjs
+
         if errorlevel 1 exit /b 1
-        "%RUNNER_TEMP%\ci-transfer\Scripts\python.exe" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools\ci-transfer-requirements.txt
+
+        '
+    - name: Pack only the four signed CI inputs with exact source hashes
+      shell: cmd
+      run: 'py -3 tools\ci_apk_archive.py pack
+
         if errorlevel 1 exit /b 1
-    - name: Transfer only the four signed test inputs through a private temporary bucket
+
+        '
+    - name: Transfer signed inputs through a private temporary GitHub draft
       id: transfer
-      shell: cmd
-      env:
-        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-      run: |
-        "%RUNNER_TEMP%\ci-transfer\Scripts\python.exe" tools\timeweb_ci_transfer.py upload
-        if errorlevel 1 exit /b 1
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'upload'});
   runtime:
     name: Verify the exact APK on free Linux / API 37 / 16 KB and 4 KB
     needs:
@@ -162,136 +186,144 @@ jobs:
       PYTHONUNBUFFERED: '1'
       LIBGL_ALWAYS_SOFTWARE: '1'
     steps:
-    - &id001
-      name: Checkout the same source commit
+    - name: Checkout the same source commit
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
         clean: true
     - name: Enable this ephemeral runner user to use KVM
-      run: |
-        sudo chown "$(id -u):$(id -g)" /dev/kvm
+      run: 'sudo chown "$(id -u):$(id -g)" /dev/kvm
+
         python3 tools/ci_host_capacity.py
-    - name: Prepare pinned private transfer dependencies
-      run: |
-        python3 -m venv "$RUNNER_TEMP/ci-transfer"
-        "$RUNNER_TEMP/ci-transfer/bin/python" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools/ci-transfer-requirements.txt
-    - name: Restore and verify the exact signed APK bytes and source commit
+
+        '
+    - name: Download and verify the private signed CI inputs
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       env:
-        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
         TRANSFER_SHA256: ${{ needs.build.outputs.archive_sha256 }}
-      run: '"$RUNNER_TEMP/ci-transfer/bin/python" tools/timeweb_ci_transfer.py download'
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'download'});
+    - name: Verify exact source and per-file hashes before unpacking
+      run: python3 tools/ci_apk_archive.py unpack
     - name: Set up JDK 17
       uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
       with:
         distribution: temurin
         java-version: '17'
     - name: Install checksum-pinned official Linux Android tools
-      run: |
-        archive="$RUNNER_TEMP/commandlinetools-linux-15859902_latest.zip"
-        curl --fail --location --retry 3 --proto '=https' --tlsv1.2 'https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip' --output "$archive"
+      run: 'archive="$RUNNER_TEMP/commandlinetools-linux-15859902_latest.zip"
+
+        curl --fail --location --retry 3 --proto ''=https'' --tlsv1.2 ''https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip''
+        --output "$archive"
+
         echo "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583  $archive" | sha256sum --check -
+
         mkdir -p "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools"
+
         unzip -q "$archive" -d "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools"
+
         mv "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools/cmdline-tools" "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools/latest"
+
         echo "ANDROID_SDK_ROOT=$RUNNER_TEMP/analyst-android-sdk" >> "$GITHUB_ENV"
+
         echo "ANDROID_HOME=$RUNNER_TEMP/analyst-android-sdk" >> "$GITHUB_ENV"
+
+        '
     - name: Install and verify release API 37 packages and both page-size images
-      run: |
-        python3 .github/scripts/prepare_android_sdk.py --sdk "$ANDROID_SDK_ROOT"
+      run: 'python3 .github/scripts/prepare_android_sdk.py --sdk "$ANDROID_SDK_ROOT"
+
         python3 .github/scripts/prepare_android_sdk.py --sdk "$ANDROID_SDK_ROOT" --runtime
+
         "$ANDROID_SDK_ROOT/emulator/emulator" -accel-check
+
+        '
     - name: Prepare headless Mesa Vulkan for the unchanged 3D renderer
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends xvfb libvulkan1 mesa-vulkan-drivers vulkan-tools libgl1
-        python3 - <<'PYCODE'
-        from pathlib import Path
-        import os
-        paths = list(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
-        if len(paths) != 1:
-            raise SystemExit("Exactly one Mesa Lavapipe Vulkan ICD is required")
-        with open(os.environ["GITHUB_ENV"], "a") as output:
-            output.write("VK_ICD_FILENAMES=" + str(paths[0]) + "\n")
-        PYCODE
+      run: "sudo apt-get update -qq\nsudo apt-get install -y --no-install-recommends xvfb libvulkan1 mesa-vulkan-drivers vulkan-tools libgl1\n\
+        python3 - <<'PYCODE'\nfrom pathlib import Path\nimport os\npaths = list(Path(\"/usr/share/vulkan/icd.d\").glob(\"lvp_icd*.json\"))\nif\
+        \ len(paths) != 1:\n    raise SystemExit(\"Exactly one Mesa Lavapipe Vulkan ICD is required\")\nwith open(os.environ[\"GITHUB_ENV\"],\
+        \ \"a\") as output:\n    output.write(\"VK_ICD_FILENAMES=\" + str(paths[0]) + \"\\n\")\nPYCODE\n"
     - name: Verify native 3D assets and the signed preview using official Android tools
-      run: |
-        python3 tools/prepare_spectrum_checkout.py
+      run: 'python3 tools/prepare_spectrum_checkout.py
+
         python3 tools/test_native_alignment.py
+
         python3 tools/generate_spectrum_meshes.py --check --check-apk
+
         python3 tools/test_spectrum_meshes.py
+
         apk_dir="$GITHUB_WORKSPACE/app/build/outputs/apk/preview"
+
         build_tools="$ANDROID_SDK_ROOT/build-tools/37.0.0"
+
         java -jar "$build_tools/lib/apksigner.jar" verify --verbose --print-certs "$apk_dir/app-preview.apk" > "$apk_dir/signature.txt"
+
         "$build_tools/zipalign" -c -P 16 -v 4 "$apk_dir/app-preview.apk" > "$apk_dir/alignment.txt"
+
         "$build_tools/aapt" dump badging "$apk_dir/app-preview.apk" > "$apk_dir/badging.txt"
+
         "$build_tools/aapt" dump xmltree "$apk_dir/app-preview.apk" AndroidManifest.xml > "$apk_dir/manifest.txt"
+
         python3 .github/scripts/verify_apk.py
+
+        '
     - name: Verify clean install, upgrade, launch and full 3D UI at API 37 / 16 KB
-      run: |
-        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --previous "$PREVIOUS_APK" --api 37 --page-bytes 16384 --work-dir app/build/outputs/apk/preview/install-api37-16384
-        python3 -c "import shutil; shutil.copytree('app/build/outputs/apk/preview/ui-screens', 'app/build/outputs/apk/preview/ui-screens-api37-16384', dirs_exist_ok=True)"
+      run: 'xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk
+        --previous "$PREVIOUS_APK" --api 37 --page-bytes 16384 --work-dir app/build/outputs/apk/preview/install-api37-16384
+
+        python3 -c "import shutil; shutil.copytree(''app/build/outputs/apk/preview/ui-screens'', ''app/build/outputs/apk/preview/ui-screens-api37-16384'',
+        dirs_exist_ok=True)"
+
+        '
     - name: Verify clean install, upgrade, launch and full 3D UI at API 37 / 4 KB
-      run: |
-        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --previous "$PREVIOUS_APK" --api 37 --page-bytes 4096 --work-dir app/build/outputs/apk/preview/install-api37-4096
+      run: 'xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk
+        --previous "$PREVIOUS_APK" --api 37 --page-bytes 4096 --work-dir app/build/outputs/apk/preview/install-api37-4096
+
         python3 .github/scripts/validate_distribution.py
+
+        '
     - name: Record synthetic UI evidence and reports
       if: always()
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
-        script: |
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto');
-          const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
-          const base = path.join(root, 'app/build/outputs/apk/preview');
-          const shots = ['workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-          const spatialShots = ['spatial-dark', 'spatial-shadow-reference', 'spatial-light', 'spatial-dialog', 'spatial-bars', 'spatial-candles', 'spatial-ring', 'spatial-selected', 'spatial-clipping', 'spatial-long-scroll', 'spatial-rotation-before', 'spatial-rotation-ready', 'spatial-rotation', 'spatial-large-font', 'spatial-dialog-large-font', 'spatial-system-motion-off', 'spatial-thermal-moderate', 'spatial-predictive-back-progress', 'spatial-predictive-back-cancelled', 'business-assistant-draft-rotation', 'business-assistant-draft-rotation-font-200', 'business-assistant-impact', 'business-assistant-impact-font-200', 'business-risk-scenario-rotation', 'business-risk-scenario-rotation-font-200', 'business-risk-scenarios', 'business-risk-scenarios-font-200', 'business-strategy-draft-rotation', 'business-strategy-draft-rotation-font-200', 'balance-private-first', 'balance-private-second', 'balance-private-first-font-200', 'balance-private-second-font-200', 'portfolio-quick-long-press', 'portfolio-quick-button', 'goal-draft-rotation', 'goal-draft-rotation-font-200', 'goal-pending-rotation', 'goal-pending-rotation-font-200', 'goal-recovered', 'goal-recovered-font-200'];
-          const businessShots = ['risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis', 'catalogue'].flatMap(route =>
-            ['ready', 'empty', 'partial', 'error', 'job'].filter(state => state !== 'job' || ['assistant', 'plans'].includes(route)).flatMap(state =>
-              ['', '-font-200'].map(suffix => `business-${route}-${state}${suffix}`)));
-          const portfolioCases = [['discovery', 'ready'], ['dossier', 'ready'], ['history', 'ready'], ['history', 'partial'],
-            ['quotes', 'ready'], ['markets', 'ready'], ['appearance', 'ready']];
-          const portfolioShots = portfolioCases.flatMap(([route, state]) =>
-            ['', '-font-200'].map(suffix => `portfolio-${route}-${state}${suffix}`));
-          const portfolioSteps = {
-            discovery: ['common-period', 'comparison', 'archive', 'watch-dossier'],
-            dossier: ['scheduled-report', 'published-report', 'primary-source', 'selected-holding', 'event-draft'],
-            history: ['exact-observation', 'missing-observation', 'range'],
-            quotes: ['exact-ohlc', 'stale-week', 'magnifier'],
-            markets: ['session-midnight', 'geography'],
-            appearance: ['applied', 'restored', 'preview-rotation']
-          };
-          const portfolioStepShots = Object.entries(portfolioSteps).flatMap(([route, stages]) =>
-            stages.flatMap(stage => ['', '-font-200'].map(suffix => `portfolio-${route}-${stage}${suffix}`)));
-          const contextShots = ['session-context-restored', 'session-context-restored-font-200', 'session-context-signed-out-rotation', 'session-context-signed-out-rotation-font-200'];
-          const allShots = [...contextShots, ...shots, ...spatialShots, ...businessShots, ...portfolioShots, ...portfolioStepShots];
-          const names = ['apk-verification.json', 'install-api37-16384/install-results.json', 'install-api37-4096/install-results.json',
-            ...['ui-screens-api37-16384', 'ui-screens'].flatMap(folder => [
-              `${folder}/session-context-verification.json`, `${folder}/balance-privacy-verification.json`, `${folder}/position-preview-verification.json`, `${folder}/goal-workflow-verification.json`, `${folder}/spatial-verification.json`, `${folder}/business-verification.json`, `${folder}/portfolio-verification.json`,
-              ...allShots.map(name => `${folder}/${name}.png`)])];
-          const records = [];
-          for (const name of names) {
-            const file = path.join(base, name);
-            if (!fs.existsSync(file)) continue;
-            if (fs.lstatSync(file).isSymbolicLink() || !fs.realpathSync(file).startsWith(root + path.sep)) throw new Error('Evidence outside checkout');
-            const bytes = fs.readFileSync(file);
-            if (bytes.length > 2097152) throw new Error('Evidence file unexpectedly large');
-            const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-            if (name.endsWith('.json')) {
-              core.info(`VERIFICATION_REPORT ${name} ${JSON.stringify(JSON.parse(bytes.toString('utf8')))}`);
-            }
-            const blob = (await github.rest.git.createBlob({...context.repo, encoding:'base64', content:bytes.toString('base64')})).data;
-            let preview_base64_blob_sha = null;
-            if (name.endsWith('.png')) {
-              const preview = (await github.rest.git.createBlob({...context.repo, encoding:'utf-8', content:bytes.toString('base64')})).data;
-              preview_base64_blob_sha = preview.sha;
-            }
-            records.push({name, blob_sha:blob.sha, preview_base64_blob_sha, sha256, bytes:bytes.length});
-          }
-          core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.sha, run:context.runId, records}));
-          await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
+        script: "const fs = require('fs');\nconst path = require('path');\nconst crypto = require('crypto');\nconst root = fs.realpathSync(process.env.GITHUB_WORKSPACE);\n\
+          const base = path.join(root, 'app/build/outputs/apk/preview');\nconst shots = ['workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font',\
+          \ 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home',\
+          \ 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light',\
+          \ 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];\nconst spatialShots = ['spatial-dark', 'spatial-shadow-reference',\
+          \ 'spatial-light', 'spatial-dialog', 'spatial-bars', 'spatial-candles', 'spatial-ring', 'spatial-selected', 'spatial-clipping', 'spatial-long-scroll',\
+          \ 'spatial-rotation-before', 'spatial-rotation-ready', 'spatial-rotation', 'spatial-large-font', 'spatial-dialog-large-font', 'spatial-system-motion-off',\
+          \ 'spatial-thermal-moderate', 'spatial-predictive-back-progress', 'spatial-predictive-back-cancelled', 'business-assistant-draft-rotation',\
+          \ 'business-assistant-draft-rotation-font-200', 'business-assistant-impact', 'business-assistant-impact-font-200', 'business-risk-scenario-rotation',\
+          \ 'business-risk-scenario-rotation-font-200', 'business-risk-scenarios', 'business-risk-scenarios-font-200', 'business-strategy-draft-rotation',\
+          \ 'business-strategy-draft-rotation-font-200', 'balance-private-first', 'balance-private-second', 'balance-private-first-font-200',\
+          \ 'balance-private-second-font-200', 'portfolio-quick-long-press', 'portfolio-quick-button', 'goal-draft-rotation', 'goal-draft-rotation-font-200',\
+          \ 'goal-pending-rotation', 'goal-pending-rotation-font-200', 'goal-recovered', 'goal-recovered-font-200'];\nconst businessShots = ['risk',\
+          \ 'assistant', 'plans', 'strategy', 'notifications', 'analysis', 'catalogue'].flatMap(route =>\n  ['ready', 'empty', 'partial', 'error',\
+          \ 'job'].filter(state => state !== 'job' || ['assistant', 'plans'].includes(route)).flatMap(state =>\n    ['', '-font-200'].map(suffix\
+          \ => `business-${route}-${state}${suffix}`)));\nconst portfolioCases = [['discovery', 'ready'], ['dossier', 'ready'], ['history', 'ready'],\
+          \ ['history', 'partial'],\n  ['quotes', 'ready'], ['markets', 'ready'], ['appearance', 'ready']];\nconst portfolioShots = portfolioCases.flatMap(([route,\
+          \ state]) =>\n  ['', '-font-200'].map(suffix => `portfolio-${route}-${state}${suffix}`));\nconst portfolioSteps = {\n  discovery: ['common-period',\
+          \ 'comparison', 'archive', 'watch-dossier'],\n  dossier: ['scheduled-report', 'published-report', 'primary-source', 'selected-holding',\
+          \ 'event-draft'],\n  history: ['exact-observation', 'missing-observation', 'range'],\n  quotes: ['exact-ohlc', 'stale-week', 'magnifier'],\n\
+          \  markets: ['session-midnight', 'geography'],\n  appearance: ['applied', 'restored', 'preview-rotation']\n};\nconst portfolioStepShots\
+          \ = Object.entries(portfolioSteps).flatMap(([route, stages]) =>\n  stages.flatMap(stage => ['', '-font-200'].map(suffix => `portfolio-${route}-${stage}${suffix}`)));\n\
+          const contextShots = ['session-context-restored', 'session-context-restored-font-200', 'session-context-signed-out-rotation', 'session-context-signed-out-rotation-font-200'];\n\
+          const allShots = [...contextShots, ...shots, ...spatialShots, ...businessShots, ...portfolioShots, ...portfolioStepShots];\nconst names\
+          \ = ['apk-verification.json', 'install-api37-16384/install-results.json', 'install-api37-4096/install-results.json',\n  ...['ui-screens-api37-16384',\
+          \ 'ui-screens'].flatMap(folder => [\n    `${folder}/session-context-verification.json`, `${folder}/balance-privacy-verification.json`,\
+          \ `${folder}/position-preview-verification.json`, `${folder}/goal-workflow-verification.json`, `${folder}/spatial-verification.json`,\
+          \ `${folder}/business-verification.json`, `${folder}/portfolio-verification.json`,\n    ...allShots.map(name => `${folder}/${name}.png`)])];\n\
+          const records = [];\nfor (const name of names) {\n  const file = path.join(base, name);\n  if (!fs.existsSync(file)) continue;\n  if\
+          \ (fs.lstatSync(file).isSymbolicLink() || !fs.realpathSync(file).startsWith(root + path.sep)) throw new Error('Evidence outside checkout');\n\
+          \  const bytes = fs.readFileSync(file);\n  if (bytes.length > 2097152) throw new Error('Evidence file unexpectedly large');\n  const\
+          \ sha256 = crypto.createHash('sha256').update(bytes).digest('hex');\n  if (name.endsWith('.json')) {\n    core.info(`VERIFICATION_REPORT\
+          \ ${name} ${JSON.stringify(JSON.parse(bytes.toString('utf8')))}`);\n  }\n  const blob = (await github.rest.git.createBlob({...context.repo,\
+          \ encoding:'base64', content:bytes.toString('base64')})).data;\n  let preview_base64_blob_sha = null;\n  if (name.endsWith('.png'))\
+          \ {\n    const preview = (await github.rest.git.createBlob({...context.repo, encoding:'utf-8', content:bytes.toString('base64')})).data;\n\
+          \    preview_base64_blob_sha = preview.sha;\n  }\n  records.push({name, blob_sha:blob.sha, preview_base64_blob_sha, sha256, bytes:bytes.length});\n\
+          }\ncore.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.sha, run:context.runId, records}));\nawait core.summary.addHeading('Android\
+          \ verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();\n"
   cleanup:
     name: Delete only this run's private CI transfer
     needs:
@@ -301,12 +333,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-    - *id001
-    - name: Prepare pinned private transfer dependencies
-      run: |
-        python3 -m venv "$RUNNER_TEMP/ci-transfer"
-        "$RUNNER_TEMP/ci-transfer/bin/python" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools/ci-transfer-requirements.txt
-    - name: Verify deletion of the owned temporary bucket
-      env:
-        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-      run: '"$RUNNER_TEMP/ci-transfer/bin/python" tools/timeweb_ci_transfer.py cleanup'
+    - name: Checkout the same source commit
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        clean: true
+    - name: Delete only this run private CI handoff and verify absence
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+    permissions:
+      contents: write
