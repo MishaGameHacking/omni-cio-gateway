@@ -21,6 +21,13 @@ def server(**changes):
 
 
 class CapacityTests(unittest.TestCase):
+    def test_error_details_never_echo_message_or_secret_fields(self):
+        raw = json.dumps({"error_code": "invalid_request", "message": {"cloud_init": TOKEN},
+                          "root_pass": TOKEN}).encode()
+        self.assertEqual(capacity.error_details(raw), {
+            "error_code": "invalid_request", "mentioned_fields": ["cloud_init"],
+            "balance_mentioned": False})
+
     def test_cloud_keys_are_isolated_and_password_login_is_disabled(self):
         config = json.loads(capacity.cloud_config("client-public", "host-private", "host-public").split("\n", 1)[1])
         self.assertFalse(config["ssh_pwauth"])

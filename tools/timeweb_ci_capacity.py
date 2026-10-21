@@ -62,6 +62,24 @@ def state_path() -> Path:
     return Path(root) / (identity() + ".json")
 
 
+def error_details(raw: bytes) -> dict:
+    """Only a bounded symbolic code and known field names; never the error message."""
+    try:
+        document = decode_response(raw)
+    except ProbeError:
+        return {}
+    result = {}
+    code = document.get("error_code")
+    if isinstance(code, str) and re.fullmatch(r"[a-z_]{1,64}", code):
+        result["error_code"] = code
+    message = json.dumps(document.get("message", ""), ensure_ascii=False).lower()
+    fields = ("preset_id", "os_id", "project_id", "cloud_init", "hostname", "ssh_keys_ids",
+              "availability_zone", "configuration", "is_root_password_required", "network")
+    result["mentioned_fields"] = [field for field in fields if field in message]
+    result["balance_mentioned"] = any(term in message for term in ("balance", "баланс", "средств"))
+    return result
+
+
 def request(token: str, method: str, path: str, body=None) -> dict:
     allowed = (method == "POST" and path == "/api/v1/servers") or (
         method in {"GET", "DELETE"} and re.fullmatch(r"/api/v1/servers/[1-9][0-9]{0,15}", path))
@@ -84,7 +102,10 @@ def request(token: str, method: str, path: str, body=None) -> dict:
             raw = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
         code = error.code
+        details = error_details(error.read(MAX_BYTES + 1))
         error.close()
+        if code != 404:
+            print("TIMEWEB_CAPACITY_HTTP=" + json.dumps({"status": code, **details}, sort_keys=True), flush=True)
         raise ProbeError("timeweb_http_" + str(code)) from None
     except OSError as error:
         raise ProbeError(transport_error_code(error)) from None
