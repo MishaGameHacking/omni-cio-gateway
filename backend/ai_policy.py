@@ -66,6 +66,52 @@ NONE_DECISION = AnalysisDecision(
 )
 
 
+def _critical_decision(budget: AnalysisBudget) -> AnalysisDecision:
+    if budget.premium_calls_left > 0:
+        return AnalysisDecision(
+            AnalysisTier.PREMIUM,
+            AnalysisReason.RISK_EVENT,
+            True,
+            1_200,
+        )
+    if budget.standard_calls_left > 0:
+        return AnalysisDecision(
+            AnalysisTier.STANDARD,
+            AnalysisReason.RISK_EVENT,
+            True,
+            800,
+        )
+    if budget.fast_calls_left > 0:
+        return AnalysisDecision(
+            AnalysisTier.FAST,
+            AnalysisReason.RISK_EVENT,
+            True,
+            450,
+        )
+    return AnalysisDecision(
+        AnalysisTier.NONE,
+        AnalysisReason.BUDGET_EXHAUSTED,
+        False,
+        0,
+    )
+
+
+def _standard_reason(signals: AnalysisSignals) -> AnalysisReason | None:
+    standard_reason = None
+    if signals.portfolio_changed:
+        standard_reason = AnalysisReason.PORTFOLIO_CHANGED
+    elif signals.cash_changed:
+        standard_reason = AnalysisReason.CASH_CHANGED
+    elif signals.market_regime_changed:
+        standard_reason = AnalysisReason.MARKET_REGIME_CHANGED
+    elif signals.morning_due:
+        standard_reason = AnalysisReason.MORNING_BRIEF
+    elif signals.evening_due:
+        standard_reason = AnalysisReason.EVENING_BRIEF
+
+    return standard_reason
+
+
 def decide_analysis(
     signals: AnalysisSignals,
     budget: AnalysisBudget,
@@ -79,33 +125,7 @@ def decide_analysis(
     supplied per-tier budget. The function never silently upgrades cost.
     """
     if signals.critical_risk:
-        if budget.premium_calls_left > 0:
-            return AnalysisDecision(
-                AnalysisTier.PREMIUM,
-                AnalysisReason.RISK_EVENT,
-                True,
-                1_200,
-            )
-        if budget.standard_calls_left > 0:
-            return AnalysisDecision(
-                AnalysisTier.STANDARD,
-                AnalysisReason.RISK_EVENT,
-                True,
-                800,
-            )
-        if budget.fast_calls_left > 0:
-            return AnalysisDecision(
-                AnalysisTier.FAST,
-                AnalysisReason.RISK_EVENT,
-                True,
-                450,
-            )
-        return AnalysisDecision(
-            AnalysisTier.NONE,
-            AnalysisReason.BUDGET_EXHAUSTED,
-            False,
-            0,
-        )
+        return _critical_decision(budget)
 
     if (
         signals.minutes_since_last_analysis is not None
@@ -120,17 +140,7 @@ def decide_analysis(
             0,
         )
 
-    standard_reason = None
-    if signals.portfolio_changed:
-        standard_reason = AnalysisReason.PORTFOLIO_CHANGED
-    elif signals.cash_changed:
-        standard_reason = AnalysisReason.CASH_CHANGED
-    elif signals.market_regime_changed:
-        standard_reason = AnalysisReason.MARKET_REGIME_CHANGED
-    elif signals.morning_due:
-        standard_reason = AnalysisReason.MORNING_BRIEF
-    elif signals.evening_due:
-        standard_reason = AnalysisReason.EVENING_BRIEF
+    standard_reason = _standard_reason(signals)
 
     if standard_reason is not None:
         if not signals.digest_changed and standard_reason not in {

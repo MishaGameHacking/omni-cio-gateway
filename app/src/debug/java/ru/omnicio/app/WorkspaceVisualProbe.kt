@@ -13,6 +13,8 @@ import ru.omnicio.app.ui.portfolio.HistoryPoint
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
 import ru.omnicio.app.ui.workspace.*
 
+private const val VISUAL_FIXTURE_DATE = "2026-10-17"
+
 /** Only src/debug may construct synthetic financial UI evidence. */
 @Composable
 internal fun WorkspaceVisualProbe(onBack: () -> Unit) {
@@ -25,7 +27,7 @@ internal fun WorkspaceVisualProbe(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (section == 0) item {
                     ActionPlan(listOf(PlanAction("fixture", "Проверить распределение", "Тестовый счёт", "Тестовый актив", "1 шт.", "500 ₽",
-                        "Тест объяснения причины действия", "Синтетический источник", "2026-10-17", "2099-01-01T00:00:00Z", "10%", "9%",
+                        "Тест объяснения причины действия", "Синтетический источник", VISUAL_FIXTURE_DATE, "2099-01-01T00:00:00Z", "10%", "9%",
                         listOf("Это визуальный тест. Сделки и вычисления не выполняются.")))) { opened = true }
                     if (opened) Text("Переход проверен · брокер не открывался")
                 }
@@ -44,9 +46,9 @@ internal fun WorkspaceVisualProbe(onBack: () -> Unit) {
                 }
                 if (section == 2) item {
                     StrategyImpact(StrategyImpactUi(listOf(ImpactRow("Резерв", "10%", "15%"), ImpactRow("Компания", "8%", "5%")),
-                        "2026-10-17", "Тестовый расчёт", "Синтетическое сравнение, не рекомендация"))
+                        VISUAL_FIXTURE_DATE, "Тестовый расчёт", "Синтетическое сравнение, не рекомендация"))
                 }
-                if (section == 3) item { NotificationGroup(NotificationGroupUi("test-event", "Обновления одного события", "2026-10-17", listOf("Первая проверка", "Уточнение источника"))) }
+                if (section == 3) item { NotificationGroup(NotificationGroupUi("test-event", "Обновления одного события", VISUAL_FIXTURE_DATE, listOf("Первая проверка", "Уточнение источника"))) }
             }
         }
     }

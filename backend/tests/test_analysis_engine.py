@@ -108,11 +108,14 @@ class AnalysisEngineTests(unittest.TestCase):
         payload = valid_report()
         payload["evidence"][0]["source_id"] = "invented:source"
         gateway = FakeGateway(payload)
+        signals = AnalysisSignals(portfolio_changed=True, digest_changed=True)
+        budget = AnalysisBudget(5, 2, 1)
+        context = source_context(portfolio={"changed": True})
         with self.assertRaises(AnalysisValidationError) as raised:
             analyze_if_needed(
-                signals=AnalysisSignals(portfolio_changed=True, digest_changed=True),
-                budget=AnalysisBudget(5, 2, 1),
-                context=source_context(portfolio={"changed": True}),
+                signals=signals,
+                budget=budget,
+                context=context,
                 client=gateway,  # type: ignore[arg-type]
             )
         self.assertEqual(str(raised.exception), "analysis_unknown_evidence_source")
@@ -121,11 +124,14 @@ class AnalysisEngineTests(unittest.TestCase):
         payload = valid_report()
         payload["evidence"] = [{"fact": "Цена упала"}]
         gateway = FakeGateway(payload)
+        signals = AnalysisSignals(portfolio_changed=True, digest_changed=True)
+        budget = AnalysisBudget(5, 2, 1)
+        context = source_context(portfolio={"changed": True})
         with self.assertRaises(AnalysisValidationError):
             analyze_if_needed(
-                signals=AnalysisSignals(portfolio_changed=True, digest_changed=True),
-                budget=AnalysisBudget(5, 2, 1),
-                context=source_context(portfolio={"changed": True}),
+                signals=signals,
+                budget=budget,
+                context=context,
                 client=gateway,  # type: ignore[arg-type]
             )
 
@@ -133,11 +139,14 @@ class AnalysisEngineTests(unittest.TestCase):
         payload = valid_report()
         payload["evidence"][0]["as_of"] = "2026-10-12T09:00:00"
         gateway = FakeGateway(payload)
+        signals = AnalysisSignals(cash_changed=True, digest_changed=True)
+        budget = AnalysisBudget(5, 2, 1)
+        context = source_context(cash={"changed": True})
         with self.assertRaises(AnalysisValidationError) as raised:
             analyze_if_needed(
-                signals=AnalysisSignals(cash_changed=True, digest_changed=True),
-                budget=AnalysisBudget(5, 2, 1),
-                context=source_context(cash={"changed": True}),
+                signals=signals,
+                budget=budget,
+                context=context,
                 client=gateway,  # type: ignore[arg-type]
             )
         self.assertEqual(
@@ -147,10 +156,12 @@ class AnalysisEngineTests(unittest.TestCase):
 
     def test_context_size_is_bounded_before_gateway_call(self) -> None:
         gateway = FakeGateway(valid_report())
+        signals = AnalysisSignals(portfolio_changed=True, digest_changed=True)
+        budget = AnalysisBudget(5, 2, 1)
         with self.assertRaises(AnalysisValidationError) as raised:
             analyze_if_needed(
-                signals=AnalysisSignals(portfolio_changed=True, digest_changed=True),
-                budget=AnalysisBudget(5, 2, 1),
+                signals=signals,
+                budget=budget,
                 context={"oversized": "x" * 100_000},
                 client=gateway,  # type: ignore[arg-type]
             )

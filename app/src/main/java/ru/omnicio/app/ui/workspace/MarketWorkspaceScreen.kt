@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import ru.omnicio.app.data.portfolio.PortfolioPosition
 import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
@@ -22,11 +23,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     val positions = snapshot?.accounts?.flatMap { it.positions }.orEmpty()
     val groups = positions.groupBy {
-        if (section == 0) it.sector?.takeIf(String::isNotBlank) ?: "Отрасль не указана"
-        else when (it.instrumentType) {
-            "bond" -> "Облигации"; "share" -> "Акции"; "etf" -> "Фонды"
-            "cash", "currency" -> "Деньги и валюта"; else -> "Другие инструменты"
-        }
+        marketGroupLabel(it, section)
     }.toList().sortedByDescending { it.second.size }
     WorkspaceDetailPage("Отрасли и классы", "Ваши вложения", onBack, SpectrumSymbol.Market) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
@@ -83,3 +80,11 @@ private fun marketKind(value: String): String = when (value) {
     "cash", "currency" -> "cash"
     else -> "other"
 }
+
+
+private fun marketGroupLabel(position: PortfolioPosition, section: Int): String =
+    if (section == 0) position.sector?.takeIf(String::isNotBlank) ?: "Отрасль не указана"
+    else when (position.instrumentType) {
+        "bond" -> "Облигации"; "share" -> "Акции"; "etf" -> "Фонды"
+        "cash", "currency" -> "Деньги и валюта"; else -> "Другие инструменты"
+    }

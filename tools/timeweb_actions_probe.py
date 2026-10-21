@@ -13,8 +13,9 @@ import urllib.request
 BASE_URL = "https://api.timeweb.cloud"
 MAX_BYTES = 2 * 1024 * 1024
 TIMEOUT_SECONDS = 20
+PROJECTS_PATH = "/api/v1/projects"
 ENDPOINTS = {
-    "projects": "/api/v1/projects",
+    "projects": PROJECTS_PATH,
     "servers": "/api/v1/servers?limit=100&offset=0",
     "buckets": "/api/v1/storages/buckets",
 }
@@ -166,9 +167,9 @@ def validate_schema(path: Path = SCHEMA_PATH) -> dict:
     schema = decode_response(path.read_bytes())
     if schema.get("openapi") != "3.1.0" or schema.get("servers") != [{"url": BASE_URL}]:
         raise ProbeError("schema_server_or_version_invalid")
-    if set(schema.get("paths", {})) != {"/api/v1/projects"}:
+    if set(schema.get("paths", {})) != {PROJECTS_PATH}:
         raise ProbeError("unexpected_schema_path")
-    methods = schema["paths"]["/api/v1/projects"]
+    methods = schema["paths"][PROJECTS_PATH]
     if set(methods) != {"get"}:
         raise ProbeError("schema_must_be_read_only")
     operation = methods["get"]
@@ -187,14 +188,19 @@ def validate_schema(path: Path = SCHEMA_PATH) -> dict:
     return {"schema_validated": True, "operation_count": 1, "read_only": True}
 
 
+def validate_reference(reference, root):
+    prefix = "#/components/schemas/"
+    if not isinstance(reference, str) or not reference.startswith(prefix):
+        raise ProbeError("schema_external_or_invalid_reference")
+    if reference[len(prefix):] not in root["components"]["schemas"]:
+        raise ProbeError("schema_reference_missing")
+
+
 def validate_references(value, root):
     if type(value) is dict:
         for key, child in value.items():
             if key == "$ref":
-                if not isinstance(child, str) or not child.startswith("#/components/schemas/"):
-                    raise ProbeError("schema_external_or_invalid_reference")
-                if child[len("#/components/schemas/"):] not in root["components"]["schemas"]:
-                    raise ProbeError("schema_reference_missing")
+                validate_reference(child, root)
             else:
                 validate_references(child, root)
     elif type(value) is list:

@@ -79,16 +79,7 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             if (rows.isEmpty()) item { WorkspaceEmpty(if (changed) "Ничего не найдено" else "Активов пока нет",
                 if (changed) "Измените запрос или условия поиска." else "Счёт подключён. Полученные позиции появятся здесь.") }
-            if (restricted.isNotEmpty()) {
-                item { SpectrumCard {
-                    Text("Ограниченные активы · ${restricted.size}", style = MaterialTheme.typography.titleMedium)
-                    Text("Условия сделки уточняются у брокера.", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { showRestricted = !showRestricted }) { Text(if (showRestricted) "Свернуть" else "Посмотреть ограничения") }
-                } }
-                if (showRestricted) items(restricted, key = { "restricted:${it.account.id}:${it.position.id}" }) { row ->
-                    PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name) { onPosition(row.account.id, row.position) }
-                }
-            }
+            restrictedRows(restricted, snapshot, showRestricted, { showRestricted = !showRestricted }, onPosition)
             cashRows(cash, snapshot, showCash, { showCash = !showCash }, onPosition)
             if (group == 1) item { Notice("Названия получены от брокера. Проверенные группы связанных эмитентов ещё не подключены.") }
             if (order in 1..2 && rows.any { it.position.currentValue?.currency != snapshot.totalValue.currency }) item {
@@ -171,4 +162,21 @@ internal fun matchingKind(value: String, filter: String): Boolean = when (filter
     "cash" -> value in setOf("cash", "currency")
     "other" -> value !in setOf("bond", "share", "etf", "cash", "currency")
     else -> value == filter
+}
+
+
+private fun LazyListScope.restrictedRows(
+    restricted: List<PortfolioRow>, snapshot: PortfolioSnapshot, showRestricted: Boolean,
+    onToggle: () -> Unit, onPosition: (String, PortfolioPosition) -> Unit,
+) {
+    if (restricted.isNotEmpty()) {
+        item { SpectrumCard {
+            Text("Ограниченные активы · ${restricted.size}", style = MaterialTheme.typography.titleMedium)
+            Text("Условия сделки уточняются у брокера.", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onToggle) { Text(if (showRestricted) "Свернуть" else "Посмотреть ограничения") }
+        } }
+        if (showRestricted) items(restricted, key = { "restricted:${it.account.id}:${it.position.id}" }) { row ->
+            PositionLine(row.position, total = snapshot.totalValue, accountName = row.account.name) { onPosition(row.account.id, row.position) }
+        }
+    }
 }

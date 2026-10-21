@@ -26,6 +26,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 15
     env:
+      EXPECTED_MOSCOW_IP: "176.98.178.81"
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"

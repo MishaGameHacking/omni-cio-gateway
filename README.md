@@ -1,6 +1,12 @@
 # Analyst AI — Android-приложение и Timeweb backend
 
-**Сверка 21.10.2026:** исправления CI для `main` сохраняют длинные пути Windows при checkout. Настоящий 3D-интерфейс разрабатывается в [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880); переход на 2D не утверждён. 79 замечаний Sonar, HTTP 403 Timeweb и квота GitHub Artifacts остаются открытыми ограничениями. [Подробности](docs/PLAN_STATUS.md#repair-2026-10-21).
+**Сверка 21.10.2026:** GitHub-репозиторий общедоступный. Получена полная выгрузка
+79 замечаний Sonar для `973f294`; подготовлены исправления функций, обработки
+ресурсов и проверок исключений. Локально прошли 819 backend tests / 442 subtests,
+377 CI tests (1 платформенный пропуск), 37 тестов Timeweb probe; 10 240 вариантов
+AI-политики совпали с исходной версией. Окончательные GitHub/Sonar-проверки ещё
+требуются. Настоящий 3D-интерфейс — [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880).
+[Подробности](docs/PLAN_STATUS.md#repair-2026-10-21).
 
 **Опубликован [0.10.0-preview / 34](https://github.com/MishaGameHacking/omni-cio-gateway/releases/tag/android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b). Android 15 и новее.**
 

@@ -120,8 +120,9 @@ class ScrollLayoutReadinessTests(unittest.TestCase):
     def test_transport_and_ui_exceptions_are_not_swallowed(self):
         for error in (ConnectionError("disconnected"), AssertionError("UI failure")):
             swipe = Mock()
+            mock_argument = Mock(side_effect=error)
             with self.assertRaises(type(error)):
-                self.reveal(Mock(side_effect=error), swipe)
+                self.reveal(mock_argument, swipe)
             swipe.assert_not_called()
 
     def test_resource_target_has_the_same_readiness_contract(self):
@@ -149,10 +150,11 @@ class ScrollLayoutReadinessTests(unittest.TestCase):
     def test_invalid_timeout_is_rejected_before_device_access(self):
         for seconds in (-1, 13, True, float("nan"), float("inf")):
             read = Mock()
+            mock_argument = Mock()
             with self.assertRaisesRegex(ValueError, "invalid_layout_timeout"):
                 scroll.reveal_in_list(
                     read,
-                    Mock(),
+                    mock_argument,
                     TARGET,
                     resource_id=AREA,
                     layout_timeout=seconds,
