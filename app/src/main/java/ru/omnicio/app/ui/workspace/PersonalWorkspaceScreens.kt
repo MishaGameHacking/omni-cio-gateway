@@ -138,7 +138,7 @@ private fun GoalEditor(existing: JSONObject?, close: () -> Unit, refresh: () -> 
             action.perform("/workspace/goals", JSONObject().put("request_id", requestId).put("id", existing?.optString("id") ?: JSONObject.NULL)
                 .put("title", title.trim()).put("target", JSONObject().put("amount", amount).put("currency", selected))
                 .put("reserve", JSONObject().put("amount", reserve).put("currency", selected)))
-        }, Modifier.fillMaxWidth(), valid && !action.busy)
+        }, Modifier.fillMaxWidth().testTag("goal-submit"), valid && !action.busy)
         WorkspaceActionState(action)
     }
 }

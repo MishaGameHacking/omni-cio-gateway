@@ -79,10 +79,12 @@ def _case(probe, scale):
     probe.command("shell", "input", "text", "500000")
     probe.wait_for(lambda: focused_editor(probe.tree(), "500000"), "Goal amount did not enter the native editor")
     probe.dismiss_keyboard()
-    probe.tap("Сохранить цель", AREA)
+    # The native label can become visible while the dialog still scrolls.
+    # Use the full button's clipped, settled geometry for both idempotent posts.
+    probe.tap_resource("goal-submit", AREA)
     _pending(probe)
     _rotate_pending(probe, suffix)
-    probe.tap(RECOVER, AREA)
+    probe.tap_resource("goal-submit", AREA)
     # The marker belongs to the page in the active window, outside the dialog.
     # At 200% its recovered card's edit button is below the viewport.
     observed = _trace(probe, ("2", "1", "1", "true"))
