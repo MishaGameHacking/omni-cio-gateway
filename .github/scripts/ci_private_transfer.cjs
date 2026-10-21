@@ -10,11 +10,14 @@ const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function identity(context, env) {
   const attempt = env.GITHUB_RUN_ATTEMPT;
   const kind = env.CI_TRANSFER_KIND || 'apk-inputs';
-  if (context.eventName !== 'push' || !/^[a-f0-9]{40}$/.test(context.sha) ||
+  const repository = `${context.repo.owner}/${context.repo.repo}`;
+  const sameRepositoryEvent = context.eventName === 'push' ||
+    (context.eventName === 'pull_request' && context.payload.pull_request?.head?.repo?.full_name === repository);
+  if (!sameRepositoryEvent || !/^[a-f0-9]{40}$/.test(context.sha) ||
       !/^[1-9]\d{0,19}$/.test(String(context.runId)) || !/^[1-9]\d{0,4}$/.test(attempt) ||
       !['probe', 'apk-inputs'].includes(kind) ||
-      context.payload.repository?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
-    throw new Error('CI transfer requires an exact same-repository push identity');
+      context.payload.repository?.full_name !== repository) {
+    throw new Error('CI transfer requires an exact same-repository event identity');
   }
   return {tag: `ci-transfer-${context.runId}-${attempt}`, head: context.sha,
     body: JSON.stringify({purpose: 'temporary-private-ci-transfer', head: context.sha,
