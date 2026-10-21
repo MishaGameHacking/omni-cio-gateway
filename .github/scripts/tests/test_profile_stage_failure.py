@@ -14,8 +14,9 @@ class StageFailureTests(unittest.TestCase):
         original = AssertionError("Required dialog did not open")
         probe = Mock()
         probe.capture.side_effect = subprocess.TimeoutExpired("console screenshot", 15)
+        stage = Mock(side_effect=original)
         with self.assertRaises(AssertionError) as caught:
-            run_stage(probe, Mock(side_effect=original))
+            run_stage(probe, stage)
         self.assertIs(caught.exception, original)
         probe.capture.assert_called_once_with("failure")
 
