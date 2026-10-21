@@ -27,9 +27,17 @@ settings also found `TELEGRAM_CLIENT_ID` in Actions **variables**; the old inven
 incorrectly read it from secrets. The workflow now reads `vars.TELEGRAM_CLIENT_ID`.
 Only `OWNER_TELEGRAM_SUB` is missing. Configure it through GitHub's protected secret
 settings or the server's private configuration, never in public code.
-The owner subject is the owner's numeric verified Telegram identity, not a
-username and not the first visitor. `OWNER_TELEGRAM_SUB` maps to the runtime name
-`ANALYST_OWNER_TELEGRAM_SUB`.
+Use the exact `sub` claim from the owner's **verified Telegram OIDC ID token**.
+It is an opaque, case-sensitive value, distinct from the numeric `id` in the
+profile scope. A bot's Client ID, an ordinary account ID, a username, or the
+first visitor cannot substitute for it. Do not guess or calculate it.
+`OWNER_TELEGRAM_SUB` maps to runtime `ANALYST_OWNER_TELEGRAM_SUB`.
+The earlier request for an ordinary numeric Telegram account ID was incorrect.
+An administrator must bind the identity obtained through the owner's completed
+Telegram sign-in, checking signature, issuer, audience, expiry and the issued
+nonce. Do not paste an ID token or client secret into public issues or logs.
+Without this verified binding, the application stays closed.
+Source: https://core.telegram.org/bots/telegram-login (checked 21 October 2026).
 
 For this fresh database, the installer generates a new Fernet key directly on
 the VM. It never prints it or replaces an existing key. Preserve an encrypted

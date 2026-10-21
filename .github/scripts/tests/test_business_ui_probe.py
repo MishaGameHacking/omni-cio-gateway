@@ -11,11 +11,11 @@ business = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(business)
 
 
-def frame(route="risk", scenario="partial", *, requests="3", errors="0", transport="synthetic", package="ru.omnicio.app.debug"):
+def frame(route="risk", scenario="partial", *, requests="3", errors="0", comparisons="0", transport="synthetic", package="ru.omnicio.app.debug"):
     tree = ET.Element("hierarchy")
     ET.SubElement(tree, "node", {"package": package, "visible-to-user": "true", "content-desc":
         f"business-probe:{route}/{scenario};transport:{transport};requests:{requests};contract-errors:{errors};navigation:instrument:synthetic-stock::"
-        ";message-posts:0;message-request-id:none;by-request-gets:0;recovered-request-id:none"})
+        f";message-posts:0;message-request-id:none;by-request-gets:0;recovered-request-id:none;scenario-compares:{comparisons}"})
     return tree
 
 
@@ -44,12 +44,19 @@ class BusinessUiProbeTests(unittest.TestCase):
             self.assertIsNone(business.business_marker(tree, "risk", "partial"))
 
     def test_contract_rejections_and_invalid_counters_fail_closed(self):
-        for tree in (frame(errors="1"), frame(requests="-2"), frame(errors="unknown")):
+        for tree in (frame(errors="1"), frame(requests="-2"), frame(errors="unknown"),
+                     frame(comparisons="-1"), frame(comparisons="unknown"), frame(comparisons="4")):
             with self.assertRaises(AssertionError):
                 business.business_marker(tree, "risk", "partial")
         unsupported = frame()
         with self.assertRaises(ValueError):
             business.business_marker(unsupported, "risk", "job")
+
+    def test_only_the_visible_transport_can_report_comparison_requests(self):
+        self.assertEqual(business.business_marker(frame(comparisons="1"), "risk", "partial")["scenario_comparisons"], 1)
+        hidden = frame(comparisons="1")
+        hidden[0].set("visible-to-user", "false")
+        self.assertIsNone(business.business_marker(hidden, "risk", "partial"))
 
 
 if __name__ == "__main__":

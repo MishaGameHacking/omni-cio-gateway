@@ -51,6 +51,9 @@ def _enter_percent(probe, value):
 def exercise_scenario_comparison(case):
     probe = case.probe
     probe.tap("Концентрация", "profile-tabs", direction="start")
+    # Android hides the underlying Activity's accessibility nodes while a
+    # modal dialog is open. Observe transport only while that marker is visible.
+    before = case.observed()
     probe.tap("Рассчитать свой сценарий", AREA, direction="start")
     probe.reveal(COMPARE, AREA)
     disabled = probe.wait_for(lambda: button_label(probe.tree(), COMPARE), "Missing native scenario action")
@@ -64,9 +67,7 @@ def exercise_scenario_comparison(case):
     suffix = "-font-200" if math.isclose(case.font_scale, 2.0) else ""
     rotation = rotate_focused_draft(probe, "5", "business-risk-scenario-rotation" + suffix, dialog=True)
     probe.dismiss_keyboard()
-    before = case.observed()["requests"]
     probe.tap(COMPARE, AREA)
-    probe.wait_for(lambda: case.observed()["requests"] > before, "Scenario comparison sent no request")
     for scenario_id, change, after in (("A", "-10000", "90000"), ("B", "5000", "105000")):
         _record_value(probe, case.reader, scenario_id, "Исходный капитал: 100000 RUB")
         _record_value(probe, case.reader, scenario_id, "Изменение оценённых позиций: " + change + " RUB")
@@ -75,7 +76,12 @@ def exercise_scenario_comparison(case):
     picture = "business-risk-scenarios" + suffix
     probe.capture(picture)
     probe.tap("Закрыть", AREA)
+    after = case.observed()
+    if (after["requests"] <= before["requests"] or
+            after["scenario_comparisons"] != before["scenario_comparisons"] + 1):
+        raise AssertionError("Scenario comparison did not send exactly one actual comparison request")
     return {"same_baseline": "100000 RUB", "assumptions_percent": {"A": "-10", "B": "5"},
             "estimated_after": {"A": "90000 RUB", "B": "105000 RUB"},
+            "comparison_requests": after["scenario_comparisons"] - before["scenario_comparisons"],
             "native_draft_rotation": rotation, "screenshot": picture + ".png",
             "fixture": "synthetic-no-broker-or-model-call"}

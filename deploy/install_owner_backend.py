@@ -42,9 +42,12 @@ def validated_config(values: dict) -> dict[str, str]:
         value = values[name]
         if not isinstance(value, str) or not 1 <= len(value) <= 4096 or any(ord(c) < 33 or ord(c) > 126 for c in value):
             raise InstallError('configuration_value_invalid')
-    for name in ('TELEGRAM_CLIENT_ID', 'ANALYST_OWNER_TELEGRAM_SUB'):
-        if not re.fullmatch(r'[1-9][0-9]{0,19}', values[name], re.ASCII):
-            raise InstallError('numeric_telegram_identity_required')
+    if not re.fullmatch(r'[1-9][0-9]{0,19}', values['TELEGRAM_CLIENT_ID'], re.ASCII):
+        raise InstallError('numeric_telegram_client_id_required')
+    # OIDC sub is an opaque, case-sensitive identity. Telegram's profile id
+    # is a different claim; never derive or normalize the owner subject from it.
+    if len(values['ANALYST_OWNER_TELEGRAM_SUB']) > 256:
+        raise InstallError('telegram_oidc_subject_too_long')
     try:
         address = IPv4Address(values['EXPECTED_PUBLIC_IPV4'])
     except ValueError:

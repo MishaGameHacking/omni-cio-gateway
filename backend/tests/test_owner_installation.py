@@ -35,10 +35,19 @@ class OwnerInstallationTests(unittest.TestCase):
             'https://new.example.com/other', 'https://user@new.example.com',
             'https://new.example.com:443', 'https://new.example.com\nadmin off',
             'https://new..example.com', 'https://1.1.1.1')]
-        cases += [('ANALYST_OWNER_TELEGRAM_SUB', '@display-name'), ('EXPECTED_PUBLIC_IPV4', '127.0.0.1')]
+        cases += [('ANALYST_OWNER_TELEGRAM_SUB', 'x' * 257), ('ANALYST_OWNER_TELEGRAM_SUB', 'subject with whitespace'),
+                  ('EXPECTED_PUBLIC_IPV4', '127.0.0.1')]
         for name, value in cases:
             with self.subTest(name=name, value=value), self.assertRaises(installer.InstallError):
                 installer.validated_config(configuration() | {name: value})
+
+    def test_oidc_subject_is_preserved_and_never_derived_from_numeric_profile_id(self):
+        for subject in ('1234123412341234123', 'opaque:Owner-A_9', 'x' * 256):
+            with self.subTest(subject=subject):
+                values = configuration() | {'ANALYST_OWNER_TELEGRAM_SUB': subject}
+                self.assertEqual(installer.validated_config(values)['ANALYST_OWNER_TELEGRAM_SUB'], subject)
+        with self.assertRaises(installer.InstallError):
+            installer.validated_config(configuration() | {'TELEGRAM_PROFILE_ID': '987654321'})
 
     def test_environment_is_data_and_never_copies_install_target(self):
         config = configuration() | {'TELEGRAM_CLIENT_SECRET': 'synthetic"$value\\tail'}

@@ -78,7 +78,8 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
     }
     val marker = "business-probe:$initialRoute/$scenario;transport:synthetic;requests:${trace.requests};contract-errors:${trace.errors.size};navigation:$navigation" +
         ";message-posts:${trace.messagePosts};message-request-id:${trace.messageRequestId ?: "none"}" +
-        ";by-request-gets:${trace.byRequestGets};recovered-request-id:${trace.recoveredRequestId ?: "none"}"
+        ";by-request-gets:${trace.byRequestGets};recovered-request-id:${trace.recoveredRequestId ?: "none"}" +
+        ";scenario-compares:${trace.scenarioComparisons}"
     Column(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).statusBarsPadding().padding(6.dp)
             .testTag("business-probe-marker").semantics { contentDescription = marker }) {
@@ -167,6 +168,7 @@ private data class ProbeTrace(
     val messageRequestId: String? = null,
     val byRequestGets: Int = 0,
     val recoveredRequestId: String? = null,
+    val scenarioComparisons: Int = 0,
 )
 
 /** Keep the simulated server consistent across Activity recreation, like HTTPS would be. */
@@ -395,6 +397,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     }
 
     private fun compareRiskScenarios(body: JSONObject?): VolumeReply {
+        trace.value = trace.value.copy(scenarioComparisons = trace.value.scenarioComparisons + 1)
         val candidates = body!!.getJSONArray("scenarios")
         require(candidates.length() in 2..4 && body.optString("currency", "RUB") == "RUB")
         val seen = mutableSetOf<String>()

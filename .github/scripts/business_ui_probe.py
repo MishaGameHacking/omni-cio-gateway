@@ -42,12 +42,16 @@ def business_marker(tree, route, scenario):
         parts = {key: value for part in node.get("content-desc", "").split(";") if ":" in part for key, value in [part.split(":", 1)]}
         if parts.get("business-probe") != route + "/" + scenario or parts.get("transport") != "synthetic":
             continue
-        if not re.fullmatch(r"\d+", parts.get("requests", "")) or not re.fullmatch(r"\d+", parts.get("contract-errors", "")):
+        if any(not re.fullmatch(r"\d+", parts.get(key, ""))
+               for key in ("requests", "contract-errors", "scenario-compares")):
             raise AssertionError("Invalid observed business transport counters")
         if int(parts["contract-errors"]):
             raise AssertionError("The real screen submitted an invalid fixture contract")
+        if int(parts["scenario-compares"]) > int(parts["requests"]):
+            raise AssertionError("Scenario comparison count exceeds actual requests")
         if int(parts["requests"]) > 0:
             return {"route": route, "scenario": scenario, "requests": int(parts["requests"]),
+                    "scenario_comparisons": int(parts["scenario-compares"]),
                     "contract_errors": 0, "navigation": parts.get("navigation", "none"),
                     **chat_counters(parts, int(parts["requests"]), scenario)}
     return None
