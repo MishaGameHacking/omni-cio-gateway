@@ -118,6 +118,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
 
     def test_unresolved_or_ambiguous_uid_never_falls_back_to_general_logcat(self):
         for identity in ("", "package:other.app uid:10123\n", "package:ru.omnicio.app.debug uid:1000\n",
+                         "package:ru.omnicio.app.debug uid:١٠١٢٣\n", "package:ru.omnicio.app.debug uid:１０１２３\n",
                          "package:ru.omnicio.app.debug uid:10123\n" * 2):
             probe = Mock()
             probe.command.return_value = identity
@@ -330,8 +331,8 @@ class NativeInputEvidenceTests(unittest.TestCase):
 
     def test_android_utf16_offsets_and_public_display_geometry(self):
         root = frame(text="A\U0001f310B", **{"selection-start": "4", "selection-end": "4"})
-        self.assertEqual(4, native.focused_editor(root, "A\U0001f310B")["selection_start"])
-        self.assertEqual((1080, 1920), native.display_geometry(root))
+        self.assertEqual(native.focused_editor(root, "A\U0001f310B")["selection_start"], 4)
+        self.assertEqual(native.display_geometry(root), (1080, 1920))
         for value in ("0", "", "landscape", "-1", "1.5"):
             root.set("display-width", value)
             with self.subTest(value=value), self.assertRaises(AssertionError):

@@ -197,7 +197,7 @@ def _rotation_failure_diagnostics(probe, observations):
         print("NATIVE_ROTATION_SCREENSHOT_UNAVAILABLE=" + type(error).__name__, flush=True)
     try:
         identity = probe.command("shell", "cmd", "package", "list", "packages", "-U", PACKAGE, timeout=4)
-        uids = re.findall(r"^package:ru\.omnicio\.app\.debug uid:([0-9]{1,10})$", identity, re.MULTILINE)
+        uids = re.findall(r"^package:ru\.omnicio\.app\.debug uid:(\d{1,10})$", identity, re.MULTILINE | re.ASCII)
         if len(uids) != 1 or not 10000 <= int(uids[0]) <= 2147483647:
             raise ValueError("Candidate UID is unavailable")
         output = probe.command("logcat", "-d", "-b", "main", "-v", "raw", "-t", "120",
@@ -205,6 +205,16 @@ def _rotation_failure_diagnostics(probe, observations):
         print("NATIVE_EDITOR_RESTORE_TRACE=" + json.dumps(_restore_trace_records(output), sort_keys=True), flush=True)
     except Exception as error:
         print("NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
+
+
+def _report_rotation_failure(probe, initial, dialog, expected, sample_count, ime_visible_count, recent):
+    """Keep evidence collection from replacing the original rotation failure."""
+    try:
+        _rotation_failure_diagnostics(probe, {"initial": _frame_diagnostic(initial), "dialog": dialog,
+            "expected_selection": [expected, expected], "sample_count": sample_count,
+            "ime_visible_count": ime_visible_count, "recent": list(recent)})
+    except Exception as error:
+        print("NATIVE_ROTATION_DIAGNOSTIC_UNAVAILABLE=" + type(error).__name__, flush=True)
 
 
 def append_native_text(probe, text: str, suffix: str) -> dict:
@@ -232,6 +242,23 @@ def append_native_text(probe, text: str, suffix: str) -> dict:
     return _wait_editor(probe, lambda: ready(expected, (end, end)),
                         "Native editor did not retain the complete keyboard input",
                         "input-result", expected)
+
+
+def _restore_rotation(probe, settings, original_geometry, previous_window, text, selection, *, dialog):
+    """Restore the saved device settings, then require the same native editor."""
+    for key, value in settings:
+        if value in {"0", "1", "2", "3"}:
+            probe.command("shell", "settings", "put", "system", key, value)
+        else:
+            probe.command("shell", "settings", "delete", "system", key)
+
+    def restored():
+        tree = probe.tree()
+        if display_geometry(tree) != original_geometry:
+            return None
+        return recreated_editor(tree, text, selection, previous_window, dialog=dialog)
+
+    _wait_editor(probe, restored, "Restoring device rotation lost the focused draft/caret", "restored", text)
 
 
 def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
@@ -287,12 +314,7 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
             after = _wait_editor(probe, rotated,
                                    "Rotation lost the unsent native question, input focus or exact caret offset", "rotated", text)
         except (AssertionError, RuntimeError, ValueError, OSError):
-            try:
-                _rotation_failure_diagnostics(probe, {"initial": _frame_diagnostic(initial), "dialog": dialog,
-                    "expected_selection": [expected, expected], "sample_count": sample_count,
-                    "ime_visible_count": ime_visible_count, "recent": list(recent)})
-            except Exception as error:
-                print("NATIVE_ROTATION_DIAGNOSTIC_UNAVAILABLE=" + type(error).__name__, flush=True)
+            _report_rotation_failure(probe, initial, dialog, expected, sample_count, ime_visible_count, recent)
             raise
         rotated_window = after["window_id"]
         probe.capture(name)
@@ -303,19 +325,8 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
         raise
     finally:
         try:
-            for key, value in (("user_rotation", rotation), ("accelerometer_rotation", automatic)):
-                if value in {"0", "1", "2", "3"}:
-                    probe.command("shell", "settings", "put", "system", key, value)
-                else:
-                    probe.command("shell", "settings", "delete", "system", key)
-
-            def restored():
-                tree = probe.tree()
-                if display_geometry(tree) != original_geometry:
-                    return None
-                return recreated_editor(tree, text, (expected, expected), rotated_window, dialog=dialog)
-
-            _wait_editor(probe, restored, "Restoring device rotation lost the focused draft/caret", "restored", text)
+            settings = (("user_rotation", rotation), ("accelerometer_rotation", automatic))
+            _restore_rotation(probe, settings, original_geometry, rotated_window, text, (expected, expected), dialog=dialog)
         except Exception as error:
             if rotation_failure is None:
                 raise
