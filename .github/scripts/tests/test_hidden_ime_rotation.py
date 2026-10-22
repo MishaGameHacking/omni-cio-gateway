@@ -371,7 +371,7 @@ class HiddenImeRotationTests(unittest.TestCase):
             native.record_editor_restore_trace(probe)
         probe.capture.assert_not_called()
         self.assertEqual(probe.command.call_args.args,
-                         ("logcat", "-d", "-b", "main", "-v", "raw", "-t", "120",
+                         ("logcat", "-d", "-b", "main", "-v", "raw",
                           "--uid=10123", "AnalystEditorRestore:D", "*:S"))
         self.assertEqual(output.call_args.args[0], "NATIVE_EDITOR_RESTORE_TRACE=[]")
         probe.command.side_effect = RuntimeError("private error payload")
