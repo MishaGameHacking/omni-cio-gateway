@@ -141,7 +141,7 @@ class _BusinessCase:
         self.probe.tap("Повторить", "workspace-content")
         self.probe.wait_for(lambda observe=self.observed, minimum=baseline: (value if (value := observe())["requests"] > minimum else None),
                        "Retry did not issue a new synthetic transport request")
-        self.probe.reveal(ERROR, "workspace-content")
+        self.probe.reveal(ERROR, "workspace-content", direction="start")
         self.checks.extend(("explicit-source-error", "retry-real-request"))
 
     def catalogue(self):

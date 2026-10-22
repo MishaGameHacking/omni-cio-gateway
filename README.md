@@ -1,6 +1,51 @@
 # Analyst AI — Android-приложение и Timeweb backend
 
 **Подготовленная синхронизация server/app, F01/F02/F16/F20/F22/F23, 22.10.2026:**
+Серверный `1c9f95aa` объединён локально с app `fa9f5b22`: перенесены направление
+повторного поиска ошибки, его регрессия и проверка успешной пустой истории.
+Все 334 файла app/driver совпадают с app-кандидатом; 13 серверных путей сохранены.
+Полный локальный CI-набор сервера: **903 tests PASS**, 4 предусмотренных skips,
+0.868 s; diff check — PASS. Backend не изменён относительно `1c9f95aa`,
+поэтому pytest повторно не запускался. Новый server SHA требует собственного
+удалённого Backend CI и полного Sonar.
+
+Для app `fa9f5b22` [Backend CI 39852793503](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39852793503)
+прошёл 1475 tests / 1409 subtests и строгий Sonar gate с 0 annotations.
+[Полный Sonar 39852786612](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39852786612)
+подтвердил 0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true`.
+[Android CI 39852793494](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39852793494)
+ещё выполняет build; полные runtime-матрицы нового app-кандидата не подтверждены.
+
+**Ниже сохранены записи обоих родителей с их исходными проверками:**
+
+**Ошибка и пустая история ассистента, F01/F16/F22/F23, 22.10.2026:**
+Кандидат `211c6de1` прошёл [Backend](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846798072)
+(1475 tests / 1409 subtests), [полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846787949)
+(0 OPEN/CONFIRMED всех типов, 0 новых, complete:true) и
+[Android build](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846798007/job/120063248061)
+(Gradle/JVM/lint, все APK, test-only driver, 875 CI-тестов).
+На API37 с измеренным PAGE_SIZE 16384 прошли установка, обновление, запуск,
+повороты risk и assistant при font100 с прежними проверками ввода.
+Следующий отказ — повторный поиск сообщения ошибки в `assistant/error`:
+после нажатия «Повторить» текст оказался выше viewport, а probe искал вниз.
+
+Второй поиск теперь идёт к началу списка; точный текст ошибки, реальное
+нажатие, рост числа запросов, таймауты и лимиты сохранены. Поведенческая
+регрессия воспроизвела прежний отказ через настоящий `reveal_in_list`.
+Приглашение «С чего начнём?» теперь требует успешно загруженной пустой
+истории: отсутствие ответа или ошибка refresh больше не выглядят как успех.
+Локально 876 CI-тестов PASS (4 предусмотренных environment skips),
+diff check и независимое ревью PASS. Новый SHA требует собственного CI.
+Матрица 16384 ещё не завершена; профиль 4096 пропущен, полная business/portfolio
+матрица при font200 ещё не пройдена. Cleanup подтвердил `verified_absent`;
+новый приватный APK не выдан.
+Подробные доказательства и границы — в [PLAN_STATUS](docs/PLAN_STATUS.md).
+
+**Ниже сохранена история предыдущих кандидатов:**
+
+**Предыдущая синхронизация серверной ветки:**
+
+**Подготовленная синхронизация server/app, F01/F02/F16/F20/F22/F23, 22.10.2026:**
 Объединённое локальное дерево сохраняет server `34ac2cbe` и app `211c6de1`:
 одноразовую Telegram OIDC-привязку владельца, восстановление нативного ввода,
 доступность черновика ассистента, исправление диапазона дат и перенос

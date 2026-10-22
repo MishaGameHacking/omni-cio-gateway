@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 SPEC = importlib.util.spec_from_file_location("business_ui_probe", Path(__file__).resolve().parents[1] / "business_ui_probe.py")
 business = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(business)
+from profile_scroll import reveal_in_list
 
 
 def frame(route="risk", scenario="partial", *, requests="3", errors="0", comparisons="0", transport="synthetic", package="ru.omnicio.app.debug"):
@@ -19,7 +20,61 @@ def frame(route="risk", scenario="partial", *, requests="3", errors="0", compari
     return tree
 
 
+class RetryViewportProbe:
+    """Retry is below its error text; tapping scrolls that text out of view."""
+
+    def __init__(self):
+        self.offset = 0
+        self.requests = 1
+        self.observed_labels = []
+        self.tapped_labels = []
+
+    def tree(self):
+        tree = frame("assistant", "error", requests=str(self.requests))
+        viewport = ET.SubElement(tree, "node", {"package": "ru.omnicio.app.debug",
+            "resource-id": "workspace-content", "scrollable": "true", "bounds": "[0,0][320,200]"})
+        for label, top, bottom in (("Не удалось обновить", 0, 40), (business.ERROR, 56, 136),
+                                   ("Повторить", 160, 212), ("Following content", 240, 420)):
+            top, bottom = max(0, top - self.offset), min(200, bottom - self.offset)
+            if top < bottom:
+                ET.SubElement(viewport, "node", {"package": "ru.omnicio.app.debug", "text": label,
+                    "bounds": f"[0,{top}][320,{bottom}]"})
+        return tree
+
+    def scroll(self, _x1, y1, _x2, y2):
+        self.offset = max(0, min(220, self.offset + (160 if y1 > y2 else -160)))
+
+    def reveal(self, text, area, direction="end"):
+        target = reveal_in_list(self.tree, self.scroll, text, resource_id=area, direction=direction)
+        self.observed_labels.append((text, self.requests))
+        return target
+
+    def tap(self, text, area):
+        self.offset = 160  # The retry action reaches the viewport's upper edge.
+        self.reveal(text, area)
+        self.tapped_labels.append(text)
+        self.requests += 1
+
+    @staticmethod
+    def wait_for(condition, message):
+        result = condition()
+        if not result:
+            raise AssertionError(message)
+        return result
+
+
 class BusinessUiProbeTests(unittest.TestCase):
+    def test_retry_reveals_the_same_error_above_the_action_viewport(self):
+        probe = RetryViewportProbe()
+        case = business._BusinessCase(probe, None, "assistant", "error", 1.0)
+        case.error()
+        self.assertEqual(probe.requests, 2)
+        self.assertEqual(probe.tapped_labels, ["Повторить"])
+        self.assertEqual(probe.observed_labels, [
+            ("Не удалось обновить", 1), (business.ERROR, 1), ("Повторить", 1), (business.ERROR, 2),
+        ])
+        self.assertEqual(case.checks, ["explicit-source-error", "retry-real-request"])
+
     def test_operation_checkbox_keeps_its_quantity_label_in_an_unmerged_child(self):
         quantity = " · 3 ед."
         control = ET.Element("node", {"package": "ru.omnicio.app.debug", "checkable": "true"})

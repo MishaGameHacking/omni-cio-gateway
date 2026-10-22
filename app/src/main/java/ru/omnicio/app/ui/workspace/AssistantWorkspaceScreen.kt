@@ -166,7 +166,9 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                 item { WorkspaceRequestState(threads); WorkspaceRequestState(messages); WorkspaceActionState(create) }
                 assistantHistoryPages(messages, cursors) { cursors = it }
                 items(messageItems, key = { it.text("id") }) { message -> AssistantMessage(message, onPortfolio, onActions, onStrategy) }
-                if (messageItems.isEmpty() && !messages.busy) item { WorkspaceEmpty("С чего начнём?", "Спросите о позиции, изменениях капитала или правилах стратегии. Ответ появится после фактического запроса к модели.") }
+                if (messages.data != null && messages.error == null && !messages.busy && messageItems.isEmpty()) item {
+                    WorkspaceEmpty("С чего начнём?", "Спросите о позиции, изменениях капитала или правилах стратегии. Ответ появится после фактического запроса к модели.")
+                }
                 activeJob?.let { model -> item { WorkspaceJobPanel(model, onClose = { jobId = null }) } }
                 item { WorkspaceActionState(send); WorkspaceActionState(estimateAction) }
                 item { PendingJobRecovery(savedRequests, onThreadRecovered = { threadId = it }, onRequestRecovered = requestRecovered,
