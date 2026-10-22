@@ -146,8 +146,13 @@ def date_range(start: date | None, end: date | None, *, days: int = 30,
                max_days: int = 3660) -> tuple[datetime, datetime]:
     today = datetime.now(timezone.utc).date()
     last = end or today
+    earliest = date(1970, 1, 1)
+    # Validate before deriving the default start: a syntactically valid date
+    # near date.min would otherwise underflow and turn invalid input into a 500.
+    if last < earliest or last > today:
+        raise HTTPException(422, 'invalid_date_range')
     first = start or last - timedelta(days=days)
-    if first > last or last > today or (last - first).days > max_days or first < date(1970, 1, 1):
+    if first > last or (last - first).days > max_days or first < earliest:
         raise HTTPException(422, 'invalid_date_range')
     begin = datetime.combine(first, datetime.min.time(), timezone.utc)
     finish = min(datetime.combine(last + timedelta(days=1), datetime.min.time(), timezone.utc),

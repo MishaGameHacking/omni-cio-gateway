@@ -176,12 +176,14 @@ private fun rememberEditorFocus(
                         viewport.bringIntoView()
                     },
                     awaitFrame = { withFrameNanos { } },
-                    setKeyboardVisible = { visible ->
-                        trace(if (visible) "request-show" else "request-hide", attemptId)
-                        restoreKeyboardVisibility(keyboard, visible)
-                    },
-                    prepareInput = inputHandoff::handoff,
-                    releaseInput = inputHandoff::release,
+                    input = EditorInputCommands(
+                        setKeyboardVisible = { visible ->
+                            trace(if (visible) "request-show" else "request-hide", attemptId)
+                            restoreKeyboardVisibility(keyboard, visible)
+                        },
+                        prepareInput = inputHandoff::handoff,
+                        releaseInput = inputHandoff::release,
+                    ),
                 )
             } catch (cancelled: CancellationException) {
                 trace("restore-cancelled", attemptId)

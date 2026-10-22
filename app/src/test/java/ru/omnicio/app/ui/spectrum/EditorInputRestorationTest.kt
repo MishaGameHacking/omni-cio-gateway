@@ -29,8 +29,10 @@ class EditorInputRestorationTest {
                 windowReady = true
             },
             awaitFrame = { ime.flushFrame(); yield() },
-            setKeyboardVisible = ime::setKeyboardVisible,
-            prepareInput = { error("Hidden restoration must not defer IME eligibility") },
+            input = EditorInputCommands(
+                setKeyboardVisible = ime::setKeyboardVisible,
+                prepareInput = { error("Hidden restoration must not defer IME eligibility") },
+            ),
         )
         ime.flushFrame()
         assertTrue(completed)
@@ -68,17 +70,19 @@ class EditorInputRestorationTest {
                 observations += "frame"
                 yield()
             },
-            setKeyboardVisible = { visible ->
-                observations += "show"
-                ime.setKeyboardVisible(visible)
-            },
-            prepareInput = {
-                assertEquals("focused", observations.last())
-                inputHeld = false
-                observations += "input"
-                true
-            },
-            releaseInput = { inputHeld = false; cleanups++ },
+            input = EditorInputCommands(
+                setKeyboardVisible = { visible ->
+                    observations += "show"
+                    ime.setKeyboardVisible(visible)
+                },
+                prepareInput = {
+                    assertEquals("focused", observations.last())
+                    inputHeld = false
+                    observations += "input"
+                    true
+                },
+                releaseInput = { inputHeld = false; cleanups++ },
+            ),
         )
         ime.flushFrame()
         assertTrue(completed)
@@ -99,7 +103,7 @@ class EditorInputRestorationTest {
             awaitFocus = { ime.flushFrame(); yield() },
             awaitWindowReady = { observedVisibility = true; yield() },
             awaitFrame = { ime.flushFrame(); yield() },
-            setKeyboardVisible = ime::setKeyboardVisible,
+            input = EditorInputCommands(setKeyboardVisible = ime::setKeyboardVisible),
         )
         assertTrue(observedVisibility)
         assertEquals(0, ime.showRequests)
@@ -122,9 +126,11 @@ class EditorInputRestorationTest {
                 awaitFocus = { awaited = true },
                 awaitWindowReady = { windowAwaited = true },
                 awaitFrame = { awaited = true },
-                setKeyboardVisible = ime::setKeyboardVisible,
-                prepareInput = { error("Refused focus cannot prepare native input") },
-                releaseInput = { cleanups++ },
+                input = EditorInputCommands(
+                    setKeyboardVisible = ime::setKeyboardVisible,
+                    prepareInput = { error("Refused focus cannot prepare native input") },
+                    releaseInput = { cleanups++ },
+                ),
             )
             assertFalse(completed)
             assertFalse(awaited)
@@ -146,8 +152,10 @@ class EditorInputRestorationTest {
                 awaitFocus = { observations += "focused"; yield() },
                 awaitWindowReady = { observations += "window"; yield() },
                 awaitFrame = { observations += "frame"; yield() },
-                setKeyboardVisible = ime::setKeyboardVisible,
-                prepareInput = { error("Read-only restoration must not defer IME eligibility") },
+                input = EditorInputCommands(
+                    setKeyboardVisible = ime::setKeyboardVisible,
+                    prepareInput = { error("Read-only restoration must not defer IME eligibility") },
+                ),
             )
             assertTrue(completed)
             assertEquals(listOf("window", "focus", "focused", "frame"), observations)
@@ -173,9 +181,11 @@ class EditorInputRestorationTest {
             awaitFocus = {},
             awaitWindowReady = { error("Input is not ready for a window handoff") },
             awaitFrame = { error("Input is not ready for a frame barrier") },
-            setKeyboardVisible = ime::setKeyboardVisible,
-            prepareInput = { false },
-            releaseInput = { cleanups++ },
+            input = EditorInputCommands(
+                setKeyboardVisible = ime::setKeyboardVisible,
+                prepareInput = { false },
+                releaseInput = { cleanups++ },
+            ),
         )
         assertFalse(completed)
         assertEquals(1, cleanups)
@@ -193,9 +203,11 @@ class EditorInputRestorationTest {
                 awaitFocus = {},
                 awaitWindowReady = {},
                 awaitFrame = {},
-                setKeyboardVisible = ime::setKeyboardVisible,
-                prepareInput = { error("fixture preparation failure") },
-                releaseInput = { cleanups++ },
+                input = EditorInputCommands(
+                    setKeyboardVisible = ime::setKeyboardVisible,
+                    prepareInput = { error("fixture preparation failure") },
+                    releaseInput = { cleanups++ },
+                ),
             )
             error("Expected input preparation to fail")
         } catch (expected: IllegalStateException) {
@@ -224,8 +236,10 @@ class EditorInputRestorationTest {
                 awaitFocus = { waitAt("focus") },
                 awaitWindowReady = { waitAt("window") },
                 awaitFrame = { waitAt("frame") },
-                setKeyboardVisible = ime::setKeyboardVisible,
-                releaseInput = { cleanups++ },
+                input = EditorInputCommands(
+                    setKeyboardVisible = ime::setKeyboardVisible,
+                    releaseInput = { cleanups++ },
+                ),
             )
         }
         waiting.await()

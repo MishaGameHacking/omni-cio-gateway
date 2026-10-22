@@ -1,5 +1,12 @@
 package ru.omnicio.app.ui.spectrum
 
+/** Platform input commands belong to the same prepared editor handoff and cleanup. */
+internal data class EditorInputCommands(
+    val setKeyboardVisible: (Boolean) -> Unit,
+    val prepareInput: () -> Boolean = { true },
+    val releaseInput: () -> Unit = {},
+)
+
 /** Restore a saved editor in a newly created input owner, without changing its IME intent. */
 internal suspend fun restoreEditorInput(
     showKeyboard: Boolean,
@@ -8,9 +15,7 @@ internal suspend fun restoreEditorInput(
     awaitFocus: suspend () -> Unit,
     awaitWindowReady: suspend () -> Unit,
     awaitFrame: suspend () -> Unit,
-    setKeyboardVisible: (Boolean) -> Unit,
-    prepareInput: () -> Boolean = { true },
-    releaseInput: () -> Unit = {},
+    input: EditorInputCommands,
 ): Boolean {
     val restoreVisibleKeyboard = showKeyboard && !readOnly
     try {
@@ -20,16 +25,16 @@ internal suspend fun restoreEditorInput(
         if (!requestFocus()) return false
         // The fresh Compose input session queues an implicit show during requestFocus.
         // Queue hide in the same batch, before any suspension can flush that show.
-        if (!readOnly && !showKeyboard) setKeyboardVisible(false)
+        if (!readOnly && !showKeyboard) input.setKeyboardVisible(false)
         awaitFocus()
         if (restoreVisibleKeyboard) {
-            if (!prepareInput()) return false
+            if (!input.prepareInput()) return false
             awaitWindowReady()
         }
         awaitFrame()
-        if (restoreVisibleKeyboard) setKeyboardVisible(true)
+        if (restoreVisibleKeyboard) input.setKeyboardVisible(true)
         return true
     } finally {
-        releaseInput()
+        input.releaseInput()
     }
 }
