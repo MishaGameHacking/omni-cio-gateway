@@ -65,6 +65,22 @@ SHA фиксируются в PR #880. Ни прежние результаты,
 не заменяют runtime; APK, физический телефон и новая установка Timeweb
 не объявляются проверенными на основании этих локальных прогонов.
 
+### Результат CI 7640325e и следующий рефакторинг
+
+[Backend CI 39845827773](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39845827773)
+на `7640325ed767200446d2c15f5decd771a2e1df26` выполнил
+1475 tests / 1409 subtests, 32.71 s. Его общий результат — FAIL только
+из-за строгого Sonar gate: [полный аудит 39845815289](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39845815289)
+нашёл одно новое OPEN/CONFIRMED замечание, `all_types:true`, `complete:true`.
+В AssistantWorkspaceScreen Cognitive Complexity составила 46 при лимите 45.
+
+Формирование тела отправки перенесено из вложенной startMessage-лямбды
+в ChatRequestSnapshot.messagePayload. Набор и значения полей, условный
+confirm_premium, генерация UUID после проверок и все guards отправки
+сохранены. Это структурный рефакторинг без подавления правил или изменения
+лимитов. Повторный полный Sonar, Gradle и обе runtime-матрицы должны
+проверить новый SHA; результаты родителя их не заменяют.
+
 ## Журнал предшествующих срезов
 
 **Последний завершённый CI и полученная история IME, F01/F16/F22/F23, 22.10.2026:**

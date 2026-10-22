@@ -19,7 +19,13 @@ Backend теперь проверяет конец диапазона до вы�
 прошёл на Kotlin 2.4.10 / JRE17; Android/Compose wrapper проверяет полный CI.
 Замечание Sonar о 9 параметрах restoreEditorInput устранено группировкой
 связанных input commands; теперь параметров 7, порядок и finally сохранены.
-Текущие локальные результаты и границы — в [PLAN_STATUS](docs/PLAN_STATUS.md).
+[Backend CI кандидата 7640325e](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39845827773)
+подтвердил 1475 tests / 1409 subtests. Строгий gate выявил новое замечание
+Sonar: Cognitive Complexity экрана ассистента 46 при лимите 45.
+Формирование payload отправки перенесено в ChatRequestSnapshot; проверки
+готовности, стоимости и подтверждения, момент генерации request_id сохранены.
+Результат повторного Sonar и Android CI этого изменения ещё требуется.
+Проверки и границы — в [PLAN_STATUS](docs/PLAN_STATUS.md).
 Полный CI нового совместного SHA и обе API37-матрицы остаются обязательными;
 статус кандидата и результаты публикуются в [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880).
 

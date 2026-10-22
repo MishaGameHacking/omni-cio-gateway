@@ -38,6 +38,12 @@ private data class ChatRequestSnapshot(val threadId: String, val text: String, v
     fun payload(): JSONObject = JSONObject().put("thread_id", threadId).put("text", text)
         .put("context", JSONObject(context)).put("tier", tier)
     val signature: String get() = payload().toString()
+
+    fun messagePayload(quote: ChatRouteQuote, confirmed: Boolean): JSONObject = payload().apply {
+        remove("thread_id"); put("request_id", UUID.randomUUID().toString())
+        put("max_cost_micro_rub", quote.ceilingMicroRub); put("expected_route_id", quote.routeId)
+        if (confirmed) put("confirm_premium", true)
+    }
 }
 
 private fun checkpointThread(point: JSONObject): String? =
@@ -96,11 +102,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     val startMessage: (ChatRequestSnapshot, ChatRouteQuote, Boolean) -> Unit = { selected, quote, confirmed ->
         if (quote.usable && (!quote.needsConfirmation(selected.tier) || confirmed) &&
             !needsRecovery && jobId == null && !restoringJob && !send.busy) {
-            val body = selected.payload().apply {
-                remove("thread_id"); put("request_id", UUID.randomUUID().toString())
-                put("max_cost_micro_rub", quote.ceilingMicroRub); put("expected_route_id", quote.routeId)
-                if (confirmed) put("confirm_premium", true)
-            }
+            val body = selected.messagePayload(quote, confirmed)
             pendingSend = selected
             send.perform("/workspace/chat/threads/" + VolumeWorkspaceClient.encode(selected.threadId) + "/messages", body, job = true)
         }
