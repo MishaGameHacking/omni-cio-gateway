@@ -60,6 +60,36 @@ leaves the IPv4 on the account; even an unattached address is billed until the
 address itself is deleted. Confirm current capacity and the total recurring cost
 in the account before order. This guide does not create or delete resources.
 
+## Optional cold S3 backup budget
+
+Checked **22 October 2026**: the [official cold-storage rate](https://timeweb.cloud/blog/digest-november-2025)
+is 1 RUB/GB/month. The [minimum billed capacity](https://timeweb.cloud/docs/s3-storage/manage-storage/s3-autoscaling)
+is 1 GB even for an empty cold bucket; its autoscaling is always enabled.
+[Bucket billing](https://timeweb.cloud/docs/s3-storage/manage-storage/create-bucket) is hourly.
+If **all retained encrypted data totals at most 1 GB**, including every [object version](https://timeweb.cloud/docs/s3-storage/supported-features/s3-object-versioning),
+the storage floor is 1 RUB/month: **551 RUB/month** for VM + IPv4 + S3,
+or **641 RUB/month** with the single 15 GB panel copy retained as well.
+These conditional calculations exclude outgoing traffic, AI and other services;
+larger backups cost according to stored data, not the VM's full disk capacity.
+
+The [traffic billing documentation](https://timeweb.cloud/docs/s3-storage/tariffication)
+charges non-Prime cold storage **1.5 RUB per outgoing GB from the first GB**.
+The [service page](https://timeweb.cloud/services/s3-storage) still advertises 100 GB
+free; resolve this official conflict before ordering and budget paid downloads.
+The outgoing limit is checked hourly, and overshoot is charged; it is not a hard
+spending cap. The [official traffic announcement](https://timeweb.cloud/blog/tarifikaciya-iskhodyashchego-trafika-s3)
+lists GET/HEAD/OPTIONS/PUT/POST/PATCH/LIST and incoming traffic as free; confirm
+current account terms and any unlisted operation charges before ordering.
+
+A private bucket is a separate resource from the VM, allowing a copy to outlive
+that VM's deletion. It still shares the Timeweb provider and account: this does
+not protect against their common failure, account lockout or account deletion.
+S3 scheduling, retention, key recovery and a verified database restore are **not
+implemented or configured by this installer**. Before replacing the panel copy,
+prove recovery of the consistent SQLite backup and Fernet key without the old VM;
+the lower price does not waive backup or restore requirements. No bucket or
+backup policy has been selected or ordered; these are not confirmed order totals.
+
 ## Free technical domain option
 
 A paid domain is not required. Timeweb offers free technical names in `.twc1.net`,
