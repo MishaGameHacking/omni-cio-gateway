@@ -242,7 +242,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     private var config = strategyConfig()
     private var preview: JSONObject? = null
     private var sequence = 0
-    private var lastChatEstimate: JSONObject? = null
+    private val chatContract = BusinessChatContract(PROBE_THREAD, PROBE_AS_OF)
     private val messages: MutableList<JSONObject> = if (scenario == "empty") mutableListOf() else mutableListOf(
         jObject("id" to "synthetic-question", "role" to "user", "text" to "Что подтверждено в этом тестовом портфеле?", "created_at" to PROBE_AS_OF),
         assistantMessage("synthetic-answer"),
@@ -427,7 +427,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
         require(body?.optString("reason") == "manual")
         if (scenario in setOf("empty", "partial"))
             return conflict("Синтетический анализ недоступен по состоянию источника.")
-        return enqueue(body)
+        return enqueue(body, "analysis")
     }
 
     private fun createRiskCheck(body: JSONObject?): VolumeReply {
@@ -618,23 +618,14 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
     }
 
     private fun estimateChat(body: JSONObject?): VolumeReply {
-        require(body?.getString("text")?.isNotBlank() == true)
-        require(
-            body.getString("thread_id") == PROBE_THREAD &&
-                body.getString("tier") in setOf("fast", "standard", "premium")
-        )
-        require(
-            body.getJSONObject("context").getString("mode") in
-                setOf("general", "portfolio", "instrument")
-        )
-        lastChatEstimate = JSONObject(body.toString())
-        return ok(
-            jObject(
-                "available" to true,
-                "estimated_upper_bound" to probeMoney("0.01"),
-                "synthetic" to true,
-            )
-        )
+        val request = requireNotNull(body)
+        return ok(JSONObject(chatContract.estimate(chatRequest(request, request.get("thread_id") as String))))
+    }
+
+    private fun chatRequest(body: JSONObject, threadId: String): ProbeChatRequest {
+        val context = body.getJSONObject("context")
+        return ProbeChatRequest(threadId, body.get("text") as String, context.toString(),
+            context.get("mode") as String, body.get("tier") as String)
     }
 
     private fun sendChat(body: JSONObject?): VolumeReply {
@@ -644,32 +635,21 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
                 messagePosts = trace.value.messagePosts + 1,
                 messageRequestId = requestId,
             )
-        require(
-            body?.getString("text")?.isNotBlank() == true &&
-                body.getJSONObject("context").getString("mode") in
-                    setOf("general", "portfolio", "instrument")
-        )
-        require(UUID.fromString(requestId).toString() == requestId)
-        val estimated =
-            checkNotNull(lastChatEstimate) { "Message requires a preceding exact cost estimate" }
-        require(
-            estimated.getString("text") == body.getString("text") &&
-                estimated.getString("tier") == body.getString("tier") &&
-                estimated.getJSONObject("context").toString() ==
-                    body.getJSONObject("context").toString()
-        )
+        val request = requireNotNull(body)
+        chatContract.validateSend(requestId, chatRequest(request, PROBE_THREAD),
+            request.opt("max_cost_micro_rub"), request.opt("expected_route_id"), request.opt("confirm_premium"))
         if (scenario == "ready" && trace.value.messagePosts != 1)
             return invalid("A lost chat response must not issue a second message POST")
         messages.add(
             jObject(
                 "id" to "synthetic-user-${++sequence}",
                 "role" to "user",
-                "text" to body.getString("text"),
+                "text" to request.getString("text"),
                 "created_at" to PROBE_AS_OF,
             )
         )
         messages.add(assistantMessage("synthetic-answer-$sequence"))
-        val accepted = enqueue(body)
+        val accepted = enqueue(request, "chat")
         // The simulated server has accepted this exact request. Only
         // its response is lost; recovery must read the existing job.
         return if (scenario == "ready" && accepted.data != null)
@@ -689,7 +669,7 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
             requestJobs[requestId]
                 ?: return VolumeReply(status = 404, error = "Тестовое задание не найдено.")
         trace.value = trace.value.copy(recoveredRequestId = requestId)
-        return ok(jObject("job_id" to id))
+        return ok(jobs.getValue(id))
     }
 
     private fun pollJob(endpoint: String): VolumeReply {
@@ -720,14 +700,14 @@ private fun ok(data: JSONObject) = VolumeReply(data = JSONObject(data.toString()
         trace.value = trace.value.copy(errors = (trace.value.errors + message).takeLast(10))
         return VolumeReply(error = message, code = "fixture_contract_error", status = 422)
     }
-    private fun enqueue(body: JSONObject?): VolumeReply {
+    private fun enqueue(body: JSONObject?, kind: String = "reconcile"): VolumeReply {
         val request = body?.optString("request_id")?.takeIf(String::isNotBlank) ?: return invalid("Missing request_id")
-        requestJobs[request]?.let { return ok(jObject("job_id" to it)) }
-        val id = "synthetic-job-${++sequence}"; requestJobs[request] = id; jobs[id] = job("running", id)
-        return ok(jObject("job_id" to id))
+        requestJobs[request]?.let { return ok(jobs.getValue(it)) }
+        val id = "synthetic-job-${++sequence}"; requestJobs[request] = id; jobs[id] = job("running", id, request, kind)
+        return ok(jobs.getValue(id))
     }
-    private fun job(state: String, id: String = PROBE_JOB) = jObject("id" to id, "state" to state, "stage" to if (state == "uncertain") "provider_request" else "collecting",
-        "updated_at" to PROBE_AS_OF, "can_retry" to false, "sources" to jArray(probeSource()))
+    private fun job(state: String, id: String = PROBE_JOB, requestId: String = PROBE_REQUEST, kind: String = "synthetic") =
+        JSONObject(businessProbeJobPayload(id, requestId, kind, state, PROBE_AS_OF)).put("sources", jArray(probeSource()))
     private fun strategy() = jObject("active" to if (version == 0) null else jObject("version" to version, "confirmed_at" to PROBE_AS_OF, "config" to config),
         "history" to if (version == 0) JSONArray() else jArray(jObject("version" to 2, "confirmed_at" to "2026-10-16T10:00:00Z", "config" to strategyConfig("income"))))
     private fun strategyConfig(goal: String = "preservation") = jObject("goal" to goal, "horizon_months" to 36,
