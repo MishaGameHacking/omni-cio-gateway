@@ -15,9 +15,14 @@ The secret environment file remains mode `0600`, and runtime data retains the
 service's private `UMask=0077`. These packaging and permission boundaries passed
 16 local installer tests on 22 October 2026; they do not prove a live deployment.
 
-Fresh Timeweb inventory: run `39636306165`; catalogue/configuration inventory:
-run `39249141914`, latest job `119349484440`. Project `2941515` is visible and
-contains no visible servers. No server has been ordered by this new installation.
+Fresh authenticated read-only inventory: [run `39730159289`](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39730159289),
+job `119663110280`, 22 October 2026 at 05:49:03 UTC / 08:49:03 Moscow time,
+head `9eb7dcf4`. It returned `servers=[]`, `agents=[]`, `floating_ips=[]`,
+`domains_total=0`, `subdomains_total=0`, `unattached_ipv4_count=0`, and
+`complete_within_token_visibility=true`. This is visibility granted to this
+token, not a whole-account inventory or a billing statement. DNS, ownership
+of a hostname, HTTPS and regional capacity have not been verified.
+`resource_changes=false`; no server was ordered by this inventory or package.
 
 | Initial candidate | Region IDs | Preset IDs | VM monthly price, excluding IPv4 |
 | --- | --- | --- | --- |
@@ -28,7 +33,7 @@ These are authenticated catalogue observations, not capacity reservations or a
 claim of total cost. Start with the 1 GB candidate for one ASGI worker; measure
 memory/disk after installation and representative requests before using it for
 owner data. Models run remotely. Do not buy Android CI/GPU capacity for backend.
-The official public calculator (https://timeweb.cloud/prices, checked 21 October
+The official public calculator (https://timeweb.cloud/prices, checked 22 October
 2026) lists a public IPv4 at 200 RUB/month and automated backups at 6 RUB per
 GB/month. Combined with the authenticated 350 RUB preset, 550 RUB/month is an
 estimate before backups, not an account-specific order quote. The IP documentation
@@ -37,11 +42,15 @@ Confirm current capacity and the total recurring cost in the account before orde
 
 ## Configuration still required
 
-The inventory found `TELEGRAM_CLIENT_SECRET` present. A direct check of repository
-settings also found `TELEGRAM_CLIENT_ID` in Actions **variables**; the old inventory
-incorrectly read it from secrets. The workflow now reads `vars.TELEGRAM_CLIENT_ID`.
-Only `OWNER_TELEGRAM_SUB` is missing. Configure it through GitHub's protected secret
-settings or the server's private configuration, never in public code.
+The current inventory found `TELEGRAM_CLIENT_SECRET` present and
+`TELEGRAM_CLIENT_ID` present in Actions **variables**. It found
+`OWNER_TELEGRAM_SUB` and `FERNET_KEY` absent; recovery metadata had zero candidates.
+For a fresh empty installation, the missing Fernet key is generated locally as
+described below. The missing verified owner subject requires enrollment; the
+normal owner-only application cannot start first and discover its own owner.
+The new explicit enrollment mode below resolves this cycle without opening
+the application. An already verified subject can still be supplied through the
+original protected configuration path, never in public code.
 Use the exact `sub` claim from the owner's **verified Telegram OIDC ID token**.
 It is an opaque, case-sensitive value, distinct from the numeric `id` in the
 profile scope. A bot's Client ID, an ordinary account ID, a username, or the
@@ -52,7 +61,118 @@ An administrator must bind the identity obtained through the owner's completed
 Telegram sign-in, checking signature, issuer, audience, expiry and the issued
 nonce. Do not paste an ID token or client secret into public issues or logs.
 Without this verified binding, the application stays closed.
-Source: https://core.telegram.org/bots/telegram-login (checked 21 October 2026).
+Source: https://core.telegram.org/bots/telegram-login (checked 22 October 2026).
+
+## First owner sign-in — F02 / F20 preparation
+
+The reviewed source now includes `deploy/enroll_owner.py` and the integrated
+`--enroll-owner` mode of the fresh installer. It is not a public signup endpoint.
+It does not import the application, create a user/session/database or choose the
+first visitor as owner. `backend/telegram_oidc.py` contains the shared pure
+RS256/issuer/audience/expiry/nonce/subject validator; ordinary browser login
+still uses its deployment-pinned JWKS and existing transaction/session boundary.
+
+Live prerequisites are still required: a verified new VM/IP, an owned hostname
+whose DNS identifies that VM, public HTTPS certificate issuance, working direct
+TLS connections from that VM to `oauth.telegram.org`, the real BotFather Client
+ID and client secret, and an administrator's private interactive SSH terminal.
+The owner must sign in interactively using their intended Telegram account.
+No live login, BotFather change, VM installation or certificate issuance was
+performed by the local tests. A real Client ID, hostname or verified owner `sub`
+cannot be invented from the source or a test token.
+
+Register the actual new application origin in BotFather. Also register **exactly**
+the actual `BACKEND_PUBLIC_URL` followed by
+`/auth/telegram/owner-enrollment/callback` as an allowed HTTPS redirect URI.
+Use that exact value in `TELEGRAM_ENROLLMENT_REDIRECT_URI`. This path is distinct
+from the existing application's `/auth/telegram/callback`; the installer rejects
+a different host, path, scheme, query, fragment or alternate port. No real origin
+is supplied in this document because none has been provisioned and verified.
+
+Before installing Caddy or creating any app directories, prepare the new
+`/root/analyst-ai-enrollment.json` using the private administrative environment.
+It must be a root-owned, mode-0600 regular JSON file with exactly these fields:
+
+- `TELEGRAM_CLIENT_ID` — actual numeric Client ID from BotFather.
+- `TELEGRAM_CLIENT_SECRET` — actual secret; never a command-line argument or log.
+- `BACKEND_PUBLIC_URL` — the new verified HTTPS origin, without a trailing slash.
+- `EXPECTED_PUBLIC_IPV4` — the exact verified new VM address.
+- `TELEGRAM_ENROLLMENT_REDIRECT_URI` — the exact registered URI described above.
+
+Do not supply an owner subject in this input. `/root/analyst-ai-owner.json` must
+not exist, even as a dangling symlink. Run from the reviewed checkout in a root
+interactive terminal with terminal recording disabled. `mesg n` removes other
+users' terminal access; the program refuses pipes and shared terminal permissions.
+
+```sh
+mesg n
+umask 077
+python3 deploy/install_owner_backend.py --enroll-owner
+python3 deploy/install_owner_backend.py --install --enroll-owner
+```
+
+The first command validates configuration and sources only. The second keeps
+the original fresh-VM refusal checks, including any existing Caddy configuration
+or service drop-in directory. It checks DNS against the verified local interface,
+installs dependencies, and temporarily exposes only the exact GET callback
+through Caddy to `127.0.0.1:8765`. All other application paths return 404; the
+application environment, Fernet key, unit and database are not created yet.
+A local TLS probe verifies the hostname certificate and that application routes
+remain closed before the sign-in helper is launched.
+
+In the private terminal, the administrator first confirms that the exact redirect
+was registered. The helper shows a single-use authorization link only in that
+terminal. It issues independent random state, nonce and an S256 PKCE challenge;
+the transaction expires in ten minutes. It exchanges the code only at the fixed
+Telegram HTTPS token endpoint, fetches only Telegram's fixed HTTPS JWKS endpoint,
+and disables redirects and proxy/environment overrides. The callback spends its
+matching state before the exchange, including on cancellation or invalid tokens.
+No token, authorization code, client secret or provider error body is printed.
+
+After verification the listener closes. The terminal shows the verified `sub`
+and bounded, escaped profile hints. The administrator must check the intended
+account and type `BIND` followed by that exact `sub`; a display name, numeric
+profile ID, generic “yes”, empty input, expiration or cancellation cannot bind it.
+Only then is the complete owner JSON published atomically as a new mode-0600
+file under root's private directory, without replacement or symlink following.
+The installer rereads it, checks client/secret/origin/IP against the initial input,
+generates the new Fernet key and starts the existing strict owner-only factory.
+
+During this short bootstrap stage, Caddy's **global runtime logger** uses
+`output discard`, including `http.log.error`: disabling access logs alone would
+not protect callback queries on upstream errors. The Python callback also omits
+request/error logs. The runtime Caddy configuration restores ordinary logging
+and returns 410 for the enrollment path without forwarding it to Uvicorn.
+Sources: [Caddy global logging](https://caddyserver.com/docs/caddyfile/options#log),
+[discard output](https://caddyserver.com/docs/caddyfile/directives/log#discard).
+
+Ctrl-C, normal termination and SSH hangup enter controlled cancellation. Failure
+after package installation may have started Caddy is covered by cleanup that
+disables/stops Caddy and stops a created owner service. A failed cleanup is
+reported explicitly. Abrupt process kill or loss of the machine cannot be handled
+by a Python cleanup block. Partial installation files are retained, including any
+already confirmed owner configuration and generated key; there is no automatic
+resume or deletion. Another fresh invocation refuses these paths. An administrator
+must inspect and resolve the incomplete installation while preserving any identity,
+key or data; removing the refusal checks is not a recovery procedure.
+
+Telegram explicitly documents nonce for its Login SDK; the manual authorization
+code example omits it. This implementation sends nonce and requires its exact
+signed return, as required by [OpenID Connect Core §3.1.3.7](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation).
+Live Telegram code-flow nonce behavior remains an integration gate. A missing
+nonce fails closed and must not be “fixed” by removing the check. Ordinary runtime
+login must also be tested against the deployed pinned signing-key snapshot.
+
+Local verification on 22 October 2026 passed 69 targeted tests / 77 subtests
+and the full backend suite: 1500 tests / 1447 subtests in 22.45 seconds. The only
+warning was the existing Starlette/AnyIO deprecated alias. Signed synthetic RSA tokens, negative claims,
+state/PKCE/replay/expiry/cancellation/manual-binding boundaries, root-private
+atomic file publication, symlink refusal and installer ordering are covered by
+`test_owner_enrollment.py`, `test_owner_enrollment_install.py` and the preserved
+Telegram/owner regression tests. Both generated Caddyfiles were independently
+adapted successfully by the official Caddy v2.6.2 binary after checksum verification;
+this used no listener, ACME request or service. Source/test readiness does not
+close F02/F20/F23 deployment, owner-login or phone acceptance.
 
 For this fresh database, the installer generates a new Fernet key directly on
 the VM. It never prints it or replaces an existing key. Preserve an encrypted
@@ -64,7 +184,10 @@ use a verified SSH host key. Point the new HTTPS hostname to that VM and approve
 the new Telegram OIDC origin/redirect in BotFather. Do not reuse the deleted
 `176.98.178.81.sslip.io` endpoint as proof of ownership or send credentials to it.
 
-On that VM, supply `/root/analyst-ai-owner.json`, a root-owned mode-0600 regular JSON file (not a symlink), with exactly these fields:
+For the original path with an **already verified** owner identity, supply
+`/root/analyst-ai-owner.json` on that VM, a root-owned mode-0600 regular JSON file
+(not a symlink), with exactly these fields. The integrated enrollment mode instead
+creates this file after private confirmation; do not run the two paths in sequence.
 
 - `TELEGRAM_CLIENT_ID`
 - `TELEGRAM_CLIENT_SECRET`
