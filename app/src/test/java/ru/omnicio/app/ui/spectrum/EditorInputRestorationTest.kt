@@ -3,6 +3,7 @@ package ru.omnicio.app.ui.spectrum
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -138,38 +139,38 @@ class EditorInputRestorationTest {
     @Test(timeout = 5000) fun cancellationCannotFinishTheRestoreOrIssueALateShow() = runBlocking {
         for (visible in listOf(false, true)) {
             for (cancelAt in listOf("window", "focus", "frame")) {
-                val ime = QueuedIme()
-                val waiting = CompletableDeferred<Unit>()
-                var completed = false
-                val restore = launch {
-                    completed = restoreEditorInput(
-                        showKeyboard = visible,
-                        readOnly = false,
-                        requestFocus = ime::requestFocus,
-                        awaitFocus = {
-                            if (cancelAt == "focus") {
-                                waiting.complete(Unit)
-                                awaitCancellation()
-                            }
-                        },
-                        awaitWindowReady = {
-                            if (cancelAt == "window") {
-                                waiting.complete(Unit)
-                                awaitCancellation()
-                            }
-                        },
-                        awaitFrame = { waiting.complete(Unit); awaitCancellation() },
-                        setKeyboardVisible = ime::setKeyboardVisible,
-                    )
-                }
-                waiting.await()
-                restore.cancelAndJoin()
-                assertFalse(completed)
-                val expectedHide = !visible && cancelAt != "window"
-                assertEquals(if (expectedHide) listOf(false) else emptyList<Boolean>(), ime.explicitRequests)
-                assertEquals(if (visible || cancelAt != "window") 1 else 0, ime.focusRequests)
+                assertCancelledRestore(visible, cancelAt)
             }
         }
+    }
+
+    private suspend fun assertCancelledRestore(visible: Boolean, cancelAt: String) = coroutineScope {
+        val ime = QueuedIme()
+        val waiting = CompletableDeferred<Unit>()
+        var completed = false
+        suspend fun waitAt(stage: String) {
+            if (cancelAt == stage) {
+                waiting.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val restore = launch {
+            completed = restoreEditorInput(
+                showKeyboard = visible,
+                readOnly = false,
+                requestFocus = ime::requestFocus,
+                awaitFocus = { waitAt("focus") },
+                awaitWindowReady = { waitAt("window") },
+                awaitFrame = { waitAt("frame") },
+                setKeyboardVisible = ime::setKeyboardVisible,
+            )
+        }
+        waiting.await()
+        restore.cancelAndJoin()
+        assertFalse(completed)
+        val expectedHide = !visible && cancelAt != "window"
+        assertEquals(if (expectedHide) listOf(false) else emptyList<Boolean>(), ime.explicitRequests)
+        assertEquals(if (visible || cancelAt != "window") 1 else 0, ime.focusRequests)
     }
 
     /** Compose's fresh StartInput batch implicitly shows unless a later hide replaces it. */

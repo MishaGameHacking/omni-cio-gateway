@@ -1,5 +1,35 @@
 # Выполнение главного плана Analyst AI
 
+**Упрощение теста отмены, F01/F16/F22, 22.10.2026:**
+Кандидат `c86b9190b8e210464d79e6c34887f6d19942d370`:
+
+- [Backend 39794038157](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39794038157),
+  job119876825961 — 1467 tests / 1409 subtests PASS; итоговый job — failure
+  из-за строгого Sonar gate.
+- [Полный Sonar 39794027321](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39794027321),
+  exact-head check119877617030: 1 OPEN/CONFIRMED finding, 1 новый,
+  все типы, `complete:true`. `kotlin:S3776` в тесте отмены:
+  Cognitive Complexity 27 при допустимых 15; issue `AaFj-IJq-Mhw8ApFNdwK`.
+  Успешный статус самого диагностического workflow не означает чистый inventory.
+- [Android 39794038166](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39794038166),
+  build job119876936200 — подготовка runner завершилась ошибкой загрузки
+  закреплённого actions/setup-java с codeload.github.com после трёх таймаутов.
+  Компиляция, JUnit и runtime не выполнялись; это не новый результат эмулятора.
+  Cleanup job119880771549 подтвердил `CI_PRIVATE_TRANSFER_CLEANUP=verified_absent`.
+
+Только структура теста отмены изменена: два цикла сохраняют шесть сочетаний
+visible/hidden × window/focus/frame; coroutineScope в отдельной suspend-функции
+сохраняет отмену дочерней coroutine. Общий waitAt приостанавливается только
+в выбранной точке; waiting.await, cancelAndJoin, общий timeout 5000 ms
+и все три assertions сохранены. Безусловное ожидание frame больше не скрывает
+пропуск раннего callback. Production, driver, gate и suppressions не менялись.
+Независимое ревью — PASS. Локально: 844 CI-теста (4 предусмотренных пропуска),
+Python-аудит 311 файлов и diff check — PASS. Локальный JUnit недоступен
+из-за libjli.so; компиляция и снятие finding требуют exact-head CI.
+Новый head ещё должен пройти Backend, полный Sonar 0/0 и обе полные
+API37-матрицы на собственных байтах. APK не выдан; прежние проверки
+не переносятся на новый head как готовый результат.
+
 **Порядок восстановления фокуса и IME, F01/F16/F22, 22.10.2026:**
 Диагностический head `51510ac9439a2173744a43e3d9a54590f325ffc5`:
 
