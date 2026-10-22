@@ -1,5 +1,17 @@
 """Observe the production hypothesis panel without treating it as a fact."""
 
+from profile_scroll import visible_resource
+
+CHANNEL_SOURCES = "assistant-impact-channel-0-sources"
+
+
+def expanded_channel_sources(tree):
+    target = visible_resource(tree, CHANNEL_SOURCES)
+    if (target is not None and target.get("clickable") == "true"
+            and target.get("enabled") == "true" and target.get("state-description") == "Развёрнуто"):
+        return target
+    return None
+
 
 def exercise_impact(probe, observed, screenshot):
     area = "workspace-content"
@@ -19,9 +31,12 @@ def exercise_impact(probe, observed, screenshot):
                  "1. СИНТЕТИЧЕСКОЕ допущение: компания использует затронутый ресурс",
                  "СИНТЕТИЧЕСКАЯ неопределённость: величина изменения не подтверждена"):
         probe.reveal(text, area)
-    # The basis fold is closed, so the next source fold belongs to this
-    # expanded mechanism, rather than to an unrelated earlier company.
-    probe.tap("Основания (1)", area)
+    # The surrounding answer has another identically labelled source fold.
+    # Open this channel's native toggle and observe its actual expanded state
+    # before a subsequent scroll can move past the newly inserted metadata.
+    probe.tap_resource(CHANNEL_SOURCES, area)
+    probe.wait_for(lambda: expanded_channel_sources(probe.tree()),
+                   "The hypothesis channel source fold did not expand")
     probe.reveal("СИНТЕТИЧЕСКИЙ источник визуального теста", area)
     probe.capture(screenshot)
     probe.tap("Ограничения разбора", area)

@@ -5,7 +5,8 @@ import math
 import re
 import time
 
-from native_input_evidence import empty_editor_focused, focused_editor, rotate_focused_draft
+from native_input_evidence import (empty_editor_focused, focused_editor, record_editor_restore_trace,
+                                   rotate_dismissed_draft, rotate_focused_draft)
 from profile_ui_probe import button_label
 
 AREA = "workspace-content"
@@ -66,7 +67,8 @@ def exercise_scenario_comparison(case):
     _enter_percent(probe, "5")
     suffix = "-font-200" if math.isclose(case.font_scale, 2.0) else ""
     rotation = rotate_focused_draft(probe, "5", "business-risk-scenario-rotation" + suffix, dialog=True)
-    probe.dismiss_keyboard()
+    record_editor_restore_trace(probe)
+    hidden_rotation = rotate_dismissed_draft(probe, "5", "business-risk-hidden-ime-rotation" + suffix, dialog=True)
     probe.tap(COMPARE, AREA)
     for scenario_id, change, after in (("A", "-10000", "90000"), ("B", "5000", "105000")):
         _record_value(probe, case.reader, scenario_id, "Исходный капитал: 100000 RUB")
@@ -83,5 +85,6 @@ def exercise_scenario_comparison(case):
     return {"same_baseline": "100000 RUB", "assumptions_percent": {"A": "-10", "B": "5"},
             "estimated_after": {"A": "90000 RUB", "B": "105000 RUB"},
             "comparison_requests": after["scenario_comparisons"] - before["scenario_comparisons"],
-            "native_draft_rotation": rotation, "screenshot": picture + ".png",
+            "native_draft_rotation": rotation, "native_hidden_draft_rotation": hidden_rotation,
+            "screenshot": picture + ".png",
             "fixture": "synthetic-no-broker-or-model-call"}

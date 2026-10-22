@@ -47,12 +47,13 @@ fun WorkspaceActionState(action: WorkspaceAction) {
 }
 
 @Composable
-fun EvidenceLinks(evidence: List<JSONObject>, highlights: List<JSONObject> = emptyList()) {
+fun EvidenceLinks(evidence: List<JSONObject>, highlights: List<JSONObject> = emptyList(),
+    headerModifier: Modifier = Modifier) {
     val navigate = LocalEvidenceNavigator.current
     val workspace = LocalWorkspaceNavigator.current
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val catalogue = LocalWorkspaceSnapshot.current?.records("sources").orEmpty()
-    if (evidence.isNotEmpty()) DetailFold("Основания (${evidence.size})") {
+    if (evidence.isNotEmpty()) DetailFold("Основания (${evidence.size})", headerModifier = headerModifier) {
         evidence.forEach { source ->
             val details = if (source.has("provider")) source else catalogue.firstOrNull { it.text("id") == source.text("source_id", source.text("id", "")) } ?: source
             Text(details.text("title", details.text("provider", "Источник наблюдения")), style = MaterialTheme.typography.titleSmall)

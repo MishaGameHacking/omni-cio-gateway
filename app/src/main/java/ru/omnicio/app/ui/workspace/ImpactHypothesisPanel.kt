@@ -103,15 +103,15 @@ private fun ImpactChannel(index: Int, channel: JSONObject, sources: List<JSONObj
         }
         Text("Неопределённость", style = MaterialTheme.typography.titleSmall)
         Text(PrivateValue(channel.text("uncertainty", "Основания требуют дополнительной проверки")))
-        ImpactSources(channel, sources)
+        ImpactSources(channel, sources, Modifier.testTag("assistant-impact-channel-$index-sources"))
     }
 }
 
 @Composable
-private fun ImpactSources(item: JSONObject, sources: List<JSONObject>) {
+private fun ImpactSources(item: JSONObject, sources: List<JSONObject>, headerModifier: Modifier = Modifier) {
     val ids = item.strings("source_ids").toSet()
     val selected = sources.filter { it.text("id", "") in ids }
-    if (selected.isNotEmpty()) EvidenceLinks(selected)
+    if (selected.isNotEmpty()) EvidenceLinks(selected, headerModifier = headerModifier)
     else Text("Метаданные источников не получены.", style = MaterialTheme.typography.bodySmall)
 }
 
