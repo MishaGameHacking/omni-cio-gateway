@@ -1,4 +1,21 @@
-# Analyst AI: Android 15+ native UI specification
+# Analyst AI: native UI specification
+
+## Current platform contract
+
+The owner's clarification of 19–20 October 2026 supersedes the older platform
+requirements below: the **0.11.0 / 35 candidate requires Android 17 / API 37**,
+with `minSdk = compileSdk = targetSdk = 37`. Both measured **4096-byte and
+16384-byte** API37 x86_64 profiles require installation, upgrade, launch and
+full UI checks tied to the candidate's bytes. The authoritative contract is in
+[AGENTS](../AGENTS.md#android); actual results remain in [PLAN_STATUS](PLAN_STATUS.md).
+This specification does not establish a verified new APK release.
+
+## Preserved specification — 17 October 2026
+
+The body below retains the dated 3D100 specification, its historical API35/36
+platform assumptions and the published **0.10.0 / 34** baseline. Those OS and
+acceptance-matrix defaults are superseded by the current contract above;
+historical evidence and implementation descriptions retain their original scope.
 
 Current implementation contract for the **3D100 / 0.11.0 / 35 candidate**, updated 2026-10-17. The latest published baseline remains 0.10.0 / 34. [3D100](3D100.md) tracks source and verification for each requirement; this specification does not itself certify a release.
 
