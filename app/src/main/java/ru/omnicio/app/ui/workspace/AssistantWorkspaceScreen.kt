@@ -38,6 +38,12 @@ private data class ChatRequestSnapshot(val threadId: String, val text: String, v
     fun payload(): JSONObject = JSONObject().put("thread_id", threadId).put("text", text)
         .put("context", JSONObject(context)).put("tier", tier)
     val signature: String get() = payload().toString()
+
+    fun messagePayload(quote: ChatRouteQuote, confirmed: Boolean): JSONObject = payload().apply {
+        remove("thread_id"); put("request_id", UUID.randomUUID().toString())
+        put("max_cost_micro_rub", quote.ceilingMicroRub); put("expected_route_id", quote.routeId)
+        if (confirmed) put("confirm_premium", true)
+    }
 }
 
 private fun checkpointThread(point: JSONObject): String? =
@@ -73,7 +79,8 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     val request = ChatRequestSnapshot(threadId, question.trim(), questionContext.json().toString(), tiers[tier])
     val signature = request.signature
     val pendingQuestion = savedRequests.items.any { JobCheckpointStore.isUnconfirmedChat(it) || checkpointMatches(it, request) }
-    val needsRecovery = savedRequests.loading || savedRequests.error != null || awaitingRequestId != null || pendingQuestion
+    val recoveryRequired = savedRequests.error != null || awaitingRequestId != null || pendingQuestion
+    val needsRecovery = savedRequests.loading || recoveryRequired
     var cursors by rememberSaveable(session.userId, threadId) { mutableStateOf(listOf("")) }
     var jobState by remember(jobId) { mutableStateOf("queued") }
     val cursor = cursors.last()
@@ -95,11 +102,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     val startMessage: (ChatRequestSnapshot, ChatRouteQuote, Boolean) -> Unit = { selected, quote, confirmed ->
         if (quote.usable && (!quote.needsConfirmation(selected.tier) || confirmed) &&
             !needsRecovery && jobId == null && !restoringJob && !send.busy) {
-            val body = selected.payload().apply {
-                remove("thread_id"); put("request_id", UUID.randomUUID().toString())
-                put("max_cost_micro_rub", quote.ceilingMicroRub); put("expected_route_id", quote.routeId)
-                if (confirmed) put("confirm_premium", true)
-            }
+            val body = selected.messagePayload(quote, confirmed)
             pendingSend = selected
             send.perform("/workspace/chat/threads/" + VolumeWorkspaceClient.encode(selected.threadId) + "/messages", body, job = true)
         }
@@ -117,7 +120,12 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         }
     }
     val valid = question.isNotBlank() && question.length <= 4_000 && threadId.isNotBlank()
-    val busy = send.busy || estimateAction.busy || jobId != null || restoringJob || needsRecovery
+    val composerAvailability = AssistantComposerAvailability(
+        checkpointsLoading = savedRequests.loading,
+        recoveryRequired = recoveryRequired,
+        operationBusy = send.busy || estimateAction.busy || jobId != null || restoringJob,
+    )
+    val busy = !composerAvailability.canSubmit
     LaunchedEffect(savedRequests.loading, savedRequests.error, savedRequests.items, savedRequests.revision, awaitingRequestId) {
         if (!savedRequests.loading && savedRequests.error == null && savedRequests.revision == JobCheckpointStore.revision.value && awaitingRequestId != null &&
             savedRequests.items.none { it.text("request_id", "") == awaitingRequestId }) awaitingRequestId = null
@@ -138,9 +146,11 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     val quotedRoute = routeQuote(estimate)
     val approvedDeep = estimateSignature == signature && quotedRoute.usable && quotedRoute.needsConfirmation(request.tier)
     val sendQuestion = {
-        if (approvedDeep) startMessage(request, quotedRoute, true) else {
-            pendingEstimate = request
-            estimateAction.perform("/workspace/chat/estimate", request.payload())
+        composerAvailability.submitIfAllowed(valid) {
+            if (approvedDeep) startMessage(request, quotedRoute, true) else {
+                pendingEstimate = request
+                estimateAction.perform("/workspace/chat/estimate", request.payload())
+            }
         }
     }
     // Preserve room for the native editor in landscape with large system text.
@@ -164,7 +174,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                     onBusyChanged = { restoringJob = it }) { jobId = it } }
                 estimate?.let { value -> item { AssistantEstimateCard(value, estimateSignature == signature) } }
             }
-            AssistantComposer(question, tier, savedRequests.loading, needsRecovery, busy, valid,
+            AssistantComposer(question, tier, savedRequests.loading, needsRecovery, composerAvailability, valid,
                 approvedDeep,
                 { tier = it; estimate = null }, { question = it.take(4_000); estimate = null }) {
                 sendQuestion()
@@ -384,11 +394,12 @@ private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
 
 @Composable
 private fun AssistantComposer(question: String, tier: Int, loading: Boolean, needsRecovery: Boolean,
-    busy: Boolean, valid: Boolean, approvedDeep: Boolean, onTier: (Int) -> Unit,
+    availability: AssistantComposerAvailability, valid: Boolean, approvedDeep: Boolean, onTier: (Int) -> Unit,
     onQuestion: (String) -> Unit, onSend: () -> Unit) {
     // The parent consumes the page/IME insets. Keep this bounded viewport
     // scrollable so native focus can reveal the editor on short/large-font windows.
     val compact = LocalCompactWorkspaceInput.current
+    val busy = !availability.canSubmit
     SpectrumCard(Modifier.fillMaxWidth().padding(
         horizontal = if (compact) 0.dp else 12.dp, vertical = if (compact) 0.dp else 8.dp)
         .verticalScroll(rememberScrollState())) {
@@ -397,9 +408,11 @@ private fun AssistantComposer(question: String, tier: Int, loading: Boolean, nee
                     DetailFold("Глубина ответа: " + listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP)[tier]) {
                         WorkspaceChoices("Выбор модели", listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP), tier) { if (!busy) onTier(it) }
                     }
+                    // The local checkpoint read repeats after Activity recreation. It must
+                    // gate dispatch without briefly removing the restored native input session.
                     WorkspaceTextInput(question, onQuestion, "Ваш вопрос", singleLine = false,
                         modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }
-                            .testTag("assistant-question"), enabled = !busy)
+                            .testTag("assistant-question"), enabled = availability.canEditDraft)
                     SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 3) "Проверить стоимость" else "Отправить",
                         onSend,
                         Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)

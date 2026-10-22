@@ -8,13 +8,14 @@ from collections import deque
 import xml.etree.ElementTree as ET
 
 from ime_tracker_evidence import record_ime_tracker_trace
+from ime_service_history import record_ime_service_history
 
 PACKAGE = "ru.omnicio.app.debug"
 _ROTATION_SAMPLES = 5
 _ROTATION_TRANSITIONS = 8
 _RESTORE_EVENTS = {"restore-start", "request-show", "request-hide", "restore-finished",
                    "ime-observed", "focus-changed", "restore-wait-enabled",
-                   "restore-cancelled", "restore-focus-refused"}
+                   "restore-cancelled", "restore-focus-refused", "restore-not-ready"}
 _RESTORE_FLAGS = ("restoreFocus", "restoreKeyboard", "receiveFocusEvents", "focused",
                   "windowFocused", "viewFocused", "viewAttached", "resumed", "imeVisible",
                   "rootImeAvailable", "rootImeVisible", "viewIsTextEditor", "enabled", "readOnly")
@@ -242,7 +243,7 @@ def _rotation_failure_diagnostics(probe, observations):
         probe.capture("rotation-failure")
     except Exception as error:
         print("NATIVE_ROTATION_SCREENSHOT_UNAVAILABLE=" + type(error).__name__, flush=True)
-    record_editor_restore_trace(probe, include_ime_tracker=True)
+    record_editor_restore_trace(probe, include_ime_tracker=True, include_ime_history=True)
 
 
 def _candidate_uid(probe):
@@ -253,13 +254,15 @@ def _candidate_uid(probe):
     return uids[0]
 
 
-def record_editor_restore_trace(probe, *, include_ime_tracker=False):
-    """Record candidate-only facts; collect platform events only after failure."""
+def record_editor_restore_trace(probe, *, include_ime_tracker=False, include_ime_history=False):
+    """Record bounded candidate facts after observation; tracker events follow failure."""
     try:
         uid = _candidate_uid(probe)
     except Exception as error:
         print("NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
         return
+    if include_ime_history:
+        record_ime_service_history(probe, uid)
     try:
         # AOSP logcat applies a numeric -t tail before UID and tag filtering:
         # https://android.googlesource.com/platform/system/logging/+/refs/heads/main/logcat/logcat.cpp
@@ -474,7 +477,8 @@ def _rotate_observed_draft(probe, text, name, before, initial, *, dialog, keyboa
 
         try:
             after = _wait_rotation_editor(probe, rotated,
-                "Rotation lost the unsent native question, input focus or exact caret offset", "rotated", text)
+                "Rotation lost the unsent native question, input focus, exact caret offset or native keyboard state",
+                "rotated", text)
             rotated_window = after["window_id"]
             probe.capture(name)
             post_capture = _post_capture_rotation(rotated, after)
