@@ -100,6 +100,15 @@ class NativeInputEvidenceTests(unittest.TestCase):
         records = native._restore_trace_records(output)
         self.assertEqual([record["elapsedMs"] for record in records], list(range(110, 150)))
 
+    def test_restore_log_applies_recent_line_and_record_size_limits_after_filtering(self):
+        earlier = json.dumps(restore_record(elapsedMs=1))
+        recent = json.dumps(restore_record(elapsedMs=2, text="private draft"))
+        oversized = json.dumps(restore_record(elapsedMs=3, text="private draft" * 400))
+        output = "\n".join([earlier] + ["not a JSON record"] * 119 + [recent, oversized])
+        records = native._restore_trace_records(output)
+        self.assertEqual(records, [restore_record(elapsedMs=2)])
+        self.assertNotIn("private", json.dumps(records))
+
     def test_failure_capture_and_trace_use_only_fixed_tag_uid_and_survive_capture_error(self):
         probe = Mock()
         probe.capture.side_effect = OSError("private screenshot failure")
@@ -111,7 +120,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
         self.assertEqual(probe.command.call_args_list[0].args,
                          ("shell", "cmd", "package", "list", "packages", "-U", native.PACKAGE))
         self.assertEqual(probe.command.call_args_list[1].args,
-                         ("logcat", "-d", "-b", "main", "-v", "raw", "-t", "120",
+                         ("logcat", "-d", "-b", "main", "-v", "raw",
                           "--uid=10123", "AnalystEditorRestore:D", "*:S"))
         self.assertTrue(all(call.kwargs == {"timeout": 4} for call in probe.command.call_args_list))
         self.assertNotIn("private", "\n".join(call.args[0] for call in output.call_args_list))

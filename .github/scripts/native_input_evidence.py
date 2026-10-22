@@ -211,7 +211,10 @@ def record_editor_restore_trace(probe):
         uids = re.findall(r"^package:ru\.omnicio\.app\.debug uid:(\d{1,10})$", identity, re.MULTILINE | re.ASCII)
         if len(uids) != 1 or not 10000 <= int(uids[0]) <= 2147483647:
             raise ValueError("Candidate UID is unavailable")
-        output = probe.command("logcat", "-d", "-b", "main", "-v", "raw", "-t", "120",
+        # AOSP logcat applies a numeric -t tail before UID and tag filtering:
+        # https://android.googlesource.com/platform/system/logging/+/refs/heads/main/logcat/logcat.cpp
+        # Bound the filtered records below, after unrelated traffic has been excluded.
+        output = probe.command("logcat", "-d", "-b", "main", "-v", "raw",
                                "--uid=" + uids[0], "AnalystEditorRestore:D", "*:S", timeout=4)
         print("NATIVE_EDITOR_RESTORE_TRACE=" + json.dumps(_restore_trace_records(output), sort_keys=True), flush=True)
     except Exception as error:

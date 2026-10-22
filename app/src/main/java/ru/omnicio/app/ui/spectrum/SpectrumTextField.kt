@@ -135,18 +135,24 @@ private fun rememberEditorFocus(
         // loads. Keep its saved focus/IME pending until it can accept input.
         if (recreated && restoreFocus && !enabled) return@LaunchedEffect
         if (recreated && restoreFocus) {
+            val keyboardWasVisible = restoreKeyboard
             // A Dialog can compose before its new Window is ready for input.
             lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
             snapshotFlow { window.isWindowFocused }.first { it }
             withFrameNanos { }
             viewport.bringIntoView()
-            requester.requestFocus()
-            snapshotFlow { focused.value }.first { it }
-            withFrameNanos { }
-            if (!readOnly) {
-                trace(if (restoreKeyboard) "request-show" else "request-hide")
-                restoreKeyboardVisibility(keyboard, restoreKeyboard)
-            }
+            val restored = restoreEditorInput(
+                showKeyboard = keyboardWasVisible,
+                readOnly = readOnly,
+                requestFocus = { requester.requestFocus() },
+                awaitFocus = { snapshotFlow { focused.value }.first { it } },
+                awaitFrame = { withFrameNanos { } },
+                setKeyboardVisible = { visible ->
+                    trace(if (visible) "request-show" else "request-hide")
+                    restoreKeyboardVisibility(keyboard, visible)
+                },
+            )
+            if (!restored) return@LaunchedEffect
         } else if (!recreated) {
             // Scrolling a lazy item back into view must not steal focus or open IME.
             restoreFocus = focused.value
