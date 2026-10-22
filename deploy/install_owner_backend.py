@@ -283,10 +283,12 @@ def write_caddy_config(name: str, hostname: str, *, enrollment: bool = False) ->
 def configure_caddy(hostname: str, *, enrollment: bool) -> Path:
     caddy_file = write_caddy_config('Caddyfile', hostname, enrollment=enrollment)
     run(['caddy', 'validate', '--config', str(caddy_file), '--adapter', 'caddyfile'])
-    CADDY_DROPIN.parent.mkdir(mode=0o755)
+    # PID 1 reads this system-unit override as root. The caddy service itself
+    # only needs the separate group-readable Caddyfile, not this directory.
+    CADDY_DROPIN.parent.mkdir(mode=0o700)
     directory = os.open(CADDY_DROPIN.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        os.fchmod(directory, 0o755)
+        os.fchmod(directory, 0o700)
         write_new(Path(CADDY_DROPIN.name), '[Service]\nExecStart=\nExecStart=/usr/bin/caddy run --config /etc/analyst-ai/Caddyfile\nExecReload=\nExecReload=/usr/bin/caddy reload --config /etc/analyst-ai/Caddyfile --force\n', 0o644, directory=directory)
     finally:
         os.close(directory)

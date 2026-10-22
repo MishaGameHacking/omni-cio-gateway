@@ -113,6 +113,10 @@ class OwnerEnrollmentInstallationTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE((installer.CONFIG / 'backend.env').stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(installer.INPUT_CONFIG.stat().st_mode), 0o600)
         self.assert_caddy_permissions(installer.CONFIG / 'Caddyfile')
+        self.assertEqual(stat.S_IMODE(installer.CADDY_DROPIN.parent.stat().st_mode), 0o700)
+        self.assertEqual(installer.CADDY_DROPIN.parent.stat().st_uid, os.getuid())
+        self.assertIn('ExecStart=/usr/bin/caddy run --config /etc/analyst-ai/Caddyfile',
+                      installer.CADDY_DROPIN.read_text())
         self.assertEqual((installer.CONFIG / 'backend.env').stat().st_uid, os.getuid())
         text = (installer.CONFIG / 'Caddyfile').read_text()
         self.assertNotIn('output discard', text)
