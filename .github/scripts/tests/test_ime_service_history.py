@@ -112,6 +112,33 @@ class ImeServiceHistoryTests(unittest.TestCase):
         self.assertEqual(value["show_hide"]["records"][0]["reason"], "unrecognized")
         self.assertNotIn("private", json.dumps(value).lower())
 
+    def test_unicode_digits_in_history_numbers_are_rejected_without_numeric_coercion(self):
+        bad_starts = (start().replace("#17:", "#１７:"), start().replace("targetUserId=0", "targetUserId=٠"),
+                      start(input_type="２００２"), start().replace("2026-10-22", "２０２６-10-22"),
+                      start().replace("timestamp=123891", "timestamp=١٢٣٨٩١"),
+                      start(window="android.os.BinderProxy@a١٢"))
+        bad_shows = (visibility(uid="١٠١٢٣"), visibility(uid="１０１２３"),
+                     visibility().replace("#27:", "#２７:"),
+                     visibility(editor="inputType=０ privateImeOptions=private fieldId (viewId)=0"),
+                     visibility(editor="inputType=0 privateImeOptions=private fieldId (viewId)=-١"))
+        for entry in bad_starts:
+            with self.subTest(start=entry):
+                result = history.ime_service_history(dump(entry), "10123")["start_input"]
+                self.assertEqual(result["records"], [])
+                self.assertEqual(result["counts"]["rejected_entries"], 1)
+        for entry in bad_shows:
+            with self.subTest(show=entry):
+                result = history.ime_service_history(dump(shows=entry), "10123")["show_hide"]
+                self.assertEqual(result["records"], [])
+                self.assertEqual(result["counts"]["rejected_entries"], 1)
+
+    def test_unicode_window_identifiers_do_not_alias_ascii_reference_numbers(self):
+        for invalid_window in ("Window{a١٢ u0 private title}", "Window{a12 u٠ private title}"):
+            with self.subTest(window=invalid_window):
+                value = history.ime_service_history(dump(shows=visibility(focused=invalid_window)), "10123")
+                self.assertEqual(value["show_hide"]["records"][0]["focused_wm_window"], "unrecognized")
+                self.assertNotIn(invalid_window, json.dumps(value))
+
     def test_partial_duplicate_and_out_of_range_fields_are_rejected_without_inventing_editor(self):
         bad_starts = (
             start().replace("targetWin=", "unknownTarget="),

@@ -25,13 +25,13 @@ _MAX_LINE_LENGTH = 4096
 _MAX_SCAN_RECORDS = 128
 _MAX_RECORDS = 64
 _MAX_RECORD_LINES = 24
-_UNSIGNED = r"[0-9]{1,10}"
-_SIGNED = r"-?[0-9]{1,10}"
-_HEX = r"[0-9a-f]{1,8}"
+_UNSIGNED = r"\d{1,10}"
+_SIGNED = r"-?\d{1,10}"
+_HEX = r"[\da-f]{1,8}"
 _BINDER = rf"(?:android\.os\.)?Binder(?:Proxy)?@{_HEX}"
-_TIME = (r"time=(?P<wall_time>[0-9]{4}-[0-9]{2}-[0-9]{2} "
-         r"[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}) "
-         r"\(timestamp=(?P<uptime_ms>[0-9]{1,19})\)")
+_TIME = (r"time=(?P<wall_time>\d{4}-\d{2}-\d{2} "
+         r"\d{2}:\d{2}:\d{2}\.\d{3}) "
+         r"\(timestamp=(?P<uptime_ms>\d{1,19})\)")
 _START_REASONS = frozenset({
     "UNSPECIFIED", "WINDOW_FOCUS_GAIN", "WINDOW_FOCUS_GAIN_REPORT_ONLY",
     "SCHEDULED_CHECK_FOCUS", "APP_CALLED_RESTART_INPUT_API", "CHECK_FOCUS",
@@ -58,7 +58,7 @@ def _integer(value, *, lower=0, upper=_MAX_INT, base=10):
 
 
 def _uid(value):
-    if type(value) is not str or re.fullmatch(_UNSIGNED, value) is None:
+    if type(value) is not str or re.fullmatch(_UNSIGNED, value, re.ASCII) is None:
         raise ValueError("Candidate UID unavailable")
     return _integer(value, lower=10000)
 
@@ -67,7 +67,7 @@ def _one(lines, prefix, pattern):
     candidates = [line for line in lines if line.startswith(prefix)]
     if len(candidates) != 1:
         raise ValueError("Missing or repeated IME field")
-    match = re.fullmatch(pattern, candidates[0])
+    match = re.fullmatch(pattern, candidates[0], re.ASCII)
     if match is None:
         raise ValueError("Unrecognized IME field format")
     return match
@@ -95,7 +95,7 @@ def _ordinal(identities, identity):
 def _window_reference(value, identities):
     if value == "null":
         return None
-    match = re.fullmatch(rf"Window\{{(?P<identity>{_HEX}) u{_UNSIGNED} [^\x00-\x1f\x7f]{{1,1024}}\}}", value)
+    match = re.fullmatch(rf"Window\{{(?P<identity>{_HEX}) u{_UNSIGNED} [^\x00-\x1f\x7f]{{1,1024}}\}}", value, re.ASCII)
     if match is None:
         return "unrecognized"
     # Window titles can contain user data. Only a generated ordinal survives.
@@ -110,10 +110,10 @@ def _start_record(lines, candidate_uid, identities):
     if target["package"] != _PACKAGE or _integer(target["user"]) != candidate_uid // 100000:
         return None
     header = _one(lines, "StartInput ", rf"StartInput #(?P<sequence>{_UNSIGNED}):")
-    record, when = _time(lines, r" reason=(?P<reason>[A-Z_]+|Unknown=-?[0-9]+) restarting=(?P<restarting>true|false)")
+    record, when = _time(lines, r" reason=(?P<reason>[A-Z_]+|Unknown=-?\d+) restarting=(?P<restarting>true|false)")
     editor = _one(lines, "inputType=", rf"inputType=0x(?P<input_type>{_HEX}) "
                   rf"imeOptions=0x(?P<ime_options>{_HEX}) fieldId=0x(?P<field_id>{_HEX}) "
-                  r"fieldName=[^\x00-\x1f\x7f]* actionId=-?[0-9]{1,10} actionLabel=[^\x00-\x1f\x7f]*")
+                  r"fieldName=[^\x00-\x1f\x7f]* actionId=-?\d{1,10} actionLabel=[^\x00-\x1f\x7f]*")
     record.update({name: _integer(editor[name], upper=2 ** 32 - 1, base=16)
                    for name in ("input_type", "ime_options", "field_id")})
     record.update(sequence=_integer(header["sequence"]),
@@ -130,7 +130,7 @@ def _show_editor(lines):
     if value == " null":
         return None
     match = re.fullmatch(rf" inputType=(?P<input_type>{_SIGNED}) privateImeOptions="
-                         rf"[^\x00-\x1f\x7f]* fieldId \(viewId\)=(?P<field_id>{_SIGNED})", value)
+                         rf"[^\x00-\x1f\x7f]* fieldId \(viewId\)=(?P<field_id>{_SIGNED})", value, re.ASCII)
     if match is None:
         raise ValueError("Unrecognized show/hide editor format")
     return {name: _integer(match[name], lower=-(2 ** 31)) for name in ("input_type", "field_id")}
@@ -144,7 +144,7 @@ def _show_record(lines, candidate_uid, identities):
         return None
     header = _one(lines, "SoftInputShowHide", rf"SoftInputShowHide\[(?P<user>{_UNSIGNED})\] #(?P<sequence>{_UNSIGNED}):")
     record, _ = _time(lines)
-    reason = _one(lines, "reason=", r"reason=(?P<reason>[A-Z_]+|Unknown=-?[0-9]+) inFullscreenMode=(?P<fullscreen>true|false)")
+    reason = _one(lines, "reason=", r"reason=(?P<reason>[A-Z_]+|Unknown=-?\d+) inFullscreenMode=(?P<fullscreen>true|false)")
     record.update(sequence=_integer(header["sequence"]), ime_user=_integer(header["user"]),
                   client_pid=_integer(client["pid"], lower=1), client_display=_integer(client["display"], lower=-1),
                   reason=reason["reason"] if reason["reason"] in _DISPLAY_REASONS else "unrecognized",

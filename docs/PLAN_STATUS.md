@@ -1,5 +1,19 @@
 # Выполнение главного плана Analyst AI
 
+**Уточнение диагностического парсера, F01/F16/F22/F23, 22.10.2026:**
+На `eb0d64221415e2ce5663a5e7d35e0068204f68fe`
+[Backend39836987926](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39836987926)
+прошёл 1467 tests / 1409 subtests (16.75 s), но строгий quality gate отказал.
+[Полный Sonar39836976759](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39836976759)
+зафиксировал ровно одно новое открытое `python:S6353`, все типы, complete:true:
+рекомендацию concise digit class в `.github/scripts/ime_service_history.py`.
+Исправление использует `\d` и явный `re.ASCII` на всех четырёх `fullmatch`;
+ограничение только ASCII-цифрами сохранено. Добавлены случаи Unicode digits
+в полях StartInput/ShowHide и идентификаторах окон. Gate не ослаблен;
+приложение, driver, ввод и обе матрицы не изменены. Новый head требует своего CI.
+Локально — 875 CI-тестов PASS, 4 существующих environment skips, 1.012 s;
+включены 14 parser tests. Диагностический отказ не объявляется исправленным.
+
 **Android CI восстановлен до runtime; отказ IME остаётся, F01/F16/F22/F23, 22.10.2026:**
 Проверенный кандидат `0fded2305511a10291907543c562a6cd66305f32`:
 
