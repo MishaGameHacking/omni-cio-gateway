@@ -40,6 +40,25 @@ estimate before backups, not an account-specific order quote. The IP documentati
 (https://timeweb.cloud/docs/public-ip) says the actual price is shown at order.
 Confirm current capacity and the total recurring cost in the account before order.
 
+## Free technical domain option
+
+A paid domain is not required. Timeweb offers free technical names in `.twc1.net`,
+`.tw1.ru`, `.tw1.su` and `.webtm.ru`; see the official
+[technical domain instructions](https://timeweb.cloud/docs/domains/technical-domain).
+Choose and create an available name only when the new VM is authorized, then bind
+it to the verified new VM and project `2941515`. No name is reserved by this guide.
+The panel cannot order SSL for these names, but Timeweb explicitly documents
+[server-managed Let's Encrypt for a free technical domain](https://timeweb.cloud/blog/chto-takoe-gitlab-i-komu-on-neobkhodim).
+Use the installer's existing Caddy setup; this does not require GitLab or another
+paid service. DNS must resolve only to `EXPECTED_PUBLIC_IPV4`, verified through
+Timeweb and on the VM's interface. Additional A addresses or any AAAA address
+fail the current installer's exact-address check; do not weaken that check.
+Validate Caddy's trusted hostname certificate live and confirm external HTTPS
+reachability before treating the address as ready. Register the exact origin and
+`https://<chosen-name>/auth/telegram/owner-enrollment/callback` in BotFather, and
+use that identical callback in `TELEGRAM_ENROLLMENT_REDIRECT_URI`. Availability,
+DNS, TLS and Telegram sign-in remain live checks, not results of this guide.
+
 ## Configuration still required
 
 The current inventory found `TELEGRAM_CLIENT_SECRET` present and
@@ -72,7 +91,7 @@ first visitor as owner. `backend/telegram_oidc.py` contains the shared pure
 RS256/issuer/audience/expiry/nonce/subject validator; ordinary browser login
 still uses its deployment-pinned JWKS and existing transaction/session boundary.
 
-Live prerequisites are still required: a verified new VM/IP, an owned hostname
+Live prerequisites are still required: a verified new VM/IP, a controlled hostname
 whose DNS identifies that VM, public HTTPS certificate issuance, working direct
 TLS connections from that VM to `oauth.telegram.org`, the real BotFather Client
 ID and client secret, and an administrator's private interactive SSH terminal.

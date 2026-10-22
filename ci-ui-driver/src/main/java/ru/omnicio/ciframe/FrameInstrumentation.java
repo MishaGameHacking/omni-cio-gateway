@@ -8,6 +8,7 @@ import android.hardware.display.DisplayManager;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Xml;
 import android.view.Display;
@@ -33,6 +34,7 @@ import org.xmlpull.v1.XmlSerializer;
  */
 public final class FrameInstrumentation extends Instrumentation {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_IME_WINDOWS = 8;
     private static final String APP_PACKAGE = "ru.omnicio.app.debug";
     private static final int ACTION_FLAG = 0x80000000;
     private static final int ACTION_START_FLAG = 0x10000000;
@@ -276,10 +278,23 @@ public final class FrameInstrumentation extends Instrumentation {
         xml.startDocument("UTF-8", true);
         xml.startTag(null, "hierarchy");
         Rect display = windows.getMaximumWindowMetrics().getBounds();
+        long observationStart = SystemClock.elapsedRealtime();
+        WindowObservation observation = observeWindows(automation.getWindows(), display, root.getWindowId());
+        long observationEnd = SystemClock.elapsedRealtime();
         attr(xml, "display-width", Integer.toString(display.width()));
         attr(xml, "display-height", Integer.toString(display.height()));
+        attr(xml, "display-bounds", display.flattenToString());
+        attr(xml, "display-id", Integer.toString(Display.DEFAULT_DISPLAY));
         attr(xml, "active-window-id", Integer.toString(root.getWindowId()));
-        attr(xml, "keyboard-visible", Boolean.toString(keyboardVisible(automation, display)));
+        attr(xml, "keyboard-visible", Boolean.toString(observation.keyboardVisible()));
+        attr(xml, "window-observation-start-ms", Long.toString(observationStart));
+        attr(xml, "window-observation-end-ms", Long.toString(observationEnd));
+        attr(xml, "interactive-window-count", Integer.toString(observation.windowCount()));
+        attr(xml, "root-window-present", Boolean.toString(observation.rootPresent()));
+        attr(xml, "root-window-focused", Boolean.toString(observation.rootFocused()));
+        attr(xml, "ime-window-count", Integer.toString(observation.imeCount()));
+        attr(xml, "ime-windows-truncated", Boolean.toString(observation.imeCount() > MAX_IME_WINDOWS));
+        attr(xml, "ime-windows", observation.imeWindows());
         writeNode(xml, root, display, 0, new int[] {0});
         xml.endTag(null, "hierarchy");
         xml.endDocument();
@@ -289,17 +304,43 @@ public final class FrameInstrumentation extends Instrumentation {
         return bytes.toByteArray();
     }
 
-    private static boolean keyboardVisible(UiAutomation automation, Rect display) {
-        for (AccessibilityWindowInfo window : automation.getWindows()) {
+    private record WindowObservation(boolean keyboardVisible, int windowCount, int imeCount,
+            boolean rootPresent, boolean rootFocused, String imeWindows) {}
+
+    private static WindowObservation observeWindows(
+            List<AccessibilityWindowInfo> windows, Rect display, int rootWindowId) {
+        boolean visible = false;
+        boolean rootPresent = false;
+        boolean rootFocused = false;
+        int count = 0;
+        StringBuilder metadata = new StringBuilder("[");
+        for (AccessibilityWindowInfo window : windows) {
+            if (window.getId() == rootWindowId) {
+                rootPresent = true;
+                rootFocused = window.isFocused();
+            }
             if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
                 Rect bounds = new Rect();
                 window.getBoundsInScreen(bounds);
-                if (!bounds.isEmpty() && Rect.intersects(bounds, display)) {
-                    return true;
+                boolean intersects = !bounds.isEmpty() && Rect.intersects(bounds, display);
+                // Preserve the original visibility predicate, including windows
+                // beyond the diagnostic cap. Metadata never controls readiness.
+                visible |= intersects;
+                if (count < MAX_IME_WINDOWS) {
+                    if (count != 0) metadata.append(',');
+                    // Numeric/boolean fields only: never titles, text or extras.
+                    metadata.append('[').append(window.getId()).append(',')
+                            .append(window.getDisplayId()).append(',').append(window.getType()).append(',')
+                            .append(bounds.left).append(',').append(bounds.top).append(',')
+                            .append(bounds.right).append(',').append(bounds.bottom).append(',')
+                            .append(window.isActive()).append(',').append(window.isFocused()).append(',')
+                            .append(intersects).append(']');
                 }
+                count++;
             }
         }
-        return false;
+        return new WindowObservation(visible, windows.size(), count, rootPresent,
+                rootFocused, metadata.append(']').toString());
     }
 
     private static void writeNode(
