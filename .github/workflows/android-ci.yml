@@ -66,11 +66,11 @@ jobs:
       run: |
         py -3 tools\prepare_spectrum_checkout.py
         if errorlevel 1 exit /b 1
-    - name: Set up JDK 17
-      uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
-      with:
-        distribution: temurin
-        java-version: '17'
+    - name: Verify the signing runner's completed Temurin 17 cache
+      shell: cmd
+      run: |
+        py -3 .github\scripts\verify_cached_jdk.py
+        if errorlevel 1 exit /b 1
     - name: Verify pinned Gradle wrapper
       shell: cmd
       run: |

@@ -1,5 +1,25 @@
 # Analyst AI — Android-приложение и Timeweb backend
 
+**Восстановление Android CI, F01/F22/F23, 22.10.2026:**
+На `8fe52f60` [Backend](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795793706)
+прошёл 1467 tests / 1409 subtests; [полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795784530)
+подтвердил 0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true`.
+[Android 39795793709](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795793709)
+в attempt1 остановился до checkout: закреплённый actions/setup-java не скачался
+после трёх таймаутов по 100 секунд. Cleanup подтвердил `verified_absent`.
+Attempt2 завершился `startup_failure`; единственный возвращённый job runtime
+пропущен. Причина этого отдельного отказа не установлена; повтор не проверил APK.
+
+Windows-сборка теперь выбирает уже установленный завершённый Temurin JDK 17 x64
+из tool-cache через `verify_cached_jdk.py`. Путь, версия Java и javac, поставщик
+и архитектура проверяются до экспорта окружения; при отсутствии подходящего JDK
+сборка останавливается. Успешный предыдущий job подтвердил наличие этой установки.
+Linux runtime, подпись APK и все проверки сохранены. Исправление порядка
+восстановления клавиатуры ещё требует полного runtime нового коммита.
+Локально прошли 860 CI-тестов, включая 16 новых проверок cache/JDK;
+4 существующих пропуска связаны с окружением. Diff check и ревью прошли.
+Новый APK не выдан, сервер и канал обновления не изменены.
+
 **Упрощение теста отмены, F01/F16/F22, 22.10.2026:**
 Кандидат `c86b9190` выполнил Backend 1467 tests / 1409 subtests, но строгий
 Sonar gate остановил CI: полный inventory содержит 1 finding / 1 новый,

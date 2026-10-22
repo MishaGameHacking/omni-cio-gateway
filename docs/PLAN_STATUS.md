@@ -1,5 +1,45 @@
 # Выполнение главного плана Analyst AI
 
+**Восстановление подготовки сборочной машины, F01/F22/F23, 22.10.2026:**
+Последний проверенный head `8fe52f6098cef1a90e45fc3ba95c773f20405a1a`:
+
+- [Backend 39795793706](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795793706),
+  job119882660791 — 1467 tests / 1409 subtests PASS, 23.68 s;
+  strict Sonar gate: 34 tests, 0 annotations, PASS.
+- [Полный Sonar 39795784530](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795784530),
+  job119882632160 — 0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true`;
+  exact-head check119883611286. На main `f5491216` полный inventory также 0/0.
+- [Android 39795793709](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795793709):
+  attempt1/build119882737402 завершился до checkout и компиляции: загрузка
+  закреплённого actions/setup-java с codeload.github.com трижды превысила 100 s.
+  Cleanup119885713533 — PASS/`verified_absent`. Attempt2 закончился
+  `startup_failure`; API вернул только пропущенный runtime119888683585.
+  Это не результат компиляции или UI-проверки, причина attempt2 не установлена.
+
+Подтверждённый успешный build119856511461 предыдущего `51510ac9`
+использовал готовый tool-cache `Java_Temurin-Hotspot_jdk/17.0.20-101/x64`:
+setup-java сообщил 17.0.20+101, а Gradle — Eclipse Adoptium 17.0.20.1.
+`verify_cached_jdk.py` заменяет только загрузку setup-java в Windows job:
+требует завершённый cache, проверяет путь, фактически запускает Java/javac
+и допускает только JDK 17 x64 от Eclipse Adoptium. Различие vendor suffix
+не считается ошибкой major version. Нет сетевой установки или смены сертификата;
+нет обхода сборки, Sonar, Backend, cleanup или матрицы API37 / 16384 и 4096.
+Linux job сохраняет штатный setup-java.
+
+Локально: 860 CI-тестов PASS, 4 существующих пропуска, 1.152 s;
+все 16 новых тестов cache discovery, process checks и экспорта окружения
+выполнены. Для ограниченного локального Node 24 применены writable TMPDIR
+и `NODE_OPTIONS=--test-isolation=none`, тесты и assertions не изменялись.
+Проверка diff и ревью завершены. Запуск фактического JDK Windows остаётся
+обязательным шагом нового CI, локальные fixtures его не подменяют.
+
+Независимое ревью восстановления ввода не выявило новой регрессии:
+hidden hide до suspension, readOnly, pending disabled restore, same-owner guard
+и шесть cancellation cases сохранены. Результат позднего IME hide остаётся
+неподтверждённым до полного runtime новых байтов. Локальные проверки скрипта
+и итог нового CI фиксируются в PR #880; прежние результаты не переносятся
+на новый SHA. APK, Timeweb и production channel не обновлены.
+
 **Упрощение теста отмены, F01/F16/F22, 22.10.2026:**
 Кандидат `c86b9190b8e210464d79e6c34887f6d19942d370`:
 
