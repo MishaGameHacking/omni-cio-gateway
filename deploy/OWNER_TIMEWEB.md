@@ -33,12 +33,32 @@ These are authenticated catalogue observations, not capacity reservations or a
 claim of total cost. Start with the 1 GB candidate for one ASGI worker; measure
 memory/disk after installation and representative requests before using it for
 owner data. Models run remotely. Do not buy Android CI/GPU capacity for backend.
-The official public calculator (https://timeweb.cloud/prices, checked 22 October
-2026) lists a public IPv4 at 200 RUB/month and automated backups at 6 RUB per
-GB/month. Combined with the authenticated 350 RUB preset, 550 RUB/month is an
-estimate before backups, not an account-specific order quote. The IP documentation
-(https://timeweb.cloud/docs/public-ip) says the actual price is shown at order.
-Confirm current capacity and the total recurring cost in the account before order.
+The [official public calculator](https://timeweb.cloud/prices), checked 22 October
+2026, lists a public IPv4 at 200 RUB/month and automated backups at 6 RUB per
+GB/month. Combined with the authenticated 350 RUB preset, **550 RUB/month covers
+only the VM and one IPv4**. The [backup documentation](https://timeweb.cloud/docs/cloud-servers/manage-servers/backup)
+charges the disk's capacity for **each retained backup**, including copies left
+after automatic creation is disabled. The monthly calculation is
+`6 RUB × disk capacity in GB × number of retained copies`.
+For the 15 GB disk, retaining exactly one copy costs `6 × 15 × 1 = 90 RUB/month`;
+the minimum calculation with that single copy is **640 RUB/month** before AI or
+other services. Each further retained 15 GB copy adds another 90 RUB/month.
+With the documented retention setting of one copy, the next automatic backup
+replaces the previous one. This example does not choose a retention policy or
+create any backups, and the amounts are not confirmed by an account order.
+
+Timeweb warns that panel backups do not protect against every failure and cannot
+be relied on after deleting the VM; it recommends additional remote copies.
+Before connecting real owner data, prepare a separately stored encrypted copy of
+the Fernet key and a consistent database backup, and verify restoration from it.
+That independent storage and its cost remain to be selected; **640 RUB/month is
+not a complete production budget** or proof that recovery has been configured.
+
+The [public IP documentation](https://timeweb.cloud/docs/public-ip) states that
+IPv4 billing is hourly and its current price is shown at order. Deleting the VM
+leaves the IPv4 on the account; even an unattached address is billed until the
+address itself is deleted. Confirm current capacity and the total recurring cost
+in the account before order. This guide does not create or delete resources.
 
 ## Free technical domain option
 
