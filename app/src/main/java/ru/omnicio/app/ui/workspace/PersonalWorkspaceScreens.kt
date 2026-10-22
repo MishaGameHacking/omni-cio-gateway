@@ -101,7 +101,7 @@ fun GoalsWorkspaceScreen(onBack: () -> Unit) {
     deleting?.let { goal -> WorkspaceDialog("Удалить цель?", { if (!action.busy) deletingId = null }) {
         Text(goal.text("title"))
         SpectrumPrimaryButton("Удалить", { action.perform("/workspace/goals/" + VolumeWorkspaceClient.encode(goal.text("id")), method = "DELETE") },
-            Modifier.fillMaxWidth(), !action.busy)
+            Modifier.fillMaxWidth().testTag("goal-delete-confirm"), !action.busy)
         SpectrumSecondaryButton("Оставить", { deletingId = null }, Modifier.fillMaxWidth(), !action.busy)
         WorkspaceActionState(action)
     } }

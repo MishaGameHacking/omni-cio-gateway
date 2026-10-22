@@ -15,16 +15,26 @@ RECOVER = "Проверить сохранение"
 
 
 def _trace(probe, expected):
+    observed = {}
     def read():
-        for node in probe.tree().iter("node"):
+        frame = probe.tree()
+        observed.clear()
+        observed["window_id"] = frame.get("active-window-id")
+        for node in frame.iter("node"):
             if node.get("package") != "ru.omnicio.app.debug" or node.get("visible-to-user") != "true":
                 continue
             match = re.fullmatch(r"goal-workflow;posts:(\d+);creates:(\d+);records:(\d+);same-request:(true|false)",
                                  node.get("content-desc", ""))
-            if match and tuple(match.groups()) == expected:
-                return dict(zip(("posts", "creates", "records", "same_request"), match.groups()))
+            if match:
+                observed["counts"] = dict(zip(("posts", "creates", "records", "same_request"), match.groups()))
+                if tuple(match.groups()) == expected:
+                    return observed["counts"]
         return None
-    return probe.wait_for(read, "Goal fixture did not observe one immutable request and one created record")
+    try:
+        return probe.wait_for(read, "Goal fixture did not observe one immutable request and one created record")
+    except AssertionError:
+        print("GOAL_WORKFLOW_FAILURE=" + json.dumps({"expected": expected, "observed": observed}), flush=True)
+        raise
 
 
 def _pending(probe):
@@ -92,7 +102,11 @@ def _case(probe, scale):
     probe.reveal(TITLE, AREA, direction="start")
     probe.capture("goal-recovered" + suffix)
     probe.tap("Удалить цель", AREA)
-    probe.tap_visible("Удалить")
+    probe.find("Удалить цель?")
+    # The new dialog can expose its label before its button stops moving.
+    # Use the full native target and the same three-frame geometry barrier as
+    # saving; dispatch one real tap, then require the actual deletion below.
+    probe.tap_resource("goal-delete-confirm", AREA)
     _trace(probe, ("2", "1", "0", "true"))
     probe.reveal("Выберите первую цель", AREA, direction="start")
     return {"font_scale": scale, "draft_rotation": draft, "recovery": observed,
