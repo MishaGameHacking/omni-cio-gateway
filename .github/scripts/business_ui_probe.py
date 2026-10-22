@@ -332,7 +332,8 @@ class _BusinessCase:
 
     def ready_assistant(self):
         from impact_ui_probe import exercise_impact
-        from native_input_evidence import empty_editor_focused, keyboard_visible, rotate_focused_draft
+        from native_input_evidence import (empty_editor_focused, keyboard_visible,
+                                          record_editor_restore_trace, rotate_focused_draft)
         from chat_recovery_ui_probe import exercise_chat_recovery
 
         self.impact_screenshot = "business-assistant-impact" + ("-font-200" if math.isclose(self.font_scale, 2.0) else "")
@@ -350,6 +351,7 @@ class _BusinessCase:
         self.probe.command("shell", "input", "text", "UIprobe")
         rotation_name = "business-assistant-draft-rotation" + ("-font-200" if math.isclose(self.font_scale, 2.0) else "")
         self.draft_rotation = rotate_focused_draft(self.probe, "UIprobe", rotation_name)
+        record_editor_restore_trace(self.probe, include_ime_history=True)
         self.checks.extend(("unsent-draft-survives-rotation", "native-input-focus-and-caret-retained"))
         self.probe.dismiss_keyboard()
         self.chat_recovery = exercise_chat_recovery(self.probe, self.observed)

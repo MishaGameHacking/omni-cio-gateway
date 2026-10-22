@@ -1,4 +1,4 @@
-"""Project existing Android IME histories after a failed rotation, never during it.
+"""Project existing Android IME histories after rotation observations, never during them.
 
 Android 17 r1's critical dump includes IMMS histories but stops before client/IME
 dump IPC. These bounded server histories describe requests, not their completion
@@ -229,7 +229,7 @@ def ime_service_history(output, candidate_uid):
 
 
 def record_ime_service_history(probe, candidate_uid):
-    """One read after failure; no input action, retries, property or trace changes."""
+    """One read after observation; no input action, retries, property or trace changes."""
     try:
         _uid(candidate_uid)
         output = probe.command("shell", "dumpsys", "input_method", "--dump-priority", "CRITICAL", timeout=4)

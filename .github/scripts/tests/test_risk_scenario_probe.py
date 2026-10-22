@@ -64,14 +64,15 @@ class RiskScenarioRotationOrderTests(unittest.TestCase):
             with self.subTest(scale=scale), \
                     patch.object(risk, "_enter_percent", side_effect=lambda _probe, text: events.append(("input", text))), \
                     patch.object(risk, "rotate_focused_draft", side_effect=visible), \
-                    patch.object(risk, "record_editor_restore_trace", side_effect=lambda _probe: events.append(("trace",))), \
+                    patch.object(risk, "record_editor_restore_trace", side_effect=lambda _probe, **flags: events.append(("trace", flags))), \
                     patch.object(risk, "rotate_dismissed_draft", side_effect=hidden), \
                     patch.object(risk, "_record_value"):
                 result = risk.exercise_scenario_comparison(case)
             self.assertEqual(events[:10], [
                 ("tap", "Концентрация"), ("tap", "Рассчитать свой сценарий"), ("input", "-10"),
                 ("dismiss",), ("tap", "Сценарий B"), ("input", "5"),
-                ("visible-rotation", "5", "business-risk-scenario-rotation" + suffix, True), ("trace",),
+                ("visible-rotation", "5", "business-risk-scenario-rotation" + suffix, True),
+                ("trace", {"include_ime_history": True}),
                 ("hidden-rotation", "5", "business-risk-hidden-ime-rotation" + suffix, True),
                 ("tap", risk.COMPARE),
             ])
@@ -104,7 +105,7 @@ class RiskScenarioRotationOrderTests(unittest.TestCase):
                 self.assertRaises(AssertionError) as caught:
             risk.exercise_scenario_comparison(case)
         self.assertIs(caught.exception, failure)
-        trace.assert_called_once_with(case.probe)
+        trace.assert_called_once_with(case.probe, include_ime_history=True)
         self.assertNotIn(("tap", risk.COMPARE), events)
 
 

@@ -113,6 +113,9 @@ private fun rememberEditorFocus(
     val keyboard = LocalSoftwareKeyboardController.current
     val window = LocalWindowInfo.current
     val view = LocalView.current
+    val inputHandoff = rememberEditorImeHandoff(
+        owner, previousOwner != owner && restoreFocus && restoreKeyboard && !readOnly, view,
+    )
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val imeVisible = WindowInsets.isImeVisible
     val observedImeVisible by rememberUpdatedState(imeVisible)
@@ -177,13 +180,15 @@ private fun rememberEditorFocus(
                         trace(if (visible) "request-show" else "request-hide", attemptId)
                         restoreKeyboardVisibility(keyboard, visible)
                     },
+                    prepareInput = inputHandoff::handoff,
+                    releaseInput = inputHandoff::release,
                 )
             } catch (cancelled: CancellationException) {
                 trace("restore-cancelled", attemptId)
                 throw cancelled
             }
             if (!restored) {
-                trace("restore-focus-refused", attemptId)
+                trace("restore-not-ready", attemptId)
                 return@LaunchedEffect
             }
         } else if (!recreated) {
@@ -204,6 +209,9 @@ private fun rememberEditorFocus(
     return {
         val wasFocused = focused.value
         focused.value = it.isFocused
+        // CoreTextField begins session setup before this outer callback; handoff checks readiness.
+        // A different ready editor also releases pending restoration holds in this window.
+        if (it.isFocused && enabled && !readOnly) inputHandoff.handoff()
         // Window teardown must not overwrite the editor saved for recreation.
         if (receiveFocusEvents && window.isWindowFocused && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             restoreFocus = it.isFocused

@@ -119,6 +119,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
                    restore_record(event="restore-start", editorId=1, attemptId=2),
                    restore_record(event="restore-cancelled", editorId=1, attemptId=2),
                    restore_record(event="restore-focus-refused", editorId=2, attemptId=1, readOnly=True),
+                   restore_record(event="restore-not-ready", editorId=3, attemptId=1),
                    restore_record(event="restore-finished", editorId=2 ** 63 - 1, attemptId=2 ** 31 - 1)]
         records = native._restore_trace_records("\n".join(json.dumps(value) for value in entries))
         self.assertEqual(records, entries)

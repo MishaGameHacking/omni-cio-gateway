@@ -15,7 +15,7 @@ _ROTATION_SAMPLES = 5
 _ROTATION_TRANSITIONS = 8
 _RESTORE_EVENTS = {"restore-start", "request-show", "request-hide", "restore-finished",
                    "ime-observed", "focus-changed", "restore-wait-enabled",
-                   "restore-cancelled", "restore-focus-refused"}
+                   "restore-cancelled", "restore-focus-refused", "restore-not-ready"}
 _RESTORE_FLAGS = ("restoreFocus", "restoreKeyboard", "receiveFocusEvents", "focused",
                   "windowFocused", "viewFocused", "viewAttached", "resumed", "imeVisible",
                   "rootImeAvailable", "rootImeVisible", "viewIsTextEditor", "enabled", "readOnly")
@@ -255,7 +255,7 @@ def _candidate_uid(probe):
 
 
 def record_editor_restore_trace(probe, *, include_ime_tracker=False, include_ime_history=False):
-    """Record candidate-only facts; collect platform events only after failure."""
+    """Record bounded candidate facts after observation; tracker events follow failure."""
     try:
         uid = _candidate_uid(probe)
     except Exception as error:
