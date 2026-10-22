@@ -30,7 +30,8 @@ def frame(**changes):
 
 def restore_record(**changes):
     value = {key: True for key in native._RESTORE_FLAGS}
-    value.update(event="request-show", elapsedMs=1234, wallClockMs=1792665822811, orientation=2)
+    value.update(event="request-show", elapsedMs=1234, wallClockMs=1792665822811, orientation=2,
+                 editorId=7, attemptId=2, readOnly=False)
     value.update(changes)
     return value
 
@@ -110,6 +111,31 @@ class NativeInputEvidenceTests(unittest.TestCase):
         records = native._restore_trace_records(output)
         self.assertEqual([record["elapsedMs"] for record in records], list(range(110, 150)))
 
+    def test_restore_trace_keeps_editor_attempt_identity_and_cancellation_sequence(self):
+        entries = [restore_record(event="focus-changed", editorId=1, attemptId=0),
+                   restore_record(event="restore-wait-enabled", editorId=1, attemptId=1, enabled=False),
+                   restore_record(event="restore-start", editorId=1, attemptId=2),
+                   restore_record(event="restore-cancelled", editorId=1, attemptId=2),
+                   restore_record(event="restore-focus-refused", editorId=2, attemptId=1, readOnly=True),
+                   restore_record(event="restore-finished", editorId=2 ** 63 - 1, attemptId=2 ** 31 - 1)]
+        records = native._restore_trace_records("\n".join(json.dumps(value) for value in entries))
+        self.assertEqual(records, entries)
+
+    def test_restore_trace_rejects_missing_or_malformed_editor_attempt_fields(self):
+        for key in ("editorId", "attemptId", "enabled", "readOnly"):
+            historical = restore_record()
+            del historical[key]
+            with self.subTest(missing=key):
+                self.assertEqual(native._restore_trace_records(json.dumps(historical)), [])
+        invalid = {"editorId": (None, True, 0, -1, 1.5, "1", 2 ** 63),
+                   "attemptId": (None, True, -1, 1.5, "2", 2 ** 31),
+                   "enabled": (None, 0, 1, "true"), "readOnly": (None, 0, 1, "false")}
+        for key, values in invalid.items():
+            for value in values:
+                with self.subTest(field=key, value=value):
+                    records = native._restore_trace_records(json.dumps(restore_record(**{key: value})))
+                    self.assertEqual(records, [])
+
     def test_restore_log_applies_recent_line_and_record_size_limits_after_filtering(self):
         earlier = json.dumps(restore_record(elapsedMs=1))
         recent = json.dumps(restore_record(elapsedMs=2, text="private draft"))
@@ -123,7 +149,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
         probe = Mock()
         probe.capture.side_effect = OSError("private screenshot failure")
         probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
-                                     json.dumps(restore_record(text="private draft")), IME_REQUEST]
+                                     json.dumps(restore_record(text="private draft")), IME_REQUEST, IME_REQUEST]
         with patch("builtins.print") as output:
             native._rotation_failure_diagnostics(probe, {"recent": []})
         probe.capture.assert_called_once_with("rotation-failure")
@@ -133,9 +159,12 @@ class NativeInputEvidenceTests(unittest.TestCase):
                          ("logcat", "-d", "-b", "main", "-v", "raw",
                           "--uid=10123", "AnalystEditorRestore:D", "*:S"))
         self.assertEqual(probe.command.call_args_list[2].args,
-                         ("logcat", "-d", "-b", "main", "-v", "threadtime,UTC",
+                         ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
                           "--uid=10123", "ImeTracker:I", "*:S"))
-        self.assertEqual(probe.command.call_count, 3)
+        self.assertEqual(probe.command.call_args_list[3].args,
+                         ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
+                          "ImeTracker:I", "*:S"))
+        self.assertEqual(probe.command.call_count, 4)
         self.assertTrue(all(call.kwargs == {"timeout": 4} for call in probe.command.call_args_list))
         self.assertNotIn("private", "\n".join(call.args[0] for call in output.call_args_list))
 
@@ -152,7 +181,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
     def test_restore_log_failure_still_collects_safe_platform_events(self):
         probe = Mock()
         probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
-                                     ConnectionError("private log transport"), IME_REQUEST]
+                                     ConnectionError("private log transport"), IME_REQUEST, IME_REQUEST]
         with patch("builtins.print") as output:
             native.record_editor_restore_trace(probe, include_ime_tracker=True)
         lines = [call.args[0] for call in output.call_args_list]
@@ -163,10 +192,10 @@ class NativeInputEvidenceTests(unittest.TestCase):
         self.assertEqual(tracker[0]["operation"], "onRequestHide")
         self.assertNotIn("private", "\n".join(lines))
 
-    def test_platform_log_failure_preserves_safe_restore_record(self):
+    def test_uid_tracker_failure_preserves_restore_record_and_platform_evidence(self):
         probe = Mock()
         probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
-                                     json.dumps(restore_record()), TimeoutError("private IME detail")]
+                                     json.dumps(restore_record()), TimeoutError("private IME detail"), IME_REQUEST]
         with patch("builtins.print") as output:
             native.record_editor_restore_trace(probe, include_ime_tracker=True)
         lines = [call.args[0] for call in output.call_args_list]
@@ -174,6 +203,10 @@ class NativeInputEvidenceTests(unittest.TestCase):
         restore = json.loads(next(line.split("=", 1)[1] for line in lines
                                   if line.startswith("NATIVE_EDITOR_RESTORE_TRACE=")))
         self.assertEqual(restore, [restore_record()])
+        tracker = json.loads(next(line.split("=", 1)[1] for line in lines
+                                  if line.startswith("NATIVE_IME_TRACKER_PLATFORM_TRACE=")))
+        self.assertEqual(len(tracker), 1)
+        self.assertEqual(tracker[0]["operation"], "onRequestHide")
         self.assertNotIn("private", "\n".join(lines))
 
     def test_unresolved_or_ambiguous_uid_never_falls_back_to_general_logcat(self):
@@ -186,18 +219,25 @@ class NativeInputEvidenceTests(unittest.TestCase):
                 native._rotation_failure_diagnostics(probe, {"recent": []})
             self.assertEqual(probe.command.call_count, 1)
 
-    def test_rotation_failure_keeps_recent_polls_captures_landscape_then_restores_without_input_retry(self):
+    def test_rotation_failure_retains_sole_portrait_ime_sample_before_landscape_failure(self):
         probe = Mock()
-        state = {"landscape": False, "selection": 5, "restored": False}
+        state = {"landscape": False, "selection": 5, "restored": False, "rotation_reads": 0, "tree_reads": 0}
         events, failures = [], []
 
         def tree():
+            state["tree_reads"] += 1
+            if state["landscape"]:
+                state["rotation_reads"] += 1
+            landscape = state["landscape"] and state["rotation_reads"] > 1
+            observed_at = 1000 + state["tree_reads"] * 100
             root = frame(text="private draft", **{"selection-start": str(state["selection"]),
                                                  "selection-end": str(state["selection"])})
-            root.attrib.update({"display-width": "640" if state["landscape"] else "320",
-                                "display-height": "320" if state["landscape"] else "640",
-                                "active-window-id": "73" if state["landscape"] else "71",
-                                "keyboard-visible": "false" if state["landscape"] else "true"})
+            root.attrib.update({"display-width": "640" if landscape else "320",
+                                "display-height": "320" if landscape else "640",
+                                "active-window-id": "73" if landscape else "71",
+                                "keyboard-visible": "false" if landscape else "true",
+                                "window-observation-start-ms": str(observed_at),
+                                "window-observation-end-ms": str(observed_at + 1)})
             return root
 
         def wait(read, message):
@@ -237,19 +277,106 @@ class NativeInputEvidenceTests(unittest.TestCase):
         record = json.loads(next(line.split("=", 1)[1] for line in lines if line.startswith("NATIVE_ROTATION_OBSERVATIONS=")))
         self.assertEqual(record["initial"]["active-window-id"], "71")
         self.assertEqual(record["sample_count"], 8)
-        self.assertEqual(record["ime_visible_count"], 0)
+        self.assertEqual(record["ime_visible_count"], 1)
         self.assertEqual([item["sample"] for item in record["recent"]], [4, 5, 6, 7, 8])
         self.assertTrue(all(item["orientation_changed"] and item["window_changed"] for item in record["recent"]))
         self.assertTrue(all(item["editors"][0]["expected_text_matches"] for item in record["recent"]))
+        first_ime = record["first_ime_visible"]
+        self.assertEqual(first_ime["sample"], 1)
+        self.assertFalse(first_ime["orientation_changed"])
+        self.assertFalse(first_ime["window_changed"])
+        self.assertEqual(first_ime["frame"]["active-window-id"], "71")
+        self.assertEqual(first_ime["frame"]["window-observation-start-ms"], "1400")
+        self.assertEqual(first_ime["frame"]["window-observation-end-ms"], "1401")
+        first_rotated = record["first_orientation_changed"]
+        self.assertEqual(first_rotated["sample"], 2)
+        self.assertEqual(first_rotated["frame"]["keyboard-visible"], "false")
+        self.assertEqual(first_rotated["frame"]["display-width"], "640")
+        self.assertEqual(first_rotated["frame"]["display-height"], "320")
+        self.assertEqual(first_rotated["frame"]["window-observation-start-ms"], "1500")
+        self.assertEqual([item["sample"] for item in record["state_transitions"]], [1, 2])
+        self.assertEqual(record["state_transition_count"], 2)
+        self.assertEqual(record["state_transitions_omitted"], 0)
+        self.assertEqual(probe.tree.call_count, 17)
         self.assertNotIn("private draft", "\n".join(lines))
         self.assertLess(events.index(("capture", "rotation-failure", True)),
                         events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
-        self.assertLess(events.index(("logcat", "-d", "-b", "main", "-v", "threadtime,UTC",
+        self.assertLess(events.index(("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
                                       "--uid=10123", "ImeTracker:I", "*:S")),
+                        events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
+        self.assertLess(events.index(("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
+                                      "ImeTracker:I", "*:S")),
                         events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
         self.assertEqual([event for event in events if event[:2] == ("shell", "input")],
                          [("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")] * 2)
         probe.capture.assert_called_once_with("rotation-failure")
+
+    def test_rotation_milestones_survive_bounded_transition_and_recent_history(self):
+        observations = native._RotationObservations()
+        total = native._ROTATION_TRANSITIONS + 5
+        for index in range(1, total + 1):
+            root = frame(text="private draft")
+            root.attrib.update({"display-width": "640" if index > 1 else "320",
+                                "display-height": "320" if index > 1 else "640",
+                                "active-window-id": str(70 + index),
+                                "keyboard-visible": "true" if index == 3 else "false",
+                                "window-observation-start-ms": str(1000 + index),
+                                "window-observation-end-ms": str(1001 + index)})
+            observations.append({"sample": index, "orientation_changed": index > 1,
+                                 "window_changed": index > 1,
+                                 **native._editor_diagnostic(root, "private draft")})
+        record = observations.report()
+        self.assertEqual(record["first_orientation_changed"]["sample"], 2)
+        self.assertEqual(record["first_ime_visible"]["sample"], 3)
+        self.assertTrue(record["first_ime_visible"]["orientation_changed"])
+        self.assertEqual(record["first_ime_visible"]["frame"]["window-observation-start-ms"], "1003")
+        self.assertEqual(record["state_transition_count"], total)
+        self.assertEqual(record["state_transitions_omitted"], 5)
+        self.assertEqual([item["sample"] for item in record["state_transitions"]], list(range(6, total + 1)))
+        self.assertEqual([item["sample"] for item in record["recent"]], list(range(total - 4, total + 1)))
+        self.assertNotIn("private draft", json.dumps(record))
+
+    def test_rotation_milestones_do_not_invent_visibility_or_a_changed_orientation(self):
+        observations = native._RotationObservations()
+        root = frame()
+        root.attrib.update({"keyboard-visible": "invalid private value", "active-window-id": "71"})
+        observations.append({"sample": 1, "orientation_changed": False, "window_changed": False,
+                             **native._editor_diagnostic(root, "UIprobe")})
+        record = observations.report()
+        self.assertIsNone(record["first_ime_visible"])
+        self.assertIsNone(record["first_orientation_changed"])
+        self.assertNotIn("private", json.dumps(record))
+
+    def test_failed_observation_retention_preserves_the_rotation_gate_failure(self):
+        probe = Mock()
+        initial = frame()
+        initial.attrib.update({"keyboard-visible": "true", "active-window-id": "71"})
+        rotated = frame()
+        rotated.attrib.update({"display-width": "1920", "display-height": "1080",
+                               "keyboard-visible": "false", "active-window-id": "73"})
+        probe.tree.return_value = rotated
+        probe.command.return_value = "0"
+        failure = AssertionError("original rotation gate")
+
+        def wait(read, _message):
+            self.assertIsNone(read())
+            raise failure
+
+        probe.wait_for.side_effect = wait
+        with patch.object(native._RotationObservations, "append", side_effect=RuntimeError("private retention detail")), \
+                patch.object(native, "_restore_rotation", return_value={}), patch("builtins.print") as output, \
+                self.assertRaises(AssertionError) as caught:
+            native._rotate_observed_draft(probe, "UIprobe", "rotation-success",
+                {"selection_start": 5, "selection_end": 5}, initial, dialog=True, keyboard_expected=True)
+        self.assertIs(caught.exception, failure)
+        lines = [call.args[0] for call in output.call_args_list]
+        record = json.loads(next(line.split("=", 1)[1] for line in lines
+                                 if line.startswith("NATIVE_ROTATION_OBSERVATIONS=")))
+        self.assertEqual(record["recent"], [{"sample": 1, "diagnostic_error": "RuntimeError"}])
+        self.assertIsNone(record["first_ime_visible"])
+        self.assertEqual(probe.tree.call_count, 2)
+        self.assertNotIn("private", "\n".join(lines))
+        self.assertFalse(any(call.args[:2] == ("shell", "input") for call in probe.command.call_args_list))
 
     def test_secondary_restore_failure_preserves_original_rotation_gate(self):
         for failed_phase in ("settings", "restored-editor"):

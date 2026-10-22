@@ -11,11 +11,50 @@ from ime_tracker_evidence import record_ime_tracker_trace
 
 PACKAGE = "ru.omnicio.app.debug"
 _ROTATION_SAMPLES = 5
+_ROTATION_TRANSITIONS = 8
 _RESTORE_EVENTS = {"restore-start", "request-show", "request-hide", "restore-finished",
-                   "ime-observed", "focus-changed"}
+                   "ime-observed", "focus-changed", "restore-wait-enabled",
+                   "restore-cancelled", "restore-focus-refused"}
 _RESTORE_FLAGS = ("restoreFocus", "restoreKeyboard", "receiveFocusEvents", "focused",
                   "windowFocused", "viewFocused", "viewAttached", "resumed", "imeVisible",
-                  "rootImeAvailable", "rootImeVisible", "viewIsTextEditor")
+                  "rootImeAvailable", "rootImeVisible", "viewIsTextEditor", "enabled", "readOnly")
+_RESTORE_INTEGERS = {"elapsedMs": (0, 2 ** 63), "wallClockMs": (0, 2 ** 63),
+                     "orientation": (0, 3), "editorId": (1, 2 ** 63), "attemptId": (0, 2 ** 31)}
+
+
+class _RotationObservations:
+    """Retain milestones and bounded state changes from already-read frames."""
+
+    def __init__(self):
+        self.recent = deque(maxlen=_ROTATION_SAMPLES)
+        self.first_ime_visible = None
+        self.first_orientation_changed = None
+        self.transitions = deque(maxlen=_ROTATION_TRANSITIONS)
+        self.transition_count = 0
+        self._previous_state = None
+
+    def append(self, sample):
+        self.recent.append(sample)
+        frame = sample.get("frame", {})
+        if self.first_ime_visible is None and frame.get("keyboard-visible") == "true":
+            self.first_ime_visible = sample
+        if self.first_orientation_changed is None and sample.get("orientation_changed") is True:
+            self.first_orientation_changed = sample
+        # Timestamps advance on every poll. Keep them in each retained sample,
+        # but do not let time alone consume the bounded transition history.
+        state = {key: value for key, value in sample.items() if key not in {"sample", "frame"}}
+        state["frame"] = {key: value for key, value in frame.items()
+                          if key not in {"window-observation-start-ms", "window-observation-end-ms"}}
+        if state != self._previous_state:
+            self.transition_count += 1
+            self.transitions.append(sample)
+            self._previous_state = state
+
+    def report(self):
+        return {"recent": list(self.recent), "first_ime_visible": self.first_ime_visible,
+                "first_orientation_changed": self.first_orientation_changed,
+                "state_transitions": list(self.transitions), "state_transition_count": self.transition_count,
+                "state_transitions_omitted": self.transition_count - len(self.transitions)}
 
 
 def keyboard_visible(tree) -> bool:
@@ -188,11 +227,10 @@ def _restore_trace_records(output):
             continue
         if not all(type(value.get(key)) is bool for key in _RESTORE_FLAGS):
             continue
-        if (not all(type(value.get(key)) is int and 0 <= value[key] < 2 ** 63
-                    for key in ("elapsedMs", "wallClockMs"))
-                or type(value.get("orientation")) is not int or value["orientation"] not in {0, 1, 2}):
+        if not all(type(value.get(key)) is int and lower <= value[key] < upper
+                   for key, (lower, upper) in _RESTORE_INTEGERS.items()):
             continue
-        records.append({key: value[key] for key in ("event", "elapsedMs", "wallClockMs", "orientation") + _RESTORE_FLAGS})
+        records.append({key: value[key] for key in ("event",) + tuple(_RESTORE_INTEGERS) + _RESTORE_FLAGS})
     return records[-40:]
 
 
@@ -237,13 +275,13 @@ def record_editor_restore_trace(probe, *, include_ime_tracker=False):
         record_ime_tracker_trace(probe, uid)
 
 
-def _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, recent):
+def _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, observations):
     """Keep evidence collection from replacing the original rotation failure."""
     try:
         _rotation_failure_diagnostics(probe, {"initial": _frame_diagnostic(initial), "dialog": dialog,
             "expected_selection": list(selection), "expected_keyboard_visible": initial.get("keyboard-visible") == "true",
             "sample_count": sample_count,
-            "ime_visible_count": ime_visible_count, "recent": list(recent)})
+            "ime_visible_count": ime_visible_count, **observations.report()})
     except Exception as error:
         print("NATIVE_ROTATION_DIAGNOSTIC_UNAVAILABLE=" + type(error).__name__, flush=True)
 
@@ -406,7 +444,7 @@ def _rotate_observed_draft(probe, text, name, before, initial, *, dialog, keyboa
     original_landscape = original_geometry[0] > original_geometry[1]
     rotation = probe.command("shell", "settings", "get", "system", "user_rotation").strip()
     automatic = probe.command("shell", "settings", "get", "system", "accelerometer_rotation").strip()
-    recent = deque(maxlen=_ROTATION_SAMPLES)
+    observations = _RotationObservations()
     sample_count = 0
     ime_visible_count = 0
     rotation_failure = None
@@ -423,12 +461,12 @@ def _rotate_observed_draft(probe, text, name, before, initial, *, dialog, keyboa
             # Retain only observations already read by the unchanged readiness
             # loop. A diagnostic failure must not create a new readiness rule.
             try:
-                recent.append({"sample": sample_count,
-                               "orientation_changed": (width > height) != original_landscape,
-                               "window_changed": tree.get("active-window-id") != str(original_window),
-                               **_editor_diagnostic(tree, text)})
+                observations.append({"sample": sample_count,
+                                     "orientation_changed": (width > height) != original_landscape,
+                                     "window_changed": tree.get("active-window-id") != str(original_window),
+                                     **_editor_diagnostic(tree, text)})
             except Exception as error:
-                recent.append({"sample": sample_count, "diagnostic_error": type(error).__name__})
+                observations.recent.append({"sample": sample_count, "diagnostic_error": type(error).__name__})
             if (width > height) == original_landscape:
                 return None
             return _rotation_editor(tree, text, selection, original_window,
@@ -441,7 +479,7 @@ def _rotate_observed_draft(probe, text, name, before, initial, *, dialog, keyboa
             probe.capture(name)
             post_capture = _post_capture_rotation(rotated, after)
         except (AssertionError, RuntimeError, ValueError, OSError, ET.ParseError):
-            _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, recent)
+            _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, observations)
             raise
         result = {"scenario": "unsent-question-focus-caret-rotation", "before": before,
                   "after": after, "post_capture": post_capture, "screenshot": name + ".png",

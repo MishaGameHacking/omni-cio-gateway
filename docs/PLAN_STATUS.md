@@ -1,16 +1,191 @@
 # Выполнение главного плана Analyst AI
 
-**Согласование сервера и чата, F01/F16/F22, 22.10.2026:**
-Подготовлено объединение server PR #887 (`07d4a4ed`) с app `79cb04c1`:
+**Согласование сервера с восстановлением IME, F01/F02/F16/F20/F22/F23, 22.10.2026:**
+Локально подготовлено объединение server `2560c8af` с app `8fe52f60`:
+сохранены owner enrollment и серверные проверки; перенесены безопасная
+диагностика IME и новый порядок восстановления видимого редактора.
+App и отдельный driver совпадают с app-кандидатом; 13 серверных путей вне
+README и реестра сохраняют содержимое `2560c8af`.
+
+Локально объединённое дерево прошло 871 CI-тест (4 предусмотренных пропуска),
+52 проверки инструментов и аудит 317 Python-файлов; diff check — PASS.
+Backend-код и его тесты побайтово совпадают с `2560c8af`, поэтому полный
+backend-набор повторно не выполнялся. Прежние 1515 тестов / 1481 подпроверка
+ниже относятся к предыдущему дереву, а не к новому серверному head.
+
+Объединённый server-head требует собственных Backend CI и полного Sonar inventory.
+Результаты app `79cb04c1`, `51510ac9` и `c86b9190` ниже относятся только к указанным SHA.
+App `8fe52f60` ещё требует полной API37-матрицы; исправление IME и готовность APK
+не подтверждены. Новая VM, внешний TLS, реальный Telegram-вход и привязка
+владельца также не подтверждены. APK и канал обновлений этим объединением
+не публикуются; серверные проверки фиксируются в [PR #887](https://github.com/MishaGameHacking/omni-cio-gateway/pull/887).
+
+**Упрощение теста отмены, F01/F16/F22, 22.10.2026:**
+Кандидат `c86b9190b8e210464d79e6c34887f6d19942d370`:
+
+- [Backend 39794038157](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39794038157),
+  job119876825961 — 1467 tests / 1409 subtests PASS; итоговый job — failure
+  из-за строгого Sonar gate.
+- [Полный Sonar 39794027321](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39794027321),
+  exact-head check119877617030: 1 OPEN/CONFIRMED finding, 1 новый,
+  все типы, `complete:true`. `kotlin:S3776` в тесте отмены:
+  Cognitive Complexity 27 при допустимых 15; issue `AaFj-IJq-Mhw8ApFNdwK`.
+  Успешный статус самого диагностического workflow не означает чистый inventory.
+- [Android 39794038166](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39794038166),
+  build job119876936200 — подготовка runner завершилась ошибкой загрузки
+  закреплённого actions/setup-java с codeload.github.com после трёх таймаутов.
+  Компиляция, JUnit и runtime не выполнялись; это не новый результат эмулятора.
+  Cleanup job119880771549 подтвердил `CI_PRIVATE_TRANSFER_CLEANUP=verified_absent`.
+
+Только структура теста отмены изменена: два цикла сохраняют шесть сочетаний
+visible/hidden × window/focus/frame; coroutineScope в отдельной suspend-функции
+сохраняет отмену дочерней coroutine. Общий waitAt приостанавливается только
+в выбранной точке; waiting.await, cancelAndJoin, общий timeout 5000 ms
+и все три assertions сохранены. Безусловное ожидание frame больше не скрывает
+пропуск раннего callback. Production, driver, gate и suppressions не менялись.
+Независимое ревью — PASS. Локально: 844 CI-теста (4 предусмотренных пропуска),
+Python-аудит 311 файлов и diff check — PASS. Локальный JUnit недоступен
+из-за libjli.so; компиляция и снятие finding требуют exact-head CI.
+Новый head ещё должен пройти Backend, полный Sonar 0/0 и обе полные
+API37-матрицы на собственных байтах. APK не выдан; прежние проверки
+не переносятся на новый head как готовый результат.
+
+**Порядок восстановления фокуса и IME, F01/F16/F22, 22.10.2026:**
+Диагностический head `51510ac9439a2173744a43e3d9a54590f325ffc5`:
+
+- [Android 39788071851](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39788071851),
+  build job119856511461 — все APK, Kotlin/JUnit, lint и 842 CI-теста
+  (3 предусмотренных platform skips) PASS; Gradle 9m 35s.
+- [Backend 39788071850](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39788071850),
+  job119856399776 — 1467 tests / 1409 subtests PASS, 16.96 s.
+- [Полный Sonar 39788059724](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39788059724),
+  job119856356486 — 0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true`
+  для точного head; check119857339900.
+- Runtime job119863114964 — FAIL на risk/ready/font100 при повороте диалога.
+  Текст, focus и caret 0:0 сохранены, IME исчезает. API37 / измеренные 16384:
+  clean install и upgrade PASS, полный UI — нет; 4096 не запущен.
+  APK SHA-256 `24d65e49f7c22087a87f2d2309839c8673d92a095f62b3688b550e622833eeb0`,
+  29853394 bytes. Rotation PNG проверен по байтам и визуально:
+  `6f1ba3e0942bdff0dfc9132b18387938391c0847c4db2028a0188df7f8e9a235`,
+  148452 bytes. Cleanup job119868894456 — `verified_absent`.
+  Aggregate119868971798 и authoritative119869017621 корректно FAIL; APK не выдан.
+
+Новая диагностика разобрала последние 120 UID-строк без rejection;
+platform capture прочитал 427 строк, выделил 248 связанных записей и вывел
+последние 120. Причинный интервал сохранён. Native observations: 44 samples,
+3 IME-positive, 4 state transitions без обрезания. Первый positive ещё portrait;
+следующие два уже landscape, но frame не атомарен: timestamps охватывают
+чтение окон, а editor сериализуется позже. Последующие 41 sample и post-timeout
+показывают прежний exact/focused editor с отсутствующей IME.
+
+В текущем risk-сегменте editor4/attempt1 постоянно enabled; нет отмены,
+ожидания disabled или новой попытки. Restore-start — 13:57:07.485 UTC,
+focus — 08.482, explicit request-show — 08.594, finished — 08.595.
+Оба признака IME true в 09.001 и false в 09.493. Driver до отказа только
+читает frames; portrait cleanup ещё не начался. Server hide128 от 07.951
+завершается в 08.910; show82 от 08.517 — onShown в 08.930. Show82 предшествует
+explicit restore и не приписывается ему. Поздний IME hide88 с причиной
+`HIDE_SOFT_INPUT_EXTRACT_INPUT_CHANGED` (08.883) имеет onHidden в 09.501.
+
+В [Android 17 r1 InputMethodService](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/core/java/android/inputmethodservice/InputMethodService.java)
+этот default callback скрывает IME при `EditorInfo.inputType == TYPE_NULL`.
+[InputMethodManager](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/core/java/android/view/inputmethod/InputMethodManager.java)
+может передать исходный EditorInfo даже при null InputConnection. Штатный
+Decimal editor в точном Compose 1.11.4 получает тип 0x2002 и IME_FLAG_NO_FULLSCREEN.
+Промежуточная цель без готового редактора согласуется с кодом и событиями,
+но фактический EditorInfo/window этого callback не записан. AOSP r1 также
+не объявляется доказанно тождественным конкретной сборке эмулятора.
+
+Изменён порядок только для восстановления видимой IME доступного writable
+editor: requestFocus/awaitFocus предшествуют RESUMED/window focus/frame/
+bringIntoView; следующий frame и единственный explicit show остаются после
+готовности окна. Такой порядок соответствует [официальному руководству Android](https://developer.android.com/develop/ui/views/touch-and-input/keyboard-input/visibility)
+и начинает подготовку Compose input session раньше прежнего ожидания окна.
+Готовность platform InputConnection до конкретного события WM этим не доказана.
+Для hidden intent и readOnly сохранён прежний порядок целиком; same-batch hide
+не переносится за suspend. Disabled restore остаётся pending, cancellation
+распространяется, отказ focus не считается успехом. Повторы, новые таймауты,
+input-session перехватчики и изменения driver/gate не добавлены.
+
+Безопасный ImeTracker allowlist дополнен точными Android 17 именами
+`HIDE_CLOSE_CURRENT_SESSION` и `PHASE_SERVER_ALREADY_VISIBLE`; прежние значения
+сохранены, похожие неизвестные строки остаются `unrecognized`.
+Локально: 844 CI-теста, 4 предусмотренных пропуска, 1.077 s — PASS;
+Python-аудит 311 файлов и diff check — PASS. 29 ImeTracker tests включают
+оба новых имени и сохранение безопасной проекции; 52 focused native/rotation/
+typing tests также прошли. Независимое ревью порядка, hidden/readOnly,
+disabled/lazy guards, cancellation и отсутствия изменений driver завершено.
+Шесть существующих JVM-тестов расширены: focus перед новым window wait,
+hidden intent до первого flush и cancellation в window/focus/frame.
+Локально они не выполнены из-за ошибки Java libjli.so; CI JUnit обязателен.
+Новый кандидат ещё требует сборки, полного Sonar/Backend и обеих полных
+API37-матриц на собственных байтах; его исправление не объявлено подтверждённым
+runtime. Результат фиксируется в [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880).
+
+**Повторный сбой IME и исправление диагностики, F01/F16/F22, 22.10.2026:**
+Кандидат `79cb04c1f1db9b11603300f808b40a3178608d4f`:
+
+- [Android 39781504544](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39781504544):
+  все APK, Kotlin/JUnit, lintDebug/lintPreview — PASS за 9m 5s;
+  828 CI tests, 3 предусмотренных платформенных пропуска.
+- [Backend 39781504548](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39781504548):
+  1467 tests / 1409 subtests — PASS.
+- [Полный Sonar 39781495961](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39781495961):
+  0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true` для точного head.
+- Runtime на API37 / измеренных 16384 прошёл четыре risk/font100 случая
+  и прежний отказ impact fold в assistant/ready. Проверенный impact PNG:
+  `d5057d939cf70f3e9591d88ce3bb097eddd2487107fbb1ecef08578ce933606d`.
+  Затем поворот несохранённого вопроса завершился отказом: текст `UIprobe`,
+  фокус и caret 5:5 сохранились, IME скрылась после видимого состояния.
+  Проверенный failure PNG:
+  `15d29c256cbca1751079e256ed4b27887d577b179991ac5846deef746dda5f2c`.
+- APK SHA-256 `9f7d1943b41e99f309aac7f80d64856949b9f96ebb7cd41478c4486b41bcf796`,
+  29853394 bytes. Установка и обновление прошли, полная UI-матрица 16384 — нет;
+  4096 не запущен. Cleanup job119845412597: `verified_absent`.
+  Итоговый Android gate — failure, APK не выдан.
+
+Точная временная сверка отделила старые hide от текущего поворота:
+в 13:11:43.022 UTC приложение запросило show, в 13:11:43.208 оба показателя
+IME были true, в 13:11:43.749 — false при сохранённом фокусе. В этом интервале
+нет app restore `request-hide`. Более поздний hide в 13:11:54.886 относится
+к возврату в портрет после отказа. Stale Compose-insets временно меняют
+сохранённое намерение, но оно успевает стать true до первого скрытия;
+причинность этой гонки не доказана. Единственный IME-visible native sample
+вытеснен из прежнего tail; он мог относиться ещё к исходной ориентации.
+
+[Android 17](https://developer.android.com/about/versions/17/behavior-changes-all)
+требует явного восстановления IME после configuration recreation; приложение
+уже выполняет такой запрос. В [AOSP logprint](https://android.googlesource.com/platform/system/logging/+/refs/heads/main/liblog/logprint.cpp)
+UTC включает zone output `+0000`: прежний парсер отбрасывал этот формат.
+Исправлена строгая поддержка UTC suffix; добавлены безопасные счётчики чтения,
+принятия и отбрасывания. Второе чтение main/system допускает в вывод только
+события с точной меткой пакета кандидата либо подтверждённым в его UID request;
+сырой текст, component и request token не публикуются. Непривязанные системные
+события остаются за пределами доказательства. Первые IME-visible и rotated
+кадры сохраняются отдельно от bounded transition history. DEBUG trace
+различает экземпляр редактора, попытку, disabled wait и cancellation.
+Действия ввода, таймауты, stable-frame predicates и исходный failure сохранены.
+Следующий кандидат служит диагностике, без маркера выдачи приватного APK;
+один успешный повтор не объясняет непостоянное исчезновение клавиатуры.
+
+Локальная проверка диагностического дерева: 842 CI-теста, 4 предусмотренных
+пропуска, 1.422 s — PASS; Python-аудит 311 файлов — PASS. В их составе
+27 ImeTracker, 29 native evidence, 18 hidden/visible rotation и 5 typing tests.
+Независимое ревью DEBUG trace, parser privacy/scope и неизменности input/gate
+завершено; diff check чистый. Это не результат нового Android runtime.
+
+**Историческая сверка сервера и чата, F01/F16/F22, 22.10.2026:**
+При подготовке `2560c8af` объединены server PR #887 (`07d4a4ed`) с app `79cb04c1`:
 сохранены owner enrollment, серверные проверки и все изменения чата.
 Backend CI: 1467 тестов / 1409 подпроверок; полный Sonar inventory:
 0 OPEN/CONFIRMED, 0 новых, `complete:true` — это результаты именно app `79cb04c1`.
-Android-проверка этого app SHA ещё выполняется; полная API37-матрица не подтверждена.
+На момент той сверки Android-проверка app `79cb04c1` ещё выполнялась;
+её последующий отказ отражён выше. Полная API37-матрица не подтверждена.
 Локально объединённое дерево прошло 855 CI-тестов (4 предусмотренных пропуска),
 52 проверки инструментов и 1515 backend-тестов / 1481 подпроверку;
 аудит 317 Python-файлов и health/OpenAPI smoke — PASS.
-Объединённый server-кандидат требует отдельных проверок своего фактического SHA
-после создания коммита. Прежние результаты не переносятся на новый head.
+Эти локальные результаты относятся к предыдущей серверной интеграции
+и не переносятся на следующий head без собственных проверок его SHA.
 Новая VM, внешний TLS, реальный Telegram-вход и привязка владельца не подтверждены.
 История и ограничения ниже сохраняются; APK и канал обновлений этим согласованием
 не публикуются. Проверки сервера — в [PR #887](https://github.com/MishaGameHacking/omni-cio-gateway/pull/887).

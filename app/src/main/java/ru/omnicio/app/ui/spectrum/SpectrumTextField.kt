@@ -30,10 +30,12 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import ru.omnicio.app.BuildConfig
 import ru.omnicio.app.ui.spatial.SpatialField
+import java.util.concurrent.atomic.AtomicLong
 
 /** Changes when the Activity composition is recreated, not when a lazy item returns. */
 internal val LocalEditorRestorationOwner = staticCompositionLocalOf { "" }
@@ -88,6 +90,15 @@ fun SpectrumTextField(
     }
 }
 
+private class EditorRestoreTraceState {
+    val editorId = nextEditorId.incrementAndGet()
+    var attemptId = 0
+
+    companion object {
+        private val nextEditorId = AtomicLong()
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun rememberEditorFocus(
@@ -105,14 +116,19 @@ private fun rememberEditorFocus(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val imeVisible = WindowInsets.isImeVisible
     val observedImeVisible by rememberUpdatedState(imeVisible)
+    val debugTrace = remember { if (BuildConfig.DEBUG) EditorRestoreTraceState() else null }
     // Debug-only, text-free evidence distinguishes stale saved visibility from
     // an unfulfilled show request without changing the native input lifecycle.
     // Do not query IMM.isActive here: it can reconcile focus and start input.
-    val trace: (String) -> Unit = { event ->
-        if (BuildConfig.DEBUG) {
+    fun trace(event: String, attemptId: Int = debugTrace?.attemptId ?: 0) {
+        if (BuildConfig.DEBUG && debugTrace != null) {
             val rootInsets = view.rootWindowInsets
             Log.d("AnalystEditorRestore", JSONObject()
                 .put("event", event)
+                .put("editorId", debugTrace.editorId)
+                .put("attemptId", attemptId)
+                .put("enabled", enabled)
+                .put("readOnly", readOnly)
                 .put("restoreFocus", restoreFocus)
                 .put("restoreKeyboard", restoreKeyboard)
                 .put("receiveFocusEvents", receiveFocusEvents)
@@ -132,37 +148,51 @@ private fun rememberEditorFocus(
         }
     }
     LaunchedEffect(owner, enabled, readOnly) {
+        val attemptId = debugTrace?.let { ++it.attemptId } ?: 0
         val recreated = previousOwner != owner
-        if (recreated && restoreFocus) trace("restore-start")
+        if (recreated && restoreFocus) trace("restore-start", attemptId)
         // The caller may first disable the restored editor while local state
         // loads. Keep its saved focus/IME pending until it can accept input.
-        if (recreated && restoreFocus && !enabled) return@LaunchedEffect
+        if (recreated && restoreFocus && !enabled) {
+            trace("restore-wait-enabled", attemptId)
+            return@LaunchedEffect
+        }
         if (recreated && restoreFocus) {
-            val keyboardWasVisible = restoreKeyboard
-            // A Dialog can compose before its new Window is ready for input.
-            lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
-            snapshotFlow { window.isWindowFocused }.first { it }
-            withFrameNanos { }
-            viewport.bringIntoView()
-            val restored = restoreEditorInput(
-                showKeyboard = keyboardWasVisible,
-                readOnly = readOnly,
-                requestFocus = { requester.requestFocus() },
-                awaitFocus = { snapshotFlow { focused.value }.first { it } },
-                awaitFrame = { withFrameNanos { } },
-                setKeyboardVisible = { visible ->
-                    trace(if (visible) "request-show" else "request-hide")
-                    restoreKeyboardVisibility(keyboard, visible)
-                },
-            )
-            if (!restored) return@LaunchedEffect
+            val restored = try {
+                val keyboardWasVisible = restoreKeyboard
+                restoreEditorInput(
+                    showKeyboard = keyboardWasVisible,
+                    readOnly = readOnly,
+                    requestFocus = { requester.requestFocus() },
+                    awaitFocus = { snapshotFlow { focused.value }.first { it } },
+                    awaitWindowReady = {
+                        // A Dialog can compose before its new Window is ready for input.
+                        lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
+                        snapshotFlow { window.isWindowFocused }.first { it }
+                        withFrameNanos { }
+                        viewport.bringIntoView()
+                    },
+                    awaitFrame = { withFrameNanos { } },
+                    setKeyboardVisible = { visible ->
+                        trace(if (visible) "request-show" else "request-hide", attemptId)
+                        restoreKeyboardVisibility(keyboard, visible)
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                trace("restore-cancelled", attemptId)
+                throw cancelled
+            }
+            if (!restored) {
+                trace("restore-focus-refused", attemptId)
+                return@LaunchedEffect
+            }
         } else if (!recreated) {
             // Scrolling a lazy item back into view must not steal focus or open IME.
             restoreFocus = focused.value
         }
         previousOwner = owner
         receiveFocusEvents = true
-        if (recreated && restoreFocus) trace("restore-finished")
+        if (recreated && restoreFocus) trace("restore-finished", attemptId)
     }
     LaunchedEffect(imeVisible, focused.value, receiveFocusEvents, window.isWindowFocused) {
         if (receiveFocusEvents && focused.value && window.isWindowFocused &&

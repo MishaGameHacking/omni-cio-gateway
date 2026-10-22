@@ -3,6 +3,7 @@ package ru.omnicio.app.ui.spectrum
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -14,12 +15,19 @@ import org.junit.Test
 class EditorInputRestorationTest {
     @Test(timeout = 5000) fun hiddenIntentPreventsEvenTheFirstQueuedShow() = runBlocking {
         val ime = QueuedIme()
+        var windowReady = false
         val completed = restoreEditorInput(
             showKeyboard = false,
             readOnly = false,
-            requestFocus = ime::requestFocus,
+            requestFocus = { assertTrue(windowReady); ime.requestFocus() },
             // Any suspension after focus can let Compose process its input batch.
             awaitFocus = { ime.flushFrame(); yield() },
+            awaitWindowReady = {
+                assertEquals(0, ime.focusRequests)
+                ime.flushFrame()
+                yield()
+                windowReady = true
+            },
             awaitFrame = { ime.flushFrame(); yield() },
             setKeyboardVisible = ime::setKeyboardVisible,
         )
@@ -30,7 +38,7 @@ class EditorInputRestorationTest {
         assertFalse(ime.visible)
     }
 
-    @Test(timeout = 5000) fun visibleIntentKeepsItsExplicitShowAfterFocusAndFrame() = runBlocking {
+    @Test(timeout = 5000) fun visibleEditorIsFocusedBeforeTheNewWindowAndShownAfterItsFrame() = runBlocking {
         val ime = QueuedIme()
         val observations = mutableListOf<String>()
         val completed = restoreEditorInput(
@@ -41,6 +49,13 @@ class EditorInputRestorationTest {
                 assertTrue(ime.explicitRequests.isEmpty())
                 observations += "focused"
                 ime.flushFrame()
+                yield()
+            },
+            awaitWindowReady = {
+                assertEquals(1, ime.focusRequests)
+                assertEquals("focused", observations.last())
+                assertTrue(ime.explicitRequests.isEmpty())
+                observations += "window"
                 yield()
             },
             awaitFrame = {
@@ -55,7 +70,7 @@ class EditorInputRestorationTest {
         )
         ime.flushFrame()
         assertTrue(completed)
-        assertEquals(listOf("focus", "focused", "frame", "show"), observations)
+        assertEquals(listOf("focus", "focused", "window", "frame", "show"), observations)
         assertEquals(listOf(true), ime.explicitRequests)
         assertTrue(ime.visible)
     }
@@ -66,8 +81,9 @@ class EditorInputRestorationTest {
         restoreEditorInput(
             showKeyboard = observedVisibility,
             readOnly = false,
-            requestFocus = { observedVisibility = true; ime.requestFocus() },
+            requestFocus = ime::requestFocus,
             awaitFocus = { ime.flushFrame(); yield() },
+            awaitWindowReady = { observedVisibility = true; yield() },
             awaitFrame = { ime.flushFrame(); yield() },
             setKeyboardVisible = ime::setKeyboardVisible,
         )
@@ -83,16 +99,19 @@ class EditorInputRestorationTest {
             ime.flushFrame()
             ime.explicitRequests.clear()
             var awaited = false
+            var windowAwaited = false
             val completed = restoreEditorInput(
                 showKeyboard = visible,
                 readOnly = false,
                 requestFocus = { false },
                 awaitFocus = { awaited = true },
+                awaitWindowReady = { windowAwaited = true },
                 awaitFrame = { awaited = true },
                 setKeyboardVisible = ime::setKeyboardVisible,
             )
             assertFalse(completed)
             assertFalse(awaited)
+            assertEquals(!visible, windowAwaited)
             assertTrue(ime.explicitRequests.isEmpty())
             assertTrue(ime.visible)
         }
@@ -107,42 +126,51 @@ class EditorInputRestorationTest {
                 readOnly = true,
                 requestFocus = { observations += "focus"; true },
                 awaitFocus = { observations += "focused"; yield() },
+                awaitWindowReady = { observations += "window"; yield() },
                 awaitFrame = { observations += "frame"; yield() },
                 setKeyboardVisible = ime::setKeyboardVisible,
             )
             assertTrue(completed)
-            assertEquals(listOf("focus", "focused", "frame"), observations)
+            assertEquals(listOf("window", "focus", "focused", "frame"), observations)
             assertTrue(ime.explicitRequests.isEmpty())
         }
     }
 
     @Test(timeout = 5000) fun cancellationCannotFinishTheRestoreOrIssueALateShow() = runBlocking {
         for (visible in listOf(false, true)) {
-            for (cancelAtFocus in listOf(false, true)) {
-                val ime = QueuedIme()
-                val waiting = CompletableDeferred<Unit>()
-                var completed = false
-                val restore = launch {
-                    completed = restoreEditorInput(
-                        showKeyboard = visible,
-                        readOnly = false,
-                        requestFocus = ime::requestFocus,
-                        awaitFocus = {
-                            if (cancelAtFocus) {
-                                waiting.complete(Unit)
-                                awaitCancellation()
-                            }
-                        },
-                        awaitFrame = { waiting.complete(Unit); awaitCancellation() },
-                        setKeyboardVisible = ime::setKeyboardVisible,
-                    )
-                }
-                waiting.await()
-                restore.cancelAndJoin()
-                assertFalse(completed)
-                assertEquals(if (visible) emptyList<Boolean>() else listOf(false), ime.explicitRequests)
+            for (cancelAt in listOf("window", "focus", "frame")) {
+                assertCancelledRestore(visible, cancelAt)
             }
         }
+    }
+
+    private suspend fun assertCancelledRestore(visible: Boolean, cancelAt: String) = coroutineScope {
+        val ime = QueuedIme()
+        val waiting = CompletableDeferred<Unit>()
+        var completed = false
+        suspend fun waitAt(stage: String) {
+            if (cancelAt == stage) {
+                waiting.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val restore = launch {
+            completed = restoreEditorInput(
+                showKeyboard = visible,
+                readOnly = false,
+                requestFocus = ime::requestFocus,
+                awaitFocus = { waitAt("focus") },
+                awaitWindowReady = { waitAt("window") },
+                awaitFrame = { waitAt("frame") },
+                setKeyboardVisible = ime::setKeyboardVisible,
+            )
+        }
+        waiting.await()
+        restore.cancelAndJoin()
+        assertFalse(completed)
+        val expectedHide = !visible && cancelAt != "window"
+        assertEquals(if (expectedHide) listOf(false) else emptyList<Boolean>(), ime.explicitRequests)
+        assertEquals(if (visible || cancelAt != "window") 1 else 0, ime.focusRequests)
     }
 
     /** Compose's fresh StartInput batch implicitly shows unless a later hide replaces it. */
@@ -153,8 +181,11 @@ class EditorInputRestorationTest {
             private set
         var showRequests = 0
             private set
+        var focusRequests = 0
+            private set
 
         fun requestFocus(): Boolean {
+            focusRequests += 1
             visibilityCommands += true
             return true
         }
