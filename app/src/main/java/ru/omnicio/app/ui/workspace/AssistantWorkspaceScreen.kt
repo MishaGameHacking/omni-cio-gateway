@@ -123,7 +123,13 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
             savedRequests.items.none { it.text("request_id", "") == awaitingRequestId }) awaitingRequestId = null
     }
     InitializeChatThread(threads, threadId, session.userId, questionContext.title, create) { threadId = it }
-    val listState = rememberAssistantList(messageItems, cursor)
+    val hasEarlierMessages = messages.data?.optBoolean("has_more") == true
+    val listState = rememberAssistantList(messageItems, cursor, hasEarlierMessages)
+    val activeJob = jobId?.let { id ->
+        rememberWorkspaceJobState(id,
+            onCompleted = { cursors = listOf(""); messages.refresh(); threads.refresh(); jobId = null },
+            onStateChanged = { jobState = it })
+    }
     val requestRecovered: (JSONObject) -> Unit = { point ->
                     if (checkpointMatches(point, request)) question = ""
                     if (point.text("request_id", "") == awaitingRequestId) { awaitingRequestId = null; pendingSend = null }
@@ -151,8 +157,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                 assistantHistoryPages(messages, cursors) { cursors = it }
                 items(messageItems, key = { it.text("id") }) { message -> AssistantMessage(message, onPortfolio, onActions, onStrategy) }
                 if (messageItems.isEmpty() && !messages.busy) item { WorkspaceEmpty("С чего начнём?", "Спросите о позиции, изменениях капитала или правилах стратегии. Ответ появится после фактического запроса к модели.") }
-                jobId?.let { id -> item { WorkspaceJobPanel(id, onCompleted = { cursors = listOf(""); messages.refresh(); threads.refresh(); jobId = null },
-                    onClose = { jobId = null }, onStateChanged = { jobState = it }) } }
+                activeJob?.let { model -> item { WorkspaceJobPanel(model, onClose = { jobId = null }) } }
                 item { WorkspaceActionState(send); WorkspaceActionState(estimateAction) }
                 item { PendingJobRecovery(savedRequests, onThreadRecovered = { threadId = it }, onRequestRecovered = requestRecovered,
                     enabled = !send.busy && !estimateAction.busy && jobId == null,
@@ -178,7 +183,9 @@ private fun AssistantMessage(message: JSONObject, onPortfolio: () -> Unit, onAct
         Text(if (assistant) "Analyst AI" else "Вы", style = MaterialTheme.typography.labelLarge)
         if (assistant) Text("Объяснение ИИ. Числа и основания проверяйте в связанных наблюдениях; выводы модели могут содержать ошибки.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(PrivateValue(message.text("text", "")), style = MaterialTheme.typography.bodyLarge)
+        Text(PrivateValue(message.text("text", "")),
+            modifier = if (assistant) Modifier else Modifier.testTag("assistant-user-message"),
+            style = MaterialTheme.typography.bodyLarge)
         Text(localMoment(message.text("created_at", "")), style = MaterialTheme.typography.bodySmall)
         message.optJSONObject("impact_hypothesis")?.let { ImpactHypothesisPanel(it) }
         EvidenceLinks(message.records("evidence"), message.records("highlights"))
@@ -391,7 +398,8 @@ private fun AssistantComposer(question: String, tier: Int, loading: Boolean, nee
                         WorkspaceChoices("Выбор модели", listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP), tier) { if (!busy) onTier(it) }
                     }
                     WorkspaceTextInput(question, onQuestion, "Ваш вопрос", singleLine = false,
-                        modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                        modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }
+                            .testTag("assistant-question"), enabled = !busy)
                     SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 3) "Проверить стоимость" else "Отправить",
                         onSend,
                         Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)
@@ -415,10 +423,15 @@ private fun InitializeChatThread(threads: WorkspaceResource, threadId: String, u
 }
 
 @Composable
-private fun rememberAssistantList(messageItems: List<JSONObject>, cursor: String): LazyListState {
+private fun rememberAssistantList(messageItems: List<JSONObject>, cursor: String, hasEarlierMessages: Boolean): LazyListState {
     val listState = rememberLazyListState()
     LaunchedEffect(messageItems.lastOrNull()?.text("id"), cursor) {
-        if (messageItems.isNotEmpty() && cursor.isBlank()) listState.animateScrollToItem(messageItems.size)
+        // The context and request-state entries precede the messages. The
+        // optional earlier-page control adds one more entry on the newest page.
+        if (messageItems.isNotEmpty() && cursor.isBlank()) {
+            val lastMessageIndex = 2 + (if (hasEarlierMessages) 1 else 0) + messageItems.lastIndex
+            listState.animateScrollToItem(lastMessageIndex)
+        }
     }
     LaunchedEffect(cursor) { if (cursor.isNotBlank()) listState.scrollToItem(0) }
     return listState

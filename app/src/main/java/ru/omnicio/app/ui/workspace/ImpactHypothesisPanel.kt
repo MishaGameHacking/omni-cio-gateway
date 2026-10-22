@@ -31,7 +31,7 @@ internal fun ImpactHypothesisPanel(hypothesis: JSONObject) {
         hypothesis.text("as_of", "").takeIf(String::isNotBlank)?.let {
             Text("Позиции в снимке от " + localMoment(it), style = MaterialTheme.typography.bodySmall)
         }
-        DetailFold("Публикация, компания и мои позиции", Modifier.testTag("assistant-impact-basis")) {
+        DetailFold("Публикация, компания и мои позиции", headerModifier = Modifier.testTag("assistant-impact-basis")) {
             ImpactEvent(hypothesis.optJSONObject("event"), sources)
             hypothesis.records("companies").forEach { ImpactCompany(it, sources) }
             hypothesis.records("positions").forEach { ImpactPosition(it, sources) }
@@ -93,7 +93,7 @@ private fun ImpactPosition(position: JSONObject, sources: List<JSONObject>) {
 
 @Composable
 private fun ImpactChannel(index: Int, channel: JSONObject, sources: List<JSONObject>) {
-    DetailFold("Возможный канал " + (index + 1), Modifier.testTag("assistant-impact-channel-$index")) {
+    DetailFold("Возможный канал " + (index + 1), headerModifier = Modifier.testTag("assistant-impact-channel-$index")) {
         Text(PrivateValue(channel.text("mechanism", "Механизм не получен")), style = MaterialTheme.typography.bodyLarge)
         Text("Направление гипотезы: " + impactDirection(channel.text("direction", "")))
         Text("Горизонт гипотезы: " + impactHorizon(channel.text("horizon", "")))
