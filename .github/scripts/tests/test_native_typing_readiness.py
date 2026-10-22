@@ -2,12 +2,14 @@
 from collections import deque
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-SPEC = importlib.util.spec_from_file_location(
-    "native_input_evidence", Path(__file__).resolve().parents[1] / "native_input_evidence.py")
+SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
+SPEC = importlib.util.spec_from_file_location("native_input_evidence", SCRIPTS / "native_input_evidence.py")
 native = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(native)
 append_native_text = native.append_native_text

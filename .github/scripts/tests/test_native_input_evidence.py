@@ -2,13 +2,20 @@
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import unittest
 from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
-SPEC = importlib.util.spec_from_file_location("native_input_evidence", Path(__file__).resolve().parents[1] / "native_input_evidence.py")
+SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
+SPEC = importlib.util.spec_from_file_location("native_input_evidence", SCRIPTS / "native_input_evidence.py")
 native = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(native)
+
+IME_REQUEST = ("10-22 10:43:42.811  8221  8221 I ImeTracker: "
+               "ru.omnicio.app.debug:eec2b238: onRequestHide at ORIGIN_CLIENT "
+               "reason HIDE_SOFT_INPUT fromUser false userId 0 displayId 0")
 
 
 def frame(**changes):
@@ -23,7 +30,7 @@ def frame(**changes):
 
 def restore_record(**changes):
     value = {key: True for key in native._RESTORE_FLAGS}
-    value.update(event="request-show", elapsedMs=1234, orientation=2)
+    value.update(event="request-show", elapsedMs=1234, wallClockMs=1792665822811, orientation=2)
     value.update(changes)
     return value
 
@@ -89,7 +96,10 @@ class NativeInputEvidenceTests(unittest.TestCase):
         allowed = restore_record(text="private draft", token="private token")
         entries = [allowed, {"event": []}, restore_record(event="private draft"),
                    restore_record(focused="true"), restore_record(elapsedMs=True),
-                   restore_record(orientation=99), "private draft", None]
+                   restore_record(orientation=99), restore_record(viewIsTextEditor="true"),
+                   restore_record(wallClockMs=True), restore_record(wallClockMs=-1),
+                   restore_record(wallClockMs=2 ** 63), restore_record(wallClockMs="private time"),
+                   "private draft", None]
         output = "--------- beginning of main\n" + "\n".join(json.dumps(value) for value in entries)
         records = native._restore_trace_records(output)
         self.assertEqual(records, [restore_record()])
@@ -113,7 +123,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
         probe = Mock()
         probe.capture.side_effect = OSError("private screenshot failure")
         probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
-                                     json.dumps(restore_record(text="private draft"))]
+                                     json.dumps(restore_record(text="private draft")), IME_REQUEST]
         with patch("builtins.print") as output:
             native._rotation_failure_diagnostics(probe, {"recent": []})
         probe.capture.assert_called_once_with("rotation-failure")
@@ -122,8 +132,49 @@ class NativeInputEvidenceTests(unittest.TestCase):
         self.assertEqual(probe.command.call_args_list[1].args,
                          ("logcat", "-d", "-b", "main", "-v", "raw",
                           "--uid=10123", "AnalystEditorRestore:D", "*:S"))
+        self.assertEqual(probe.command.call_args_list[2].args,
+                         ("logcat", "-d", "-b", "main", "-v", "threadtime,UTC",
+                          "--uid=10123", "ImeTracker:I", "*:S"))
+        self.assertEqual(probe.command.call_count, 3)
         self.assertTrue(all(call.kwargs == {"timeout": 4} for call in probe.command.call_args_list))
         self.assertNotIn("private", "\n".join(call.args[0] for call in output.call_args_list))
+
+    def test_success_trace_keeps_ime_tracker_collection_disabled(self):
+        probe = Mock()
+        probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
+                                     json.dumps(restore_record())]
+        with patch("builtins.print") as output:
+            native.record_editor_restore_trace(probe)
+        self.assertEqual(probe.command.call_count, 2)
+        self.assertEqual(probe.command.call_args.args[-2:], ("AnalystEditorRestore:D", "*:S"))
+        self.assertTrue(output.call_args.args[0].startswith("NATIVE_EDITOR_RESTORE_TRACE="))
+
+    def test_restore_log_failure_still_collects_safe_platform_events(self):
+        probe = Mock()
+        probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
+                                     ConnectionError("private log transport"), IME_REQUEST]
+        with patch("builtins.print") as output:
+            native.record_editor_restore_trace(probe, include_ime_tracker=True)
+        lines = [call.args[0] for call in output.call_args_list]
+        self.assertIn("NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=ConnectionError", lines)
+        tracker = json.loads(next(line.split("=", 1)[1] for line in lines
+                                  if line.startswith("NATIVE_IME_TRACKER_TRACE=")))
+        self.assertEqual(len(tracker), 1)
+        self.assertEqual(tracker[0]["operation"], "onRequestHide")
+        self.assertNotIn("private", "\n".join(lines))
+
+    def test_platform_log_failure_preserves_safe_restore_record(self):
+        probe = Mock()
+        probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
+                                     json.dumps(restore_record()), TimeoutError("private IME detail")]
+        with patch("builtins.print") as output:
+            native.record_editor_restore_trace(probe, include_ime_tracker=True)
+        lines = [call.args[0] for call in output.call_args_list]
+        self.assertIn("NATIVE_IME_TRACKER_TRACE_UNAVAILABLE=TimeoutError", lines)
+        restore = json.loads(next(line.split("=", 1)[1] for line in lines
+                                  if line.startswith("NATIVE_EDITOR_RESTORE_TRACE=")))
+        self.assertEqual(restore, [restore_record()])
+        self.assertNotIn("private", "\n".join(lines))
 
     def test_unresolved_or_ambiguous_uid_never_falls_back_to_general_logcat(self):
         for identity in ("", "package:other.app uid:10123\n", "package:ru.omnicio.app.debug uid:1000\n",
@@ -192,6 +243,9 @@ class NativeInputEvidenceTests(unittest.TestCase):
         self.assertTrue(all(item["editors"][0]["expected_text_matches"] for item in record["recent"]))
         self.assertNotIn("private draft", "\n".join(lines))
         self.assertLess(events.index(("capture", "rotation-failure", True)),
+                        events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
+        self.assertLess(events.index(("logcat", "-d", "-b", "main", "-v", "threadtime,UTC",
+                                      "--uid=10123", "ImeTracker:I", "*:S")),
                         events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
         self.assertEqual([event for event in events if event[:2] == ("shell", "input")],
                          [("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")] * 2)

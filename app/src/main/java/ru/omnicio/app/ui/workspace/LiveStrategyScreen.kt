@@ -73,10 +73,13 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val edit: (JSONObject) -> Unit = { if (!previewAction.busy && !confirmAction.busy) { draftSaved = false; configText = it.toString(); preview = null; savedMessage = null } }
     val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
     SpatialBackHandler(onBack = leave)
-    WorkspaceDetailPage("Моя стратегия", "Версии правил и влияние на текущий портфель", leave, SpectrumSymbol.Goal) { padding ->
+    WorkspaceDetailPage("Моя стратегия", "Версии правил и влияние на текущий портфель", leave, SpectrumSymbol.Goal,
+        adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
+            if (!compact) SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { WorkspaceRequestState(resource) }
                 item { StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ } }

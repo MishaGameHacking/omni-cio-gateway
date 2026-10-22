@@ -237,7 +237,9 @@ class _BusinessCase:
                 self.probe.command("shell", "input", "text", "5")
                 self.probe.dismiss_keyboard()
                 self.probe.tap("Проверить и сохранить расчёт", "workspace-content")
-                self.probe.reveal("СИНТЕТИЧЕСКИЙ РАСЧЁТ", "workspace-content")
+                self.probe.reveal(
+                    "СИНТЕТИЧЕСКИЙ РАСЧЁТ · Покупка · Синтетическая акция", "workspace-content"
+                )
                 self.probe.reveal("План: 5 ед. · лот 1", "workspace-content")
                 self.checks.extend(("native-quantity-input", "new-confirmed-calculation"))
 

@@ -107,6 +107,7 @@ private fun rememberEditorFocus(
     val observedImeVisible by rememberUpdatedState(imeVisible)
     // Debug-only, text-free evidence distinguishes stale saved visibility from
     // an unfulfilled show request without changing the native input lifecycle.
+    // Do not query IMM.isActive here: it can reconcile focus and start input.
     val trace: (String) -> Unit = { event ->
         if (BuildConfig.DEBUG) {
             val rootInsets = view.rootWindowInsets
@@ -119,11 +120,13 @@ private fun rememberEditorFocus(
                 .put("windowFocused", window.isWindowFocused)
                 .put("viewFocused", view.isFocused)
                 .put("viewAttached", view.isAttachedToWindow)
+                .put("viewIsTextEditor", view.onCheckIsTextEditor())
                 .put("resumed", lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                 .put("imeVisible", observedImeVisible)
                 .put("rootImeAvailable", rootInsets != null)
                 .put("rootImeVisible", rootInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true)
                 .put("elapsedMs", SystemClock.elapsedRealtime())
+                .put("wallClockMs", System.currentTimeMillis())
                 .put("orientation", view.resources.configuration.orientation)
                 .toString())
         }

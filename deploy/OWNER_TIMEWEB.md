@@ -257,12 +257,13 @@ warning was the existing Starlette/AnyIO deprecated alias. Signed synthetic RSA 
 state/PKCE/replay/expiry/cancellation/manual-binding boundaries, root-private
 atomic file publication, symlink refusal and installer ordering are covered by
 `test_owner_enrollment.py`, `test_owner_enrollment_install.py` and the preserved
-Telegram/owner regression tests. GitHub on `9dbce107` independently passed all
-[1515 tests / 1481 subtests and the exact-head Sonar gate](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39760214046).
-The [complete Sonar inventory](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39760204320)
+Telegram/owner regression tests. GitHub on `a55d5c2c` independently passed all
+[1515 tests / 1481 subtests and the exact-head Sonar gate](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39763435359).
+The [complete Sonar inventory](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39763426383)
 reported zero OPEN/CONFIRMED issues of all types, zero new issues and
 `complete:true`; main was also clean. All 27 earlier findings were repaired.
-Android sources are aligned with `0dc509df`; checks for the combined head are
+Android sources are aligned with `5543f89f`, including compact strategy input
+and passive IME-failure diagnostics. Checks for the combined head are
 recorded separately in [PR 887](https://github.com/MishaGameHacking/omni-cio-gateway/pull/887).
 Both generated Caddyfiles were independently
 adapted successfully by the official Caddy v2.6.2 binary after checksum verification;

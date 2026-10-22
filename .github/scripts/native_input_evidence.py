@@ -7,13 +7,15 @@ import time
 from collections import deque
 import xml.etree.ElementTree as ET
 
+from ime_tracker_evidence import record_ime_tracker_trace
+
 PACKAGE = "ru.omnicio.app.debug"
 _ROTATION_SAMPLES = 5
 _RESTORE_EVENTS = {"restore-start", "request-show", "request-hide", "restore-finished",
                    "ime-observed", "focus-changed"}
 _RESTORE_FLAGS = ("restoreFocus", "restoreKeyboard", "receiveFocusEvents", "focused",
                   "windowFocused", "viewFocused", "viewAttached", "resumed", "imeVisible",
-                  "rootImeAvailable", "rootImeVisible")
+                  "rootImeAvailable", "rootImeVisible", "viewIsTextEditor")
 
 
 def keyboard_visible(tree) -> bool:
@@ -186,10 +188,11 @@ def _restore_trace_records(output):
             continue
         if not all(type(value.get(key)) is bool for key in _RESTORE_FLAGS):
             continue
-        if (type(value.get("elapsedMs")) is not int or not 0 <= value["elapsedMs"] < 2 ** 63
+        if (not all(type(value.get(key)) is int and 0 <= value[key] < 2 ** 63
+                    for key in ("elapsedMs", "wallClockMs"))
                 or type(value.get("orientation")) is not int or value["orientation"] not in {0, 1, 2}):
             continue
-        records.append({key: value[key] for key in ("event", "elapsedMs", "orientation") + _RESTORE_FLAGS})
+        records.append({key: value[key] for key in ("event", "elapsedMs", "wallClockMs", "orientation") + _RESTORE_FLAGS})
     return records[-40:]
 
 
@@ -201,24 +204,37 @@ def _rotation_failure_diagnostics(probe, observations):
         probe.capture("rotation-failure")
     except Exception as error:
         print("NATIVE_ROTATION_SCREENSHOT_UNAVAILABLE=" + type(error).__name__, flush=True)
-    record_editor_restore_trace(probe)
+    record_editor_restore_trace(probe, include_ime_tracker=True)
 
 
-def record_editor_restore_trace(probe):
-    """Record only the candidate UID's allowlisted restoration facts, if present."""
+def _candidate_uid(probe):
+    identity = probe.command("shell", "cmd", "package", "list", "packages", "-U", PACKAGE, timeout=4)
+    uids = re.findall(r"^package:ru\.omnicio\.app\.debug uid:(\d{1,10})$", identity, re.MULTILINE | re.ASCII)
+    if len(uids) != 1 or not 10000 <= int(uids[0]) <= 2147483647:
+        raise ValueError("Candidate UID is unavailable")
+    return uids[0]
+
+
+def record_editor_restore_trace(probe, *, include_ime_tracker=False):
+    """Record candidate-only facts; collect platform events only after failure."""
     try:
-        identity = probe.command("shell", "cmd", "package", "list", "packages", "-U", PACKAGE, timeout=4)
-        uids = re.findall(r"^package:ru\.omnicio\.app\.debug uid:(\d{1,10})$", identity, re.MULTILINE | re.ASCII)
-        if len(uids) != 1 or not 10000 <= int(uids[0]) <= 2147483647:
-            raise ValueError("Candidate UID is unavailable")
+        uid = _candidate_uid(probe)
+    except Exception as error:
+        print("NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
+        return
+    try:
         # AOSP logcat applies a numeric -t tail before UID and tag filtering:
         # https://android.googlesource.com/platform/system/logging/+/refs/heads/main/logcat/logcat.cpp
         # Bound the filtered records below, after unrelated traffic has been excluded.
         output = probe.command("logcat", "-d", "-b", "main", "-v", "raw",
-                               "--uid=" + uids[0], "AnalystEditorRestore:D", "*:S", timeout=4)
+                               "--uid=" + uid, "AnalystEditorRestore:D", "*:S", timeout=4)
         print("NATIVE_EDITOR_RESTORE_TRACE=" + json.dumps(_restore_trace_records(output), sort_keys=True), flush=True)
     except Exception as error:
         print("NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
+    # The first log read can fail independently. Neither diagnostic performs
+    # input actions or changes the rotation gate's original result.
+    if include_ime_tracker:
+        record_ime_tracker_trace(probe, uid)
 
 
 def _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, recent):
