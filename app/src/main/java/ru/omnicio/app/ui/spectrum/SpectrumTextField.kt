@@ -160,16 +160,18 @@ private fun rememberEditorFocus(
         if (recreated && restoreFocus) {
             val restored = try {
                 val keyboardWasVisible = restoreKeyboard
-                // A Dialog can compose before its new Window is ready for input.
-                lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
-                snapshotFlow { window.isWindowFocused }.first { it }
-                withFrameNanos { }
-                viewport.bringIntoView()
                 restoreEditorInput(
                     showKeyboard = keyboardWasVisible,
                     readOnly = readOnly,
                     requestFocus = { requester.requestFocus() },
                     awaitFocus = { snapshotFlow { focused.value }.first { it } },
+                    awaitWindowReady = {
+                        // A Dialog can compose before its new Window is ready for input.
+                        lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
+                        snapshotFlow { window.isWindowFocused }.first { it }
+                        withFrameNanos { }
+                        viewport.bringIntoView()
+                    },
                     awaitFrame = { withFrameNanos { } },
                     setKeyboardVisible = { visible ->
                         trace(if (visible) "request-show" else "request-hide", attemptId)

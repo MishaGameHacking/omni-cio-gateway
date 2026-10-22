@@ -23,6 +23,8 @@ _TERMINALS = frozenset({"onShown", "onHidden", "onDispatched"})
 
 # AOSP string values, not inferred from the request or from other records:
 # https://android.googlesource.com/platform/frameworks/base/+/main/core/java/com/android/internal/inputmethod/InputMethodDebug.java
+# https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/core/java/com/android/internal/inputmethod/InputMethodDebug.java
+# https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java
 # https://android.googlesource.com/platform/frameworks/base/+/main/core/java/android/view/inputmethod/ImeTracker.java
 _REASONS = frozenset({
     "NOT_SET",
@@ -63,6 +65,7 @@ _REASONS = frozenset({
     "REMOVE_IME_SCREENSHOT_FROM_IMMS",
     "HIDE_WHEN_INPUT_TARGET_INVISIBLE",
     "HIDE_SOFT_INPUT_CLOSE_CURRENT_SESSION",
+    "HIDE_CLOSE_CURRENT_SESSION",
     "HIDE_SOFT_INPUT_FROM_VIEW",
     "SHOW_SOFT_INPUT_LEGACY_DIRECT",
     "HIDE_SOFT_INPUT_LEGACY_DIRECT",
@@ -154,6 +157,7 @@ _PHASES = frozenset({
     "PHASE_SERVER_UPDATE_CLIENT_VISIBILITY",
     "PHASE_WM_DISPLAY_IME_CONTROLLER_SET_IME_REQUESTED_VISIBLE",
     "PHASE_WM_UPDATE_DISPLAY_WINDOW_REQUESTED_VISIBLE_TYPES",
+    "PHASE_SERVER_ALREADY_VISIBLE",
 })
 
 _THREADTIME_LINE = re.compile(

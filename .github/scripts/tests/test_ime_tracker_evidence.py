@@ -79,12 +79,25 @@ class ImeTrackerEvidenceTests(unittest.TestCase):
 
     def test_unknown_reason_names_and_numeric_values_are_fixed_literals(self):
         reasons = ("PRIVATE_DRAFT_TOKEN", "Unknown=123", "Unknown=-12",
-                   "HIDE_CLOSE_CURRENT_SESSION")
+                   "HIDE_CLOSE_CURRENT_SESSION_PRIVATE")
         output = "\n".join(log_line(request_body(reason=reason)) for reason in reasons)
         records = tracker._ime_tracker_records(output)
         self.assertEqual([record["reason"] for record in records], ["unrecognized"] * len(reasons))
         self.assertNotIn("PRIVATE_DRAFT_TOKEN", json.dumps(records))
         self.assertNotIn("Unknown=", json.dumps(records))
+
+    def test_android17_close_session_reason_keeps_exact_name_and_drops_identities(self):
+        # Android 17 r1 InputMethodDebug emits this shorter name for the same reason.
+        body = request_body(reason="HIDE_CLOSE_CURRENT_SESSION", suffix=" userId 0 displayId 0")
+        line = log_line(body).replace("42.811 ", "42.811 +0000 ")
+        records = tracker._ime_tracker_records(line)
+        self.assertEqual(records, [{"timestamp": "10-22 10:43:42.811",
+                                   "operation": "onRequestHide", "origin": "ORIGIN_CLIENT",
+                                   "reason": "HIDE_CLOSE_CURRENT_SESSION", "fromUser": False}])
+        serialized = json.dumps(records)
+        for private in ("ru.omnicio.app.debug", "eec2b238", "8221", "userId", "displayId"):
+            with self.subTest(private=private):
+                self.assertNotIn(private, serialized)
 
     def test_unknown_origin_and_phase_are_retained_without_raw_values(self):
         lines = [log_line(request_body(operation="onRequestUnknown", origin="ORIGIN_123"))]
@@ -97,6 +110,15 @@ class ImeTrackerEvidenceTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_TOKEN", json.dumps(records))
         self.assertNotIn("ORIGIN_123", json.dumps(records))
         self.assertNotIn("PHASE_123", json.dumps(records))
+
+    def test_android17_already_visible_phase_is_exact_without_request_details(self):
+        phases = ("PHASE_SERVER_ALREADY_VISIBLE", "PHASE_SERVER_ALREADY_VISIBLE_PRIVATE")
+        lines = [log_line("onCancelled at " + phase).replace("42.811 ", "42.811 +0000 ")
+                 for phase in phases]
+        records = tracker._ime_tracker_records("\n".join(lines))
+        self.assertEqual(records, [
+            {"timestamp": "10-22 10:43:42.811", "operation": "onCancelled", "phase": phase}
+            for phase in ("PHASE_SERVER_ALREADY_VISIBLE", "unrecognized")])
 
     def test_exact_aosp_display_reason_and_recent_phase_names_are_recognized(self):
         lines = [

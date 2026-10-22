@@ -1,5 +1,77 @@
 # Выполнение главного плана Analyst AI
 
+**Порядок восстановления фокуса и IME, F01/F16/F22, 22.10.2026:**
+Диагностический head `51510ac9439a2173744a43e3d9a54590f325ffc5`:
+
+- [Android 39788071851](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39788071851),
+  build job119856511461 — все APK, Kotlin/JUnit, lint и 842 CI-теста
+  (3 предусмотренных platform skips) PASS; Gradle 9m 35s.
+- [Backend 39788071850](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39788071850),
+  job119856399776 — 1467 tests / 1409 subtests PASS, 16.96 s.
+- [Полный Sonar 39788059724](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39788059724),
+  job119856356486 — 0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true`
+  для точного head; check119857339900.
+- Runtime job119863114964 — FAIL на risk/ready/font100 при повороте диалога.
+  Текст, focus и caret 0:0 сохранены, IME исчезает. API37 / измеренные 16384:
+  clean install и upgrade PASS, полный UI — нет; 4096 не запущен.
+  APK SHA-256 `24d65e49f7c22087a87f2d2309839c8673d92a095f62b3688b550e622833eeb0`,
+  29853394 bytes. Rotation PNG проверен по байтам и визуально:
+  `6f1ba3e0942bdff0dfc9132b18387938391c0847c4db2028a0188df7f8e9a235`,
+  148452 bytes. Cleanup job119868894456 — `verified_absent`.
+  Aggregate119868971798 и authoritative119869017621 корректно FAIL; APK не выдан.
+
+Новая диагностика разобрала последние 120 UID-строк без rejection;
+platform capture прочитал 427 строк, выделил 248 связанных записей и вывел
+последние 120. Причинный интервал сохранён. Native observations: 44 samples,
+3 IME-positive, 4 state transitions без обрезания. Первый positive ещё portrait;
+следующие два уже landscape, но frame не атомарен: timestamps охватывают
+чтение окон, а editor сериализуется позже. Последующие 41 sample и post-timeout
+показывают прежний exact/focused editor с отсутствующей IME.
+
+В текущем risk-сегменте editor4/attempt1 постоянно enabled; нет отмены,
+ожидания disabled или новой попытки. Restore-start — 13:57:07.485 UTC,
+focus — 08.482, explicit request-show — 08.594, finished — 08.595.
+Оба признака IME true в 09.001 и false в 09.493. Driver до отказа только
+читает frames; portrait cleanup ещё не начался. Server hide128 от 07.951
+завершается в 08.910; show82 от 08.517 — onShown в 08.930. Show82 предшествует
+explicit restore и не приписывается ему. Поздний IME hide88 с причиной
+`HIDE_SOFT_INPUT_EXTRACT_INPUT_CHANGED` (08.883) имеет onHidden в 09.501.
+
+В [Android 17 r1 InputMethodService](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/core/java/android/inputmethodservice/InputMethodService.java)
+этот default callback скрывает IME при `EditorInfo.inputType == TYPE_NULL`.
+[InputMethodManager](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/core/java/android/view/inputmethod/InputMethodManager.java)
+может передать исходный EditorInfo даже при null InputConnection. Штатный
+Decimal editor в точном Compose 1.11.4 получает тип 0x2002 и IME_FLAG_NO_FULLSCREEN.
+Промежуточная цель без готового редактора согласуется с кодом и событиями,
+но фактический EditorInfo/window этого callback не записан. AOSP r1 также
+не объявляется доказанно тождественным конкретной сборке эмулятора.
+
+Изменён порядок только для восстановления видимой IME доступного writable
+editor: requestFocus/awaitFocus предшествуют RESUMED/window focus/frame/
+bringIntoView; следующий frame и единственный explicit show остаются после
+готовности окна. Такой порядок соответствует [официальному руководству Android](https://developer.android.com/develop/ui/views/touch-and-input/keyboard-input/visibility)
+и начинает подготовку Compose input session раньше прежнего ожидания окна.
+Готовность platform InputConnection до конкретного события WM этим не доказана.
+Для hidden intent и readOnly сохранён прежний порядок целиком; same-batch hide
+не переносится за suspend. Disabled restore остаётся pending, cancellation
+распространяется, отказ focus не считается успехом. Повторы, новые таймауты,
+input-session перехватчики и изменения driver/gate не добавлены.
+
+Безопасный ImeTracker allowlist дополнен точными Android 17 именами
+`HIDE_CLOSE_CURRENT_SESSION` и `PHASE_SERVER_ALREADY_VISIBLE`; прежние значения
+сохранены, похожие неизвестные строки остаются `unrecognized`.
+Локально: 844 CI-теста, 4 предусмотренных пропуска, 1.077 s — PASS;
+Python-аудит 311 файлов и diff check — PASS. 29 ImeTracker tests включают
+оба новых имени и сохранение безопасной проекции; 52 focused native/rotation/
+typing tests также прошли. Независимое ревью порядка, hidden/readOnly,
+disabled/lazy guards, cancellation и отсутствия изменений driver завершено.
+Шесть существующих JVM-тестов расширены: focus перед новым window wait,
+hidden intent до первого flush и cancellation в window/focus/frame.
+Локально они не выполнены из-за ошибки Java libjli.so; CI JUnit обязателен.
+Новый кандидат ещё требует сборки, полного Sonar/Backend и обеих полных
+API37-матриц на собственных байтах; его исправление не объявлено подтверждённым
+runtime. Результат фиксируется в [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880).
+
 **Повторный сбой IME и исправление диагностики, F01/F16/F22, 22.10.2026:**
 Кандидат `79cb04c1f1db9b11603300f808b40a3178608d4f`:
 
