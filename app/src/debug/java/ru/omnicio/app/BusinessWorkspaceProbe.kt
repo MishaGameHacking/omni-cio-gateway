@@ -2,11 +2,14 @@ package ru.omnicio.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -14,6 +17,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Constraints
 import java.math.BigDecimal
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -80,14 +84,9 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
         ";message-posts:${trace.messagePosts};message-request-id:${trace.messageRequestId ?: "none"}" +
         ";by-request-gets:${trace.byRequestGets};recovered-request-id:${trace.recoveredRequestId ?: "none"}" +
         ";scenario-compares:${trace.scenarioComparisons}"
-    Column(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).statusBarsPadding().padding(6.dp)
-            .testTag("business-probe-marker").semantics { contentDescription = marker }) {
-            Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
-            Text("$initialRoute / $scenario · запросов ${trace.requests} · ошибок контракта ${trace.errors.size}", fontSize = 10.sp)
-            if (navigation != "none") Text("Тест перехода: $navigation", fontSize = 10.sp)
-            trace.errors.lastOrNull()?.let { Text(it, fontSize = 10.sp) }
-        }
+    BusinessProbeFrame(disclosure = { compact ->
+        BusinessProbeDisclosure(marker, "$initialRoute / $scenario", trace, navigation, compact)
+    }) {
         if (!initialized) SpectrumLoadingIndicator(description = "Подготовка изолированного теста")
         else CompositionLocalProvider(
             LocalWorkspaceSession provides WorkspaceSession("debug-fixture-only", userId),
@@ -114,7 +113,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                 }
             },
         ) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.fillMaxSize()) {
                 when (page) {
                     "assistant" -> AssistantWorkspaceScreen(onBack, { navigation = "portfolio" }, { page = "plans" }, { page = "strategy" })
                     "risk" -> RiskWorkspaceScreen(onBack)
@@ -124,6 +123,60 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                     "analysis" -> AnalysisTimelineScreen(onBack)
                     "catalogue" -> MarketCatalogueScreen(onBack)
                 }
+            }
+        }
+    }
+}
+
+/** Two stable slots: changing their bounds must not recreate the focused workspace. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BusinessProbeFrame(disclosure: @Composable (Boolean) -> Unit, content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+        .semantics { testTagsAsResourceId = true }) {
+        val compact = WindowInsets.isImeVisible && maxHeight < 240.dp
+        Layout(content = {
+            disclosure(compact)
+            Box(Modifier.fillMaxSize()) { content() }
+        }, modifier = Modifier.fillMaxSize()) { children, constraints ->
+            val markerConstraints = if (compact) {
+                // A narrow window needs its full height too. Cap the rail's
+                // width rather than putting a tall banner above the editor.
+                val railWidth = minOf(224.dp.roundToPx(), (constraints.maxWidth * .45f).toInt())
+                Constraints.fixed(railWidth, constraints.maxHeight)
+            } else {
+                constraints.copy(minWidth = constraints.maxWidth, minHeight = 0)
+            }
+            val marker = children[0].measure(markerConstraints)
+            val left = if (compact) marker.width else 0
+            val top = if (compact) 0 else marker.height
+            val workspace = children[1].measure(Constraints.fixed(
+                constraints.maxWidth - left, constraints.maxHeight - top))
+            layout(constraints.maxWidth, constraints.maxHeight) {
+                marker.placeRelative(0, 0)
+                workspace.placeRelative(left, top)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BusinessProbeDisclosure(marker: String, route: String, trace: ProbeTrace,
+    navigation: String, compact: Boolean) {
+    val detailStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp)
+    // The marker belongs to the visible viewport, so scrolling its details never
+    // removes the transport/counter evidence from the native accessibility tree.
+    Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer)
+        .testTag("business-probe-marker").semantics { contentDescription = marker },
+        propagateMinConstraints = true) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(if (compact) 4.dp else 6.dp)) {
+            Text(if (compact) "Синтетика" else "ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ",
+                style = MaterialTheme.typography.labelSmall)
+            Text(if (compact) "Запр.${trace.requests} · ош.${trace.errors.size}"
+                else "$route · запросов ${trace.requests} · ошибок контракта ${trace.errors.size}", style = detailStyle)
+            if (!compact) {
+                if (navigation != "none") Text("Тест перехода: $navigation", style = detailStyle)
+                trace.errors.lastOrNull()?.let { Text(it, style = detailStyle) }
             }
         }
     }

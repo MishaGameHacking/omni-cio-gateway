@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.theme.*
@@ -112,15 +113,37 @@ fun AppearanceScreen(onBack: () -> Unit) {
     }
 }
 
+internal val LocalCompactWorkspaceInput = staticCompositionLocalOf { false }
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
     symbol: SpectrumSymbol = SpectrumSymbol.Allocation,
+    adaptToIme: Boolean = false,
     content: @Composable (PaddingValues) -> Unit) {
     SpectrumBackground(Modifier.fillMaxSize()) {
-        Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            contentWindowInsets = WindowInsets.safeDrawing,
-            topBar = {
-                WorkspaceHeader(title, subtitle, onBack, symbol)
-            }, content = content)
+        // Measure the actual safe viewport, including any insets already consumed
+        // by a parent. Reading the screen height and subtracting IME again would
+        // reserve its space twice in an embedded workspace.
+        val insets = if (adaptToIme) WindowInsets.safeDrawing else WindowInsets(0, 0, 0, 0)
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(insets)) {
+            val compact = adaptToIme && WindowInsets.isImeVisible && maxHeight < 240.dp
+            CompositionLocalProvider(LocalCompactWorkspaceInput provides compact) {
+                Row(Modifier.fillMaxSize()) {
+                    if (compact) Box(Modifier.width(56.dp).fillMaxHeight().padding(top = 4.dp),
+                        contentAlignment = Alignment.TopCenter) {
+                        SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
+                    }
+                    // Keep the content at one composition location while the
+                    // header gives its height to the focused native editor.
+                    Scaffold(Modifier.weight(1f).fillMaxHeight(),
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        contentWindowInsets = WindowInsets.safeDrawing,
+                        topBar = {
+                            if (!compact) WorkspaceHeader(title, subtitle, onBack, symbol)
+                        }, content = content)
+                }
+            }
+        }
     }
 }

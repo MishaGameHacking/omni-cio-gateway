@@ -139,7 +139,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     }
     // Preserve room for the native editor in landscape with large system text.
     val subtitle = if (WindowInsets.isImeVisible) "" else "Объяснения с проверяемыми основаниями"
-    WorkspaceDetailPage("Ассистент", subtitle, onBack, SpectrumSymbol.Analyst) { padding ->
+    WorkspaceDetailPage("Ассистент", subtitle, onBack, SpectrumSymbol.Analyst, adaptToIme = true) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
@@ -381,7 +381,9 @@ private fun AssistantComposer(question: String, tier: Int, loading: Boolean, nee
     onQuestion: (String) -> Unit, onSend: () -> Unit) {
     // The parent consumes the page/IME insets. Keep this bounded viewport
     // scrollable so native focus can reveal the editor on short/large-font windows.
-    SpectrumCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+    val compact = LocalCompactWorkspaceInput.current
+    SpectrumCard(Modifier.fillMaxWidth().padding(
+        horizontal = if (compact) 0.dp else 12.dp, vertical = if (compact) 0.dp else 8.dp)
         .verticalScroll(rememberScrollState())) {
                     if (loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
                     else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
