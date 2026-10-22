@@ -125,6 +125,28 @@ def nullable_address(row: dict, field: str):
         raise InventoryError('invalid_ip_address') from None
 
 
+def _public_server_ips(server: dict):
+    for network in entries(server, 'networks'):
+        if network.get('type') != 'public':
+            continue
+        for address in entries(network, 'ips'):
+            ip = nullable_address(address, 'ip')
+            if ip is None:
+                raise InventoryError('missing_public_server_ip')
+            yield str(ip)
+
+
+def _project_public_addresses(servers: list[dict]) -> dict:
+    public_addresses = {}
+    for server in servers:
+        for ip in _public_server_ips(server):
+            if ip in public_addresses:
+                raise InventoryError('duplicate_project_public_ip')
+            public_addresses[ip] = {'resource_type': 'server',
+                                    'resource_id': server['id']}
+    return public_addresses
+
+
 def project_resources(token: str) -> tuple[dict, dict]:
     payload = read_api(token, PROJECT_PATH)
     collections = {key: entries(payload, key) for key in PROJECT_COLLECTIONS}
@@ -136,20 +158,24 @@ def project_resources(token: str) -> tuple[dict, dict]:
         if len(set(values)) != len(values):
             raise InventoryError('duplicate_project_resource')
         ids[kind] = set(values)
-    public_addresses = {}
-    for server in collections['servers']:
-        for network in entries(server, 'networks'):
-            if network.get('type') != 'public':
-                continue
-            for address in entries(network, 'ips'):
-                ip = nullable_address(address, 'ip')
-                if ip is None:
-                    raise InventoryError('missing_public_server_ip')
-                if str(ip) in public_addresses:
-                    raise InventoryError('duplicate_project_public_ip')
-                public_addresses[str(ip)] = {'resource_type': 'server',
-                                             'resource_id': server['id']}
-    return ids, public_addresses
+    return ids, _project_public_addresses(collections['servers'])
+
+
+def _floating_assignment(row: dict, project_ids: dict) -> dict:
+    if 'resource_type' not in row or 'resource_id' not in row:
+        raise InventoryError('missing_ip_assignment')
+    kind, assigned_id = row['resource_type'], row['resource_id']
+    if kind is None and assigned_id is None:
+        assignment = 'unattached'
+    elif isinstance(kind, str) and kind in RESOURCE_TYPES and assigned_id is not None:
+        assigned_id = resource_id(assigned_id)
+        assignment = ('attached_to_project' if assigned_id in project_ids.get(kind, set())
+                      else 'attached_outside_or_unknown_project')
+    else:
+        raise InventoryError('invalid_ip_assignment')
+    return {'assignment': assignment, 'resource_type': kind,
+            'resource_id': assigned_id,
+            'project_id': PROJECT_ID if assignment == 'attached_to_project' else None}
 
 
 def floating_ips(token: str, project_ids: dict) -> tuple[list[dict], dict]:
@@ -164,22 +190,10 @@ def floating_ips(token: str, project_ids: dict) -> tuple[list[dict], dict]:
             raise InventoryError('duplicate_floating_ip')
         seen.add(identifier)
         ip = nullable_address(row, 'ip')
-        if 'resource_type' not in row or 'resource_id' not in row:
-            raise InventoryError('missing_ip_assignment')
-        kind, assigned_id = row['resource_type'], row['resource_id']
-        if kind is None and assigned_id is None:
-            assignment = 'unattached'
-        elif isinstance(kind, str) and kind in RESOURCE_TYPES and assigned_id is not None:
-            assigned_id = resource_id(assigned_id)
-            assignment = ('attached_to_project' if assigned_id in project_ids.get(kind, set())
-                          else 'attached_outside_or_unknown_project')
-        else:
-            raise InventoryError('invalid_ip_assignment')
+        assignment = _floating_assignment(row, project_ids)
         summary = {'id': identifier, 'type': 'floating',
                    'ip_version': ip.version if ip is not None else None,
-                   'assignment': assignment, 'resource_type': kind,
-                   'resource_id': assigned_id,
-                   'project_id': PROJECT_ID if assignment == 'attached_to_project' else None}
+                   **assignment}
         result.append(summary)
         if ip is not None:
             if str(ip) in address_index:
@@ -224,6 +238,45 @@ def safe_fqdn(value) -> str:
     return ascii_name
 
 
+def _checked_domain_names(domain: dict, subdomains: list[dict], seen_subdomains: set):
+    names = [('domain', domain), *(('subdomain', sub) for sub in subdomains)]
+    for kind, name in names:
+        identifier = resource_id(name.get('id'))
+        if kind == 'subdomain':
+            if identifier in seen_subdomains:
+                raise InventoryError('duplicate_subdomain')
+            seen_subdomains.add(identifier)
+        yield kind, name
+
+
+def _record_domain_name(report: dict, kind: str, name: dict, is_technical: bool,
+                        ip_index: dict, public_addresses: dict) -> None:
+    """Record a name only after its resource ID and duplicate checks pass."""
+    ip = nullable_address(name, 'linked_ip')
+    if ip is None:
+        report['unlinked_names_count'] += 1
+        return
+    floating = ip_index.get(str(ip), {})
+    binding = public_addresses.get(str(ip))
+    if binding and floating and (floating.get('project_id') != PROJECT_ID or
+                                 floating['resource_type'] != binding['resource_type'] or
+                                 floating['resource_id'] != binding['resource_id']):
+        raise InventoryError('conflicting_ip_assignment')
+    if floating.get('project_id') == PROJECT_ID:
+        binding = floating
+    if binding:
+        report['project_linked_names'].append({
+            'id': name['id'], 'type': kind, 'fqdn': safe_fqdn(name.get('fqdn')),
+            'is_technical': is_technical, 'project_id': PROJECT_ID,
+            'resource_type': binding['resource_type'],
+            'resource_id': binding['resource_id'], 'https_verified': False,
+        })
+    elif floating.get('assignment') == 'unattached':
+        report['linked_to_unattached_ip_count'] += 1
+    else:
+        report['outside_or_unknown_project_names_count'] += 1
+
+
 def domain_summary(rows: list[dict], ip_index: dict, public_addresses: dict) -> dict:
     report = {'domains_total': len(rows), 'subdomains_total': 0,
               'unlinked_names_count': 0, 'linked_to_unattached_ip_count': 0,
@@ -237,36 +290,9 @@ def domain_summary(rows: list[dict], ip_index: dict, public_addresses: dict) -> 
         report['subdomains_total'] += len(subdomains)
         if report['subdomains_total'] + len(rows) > MAX_ENTRIES:
             raise InventoryError('inventory_entry_limit')
-        names = [('domain', domain), *(('subdomain', sub) for sub in subdomains)]
-        for kind, name in names:
-            identifier = resource_id(name.get('id'))
-            if kind == 'subdomain':
-                if identifier in seen_subdomains:
-                    raise InventoryError('duplicate_subdomain')
-                seen_subdomains.add(identifier)
-            ip = nullable_address(name, 'linked_ip')
-            if ip is None:
-                report['unlinked_names_count'] += 1
-                continue
-            floating = ip_index.get(str(ip), {})
-            binding = public_addresses.get(str(ip))
-            if binding and floating and (floating.get('project_id') != PROJECT_ID or
-                                         floating['resource_type'] != binding['resource_type'] or
-                                         floating['resource_id'] != binding['resource_id']):
-                raise InventoryError('conflicting_ip_assignment')
-            if floating.get('project_id') == PROJECT_ID:
-                binding = floating
-            if binding:
-                report['project_linked_names'].append({
-                    'id': identifier, 'type': kind, 'fqdn': safe_fqdn(name.get('fqdn')),
-                    'is_technical': domain['is_technical'], 'project_id': PROJECT_ID,
-                    'resource_type': binding['resource_type'],
-                    'resource_id': binding['resource_id'], 'https_verified': False,
-                })
-            elif floating.get('assignment') == 'unattached':
-                report['linked_to_unattached_ip_count'] += 1
-            else:
-                report['outside_or_unknown_project_names_count'] += 1
+        for kind, name in _checked_domain_names(domain, subdomains, seen_subdomains):
+            _record_domain_name(report, kind, name, domain['is_technical'],
+                                ip_index, public_addresses)
     return report
 
 

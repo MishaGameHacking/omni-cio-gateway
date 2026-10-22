@@ -238,10 +238,12 @@ class OwnerEnrollmentTests(unittest.TestCase):
             with self.telegram(self.token(flow)):
                 self.complete(flow)
             with self.subTest(answer=answer), patch.object(enrollment, 'write_owner_config') as write:
+                terminal = Terminal(answer)
+                retry_terminal = Terminal('BIND opaque:Owner-A_9')
                 with self.assertRaisesRegex(enrollment.EnrollmentError, 'cancelled'):
-                    flow.confirm(Terminal(answer))
+                    flow.confirm(terminal)
                 with self.assertRaisesRegex(enrollment.EnrollmentError, 'verified_identity'):
-                    flow.confirm(Terminal('BIND opaque:Owner-A_9'))
+                    flow.confirm(retry_terminal)
                 write.assert_not_called()
 
     def test_token_or_transaction_expiry_during_confirmation_cannot_write(self):
@@ -257,14 +259,16 @@ class OwnerEnrollmentTests(unittest.TestCase):
                     candidate['exp'] = int(time.time()) - 1
                 return 'BIND opaque:Owner-A_9'
             with self.subTest(expiry=expiry), patch.object(enrollment, 'write_owner_config') as write:
+                terminal = Terminal(answer)
                 with self.assertRaisesRegex(enrollment.EnrollmentError, 'expired'):
-                    flow.confirm(Terminal(answer))
+                    flow.confirm(terminal)
                 write.assert_not_called()
 
     def test_unverified_first_visitor_cannot_confirm(self):
+        terminal = Terminal('BIND arbitrary-owner')
         with patch.object(enrollment, 'write_owner_config') as write:
             with self.assertRaisesRegex(enrollment.EnrollmentError, 'verified_identity'):
-                self.flow.confirm(Terminal('BIND arbitrary-owner'))
+                self.flow.confirm(terminal)
             write.assert_not_called()
 
     def test_callback_only_loopback_host_and_https_and_never_logs_query(self):
@@ -299,15 +303,15 @@ class OwnerEnrollmentTests(unittest.TestCase):
 
     def test_terminal_rejects_pipe_or_group_access_before_opening(self):
         with patch.object(enrollment.os, 'isatty', return_value=False), patch.object(enrollment.os, 'open') as opened:
+            terminal = enrollment.PrivateTerminal()
             with self.assertRaises(enrollment.EnrollmentError):
-                with enrollment.PrivateTerminal():
-                    self.fail('Pipe accepted')
+                terminal.__enter__()
             opened.assert_not_called()
         info = os.stat_result((stat.S_IFCHR | 0o620, 1, 1, 1, 0, 5, 0, 0, 0, 0))
         with patch.object(enrollment.os, 'isatty', return_value=True), patch.object(enrollment.os, 'fstat', return_value=info), patch.object(enrollment.os, 'open') as opened:
+            terminal = enrollment.PrivateTerminal()
             with self.assertRaisesRegex(enrollment.EnrollmentError, 'mesg_n'):
-                with enrollment.PrivateTerminal():
-                    self.fail('Shared terminal accepted')
+                terminal.__enter__()
             opened.assert_not_called()
 
 

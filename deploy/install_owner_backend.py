@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 from contextlib import contextmanager
+import grp
 import hashlib
 from http.client import HTTPConnection, HTTPSConnection, HTTPException
 from ipaddress import IPv4Address
@@ -60,21 +61,25 @@ def _validated_values(values: dict, *, enrollment: bool = False) -> dict[str, st
     # is a different claim; never derive or normalize the owner subject from it.
     if not enrollment and len(values['ANALYST_OWNER_TELEGRAM_SUB']) > 256:
         raise InstallError('telegram_oidc_subject_too_long')
+    _validate_server_target(values['BACKEND_PUBLIC_URL'], values['EXPECTED_PUBLIC_IPV4'])
+    if enrollment and values['TELEGRAM_ENROLLMENT_REDIRECT_URI'] != values['BACKEND_PUBLIC_URL'] + ENROLLMENT_CALLBACK:
+        raise InstallError('exact_enrollment_https_redirect_required')
+    return dict(values)
+
+
+def _validate_server_target(public_url: str, expected_ip: str) -> None:
     try:
-        address = IPv4Address(values['EXPECTED_PUBLIC_IPV4'])
+        address = IPv4Address(expected_ip)
     except ValueError:
         raise InstallError('global_ipv4_required') from None
     if not address.is_global:
         raise InstallError('global_ipv4_required')
-    url = urlsplit(values['BACKEND_PUBLIC_URL'])
+    url = urlsplit(public_url)
     host = url.hostname or ''
     if (url.scheme != 'https' or url.netloc != host or url.path or url.query or url.fragment
             or not valid_hostname(host)
             or host == '176.98.178.81.sslip.io'):
         raise InstallError('new_https_hostname_required')
-    if enrollment and values['TELEGRAM_ENROLLMENT_REDIRECT_URI'] != values['BACKEND_PUBLIC_URL'] + ENROLLMENT_CALLBACK:
-        raise InstallError('exact_enrollment_https_redirect_required')
-    return dict(values)
 
 
 def validated_config(values: dict) -> dict[str, str]:
@@ -216,9 +221,12 @@ def wait_healthy(hostname: str | None = None) -> None:
     raise InstallError('health_or_authentication_probe_failed')
 
 
-def write_new(path: Path, content: str, mode: int, *, directory: int | None = None) -> None:
+def write_new(path: Path, content: str, mode: int, *, directory: int | None = None,
+              group_id: int | None = None) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=directory)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+        if group_id is not None:
+            os.fchown(output.fileno(), 0, group_id)
         os.fchmod(output.fileno(), mode)
         output.write(content)
 
@@ -254,10 +262,26 @@ def caddy_text(hostname: str, *, enrollment: bool = False) -> str:
             '\thandle {\n\t\treverse_proxy 127.0.0.1:8080\n\t}\n}\n')
 
 
+def write_caddy_config(name: str, hostname: str, *, enrollment: bool = False) -> Path:
+    try:
+        group_id = grp.getgrnam('caddy').gr_gid
+    except KeyError:
+        raise InstallError('caddy_service_group_required') from None
+    directory = os.open(CONFIG, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        # Only root may change config. The packaged caddy:caddy service needs
+        # directory traversal and Caddyfile read access, not world access or env.
+        os.fchown(directory, 0, group_id)
+        os.fchmod(directory, 0o750)
+        write_new(Path(name), caddy_text(hostname, enrollment=enrollment), 0o640,
+                  directory=directory, group_id=group_id)
+    finally:
+        os.close(directory)
+    return CONFIG / name
+
+
 def configure_caddy(hostname: str, *, enrollment: bool) -> Path:
-    caddy_file = CONFIG / 'Caddyfile'
-    write_new(caddy_file, caddy_text(hostname, enrollment=enrollment), 0o644)
-    CONFIG.chmod(0o711)  # caddy reads public config, never the 0600 environment.
+    caddy_file = write_caddy_config('Caddyfile', hostname, enrollment=enrollment)
     run(['caddy', 'validate', '--config', str(caddy_file), '--adapter', 'caddyfile'])
     CADDY_DROPIN.parent.mkdir(mode=0o755)
     directory = os.open(CADDY_DROPIN.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -300,8 +324,7 @@ def complete_enrollment(values: dict[str, str], hostname: str, caddy_file: Path)
     run(['systemctl', 'stop', 'caddy'])
     # These two public files belong exclusively to this fresh invocation. The
     # private owner JSON is published no-replace by the enrollment CLI instead.
-    runtime_config = CONFIG / 'Caddyfile.runtime'
-    write_new(runtime_config, caddy_text(hostname), 0o644)
+    runtime_config = write_caddy_config('Caddyfile.runtime', hostname)
     run(['caddy', 'validate', '--config', str(runtime_config), '--adapter', 'caddyfile'])
     os.replace(runtime_config, caddy_file)
     return confirmed

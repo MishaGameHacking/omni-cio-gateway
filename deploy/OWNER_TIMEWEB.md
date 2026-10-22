@@ -11,9 +11,12 @@ SHA-256 used by the T-Invest client before any installation commands. Its nested
 path must be preserved; a healthy HTTP endpoint alone cannot detect a missing CA.
 Public code, the virtual environment and Caddy configuration remain readable by
 their service accounts even when the administrator's shell uses `umask 077`.
-The secret environment file remains mode `0600`, and runtime data retains the
-service's private `UMask=0077`. These packaging and permission boundaries passed
-16 local installer tests on 22 October 2026; they do not prove a live deployment.
+The configuration directory is owned by `root:caddy` with mode `0750`; both the
+bootstrap and runtime Caddyfiles use `root:caddy 0640`. Caddy group lookup and
+file publication fail closed. The secret environment file remains root-owned
+mode `0600`, and runtime data retains the service's private `UMask=0077`.
+These packaging and permission boundaries are covered by the installer tests;
+they do not prove a live deployment.
 
 Fresh authenticated read-only inventory: [run `39730159289`](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39730159289),
 job `119663110280`, 22 October 2026 at 05:49:03 UTC / 08:49:03 Moscow time,
@@ -198,6 +201,18 @@ and disables redirects and proxy/environment overrides. The callback spends its
 matching state before the exchange, including on cancellation or invalid tokens.
 No token, authorization code, client secret or provider error body is printed.
 
+Token verification tries at most 64 eligible keys from the trusted JWKS snapshot,
+with a fixed RS256 algorithm and RSA public keys of at least 2048 bits. Only after
+signature and required-claim validation does it inspect the verified header.
+The signed `kid` must identify exactly one eligible entry and match the key that
+verified the signature. Duplicate identifiers, mismatched key identifiers,
+unsupported critical headers and token-supplied key URLs are rejected. No
+unverified header selects a key URL, algorithm or network request. Ordinary login
+reads the locally pinned snapshot; updating that trusted snapshot remains necessary
+for provider key rotation. Enrollment fetches the fixed provider JWKS before
+verification. Synthetic rotation, duplicate and malformed-key tests cover these
+boundaries without contacting Telegram.
+
 After verification the listener closes. The terminal shows the verified `sub`
 and bounded, escaped profile hints. The administrator must check the intended
 account and type `BIND` followed by that exact `sub`; a display name, numeric
@@ -232,15 +247,19 @@ Live Telegram code-flow nonce behavior remains an integration gate. A missing
 nonce fails closed and must not be “fixed” by removing the check. Ordinary runtime
 login must also be tested against the deployed pinned signing-key snapshot.
 
-Local verification on 22 October 2026 passed 69 targeted tests / 77 subtests
-and the full backend suite: 1500 tests / 1447 subtests in 22.45 seconds. The only
+Local verification on 22 October 2026 passed the full backend suite: 1515 tests /
+1481 subtests in 24.94 seconds, plus 816 CI-script tests with four environment
+skips. The latter include all 27 network-inventory tests. The only backend
 warning was the existing Starlette/AnyIO deprecated alias. Signed synthetic RSA tokens, negative claims,
 state/PKCE/replay/expiry/cancellation/manual-binding boundaries, root-private
 atomic file publication, symlink refusal and installer ordering are covered by
 `test_owner_enrollment.py`, `test_owner_enrollment_install.py` and the preserved
-Telegram/owner regression tests. Both generated Caddyfiles were independently
+Telegram/owner regression tests. The changes address all 27 Sonar findings on
+server head `c4094bc6`; the next head still requires a successful exact-head
+Backend CI and complete zero-finding Sonar review. Both generated Caddyfiles were independently
 adapted successfully by the official Caddy v2.6.2 binary after checksum verification;
-this used no listener, ACME request or service. Source/test readiness does not
+this used no listener, ACME request or service. Their configuration text is unchanged
+by the permission repair. Source/test readiness does not
 close F02/F20/F23 deployment, owner-login or phone acceptance.
 
 For this fresh database, the installer generates a new Fernet key directly on

@@ -105,6 +105,22 @@ class OwnerNetworkInventoryTests(unittest.TestCase):
         self.assertEqual(report['project_linked_names'][0]['fqdn'], 'api.analyst.example')
         self.assertEqual(report['outside_or_unknown_project_names_count'], 1)
 
+    def test_public_network_missing_and_duplicate_address_guards_remain_strict(self):
+        cases = [
+            ([{'id': 42}], 'invalid_inventory_collection'),
+            ([{'id': 42, 'networks': [{'type': 'public'}]}], 'invalid_inventory_collection'),
+            ([{'id': 42, 'networks': [{'type': 'public', 'ips': [{}]}]}], 'missing_ip_address'),
+            ([{'id': 42, 'networks': [{'type': 'public', 'ips': [{'ip': None}]}]}],
+             'missing_public_server_ip'),
+            ([{'id': 42, 'networks': [{'type': 'public', 'ips': [{'ip': '2001:db8::1'}]}]},
+              {'id': 43, 'networks': [{'type': 'public', 'ips': [{'ip': '2001:0db8::1'}]}]}],
+             'duplicate_project_public_ip'),
+        ]
+        for servers, error in cases:
+            resources = project(servers=servers)
+            with self.subTest(error=error), self.assertRaisesRegex(module.InventoryError, '^' + error + '$'):
+                self.inventory(resources)
+
     def test_missing_or_half_null_assignment_is_not_unattached(self):
         variants = [dict(resource_type=None), dict(resource_id=None),
                     dict(resource_type=None, resource_id=42),
@@ -181,8 +197,32 @@ class OwnerNetworkInventoryTests(unittest.TestCase):
     def test_conflicting_live_assignment_does_not_disclose_name(self):
         resources = project(servers=[{'id': 42, 'networks': [
             {'type': 'public', 'ips': [{'ip': '198.51.100.1'}]}]}])
+        ips = [floating()]
+        domains = [domain(linked_ip='198.51.100.1')]
         with self.assertRaisesRegex(module.InventoryError, '^conflicting_ip_assignment$'):
-            self.inventory(resources, ips=[floating()], domains=[domain(linked_ip='198.51.100.1')])
+            self.inventory(resources, ips=ips, domains=domains)
+
+    def test_project_floating_binding_must_match_public_resource_type_and_id(self):
+        resources = project(servers=[{'id': 42, 'networks': [
+            {'type': 'public', 'ips': [{'ip': '198.51.100.1'}]}]},
+            {'id': 43, 'networks': []}], balancers=[{'id': 42}])
+        domains = [domain(linked_ip='198.51.100.1', fqdn='analyst.example')]
+        matching_ips = [floating(resource_type='server', resource_id=42)]
+        report = self.inventory(resources, ips=matching_ips, domains=domains)
+        self.assertEqual(report['domains']['project_linked_names'][0]['fqdn'], 'analyst.example')
+        for kind, identifier in [('server', 43), ('balancer', 42)]:
+            ips = [floating(resource_type=kind, resource_id=identifier)]
+            with self.subTest(kind=kind), self.assertRaisesRegex(
+                    module.InventoryError, '^conflicting_ip_assignment$'):
+                self.inventory(resources, ips=ips, domains=domains)
+
+    def test_domain_type_and_subdomain_identifier_validation_are_preserved(self):
+        cases = [([domain(is_technical=0)], 'invalid_domain_type'),
+                 ([domain(is_technical='true')], 'invalid_domain_type'),
+                 ([domain(subdomains=[{'id': True, 'linked_ip': None}])], 'invalid_resource_id')]
+        for domains, error in cases:
+            with self.subTest(error=error), self.assertRaisesRegex(module.InventoryError, '^' + error + '$'):
+                self.inventory(domains=domains)
 
     def test_missing_subdomain_array_is_not_an_empty_list(self):
         row = domain()
@@ -238,8 +278,9 @@ class InventoryTransportTests(unittest.TestCase):
             factory.assert_not_called()
 
     def test_redirect_never_follows_or_echoes_destination(self):
+        handler = module.NoRedirect()
         with self.assertRaisesRegex(module.InventoryError, '^redirect_refused$'):
-            module.NoRedirect().redirect_request(None, None, 302, 'secret', {}, 'https://evil.example/token')
+            handler.redirect_request(None, None, 302, 'secret', {}, 'https://evil.example/token')
 
     def test_response_size_json_and_top_level_shape_are_bounded(self):
         for raw, error in [(b' ' * (module.MAX_BYTES + 1), 'response_size_limit'),

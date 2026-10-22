@@ -145,6 +145,17 @@ def _response_json(client: httpx.Client, method: str, url: str, *, limit: int, *
     return document
 
 
+def _callback_parameters(query: str, expected_state: str) -> dict[str, list[str]]:
+    try:
+        parameters = parse_qs(query, strict_parsing=True, keep_blank_values=True, max_num_fields=8)
+    except ValueError:
+        raise EnrollmentError('callback_invalid') from None
+    if (any(len(value) != 1 for value in parameters.values())
+            or not nonce_matches(parameters.get('state', [''])[0], expected_state)):
+        raise EnrollmentError('callback_state_invalid')
+    return parameters
+
+
 class Enrollment:
     def __init__(self, values: dict[str, str]):
         self.values = installer.validated_enrollment_config(values)
@@ -172,13 +183,7 @@ class Enrollment:
     def complete(self, query: str) -> None:
         if self.consumed or self.remaining() <= 0:
             raise EnrollmentError('enrollment_expired_or_used')
-        try:
-            parameters = parse_qs(query, strict_parsing=True, keep_blank_values=True, max_num_fields=8)
-        except ValueError:
-            raise EnrollmentError('callback_invalid') from None
-        if (any(len(value) != 1 for value in parameters.values())
-                or not nonce_matches(parameters.get('state', [''])[0], self.state)):
-            raise EnrollmentError('callback_state_invalid')
+        parameters = _callback_parameters(query, self.state)
         # A matching state is spent even on denial, failed exchange or bad JWT.
         self.consumed = True
         try:
