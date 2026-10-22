@@ -307,17 +307,22 @@ class ProfileProbe:
         return dismiss_keyboard(self)
 
     def tap(self, text, area="profile-content", direction="end"):
-        self.tap_node(self.reveal(text, area, direction))
+        from native_label_target import settled_label
+        from profile_scroll import reveal_in_list
+
+        target = reveal_in_list(
+            self.tree, self._semantic_scroll_callback(area, direction), text,
+            resource_id=area, direction=direction, layout_timeout=12, for_tap=True,
+        )
+        if target is None:
+            raise AssertionError("Native action list is not visible: " + area)
+        self.tap_node(settled_label(self.tree, text))
 
     def tap_visible(self, text):
-        """Wait for a dialog action; never scroll the obscured profile behind it."""
-        from profile_scroll import visible_label
+        """Wait for a native visible action/editor without scrolling any list."""
+        from native_label_target import settled_label
 
-        target = self.wait_for(
-            lambda: visible_label(self.tree(), text),
-            "Dialog action not visible: " + text,
-        )
-        self.tap_node(target)
+        self.tap_node(settled_label(self.tree, text))
 
     def resource_tap_target(
         self,
@@ -344,19 +349,27 @@ class ProfileProbe:
         self.tap_node(self.resource_tap_target(resource_id, area, direction))
 
     def tap_profile_content(self, text):
+        from native_label_target import settled_label
         from profile_scroll import reveal_in_list
         from profile_tab_checks import content_tree
 
+        def read_content():
+            frame = self.tree()
+            scoped = ET.Element("hierarchy", dict(frame.attrib))
+            scoped.append(content_tree(frame))
+            return scoped
+
         target = reveal_in_list(
-            lambda: content_tree(self.tree()),
+            read_content,
             self._semantic_scroll_callback("profile-content", "end"),
             text,
             resource_id="profile-content",
             layout_timeout=12,
+            for_tap=True,
         )
         if target is None:
             raise AssertionError("Profile content action not visible: " + text)
-        self.tap_node(target)
+        self.tap_node(settled_label(read_content, text))
 
     def tab(self, label):
         from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab, settled_tab

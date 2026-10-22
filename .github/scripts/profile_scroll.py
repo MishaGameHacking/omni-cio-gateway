@@ -245,18 +245,26 @@ def reveal_in_list(
     max_swipes: int = 10,
     direction: str = "end",
     layout_timeout: float = 0,
+    for_tap: bool = False,
 ) -> ET.Element | None:
     """Return the visible exact label or fail after a bounded number of gestures.
 
     None means this particular list is not visible; no other list or system
     window is scrolled. A positive layout_timeout waits for this exact list
     within one overall deadline without resetting the swipe budget.
-    Header/dialog labels may be found without any gesture.
+    Header/dialog labels may be found without any gesture. A tap requires the
+    native action's visible geometry, not an offscreen logical text child.
     """
+    find_target = lambda tree: visible_label(tree, text)
+    if for_tap:
+        from native_label_target import label_target
+
+        find_target = lambda tree: label_target(tree, text, require_enabled=False)
+
     return _reveal_target(
         read_tree,
         swipe,
-        lambda tree: visible_label(tree, text),
+        find_target,
         text,
         resource_id=resource_id,
         max_swipes=max_swipes,

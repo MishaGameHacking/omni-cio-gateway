@@ -165,9 +165,9 @@ class ScrollLayoutReadinessTests(unittest.TestCase):
         source = (
             Path(__file__).resolve().parents[1] / "profile_ui_probe.py"
         ).read_text(encoding="utf-8")
-        # Label, resource-id and selected-tab content paths each wait for the
-        # exact Compose list rather than accepting a transient missing root.
-        self.assertEqual(source.count("layout_timeout=12,"), 4)
+        # Read-only labels, native label taps, resources and scoped content
+        # each wait for the exact list instead of accepting a missing root.
+        self.assertEqual(source.count("layout_timeout=12,"), 5)
         self.assertIn("for_tap=True,", source)
         self.assertIn(
             'self.reveal("Денежные средства", "portfolio-content")',
