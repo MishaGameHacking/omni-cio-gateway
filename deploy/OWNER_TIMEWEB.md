@@ -22,8 +22,8 @@ These packaging and permission boundaries are covered by the installer tests;
 they do not prove a live deployment.
 
 Fresh authenticated read-only inventory: [run `39759477768`](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39759477768),
-job `119759775262`, head `a1825d17`, 22 October 2026 at 09:58:16 UTC / 12:58:16 Moscow time,
-head `9eb7dcf4`. It returned `servers=[]`, `agents=[]`, `floating_ips=[]`,
+job `119759775262`, head `a1825d17`, 22 October 2026 at 09:58:16 UTC / 12:58:16 Moscow time.
+It returned `servers=[]`, `agents=[]`, `floating_ips=[]`,
 `domains_total=0`, `subdomains_total=0`, `unattached_ipv4_count=0`, and
 `complete_within_token_visibility=true`. This is visibility granted to this
 token, not a whole-account inventory or a billing statement. DNS, ownership
@@ -257,12 +257,14 @@ warning was the existing Starlette/AnyIO deprecated alias. Signed synthetic RSA 
 state/PKCE/replay/expiry/cancellation/manual-binding boundaries, root-private
 atomic file publication, symlink refusal and installer ordering are covered by
 `test_owner_enrollment.py`, `test_owner_enrollment_install.py` and the preserved
-Telegram/owner regression tests. GitHub on `a1825d17` independently passed all
-1515 tests / 1481 subtests; Sonar reported one remaining S2612 finding on the
-systemd drop-in directory, with the other 26 findings absent. After restricting
-that directory to root, all 31 installer tests / 37 subtests passed in 0.24 seconds.
-The next head still requires a successful exact-head Backend CI and complete
-zero-finding Sonar review. Both generated Caddyfiles were independently
+Telegram/owner regression tests. GitHub on `9dbce107` independently passed all
+[1515 tests / 1481 subtests and the exact-head Sonar gate](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39760214046).
+The [complete Sonar inventory](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39760204320)
+reported zero OPEN/CONFIRMED issues of all types, zero new issues and
+`complete:true`; main was also clean. All 27 earlier findings were repaired.
+Android sources are aligned with `0dc509df`; checks for the combined head are
+recorded separately in [PR 887](https://github.com/MishaGameHacking/omni-cio-gateway/pull/887).
+Both generated Caddyfiles were independently
 adapted successfully by the official Caddy v2.6.2 binary after checksum verification;
 this used no listener, ACME request or service. Their configuration text is unchanged
 by the permission repair. Source/test readiness does not
