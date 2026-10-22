@@ -5,6 +5,16 @@ deployment pause for backend preparation, while preserving authentication and
 verified APK delivery. This installer is for an empty Ubuntu 24.04 VM only.
 It refuses an existing Analyst installation and never restores old user data.
 
+The installation package includes the broker-only certificate at
+`backend/certs/russian_trusted_root_ca.pem`, verified against the same X.509 DER
+SHA-256 used by the T-Invest client before any installation commands. Its nested
+path must be preserved; a healthy HTTP endpoint alone cannot detect a missing CA.
+Public code, the virtual environment and Caddy configuration remain readable by
+their service accounts even when the administrator's shell uses `umask 077`.
+The secret environment file remains mode `0600`, and runtime data retains the
+service's private `UMask=0077`. These packaging and permission boundaries passed
+16 local installer tests on 22 October 2026; they do not prove a live deployment.
+
 Fresh Timeweb inventory: run `39636306165`; catalogue/configuration inventory:
 run `39249141914`, latest job `119349484440`. Project `2941515` is visible and
 contains no visible servers. No server has been ordered by this new installation.

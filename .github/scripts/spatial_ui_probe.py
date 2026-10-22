@@ -163,7 +163,7 @@ class _SpatialSession:
 
     def native_controls(self):
         from profile_ui_probe import checkable_label, node_bounds, DARK_BACKGROUND
-        from native_input_evidence import focused_editor
+        from native_input_evidence import append_native_text
 
         self.probe.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
         self.probe.palette(DARK_BACKGROUND)
@@ -193,12 +193,7 @@ class _SpatialSession:
         if checked.get("checked") != "true":
             raise AssertionError("Mesh toggle did not expose its checked state")
         self.probe.tap_resource("spatial-input", "workspace-content")
-        self.probe.wait_for(lambda: focused_editor(self.probe.tree(), "native"),
-                            "Mesh input did not focus its native editor")
-        self.probe.command("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-        self.probe.command("shell", "input", "text", "3d")
-        self.probe.wait_for(lambda: focused_editor(self.probe.tree(), "native3d"),
-                            "Mesh input did not retain the actual keyboard text")
+        append_native_text(self.probe, "native", "3d")
         self.probe.dismiss_keyboard()
         field = self.probe.reveal_resource("spatial-input", "workspace-content")
         labels = [node.get("text", "") for node in field.iter("node")]

@@ -107,7 +107,7 @@ def focused_editor(tree, expected_text: str, selection: tuple[int, int] | None =
             "accessibility_focused": node.get("accessibility-focused") == "true"}
 
 
-def _wait_rotation(probe, read, message, phase, text):
+def _wait_editor(probe, read, message, phase, text):
     """Keep the first failed frame observable even when restoration also fails."""
     try:
         return probe.wait_for(read, message)
@@ -119,16 +119,43 @@ def _wait_rotation(probe, read, message, phase, text):
                    | {"expected_text_matches": node.get("text") == text}
                    for node in tree.iter("node")
                    if node.get("package") == PACKAGE and node.get("editable") == "true"]
-        print("NATIVE_ROTATION_FAILURE=" + json.dumps({"phase": phase,
+        print("NATIVE_EDITOR_FAILURE=" + json.dumps({"phase": phase,
               "frame": {key: tree.get(key, "") for key in
                         ("display-width", "display-height", "active-window-id", "keyboard-visible")},
               "editors": editors}, sort_keys=True), flush=True)
         raise
 
 
+def append_native_text(probe, text: str, suffix: str) -> dict:
+    """Type once after observing the real IME and the applied end-of-text caret.
+
+    Accessibility focus can precede the input-method window, and a completed
+    shell key command does not prove that its caret update reached Compose.
+    Never retry or replace missing input: the exact resulting text must pass.
+    """
+    def ready(expected, selection=None):
+        tree = probe.tree()
+        if not keyboard_visible(tree):
+            return None
+        return focused_editor(tree, expected, selection)
+
+    _wait_editor(probe, lambda: ready(text),
+                 "Native editor or keyboard is not ready for input", "input-ready", text)
+    probe.command("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    end = len(text.encode("utf-16-le")) // 2
+    _wait_editor(probe, lambda: ready(text, (end, end)),
+                 "Native cursor did not reach the end before typing", "input-caret", text)
+    probe.command("shell", "input", "text", suffix)
+    expected = text + suffix
+    end = len(expected.encode("utf-16-le")) // 2
+    return _wait_editor(probe, lambda: ready(expected, (end, end)),
+                        "Native editor did not retain the complete keyboard input",
+                        "input-result", expected)
+
+
 def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
     """Rotate the real Activity while the unsent native editor retains its caret."""
-    before = _wait_rotation(probe, lambda: focused_editor(probe.tree(), text),
+    before = _wait_editor(probe, lambda: focused_editor(probe.tree(), text),
                             "Draft did not enter the native focused editor", "before", text)
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
@@ -159,7 +186,7 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
             return {"editor": editor, "width": width, "height": height,
                     "window_id": active_window_id(tree), "keyboard_visible": True} if editor is not None else None
 
-        after = _wait_rotation(probe, rotated,
+        after = _wait_editor(probe, rotated,
                                "Rotation lost the unsent native question, input focus or exact caret offset", "rotated", text)
         rotated_window = after["window_id"]
         probe.capture(name)
@@ -178,4 +205,4 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
                 return None
             return recreated_editor(tree, text, (expected, expected), rotated_window, dialog=dialog)
 
-        _wait_rotation(probe, restored, "Restoring device rotation lost the focused draft/caret", "restored", text)
+        _wait_editor(probe, restored, "Restoring device rotation lost the focused draft/caret", "restored", text)

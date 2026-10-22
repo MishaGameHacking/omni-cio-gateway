@@ -1,10 +1,15 @@
 """First-install boundary tests; no cloud order or server mutation."""
 import importlib.util
+import ast
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
+import ssl
+import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -82,10 +87,86 @@ class OwnerInstallationTests(unittest.TestCase):
             installer.check_address(values)
 
     def test_source_package_contains_real_owner_factory(self):
-        names = {path.name for path in installer.source_files()}
+        names = {path.relative_to(installer.ROOT / 'backend').as_posix() for path in installer.source_files()}
         self.assertIn('owner_app.py', names)
         self.assertIn('telegram_jwks.json', names)
+        self.assertIn('certs/russian_trusted_root_ca.pem', names)
         self.assertNotIn('backend.db', names)
+
+    def test_broker_certificate_package_pin_matches_actual_client(self):
+        source = ast.parse((installer.ROOT / 'backend/app.py').read_text())
+        client_pin = next(ast.literal_eval(node.value) for node in source.body
+                          if isinstance(node, ast.Assign) and
+                          any(isinstance(target, ast.Name) and target.id == 'TINVEST_ROOT_CA_SHA256'
+                              for target in node.targets))
+        self.assertEqual(installer.TINVEST_CA_SHA256, client_pin)
+
+    def test_incomplete_or_changed_certificate_package_is_rejected_before_commands(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            shutil.copytree(installer.ROOT / 'backend', root / 'backend',
+                            ignore=shutil.ignore_patterns('tests', '__pycache__'))
+            certificate = root / 'backend/certs/russian_trusted_root_ca.pem'
+            reviewed = certificate.read_text(encoding='ascii')
+            changed = reviewed.replace('\nM', '\nN', 1)
+            self.assertNotEqual(changed, reviewed)
+            for content in (None, 'not a certificate', changed):
+                if content is None:
+                    certificate.unlink()
+                else:
+                    certificate.write_text(content, encoding='ascii')
+                with self.subTest(kind='missing' if content is None else 'modified'):
+                    with patch.object(installer, 'ROOT', root), patch.object(installer, 'run') as run:
+                        with self.assertRaises(installer.InstallError):
+                            installer.source_files()
+                        run.assert_not_called()
+
+    @unittest.skipUnless(os.name == 'posix', 'Ubuntu installer requires POSIX file permissions')
+    def test_private_root_umask_keeps_public_sources_readable_and_secrets_private(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            target = root / 'analyst-ai'
+            sources = installer.source_files()
+            previous = os.umask(0o077)
+            try:
+                with patch.object(installer, 'INSTALL', target):
+                    installer.install_sources(sources)
+                installer.write_new(root / 'Caddyfile', 'synthetic.example { }', 0o644)
+                installer.write_new(root / 'backend.env', 'SYNTHETIC=private', 0o600)
+                # Venv/pip subprocesses must also create service-readable code.
+                installer.run([sys.executable, '-c',
+                               'from pathlib import Path; import sys; Path(sys.argv[1]).write_text("code")',
+                               str(root / 'wheel.py')])
+            finally:
+                os.umask(previous)
+            for directory in (target, target / 'backend', target / 'backend/certs'):
+                self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o755)
+            for path in sources:
+                destination = target / 'backend' / path.relative_to(installer.ROOT / 'backend')
+                self.assertEqual(destination.read_bytes(), path.read_bytes())
+                self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o644)
+            for name in ('Caddyfile', 'wheel.py'):
+                self.assertEqual(stat.S_IMODE((root / name).stat().st_mode), 0o644)
+            self.assertEqual(stat.S_IMODE((root / 'backend.env').stat().st_mode), 0o600)
+            # The copied trust anchor is an actual certificate accepted by TLS.
+            ssl.create_default_context(cafile=str(target / 'backend/certs/russian_trusted_root_ca.pem'))
+
+    def test_certificate_symlinks_never_enter_install_package(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            shutil.copytree(installer.ROOT / 'backend', root / 'backend',
+                            ignore=shutil.ignore_patterns('tests', '__pycache__'))
+            certificates = root / 'backend/certs'
+            certificate = certificates / 'russian_trusted_root_ca.pem'
+            certificate.unlink()
+            certificate.symlink_to(installer.ROOT / 'backend/certs/russian_trusted_root_ca.pem')
+            with patch.object(installer, 'ROOT', root), self.assertRaises(installer.InstallError):
+                installer.source_files()
+            certificate.unlink()
+            certificates.rmdir()
+            certificates.symlink_to(installer.ROOT / 'backend/certs', target_is_directory=True)
+            with patch.object(installer, 'ROOT', root), self.assertRaises(installer.InstallError):
+                installer.source_files()
 
     @patch.object(installer, 'check_target', side_effect=installer.InstallError('existing_installation_refused_no_data_replaced'))
     @patch.object(installer, 'run')

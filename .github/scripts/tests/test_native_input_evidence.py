@@ -30,7 +30,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
         probe.wait_for.side_effect = failure
         with patch("builtins.print") as output:
             with self.assertRaises(AssertionError) as caught:
-                native._wait_rotation(probe, lambda: None, "missing", "rotated", "private draft")
+                native._wait_editor(probe, lambda: None, "missing", "rotated", "private draft")
         self.assertIs(caught.exception, failure)
         observed = output.call_args.args[0]
         self.assertNotIn("private draft", observed)

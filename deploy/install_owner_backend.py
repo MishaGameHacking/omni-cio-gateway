@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 from http.client import HTTPConnection, HTTPSConnection, HTTPException
 from ipaddress import IPv4Address
 import json
@@ -30,6 +31,9 @@ STATE = Path('/var/lib/analyst-ai')
 UNIT = Path('/etc/systemd/system/analyst-ai-owner.service')
 INPUT_CONFIG = Path('/root/analyst-ai-owner.json')
 REQUIRED = ('TELEGRAM_CLIENT_ID', 'TELEGRAM_CLIENT_SECRET', 'ANALYST_OWNER_TELEGRAM_SUB', 'BACKEND_PUBLIC_URL', 'EXPECTED_PUBLIC_IPV4')
+# The same public X.509 DER pin used by app.tinvest_ssl_context(). Packaging
+# must fail before installing if its broker-only trust anchor is absent/changed.
+TINVEST_CA_SHA256 = 'd26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31'
 
 
 class InstallError(RuntimeError):
@@ -98,7 +102,11 @@ def environment_text(values: dict[str, str], fernet_key: str) -> str:
 
 
 def run(command: list[str], *, timeout: int = 1200) -> None:
-    result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
+    # Venv and wheel files are public code read by the service account. A root
+    # shell with umask 077 must not make them inaccessible. Secrets are written
+    # separately with explicit mode 0600; the service keeps its own UMask=0077.
+    result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            timeout=timeout, check=False, umask=0o022)
     if result.returncode:
         raise InstallError('installation_command_failed_' + Path(command[0]).name)
 
@@ -106,10 +114,30 @@ def run(command: list[str], *, timeout: int = 1200) -> None:
 def source_files() -> list[Path]:
     backend = ROOT / 'backend'
     paths = sorted(path for path in backend.iterdir() if path.suffix in {'.py', '.json'} or path.name == 'requirements.txt')
+    certificate = backend / 'certs/russian_trusted_root_ca.pem'
+    paths.append(certificate)
     required = {'owner_app.py', 'owner_access.py', 'app.py', 'telegram_browser_app.py', 'telegram_jwks.json', 'requirements.txt'}
-    if not required.issubset({path.name for path in paths}) or any(not path.is_file() or path.is_symlink() for path in paths):
+    if (not required.issubset({path.name for path in paths}) or certificate.parent.is_symlink()
+            or any(not path.is_file() or path.is_symlink() for path in paths)):
         raise InstallError('reviewed_backend_sources_required')
+    try:
+        der = ssl.PEM_cert_to_DER_cert(certificate.read_text(encoding='ascii'))
+    except (OSError, ValueError):
+        raise InstallError('reviewed_broker_certificate_required') from None
+    if hashlib.sha256(der).hexdigest() != TINVEST_CA_SHA256:
+        raise InstallError('reviewed_broker_certificate_required')
     return paths
+
+
+def install_sources(paths: list[Path]) -> None:
+    """Copy reviewed public code/assets with their paths and service readability."""
+    for directory in (INSTALL, INSTALL / 'backend', INSTALL / 'backend/certs'):
+        directory.mkdir(mode=0o755)
+        directory.chmod(0o755)
+    for path in paths:
+        destination = INSTALL / 'backend' / path.relative_to(ROOT / 'backend')
+        shutil.copyfile(path, destination)
+        destination.chmod(0o644)
 
 
 def check_target() -> None:
@@ -173,6 +201,7 @@ def wait_healthy(hostname: str | None = None) -> None:
 def write_new(path: Path, content: str, mode: int) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+        os.fchmod(output.fileno(), mode)
         output.write(content)
 
 
@@ -198,11 +227,9 @@ def install(values: dict[str, str]) -> None:
     run(['apt-get', 'install', '-y', '--no-install-recommends', 'python3-venv', 'ca-certificates', 'caddy'])
     run(['useradd', '--system', '--user-group', '--home-dir', str(STATE), '--no-create-home', '--shell', '/usr/sbin/nologin', 'analyst-ai'])
     CONFIG.mkdir(mode=0o700)
-    (INSTALL / 'backend').mkdir(parents=True, mode=0o755)
+    install_sources(paths)
     STATE.mkdir(mode=0o700)
     shutil.chown(STATE, user='analyst-ai', group='analyst-ai')
-    for path in paths:
-        shutil.copyfile(path, INSTALL / 'backend' / path.name)
     run(['python3', '-m', 'venv', str(INSTALL / 'venv')])
     run([str(INSTALL / 'venv/bin/python'), '-m', 'pip', 'install', '--only-binary=:all:', '-r', str(INSTALL / 'backend/requirements.txt')])
     fernet_key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('ascii')
