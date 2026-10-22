@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -83,8 +84,32 @@ fun EvidenceLinks(evidence: List<JSONObject>, highlights: List<JSONObject> = emp
 
 private val terminalJobs = setOf("completed", "cancelled", "failed", "uncertain")
 
+class WorkspaceJobState internal constructor(
+    val job: JSONObject?, val error: String?,
+    val cancellation: WorkspaceAction, val retry: WorkspaceAction,
+    val cancel: () -> Unit, val retryJob: () -> Unit, val refresh: () -> Unit,
+    val close: (() -> Unit) -> Unit,
+) {
+    val state: String get() = job?.text("state", "queued") ?: "queued"
+}
+
+/** Own the job independently of whether its LazyColumn card is on screen. */
 @Composable
-fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -> Unit = {}, onStateChanged: (String) -> Unit = {}) {
+fun rememberWorkspaceJobState(jobId: String, onCompleted: () -> Unit = {},
+    onStateChanged: (String) -> Unit = {}): WorkspaceJobState {
+    val session = LocalWorkspaceSession.current
+    return key(session.userId, jobId) {
+        var activeId by rememberSaveable { mutableStateOf(jobId) }
+        // A reply for the previous job/session must not enter a newer job's state.
+        key(activeId) {
+            rememberActiveWorkspaceJob(activeId, onCompleted, onStateChanged) { activeId = it }
+        }
+    }
+}
+
+@Composable
+private fun rememberActiveWorkspaceJob(activeId: String, onCompleted: () -> Unit,
+    onStateChanged: (String) -> Unit, onRetried: (String) -> Unit): WorkspaceJobState {
     val session = LocalWorkspaceSession.current
     val client = LocalWorkspaceTransport.current
     val foreground = workspaceForeground()
@@ -93,15 +118,17 @@ fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -
     val reauthenticate = LocalReauthenticate.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val checkpoints = remember(context) { ru.omnicio.app.data.workspace.JobCheckpointStore(context) }
-    val scope = rememberCoroutineScope()
-    var activeId by remember(jobId, session.userId) { mutableStateOf(jobId) }
-    var job by remember(activeId, session.userId) { mutableStateOf<JSONObject?>(null) }
-    var error by remember(activeId) { mutableStateOf<String?>(null) }
-    var revision by remember(activeId) { mutableIntStateOf(0) }
-    var notified by remember(activeId) { mutableStateOf(false) }
-    val cancel = rememberWorkspaceAction { job = it; revision++ }
-    val retry = rememberWorkspaceAction { result -> result.optString("job_id").takeIf(String::isNotBlank)?.let { activeId = it } }
-    LaunchedEffect(activeId, session.token, foreground, revision) {
+    val scope = key(session.token, client) { rememberCoroutineScope() }
+    var job by remember { mutableStateOf<JSONObject?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var revision by remember { mutableIntStateOf(0) }
+    var notified by remember { mutableStateOf(false) }
+    val retried by rememberUpdatedState(onRetried)
+    val cancel = key(session.token, client) { rememberWorkspaceAction { job = it; revision++ } }
+    val retry = key(session.token, client) {
+        rememberWorkspaceAction { result -> result.optString("job_id").takeIf(String::isNotBlank)?.let(retried) }
+    }
+    LaunchedEffect(activeId, session.userId, session.token, client, foreground, revision) {
         if (!foreground || session.token.isBlank() || activeId.isBlank()) return@LaunchedEffect
         while (isActive) {
             val reply = withContext(Dispatchers.IO) { client.request(session.token, "/workspace/jobs/${VolumeWorkspaceClient.encode(activeId)}") }
@@ -111,35 +138,61 @@ fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -
             val state = job?.text("state", "")
             if (!state.isNullOrBlank()) stateChanged(state)
             if (state == "completed" && !notified) {
-                withContext(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
-                notified = true; completed()
+                val removed = withContext(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
+                if (removed && !notified) { notified = true; completed() }
+                else if (!removed) error = "Не удалось удалить сохранённое задание. Повторите проверку состояния или закрытие."
             }
             if (state in terminalJobs || reply.error != null) break
             delay(1_500)
         }
     }
     val state = job?.text("state", "queued") ?: "queued"
+    return WorkspaceJobState(job, error, cancel, retry,
+        cancel = { cancel.perform("/workspace/jobs/${VolumeWorkspaceClient.encode(activeId)}/cancel", JSONObject()) },
+        retryJob = {
+            retry.perform("/workspace/jobs/${VolumeWorkspaceClient.encode(activeId)}/retry", JSONObject().put("request_id", UUID.randomUUID().toString()), job = true)
+        },
+        refresh = { revision++ },
+        close = { onClose ->
+            if (state == "cancelled" || state == "completed") scope.launch {
+                val removed = withContext(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
+                if (removed) {
+                    if (state == "completed" && !notified) { notified = true; completed() }
+                    onClose()
+                }
+                else error = "Не удалось удалить сохранённое задание. Повторите проверку состояния или закрытие."
+            } else onClose()
+        })
+}
+
+@Composable
+fun WorkspaceJobPanel(jobId: String, onCompleted: () -> Unit = {}, onClose: () -> Unit = {}, onStateChanged: (String) -> Unit = {}) {
+    WorkspaceJobPanel(rememberWorkspaceJobState(jobId, onCompleted, onStateChanged), onClose)
+}
+
+/** Rendering a hoisted state never starts another poller or action scope. */
+@Composable
+fun WorkspaceJobPanel(model: WorkspaceJobState, onClose: () -> Unit = {}) {
+    val job = model.job
+    val state = model.state
+    val closed by rememberUpdatedState(onClose)
     SpectrumCard(emphasized = true) {
         WorkspaceJobHeading(state, job?.text("stage", "queued") ?: "queued")
         job?.optString("updated_at")?.takeIf { it.isNotBlank() }?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (state == "uncertain") Text("Исход запроса к модели пока не подтверждён. Автоматического повторного запроса нет.")
         if (state == "cancel_requested") Text("Отмена запрошена. Уже отправленный запрос провайдеру может завершиться и учитывается в расходе.")
-        if (state !in terminalJobs && state != "cancel_requested") SpectrumSecondaryButton("Отменить задание", {
-            cancel.perform("/workspace/jobs/${VolumeWorkspaceClient.encode(activeId)}/cancel", JSONObject())
-        }, Modifier.fillMaxWidth(), enabled = !cancel.busy)
-        SpectrumSecondaryButton("Проверить состояние", { revision++ }, Modifier.fillMaxWidth())
-        WorkspaceActionState(cancel)
+        if (state !in terminalJobs && state != "cancel_requested") SpectrumSecondaryButton("Отменить задание", model.cancel,
+            Modifier.fillMaxWidth(), enabled = !model.cancellation.busy)
+        SpectrumSecondaryButton("Проверить состояние", model.refresh, Modifier.fillMaxWidth())
+        WorkspaceActionState(model.cancellation)
         if (job?.optBoolean("can_retry") == true && state in terminalJobs && state != "uncertain") {
             Text("Сервер разрешил повтор этой задачи. Повтор выполняется только по вашему нажатию.")
-            SpectrumSecondaryButton("Повторить разрешённую задачу", {
-                retry.perform("/workspace/jobs/${VolumeWorkspaceClient.encode(activeId)}/retry", JSONObject().put("request_id", UUID.randomUUID().toString()), job = true)
-            }, Modifier.fillMaxWidth(), !retry.busy)
-            WorkspaceActionState(retry)
+            SpectrumSecondaryButton("Повторить разрешённую задачу", model.retryJob, Modifier.fillMaxWidth(), !model.retry.busy)
+            WorkspaceActionState(model.retry)
         }
         if (state in terminalJobs) SpectrumSecondaryButton("Закрыть", {
-            if (state == "cancelled" || state == "completed") scope.launch(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
-            onClose()
+            model.close { closed() }
         }, Modifier.fillMaxWidth())
     }
 }

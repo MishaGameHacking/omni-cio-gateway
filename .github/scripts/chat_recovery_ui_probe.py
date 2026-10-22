@@ -3,10 +3,86 @@ from __future__ import annotations
 
 import re
 
+from native_label_target import _ancestry, _display, _intersection, _visible_geometry
+from profile_scroll import _bounds, _visible_app_node
+
 PACKAGE = "ru.omnicio.app.debug"
 UUID = re.compile(r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
 SEND = "Отправить"
 LOST_REPLY = "СИНТЕТИЧЕСКАЯ потеря ответа после принятия запроса. Сверьте сохранённый идентификатор."
+HISTORY = "workspace-content"
+USER_MESSAGE = "assistant-user-message"
+QUESTION = "assistant-question"
+
+
+def _tagged_nodes(tree, resource):
+    names = {resource, f"{PACKAGE}:id/{resource}"}
+    return [node for node in tree.iter("node")
+            if _visible_app_node(node) and node.get("visible-to-user") == "true"
+            and node.get("resource-id") in names]
+
+
+def _single_tag(tree, resource):
+    nodes = _tagged_nodes(tree, resource)
+    if len(nodes) > 1:
+        raise AssertionError("Ambiguous chat resource: " + resource)
+    return nodes[0] if nodes else None
+
+
+def recovered_composer(tree):
+    """A cleared native editor is usable only after all recovery/job guards clear."""
+    field = _single_tag(tree, QUESTION)
+    display = _display(tree)
+    if field is None or display is None:
+        return None
+    parents = {child: parent for parent in tree.iter() for child in parent}
+    editors = [node for node in field.iter("node")
+               if _visible_app_node(node) and node.get("visible-to-user") == "true"
+               and node.get("editable") == "true"]
+    if len(editors) != 1:
+        return None
+    editor = editors[0]
+    if editor.get("text") != "" or any(node.get("enabled") != "true"
+                                      for node in _ancestry(editor, parents)):
+        return None
+    return editor if _visible_geometry(editor, parents, display[0]) is not None else None
+
+
+def persisted_user_message(tree):
+    """Only the saved user-message text inside this history can prove delivery."""
+    history = _single_tag(tree, HISTORY)
+    display = _display(tree)
+    if history is None or display is None:
+        return None
+    messages = [node for node in _tagged_nodes(history, USER_MESSAGE) if node.get("text") == "UIprobe"]
+    if len(messages) > 1:
+        raise AssertionError("Ambiguous recovered user message")
+    if not messages:
+        return None
+    target = messages[0]
+    parents = {child: parent for parent in tree.iter() for child in parent}
+    bounds = _bounds(target)
+    if _intersection(bounds, display[0]) != bounds or _intersection(bounds, _bounds(history)) != bounds:
+        return None
+    for ancestor in _ancestry(target, parents):
+        if not _visible_app_node(ancestor):
+            return None
+        if ancestor.get("scrollable") == "true" and _intersection(bounds, _bounds(ancestor)) != bounds:
+            return None
+    return target
+
+
+def reveal_persisted_user_message(probe):
+    from profile_scroll import _reveal_target
+
+    target = _reveal_target(
+        probe.tree, probe._semantic_scroll_callback(HISTORY, "start"), persisted_user_message,
+        "the recovered user message in chat history", resource_id=HISTORY,
+        max_swipes=10, direction="start", layout_timeout=12,
+    )
+    if target is None:
+        raise AssertionError("The recovered chat history is not visible")
+    return target
 
 
 def chat_counters(parts, requests, scenario):
@@ -83,12 +159,20 @@ def exercise_chat_recovery(probe, observed):
     probe.tap_resource("recover-request-" + request_id, "workspace-content")
     recovered = probe.wait_for(lambda: recovered_single_request(observed(), request_id),
                               "The explicit recovery did not retrieve the same accepted UUID")
-    probe.reveal("UIprobe", "workspace-content")
+    # GET counters change before local acknowledgement is saved/applied. The
+    # composer is cleared and usable only after recovery and the confirmed job
+    # finish; its former draft must never stand in for a saved history message.
+    probe.wait_for(lambda: recovered_composer(probe.tree()),
+                   "Recovered chat did not clear its draft and release the native editor")
+    reveal_persisted_user_message(probe)
+    if recovered_composer(probe.tree()) is None:
+        raise AssertionError("Recovered chat lost its cleared usable editor")
     completed = recovered_single_request(observed(), request_id)
     if completed is None:
         raise AssertionError("The completed message lost its recovery identity")
     return {"before": before, "accepted": accepted, "recovered": recovered, "completed": completed,
             "send_disabled_while_uncertain": True, "screen_remounted": False,
+            "saved_user_message_visible": True, "composer_cleared_and_enabled": True,
             "recovery_method": "GET", "new_message_posts": completed["message_posts"] - before["message_posts"]}
 
 
