@@ -1,5 +1,70 @@
 # Выполнение главного плана Analyst AI
 
+## Ошибка и пустая история ассистента — 22.10.2026
+
+Область F01/F16/F22/F23, продолжение PR #880. Android 17 / API37,
+Filament/GLB, нативный ввод, package и подпись сохраняются.
+
+### Завершённый CI кандидата 211c6de1
+
+Точный head `211c6de16fb50e2d0eaf8f1d71033fc43401da26`:
+
+- [Backend39846798072](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846798072)
+  — 1475 tests / 1409 subtests PASS, strict Sonar 34 gate tests / 0 annotations.
+- [Полный Sonar39846787949](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846787949)
+  — 0 OPEN/CONFIRMED всех типов, 0 новых, scope all_open_and_confirmed,
+  all_types:true, complete:true, exact-head check120063016118.
+- [Android build120063248061](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846798007/job/120063248061)
+  — PASS: 875 CI-тестов (3 предусмотренных skips), Gradle/JVM/lint,
+  debug/preview/release APK и test-only driver; BUILD SUCCESSFUL in 9m 11s.
+- [Runtime120068641831](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846798007/job/120068641831)
+  — API37, фактический PAGE_SIZE 16384; install/upgrade/launch прошли.
+  Preview APK SHA-256 `e82e521e6b0879e26f9ba316763d74c2cedea6335baa189879f26800520c2b9f`.
+  Risk ready/empty/partial/error и assistant ready/empty/partial при font100
+  прошли. Следующий assistant/error остановился после retry; итоговый Android
+  gate FAIL, профиль 4096 пропущен. Полная business/portfolio-матрица при
+  font200 не достигнута; отдельные spatial/goal-проверки font200 прошли.
+- [Cleanup120078389274](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39846798007/job/120078389274)
+  — CI_PRIVATE_TRANSFER_CLEANUP=verified_absent. Новый приватный APK не выдан.
+
+В assistant/ready прошли прежние проверки сохранения текста, фокуса, caret,
+видимой IME, стабильных кадров, post-capture и возврата ориентации. Для risk
+также прошёл намеренно скрытый ввод. NATIVE_EDITOR_RESTORE_TRACE после успешных
+поворотов содержит 7 restore-start / 7 restore-finished и 0 restore-not-ready.
+В ограниченной истории IMMS новые assistant WINDOW_FOCUS_GAIN имеют тип
+редактора 163841. Это доказательство
+font100 на одном 16KB-профиле, а не приёмка всех сред или физического телефона.
+
+### Причина следующего отказа и исправления
+
+Первый точный ERROR и нажатие «Повторить» прошли; число синтетических запросов
+выросло до 2, ошибок контракта 0. После прокрутки к кнопке текст ошибки был
+выше текущего viewport. Второй `reveal(ERROR)` искал только к концу списка:
+одна результативная и девять безрезультатных прокруток завершились прежним
+`List target not reachable`. WorkspaceEmpty располагает текст перед Retry;
+при повторном запросе resource сохраняет ошибку. Исправление меняет только
+направление второго поиска на `start`; exact ERROR, actual retry, рост requests,
+driver, лимиты и таймауты сохранены. Новая viewport-регрессия использует
+настоящий reveal_in_list: до исправления воспроизведён тот же отказ после
+10 прокруток вниз, после исправления целевой набор 6 tests PASS.
+
+Скриншот также показал приглашение «С чего начнём?» при не загруженной истории.
+Теперь оно требует `messages.data != null`, отсутствия error и busy и пустых
+messageItems. Проверка error нужна и при сохранённых пустых data после
+неудачного refresh. Успешно загруженная пустая история сохраняет приглашение;
+IME, отправка, стоимость, snapshot и recovery этим изменением не затронуты.
+
+Полный локальный CI-набор нового совместного дерева: 876 tests PASS,
+4 существующих environment skips, 0.893 s. Diff check и независимое review
+скриншота, app guard и поведенческой регрессии — PASS. Новый head требует
+собственных Backend, полного Sonar 0/0, Android build и обеих полных матриц
+API37 / 16384 и 4096. Прежний частичный успех не заменяет эти gates.
+Серверный `1c9f95aa` отдельно прошёл Backend 1523 tests / 1481 subtests и
+полный Sonar 0/0; новая VM, TLS, Telegram owner binding и канал обновления
+этими проверками кода не подтверждены.
+
+**Ниже сохранена история предыдущих кандидатов:**
+
 ## Исправления черновика и диапазона дат — 22.10.2026
 
 Область F01/F16/F22/F23. Изменения сохраняют Android 17 / API37,
