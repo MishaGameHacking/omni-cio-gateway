@@ -363,6 +363,7 @@ public final class FrameInstrumentation extends Instrumentation {
         attr(xml, "resource-id", node.getViewIdResourceName());
         attr(xml, "text", node.getText());
         attr(xml, "content-desc", node.getContentDescription());
+        attr(xml, "state-description", node.getStateDescription());
         attr(
                 xml,
                 "bounds",

@@ -53,11 +53,12 @@ fun CurrencyChoice(currency: String) {
 
 @Composable
 fun DetailFold(title: String, modifier: Modifier = Modifier, initiallyOpen: Boolean = false,
+    headerModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit) {
     var expanded by rememberSaveable(title) { mutableStateOf(initiallyOpen) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SpectrumTextButton(title, onClick = { expanded = !expanded },
-            modifier = Modifier.fillMaxWidth().semantics { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" },
+            modifier = Modifier.fillMaxWidth().then(headerModifier).semantics { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" },
             symbol = if (expanded) SpectrumSymbol.Collapse else SpectrumSymbol.Expand)
         if (expanded) content()
     }

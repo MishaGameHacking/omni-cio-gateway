@@ -40,6 +40,18 @@ def packet(sequence=1, status=1, payload=XML):
 
 
 class FrameProtocolTests(unittest.TestCase):
+    def test_native_fold_state_is_preserved_separately_from_duplicate_labels(self):
+        tree = ET.Element("hierarchy")
+        ET.SubElement(tree, "node", {"text": "Основания (1)", "resource-id": "answer-sources",
+                                    "state-description": "Свёрнуто"})
+        ET.SubElement(tree, "node", {"text": "Основания (1)", "resource-id": "channel-sources",
+                                    "state-description": "Развёрнуто & <проверено>"})
+        reader = frames.FrameReader(Stream(packet(payload=ET.tostring(tree, encoding="utf-8"))))
+        observed = list(reader.ready_tree().iter("node"))
+        self.assertEqual(observed[0].get("state-description"), "Свёрнуто")
+        self.assertEqual(observed[1].get("state-description"), "Развёрнуто & <проверено>")
+        self.assertEqual(observed[1].get("resource-id"), "channel-sources")
+
     def test_partial_reads_and_monotonic_fresh_requests(self):
         stream = Stream(packet() + packet(2, payload=XML.replace(b'"A"', b'"B"')))
         reader = frames.FrameReader(stream)

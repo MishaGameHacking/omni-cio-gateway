@@ -168,7 +168,8 @@ class NativeInputEvidenceTests(unittest.TestCase):
         probe.wait_for.side_effect = wait
         probe.command.side_effect = command
         probe.capture.side_effect = lambda name: events.append(("capture", name, state["landscape"]))
-        with patch("builtins.print") as output, self.assertRaises(AssertionError) as caught:
+        with patch("builtins.print") as output, self.assertRaises(AssertionError) as caught, \
+                patch.object(native.time, "monotonic", side_effect=[index * .25 for index in range(30)]):
             native.rotate_focused_draft(probe, "private draft", "rotation-success", dialog=True)
         self.assertIs(caught.exception, failures[0])
         self.assertTrue(state["restored"])
@@ -195,7 +196,8 @@ class NativeInputEvidenceTests(unittest.TestCase):
             original = AssertionError("original landscape failure")
             secondary = RuntimeError("private cleanup detail")
             probe.tree.return_value = root
-            probe.wait_for.side_effect = [{"selection_end": 5}, {"selection_end": 3}, root, original, secondary]
+            probe.wait_for.side_effect = [{"selection_end": 5}, {"selection_start": 3, "selection_end": 3},
+                                          root, original, secondary]
 
             def command(*args, **_kwargs):
                 if failed_phase == "settings" and args == ("shell", "settings", "put", "system", "user_rotation", "0"):
@@ -213,10 +215,14 @@ class NativeInputEvidenceTests(unittest.TestCase):
         root = frame()
         root.attrib.update({"keyboard-visible": "true", "active-window-id": "17"})
         failure = RuntimeError("restored editor failed")
-        probe.tree.return_value = root
+        rotated = frame(**{"selection-start": "3", "selection-end": "3"})
+        rotated.attrib.update({"display-width": "1920", "display-height": "1080",
+                               "keyboard-visible": "true", "active-window-id": "18"})
+        probe.tree.return_value = rotated
         probe.command.return_value = "0"
-        probe.wait_for.side_effect = [{"selection_end": 5}, {"selection_end": 3}, root,
-                                      {"window_id": 18}, failure]
+        probe.wait_for.side_effect = [{"selection_end": 5}, {"selection_start": 3, "selection_end": 3}, root,
+                                      {"window_id": 18, "width": 1920, "height": 1080,
+                                       "keyboard_visible": True, "frame": {"ime-windows": []}}, failure]
         with patch("builtins.print"), self.assertRaises(RuntimeError) as caught:
             native.rotate_focused_draft(probe, "UIprobe", "rotation-success", dialog=True)
         self.assertIs(caught.exception, failure)

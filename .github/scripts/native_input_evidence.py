@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import re
 import json
+import time
 from collections import deque
+import xml.etree.ElementTree as ET
 
 PACKAGE = "ru.omnicio.app.debug"
 _ROTATION_SAMPLES = 5
@@ -58,13 +60,17 @@ def _activity_orientation(tree):
     return None
 
 
-def recreated_editor(tree, text, selection, previous_window, *, dialog=True):
+def recreated_editor(tree, text, selection, previous_window, *, dialog=True, keyboard_expected=True):
     """Observe new dialog or updated Activity content, plus the actual IME."""
     window = active_window_id(tree)
     width, height = display_geometry(tree)
     orientation = 2 if width > height else 1
     ready = window != previous_window if dialog else _activity_orientation(tree) == orientation
-    if not ready or not keyboard_visible(tree):
+    if not ready:
+        return None
+    if keyboard_visible(tree) != keyboard_expected:
+        if not keyboard_expected:
+            raise AssertionError("Rotation reopened a deliberately dismissed input-method window")
         return None
     return focused_editor(tree, text, selection)
 
@@ -195,6 +201,11 @@ def _rotation_failure_diagnostics(probe, observations):
         probe.capture("rotation-failure")
     except Exception as error:
         print("NATIVE_ROTATION_SCREENSHOT_UNAVAILABLE=" + type(error).__name__, flush=True)
+    record_editor_restore_trace(probe)
+
+
+def record_editor_restore_trace(probe):
+    """Record only the candidate UID's allowlisted restoration facts, if present."""
     try:
         identity = probe.command("shell", "cmd", "package", "list", "packages", "-U", PACKAGE, timeout=4)
         uids = re.findall(r"^package:ru\.omnicio\.app\.debug uid:(\d{1,10})$", identity, re.MULTILINE | re.ASCII)
@@ -207,11 +218,12 @@ def _rotation_failure_diagnostics(probe, observations):
         print("NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
 
 
-def _report_rotation_failure(probe, initial, dialog, expected, sample_count, ime_visible_count, recent):
+def _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, recent):
     """Keep evidence collection from replacing the original rotation failure."""
     try:
         _rotation_failure_diagnostics(probe, {"initial": _frame_diagnostic(initial), "dialog": dialog,
-            "expected_selection": [expected, expected], "sample_count": sample_count,
+            "expected_selection": list(selection), "expected_keyboard_visible": initial.get("keyboard-visible") == "true",
+            "sample_count": sample_count,
             "ime_visible_count": ime_visible_count, "recent": list(recent)})
     except Exception as error:
         print("NATIVE_ROTATION_DIAGNOSTIC_UNAVAILABLE=" + type(error).__name__, flush=True)
@@ -244,7 +256,64 @@ def append_native_text(probe, text: str, suffix: str) -> dict:
                         "input-result", expected)
 
 
-def _restore_rotation(probe, settings, original_geometry, previous_window, text, selection, *, dialog):
+def _rotation_editor(tree, text, selection, previous_window, *, dialog, keyboard_expected):
+    editor = recreated_editor(tree, text, selection, previous_window,
+                               dialog=dialog, keyboard_expected=keyboard_expected)
+    if editor is None:
+        return None
+    width, height = display_geometry(tree)
+    observation = {"editor": editor, "width": width, "height": height,
+                   "window_id": active_window_id(tree), "keyboard_visible": keyboard_expected}
+    try:
+        observation["frame"] = _frame_diagnostic(tree)
+    except Exception as error:
+        observation["frame"] = {"diagnostic_error": type(error).__name__}
+    return observation
+
+
+def _rotation_signature(observation):
+    windows = observation.get("frame", {}).get("ime-windows")
+    # Only compare the bounded, validated metadata already observed in this
+    # frame. Omitted windows never replace the driver's full-list predicate.
+    geometry = tuple(sorted(tuple(row) for row in windows)) if isinstance(windows, list) else None
+    return (observation["window_id"], observation["width"], observation["height"],
+            observation["keyboard_visible"], geometry)
+
+
+def _settled_rotation(read):
+    """Observe the required IME state across fresh frames, not a transition."""
+    signature = None
+    started = 0.0
+    samples = 0
+
+    def settled():
+        nonlocal signature, started, samples
+        try:
+            value = read()
+        except (RuntimeError, ValueError, ET.ParseError):
+            signature = None
+            samples = 0
+            raise
+        current = None if value is None else _rotation_signature(value)
+        now = time.monotonic()
+        if current is None or current != signature:
+            signature, started, samples = current, now, 0
+        if current is None:
+            return None
+        samples += 1
+        if samples < 3 or now - started < 1.0:
+            return None
+        return value | {"stability": {"samples": samples, "span_ms": round((now - started) * 1000),
+                                      "window_id": current[0], "display": list(current[1:3])}}
+
+    return settled
+
+
+def _wait_rotation_editor(probe, read, message, phase, text):
+    return _wait_editor(probe, _settled_rotation(read), message, phase, text)
+
+
+def _restore_rotation(probe, settings, original_geometry, read_editor, text):
     """Restore the saved device settings, then require the same native editor."""
     for key, value in settings:
         if value in {"0", "1", "2", "3"}:
@@ -256,9 +325,17 @@ def _restore_rotation(probe, settings, original_geometry, previous_window, text,
         tree = probe.tree()
         if display_geometry(tree) != original_geometry:
             return None
-        return recreated_editor(tree, text, selection, previous_window, dialog=dialog)
+        return read_editor(tree)
 
-    _wait_editor(probe, restored, "Restoring device rotation lost the focused draft/caret", "restored", text)
+    return _wait_rotation_editor(probe, restored, "Restoring device rotation lost the focused draft/caret",
+                                  "restored", text)
+
+
+def _post_capture_rotation(read, after):
+    observation = read()
+    if observation is None or _rotation_signature(observation) != _rotation_signature(after):
+        raise AssertionError("Post-capture observation lost the same native editor window or input-method state")
+    return observation
 
 
 def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
@@ -275,6 +352,35 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
         return tree if keyboard_visible(tree) else None
 
     initial = probe.wait_for(input_window, "Focused draft did not show its native input-method window")
+    return _rotate_observed_draft(probe, text, name, before, initial, dialog=dialog, keyboard_expected=True)
+
+
+def _focused_input(tree, text, selection=None, *, keyboard_expected):
+    if keyboard_visible(tree) != keyboard_expected:
+        if not keyboard_expected:
+            raise AssertionError("Dismissed native input-method window became visible before rotation")
+        return None
+    editor = focused_editor(tree, text, selection)
+    return (tree, editor) if editor is not None else None
+
+
+def rotate_dismissed_draft(probe, text: str, name: str, *, dialog=False) -> dict:
+    """Dismiss once, then rotate without refocusing or changing the actual caret."""
+    _, before = _wait_editor(probe, lambda: _focused_input(probe.tree(), text, keyboard_expected=True),
+                              "Focused draft did not have an input-method window to dismiss", "before-dismiss", text)
+    selection = before["selection_start"], before["selection_end"]
+    if not probe.dismiss_keyboard():
+        raise AssertionError("Hidden rotation requires a real user dismissal of the visible keyboard")
+    initial, _ = _wait_editor(probe,
+        lambda: _focused_input(probe.tree(), text, selection, keyboard_expected=False),
+        "Dismissing the keyboard lost the focused draft or exact caret", "dismissed", text)
+    result = _rotate_observed_draft(probe, text, name, before, initial, dialog=dialog, keyboard_expected=False)
+    result["scenario"] = "dismissed-keyboard-focus-caret-rotation"
+    return result
+
+
+def _rotate_observed_draft(probe, text, name, before, initial, *, dialog, keyboard_expected):
+    selection = before["selection_start"], before["selection_end"]
     original_geometry = display_geometry(initial)
     original_window = active_window_id(initial)
     rotated_window = None
@@ -306,28 +412,35 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
                 recent.append({"sample": sample_count, "diagnostic_error": type(error).__name__})
             if (width > height) == original_landscape:
                 return None
-            editor = recreated_editor(tree, text, (expected, expected), original_window, dialog=dialog)
-            return {"editor": editor, "width": width, "height": height,
-                    "window_id": active_window_id(tree), "keyboard_visible": True} if editor is not None else None
+            return _rotation_editor(tree, text, selection, original_window,
+                                      dialog=dialog, keyboard_expected=keyboard_expected)
 
         try:
-            after = _wait_editor(probe, rotated,
-                                   "Rotation lost the unsent native question, input focus or exact caret offset", "rotated", text)
-        except (AssertionError, RuntimeError, ValueError, OSError):
-            _report_rotation_failure(probe, initial, dialog, expected, sample_count, ime_visible_count, recent)
+            after = _wait_rotation_editor(probe, rotated,
+                "Rotation lost the unsent native question, input focus or exact caret offset", "rotated", text)
+            rotated_window = after["window_id"]
+            probe.capture(name)
+            post_capture = _post_capture_rotation(rotated, after)
+        except (AssertionError, RuntimeError, ValueError, OSError, ET.ParseError):
+            _report_rotation_failure(probe, initial, dialog, selection, sample_count, ime_visible_count, recent)
             raise
-        rotated_window = after["window_id"]
-        probe.capture(name)
-        return {"scenario": "unsent-question-focus-caret-rotation", "before": before,
-                "after": after, "screenshot": name + ".png", "screen_reader_perception_verified": False}
+        result = {"scenario": "unsent-question-focus-caret-rotation", "before": before,
+                  "after": after, "post_capture": post_capture, "screenshot": name + ".png",
+                  "screen_reader_perception_verified": False}
     except Exception as error:
         rotation_failure = error
         raise
     finally:
         try:
             settings = (("user_rotation", rotation), ("accelerometer_rotation", automatic))
-            _restore_rotation(probe, settings, original_geometry, rotated_window, text, (expected, expected), dialog=dialog)
+            def restored_editor(tree):
+                return _rotation_editor(tree, text, selection, rotated_window,
+                                          dialog=dialog, keyboard_expected=keyboard_expected)
+
+            restored = _restore_rotation(probe, settings, original_geometry, restored_editor, text)
         except Exception as error:
             if rotation_failure is None:
                 raise
             rotation_failure.add_note("Rotation restoration also failed: " + type(error).__name__)
+    result["restored"] = restored
+    return result
