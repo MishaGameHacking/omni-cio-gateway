@@ -2,9 +2,10 @@ name: Owner-only resource inventory
 
 on:
   push:
-    branches: [codex/spectrum-3d-100]
+    branches: [codex/spectrum-3d-100, codex/owner-enrollment-2026-10-22]
     paths:
       - '.github/scripts/owner_cloud_inventory.py'
+      - '.github/scripts/owner_network_inventory.py'
       - '.github/scripts/owner_rebuild_inventory.py'
       - '.github/workflows/owner-cloud-inventory.yml'
   workflow_dispatch:
@@ -35,6 +36,8 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: |
           py -3 .github\scripts\owner_cloud_inventory.py
+          if errorlevel 1 exit /b 1
+          py -3 .github\scripts\owner_network_inventory.py
           if errorlevel 1 exit /b 1
       - name: Inspect current tariffs and recovery metadata only
         shell: cmd
