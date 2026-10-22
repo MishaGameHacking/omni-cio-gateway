@@ -104,10 +104,10 @@ class RecoveryProbe:
 class ChatRecoveryEvidenceTests(unittest.TestCase):
     def test_matching_counters_prove_one_post_and_one_read(self):
         accepted = chat_counters(parts(), 5, "ready")
-        self.assertEqual(REQUEST, accepted_single_request(accepted)["message_request_id"])
+        self.assertEqual(accepted_single_request(accepted)["message_request_id"], REQUEST)
         self.assertIsNone(recovered_single_request(accepted, REQUEST))
         recovered = chat_counters(parts(**{"by-request-gets": "1", "recovered-request-id": REQUEST}), 6, "ready")
-        self.assertEqual(1, recovered_single_request(recovered, REQUEST)["message_posts"])
+        self.assertEqual(recovered_single_request(recovered, REQUEST)["message_posts"], 1)
 
     def test_missing_inconsistent_and_unbound_counters_do_not_prove_recovery(self):
         for key in parts():
@@ -134,7 +134,7 @@ class ChatRecoveryEvidenceTests(unittest.TestCase):
 
     def test_seeded_legacy_id_is_only_valid_for_the_job_case(self):
         seed = {"message-posts": "0", "message-request-id": "none", "by-request-gets": "1", "recovered-request-id": "synthetic-request"}
-        self.assertEqual("synthetic-request", chat_counters(seed, 3, "job")["recovered_request_id"])
+        self.assertEqual(chat_counters(seed, 3, "job")["recovered_request_id"], "synthetic-request")
         with self.assertRaises(AssertionError):
             chat_counters(seed, 3, "ready")
 
@@ -145,11 +145,11 @@ class ChatRecoveryEvidenceTests(unittest.TestCase):
                                            "bounds": "[20,100][300,160]"})
         self.assertIsNone(native_send_button(root, enabled=False))
         node.set("class", "android.widget.Button")
-        self.assertIs(node, native_send_button(root, enabled=False))
+        self.assertIs(native_send_button(root, enabled=False), node)
         self.assertIsNone(native_send_button(root, enabled=True))
         node.set("enabled", "true")
         self.assertIsNone(native_send_button(root, enabled=False))
-        self.assertIs(node, native_send_button(root, enabled=True))
+        self.assertIs(native_send_button(root, enabled=True), node)
         node.set("package", "other.app")
         self.assertIsNone(native_send_button(root, enabled=True))
 
