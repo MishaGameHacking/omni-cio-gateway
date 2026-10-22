@@ -98,10 +98,12 @@ private fun rememberEditorFocus(
     val window = LocalWindowInfo.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val imeVisible = WindowInsets.isImeVisible
-    LaunchedEffect(Unit) {
+    LaunchedEffect(owner, enabled, readOnly) {
         val recreated = previousOwner != owner
-        previousOwner = owner
-        if (recreated && restoreFocus && enabled) {
+        // The caller may first disable the restored editor while local state
+        // loads. Keep its saved focus/IME pending until it can accept input.
+        if (recreated && restoreFocus && !enabled) return@LaunchedEffect
+        if (recreated && restoreFocus) {
             // A Dialog can compose before its new Window is ready for input.
             lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
             snapshotFlow { window.isWindowFocused }.first { it }
@@ -115,6 +117,7 @@ private fun rememberEditorFocus(
             // Scrolling a lazy item back into view must not steal focus or open IME.
             restoreFocus = focused.value
         }
+        previousOwner = owner
         receiveFocusEvents = true
     }
     LaunchedEffect(imeVisible, focused.value, receiveFocusEvents, window.isWindowFocused) {
