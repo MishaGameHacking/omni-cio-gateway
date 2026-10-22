@@ -1,5 +1,57 @@
 # Выполнение главного плана Analyst AI
 
+**Повторный сбой IME и исправление диагностики, F01/F16/F22, 22.10.2026:**
+Кандидат `79cb04c1f1db9b11603300f808b40a3178608d4f`:
+
+- [Android 39781504544](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39781504544):
+  все APK, Kotlin/JUnit, lintDebug/lintPreview — PASS за 9m 5s;
+  828 CI tests, 3 предусмотренных платформенных пропуска.
+- [Backend 39781504548](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39781504548):
+  1467 tests / 1409 subtests — PASS.
+- [Полный Sonar 39781495961](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39781495961):
+  0 OPEN/CONFIRMED всех типов, 0 новых, `complete:true` для точного head.
+- Runtime на API37 / измеренных 16384 прошёл четыре risk/font100 случая
+  и прежний отказ impact fold в assistant/ready. Проверенный impact PNG:
+  `d5057d939cf70f3e9591d88ce3bb097eddd2487107fbb1ecef08578ce933606d`.
+  Затем поворот несохранённого вопроса завершился отказом: текст `UIprobe`,
+  фокус и caret 5:5 сохранились, IME скрылась после видимого состояния.
+  Проверенный failure PNG:
+  `15d29c256cbca1751079e256ed4b27887d577b179991ac5846deef746dda5f2c`.
+- APK SHA-256 `9f7d1943b41e99f309aac7f80d64856949b9f96ebb7cd41478c4486b41bcf796`,
+  29853394 bytes. Установка и обновление прошли, полная UI-матрица 16384 — нет;
+  4096 не запущен. Cleanup job119845412597: `verified_absent`.
+  Итоговый Android gate — failure, APK не выдан.
+
+Точная временная сверка отделила старые hide от текущего поворота:
+в 13:11:43.022 UTC приложение запросило show, в 13:11:43.208 оба показателя
+IME были true, в 13:11:43.749 — false при сохранённом фокусе. В этом интервале
+нет app restore `request-hide`. Более поздний hide в 13:11:54.886 относится
+к возврату в портрет после отказа. Stale Compose-insets временно меняют
+сохранённое намерение, но оно успевает стать true до первого скрытия;
+причинность этой гонки не доказана. Единственный IME-visible native sample
+вытеснен из прежнего tail; он мог относиться ещё к исходной ориентации.
+
+[Android 17](https://developer.android.com/about/versions/17/behavior-changes-all)
+требует явного восстановления IME после configuration recreation; приложение
+уже выполняет такой запрос. В [AOSP logprint](https://android.googlesource.com/platform/system/logging/+/refs/heads/main/liblog/logprint.cpp)
+UTC включает zone output `+0000`: прежний парсер отбрасывал этот формат.
+Исправлена строгая поддержка UTC suffix; добавлены безопасные счётчики чтения,
+принятия и отбрасывания. Второе чтение main/system допускает в вывод только
+события с точной меткой пакета кандидата либо подтверждённым в его UID request;
+сырой текст, component и request token не публикуются. Непривязанные системные
+события остаются за пределами доказательства. Первые IME-visible и rotated
+кадры сохраняются отдельно от bounded transition history. DEBUG trace
+различает экземпляр редактора, попытку, disabled wait и cancellation.
+Действия ввода, таймауты, stable-frame predicates и исходный failure сохранены.
+Следующий кандидат служит диагностике, без маркера выдачи приватного APK;
+один успешный повтор не объясняет непостоянное исчезновение клавиатуры.
+
+Локальная проверка диагностического дерева: 842 CI-теста, 4 предусмотренных
+пропуска, 1.422 s — PASS; Python-аудит 311 файлов — PASS. В их составе
+27 ImeTracker, 29 native evidence, 18 hidden/visible rotation и 5 typing tests.
+Независимое ревью DEBUG trace, parser privacy/scope и неизменности input/gate
+завершено; diff check чистый. Это не результат нового Android runtime.
+
 **Чат: переходы раскрытия, последнее сообщение и восстановление, F01/F16/F22, 22.10.2026:**
 `5543f89f` прошёл сборку всех APK, lint/JUnit, Backend CI и полный Sonar
 с нулём OPEN/CONFIRMED. Runtime `39768001717` подтвердил четыре сценария риска

@@ -1,7 +1,8 @@
 """Read-only ImeTracker facts, never a keyboard-readiness or causality gate.
 
-Only the already resolved candidate UID is read. Server and IME-process logs
-are outside this evidence, and discarded request tokens cannot link events.
+The candidate UID read anchors a second, app-attributed ImeTracker-only read
+across processes. Raw identities and text never leave the parser. Per-capture
+request numbers link matching log labels/tokens, not proven causes of a hide.
 """
 from __future__ import annotations
 
@@ -10,9 +11,13 @@ import json
 import re
 
 _MAX_LINES = 120
+_MAX_PLATFORM_LINES = 1200
 _MAX_LINE_LENGTH = 4096
 _MAX_RECORDS = 40
+_MAX_PLATFORM_RECORDS = 120
 _MAX_ANDROID_INT = 2147483647
+_PACKAGE = "ru.omnicio.app.debug"
+_LOG_FORMAT = "threadtime,UTC"
 _ORIGINS = frozenset({"ORIGIN_CLIENT", "ORIGIN_SERVER", "ORIGIN_IME", "ORIGIN_WM_SHELL"})
 _TERMINALS = frozenset({"onShown", "onHidden", "onDispatched"})
 
@@ -153,8 +158,9 @@ _PHASES = frozenset({
 
 _THREADTIME_LINE = re.compile(
     r"(?P<timestamp>\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})"
+    r"(?: \+0000)?"
     r" +(?P<pid>[1-9]\d{0,9}) +(?P<tid>[1-9]\d{0,9}) I ImeTracker: "
-    r"[\w.$/:+-]{1,200}:[\da-f]{1,8}: (?P<body>[ -~]{1,512})",
+    r"(?P<component>[\w.$/:+-]{1,200}):(?P<token>[\da-f]{1,8}): (?P<body>[ -~]{1,512})",
     re.ASCII,
 )
 _REQUEST = re.compile(
@@ -205,7 +211,7 @@ def _event_record(body):
     return None
 
 
-def _line_record(line):
+def _parsed_line(line):
     if len(line) > _MAX_LINE_LENGTH or not line.isascii():
         return None
     match = _THREADTIME_LINE.fullmatch(line)
@@ -222,22 +228,81 @@ def _line_record(line):
     record = _event_record(match["body"])
     if record is None:
         return None
-    return {"timestamp": match["timestamp"], **record}
+    return ((match["component"], match["token"]),
+            {"timestamp": match["timestamp"], **record})
+
+
+def _bounded_lines(output, limit):
+    if not isinstance(output, str):
+        raise TypeError("ImeTracker output must be text")
+    content = output.removesuffix("\n")
+    if not content:
+        return 0, []
+    return content.count("\n") + 1, content.rsplit("\n", limit)[-limit:]
+
+
+def _collect_records(output, *, trusted_tags=None, request_numbers=None,
+                     line_limit=_MAX_LINES, record_limit=_MAX_RECORDS):
+    """Keep only validated events; private matching keys stay in this call chain."""
+    raw_count, lines = _bounded_lines(output, line_limit)
+    records, tags = [], set()
+    rejected = unattributed = 0
+    for line in lines:
+        parsed = _parsed_line(line.removesuffix("\r"))
+        if parsed is None:
+            rejected += 1
+            continue
+        tag, record = parsed
+        if trusted_tags is not None and tag[0] != _PACKAGE and tag not in trusted_tags:
+            unattributed += 1
+            continue
+        tags.add(tag)
+        if request_numbers is not None:
+            record["request"] = request_numbers.setdefault(tag, len(request_numbers) + 1)
+        records.append(record)
+    emitted = records[-record_limit:]
+    counts = {"raw_lines": raw_count, "scanned_lines": len(lines),
+              "accepted_lines": len(records), "rejected_lines": rejected,
+              "unattributed_lines": unattributed, "omitted_lines": raw_count - len(lines),
+              "emitted_records": len(emitted), "omitted_records": len(records) - len(emitted)}
+    return emitted, counts, tags
 
 
 def _ime_tracker_records(output):
     """Return at most forty safe events from the last 120 filtered log lines."""
-    if not isinstance(output, str):
-        raise TypeError("ImeTracker output must be text")
-    records = []
-    # Bound splitting as well as record parsing. A normal final newline is not
-    # an extra record; CRLF is accepted only at the end of each physical line.
-    lines = output.removesuffix("\n").rsplit("\n", _MAX_LINES)[-_MAX_LINES:]
-    for line in lines:
-        record = _line_record(line.removesuffix("\r"))
-        if record is not None:
-            records.append(record)
-    return records[-_MAX_RECORDS:]
+    return _collect_records(output)[0]
+
+
+def _emit_trace(prefix, scope, records, counts):
+    print(prefix + "_SUMMARY=" + json.dumps(
+        {"scope": scope, "buffers": ["main", "system"], "format": _LOG_FORMAT,
+         "request_numbers": "per_capture_label_token_match", **counts}, sort_keys=True), flush=True)
+    print(prefix + "=" + json.dumps(records, sort_keys=True), flush=True)
+
+
+def _capture_candidate(probe, uid, request_numbers):
+    try:
+        output = probe.command("logcat", "-d", "-b", "main", "-b", "system", "-v", _LOG_FORMAT,
+                               "--uid=" + uid, "ImeTracker:I", "*:S", timeout=4)
+        records, counts, tags = _collect_records(output, request_numbers=request_numbers)
+        _emit_trace("NATIVE_IME_TRACKER_TRACE", "candidate_uid", records, counts)
+        return tags
+    except Exception as error:
+        print("NATIVE_IME_TRACKER_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
+        return set()
+
+
+def _capture_platform(probe, trusted_tags, request_numbers):
+    try:
+        output = probe.command("logcat", "-d", "-b", "main", "-b", "system", "-v", _LOG_FORMAT,
+                               "ImeTracker:I", "*:S", timeout=4)
+        records, counts, _ = _collect_records(
+            output, trusted_tags=trusted_tags, request_numbers=request_numbers,
+            line_limit=_MAX_PLATFORM_LINES, record_limit=_MAX_PLATFORM_RECORDS)
+        _emit_trace("NATIVE_IME_TRACKER_PLATFORM_TRACE", "exact_app_label_or_candidate_uid_token",
+                    records, counts)
+    except Exception as error:
+        print("NATIVE_IME_TRACKER_PLATFORM_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
 
 
 def record_ime_tracker_trace(probe, uid: str):
@@ -246,11 +311,15 @@ def record_ime_tracker_trace(probe, uid: str):
         if (type(uid) is not str or re.fullmatch(r"\d{1,10}", uid, re.ASCII) is None
                 or not 10000 <= int(uid) <= _MAX_ANDROID_INT):
             raise ValueError("Candidate UID is unavailable")
-        # No numeric -t: logcat applies it before UID/tag filtering. Do not
-        # enable progress/stacktrace properties or issue any input action.
-        output = probe.command("logcat", "-d", "-b", "main", "-v", "threadtime,UTC",
-                               "--uid=" + uid, "ImeTracker:I", "*:S", timeout=4)
-        print("NATIVE_IME_TRACKER_TRACE=" + json.dumps(
-            _ime_tracker_records(output), sort_keys=True), flush=True)
     except Exception as error:
         print("NATIVE_IME_TRACKER_TRACE_UNAVAILABLE=" + type(error).__name__, flush=True)
+        return
+    # No numeric -t: logcat applies it before UID/tag filtering. Do not enable
+    # progress/stacktrace properties, change buffers, or issue any input action.
+    # UTC also adds a literal +0000 zone in AOSP liblog (not a UID/year column):
+    # https://android.googlesource.com/platform/system/logging/+/bcac7c30d88a3773a7c0bc9f5617a23a886331fd/liblog/logprint.cpp
+    request_numbers = {}
+    trusted_tags = _capture_candidate(probe, uid, request_numbers)
+    # Unrelated system/IME tokens are excluded, even if their timing coincides.
+    # A failed UID read still permits only the exact app label, never a suffix.
+    _capture_platform(probe, trusted_tags, request_numbers)
