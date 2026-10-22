@@ -1,5 +1,36 @@
 # Analyst AI — Android-приложение и Timeweb backend
 
+**Android-сборка восстановлена; отказ IME сохраняется, F01/F16/F22/F23, 22.10.2026:**
+Кандидат `0fded230` прошёл [сборку Android](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39832771304):
+готовый Temurin JDK `17.0.20.1+1` проверен на Windows, 860 CI-тестов
+(3 предусмотренных пропуска), сборка debug/preview/release APK и test-only driver,
+lint и JVM-тесты успешны. [Backend](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39832771138)
+выполнил 1467 tests / 1409 subtests; [полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39832761671)
+подтвердил 0 открытых/подтверждённых и 0 новых замечаний.
+
+Runtime на API37 / измеренных 16384 байтах снова остановился при повороте
+диалога риска: черновик `5`, фокус и caret `0:0` сохранились, клавиатура
+после поворота отсутствует. Профиль 4096 не запускался; полный Android gate
+корректно завершился отказом. Поздний запрос IME
+`HIDE_SOFT_INPUT_EXTRACT_INPUT_CHANGED` отменён как уже скрытый, поэтому он
+не доказывает причину этого отказа. История фактического EditorInfo пока не получена.
+Cleanup подтвердил `verified_absent`; выдача APK и публикация не выполнялись.
+
+Диагностическое изменение добавляет ограниченную очищенную проекцию
+истории `dumpsys input_method` только после отказа, чтобы связать события с
+состоянием редактора. Это подготовка исследования причины, а не исправление
+клавиатуры; поведение приложения, действия driver и критерии приёмки сохраняются.
+Локально прошли 873 CI-теста (4 существующих environment skips), включая
+12 новых тестов парсера и проверку сохранения исходной ошибки. Независимое
+ревью формата Android 17 и ограничения вывода пройдено; новый диагностический
+коммит ещё требует собственного полного CI.
+
+Серверная ветка `34ac2cbe` синхронизирована с `0fded230`:
+[Backend](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39833845532)
+прошёл 1515 tests / 1481 subtests, [полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39833836376) — 0/0.
+Эти проверки кода не подтверждают новую установку Timeweb; сервер и канал
+обновления остаются неподтверждёнными.
+
 **Восстановление Android CI, F01/F22/F23, 22.10.2026:**
 На `8fe52f60` [Backend](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795793706)
 прошёл 1467 tests / 1409 subtests; [полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39795784530)

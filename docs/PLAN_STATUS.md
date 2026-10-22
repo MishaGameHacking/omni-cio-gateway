@@ -1,5 +1,52 @@
 # Выполнение главного плана Analyst AI
 
+**Android CI восстановлен до runtime; отказ IME остаётся, F01/F16/F22/F23, 22.10.2026:**
+Проверенный кандидат `0fded2305511a10291907543c562a6cd66305f32`:
+
+- [Android 39832771304](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39832771304),
+  build job120013086317 — PASS. Реально проверен готовый Windows tool-cache
+  Temurin JDK `17.0.20.1+1`; 860 CI-тестов с 3 предусмотренными пропусками,
+  Gradle debug/preview/release APK, test-only driver, lint и unit tests прошли.
+  Прежний отказ загрузки setup-java больше не блокирует этот Windows build.
+- [Backend 39832771138](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39832771138)
+  — 1467 tests / 1409 subtests PASS; [полный Sonar 39832761671](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39832761671)
+  — 0 OPEN/CONFIRMED всех типов, 0 новых замечаний.
+- Runtime job120018290841 — FAIL на API37 / измеренных 16384 байтах при
+  повороте диалога риска. Черновик `5`, native focus и caret `0:0` сохранены,
+  IME после поворота отсутствует. Полная UI-матрица 16384 не пройдена;
+  профиль 4096 пропущен после отказа. Подготовка образов не считается его проверкой.
+- Cleanup job120022849876 — PASS: `CI_PRIVATE_TRANSFER_CLEANUP=verified_absent`.
+  Отсутствие временного release и tag подтверждено двумя HTTP 404;
+  aggregate120022914200 и authoritative120022962270 корректно FAIL.
+  Выдача device-test APK и публикация пропущены; проверенный APK не выдан.
+
+Платформенные show-запросы завершаются отказом либо отменой. Server hide
+завершился скрытием; поздний IME-запрос
+`HIDE_SOFT_INPUT_EXTRACT_INPUT_CHANGED` отменён в состоянии ALREADY_HIDDEN.
+Этот поздний запрос не доказывает причину ранее скрытой клавиатуры.
+Фактическая история EditorInfo на причинном интервале ещё не получена;
+сохранённые focus/caret сами по себе не подтверждают готовый InputConnection.
+
+Текущее изменение добавляет только диагностику после отказа: bounded
+очищенная проекция критической истории `dumpsys input_method` с привязкой
+к кандидату. Продуктовый порядок фокуса/show/hide, действия driver,
+таймауты и критерии приёмки сохраняются. Изменение не объявляется исправлением
+IME; новый SHA ещё должен пройти собственный полный CI и обе API37-матрицы.
+Исторические успешные части не переносятся на будущий кандидат как приёмка.
+Локальный общий набор — 873 CI-теста PASS, 4 существующих environment skips,
+0.889 s с writable TMPDIR и `NODE_OPTIONS=--test-isolation=none` для данного
+окружения. Включены 12 новых тестов парсера; интеграционный сценарий проверяет
+исходную ошибку и чтение истории до восстановления ориентации. Независимое
+ревью сверило формат с Android 17 r1 и отсутствие вывода текста/сырых имён.
+
+**Параллельная серверная ветка, F02/F20/F23:**
+`34ac2cbe1393c792d2f3e40723928fcc4047f3ba` включает синхронизацию с `0fded230`.
+[Backend 39833845532](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39833845532)
+— 1515 tests / 1481 subtests PASS;
+[полный Sonar 39833836376](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39833836376)
+— 0 OPEN/CONFIRMED и 0 новых замечаний. Это проверка серверного кода,
+не новая установка Timeweb, не проверенный OIDC-вход и не доставка APK.
+
 **Восстановление подготовки сборочной машины, F01/F22/F23, 22.10.2026:**
 Последний проверенный head `8fe52f6098cef1a90e45fc3ba95c773f20405a1a`:
 

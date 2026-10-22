@@ -16,6 +16,8 @@ SPEC.loader.exec_module(native)
 IME_REQUEST = ("10-22 10:43:42.811  8221  8221 I ImeTracker: "
                "ru.omnicio.app.debug:eec2b238: onRequestHide at ORIGIN_CLIENT "
                "reason HIDE_SOFT_INPUT fromUser false userId 0 displayId 0")
+IME_HISTORY = ("Input Method Manager Service state:\n  mStartInputHistory:\n"
+               "  mSoftInputShowHideHistory:\n  mImeTrackerService#History:\n")
 
 
 def frame(**changes):
@@ -149,24 +151,39 @@ class NativeInputEvidenceTests(unittest.TestCase):
         probe = Mock()
         probe.capture.side_effect = OSError("private screenshot failure")
         probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
-                                     json.dumps(restore_record(text="private draft")), IME_REQUEST, IME_REQUEST]
+                                     IME_HISTORY, json.dumps(restore_record(text="private draft")), IME_REQUEST, IME_REQUEST]
         with patch("builtins.print") as output:
             native._rotation_failure_diagnostics(probe, {"recent": []})
         probe.capture.assert_called_once_with("rotation-failure")
         self.assertEqual(probe.command.call_args_list[0].args,
                          ("shell", "cmd", "package", "list", "packages", "-U", native.PACKAGE))
         self.assertEqual(probe.command.call_args_list[1].args,
+                         ("shell", "dumpsys", "input_method", "--dump-priority", "CRITICAL"))
+        self.assertEqual(probe.command.call_args_list[2].args,
                          ("logcat", "-d", "-b", "main", "-v", "raw",
                           "--uid=10123", "AnalystEditorRestore:D", "*:S"))
-        self.assertEqual(probe.command.call_args_list[2].args,
-                         ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
-                          "--uid=10123", "ImeTracker:I", "*:S"))
         self.assertEqual(probe.command.call_args_list[3].args,
                          ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
+                          "--uid=10123", "ImeTracker:I", "*:S"))
+        self.assertEqual(probe.command.call_args_list[4].args,
+                         ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
                           "ImeTracker:I", "*:S"))
-        self.assertEqual(probe.command.call_count, 4)
+        self.assertEqual(probe.command.call_count, 5)
         self.assertTrue(all(call.kwargs == {"timeout": 4} for call in probe.command.call_args_list))
         self.assertNotIn("private", "\n".join(call.args[0] for call in output.call_args_list))
+
+    def test_failed_history_read_does_not_prevent_the_existing_restore_and_tracker_evidence(self):
+        probe = Mock()
+        probe.command.side_effect = ["package:ru.omnicio.app.debug uid:10123\n",
+                                     TimeoutError("private dump stdout"), json.dumps(restore_record()), IME_REQUEST, IME_REQUEST]
+        with patch("builtins.print") as output:
+            native._rotation_failure_diagnostics(probe, {"recent": []})
+        lines = [call.args[0] for call in output.call_args_list]
+        self.assertIn("NATIVE_IME_SERVICE_HISTORY_UNAVAILABLE=TimeoutError", lines)
+        self.assertTrue(any(line.startswith("NATIVE_EDITOR_RESTORE_TRACE=") for line in lines))
+        self.assertTrue(any(line.startswith("NATIVE_IME_TRACKER_TRACE=") for line in lines))
+        self.assertTrue(any(line.startswith("NATIVE_IME_TRACKER_PLATFORM_TRACE=") for line in lines))
+        self.assertNotIn("private", "\n".join(lines))
 
     def test_success_trace_keeps_ime_tracker_collection_disabled(self):
         probe = Mock()
@@ -260,6 +277,8 @@ class NativeInputEvidenceTests(unittest.TestCase):
                 state["restored"] = args[5] == "0"
             elif args[:3] == ("shell", "cmd", "package"):
                 return "package:ru.omnicio.app.debug uid:10123\n"
+            elif args[:3] == ("shell", "dumpsys", "input_method"):
+                return IME_HISTORY
             elif args[0] == "logcat":
                 return json.dumps(restore_record())
             return ""
@@ -272,6 +291,7 @@ class NativeInputEvidenceTests(unittest.TestCase):
                 patch.object(native.time, "monotonic", side_effect=[index * .25 for index in range(30)]):
             native.rotate_focused_draft(probe, "private draft", "rotation-success", dialog=True)
         self.assertIs(caught.exception, failures[0])
+        self.assertIn("native keyboard state", str(caught.exception))
         self.assertTrue(state["restored"])
         lines = [call.args[0] for call in output.call_args_list]
         record = json.loads(next(line.split("=", 1)[1] for line in lines if line.startswith("NATIVE_ROTATION_OBSERVATIONS=")))
@@ -300,6 +320,8 @@ class NativeInputEvidenceTests(unittest.TestCase):
         self.assertEqual(probe.tree.call_count, 17)
         self.assertNotIn("private draft", "\n".join(lines))
         self.assertLess(events.index(("capture", "rotation-failure", True)),
+                        events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
+        self.assertLess(events.index(("shell", "dumpsys", "input_method", "--dump-priority", "CRITICAL")),
                         events.index(("shell", "settings", "put", "system", "user_rotation", "0")))
         self.assertLess(events.index(("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime,UTC",
                                       "--uid=10123", "ImeTracker:I", "*:S")),
