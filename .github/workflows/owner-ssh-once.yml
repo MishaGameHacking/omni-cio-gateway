@@ -11,7 +11,7 @@ concurrency:
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,30 +20,39 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Check account activation blockers without exposing billing details
+      - name: Remove only the unpaid unstarted build trial and verify retained owner host
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,sys,urllib.request
-          from decimal import Decimal,InvalidOperation
+          import json,os,sys,time
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
+          import access_owner_vm as access
+          from replace_unreachable_vm import remove_ip
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def get(path):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
-              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(2*1024*1024+1))
-          status=get("/account/status")["status"]
-          fin=get("/account/finances")["finances"]
-          def positive(value):
-              try:return Decimal(str(value))>0
-              except InvalidOperation:return None
-          report={"account_blocked":status.get("is_blocked"),"permanently_blocked":status.get("is_permanent_blocked"),"balance_positive":positive(fin.get("balance")),"paid_hours_positive":positive(fin.get("hours_left"))}
-          rows=p.read_resource(token,"servers");assert p.summarize("servers",rows)["complete"]
-          report["build_month_with_ipv4_covered"]=Decimal(str(fin["balance"]))>=Decimal("7000")
-          report["all_current_services_month_covered"]=Decimal(str(fin["balance"]))>=Decimal(str(fin["monthly_fee"]))
-          report["servers"]=[{k:s.get(k) for k in ("id","name","status","preset_id","availability_zone")} for s in rows["servers"]]
-          print("TIMEWEB_START_BLOCKERS="+json.dumps(report),flush=True)
+          sid=9409007
+          def inventory():
+              doc=p.read_resource(token,"servers")
+              assert p.summarize("servers",doc)["complete"]
+              return doc["servers"]
+          rows=inventory()
+          old=[s for s in rows if s["id"]==9408159]
+          assert len(old)==1 and old[0]["name"]=="analyst-ai-owner-route-20261023" and old[0]["status"]=="on"
+          new=[s for s in rows if s["id"]==sid]
+          assert len(new)<=1
+          if new:
+              s=new[0]
+              assert s["name"]=="analyst-ai-build-20261023" and s["comment"]=="Analyst AI Timeweb-only development authorized 2026-10-23" and s["preset_id"]==4245 and s["status"]=="no_paid","only_remove_unstarted_task_server"
+              p.cloud.request(token,"DELETE",f"/api/v1/servers/{sid}")
+          for attempt in range(24):
+              rows=inventory()
+              if not any(s["id"]==sid for s in rows):break
+              time.sleep(5)
+          else:raise RuntimeError("unstarted_server_cleanup_unconfirmed")
+          remove_ip(token,"d378efc5-0d10-4ef6-9eab-133f43b48f6f",sid)
+          rows=inventory()
+          assert {s["id"] for s in rows}=={9408159} and rows[0]["status"]=="on"
+          print("BUILD_CLEANUP=unstarted_server_and_its_address_absent_owner_server_running",flush=True)
           PY
