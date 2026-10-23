@@ -14,7 +14,7 @@ import java.math.BigDecimal
 import ru.omnicio.app.ui.spectrum.*
 
 private val scenarioAxes = listOf("all", "currency", "sector", "country", "instrument")
-private val scenarioLabels = listOf("Весь портфель", "Валюта оценки", "Отрасль", "Страна риска", "Инструмент")
+private val scenarioLabels = listOf("Весь портфель", "Валюта инструмента", "Отрасль", "Страна риска", "Инструмент")
 
 private fun scenarioDraft(id: String) = JSONObject().put("id", id).put("title", "Сценарий " + id)
     .put("axis", "all").put("target", "").put("percent", "")

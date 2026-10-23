@@ -307,6 +307,10 @@ class ProfileProbe:
         return dismiss_keyboard(self)
 
     def tap(self, text, area="profile-content", direction="end"):
+        self.tap_node(self.label_tap_target(text, area, direction))
+
+    def label_tap_target(self, text, area="profile-content", direction="end"):
+        """Reveal and observe the settled native action before any tap."""
         from native_label_target import settled_label
         from profile_scroll import reveal_in_list
 
@@ -316,7 +320,7 @@ class ProfileProbe:
         )
         if target is None:
             raise AssertionError("Native action list is not visible: " + area)
-        self.tap_node(settled_label(self.tree, text))
+        return settled_label(self.tree, text)
 
     def tap_visible(self, text):
         """Wait for a native visible action/editor without scrolling any list."""
@@ -432,10 +436,9 @@ class ProfileProbe:
             if screen == "portfolio":
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
-                from profile_scroll import visible_resource
-                search = self.wait_for(lambda visible_resource=visible_resource: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
-                self.tap_node(search)
-                self.command("shell", "input", "text", "NO_SUCH_ASSET")
+                from native_input_evidence import append_native_text
+                self.tap_resource("portfolio-search", "portfolio-content")
+                append_native_text(self, "", "NO_SUCH_ASSET")
                 self.dismiss_keyboard()
                 self.find("Ничего не найдено")
                 self.tap_visible("Сбросить")

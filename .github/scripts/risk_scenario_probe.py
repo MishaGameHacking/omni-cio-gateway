@@ -5,7 +5,7 @@ import math
 import re
 import time
 
-from native_input_evidence import (empty_editor_focused, focused_editor, record_editor_restore_trace,
+from native_input_evidence import (append_native_text, record_editor_restore_trace,
                                    rotate_dismissed_draft, rotate_focused_draft)
 from profile_ui_probe import button_label
 
@@ -44,9 +44,7 @@ def _record_value(probe, reader, scenario_id, value):
 
 def _enter_percent(probe, value):
     probe.tap_resource(PERCENT, AREA)
-    probe.wait_for(lambda: empty_editor_focused(probe.tree()), "Scenario editor did not gain native focus")
-    probe.command("shell", "input", "text", value)
-    probe.wait_for(lambda: focused_editor(probe.tree(), value), "Scenario percentage was not entered")
+    append_native_text(probe, "", value)
 
 
 def exercise_scenario_comparison(case):

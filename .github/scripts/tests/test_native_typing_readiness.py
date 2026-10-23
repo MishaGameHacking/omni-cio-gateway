@@ -54,6 +54,27 @@ class InputProbe:
 
 
 class NativeTypingReadinessTests(unittest.TestCase):
+    def test_empty_editor_waits_for_ime_and_does_not_invent_an_empty_caret(self):
+        probe = InputProbe(
+            [frame("", -1, keyboard=False), frame("", -1, focused=False), frame("", -1)],
+            [],
+            [frame("5", 1, keyboard=False), frame("5", 0), frame("5", 1)],
+        )
+        result = append_native_text(probe, "", "5")
+        self.assertEqual((result["text"], result["selection_end"]), ("5", 1))
+        self.assertEqual(len(probe.commands), 1)
+        command, before = probe.commands[0]
+        self.assertEqual(command, ("shell", "input", "text", "5"))
+        self.assertEqual(before.get("keyboard-visible"), "true")
+        self.assertEqual(before[0].get("selection-start"), "-1")
+
+    def test_empty_editor_never_types_before_ime_or_over_existing_text(self):
+        for state in (frame("", -1, keyboard=False), frame("stale", 5), frame("", -1, focused=False)):
+            probe = InputProbe([state], [], [])
+            with self.subTest(state=state.attrib), patch("builtins.print"), self.assertRaisesRegex(AssertionError, "not ready"):
+                append_native_text(probe, "", "5")
+            self.assertEqual(probe.commands, [])
+
     def test_delayed_ime_focus_and_caret_are_observed_before_single_input(self):
         probe = InputProbe(
             [frame(keyboard=False), frame(focused=False), frame()],

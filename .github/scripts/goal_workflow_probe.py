@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import re
 
-from native_input_evidence import display_geometry, empty_editor_focused, focused_editor, rotate_focused_draft
+from native_input_evidence import append_native_text, display_geometry, rotate_focused_draft
 
 AREA = "workspace-content"
 TITLE = "GoalDraft"
@@ -77,7 +77,7 @@ def _case(probe, scale):
         raise AssertionError("Goal scene has a different actual font scale")
     probe.tap("Добавить цель", AREA)
     probe.tap_resource("goal-title", AREA, direction="start")
-    probe.command("shell", "input", "text", TITLE)
+    append_native_text(probe, "", TITLE)
     suffix = "-font-200" if math.isclose(scale, 2.0) else ""
     draft = rotate_focused_draft(probe, TITLE, "goal-draft-rotation" + suffix, dialog=True)
     # At 200% the IME can cover the next editor after the rotation restores.
@@ -85,9 +85,7 @@ def _case(probe, scale):
     # before typing so a missed tap cannot alter the preserved title draft.
     probe.dismiss_keyboard()
     probe.tap_resource("goal-amount", AREA)
-    probe.wait_for(lambda: empty_editor_focused(probe.tree()), "Goal amount did not receive native input focus")
-    probe.command("shell", "input", "text", "500000")
-    probe.wait_for(lambda: focused_editor(probe.tree(), "500000"), "Goal amount did not enter the native editor")
+    append_native_text(probe, "", "500000")
     probe.dismiss_keyboard()
     # The native label can become visible while the dialog still scrolls.
     # Use the full button's clipped, settled geometry for both idempotent posts.
