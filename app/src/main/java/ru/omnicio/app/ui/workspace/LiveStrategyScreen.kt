@@ -28,6 +28,7 @@ private const val UNSPECIFIED_VALUE = "Не задано"
 private val limitTitles = linkedMapOf("position_percent" to "Одна позиция", "issuer_percent" to "Компания",
     "group_percent" to "Связанная группа", "sector_percent" to "Отрасль", "currency_percent" to "Валюта")
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/strategy")
@@ -82,7 +83,8 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
         adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            if (!compact) SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
+            // A compact viewport must retain section navigation after the IME closes.
+            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {

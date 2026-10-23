@@ -72,6 +72,13 @@ F01/F16/F22/F23. OWNER уточнил: исправлять существующ
   восстановлением: обе высоты истории, отсутствие/чужой package ошибки;
   старый предел воспроизводит отказ. Без ошибки нет GET или повторного POST.
 
+- Runtime `644dbf736` подтвердил исправления ассистента/font200 и остановился
+  в strategy/ready/font200: после подтверждения версии4 compact-режим
+  полностью убирал SpectrumTabs даже без IME. LiveStrategyScreen сохраняет
+  вкладки при скрытой клавиатуре; временное освобождение места во время ввода
+  осталось. Встроенный runtime уже проверяет выбор «Версии» и возврат2→5;
+  эти проверки и ограничения не изменены. Это исправление UI, не новая функция.
+
 Проверен охват запуска/обновления, сессий, сетевого клиента, хранения состояния,
 редакторов, переходов окон, backend и инфраструктуры CI. Локально: 946 CI tests
 (2 предусмотренных environment skips с доступным JDK compiler), 61 Node tests, 52 tool tests,
@@ -84,6 +91,16 @@ Sonar и Android compile/JVM/lint должны повторно пройти н�
 
 Доказательства прежних кандидатов, не результат финального SHA:
 
+- `644dbf736`: Backend39975624069 —1505/1409subtests PASS; Sonar39975613714
+  —0/0/all_types:true/complete:true. Android39975624067 build120489403982
+  —все варианты/JVM/lint,946 CI tests PASS. Runtime120494602197 подтвердил
+  API37/PAGE_SIZE16384, install/upgrade/launch, spatial/session/privacy/goals,
+  все30 business/font100 и14 business/font200 (risk4,assistant5,plans5).
+  Strategy/ready/font200: `Scroll layout not ready: profile-tabs`;
+  на кадре версия4 и закрытая IME, вкладок нет. Причина — compact-условие в UI.
+  Preview SHA256 `e38c2843e346160a627e49116e70170c97bf2da90735427d9a2f8f8264541d2f`.
+  Failure PNG SHA256 `f368e8da3f55cf4eb897e51a0894e59be1ac50da4c00a4e348c67b2b35a219b2`.
+  Профиль4096 не запускался; APK не опубликован.
 - `1a1e5068`: Backend39970599098 —1505/1409subtests PASS; Sonar39970585851
   —0/0/unique0/all_types:true/complete:true. Android39970598792 build120472050473
   —все варианты/JVM/lint,943 CI tests PASS. Runtime120477433428 подтвердил
