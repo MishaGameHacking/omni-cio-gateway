@@ -6,8 +6,19 @@
 `8fedd5fefbb612dba63cef5a97c69e70c6126c51`. Android 17 / API37,
 Filament/GLB, package, версия и прежняя подпись сохраняются.
 
-### Подтверждённый результат родителя
+### Подтверждённые результаты кандидатов
 
+- Промежуточный `e35d2d3fe0643249fe6ec77ed3c37ed368f2efb1` в
+  [Backend CI 39909455304](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39909455304)
+  прошёл 1492 tests / 1409 subtests за 23.06s и аудит 320 Python-файлов.
+  Строгий Sonar gate корректно завершился FAILED:
+  [полная выгрузка 39909449009](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39909449009)
+  на check120269267571 содержит ровно 1 OPEN/CONFIRMED / 1 new / unique:1,
+  complete:true — kotlin:S3776, сложность LiveStrategyScreen 51 при пределе 45.
+  Новый узкий рефакторинг выносит StrategyEditorStatus и StrategyHistoryCard,
+  сохраняя прежние LazyColumn items, состояние, callbacks, проверки busy и поля.
+  По фактическому inventory из основной функции убраны вклады 5+9+1+1;
+  точный результат подтвердит Sonar нового SHA. Порог и подавления не менялись.
 - [Backend CI 39905550281](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39905550281)
   — 1482 tests / 1409 subtests, strict Sonar gate PASS.
 - [Полный Sonar 39905546287](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39905546287)

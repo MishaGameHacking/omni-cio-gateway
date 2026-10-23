@@ -88,27 +88,14 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { WorkspaceRequestState(resource) }
                 item {
-                    if (hasEditorState) StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ }
-                    else SpectrumCard {
-                        Text("Подготавливаем редактор стратегии", style = MaterialTheme.typography.titleLarge)
-                        Text("Ждём действующие правила и сохранённый черновик. После загрузки поля станут доступны.")
-                    }
+                    StrategyEditorStatus(hasEditorState, active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ }
                 }
                 when (tab) {
                     0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
                     1 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
                     2 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
                     else -> resource.data?.records("history").orEmpty().forEach { old -> item {
-                        SpectrumCard {
-                            Text("Версия " + old.optInt("version"), style = MaterialTheme.typography.titleMedium)
-                            Text(localMoment(old.text("confirmed_at", "")), style = MaterialTheme.typography.bodySmall)
-                            val previous = old.optJSONObject("config") ?: JSONObject()
-                            StrategyDifference(active?.optJSONObject("config"), previous)
-                            SpectrumSecondaryButton("Проверить возврат к этой версии", {
-                                if (loaded && editor.canEdit) previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
-                                    .put("rollback_to_version", old.optInt("version")))
-                            }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
-                        }
+                        StrategyHistoryCard(old, active, loaded, editor, version, previewAction)
                     } }
                 }
                 item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
@@ -234,6 +221,31 @@ private fun StrategyPreview(preview: JSONObject, enabled: Boolean, confirm: () -
         Text("Расчёт действителен до " + localMoment(preview.text("expires_at", "")), style = MaterialTheme.typography.bodySmall)
         Text("Если портфель или правила изменятся, потребуется новый расчёт.", style = MaterialTheme.typography.bodySmall)
         SpectrumPrimaryButton("Подтвердить эту версию", confirm, Modifier.fillMaxWidth(), enabled && preview.optBoolean("can_confirm"), SpectrumSymbol.Goal)
+    }
+}
+
+@Composable
+private fun StrategyHistoryCard(old: JSONObject, active: JSONObject?, loaded: Boolean,
+    editor: StrategyEditorAvailability, version: Int, previewAction: WorkspaceAction) {
+    SpectrumCard {
+        Text("Версия " + old.optInt("version"), style = MaterialTheme.typography.titleMedium)
+        Text(localMoment(old.text("confirmed_at", "")), style = MaterialTheme.typography.bodySmall)
+        val previous = old.optJSONObject("config") ?: JSONObject()
+        StrategyDifference(active?.optJSONObject("config"), previous)
+        SpectrumSecondaryButton("Проверить возврат к этой версии", {
+            if (loaded && editor.canEdit) previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
+                .put("rollback_to_version", old.optInt("version")))
+        }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
+    }
+}
+
+@Composable
+private fun StrategyEditorStatus(hasEditorState: Boolean, active: JSONObject?, dirty: Boolean,
+    draftSaved: Boolean, loaded: Boolean, savedMessage: String?, retryDraft: () -> Unit) {
+    if (hasEditorState) StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage, retryDraft)
+    else SpectrumCard {
+        Text("Подготавливаем редактор стратегии", style = MaterialTheme.typography.titleLarge)
+        Text("Ждём действующие правила и сохранённый черновик. После загрузки поля станут доступны.")
     }
 }
 
