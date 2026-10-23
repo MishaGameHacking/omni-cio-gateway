@@ -1,24 +1,29 @@
-name: Timeweb backend deploy — paused after Moscow cutover
-
-# The previous deploy script still selects the Kazakhstan source by name.
-# Its Moscow replacement has NOT been installed. Do not run that script against
-# the retired source or present a skipped deployment as a successful release.
-# Android builds, installation checks, Backend CI and Sonar remain unchanged.
+name: Prepare the new owner Timeweb installation
 on:
-  workflow_dispatch:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [deploy/prepare_owner_vm.py, .github/workflows/timeweb-backend.yml]
 
 permissions:
   contents: read
 
+concurrency:
+  group: analyst-owner-first-vm
+  cancel-in-progress: false
+
 jobs:
-  deployment-paused:
-    name: Deployment paused — needs audited Moscow target configuration
-    if: ${{ false }}
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 1
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - name: No cloud credentials or deployment commands are used
-        shell: cmd
-        run: |
-          echo Deployment is paused. Moscow production is already active from the verified migration.
-          exit /b 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Prepare one minimal VM and the existing owner installer
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 deploy/prepare_owner_vm.py
