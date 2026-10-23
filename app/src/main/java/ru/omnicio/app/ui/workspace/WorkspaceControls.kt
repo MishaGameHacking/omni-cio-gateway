@@ -44,13 +44,13 @@ fun WorkspaceToggle(title: String, detail: String, checked: Boolean, modifier: M
 }
 
 @Composable
-fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Column(Modifier.selectableGroup()) {
             choices.forEachIndexed { index, choice ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .selectable(selected == index, role = Role.RadioButton, onClick = { onSelect(index) })
+                    .selectable(selected == index, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(index) })
                     .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SpatialChoiceVisual(selected == index, Modifier.size(24.dp))

@@ -96,6 +96,8 @@ private fun PlanEditor(strategyVersion: Int, action: WorkspaceAction, close: () 
     val snapshot = LocalPortfolioSnapshot.current
     val accounts = snapshot?.accounts.orEmpty()
     var accountId by rememberSaveable { mutableStateOf(accounts.firstOrNull()?.id.orEmpty()) }
+    val accountIds = accounts.map { it.id }
+    LaunchedEffect(accountIds) { accountId = initialPlanAccountId(accountId, accountIds) }
     val account = accounts.firstOrNull { it.id == accountId }
     var positionId by rememberSaveable { mutableStateOf("") }
     var quantity by rememberSaveable { mutableStateOf("") }
@@ -104,7 +106,8 @@ private fun PlanEditor(strategyVersion: Int, action: WorkspaceAction, close: () 
     val position = account?.positions?.firstOrNull { it.id == positionId }
     WorkspaceDialog("Подготовить действие", close) {
         if (accounts.isEmpty()) Text("Для расчёта нужен подтверждённый снимок подключённого счёта.") else {
-            WorkspaceChoices("Счёт", accounts.map { it.name }, accounts.indexOf(account).coerceAtLeast(0)) { accountId = accounts[it].id; positionId = "" }
+            WorkspaceChoices("Счёт", accounts.map { it.name }, accounts.indexOf(account)) { accountId = accounts[it].id; positionId = "" }
+            if (account == null && accountId.isNotBlank()) Text("Ранее выбранный счёт недоступен в этом снимке. Выберите счёт для расчёта.")
             WorkspaceTextInput(search, { search = it.take(100) }, "Найти инструмент на счёте", Modifier.fillMaxWidth(), enabled = !action.busy)
             val found = account?.positions.orEmpty().filter { search.isBlank() || it.title.contains(search, true) || it.ticker?.contains(search, true) == true }
             if (position != null) Text("Выбрано: " + position.title, style = MaterialTheme.typography.titleMedium)
@@ -128,6 +131,10 @@ private fun PlanEditor(strategyVersion: Int, action: WorkspaceAction, close: () 
         SpectrumSecondaryButton("Закрыть", close, Modifier.fillMaxWidth(), !action.busy)
     }
 }
+
+/** Initialize only an absent choice; a refreshed snapshot must not redirect a user's plan. */
+internal fun initialPlanAccountId(accountId: String, availableIds: List<String>): String =
+    accountId.ifBlank { availableIds.firstOrNull().orEmpty() }
 
 @Composable
 private fun PlanCard(plan: JSONObject, enabled: Boolean, onOpen: () -> Unit, onReconcile: (List<String>) -> Unit) {

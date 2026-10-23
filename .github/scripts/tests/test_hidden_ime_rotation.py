@@ -293,6 +293,52 @@ class HiddenImeRotationTests(unittest.TestCase):
         self.assertNotIn(("capture", "visible-rotation", "landscape", True), probe.events)
         self.assertIn(("capture", "rotation-failure", "landscape", False), probe.events)
 
+    def test_old_portrait_ime_does_not_mask_recreated_numeric_editor_losing_keyboard(self):
+        # Observed risk-dialog failure: the first sample is still the old
+        # portrait window. All recreated frames keep text/focus/caret, but IME
+        # never returns. A secondary portrait failure must not replace it.
+        probe = RotationProbe()
+        probe.selection = (1, 1)
+        probe.landscape_keyboards = [False]
+        probe.restore_keyboard = False
+        read = probe.tree
+
+        def numeric_frame():
+            root = read()
+            root[0].set("text", "5")
+            if probe.phase == "landscape" and probe.reads["landscape"] == 1:
+                root.attrib.update({"display-width": "320", "display-height": "640",
+                                    "active-window-id": "71", "keyboard-visible": "true",
+                                    "ime-windows": json.dumps([[918, 0, 2, 0, 357, 320, 640,
+                                                                 False, False, True]])})
+            return root
+
+        probe.tree = numeric_frame
+        with patch.object(native.time, "monotonic", side_effect=lambda: probe.elapsed), \
+                patch("builtins.print") as output, \
+                self.assertRaisesRegex(AssertionError, "Rotation lost") as caught:
+            native.rotate_focused_draft(probe, "5", "risk-rotation", dialog=True)
+        self.assertEqual(caught.exception.__notes__, ["Rotation restoration also failed: AssertionError"])
+        observations = json.loads(next(call.args[0].split("=", 1)[1] for call in output.call_args_list
+                                       if call.args[0].startswith("NATIVE_ROTATION_OBSERVATIONS=")))
+        self.assertEqual(observations["expected_selection"], [0, 0])
+        self.assertEqual(observations["ime_visible_count"], 1)
+        self.assertEqual(observations["state_transition_count"], 2)
+        self.assertFalse(observations["first_ime_visible"]["orientation_changed"])
+        self.assertFalse(observations["first_ime_visible"]["window_changed"])
+        changed = observations["first_orientation_changed"]
+        self.assertTrue(changed["window_changed"])
+        self.assertEqual(changed["frame"]["keyboard-visible"], "false")
+        self.assertEqual(changed["frame"]["ime-windows"], [])
+        self.assertTrue(changed["editors"][0]["expected_text_matches"])
+        self.assertEqual(changed["editors"][0]["focused"], "true")
+        self.assertEqual(changed["editors"][0]["selection-start"], "0")
+        self.assertEqual(changed["editors"][0]["selection-end"], "0")
+        self.assertIn(("capture", "rotation-failure", "landscape", False), probe.events)
+        self.assertFalse(any(event[:2] == ("capture", "risk-rotation") for event in probe.events))
+        self.assertEqual([event for event in probe.events if event[:2] == ("shell", "input")],
+                         [("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")] * 2)
+
     def test_post_capture_loss_or_window_geometry_change_fails_without_another_wait(self):
         for attribute, changed in (("keyboard", False), ("window", 999),
                                    ("selection", (0, 0)), ("landscape_geometry", (630, 320)),
