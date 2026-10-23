@@ -33,6 +33,7 @@ def request(token, method, path, data=None, *, api_version=1):
     allowed |= method == "POST" and re.fullmatch(r"/floating-ips/[a-f0-9-]{36}/bind", path) is not None
     allowed |= method in {"GET", "POST"} and path == "/domains/" + prepare.HOST + "/dns-records"
     allowed |= method == "PATCH" and path == "/domains/" + prepare.HOST + "/dns-records/95034169"
+    allowed |= method == "DELETE" and path == "/domains/" + prepare.HOST + "/dns-records/95034169"
     allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/" + str(SERVER_ID) + r"/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
         raise prepare.ProbeError("unapproved_access_endpoint")

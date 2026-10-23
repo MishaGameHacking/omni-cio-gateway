@@ -61,15 +61,20 @@ def move_dns(token):
         if len(addresses) != 1:
             raise prepare.ProbeError("adoption_domain_address_conflict")
         row = addresses[0]
-        if row.get("id") != 95034169 or row.get("type") != "A" or row.get("fqdn") != prepare.HOST:
+        if row.get("type") != "A" or row.get("fqdn") != prepare.HOST or type(row.get("id")) is not int:
             raise prepare.ProbeError("adoption_dns_record_changed")
-        preserved = {item["id"]: json.dumps(item, sort_keys=True) for item in records if item.get("id") != 95034169}
+        if row.get("data", {}).get("value") == OLD_IP and row["id"] != 95034169:
+            raise prepare.ProbeError("original_dns_record_identity_changed")
+        preserved = {item["id"]: json.dumps(item, sort_keys=True) for item in records if item.get("id") != row["id"]}
         return row.get("data", {}).get("value"), preserved
     current, preserved = exact_record()
     if current not in {OLD_IP, NEW_IP}:
         raise prepare.ProbeError("adoption_dns_address_changed")
     if current == OLD_IP:
-        access.request(token, "PATCH", path + "/95034169", {"type": "A", "value": NEW_IP, "ttl": 300}, api_version=2)
+        # Both documented update versions returned HTTP500 without changing
+        # this task's A record. Replace only that verified record; preserve MX/TXT.
+        access.request(token, "DELETE", path + "/95034169")
+        access.request(token, "POST", path, {"type": "A", "subdomain": prepare.HOST, "value": NEW_IP, "ttl": 300})
     updated, remaining = exact_record()
     if updated != NEW_IP or remaining != preserved:
         raise prepare.ProbeError("adoption_dns_update_not_verified")
