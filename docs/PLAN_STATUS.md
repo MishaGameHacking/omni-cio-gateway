@@ -1,5 +1,97 @@
 # Выполнение главного плана Analyst AI
 
+## Ожидание окна сравнения риска при font200 — 23.10.2026
+
+Область F01/F22/F23, продолжение PR #880 от
+`0bd11737cb6219f49be50caeb771e20c401c7bf2`. Версия остаётся
+0.11.0-preview / 35, Android 17 / API37. Существующие исправления каталога,
+портфеля, валют, черновиков, native IME и preflight повторной сборки сохранены.
+
+### Подтверждённый результат основы
+
+- [Backend 39927331812](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927331812)
+  — **1505 tests / 1409 subtests PASS**, 20.62s; аудит 330 Python-файлов
+  без ошибок и strict Sonar PASS. [Полный Sonar 39927324925](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927324925)
+  — **0 OPEN/CONFIRMED всех типов / 0 новых / unique:0**, all_types:true,
+  complete:true, exact-head check `120327828515`.
+- [Android 39927331871](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927331871)
+  — build `120327377022` PASS: **922 CI tests**, 3 предусмотренных skips,
+  Gradle всех вариантов/JVM/lint за 9m22s, 197 выполненных задач.
+  CI checkout `f9556649b65eaa0ae7314c670a65befd8f3fd672` имеет точное
+  дерево опубликованного кандидата `f739902da1e5366f5ee4c3414b6ee988510834c3`.
+- Runtime `120331544496` подтвердил фактический `getconf PAGE_SIZE=16384`
+  на API37 x86_64, clean install, upgrade с 0.10.0/34 и оба запуска preview.
+  **Все 30 business cases font100 PASS**, включая catalogue ready, empty,
+  partial и error. Это подтверждает исправленный переход каталога при font100.
+- Следующий `risk/ready;font=2.0` начат в 09:15:56 UTC и остановился
+  перед первой проверкой пустых предположений в scenario dialog:
+  `risk_scenario_probe.py::exercise_scenario_comparison` вызвал
+  `probe.reveal(COMPARE, AREA)` сразу после tap «Рассчитать свой сценарий».
+  Последний tap в 09:16:13.919 ещё относится к window156. В 09:16:14.602
+  native driver сообщил `frame_error=IOException: Expected one exact visible app list`.
+  Python `ConnectionError: UiAutomation session ended before a complete frame`
+  последовал после закрытия драйвером соединения; ADB оставался подключён.
+  Успешный font200 comparison или rotation этим запуском не установлен.
+- Failure screenshot уже показывает отдельный dialog «Сравнение ваших
+  сценариев» с длинным вводным текстом при font200. PNG blob
+  `42df389817dcbcd592ef1ed475488be76df81861`, preview blob
+  `c51dc5afb4bb0ad5964cfa8e0bae41b237821967`. Число совпадений native списка
+  не выводилось, поэтому ноль против нескольких не объявляется измеренным.
+- Полная font200 business-матрица и portfolio не достигнуты; 4096 skipped.
+  Cleanup `120338240224` PASS, `verified_absent` в 09:17:35.966 UTC.
+  Приватный APK не сохранён. Preview SHA256
+  `ec5b5dfbc6fabcb2e046d758fc5ed07e39dc46253abbc92900a249d5c1012cc5`,
+  29,853,394 bytes; APK report сохраняет `device_install_test=separate_required_check`.
+- Серверный `907399f562214a75366323ebdf83dac42cf28831` отдельно прошёл
+  [Backend 39927982498](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927982498)
+  — **1553 tests / 1481 subtests**, 26.14s, audit336 без ошибок, и
+  [полный Sonar 39927978072](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927978072)
+  — **0/0, all_types:true, complete:true**, check `120329518818`.
+
+### Причина и граница исправления
+
+`RiskWorkspaceScreen` открывает отдельный `RiskScenarioDialog`;
+`WorkspaceDialog` размещает заголовок первым Text внутри собственного
+`workspace-content`. Старый экран и новый dialog используют одинаковый tag,
+поэтому одного поиска tag после tap недостаточно для подтверждения перехода.
+Код, timing и screenshot согласуются с гонкой между старым кадром probe и
+новым root, который строгий native driver читает непосредственно при scroll.
+
+Probe запоминает native window перед открытием и переиспользует
+`wait_for_new_app_window` по заголовку «Сравнение ваших сценариев».
+Ожидание требует нового валидного window ID, ровно одной видимой enabled
+области приложения с точным tag и заголовка внутри этой области. Только
+после этого прежний ограниченный reveal ищет кнопку «Сравнить сценарии».
+Ожидание не требует видимости нижней кнопки или признака scrollable.
+Driver, протокол, timeout/scroll limits, валидация пустого ввода, точные
+денежные результаты и rotation assertions не меняются.
+
+### Проверка нового кандидата
+
+Полный локальный CI-набор: **927 tests PASS**, 4 предусмотренных skips,
+0.939s. Compile audit всех **331 tracked Python-файлов PASS**, failures:[].
+Целевые risk tests — **10/10 PASS**, включая 5 новых методов; независимый
+review APPROVE. Working/staged diff check PASS.
+
+Регрессия выполняет настоящий handler до первого нативного ввода через
+empty-input guard и прежние bounded reveals. Моделируются задержанный кадр
+старого окна, появление нового root до списка и списка до заголовка,
+масштабы 1/2 и оба вида resource ID. Исходный HEAD handler воспроизводит
+отказ на всех четырёх конфигурациях; новый доходит до первого редактора
+без прокрутки чужого окна. Независимый no-op mutant ожидания также
+воспроизводит отказ 4/4. Negative guards отвергают прежнее/невалидное окно,
+заголовок вне списка и ошибочно разрешённую кнопку при пустом вводе.
+Эта модель не выполняет native text entry/rotation и не заменяет Android.
+
+Kotlin, backend, SDK и signing остаются неизменными относительно основы;
+повтор неизменённых локальных backend/JVM suites не требовался. Собственные
+удалённые gates нового SHA остаются обязательными.
+
+Новому SHA обязательны собственные полный Sonar, Gradle/JVM/lint и обе полные
+API37-матрицы с фактическими 16384/4096. `[private-apk]` сохраняет приватный
+draft только после всех gates. Физический телефон, live Timeweb, Telegram
+owner binding и серверный канал обновления остаются отдельными этапами.
+
 ## Preflight текущей попытки повторной сборки — 23.10.2026
 
 Область F23; родитель app `25e73835dfee05b7c22645ddf8e541dcf3e7caf7`,

@@ -39,6 +39,7 @@ class RiskScenarioRecordTests(unittest.TestCase):
 def scenario_case(font_scale=1.0):
     events = []
     probe = Mock()
+    probe.tree.return_value = ET.Element("hierarchy", {"active-window-id": "156"})
     probe.tap.side_effect = lambda text, *_args, **_kwargs: events.append(("tap", text))
     probe.dismiss_keyboard.side_effect = lambda: events.append(("dismiss",))
     probe.wait_for.return_value = ET.Element("node", {"enabled": "false"})

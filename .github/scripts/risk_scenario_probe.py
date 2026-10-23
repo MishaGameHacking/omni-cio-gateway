@@ -5,8 +5,9 @@ import math
 import re
 import time
 
-from native_input_evidence import (append_native_text, record_editor_restore_trace,
+from native_input_evidence import (active_window_id, append_native_text, record_editor_restore_trace,
                                    rotate_dismissed_draft, rotate_focused_draft)
+from native_window_evidence import wait_for_new_app_window
 from profile_ui_probe import button_label
 
 AREA = "workspace-content"
@@ -53,7 +54,9 @@ def exercise_scenario_comparison(case):
     # Android hides the underlying Activity's accessibility nodes while a
     # modal dialog is open. Observe transport only while that marker is visible.
     before = case.observed()
+    original_window = active_window_id(probe.tree())
     probe.tap("Рассчитать свой сценарий", AREA, direction="start")
+    wait_for_new_app_window(probe, original_window, "Сравнение ваших сценариев", AREA)
     probe.reveal(COMPARE, AREA)
     disabled = probe.wait_for(lambda: button_label(probe.tree(), COMPARE), "Missing native scenario action")
     if disabled.get("enabled") != "false":
