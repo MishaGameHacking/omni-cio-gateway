@@ -39,7 +39,7 @@ internal fun runWorkspaceUxChecks(): Int {
     check(matchingSector(null, "__unknown__"))
     check(!matchingSector("finance", "__unknown__"))
     check(matchingKind("currency", "cash"))
-    check(matchingKind("futures", "other"))
+    check(!matchingKind("futures", "other"))
     check(!matchingKind("bond", "other"))
     return 24
 }

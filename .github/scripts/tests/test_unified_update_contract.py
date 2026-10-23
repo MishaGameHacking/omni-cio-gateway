@@ -25,7 +25,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
     def test_main_uses_shared_gate_and_spectrum_renderer(self):
         main = self.source('MainActivity.kt')
         self.assertIn('MandatoryUpdateHost(blockedContent =', main)
-        self.assertIn('RequiredUpdateScreen(state, actions)', main)
+        self.assertIn('RequiredUpdateScreen(state, actions, extraContent = { OfflineSnapshotAccess(state) })', main)
         self.assertIn('AnalystAiApp(', main)
 
     def test_bootstrap_does_not_forward_untrusted_extras_or_check_a_second_policy(self):

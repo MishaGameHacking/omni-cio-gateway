@@ -22,7 +22,34 @@ SYSTEM_PACKAGES = {"android", "com.android.systemui"}
 SYSTEM_UI_WAIT_IDS = {"android:id/aerr_wait", "aerr_wait"}
 SYSTEM_UI_WAIT_LABELS = {"Wait", "Подождать"}
 EMULATOR_MESSAGING_PACKAGE = "com.google.android.apps.messaging"
-FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100"}
+BUSINESS_SCREENS = {"business-" + screen for screen in ("assistant", "risk", "plans", "strategy", "notifications", "analysis", "catalogue")}
+BUSINESS_SCENARIOS = {"ready", "empty", "partial", "error", "job"}
+PORTFOLIO_CASES = (
+    ("discovery", "ready"), ("dossier", "ready"),
+    ("history", "ready"), ("history", "partial"),
+    ("quotes", "ready"), ("markets", "ready"), ("appearance", "ready"),
+)
+PORTFOLIO_SCREENS = {"portfolio-" + route for route, _ in PORTFOLIO_CASES}
+FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor"} | BUSINESS_SCREENS | PORTFOLIO_SCREENS
+
+
+def validate_fixture(expected_screen: str | None, scenario: str | None = None) -> None:
+    if expected_screen is None:
+        if scenario is not None:
+            raise ValueError("Fixture scenario requires an explicit screen")
+        return
+    if expected_screen not in FIXTURE_SCREENS:
+        raise ValueError("Unknown fixture screen")
+    if scenario is None:
+        return
+    if expected_screen in PORTFOLIO_SCREENS:
+        if (expected_screen.removeprefix("portfolio-"), scenario) not in PORTFOLIO_CASES:
+            raise ValueError("Unknown portfolio fixture scenario")
+        return
+    if expected_screen not in BUSINESS_SCREENS or scenario not in BUSINESS_SCENARIOS:
+        raise ValueError("Unknown business fixture scenario")
+    if scenario == "job" and expected_screen not in {"business-assistant", "business-plans"}:
+        raise ValueError("Business job fixture is supported only for assistant and plans")
 
 
 def start_status(output: str) -> str:
@@ -46,12 +73,22 @@ def profile_resumed(output: str) -> bool:
     return False
 
 
-def ready_marker(tree, expected_screen: str | None = None):
+def validate_probe_run(expected_screen: str | None, run_id: str | None) -> None:
+    if run_id is not None and (expected_screen not in PORTFOLIO_SCREENS or not isinstance(run_id, str)
+                               or re.fullmatch(r"[a-f0-9]{32}", run_id) is None):
+        raise ValueError("Invalid portfolio fixture run identity")
+
+
+def ready_marker(tree, expected_screen: str | None = None, scenario: str | None = None, run_id: str | None = None):
+    validate_fixture(expected_screen, scenario)
+    validate_probe_run(expected_screen, run_id)
     required = {MARKER}
     if expected_screen is not None:
-        if expected_screen not in FIXTURE_SCREENS:
-            raise ValueError("Unknown fixture screen")
         required.add("probe-screen:" + expected_screen)
+    if scenario is not None:
+        required.add("probe-scenario:" + scenario)
+    if run_id is not None:
+        required.add("probe-run:" + run_id)
     for node in tree.iter("node"):
         if node.get("package") != PACKAGE:
             continue
@@ -169,16 +206,33 @@ def frame_observation(tree) -> dict:
             for node in nodes})[:8], "markers": markers}
 
 
-def profile_frame(command, read_tree, evidence, expected_screen: str | None = None):
+def _foreground_snapshot(command, evidence, key):
+    # A full system report exceeded the host deadline in run 39113762845 even
+    # after the fixture rendered. Bound this read-only observation on both
+    # sides; the existing readiness deadline still requires a fresh pair of
+    # complete foreground observations around a fresh accessibility frame.
+    try:
+        output = command("shell", "dumpsys", "-t", "2", "activity", "activities", timeout=4)
+    except subprocess.TimeoutExpired:
+        evidence[key] = ["activity observation timed out"]
+        return ""
+    if "DUMP TIMEOUT" in output:
+        evidence[key] = ["activity observation incomplete"]
+        return ""
+    evidence[key] = foreground_observation(output)
+    return output
+
+
+def profile_frame(command, read_tree, evidence, expected_screen: str | None = None, scenario: str | None = None,
+                  run_id: str | None = None):
     evidence["stage"] = "foreground-before-tree"
-    before = command("shell", "dumpsys", "activity", "activities")
-    evidence["foreground_before"] = foreground_observation(before)
+    before = _foreground_snapshot(command, evidence, "foreground_before")
     if not profile_resumed(before):
         return None
     evidence["stage"] = "accessibility-tree"
     tree = read_tree()
     evidence["frame"] = frame_observation(tree)
-    node = ready_marker(tree, expected_screen)
+    node = ready_marker(tree, expected_screen, scenario, run_id)
     if node is None:
         # A confirmed Android System UI ANR may cover the already-resumed debug
         # fixture. Dismiss only its exact system-owned Wait action, then let the
@@ -188,26 +242,38 @@ def profile_frame(command, read_tree, evidence, expected_screen: str | None = No
         return None
     # A crash or focus change during the UI dump must not count as ready.
     evidence["stage"] = "foreground-after-tree"
-    after = command("shell", "dumpsys", "activity", "activities")
-    evidence["foreground_after"] = foreground_observation(after)
+    after = _foreground_snapshot(command, evidence, "foreground_after")
     return node if profile_resumed(after) else None
 
 
-def launch_profile(command, read_tree, wait_for, *, expected_screen: str = "profile") -> None:
-    if expected_screen not in FIXTURE_SCREENS:
-        raise ValueError("Unknown fixture screen")
+def launch_profile(command, read_tree, wait_for, *, expected_screen: str = "profile", scenario: str | None = None,
+                   run_id: str | None = None):
+    validate_fixture(expected_screen, scenario)
+    validate_probe_run(expected_screen, run_id)
     started = time.monotonic()
     evidence = {"stage": "launch", "expected_screen": expected_screen}
+    if scenario is not None:
+        evidence["expected_scenario"] = scenario
+    if run_id is not None:
+        evidence["probe_run"] = run_id
     try:
         # Always create a new fixture Activity with an explicit profile intent.
         # Reusing the previous dashboard Activity can preserve a modal window or
         # an old screen extra and make a generic readiness marker misleading.
         command("shell", "am", "force-stop", PACKAGE)
         try:
-            status = start_status(command(
-                "shell", "am", "start", "-W", "-n", ACTIVITY,
-                "--es", "spectrum_screen", expected_screen,
-            ))
+            args = ["shell", "am", "start", "-W", "-n", ACTIVITY,
+                    "--es", "spectrum_screen", expected_screen]
+            if scenario is not None:
+                args.extend(("--es", "spectrum_scenario", scenario))
+            if run_id is not None:
+                args.extend(("--es", "spectrum_probe_run", run_id))
+            output = command(*args)
+            status = start_status(output)
+            for label in ("TotalTime", "WaitTime"):
+                values = re.findall(r"^" + label + r":\s*(\d+)\s*$", output, flags=re.MULTILINE)
+                if len(values) == 1:
+                    evidence[label] = int(values[0])
         except subprocess.TimeoutExpired:
             # On the fresh API36 AVD (run 39035275698) the host adb deadline
             # expired during am start -W. A timeout is not launch evidence:
@@ -219,11 +285,15 @@ def launch_profile(command, read_tree, wait_for, *, expected_screen: str = "prof
             print(f"PROFILE_LAUNCH_WAIT={status};checking-visible-frame", flush=True)
 
         def read():
-            return profile_frame(command, read_tree, evidence, expected_screen=expected_screen)
+            return profile_frame(command, read_tree, evidence, expected_screen=expected_screen, scenario=scenario, run_id=run_id)
 
         if wait_for(read, "Profile fixture is not resumed with a completed visible regression marker") is None:
             raise AssertionError("Profile readiness was not established")
     except Exception:
         print("PROFILE_READINESS_DIAGNOSTIC=" + json.dumps(evidence, ensure_ascii=True), flush=True)
         raise
-    print(f"PROFILE_LAUNCH_READY_SECONDS={time.monotonic() - started:.3f}", flush=True)
+    elapsed = time.monotonic() - started
+    print(f"PROFILE_LAUNCH_READY_SECONDS={elapsed:.3f}", flush=True)
+    return {"fixture": expected_screen, "scenario": scenario, "run_id": run_id, "mode": "force-stopped-debug-fixture",
+            "am_total_time_ms": evidence.get("TotalTime"), "am_wait_time_ms": evidence.get("WaitTime"),
+            "host_until_verified_marker_ms": round(elapsed * 1000, 3)}

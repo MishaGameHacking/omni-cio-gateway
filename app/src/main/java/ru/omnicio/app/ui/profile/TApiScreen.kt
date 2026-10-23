@@ -2,11 +2,12 @@ package ru.omnicio.app.ui.profile
 
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
-import androidx.compose.material3.AlertDialog
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.size
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,8 +29,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -50,13 +53,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.backend.AnalystBackendClient
 import ru.omnicio.app.data.backend.BackendResult
+import ru.omnicio.app.ui.spatial.SpatialIcon
+import ru.omnicio.app.ui.spatial.SpatialState
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 
 private sealed interface TokenUiStatus {
     data object Missing : TokenUiStatus
     data object Connected : TokenUiStatus
     data object Checking : TokenUiStatus
+    data object Saving : TokenUiStatus
+    data object Removing : TokenUiStatus
     data class Error(val message: String) : TokenUiStatus
 }
+
+private fun TokenUiStatus.isBusy(): Boolean = this == TokenUiStatus.Checking || this == TokenUiStatus.Saving || this == TokenUiStatus.Removing
 
 private val TApiCard: Color
     @Composable get() = MaterialTheme.colorScheme.surface
@@ -64,7 +76,8 @@ private val TApiMuted: Color
     @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val TApiBlue: Color
     @Composable get() = MaterialTheme.colorScheme.primary
-private val TApiGreen = Color(0xFF178B4D)
+private val TApiGreen: Color
+    @Composable get() = LocalSpectrumPalette.current.emerald
 private val TApiRed: Color
     @Composable get() = MaterialTheme.colorScheme.error
 
@@ -84,23 +97,28 @@ fun TApiScreen(
     val backend = remember { AnalystBackendClient() }
     val scope = rememberCoroutineScope()
 
-    var tokenInput by remember { mutableStateOf("") }
-    var showToken by remember { mutableStateOf(false) }
+    var tokenInput by remember(accessToken) { mutableStateOf("") }
+    var showToken by remember(accessToken) { mutableStateOf(false) }
+    val foreground = workspaceForeground()
+    val reauthenticate = LocalReauthenticate.current
+    LaunchedEffect(foreground) { if (!foreground) showToken = false }
     var docsError by remember { mutableStateOf<String?>(null) }
     var status by remember(tApiConfigured, connection) {
         mutableStateOf<TokenUiStatus>(
             when {
-                tApiConfigured -> TokenUiStatus.Connected
                 connection == BrokerConnectionState.Checking -> TokenUiStatus.Checking
                 connection == BrokerConnectionState.Unknown -> TokenUiStatus.Error("Статус не получен. Проверьте сеть или повторно подключите read-only токен.")
+                connection == BrokerConnectionState.Missing -> TokenUiStatus.Missing
+                connection == BrokerConnectionState.Connected || tApiConfigured -> TokenUiStatus.Connected
                 else -> TokenUiStatus.Missing
             },
         )
     }
 
     val verify = {
-        if (status != TokenUiStatus.Checking && tokenInput.isNotBlank()) {
-            status = TokenUiStatus.Checking
+        if (!status.isBusy() && tokenInput.isNotBlank()) {
+            status = TokenUiStatus.Saving
+            showToken = false
             scope.launch {
                 when (val result = withContext(Dispatchers.IO) {
                     backend.saveTInvestToken(
@@ -115,6 +133,7 @@ fun TApiScreen(
                     }
                     is BackendResult.Failure -> {
                         status = TokenUiStatus.Error(result.message)
+                        if (result.statusCode in listOf(401, 403)) reauthenticate()
                     }
                 }
             }
@@ -132,7 +151,7 @@ fun TApiScreen(
         onBack = onBack,
         onTokenInputChange = { value ->
             tokenInput = value
-            if (status !is TokenUiStatus.Checking) {
+            if (!status.isBusy()) {
                 status = if (tApiConfigured) {
                     TokenUiStatus.Connected
                 } else {
@@ -145,8 +164,9 @@ fun TApiScreen(
         },
         onVerify = verify,
         onRemove = {
-            if (status != TokenUiStatus.Checking) {
-                status = TokenUiStatus.Checking
+            if (!status.isBusy()) {
+                status = TokenUiStatus.Removing
+                showToken = false
                 scope.launch {
                     when (val result = withContext(Dispatchers.IO) {
                         backend.deleteTInvestToken(accessToken)
@@ -158,6 +178,7 @@ fun TApiScreen(
                         }
                         is BackendResult.Failure -> {
                             status = TokenUiStatus.Error(result.message)
+                            if (result.statusCode in listOf(401, 403)) reauthenticate()
                         }
                     }
                 }
@@ -208,7 +229,7 @@ private fun TApiContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { TApiHeader(onBack = onBack) }
-            item { Text(if (tApiConfigured) "1. Вход ✓  ·  2. Счёт ✓  ·  3. Портфель" else "1. Вход ✓  ·  2. Подключение счёта  ·  3. Портфель", style = MaterialTheme.typography.bodySmall) }
+            item { ConnectionStages(status) }
             item { StatusCard(status = status) }
             if (tApiConfigured) item { SpectrumPrimaryButton("Открыть портфель", onOpenPortfolio, Modifier.fillMaxWidth()) }
             item {
@@ -245,14 +266,7 @@ private fun TApiHeader(onBack: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(
-                text = "‹ Назад",
-                fontSize = 16.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        SpectrumTextButton("Назад", onBack, symbol = SpectrumSymbol.Back)
         Column(Modifier.weight(1f)) {
             Text(
                 text = "Подключение",
@@ -280,12 +294,8 @@ private fun TokenInputCard(
     onVerify: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val checking = status == TokenUiStatus.Checking
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = TApiCard),
-    ) {
+    val checking = status.isBusy()
+    SpectrumCard(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -301,7 +311,7 @@ private fun TokenInputCard(
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            OutlinedTextField(
+            SpectrumTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = tokenInput,
                 onValueChange = onTokenInputChange,
@@ -323,35 +333,13 @@ private fun TokenInputCard(
                         Text(if (showToken) "Скрыть" else "Показать")
                     }
                 },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, keyboardType = KeyboardType.Password),
                 keyboardActions = KeyboardActions(onDone = { onVerify() }),
             )
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onVerify,
-                enabled = !checking && tokenInput.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                if (checking) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Text(if (tApiConfigured) "Проверить и заменить" else "Проверить и подключить")
-                }
-            }
+            SpectrumPrimaryButton(if (checking) "Ждём ответ сервера…" else if (tApiConfigured) "Проверить и заменить" else "Проверить и подключить",
+                onVerify, Modifier.fillMaxWidth(), enabled = !checking && tokenInput.isNotBlank())
             if (tApiConfigured) {
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onRemove,
-                    enabled = !checking,
-                ) {
-                    Text("Отключить T‑API")
-                }
+                SpectrumSecondaryButton("Отключить T‑API", onRemove, Modifier.fillMaxWidth(), enabled = !checking)
             }
         }
     }
@@ -359,11 +347,7 @@ private fun TokenInputCard(
 
 @Composable
 private fun TokenDocsCard(onOpenDocs: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = TApiCard),
-    ) {
+    SpectrumCard(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -390,15 +374,11 @@ private fun TokenDocsCard(onOpenDocs: () -> Unit) {
 
 @Composable
 private fun DocsErrorCard(message: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-    ) {
+    SpectrumCard(Modifier.fillMaxWidth()) {
         Text(
             text = message,
             modifier = Modifier.padding(18.dp),
-            color = MaterialTheme.colorScheme.onErrorContainer,
+            color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -406,11 +386,7 @@ private fun DocsErrorCard(message: String) {
 
 @Composable
 private fun TokenSecurityCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = TApiCard),
-    ) {
+    SpectrumCard(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -435,6 +411,31 @@ private fun TokenSecurityCard() {
 }
 
 @Composable
+private fun ConnectionStages(status: TokenUiStatus) {
+    val snapshot = LocalPortfolioSnapshot.current
+    val connected = status == TokenUiStatus.Connected
+    SpectrumCard {
+        listOf(
+            Triple("Вход в Analyst AI подтверждён", "Ваш сеанс Telegram", SpatialState.Success),
+            Triple(if (connected) "Доступ к брокеру подтверждён" else if (status.isBusy()) "Проверяем доступ к брокеру" else "Подключите счёт",
+                if (status == TokenUiStatus.Saving) "Проверка и сохранение завершаются одним ответом сервера" else "Доступ только к чтению данных",
+                when { connected -> SpatialState.Success; status.isBusy() -> SpatialState.Loading; status is TokenUiStatus.Error -> SpatialState.Attention; else -> SpatialState.Idle }),
+            Triple(if (connected && snapshot != null) "Снимок портфеля получен" else "Первая загрузка портфеля",
+                if (connected && snapshot != null) "${snapshot.accounts.size} счетов · ${snapshot.asOf ?: "время источника не получено"}" else "Будет подтверждена после получения счетов и позиций",
+                if (connected && snapshot != null) SpatialState.Success else SpatialState.Idle),
+        ).forEachIndexed { index, (title, detail, state) ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SpatialIcon(when { state == SpatialState.Success -> "check"; index == 0 -> "profile"; index == 1 -> "sources"; else -> "portfolio" }, Modifier.size(30.dp), state = state)
+                Column(Modifier.weight(1f)) {
+                    Text("${index + 1}. $title", style = MaterialTheme.typography.titleSmall)
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = TApiMuted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun StatusCard(status: TokenUiStatus) {
     val (title, subtitle, color) = when (status) {
         TokenUiStatus.Missing -> Triple(
@@ -448,10 +449,12 @@ private fun StatusCard(status: TokenUiStatus) {
             TApiGreen,
         )
         TokenUiStatus.Checking -> Triple(
-            "Проверяем подключение",
-            "Analyst AI проверяет токен через сервер.",
+            "Проверяем состояние подключения",
+            "Ожидаем ответ сервера о сохранённом подключении.",
             TApiBlue,
         )
+        TokenUiStatus.Saving -> Triple("Проверка и сохранение токена", "Сервер выполняет запрос к брокеру и сохраняет подключение. Завершение появится только после подтверждения.", TApiBlue)
+        TokenUiStatus.Removing -> Triple("Отключаем доступ к данным", "Ожидаем подтверждение удаления токена на сервере.", TApiBlue)
         is TokenUiStatus.Error -> Triple(
             "Подключение не завершено",
             status.message,
@@ -459,20 +462,18 @@ private fun StatusCard(status: TokenUiStatus) {
         )
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = TApiCard),
-    ) {
+    SpectrumCard(Modifier.fillMaxWidth(), emphasized = true) {
         Column(
             modifier = Modifier.padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
+            SpatialIcon(when (status) { TokenUiStatus.Connected -> "check"; is TokenUiStatus.Error -> "error"; else -> "sources" }, Modifier.size(52.dp),
+                tint = color, state = when { status.isBusy() -> SpatialState.Loading; status == TokenUiStatus.Connected -> SpatialState.Success; status is TokenUiStatus.Error -> SpatialState.Attention; else -> SpatialState.Idle })
             Text(
                 text = title,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = color,
+                color = color, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
             Text(
                 text = subtitle,

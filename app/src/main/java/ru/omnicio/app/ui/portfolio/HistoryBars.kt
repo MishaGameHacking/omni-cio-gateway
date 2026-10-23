@@ -16,7 +16,7 @@ internal data class HistoryBars(val bars: List<HistoryBar>, val source: HistoryG
  * The bar is the LAST observed balance, never a sum/average of account balances.
  * Missing buckets stay empty, and exact source amounts survive aggregation.
  */
-internal fun historyBars(points: List<HistoryPoint>): HistoryBars? {
+internal fun historyBars(points: List<HistoryPoint>, grouping: String = "auto"): HistoryBars? {
     val source = portfolioHistory(points) ?: return null
     val ordered = source.coordinates.map { it.point }
     fun day(point: HistoryPoint) = Instant.parse(point.date).atZone(Moscow).toLocalDate()
@@ -24,7 +24,8 @@ internal fun historyBars(points: List<HistoryPoint>): HistoryBars? {
     val last = day(ordered.last())
     val days = ChronoUnit.DAYS.between(first, last)
     if (days > 36600) return null
-    val unit = when { days < 35 -> ChronoUnit.DAYS; days < 224 -> ChronoUnit.WEEKS; days < 1095 -> ChronoUnit.MONTHS; else -> ChronoUnit.YEARS }
+    val unit = historyGroupingUnit(grouping, days)
+    if (unit == ChronoUnit.DAYS && days > 730 || unit == ChronoUnit.WEEKS && days > 5110) return null
     val count = if (unit == ChronoUnit.YEARS) maxOf(1L, (last.year - first.year + 31L) / 32L) else 1L
     var start = when (unit) { ChronoUnit.MONTHS -> first.withDayOfMonth(1); ChronoUnit.YEARS -> first.withDayOfYear(1); else -> first }
     val bars = mutableListOf<HistoryBar>()
@@ -40,6 +41,29 @@ internal fun historyBars(points: List<HistoryPoint>): HistoryBars? {
     return HistoryBars(bars, source, interval)
 }
 
+/** Explicit grouping and automatic density use the same calendar buckets. */
+private fun historyGroupingUnit(grouping: String, days: Long): ChronoUnit = when (grouping) {
+    "day" -> ChronoUnit.DAYS
+    "week" -> ChronoUnit.WEEKS
+    "month" -> ChronoUnit.MONTHS
+    else -> when {
+        days < 35 -> ChronoUnit.DAYS
+        days < 224 -> ChronoUnit.WEEKS
+        days < 1095 -> ChronoUnit.MONTHS
+        else -> ChronoUnit.YEARS
+    }
+}
+
+/** A restored exact date is mapped to its current day/week/month bucket, never a float index. */
+internal fun historyRangeIndices(bars: List<HistoryBar>, start: String?, end: String?): IntRange {
+    require(bars.isNotEmpty())
+    val firstDate = start?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: bars.first().start
+    val lastDate = end?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: bars.last().end
+    val first = bars.indexOfFirst { !it.end.isBefore(firstDate) }.let { if (it < 0) bars.lastIndex else it }
+    val last = bars.indexOfLast { !it.start.isAfter(lastDate) }.coerceAtLeast(first)
+    return first..last
+}
+
 internal fun historyBarIndex(x: Float, width: Float, count: Int): Int {
     require(count > 0 && width.isFinite() && width > 0 && x.isFinite())
     return ((x / width) * count).toInt().coerceIn(0, count - 1)
@@ -47,3 +71,4 @@ internal fun historyBarIndex(x: Float, width: Float, count: Int): Int {
 
 internal fun historyChange(points: List<HistoryPoint>): BigDecimal? =
     if (points.size < 2) null else points.last().value.subtract(points.first().value)
+

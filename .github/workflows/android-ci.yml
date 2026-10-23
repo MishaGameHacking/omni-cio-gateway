@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: android-ci-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   transfer-preflight:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
+    outputs:
+      prepared_attempt: ${{ steps.prepare.outputs.prepared_attempt }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       id: checkout
@@ -26,9 +28,12 @@ jobs:
         node --test .github/scripts/ci_private_transfer.test.cjs .github/scripts/require_main_release.test.cjs .github/scripts/authoritative_merge_gate.test.cjs
         python3 -m unittest discover -s tools/tests -p 'test_*.py'
     - name: Verify synthetic draft handoff and unauthenticated denial
+      id: prepare
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+        script: |
+          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+          core.setOutput('prepared_attempt', process.env.GITHUB_RUN_ATTEMPT);
     - name: Remove the temporary draft immediately if preparation fails
       if: failure() && steps.checkout.outcome == 'success'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -61,11 +66,27 @@ jobs:
       with:
         persist-credentials: false
         clean: true
-    - name: Set up JDK 17
-      uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+    - name: Prepare private handoff for the current rerun attempt
+      id: prepare_transfer
+      if: needs.transfer-preflight.outputs.prepared_attempt != format('{0}', github.run_attempt)
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        distribution: temurin
-        java-version: '17'
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+    - name: Remove the temporary draft immediately if rerun preparation fails
+      if: failure() && steps.prepare_transfer.outcome == 'failure'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+    - name: Prepare canonical 3D catalogue before packaging
+      shell: cmd
+      run: |
+        py -3 tools\prepare_spectrum_checkout.py
+        if errorlevel 1 exit /b 1
+    - name: Verify the signing runner's completed Temurin 17 cache
+      shell: cmd
+      run: |
+        py -3 .github\scripts\verify_cached_jdk.py
+        if errorlevel 1 exit /b 1
     - name: Verify pinned Gradle wrapper
       shell: cmd
       run: |
@@ -84,38 +105,24 @@ jobs:
         if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
         echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
         echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
-    - name: Ensure Android SDK 36 is installed
+    - name: Ensure Android SDK 37 is installed
       shell: cmd
       run: |
-        if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
-        set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
-        curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
-        if errorlevel 1 exit /b 1
-        certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
-        if errorlevel 1 exit /b 1
-        findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
-        if errorlevel 1 exit /b 1
-        if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
-        tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
-        if errorlevel 1 exit /b 1
-        if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
-        move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
-        if errorlevel 1 exit /b 1
-        :tools_ready
-        set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
-        set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
-        (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
-        call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
-        if errorlevel 1 exit /b 1
-        call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
+        py -3 .github\scripts\prepare_android_sdk.py --sdk "%ANDROID_SDK_ROOT%"
         if errorlevel 1 exit /b 1
     - name: Test APK verification rules
       shell: cmd
       run: |
         py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
         if errorlevel 1 exit /b 1
+    - name: Lint and build all Android variants
+      shell: cmd
+      run: |
+        call gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
+        if errorlevel 1 exit /b 1
     - name: Report exact-head Sonar findings for remediation
       if: always()
+      timeout-minutes: 22
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
@@ -124,7 +131,9 @@ jobs:
           const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
           const ref = context.payload.pull_request?.head?.sha || context.sha;
           let sonar = null;
-          for (let attempt = 0; attempt < 18; attempt++) {
+          // Automatic analysis can queue while Gradle builds. Keep the exact-head
+          // gate before any APK handoff; a timeout still fails verification.
+          for (let attempt = 0; attempt < 120; attempt++) {
             const checks = await github.paginate(github.rest.checks.listForRef, {
               ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
             });
@@ -145,12 +154,7 @@ jobs:
           }
           core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
           assertCleanSonar(sonar, annotations, ref);
-    - name: Lint and build all Android variants
-      shell: cmd
-      run: |
-        call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
-        if errorlevel 1 exit /b 1
-    - name: Download installed 0.9.0 APK for exact upgrade compatibility test
+    - name: Download installed 0.10.0 APK for exact upgrade compatibility test
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
@@ -158,12 +162,12 @@ jobs:
           const fs = require('fs');
           const path = require('path');
           const crypto = require('crypto');
-          const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344'})).data;
-          const asset = release.assets.find(a => a.name === 'Analyst-AI-0.9.0-preview-a957e62.apk');
-          if (!asset) throw new Error('0.9.0 reference APK missing');
+          const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b'})).data;
+          const asset = release.assets.find(a => a.name === 'Analyst-AI-0.10.0-preview-0a894dd.apk');
+          if (!asset) throw new Error('0.10.0 reference APK missing');
           const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
           const bytes = Buffer.from(response.data);
-          if (crypto.createHash('sha256').update(bytes).digest('hex') !== '32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076') throw new Error('0.9.0 reference APK checksum mismatch');
+          if (crypto.createHash('sha256').update(bytes).digest('hex') !== '3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3') throw new Error('0.10.0 reference APK checksum mismatch');
           const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
           fs.writeFileSync(dest, bytes);
           core.exportVariable('PREVIOUS_APK', dest);
@@ -194,7 +198,7 @@ jobs:
       group: analyst-android-pr-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: false
   runtime:
-    name: Verify main repair APK on free Linux / API 35 and 36
+    name: Verify the exact APK on free Linux / API 37 / 16 KB and 4 KB
     needs:
     - build
     runs-on: ubuntu-24.04
@@ -240,40 +244,44 @@ jobs:
         mv "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools/cmdline-tools" "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools/latest"
         echo "ANDROID_SDK_ROOT=$RUNNER_TEMP/analyst-android-sdk" >> "$GITHUB_ENV"
         echo "ANDROID_HOME=$RUNNER_TEMP/analyst-android-sdk" >> "$GITHUB_ENV"
-    - name: Install the unchanged main Android platform matrix
+    - name: Install and verify release API 37 packages and both page-size images
       run: |
-        python3 - <<'PYCODE'
-        from pathlib import Path
-        import os, subprocess
-        root = Path(os.environ["ANDROID_SDK_ROOT"])
-        cli = root / "cmdline-tools/latest/bin/android"
-        packages = ["platforms/android-36", "build-tools/36.0.0", "emulator", "platform-tools",
-                    "system-images/android-35/google_apis/x86_64", "system-images/android-36/google_apis/x86_64"]
-        for package in packages:
-            subprocess.run([str(cli), "--sdk=" + str(root), "sdk", "install", package],
-                           input="y\n" * 200, text=True, check=True, timeout=600)
-        PYCODE
+        python3 .github/scripts/prepare_android_sdk.py --sdk "$ANDROID_SDK_ROOT"
+        python3 .github/scripts/prepare_android_sdk.py --sdk "$ANDROID_SDK_ROOT" --runtime
         "$ANDROID_SDK_ROOT/emulator/emulator" -accel-check
-    - name: Install headless display dependencies
+    - name: Prepare headless Mesa Vulkan for the unchanged 3D renderer
       run: |
         sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends xvfb libgl1
-    - name: Verify unchanged main APK signature and platform metadata
+        sudo apt-get install -y --no-install-recommends xvfb libvulkan1 mesa-vulkan-drivers vulkan-tools libgl1
+        python3 - <<'PYCODE'
+        from pathlib import Path
+        import os
+        paths = list(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
+        if len(paths) != 1:
+            raise SystemExit("Exactly one Mesa Lavapipe Vulkan ICD is required")
+        with open(os.environ["GITHUB_ENV"], "a") as output:
+            output.write("VK_ICD_FILENAMES=" + str(paths[0]) + "\n")
+        PYCODE
+    - name: Verify native 3D assets and the signed preview using official Android tools
       run: |
+        python3 tools/prepare_spectrum_checkout.py
+        python3 tools/test_native_alignment.py
+        python3 tools/generate_spectrum_meshes.py --check --check-apk
+        python3 tools/test_spectrum_meshes.py
         apk_dir="$GITHUB_WORKSPACE/app/build/outputs/apk/preview"
-        build_tools="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+        build_tools="$ANDROID_SDK_ROOT/build-tools/37.0.0"
         java -jar "$build_tools/lib/apksigner.jar" verify --verbose --print-certs "$apk_dir/app-preview.apk" > "$apk_dir/signature.txt"
         "$build_tools/zipalign" -c -P 16 -v 4 "$apk_dir/app-preview.apk" > "$apk_dir/alignment.txt"
         "$build_tools/aapt" dump badging "$apk_dir/app-preview.apk" > "$apk_dir/badging.txt"
         "$build_tools/aapt" dump xmltree "$apk_dir/app-preview.apk" AndroidManifest.xml > "$apk_dir/manifest.txt"
         python3 .github/scripts/verify_apk.py
-    - name: Verify main clean install, launch and full UI on API 35
+    - name: Verify clean install, upgrade, launch and full 3D UI at API 37 / 16 KB
       run: |
-        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --api 35 --work-dir app/build/outputs/apk/preview/install-api-35
-        python3 -c "import shutil; shutil.copytree('app/build/outputs/apk/preview/ui-screens', 'app/build/outputs/apk/preview/ui-screens-api35', dirs_exist_ok=True)"
-    - name: Verify main upgrade, clean install, launch and full UI on API 36
+        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --previous "$PREVIOUS_APK" --api 37 --page-bytes 16384 --work-dir app/build/outputs/apk/preview/install-api37-16384
+        python3 -c "import shutil; shutil.copytree('app/build/outputs/apk/preview/ui-screens', 'app/build/outputs/apk/preview/ui-screens-api37-16384', dirs_exist_ok=True)"
+    - name: Verify clean install, upgrade, launch and full 3D UI at API 37 / 4 KB
       run: |
-        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --previous "$PREVIOUS_APK" --api 36 --work-dir app/build/outputs/apk/preview/install-api-36
+        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --previous "$PREVIOUS_APK" --api 37 --page-bytes 4096 --work-dir app/build/outputs/apk/preview/install-api37-4096
         python3 .github/scripts/validate_distribution.py
     - name: Record synthetic UI evidence and reports
       if: always()
@@ -286,8 +294,31 @@ jobs:
           const crypto = require('crypto');
           const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
           const base = path.join(root, 'app/build/outputs/apk/preview');
-          const shots = ['failure', 'workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-          const names = ['apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json', 'ui-screens-api35/ux100-chart.png', 'ui-screens-api35/bars-selected.png', 'ui-screens-api35/bars-large-font.png', ...shots.map(n => `ui-screens/${n}.png`)];
+          const shots = ['failure', 'rotation-failure', 'workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
+          const spatialShots = ['spatial-dark', 'spatial-shadow-reference', 'spatial-light', 'spatial-dialog', 'spatial-bars', 'spatial-candles', 'spatial-ring', 'spatial-selected', 'spatial-clipping', 'spatial-long-scroll', 'spatial-rotation-before', 'spatial-rotation-ready', 'spatial-rotation', 'spatial-large-font', 'spatial-dialog-large-font', 'spatial-system-motion-off', 'spatial-thermal-moderate', 'spatial-predictive-back-progress', 'spatial-predictive-back-cancelled', 'business-assistant-draft-rotation', 'business-assistant-draft-rotation-font-200', 'business-assistant-impact', 'business-assistant-impact-font-200', 'business-risk-scenario-rotation', 'business-risk-scenario-rotation-font-200', 'business-risk-hidden-ime-rotation', 'business-risk-hidden-ime-rotation-font-200', 'business-risk-scenarios', 'business-risk-scenarios-font-200', 'business-strategy-draft-rotation', 'business-strategy-draft-rotation-font-200', 'balance-private-first', 'balance-private-second', 'balance-private-first-font-200', 'balance-private-second-font-200', 'portfolio-quick-long-press', 'portfolio-quick-button', 'goal-draft-rotation', 'goal-draft-rotation-font-200', 'goal-pending-rotation', 'goal-pending-rotation-font-200', 'goal-recovered', 'goal-recovered-font-200'];
+          const businessShots = ['risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis', 'catalogue'].flatMap(route =>
+            ['ready', 'empty', 'partial', 'error', 'job'].filter(state => state !== 'job' || ['assistant', 'plans'].includes(route)).flatMap(state =>
+              ['', '-font-200'].map(suffix => `business-${route}-${state}${suffix}`)));
+          const portfolioCases = [['discovery', 'ready'], ['dossier', 'ready'], ['history', 'ready'], ['history', 'partial'],
+            ['quotes', 'ready'], ['markets', 'ready'], ['appearance', 'ready']];
+          const portfolioShots = portfolioCases.flatMap(([route, state]) =>
+            ['', '-font-200'].map(suffix => `portfolio-${route}-${state}${suffix}`));
+          const portfolioSteps = {
+            discovery: ['common-period', 'comparison', 'archive', 'watch-dossier'],
+            dossier: ['scheduled-report', 'published-report', 'primary-source', 'selected-holding', 'event-draft'],
+            history: ['exact-observation', 'missing-observation', 'range'],
+            quotes: ['exact-ohlc', 'stale-week', 'magnifier'],
+            markets: ['session-midnight', 'geography'],
+            appearance: ['applied', 'restored', 'preview-rotation']
+          };
+          const portfolioStepShots = Object.entries(portfolioSteps).flatMap(([route, stages]) =>
+            stages.flatMap(stage => ['', '-font-200'].map(suffix => `portfolio-${route}-${stage}${suffix}`)));
+          const contextShots = ['session-context-restored', 'session-context-restored-font-200', 'session-context-signed-out-rotation', 'session-context-signed-out-rotation-font-200'];
+          const allShots = [...contextShots, ...shots, ...spatialShots, ...businessShots, ...portfolioShots, ...portfolioStepShots];
+          const names = ['apk-verification.json', 'install-api37-16384/install-results.json', 'install-api37-4096/install-results.json',
+            ...['ui-screens-api37-16384', 'ui-screens'].flatMap(folder => [
+              `${folder}/session-context-verification.json`, `${folder}/balance-privacy-verification.json`, `${folder}/position-preview-verification.json`, `${folder}/goal-workflow-verification.json`, `${folder}/spatial-verification.json`, `${folder}/business-verification.json`, `${folder}/portfolio-verification.json`,
+              ...allShots.map(name => `${folder}/${name}.png`)])];
           const records = [];
           for (const name of names) {
             const file = path.join(base, name);
@@ -302,7 +333,6 @@ jobs:
             const blob = (await github.rest.git.createBlob({...context.repo, encoding:'base64', content:bytes.toString('base64')})).data;
             let preview_base64_blob_sha = null;
             if (name.endsWith('.png')) {
-              // The review connector reads UTF-8 blobs; retain exact PNG bytes in a readable envelope.
               const preview = (await github.rest.git.createBlob({...context.repo, encoding:'utf-8', content:bytes.toString('base64')})).data;
               preview_base64_blob_sha = preview.sha;
             }
@@ -311,12 +341,16 @@ jobs:
           core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request?.head?.sha || context.sha, run:context.runId, records}));
           await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
     - name: Upload optional synthetic Spectrum screenshots
-      if: always()
+      if: always() && vars.RETAIN_DUPLICATE_UI_ARTIFACTS == 'true'
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: spectrum-ui-${{ github.event.pull_request.head.sha || github.sha }}
-        path: app/build/outputs/apk/preview/ui-screens/*.png
+        path: |
+          app/build/outputs/apk/preview/ui-screens/*.png
+          app/build/outputs/apk/preview/ui-screens/*.json
+          app/build/outputs/apk/preview/ui-screens-api37-16384/*.png
+          app/build/outputs/apk/preview/ui-screens-api37-16384/*.json
         if-no-files-found: warn
         retention-days: 1
         compression-level: 0
@@ -325,7 +359,7 @@ jobs:
         python3 - <<'PYCODE'
         from pathlib import Path
         base = Path('app/build/outputs/apk/preview')
-        required = ['app-preview.apk', 'apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json']
+        required = ['app-preview.apk', 'apk-verification.json', 'install-api37-16384/install-results.json', 'install-api37-4096/install-results.json']
         if any(not (base / name).is_file() for name in required) or not list((base / 'ui-screens').glob('*.png')):
             raise RuntimeError('Verified APK or required runtime evidence is missing')
         PYCODE
@@ -366,8 +400,8 @@ jobs:
         path: |
           app/build/outputs/apk/preview/app-preview.apk
           app/build/outputs/apk/preview/apk-verification.json
-          app/build/outputs/apk/preview/install-api-36/install-results.json
-          app/build/outputs/apk/preview/install-api-35/install-results.json
+          app/build/outputs/apk/preview/install-api37-4096/install-results.json
+          app/build/outputs/apk/preview/install-api37-16384/install-results.json
           app/build/outputs/apk/preview/ui-screens/*.png
         if-no-files-found: error
         retention-days: 1
@@ -412,14 +446,20 @@ jobs:
           const tag = `android-preview-${sha}`;
           const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
           const title = `Analyst AI ${version}`;
-          const releaseNotes = fs.readFileSync('docs/releases/0.10.0.md', 'utf8').trim();
-          if (!releaseNotes.includes('0.10.0') || !releaseNotes.includes('F01.4')) throw new Error('Release notes do not identify this update');
+          const sourceDocs = `https://github.com/${owner}/${repo}/blob/${sha}/docs`;
+          const releaseNotes = ['3D100.md', '3D100_EVIDENCE.md', 'PLAN_STATUS.md'].reduce(
+            (text, file) => text.replaceAll(`(../${file})`, `(${sourceDocs}/${file})`),
+            fs.readFileSync('docs/releases/0.11.0.md', 'utf8').trim());
+          if (!releaseNotes.includes('0.11.0') || !releaseNotes.includes('3D100')) throw new Error('Release notes do not identify this update');
           const body = [
             releaseNotes,
-            'Signed, non-debuggable preview APK. Android 15+; application ID ru.omnicio.app.debug.',
+            'Signed, non-debuggable preview APK. Android 17+; application ID ru.omnicio.app.debug.',
             'Uses the existing test signing key, not a production-store signing key.',
-            'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.9.0 preview, plus clean installation and full profile/education UI on Android 15 and 16 x86_64 emulators verified.',
-            'A successful emulator run does not claim that every physical-device configuration has been reproduced.',
+            'APK signature, ZIP/ELF alignment, DEX integrity, clean installation and launch, upgrade from 0.10.0 / 34 and post-upgrade launch were verified on Android 17/API 37 x86_64 emulators with measured getconf PAGE_SIZE values of 16384 and 4096 bytes.',
+            'The spectrum-3d-100-v2 UI receipt contains 60 business and 14 portfolio case/font IDs per page-size profile, alongside the native-rendering checks. Production UI components were exercised in a separate debug APK with synthetic data.',
+            'The attached apk-verification.json binds both emulator results to this preview APK SHA-256 and each UI receipt to the exact installed debug APK SHA-256 and case/font IDs.',
+            'These emulator checks do not verify a physical phone, physical ARM hardware with 16 KB pages, TalkBack gestures, heat, battery use, live broker or paid-model access, or installation through the in-app updater.',
+            `Source commit: ${sha}`,
             `SHA-256: ${hash}`,
             `Signing certificate SHA-256: ${report.certificate_sha256}`,
           ].join('\n\n');
@@ -448,6 +488,13 @@ jobs:
           release = (await github.rest.repos.updateRelease({owner, repo, release_id:release.id, name:title, body, draft:false, prerelease:true, make_latest:'false'})).data;
           core.notice(`APK published and verified: ${release.html_url}`);
           await core.summary.addHeading(title).addRaw(`APK SHA-256: ${hash}\n\n${body}`).write();
+    - name: Retain requested device-test APK as a private draft
+      if: success() && github.event_name == 'pull_request'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          await require('./.github/scripts/private_apk_review.cjs')({github, context, core});
   cleanup:
     name: Delete only this run's private CI transfer
     needs:

@@ -25,7 +25,7 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
     val groups = positions.groupBy {
         marketGroupLabel(it, section)
     }.toList().sortedByDescending { it.second.size }
-    WorkspaceDetailPage("Отрасли и классы", "Ваши вложения", onBack, SpectrumSymbol.Market) { padding ->
+    WorkspaceDetailPage("Рынки и география", "Ваши вложения и подтверждённые сессии", onBack, SpectrumSymbol.Market) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { SpectrumCard(emphasized = true) {
@@ -38,20 +38,15 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
                 Text("Распределение имеющихся позиций по данным брокера.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
-            item { SpectrumTabs(listOf("Отрасли", "Классы"), section, { section = it }) }
-            groups.forEach { (title, rows) -> item(key = title) {
-                SpectrumCard(onClick = { expanded = if (expanded == title) null else title }) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    Text("Позиций в счетах: ${rows.size} · ${if (expanded == title) "свернуть" else "показать"}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (expanded == title) {
-                        rows.take(5).forEach { Text(it.title, style = MaterialTheme.typography.bodyMedium) }
-                        if (rows.size > 5) Text("Ещё ${rows.size - 5} · полный список в портфеле")
-                        SpectrumSecondaryButton("Все позиции группы", { openPortfolio(PortfolioDestination(sector = if (section == 0) rows.first().sector?.takeIf(String::isNotBlank) ?: "__unknown__" else null, kind = if (section == 1) marketKind(rows.first().instrumentType) else null)) }, Modifier.fillMaxWidth())
-                    }
-                }
+            item { SpectrumTabs(listOf("Отрасли", "Классы", "География", "Сессии"), section, { section = it }) }
+            if (section == 2) item(key = "geography") { GeographyWorkspacePanel(snapshot?.totalValue?.currency ?: "RUB") }
+            if (section == 3) item(key = "trading-calendar") { TradingCalendarPanel() }
+            if (section < 2) groups.forEach { (title, rows) -> item(key = title) {
+                MarketGroupCard(title, rows, expanded == title,
+                    onToggle = { expanded = if (expanded == title) null else title },
+                    onOpen = { openPortfolio(marketGroupDestination(rows.first(), section)) })
             } }
-            if (groups.isEmpty()) item {
+            if (section < 2 && groups.isEmpty()) item {
                 MarketEmptyState(state, onPortfolio)
             }
             item { SpectrumCard {
@@ -64,6 +59,26 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
         }
     }
 }
+
+@Composable
+private fun MarketGroupCard(title: String, rows: List<PortfolioPosition>, expanded: Boolean,
+    onToggle: () -> Unit, onOpen: () -> Unit) {
+    SpectrumCard(onClick = onToggle) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text("Позиций в счетах: ${rows.size} · ${if (expanded) "свернуть" else "показать"}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (expanded) {
+            rows.take(5).forEach { Text(it.title, style = MaterialTheme.typography.bodyMedium) }
+            if (rows.size > 5) Text("Ещё ${rows.size - 5} · полный список в портфеле")
+            SpectrumSecondaryButton("Все позиции группы", onOpen, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+private fun marketGroupDestination(position: PortfolioPosition, section: Int) = PortfolioDestination(
+    sector = if (section == 0) position.sector?.takeIf(String::isNotBlank) ?: "__unknown__" else null,
+    kind = if (section == 1) marketKind(position.instrumentType) else null,
+)
 
 @Composable
 private fun MarketEmptyState(state: PortfolioUiState, onPortfolio: () -> Unit) {

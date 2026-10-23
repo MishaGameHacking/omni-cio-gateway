@@ -15,21 +15,35 @@ SPEC.loader.exec_module(installation)
 
 class EmulatorFailureTests(unittest.TestCase):
     def test_success_requires_completed_exercise(self):
-        results = []
+        from backend.installation_evidence import BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, CURRENT_UI_SUITE
+        fixture = {"test": "debug_ui_fixture_install", "success": True, "apk_sha256": "c" * 64}
+        receipt = {"ui_suite": CURRENT_UI_SUITE, "business_case_count": 60, "business_cases": sorted(BUSINESS_CASE_IDS),
+                   "portfolio_case_count": 14, "portfolio_cases": sorted(PORTFOLIO_CASE_IDS)}
+        results = [fixture]
         device = Mock()
 
         def exercise(actual):
             self.assertIs(actual, device)
             self.assertEqual(
                 results,
-                [{"test": "profile_ui", "success": False}],
+                [fixture, {"test": "profile_ui", "success": False}],
             )
+            return receipt
 
         installation.record_profile_check(device, results, exercise)
         self.assertEqual(
             results,
-            [{"test": "profile_ui", "success": True}],
+            [fixture, {"test": "profile_ui", "success": True, **receipt, "fixture_apk_sha256": "c" * 64}],
         )
+
+    def test_empty_or_partial_exercise_receipt_remains_a_failed_check(self):
+        for receipt in (None, {}, {"ui_suite": "spectrum-3d-100-v1", "business_case_count": 0, "business_cases": []}):
+            results = [{"test": "debug_ui_fixture_install", "success": True, "apk_sha256": "c" * 64}]
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock(return_value=receipt)
+            with self.subTest(receipt=receipt), self.assertRaises(ValueError):
+                installation.record_profile_check(prepared_argument_1, results, prepared_argument_2)
+            self.assertFalse(results[-1]["success"])
 
     def test_screenshot_timeout_is_recorded_and_propagated(self):
         results = []
@@ -145,6 +159,100 @@ class EmulatorFailureTests(unittest.TestCase):
             installation.collect_failure_diagnostics(device)
         self.assertEqual(device.call_count, 2)
 
+    def test_graphics_uid_requires_one_exact_installed_candidate(self):
+        self.assertEqual(installation.candidate_package_uid(
+            "package:ru.omnicio.app.debug.other uid:10999\npackage:ru.omnicio.app.debug uid:10207\n"
+        ), "10207")
+        for output in ("", "package:other.app uid:10207", "package:ru.omnicio.app.debug.other uid:10207",
+                       "package:ru.omnicio.app.debug uid:0", "package:ru.omnicio.app.debug uid:-1",
+                       "package:ru.omnicio.app.debug uid:2147483648", "package:ru.omnicio.app.debug uid:10207 --pid=1",
+                       "package:ru.omnicio.app.debug uid:10207\npackage:ru.omnicio.app.debug uid:10208"):
+            with self.subTest(output=output):
+                self.assertIsNone(installation.candidate_package_uid(output))
+
+    def test_shader_and_dead_process_logs_do_not_use_noisy_global_tail(self):
+        compile_error = '10-17 21:24:48.210 2187 2289 E Filament: InfoLog="synthetic compile failure"'
+
+        def read(*command, timeout):
+            self.assertEqual(timeout, 10)
+            if command[:5] == ("shell", "cmd", "package", "list", "packages"):
+                self.assertEqual(command[5:], ("-U", "ru.omnicio.app.debug"))
+                return subprocess.CompletedProcess(command, 0, "package:ru.omnicio.app.debug uid:10207\n", "")
+            self.assertEqual(command[:8], ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime"))
+            self.assertNotIn("-t", command)
+            self.assertNotIn("-T", command)
+            if command[-1] == "--uid=10207":
+                return subprocess.CompletedProcess(command, 0, compile_error, "")
+            self.assertIn("Filament:V", command)
+            self.assertIn("*:S", command)
+            return subprocess.CompletedProcess(command, 0, compile_error, "")
+
+        device = Mock(side_effect=read)
+        with patch("builtins.print") as output:
+            installation.collect_graphics_diagnostics(device)
+        self.assertEqual(device.call_count, 3)
+        messages = "\n".join(call.args[0] for call in output.call_args_list)
+        self.assertIn("candidate-uid-10207", messages)
+        self.assertIn("shader-main-system", messages)
+        self.assertEqual(messages.count(compile_error), 2)
+
+    def test_unknown_uid_never_reads_an_unrelated_apps_log(self):
+        device = Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, "package:ru.omnicio.app.debug.other uid:10999", ""),
+            subprocess.CompletedProcess([], 0, "shader diagnostic", ""),
+        ])
+        with patch("builtins.print") as output:
+            installation.collect_graphics_diagnostics(device)
+        self.assertEqual(device.call_count, 2)
+        self.assertFalse(any(part.startswith("--uid=") for call in device.call_args_list for part in call.args))
+        self.assertIn("EMULATOR_GRAPHICS_IDENTITY=unavailable", [call.args[0] for call in output.call_args_list])
+
+    def test_missing_shader_log_does_not_skip_candidate_uid_log(self):
+        device = Mock(side_effect=[
+            subprocess.CompletedProcess([], 0, "package:ru.omnicio.app.debug uid:10207", ""),
+            subprocess.TimeoutExpired("logcat", 10),
+            subprocess.CompletedProcess([], 0, "retained app PID and error", ""),
+        ])
+        with patch("builtins.print") as output:
+            installation.collect_graphics_diagnostics(device)
+        self.assertEqual(device.call_args_list[-1].args[-1], "--uid=10207")
+        self.assertTrue(all(call.kwargs["timeout"] == 10 for call in device.call_args_list))
+        self.assertIn("retained app PID and error", "\n".join(call.args[0] for call in output.call_args_list))
+
+    def test_missing_package_diagnostic_still_collects_shader_error(self):
+        device = Mock(side_effect=[
+            OSError("package manager unavailable"),
+            subprocess.CompletedProcess([], 0, "InfoLog=synthetic shader error", ""),
+        ])
+        with patch("builtins.print") as output:
+            installation.collect_graphics_diagnostics(device)
+        self.assertEqual(device.call_count, 2)
+        self.assertIn("InfoLog=synthetic shader error", "\n".join(call.args[0] for call in output.call_args_list))
+
+    def test_graphics_diagnostic_output_keeps_bounded_beginning_and_end(self):
+        diagnostic = "begin-shader\n" + "x" * 50000 + "\nend-abort"
+        device = Mock(side_effect=[
+            subprocess.CompletedProcess([], 1, "", "not installed"),
+            subprocess.CompletedProcess([], 0, diagnostic, ""),
+        ])
+        with patch("builtins.print") as output:
+            installation.collect_graphics_diagnostics(device)
+        message = output.call_args_list[-1].args[0]
+        self.assertLess(len(message), 32200)
+        self.assertIn("begin-shader", message)
+        self.assertIn("middle omitted", message)
+        self.assertTrue(message.endswith("end-abort"))
+
+    def test_failed_graphics_log_command_is_reported_as_unavailable(self):
+        device = Mock(side_effect=[
+            subprocess.CompletedProcess([], 1, "package:ru.omnicio.app.debug uid:10207", "failed"),
+            subprocess.CompletedProcess([], 1, "invalid graphics evidence", "failed"),
+        ])
+        with patch("builtins.print") as output:
+            installation.collect_graphics_diagnostics(device)
+        messages = "\n".join(call.args[0] for call in output.call_args_list)
+        self.assertIn("EMULATOR_GRAPHICS_DIAGNOSTIC_UNAVAILABLE=shader-main-system", messages)
+        self.assertNotIn("invalid graphics evidence", messages)
 
     def test_broken_frame_with_offline_adb_restarts_complete_attempt(self):
         calls = []

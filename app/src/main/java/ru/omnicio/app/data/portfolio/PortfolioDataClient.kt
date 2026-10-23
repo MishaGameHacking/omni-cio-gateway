@@ -9,6 +9,9 @@ import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
 
 class PortfolioDataClient {
+    fun portfolioJson(token: String, currency: PortfolioCurrency): BackendResult<JSONObject> =
+        get(token, "/tinvest/dashboard?currency=${currency.name}")
+
     fun portfolio(token: String, currency: PortfolioCurrency): BackendResult<PortfolioSnapshot> =
         when (val response = get(token, "/tinvest/dashboard?currency=${currency.name}")) {
             is BackendResult.Failure -> response
@@ -40,6 +43,7 @@ class PortfolioDataClient {
             connection.setRequestProperty("Accept", "application/json")
             val status = connection.responseCode
             ru.omnicio.app.data.updates.ClientVersion.observeStatus(status)
+            ru.omnicio.app.data.backend.SessionExpiry.observe(status, token)
             if (status in 200..299) {
                 val bytes = connection.inputStream.use { it.readNBytes(2_000_001) }
                 require(bytes.size <= 2_000_000)
@@ -54,7 +58,7 @@ class PortfolioDataClient {
                     400 -> "Проверьте выбранный период. Даты в будущем недоступны."
                     else -> "Не удалось обновить данные. Повторная проверка будет выполнена автоматически."
                 }
-                BackendResult.Failure(message, status == 429 || status >= 500 || status == 404 || status == 426)
+                BackendResult.Failure(message, status == 429 || status >= 500 || status == 404 || status == 426, status)
             }
         } catch (_: Exception) {
             BackendResult.Failure("Нет связи с сервером. Показаны последние успешно полученные данные.", true)
@@ -63,7 +67,7 @@ class PortfolioDataClient {
         }
     }
 
-    private fun parsePortfolio(json: JSONObject): PortfolioSnapshot = PortfolioSnapshot(
+    fun parsePortfolio(json: JSONObject): PortfolioSnapshot = PortfolioSnapshot(
         totalValue = parseMoney(json.getJSONObject("totalValue")),
         expectedYieldAmount = json.money("expectedYieldAmount"),
         expectedYieldPercent = json.decimal("expectedYieldPercent"),

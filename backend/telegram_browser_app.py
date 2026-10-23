@@ -300,6 +300,17 @@ def _load_pinned_key(token: str):
         raise TelegramKeyUnavailable("jwks_invalid") from error
 
 
+def _nonce_matches(received: object, expected: object) -> bool:
+    # Our login nonces are nonempty ASCII token_urlsafe strings. compare_digest
+    # rejects non-ASCII str with TypeError; malformed signed claims must instead
+    # follow the ordinary invalid-token response without relaxing signature checks.
+    if not isinstance(received, str) or not isinstance(expected, str):
+        return False
+    if not received or not expected or not received.isascii() or not expected.isascii():
+        return False
+    return secrets.compare_digest(received, expected)
+
+
 def verify_browser_id_token(token: str, expected_nonce: str) -> dict:
     key = _load_pinned_key(token)
     try:
@@ -315,7 +326,7 @@ def verify_browser_id_token(token: str, expected_nonce: str) -> dict:
     except jwt.PyJWTError as error:
         raise TelegramTokenError("invalid_claims_or_signature") from error
     nonce = claims.get("nonce")
-    if not isinstance(nonce, str) or not secrets.compare_digest(nonce, expected_nonce):
+    if not _nonce_matches(nonce, expected_nonce):
         raise TelegramTokenError("nonce_mismatch")
     subject = claims.get("sub")
     if not isinstance(subject, (str, int)) or not str(subject).strip() or len(str(subject)) > 256:

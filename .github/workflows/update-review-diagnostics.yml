@@ -12,7 +12,7 @@ permissions:
 jobs:
   diagnostics:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 45
     steps:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
@@ -87,12 +87,12 @@ jobs:
               const head = await resolveHead(target);
               await readFailedChecks(head);
               let check;
-              for (let attempt=0; attempt<36; attempt++) {
+              for (let attempt=0; attempt<120; attempt++) {
                 const checks = await github.paginate(github.rest.checks.listForRef, {...context.repo,ref:head,per_page:100});
                 check = checks.filter(item => item.head_sha===head && item.name==='SonarCloud Code Analysis' &&
                   item.app?.id===12526 && item.app?.slug==='sonarqubecloud').sort((a,b)=>b.id-a.id)[0];
                 if (check?.status==='completed') break;
-                await wait(5000);
+                await wait(10000);
               }
               if (!check || check.status!=='completed') {
                 core.setFailed('SONAR_READ_UNAVAILABLE='+JSON.stringify({...target,head,reason:'analysis_pending'}));

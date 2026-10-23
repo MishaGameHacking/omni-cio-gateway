@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "android-apk.yml"
 ACTION = ROOT / ".github" / "actions" / "check-apk" / "action.yml"
 INSTALLER = ROOT / ".github" / "scripts" / "test_apk_installation.py"
-REFERENCE_DIGEST = "32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076"
+REFERENCE_DIGEST = "3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3"
 
 
 class DistributableApkWorkflowTests(unittest.TestCase):
@@ -22,9 +22,60 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn(":app:assemblePreview", self.workflow)
         self.assertIn("RUN_PROFILE_UI_TESTS: '1'", self.workflow)
 
+    def test_preflight_exports_its_attempt_only_after_verified_preparation(self):
+        preflight = self.workflow[self.workflow.index("  transfer-preflight:"):
+                                  self.workflow.index("  build:")]
+        self.assertIn("prepared_attempt: ${{ steps.prepare.outputs.prepared_attempt }}", preflight)
+        preparation = preflight[preflight.index("- name: Verify synthetic draft handoff"):
+                                preflight.index("- name: Remove the temporary draft")]
+        self.assertIn("id: prepare\n", preparation)
+        self.assertIn(
+            "await require('./.github/scripts/ci_private_transfer.cjs')"
+            "({github, context, core, command:'prepare'});\n"
+            "          core.setOutput('prepared_attempt', process.env.GITHUB_RUN_ATTEMPT);",
+            preparation,
+        )
+        self.assertNotIn("continue-on-error", preparation)
+
+    def test_build_prepares_only_an_attempt_not_already_verified_by_preflight(self):
+        build = self.workflow[self.workflow.index("  build:"):self.workflow.index("  runtime:")]
+        self.assertEqual(build.count("    needs:\n"), 1)
+        self.assertIn("    needs:\n    - transfer-preflight\n", build)
+        preparation_start = build.index("- name: Prepare private handoff for the current rerun attempt")
+        cleanup_start = build.index("- name: Remove the temporary draft immediately if rerun preparation fails")
+        preparation = build[preparation_start:cleanup_start]
+        self.assertLess(build.index("- name: Checkout source"), preparation_start)
+        self.assertLess(preparation_start, build.index("- name: Ensure Android SDK 37 is installed"))
+        self.assertIn("id: prepare_transfer\n", preparation)
+        self.assertIn(
+            "if: needs.transfer-preflight.outputs.prepared_attempt != format('{0}', github.run_attempt)\n",
+            preparation,
+        )
+        self.assertIn(
+            "script: await require('./.github/scripts/ci_private_transfer.cjs')"
+            "({github, context, core, command:'prepare'});",
+            preparation,
+        )
+        self.assertNotIn("continue-on-error", preparation)
+
+    def test_failed_rerun_preparation_cleans_up_before_build_or_always_steps(self):
+        build = self.workflow[self.workflow.index("  build:"):self.workflow.index("  runtime:")]
+        cleanup_start = build.index("- name: Remove the temporary draft immediately if rerun preparation fails")
+        next_step = build.index("- name: Prepare canonical 3D catalogue before packaging")
+        cleanup = build[cleanup_start:next_step]
+        self.assertIn("if: failure() && steps.prepare_transfer.outcome == 'failure'\n", cleanup)
+        self.assertIn(
+            "script: await require('./.github/scripts/ci_private_transfer.cjs')"
+            "({github, context, core, command:'cleanup'});",
+            cleanup,
+        )
+        self.assertNotIn("continue-on-error", cleanup)
+        self.assertLess(cleanup_start, next_step)
+        self.assertLess(cleanup_start, build.index("if: always()"))
+
     def test_workflow_pins_the_real_installed_reference_apk(self):
-        self.assertIn("Analyst-AI-0.9.0-preview-a957e62.apk", self.workflow)
-        self.assertIn("android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344", self.workflow)
+        self.assertIn("Analyst-AI-0.10.0-preview-0a894dd.apk", self.workflow)
+        self.assertIn("android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b", self.workflow)
         self.assertIn(REFERENCE_DIGEST, self.workflow)
         self.assertIn("core.exportVariable('PREVIOUS_APK'", self.workflow)
         self.assertNotIn("Analyst-AI-0.5.1-preview", self.workflow)
@@ -76,6 +127,7 @@ class DistributableApkWorkflowTests(unittest.TestCase):
     def test_validation_source_changes_retrigger_main_apk(self):
         self.assertIn('- ".github/scripts/**"', self.caller)
         self.assertIn('- "backend/installation_evidence.py"', self.caller)
+        self.assertIn('- "tools/**"', self.caller)
 
     def test_main_reuses_the_complete_linux_runtime_and_cleanup(self):
         self.assertIn("uses: ./.github/workflows/android-ci.yml", self.caller)
@@ -92,16 +144,25 @@ class DistributableApkWorkflowTests(unittest.TestCase):
     def test_composite_action_is_fail_closed_and_always_tests_upgrade(self):
         self.assertIn("PREVIOUS_APK is required", self.action)
         self.assertIn("RUN_PROFILE_UI_TESTS must be 1", self.action)
-        self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 1)
+        self.assertEqual(self.action.count('--previous "%PREVIOUS_APK%"'), 2)
         self.assertNotIn("if defined PREVIOUS_APK goto upgrade", self.action)
 
-    def test_both_supported_android_versions_run_full_ui(self):
-        for api in (35, 36):
-            self.assertIn(f'--api {api}', self.action)
-            self.assertIn(f'system-images;android-{api};google_apis;x86_64', self.action)
+    def test_both_current_os_page_size_profiles_run_full_ui(self):
+        for size in (4096, 16384):
+            self.assertIn(f'--api 37 --page-bytes {size}', self.action)
+            self.assertIn(f'install-api37-{size}', self.action)
+        contract = (ROOT / 'backend/android_runtime_contract.py').read_text(encoding='utf-8')
+        self.assertIn('RuntimeProfile(37, 4096, "google_apis")', contract)
+        self.assertIn('RuntimeProfile(37, 16384, "google_apis_ps16k")', contract)
         validator = (ROOT / '.github/scripts/validate_distribution.py').read_text(encoding='utf-8')
-        self.assertIn('[checked_installation(35), checked_installation(36)]', validator)
-        self.assertIn('if api in {35, 36} and os.getenv', self.installer)
+        self.assertIn('checked_installation(p.api, p.page_size_bytes)', validator)
+        self.assertIn('upgrade_required=True', validator)
+        self.assertIn('android_api=profile.api, page_size_bytes=profile.page_size_bytes', validator)
+        self.assertIn("'profile_ui_required': True", validator)
+        self.assertNotIn('if api in {35, 36}', self.installer)
+        self.assertIn('device("shell", "getconf", "PAGE_SIZE")', self.installer)
+        self.assertLess(self.installer.index('page_size = device'),
+                        self.installer.index('install("previous_clean_install", previous)'))
 
     def test_candidate_is_launched_before_and_after_clean_install(self):
         upgrade = self.installer.index('install("upgrade_to_candidate", apk, update=True)')

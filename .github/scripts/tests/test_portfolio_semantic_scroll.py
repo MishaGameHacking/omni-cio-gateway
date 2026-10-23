@@ -97,6 +97,14 @@ class SemanticActionTests(unittest.TestCase):
                         [action_request(1, resource_id, direction)],
                     )
 
+    def test_nested_dossier_tabs_have_a_distinct_horizontal_target(self):
+        self.assertEqual(frames.SCROLL_LIST_CODES["dossier-tabs"], 6)
+        self.assertNotEqual(frames.SCROLL_LIST_CODES["profile-tabs"], frames.SCROLL_LIST_CODES["dossier-tabs"])
+        self.assertEqual(profile.semantic_scroll_direction("dossier-tabs", 300, 200, 100, 200), "end")
+        self.assertEqual(profile.semantic_scroll_direction("dossier-tabs", 100, 200, 300, 200), "start")
+        with self.assertRaises(ValueError):
+            profile.semantic_scroll_direction("dossier-tabs", 100, 200, 100, 400)
+
     def test_unknown_list_or_direction_sends_nothing(self):
         for resource_id, direction in (
             ("other-list", "end"),
@@ -213,6 +221,9 @@ class SemanticActionTests(unittest.TestCase):
             'EDUCATION_LIST = "education-content"',
             'PORTFOLIO_LIST = "portfolio-content"',
             'PROFILE_TABS = "profile-tabs"',
+            'DOSSIER_TABS = "dossier-tabs"',
+            'ASSISTANT_COMPOSER = "assistant-composer"',
+            'case LIST_ASSISTANT_COMPOSER -> ASSISTANT_COMPOSER',
             'APP_PACKAGE = "ru.omnicio.app.debug"',
             "matches.size() != 1",
             "node.isVisibleToUser()",
@@ -228,13 +239,12 @@ class SemanticActionTests(unittest.TestCase):
             "node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE",
         ):
             self.assertIn(required, source)
-        # API35 is now supported by explicit OWNER requirement. The old public
-        # method is restricted to the version-guarded branch; API36 keeps its API.
+        # Current OS uses the public tri-state API without an obsolete fallback.
         helper = source[source.index("private static boolean checkedState"):source.index("private static final class BoundedOutput")]
-        self.assertIn("Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA", helper)
+        self.assertNotIn("Build.VERSION.SDK_INT", helper)
         self.assertIn("node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE", helper)
-        self.assertIn("return node.isChecked();", helper)
-        self.assertEqual(source.count("node.isChecked()"), 1)
+        self.assertNotIn("return node.isChecked();", helper)
+        self.assertNotIn("node.isChecked()", source)
         self.assertNotIn("ACTION_CLICK", source)
         self.assertNotIn("executeShellCommand", source)
         self.assertNotIn("getTargetContext()", source)
@@ -242,8 +252,9 @@ class SemanticActionTests(unittest.TestCase):
     def test_profile_driver_has_no_coordinate_scroll_command(self):
         source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
         self.assertNotIn('"input", "swipe"', source)
+        callers = source + (SCRIPTS / "business_ui_probe.py").read_text(encoding="utf-8")
         for area in frames.SCROLL_LIST_CODES:
-            self.assertIn(area, source)
+            self.assertIn(area, callers)
         self.assertIn("reader.scroll_list(area, direction)", source)
 
     def test_allocation_label_and_real_screenshot_remain_required(self):

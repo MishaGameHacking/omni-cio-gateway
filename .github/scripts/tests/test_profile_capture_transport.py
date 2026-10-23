@@ -110,9 +110,11 @@ class CaptureTransportTests(unittest.TestCase):
 
     def test_dialog_wait_does_not_scroll_underlying_profile(self):
         probe = ui.ProfileProbe(Mock())
-        empty = ET.fromstring('<hierarchy><node package="ru.omnicio.app.debug" resource-id="profile-content" scrollable="true" bounds="[0,100][320,600]"/></hierarchy>')
-        ready = ET.fromstring('<hierarchy><node package="ru.omnicio.app.debug" text="Как в системе" bounds="[20,120][280,180]"/></hierarchy>')
-        with patch.object(probe, 'tree', side_effect=[empty, ready]), patch.object(probe, 'command') as command, patch.object(ui.time, 'sleep'):
+        metadata = 'display-width="320" display-height="640" active-window-id="7"'
+        empty = ET.fromstring(f'<hierarchy {metadata}><node package="ru.omnicio.app.debug" resource-id="profile-content" scrollable="true" enabled="true" bounds="[0,100][320,600]"/></hierarchy>')
+        ready = f'<hierarchy {metadata}><node package="ru.omnicio.app.debug" text="Как в системе" clickable="true" enabled="true" bounds="[20,120][280,180]"/></hierarchy>'
+        frames = [empty] + [ET.fromstring(ready) for _ in range(3)]
+        with patch.object(probe, 'tree', side_effect=frames), patch.object(probe, 'command') as command, patch.object(ui.time, 'sleep'):
             probe.tap_visible('Как в системе')
         command.assert_called_once_with('shell', 'input', 'tap', '150', '150')
 

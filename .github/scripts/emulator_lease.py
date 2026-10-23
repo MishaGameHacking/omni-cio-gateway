@@ -123,12 +123,20 @@ def verify_emulator_identity(device, name: str, api: int) -> None:
 
 
 def collect_runtime_failure(device) -> None:
-    """Crash buffer and activity state, rather than only noisy general log tail."""
-    commands = (('logcat', '-d', '-b', 'crash', '-t', '100'),
+    """Keep OS exit reasons even when SIGKILL leaves the crash buffer empty."""
+    from runtime_crash_evidence import bounded_runtime_excerpt
+
+    # A cascade after system_server death can exceed 100 lines. Read the crash
+    # ring without -t and retain early fatal identities, not only the last stack.
+    commands = (('logcat', '-d', '-b', 'crash', '-v', 'threadtime'),
+                ('shell', 'dumpsys', 'activity', 'exit-info', 'ru.omnicio.app.debug'),
+                ('logcat', '-d', '-b', 'events', '-v', 'threadtime',
+                 'am_kill:I', 'am_proc_died:I', 'am_crash:I', 'am_anr:I', '*:S'),
+                ('shell', 'dumpsys', 'meminfo'),
                 ('shell', 'dumpsys', 'activity', 'top'))
     for command in commands:
         try:
             response = device(*command, timeout=10)
-            print('EMULATOR_RUNTIME_FAILURE=' + ' '.join(command) + '\n' + response.stdout[-16000:], flush=True)
+            print('EMULATOR_RUNTIME_FAILURE=' + ' '.join(command) + '\n' + bounded_runtime_excerpt(response.stdout), flush=True)
         except Exception as error:
             print('EMULATOR_RUNTIME_DIAGNOSTIC_UNAVAILABLE=' + type(error).__name__, flush=True)

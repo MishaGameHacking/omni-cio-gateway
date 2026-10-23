@@ -9,10 +9,15 @@ PROFILE = ROOT / "app/src/main/java/ru/omnicio/app/ui/profile/ProfileSectionTabs
 
 
 class CompactHomeTests(unittest.TestCase):
-    def test_next_step_and_attention_precede_secondary_shortcuts(self):
+    def test_capital_and_attention_precede_shortcuts_with_persistent_dashboard_order(self):
         source = (HOME / "HomeScreen.kt").read_text(encoding="utf-8")
         order = re.findall(r'item\(key = "([\w-]+)"\)', source)
-        self.assertEqual(order[:4], ["brand-header", "portfolio-hero", "assistant", "attention"])
+        self.assertEqual(order[:2], ["brand-header", "portfolio-hero"])
+        self.assertLess(order.index("attention"), order.index("capabilities"))
+        self.assertLess(order.index("attention"), order.index("release-introduction"))
+        for wiring in ('normalizedDashboardOrder(personal.dashboardOrder)',
+                       'items(order, key = { "dashboard:$it" })', 'saveDashboardOrder', 'undoOrder'):
+            self.assertIn(wiring, source)
         self.assertNotIn("heightIn(max = 150.dp)", source)
         self.assertNotIn("SpectrumMetricPill", source)
         self.assertIn("onClick = onCurrency", source)

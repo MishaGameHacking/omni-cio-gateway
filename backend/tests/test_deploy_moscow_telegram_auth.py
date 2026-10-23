@@ -1,14 +1,19 @@
 """Fail-closed checks for the exact Moscow Telegram-auth deployment."""
 from __future__ import annotations
 
+from contextlib import closing
 import importlib.util
+import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +38,59 @@ normalizer_spec.loader.exec_module(normalizer)
 
 
 class TelegramAuthDeploymentTests(unittest.TestCase):
+    def test_staged_preflight_initializes_workspace_and_preserves_existing_user(self) -> None:
+        shell = REMOTE.read_text(encoding="utf-8")
+        marker = 'DATABASE_PATH="$PREFLIGHT_DB" STAGED_BACKEND="$STAGING/backend" "$VENV_PYTHON" - <<\'PY\'\n'
+        preflight = shell.split(marker, 1)[1].split("\nPY\n", 1)[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "preflight.sqlite3"
+            environment = {key: value for key, value in os.environ.items()
+                           if key.upper() in {"PATH", "SYSTEMROOT", "TEMP", "TMP", "PYTHONPATH"}}
+            environment.update(
+                DATABASE_PATH=str(database), STAGED_BACKEND=str(ROOT / "backend"),
+                TELEGRAM_CLIENT_ID="123456", TELEGRAM_CLIENT_SECRET="synthetic-preflight-only",
+                FERNET_KEY="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                BACKEND_PUBLIC_URL="https://example.invalid", ANALYSIS_SCHEDULER_ENABLED="false",
+                AI_EXTERNAL_PROCESSING_APPROVED="false",
+            )
+            subprocess.run([sys.executable, "-c", preflight], env=environment, check=True, timeout=30)
+            with closing(sqlite3.connect(database)) as db:
+                db.execute("INSERT INTO users(telegram_sub,telegram_id,created_at,updated_at) VALUES ('preflight-user','1',1,1)")
+                db.execute("INSERT INTO workspace_records VALUES (1,'note','owned','{}',1,1,1)")
+                db.commit()
+            subprocess.run([sys.executable, "-c", preflight], env=environment, check=True, timeout=30)
+            with closing(sqlite3.connect(database)) as db:
+                self.assertEqual(db.execute("SELECT telegram_sub FROM users").fetchone()[0], "preflight-user")
+                self.assertEqual(db.execute("SELECT id FROM workspace_records WHERE user_id=1").fetchone()[0], "owned")
+                self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_workspace_probe_requires_authentication_for_every_read_route(self) -> None:
+        observed = []
+
+        def unauthenticated(request, timeout):
+            observed.append(request.full_url)
+            self.assertNotIn("Authorization", request.headers)
+            self.assertIsNone(request.data)
+            self.assertEqual(timeout, 15)
+            raise HTTPError(request.full_url, 401, "Unauthorized", {}, None)
+
+        with patch.object(module.urllib.request, "urlopen", side_effect=unauthenticated):
+            module.verify_workspace_authentication()
+        self.assertEqual(observed, [module.PUBLIC_URL + path for path in module.WORKSPACE_READ_PATHS])
+
+    def test_workspace_probe_blocks_missing_routes_and_unexpected_status(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        with patch.object(module.urllib.request, "urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "Workspace authentication probe failed"):
+                module.verify_workspace_authentication()
+        for status in (403, 404, 500):
+            with self.subTest(status=status):
+                failure = HTTPError(module.PUBLIC_URL + "/workspace", status, "Unexpected", {}, None)
+                with patch.object(module.urllib.request, "urlopen", side_effect=failure):
+                    with self.assertRaisesRegex(RuntimeError, "Workspace authentication probe failed"):
+                        module.verify_workspace_authentication()
+
     def test_checked_in_source_and_pinned_jwks_validate(self) -> None:
         metadata = module.validate_source()
         self.assertRegex(metadata["jwks_sha256"], r"^[0-9a-f]{64}$")

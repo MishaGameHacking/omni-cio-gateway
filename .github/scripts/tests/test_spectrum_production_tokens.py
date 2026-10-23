@@ -13,19 +13,20 @@ def luminance(rgb):
 
 
 class SpectrumProductionTokens(unittest.TestCase):
-    def test_actual_primary_gradient_has_white_text_contrast(self):
+    def test_actual_primary_material_input_and_native_fallback_have_white_text_contrast(self):
         source = (UI / 'spectrum/SpectrumDesignSystem.kt').read_text(encoding='utf-8')
         block = source.split('internal val SpectrumPrimaryStops = listOf(', 1)[1].split('\n)', 1)[0]
         colors = re.findall(r'Color\(0xFF([0-9A-F]{6})\)', block)
         self.assertEqual(len(colors), 3)
-        self.assertIn('if (enabled) SpectrumPrimaryStops', source)
-        self.assertIn('val labelColor = if (enabled) Color.White', source)
-        rgb = [tuple(int(c[i:i + 2], 16) / 255 for i in (0, 2, 4)) for c in colors]
-        for first, second in zip(rgb, rgb[1:]):
-            for sample in range(101):
-                t = sample / 100
-                blended = tuple(a * (1 - t) + b * t for a, b in zip(first, second))
-                self.assertGreaterEqual(1.05 / (luminance(blended) + .05), 4.5)
+        self.assertIn('color = SpectrumPrimaryStops.first()', source)
+        self.assertIn('Text(text, color = if (enabled) Color.White', source)
+        rgb = tuple(int(colors[0][i:i + 2], 16) / 255 for i in (0, 2, 4))
+        self.assertGreaterEqual(1.05 / (luminance(rgb) + .05), 4.5)
+        surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
+        self.assertIn('if (unavailable) modifier.background(color)', surface)
+        self.assertIn('drawnModels', surface)
+        # Material input/token contrast is distinct from rendered PBR contrast.
+        # Actual light/dark screenshots remain required before publication.
 
     def test_portfolio_uses_new_presenter_and_live_position_resolution(self):
         screen = (UI / 'portfolio/PortfolioScreen.kt').read_text(encoding='utf-8')
@@ -42,8 +43,13 @@ class SpectrumProductionTokens(unittest.TestCase):
         source = (UI / 'portfolio/HistoryChart.kt').read_text(encoding='utf-8')
         geometry = (UI / 'portfolio/HistoryBars.kt').read_text(encoding='utf-8')
         self.assertIn('portfolioHistory(points)', geometry)
-        self.assertIn('HistoryValues(model.source.coordinates, currency)', source)
-        self.assertIn('drawRoundRect(', source)
+        self.assertIn('val selectedPoint = historySelectedObservation(model, selected, selectedObservation)', source)
+        self.assertIn('HistoryValues(model.source.coordinates, currency, selectedStart, selectedPoint?.date)', source)
+        self.assertIn('selectedInstant?.let { sameHistoryInstant(point.date, it) } == true', source)
+        self.assertIn('onSelect(point.date)', source)
+        self.assertIn('SpatialBars(model.bars.map { it.close?.value?.toDouble() }', source)
+        self.assertIn('model.source.low.toDouble(), model.source.high.toDouble()', source)
+        self.assertNotIn('drawRoundRect(', source)
         self.assertNotIn('drawPath(', source)
         self.assertNotIn('Random', source)
 

@@ -1,4 +1,4 @@
-name: Deploy Moscow Telegram auth repair
+name: Deploy Moscow backend
 
 on:
   push:
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy and verify Telegram browser login
+    name: Deploy and verify login and workspace
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&

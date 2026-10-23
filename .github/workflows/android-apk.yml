@@ -8,6 +8,7 @@ on:
       - "tools/**"
       - "ci-ui-driver/**"
       - "backend/installation_evidence.py"
+      - "backend/android_runtime_contract.py"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"

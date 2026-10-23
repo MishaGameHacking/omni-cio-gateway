@@ -35,3 +35,4 @@ fun openInstrumentInApp(activity: Activity, trustedUrl: String): BrokerOpenResul
         BrokerOpenResult.NoAppHandler
     }
 }
+

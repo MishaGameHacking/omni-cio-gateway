@@ -1,6 +1,19 @@
 # Analyst AI — APK installation and verification
 
-## Current release: 0.10.0-preview / 34
+## Current candidate: 0.11.0-preview / 35
+
+The owner's clarification of 19–20 October 2026 sets the current development
+contract to **Android 17 / API 37**, with `minSdk = compileSdk = targetSdk = 37`.
+Both measured **4096-byte and 16384-byte** API37 x86_64 profiles require their own
+installation, upgrade, launch and full UI checks tied to the candidate's bytes.
+See [AGENTS](../AGENTS.md#android) and [PLAN_STATUS](PLAN_STATUS.md).
+A verified new APK release is not established by this document.
+
+The preserved instructions, API35/36 matrices and release gates below describe
+the historical **0.10.0 / 34 baseline as of 17 October 2026**. They do not set
+the current candidate's supported OS or replace its API37 acceptance checks.
+
+## Historical published release: 0.10.0-preview / 34
 
 Updated 2026-10-17 for F01.4 / F22. The published preview supports **Android 15 / API 35 and newer**. Android 14 / API 34 and older are outside the current device baseline.
 

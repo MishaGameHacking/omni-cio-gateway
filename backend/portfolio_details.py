@@ -7,7 +7,7 @@ import time
 from collections import OrderedDict, defaultdict
 from contextlib import closing
 from datetime import date, datetime, time as day_time, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from threading import RLock
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,11 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 try:
     from . import app as backend
     from . import tinvest_portfolio as portfolio
+    from .volume_contract import decimal as strict_decimal
     from .ai_jobs import assert_current_owner_in
     from .monitoring_access import assert_monitoring_access_in, monitoring_active
 except ImportError:
     import app as backend
     import tinvest_portfolio as portfolio
+    from volume_contract import decimal as strict_decimal
     from ai_jobs import assert_current_owner_in
     from monitoring_access import assert_monitoring_access_in, monitoring_active
 
@@ -61,12 +63,7 @@ _request_locks = [RLock() for _ in range(32)]
 def number(value: Any) -> Decimal | None:
     if not isinstance(value, dict):
         return None
-    try:
-        result = Decimal(str(value.get("units", 0))) + Decimal(str(value.get("nano", 0))) / Decimal(10**9)
-        return result if result.is_finite() else None
-    except (InvalidOperation, ValueError, TypeError):
-        return None
-
+    return strict_decimal({"units": value.get("units", 0), "nano": value.get("nano", 0)})
 
 def money(value: Any) -> dict | None:
     amount = number(value)
@@ -168,6 +165,10 @@ class BrokerReader:
             value = self.read("instrument", {"idType": kind, "id": identifier}).get("instrument", {})
         except HTTPException:
             return {}
+        # Instrument responses can also contain client-specific tests and
+        # permissions. Only public identity fields enter this shared cache.
+        value = {key: value[key] for key in ("uid", "figi", "ticker", "classCode", "isin", "name", "sector",
+                 "assetUid", "exchange", "lot", "currency", "countryOfRisk", "countryOfRiskName", "instrumentType", "instrumentKind") if key in value}
         public_store(key, value, 86400)
         return value
 
@@ -219,6 +220,7 @@ def normalize_position(raw: dict, metadata: dict) -> dict:
         "blockedQuantity": quote(raw.get("blockedLots")), "isin": metadata.get("isin"),
         "sector": metadata.get("sector"), "company": metadata.get("name"),
         "assetUid": metadata.get("assetUid"), "exchange": metadata.get("exchange"),
+        "countryOfRisk": metadata.get("countryOfRisk"), "countryOfRiskName": metadata.get("countryOfRiskName"),
         "lot": metadata.get("lot"), "figi": raw.get("figi"), "classCode": metadata.get("classCode") or raw.get("classCode"),
     }
 
@@ -443,7 +445,10 @@ def summarize_operations(items: list[dict]) -> list[dict]:
             for (group, currency), amount in sorted(totals.items())]
 
 
-def load_analytics(user: Any, account_id: str, start: date | None, end: date | None, currency: str) -> dict:
+def load_analytics(user: Any, account_id: str, start: date | None, end: date | None, currency: str,
+                   history_resolution: str | None = None) -> dict:
+    if history_resolution not in {None, "intraday", "hour", "day"}:
+        raise HTTPException(422, "invalid_history_resolution")
     with BrokerReader(user) as reader:
         account = reader.account(account_id)
         begin, finish = period_bounds(start, end, account)
@@ -466,6 +471,7 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
         resolution = "intraday"
     elif span <= timedelta(days=32):
         resolution = "hour"
+    resolution = history_resolution or resolution
     with closing(backend.connect()) as db:
         ensure_history(db)
         rows = db.execute("""SELECT observed_at,value FROM portfolio_value_history
@@ -474,16 +480,17 @@ def load_analytics(user: Any, account_id: str, start: date | None, end: date | N
             (int(user["id"]), account_id, currency, resolution, begin, finish)).fetchall()
     return {"summary": summarize_operations(items), "complete": complete, "operationCount": len(items),
             "history": [{"date": row["observed_at"], "value": row["value"]} for row in rows[:2000]], "historyTruncated": len(rows) > 2000,
-            "currency": currency, "historySource": "Analyst AI: сохранённые снимки T‑Invest",
+            "currency": currency, "historyResolution": resolution, "historySource": "Analyst AI: сохранённые снимки T‑Invest",
             "totalIncome": None, "asOf": iso_now(),
             "note": "История стоимости начинается с фактического сбора данных. Денежные потоки не равны инвестиционной прибыли. Суммы операций показаны в исходных валютах."}
 
 
 @router.get("/tinvest/accounts/{account_id}/analytics", responses=READ_ERRORS)
 def analytics(account_id: str, start: date | None = None, end: date | None = None,
-              currency: str = Query("RUB", pattern="^(RUB|USD|EUR)$"), user: Any = Depends(backend.current_user)) -> dict:
-    return cached(("analytics", *identity(user), account_id, start, end, currency), 60,
-                  lambda: load_analytics(user, account_id, start, end, currency))
+              currency: str = Query("RUB", pattern="^(RUB|USD|EUR)$"), user: Any = Depends(backend.current_user),
+              history_resolution: str | None = None) -> dict:
+    return cached(("analytics", *identity(user), account_id, start, end, currency, history_resolution), 60,
+                  lambda: load_analytics(user, account_id, start, end, currency, history_resolution))
 
 
 def payment_rows(raw: dict, position: dict, kind: str, now: datetime) -> list[dict]:

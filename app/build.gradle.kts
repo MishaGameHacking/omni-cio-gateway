@@ -5,15 +5,16 @@ plugins {
 
 android {
     namespace = "ru.omnicio.app"
-    compileSdk = 36
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "ru.omnicio.app"
-        minSdk = 35
-        targetSdk = 36
+        minSdk = 37
+        targetSdk = 37
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 34
-        versionName = "0.10.0"
+        versionCode = 35
+        versionName = "0.11.0"
     }
 
     buildTypes {
@@ -65,7 +66,10 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.filament.android)
+    implementation(libs.filament.gltfio)
 
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation(libs.junit)
 }
 

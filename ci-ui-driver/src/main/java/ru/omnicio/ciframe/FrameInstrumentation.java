@@ -7,13 +7,14 @@ import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
-import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Xml;
 import android.view.Display;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -29,10 +30,11 @@ import org.xmlpull.v1.XmlSerializer;
 /**
  * One public UiAutomation connection for the whole disposable-emulator scenario.
  * A separate test-only package survives force-stop/restart of the app under test.
- * It reads fresh frames and performs only exact whitelisted list scroll actions.
+ * It reads fresh frames, scrolls exact lists and injects fixture-only Back gestures.
  */
 public final class FrameInstrumentation extends Instrumentation {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_IME_WINDOWS = 8;
     private static final String APP_PACKAGE = "ru.omnicio.app.debug";
     private static final int ACTION_FLAG = 0x80000000;
     private static final int ACTION_START_FLAG = 0x10000000;
@@ -40,6 +42,7 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int ACTION_LIST_MASK = 0x0f;
     private static final int REQUEST_SEQUENCE_MASK = 0x00ffffff;
     private static final int ALLOWED_REQUEST_BITS = ACTION_FLAG
+            | BackGestureInput.REQUEST_FLAG
             | ACTION_START_FLAG
             | (ACTION_LIST_MASK << ACTION_LIST_SHIFT)
             | REQUEST_SEQUENCE_MASK;
@@ -48,11 +51,17 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int LIST_PORTFOLIO = 3;
     private static final int LIST_PROFILE_TABS = 4;
     private static final int LIST_WORKSPACE = 5;
+    private static final int LIST_DOSSIER_TABS = 6;
+    private static final int LIST_QUOTES_INTERVALS = 7;
+    private static final int LIST_ASSISTANT_COMPOSER = 8;
     private static final String PROFILE_LIST = "profile-content";
     private static final String EDUCATION_LIST = "education-content";
     private static final String PORTFOLIO_LIST = "portfolio-content";
     private static final String PROFILE_TABS = "profile-tabs";
     private static final String WORKSPACE_LIST = "workspace-content";
+    private static final String DOSSIER_TABS = "dossier-tabs";
+    private static final String QUOTES_INTERVALS = "quotes-intervals";
+    private static final String ASSISTANT_COMPOSER = "assistant-composer";
 
     private String socketName;
     private byte[] token;
@@ -84,6 +93,7 @@ public final class FrameInstrumentation extends Instrumentation {
             }
             AccessibilityServiceInfo info = automation.getServiceInfo();
             info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                    | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
                     | AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS;
             automation.setServiceInfo(info);
             Display screen = getContext().getSystemService(DisplayManager.class)
@@ -122,8 +132,16 @@ public final class FrameInstrumentation extends Instrumentation {
         }
         output.writeInt(2);
         output.flush();
+        try (BackGestureInput gesture = new BackGestureInput(automation, windows)) {
+            serveRequests(client, input, output, automation, gesture);
+        }
+    }
+
+    private void serveRequests(LocalSocket client, DataInputStream input, DataOutputStream output,
+            UiAutomation automation, BackGestureInput gesture) throws IOException {
         int previous = 0;
         while (true) {
+            client.setSoTimeout(gesture.isHeld() ? 20_000 : 120_000);
             int rawRequest = input.readInt();
             if (rawRequest == 0) {
                 return;
@@ -141,7 +159,20 @@ public final class FrameInstrumentation extends Instrumentation {
             }
             AccessibilityNodeInfo root = automation.getRootInActiveWindow();
             boolean actionRequest = (rawRequest & ACTION_FLAG) != 0;
-            if (actionRequest) {
+            boolean backRequest = (rawRequest & BackGestureInput.REQUEST_FLAG) != 0;
+            if (backRequest) {
+                if (actionRequest || (rawRequest & ACTION_START_FLAG) != 0) {
+                    throw new IOException("Back request contains unrelated action flags");
+                }
+                gesture.perform((rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK, root);
+                output.writeInt(request);
+                output.writeInt(4);
+                output.writeInt(0);
+                output.flush();
+            } else if (actionRequest) {
+                if (gesture.isHeld()) {
+                    throw new IOException("Cannot scroll during a held Back touch");
+                }
                 int listCode = (rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK;
                 boolean towardStart = (rawRequest & ACTION_START_FLAG) != 0;
                 boolean performed = scrollExactList(root, listCode, towardStart);
@@ -156,7 +187,7 @@ public final class FrameInstrumentation extends Instrumentation {
                 if ((rawRequest & ~REQUEST_SEQUENCE_MASK) != 0) {
                     throw new IOException("Frame request contains action flags");
                 }
-                byte[] frame = root == null ? new byte[0] : encodeTree(root);
+                byte[] frame = root == null ? new byte[0] : encodeTree(root, automation);
                 output.writeInt(request);
                 output.writeInt(root == null ? 0 : 1);
                 output.writeInt(frame.length);
@@ -209,6 +240,9 @@ public final class FrameInstrumentation extends Instrumentation {
             case LIST_PORTFOLIO -> PORTFOLIO_LIST;
             case LIST_PROFILE_TABS -> PROFILE_TABS;
             case LIST_WORKSPACE -> WORKSPACE_LIST;
+            case LIST_DOSSIER_TABS -> DOSSIER_TABS;
+            case LIST_QUOTES_INTERVALS -> QUOTES_INTERVALS;
+            case LIST_ASSISTANT_COMPOSER -> ASSISTANT_COMPOSER;
             default -> null;
         };
     }
@@ -240,13 +274,30 @@ public final class FrameInstrumentation extends Instrumentation {
         }
     }
 
-    private byte[] encodeTree(AccessibilityNodeInfo root) throws IOException {
+    private byte[] encodeTree(AccessibilityNodeInfo root, UiAutomation automation) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         XmlSerializer xml = Xml.newSerializer();
         xml.setOutput(new BoundedOutput(bytes), "UTF-8");
         xml.startDocument("UTF-8", true);
         xml.startTag(null, "hierarchy");
         Rect display = windows.getMaximumWindowMetrics().getBounds();
+        long observationStart = SystemClock.elapsedRealtime();
+        WindowObservation observation = observeWindows(automation.getWindows(), display, root.getWindowId());
+        long observationEnd = SystemClock.elapsedRealtime();
+        attr(xml, "display-width", Integer.toString(display.width()));
+        attr(xml, "display-height", Integer.toString(display.height()));
+        attr(xml, "display-bounds", display.flattenToString());
+        attr(xml, "display-id", Integer.toString(Display.DEFAULT_DISPLAY));
+        attr(xml, "active-window-id", Integer.toString(root.getWindowId()));
+        attr(xml, "keyboard-visible", Boolean.toString(observation.keyboardVisible()));
+        attr(xml, "window-observation-start-ms", Long.toString(observationStart));
+        attr(xml, "window-observation-end-ms", Long.toString(observationEnd));
+        attr(xml, "interactive-window-count", Integer.toString(observation.windowCount()));
+        attr(xml, "root-window-present", Boolean.toString(observation.rootPresent()));
+        attr(xml, "root-window-focused", Boolean.toString(observation.rootFocused()));
+        attr(xml, "ime-window-count", Integer.toString(observation.imeCount()));
+        attr(xml, "ime-windows-truncated", Boolean.toString(observation.imeCount() > MAX_IME_WINDOWS));
+        attr(xml, "ime-windows", observation.imeWindows());
         writeNode(xml, root, display, 0, new int[] {0});
         xml.endTag(null, "hierarchy");
         xml.endDocument();
@@ -254,6 +305,45 @@ public final class FrameInstrumentation extends Instrumentation {
             throw new IOException("Accessibility tree exceeds byte budget");
         }
         return bytes.toByteArray();
+    }
+
+    private record WindowObservation(boolean keyboardVisible, int windowCount, int imeCount,
+            boolean rootPresent, boolean rootFocused, String imeWindows) {}
+
+    private static WindowObservation observeWindows(
+            List<AccessibilityWindowInfo> windows, Rect display, int rootWindowId) {
+        boolean visible = false;
+        boolean rootPresent = false;
+        boolean rootFocused = false;
+        int count = 0;
+        StringBuilder metadata = new StringBuilder("[");
+        for (AccessibilityWindowInfo window : windows) {
+            if (window.getId() == rootWindowId) {
+                rootPresent = true;
+                rootFocused = window.isFocused();
+            }
+            if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                Rect bounds = new Rect();
+                window.getBoundsInScreen(bounds);
+                boolean intersects = !bounds.isEmpty() && Rect.intersects(bounds, display);
+                // Preserve the original visibility predicate, including windows
+                // beyond the diagnostic cap. Metadata never controls readiness.
+                visible |= intersects;
+                if (count < MAX_IME_WINDOWS) {
+                    if (count != 0) metadata.append(',');
+                    // Numeric/boolean fields only: never titles, text or extras.
+                    metadata.append('[').append(window.getId()).append(',')
+                            .append(window.getDisplayId()).append(',').append(window.getType()).append(',')
+                            .append(bounds.left).append(',').append(bounds.top).append(',')
+                            .append(bounds.right).append(',').append(bounds.bottom).append(',')
+                            .append(window.isActive()).append(',').append(window.isFocused()).append(',')
+                            .append(intersects).append(']');
+                }
+                count++;
+            }
+        }
+        return new WindowObservation(visible, windows.size(), count, rootPresent,
+                rootFocused, metadata.append(']').toString());
     }
 
     private static void writeNode(
@@ -276,6 +366,7 @@ public final class FrameInstrumentation extends Instrumentation {
         attr(xml, "resource-id", node.getViewIdResourceName());
         attr(xml, "text", node.getText());
         attr(xml, "content-desc", node.getContentDescription());
+        attr(xml, "state-description", node.getStateDescription());
         attr(
                 xml,
                 "bounds",
@@ -291,6 +382,12 @@ public final class FrameInstrumentation extends Instrumentation {
                 "checked",
                 Boolean.toString(checkedState(node)));
         attr(xml, "checkable", Boolean.toString(node.isCheckable()));
+        attr(xml, "focusable", Boolean.toString(node.isFocusable()));
+        attr(xml, "focused", Boolean.toString(node.isFocused()));
+        attr(xml, "accessibility-focused", Boolean.toString(node.isAccessibilityFocused()));
+        attr(xml, "editable", Boolean.toString(node.isEditable()));
+        attr(xml, "selection-start", Integer.toString(node.getTextSelectionStart()));
+        attr(xml, "selection-end", Integer.toString(node.getTextSelectionEnd()));
         for (int index = 0; index < node.getChildCount(); index++) {
             AccessibilityNodeInfo child = node.getChild(index);
             if (child != null && child.isVisibleToUser()) {
@@ -300,13 +397,8 @@ public final class FrameInstrumentation extends Instrumentation {
         xml.endTag(null, "node");
     }
 
-    @SuppressWarnings("deprecation")
     private static boolean checkedState(AccessibilityNodeInfo node) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            return node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE;
-        }
-        // Public API35 contract; getChecked() only exists from API36.
-        return node.isChecked();
+        return node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE;
     }
 
     private static final class BoundedOutput extends FilterOutputStream {

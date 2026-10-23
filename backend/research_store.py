@@ -4,22 +4,23 @@ from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 import sqlite3
 
 try:
-    from .credit_evidence import EvidenceError, Rating, Source, Statement, stamp
+    from .credit_evidence import EvidenceError, Rating, Source, Statement, stamp, validated_statement_data
     from .risk_math import aligned_returns
     from .evidence_order import latest_unambiguous
     from .evidence_history import HistoryUnavailable, read_history
     from .evidence_revision import initialize_revision, read_revision, RevisionUnavailable
 except ImportError:
-    from credit_evidence import EvidenceError, Rating, Source, Statement, stamp
+    from credit_evidence import EvidenceError, Rating, Source, Statement, stamp, validated_statement_data
     from risk_math import aligned_returns
     from evidence_order import latest_unambiguous
     from evidence_history import HistoryUnavailable, read_history
     from evidence_revision import initialize_revision, read_revision, RevisionUnavailable
 
-KINDS = {'rating', 'statement', 'issuer_identity', 'total_returns'}
+KINDS = {'rating', 'statement', 'issuer_identity', 'total_returns', 'news_event'}
 
 
 def initialize(db):
@@ -65,12 +66,22 @@ def _statement(subject, payload, source):
         raise EvidenceError('statement_subject_mismatch')
     if type(statement.audited) is not bool or not isinstance(statement.values, dict):
         raise EvidenceError('invalid_statement_shape')
+    start, end = stamp(statement.period_start), stamp(statement.period_end)
+    if start >= end or end > stamp(source.published_at):
+        raise EvidenceError('invalid_statement_period')
+    validated_statement_data(statement)
 
 
 def _identity(subject, payload, _source):
     issuer = payload.get('issuer_id')
     if not isinstance(issuer, str) or not issuer.strip() or len(issuer) > 160 or payload.get('instrument_uid') != subject:
         raise EvidenceError('identity_subject_mismatch')
+    for key in ('issuer_name', 'group_id', 'group_name'):
+        value = payload.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 240 or any(ord(char) < 32 for char in value)):
+            raise EvidenceError('identity_optional_field_invalid')
+    if payload.get('group_name') and not payload.get('group_id'):
+        raise EvidenceError('verified_group_identity_required')
 
 
 def _returns(subject, payload, source):
@@ -84,15 +95,35 @@ def _returns(subject, payload, source):
         raise EvidenceError('history_after_publication')
 
 
-VALIDATORS = {'rating': _rating, 'statement': _statement, 'issuer_identity': _identity, 'total_returns': _returns}
+def _news_event(subject, payload, source):
+    if payload.get('broker_news_id') != subject or not re.fullmatch(r'\d{1,20}', subject):
+        raise EvidenceError('news_subject_mismatch')
+    if not re.fullmatch(r'[A-Za-z0-9_.:\-]{1,160}', str(payload.get('event_id', ''))):
+        raise EvidenceError('news_event_identity_required')
+    if not re.fullmatch(r'[0-9a-f]{64}', str(payload.get('news_sha256', ''))):
+        raise EvidenceError('news_observation_fingerprint_required')
+    role = payload.get('publication_role')
+    if role not in {'primary', 'repost', 'independent_report'}:
+        raise EvidenceError('news_publication_role_invalid')
+    primary = payload.get('primary_source')
+    if primary is None:
+        if role in {'primary', 'repost'}:
+            raise EvidenceError('news_primary_source_required')
+        return
+    if not isinstance(primary, dict):
+        raise EvidenceError('news_primary_source_invalid')
+    if not Source(**primary).valid(stamp(source.checked_at)):
+        raise EvidenceError('news_primary_source_not_verified')
+    if role == 'primary' and primary['url'] != source.url:
+        raise EvidenceError('news_primary_source_does_not_match_publication')
 
 
-def import_record(connect, *, kind: str, subject: str, payload: dict, at: datetime | None = None) -> str:
-    """Import reviewed facts from an operator-side connector, never from Android.
+VALIDATORS = {'rating': _rating, 'statement': _statement, 'issuer_identity': _identity, 'total_returns': _returns,
+              'news_event': _news_event}
 
-    Source timestamps are source claims. imported_at additionally records when
-    this installation first received the fact, for point-in-time replay.
-    """
+
+def prepare_record(*, kind: str, subject: str, payload: dict, at: datetime | None = None) -> tuple:
+    """Validate and encode a reviewed record without opening a database."""
     now = at if at is not None else datetime.now(timezone.utc)
     _key(kind, subject)
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
@@ -115,12 +146,41 @@ def import_record(connect, *, kind: str, subject: str, payload: dict, at: dateti
     if len(encoded) > 600_000:
         raise EvidenceError('research_record_too_large')
     digest = hashlib.sha256((kind + ':' + subject + ':' + serialized).encode()).hexdigest()
+    return digest, kind, subject, serialized, now.astimezone(timezone.utc).isoformat()
+
+
+def import_record(connect, *, kind: str, subject: str, payload: dict, at: datetime | None = None) -> str:
+    """Import reviewed facts from an operator-side connector, never from Android.
+
+    Source timestamps are source claims. imported_at additionally records when
+    this installation first received the fact, for point-in-time replay.
+    """
+    prepared = prepare_record(kind=kind, subject=subject, payload=payload, at=at)
     with closing(connect()) as db:
         initialize(db)
         db.execute('INSERT OR IGNORE INTO research_evidence_v1 VALUES (?,?,?,?,?)',
-                   (digest, kind, subject, serialized, now.astimezone(timezone.utc).isoformat()))
+                   prepared)
         db.commit()
-    return digest
+    return prepared[0]
+
+
+def import_batch(connect, records: list[dict], *, at: datetime | None = None) -> dict:
+    """Validate the entire bundle, then insert all new records atomically.
+
+    Repeated records keep their first imported_at and do not increment the
+    evidence revision. No existing user, fact, source claim or secret is edited.
+    """
+    now = at if at is not None else datetime.now(timezone.utc)
+    prepared = [prepare_record(**record, at=now) for record in records]
+    inserted = 0
+    with closing(connect()) as db:
+        initialize(db)
+        with db:
+            db.execute('BEGIN IMMEDIATE')
+            for row in prepared:
+                inserted += db.execute('INSERT OR IGNORE INTO research_evidence_v1 VALUES (?,?,?,?,?)', row).rowcount
+    return {'record_count': len(prepared), 'inserted_count': inserted,
+            'unchanged_count': len(prepared) - inserted, 'digests': [row[0] for row in prepared]}
 
 
 def records(connect, kind: str, subject: str, *, at: datetime | None = None) -> list[dict]:

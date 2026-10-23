@@ -6,6 +6,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -30,12 +31,17 @@ import ru.omnicio.app.ui.workspace.*
 import ru.omnicio.app.ui.spectrum.DarkSpectrumPalette
 import ru.omnicio.app.ui.spectrum.LightSpectrumPalette
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
+import ru.omnicio.app.ui.spectrum.LocalEditorRestorationOwner
+import ru.omnicio.app.ui.spatial.SpatialSceneRoot
+import ru.omnicio.app.ui.spatial.SpatialMotion
+import java.util.UUID
 
 enum class ThemeMode(val title: String) {
     SYSTEM("Как в системе"), LIGHT("Светлая"), DARK("Тёмная");
 }
 
-data class ThemePreference(val mode: ThemeMode, val select: (ThemeMode) -> Unit)
+data class ThemePreference(val mode: ThemeMode, val preview: (ThemeMode) -> Unit = {},
+    val cancelPreview: () -> Unit = {}, val applyPreview: () -> Unit = {}, val select: (ThemeMode) -> Unit)
 val LocalThemePreference = staticCompositionLocalOf {
     ThemePreference(ThemeMode.DARK) { }
 }
@@ -173,6 +179,7 @@ fun AnalystTheme(content: @Composable () -> Unit) {
 private fun AnalystThemeContent(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val activity = LocalActivity.current
+    val editorRestorationOwner = remember { UUID.randomUUID().toString() }
     val preferences = remember(context) {
         context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
@@ -182,10 +189,9 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
                 ?: ThemeMode.DARK.name,
         )
     }
-    var spectrumMotionEnabled by rememberSaveable {
-        mutableStateOf(preferences.getBoolean("spectrum_motion", true))
-    }
-    val mode = ThemeMode.entries.firstOrNull { it.name == modeName } ?: ThemeMode.DARK
+    var previewMode by remember { mutableStateOf<ThemeMode?>(null) }
+    val mode = previewMode ?: ThemeMode.entries.firstOrNull { it.name == modeName } ?: ThemeMode.DARK
+    val workspace = LocalWorkspacePreferences.current
     val systemDark = isSystemInDarkTheme()
     val dark = when (mode) {
         ThemeMode.SYSTEM -> systemDark
@@ -205,15 +211,19 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         )
         activity?.window?.isNavigationBarContrastEnforced = false
     }
-    val themePreference = ThemePreference(mode) { selected ->
+    val saveTheme: (ThemeMode) -> Unit = { selected ->
         modeName = selected.name
+        previewMode = null
         preferences.edit().putString("theme_mode", selected.name).apply()
     }
-    val motionPreference = SpectrumMotionPreference(spectrumMotionEnabled) { enabled ->
-        spectrumMotionEnabled = enabled
+    val themePreference = ThemePreference(mode, preview = { previewMode = it }, cancelPreview = { previewMode = null },
+        applyPreview = { previewMode?.let(saveTheme) }, select = saveTheme)
+    val motionPreference = SpectrumMotionPreference(workspace.value.motion != MotionLevel.OFF) { enabled ->
+        workspace.update(workspace.value.copy(motion = if (enabled) MotionLevel.LIVE else MotionLevel.OFF))
         preferences.edit().putBoolean("spectrum_motion", enabled).apply()
     }
     CompositionLocalProvider(
+        LocalEditorRestorationOwner provides editorRestorationOwner,
         LocalThemePreference provides themePreference,
         LocalSpectrumMotionPreference provides motionPreference,
         LocalSpectrumPalette provides workspacePalette(if (dark) DarkSpectrumPalette else LightSpectrumPalette,
@@ -225,10 +235,12 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         ) {
             // Transparent scaffolds and text outside cards must not inherit the
             // framework's default black LocalContentColor in the dark theme.
-            CompositionLocalProvider(
-                LocalContentColor provides MaterialTheme.colorScheme.onBackground,
-                content = content,
-            )
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+                SpatialSceneRoot(modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+                    motion = when (workspace.value.motion) { MotionLevel.LIVE -> SpatialMotion.Live; MotionLevel.SUBDUED -> SpatialMotion.Subdued; MotionLevel.OFF -> SpatialMotion.Off },
+                    tactile = workspace.value.haptics, opaque = workspace.value.brightLight,
+                    navigationProgress = LocalWorkspaceBackProgress.current) { content() }
+            }
         }
     }
 }

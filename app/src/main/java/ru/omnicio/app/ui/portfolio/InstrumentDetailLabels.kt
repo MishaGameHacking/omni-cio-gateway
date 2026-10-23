@@ -33,3 +33,4 @@ internal fun instrumentDetailLabels(type: String, hasAccrued: Boolean): Instrume
     }
     return InstrumentDetailLabels(label, quantity, accrued)
 }
+

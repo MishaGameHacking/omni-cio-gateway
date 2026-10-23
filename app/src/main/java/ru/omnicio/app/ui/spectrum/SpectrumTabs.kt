@@ -1,26 +1,39 @@
 package ru.omnicio.app.ui.spectrum
 
-import androidx.compose.foundation.background
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import ru.omnicio.app.ui.spatial.SpatialState
+import ru.omnicio.app.ui.spatial.SpatialSurface
+import ru.omnicio.app.ui.spatial.SpatialSurfaceKind
+import ru.omnicio.app.ui.spatial.rememberSpatialHapticClick
+
+/** Optional native scroll identity for an owned instrumentation host. */
+val LocalSpectrumTabScrollTag = staticCompositionLocalOf<String?> { null }
 
 /** Brand-owned segmented navigation: single-line labels and 48dp+ targets. */
 @Composable
@@ -40,6 +53,7 @@ fun SpectrumTabs(
     val height = with(density) { measured.maxOf { it.height }.toDp() + 24.dp }.coerceAtLeast(52.dp)
     val gap = 6.dp
     val scroll = rememberScrollState()
+    val scrollTag = LocalSpectrumTabScrollTag.current
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val available = (maxWidth - gap * (labels.size - 1)).coerceAtLeast(0.dp)
         val extra = ((available - minimumWidths.reduce { total, width -> total + width }) / labels.size).coerceAtLeast(0.dp)
@@ -51,26 +65,29 @@ fun SpectrumTabs(
             scroll.scrollTo(selectedOffset.coerceIn(0, scroll.maxValue))
         }
         Row(
-            Modifier.fillMaxWidth().height(height).horizontalScroll(scroll).selectableGroup(),
+            Modifier.fillMaxWidth().height(height).horizontalScroll(scroll).selectableGroup()
+                .let { if (scrollTag == null) it else it.semantics { testTagsAsResourceId = true }.testTag(scrollTag) },
             horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
             labels.forEachIndexed { index, label ->
                 val chosen = index == selected
-                Box(
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+                val pressed by interaction.collectIsPressedAsState()
+                val click = rememberSpatialHapticClick(ru.omnicio.app.ui.spatial.SpatialHaptic.Selection) { onSelect(index) }
+                SpatialSurface(
                     modifier = Modifier
                         .width(widths[index])
                         .height(height)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                if (chosen) listOf(palette.blue.copy(alpha = 0.30f), palette.violet.copy(alpha = 0.24f))
-                                else listOf(palette.card.copy(alpha = 0.65f), palette.card.copy(alpha = 0.65f)),
-                            ),
-                        )
-                        .selectable(chosen, role = Role.Tab, onClick = { onSelect(index) })
-                        .padding(horizontal = 8.dp),
-                    contentAlignment = Alignment.Center,
+                        .let { target -> if (scrollTag == null) target else target
+                            .semantics { testTagsAsResourceId = true }.testTag("$scrollTag-item-$index") }
+                        .selectable(chosen, interactionSource = interaction, indication = null, role = Role.Tab, onClick = click),
+                    kind = SpatialSurfaceKind.Chip,
+                    color = if (chosen) palette.cardStrong else palette.card,
+                    state = when { pressed -> SpatialState.Pressed; chosen || focused -> SpatialState.Selected; else -> SpatialState.Idle },
+                    emphasized = chosen,
                 ) {
+                    Box(Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                     Text(
                         label,
                         style = style,
@@ -78,9 +95,11 @@ fun SpectrumTabs(
                         softWrap = false,
                         color = if (chosen) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    }
                 }
             }
         }
     }
 }
+
 

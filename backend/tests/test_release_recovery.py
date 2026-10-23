@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from backend import release_publication as publication
 from backend.client_updates import AndroidRelease, ReleaseChannel, ReleaseUnavailable
+from backend.tests.android_runtime_fixtures import publication_report
 
 PACKAGE = 'ru.omnicio.app.debug'
 CERTIFICATE = 'c' * 64
@@ -25,11 +26,11 @@ class PublicationRecoveryTests(unittest.TestCase):
     def report(self, code=23):
         digest = hashlib.sha256(self.apk.read_bytes()).hexdigest()
         checks = dict(clean_install=True, upgrade=True, upgrade_launch=True, launch=True)
-        return dict(package=PACKAGE, version_code=code, version_name=f'test-{code}',
+        return publication_report(dict(package=PACKAGE, version_code=code, version_name=f'test-{code}',
                     min_sdk=36, sha256=digest, bytes=self.apk.stat().st_size,
                     certificate_sha256=CERTIFICATE, signature_v2=True, zipalign_16kb=True,
                     debuggable=False, test_only=False,
-                    installation_evidence={'apk_sha256': digest, '36': checks})
+                    installation_evidence={'apk_sha256': digest, '36': checks}))
 
     def publish(self, code=23, now=200, notes=''):
         return publication.publish(self.root, self.apk, self.report(code),
@@ -69,8 +70,8 @@ class PublicationRecoveryTests(unittest.TestCase):
     def test_retry_cannot_change_prepared_minimum_android(self):
         self.interrupt_before_activation()
         report = self.report()
-        report['min_sdk'] = 37
-        with self.assertRaisesRegex(ReleaseUnavailable, 'identity_changed'):
+        report['min_sdk'] = 38
+        with self.assertRaisesRegex(ReleaseUnavailable, 'unsupported_android_floor'):
             publication.publish(self.root, self.apk, report,
                                 expected_certificate=CERTIFICATE, now=200)
         self.assertFalse((self.root / PACKAGE / 'current.json').exists())

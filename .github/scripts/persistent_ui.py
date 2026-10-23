@@ -6,6 +6,7 @@ fallback: disconnected or invalid frames fail. This is not part of the preview A
 from __future__ import annotations
 
 from contextlib import contextmanager
+from backend.android_runtime_contract import TARGET_SDK
 import hashlib
 from pathlib import Path
 import re
@@ -31,6 +32,9 @@ SCROLL_LIST_CODES = {
     "portfolio-content": 3,
     "profile-tabs": 4,
     "workspace-content": 5,
+    "dossier-tabs": 6,
+    "quotes-intervals": 7,
+    "assistant-composer": 8,
 }
 
 
@@ -176,8 +180,8 @@ def assert_disposable(device):
         raise ValueError("Frame instrumentation is restricted to the owned disposable AVD")
     if checked(device, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
         raise ValueError("Frame instrumentation refuses physical devices")
-    if checked(device, "shell", "getprop", "ro.build.version.sdk").strip() not in {"35", "36"}:
-        raise ValueError("Frame instrumentation requires a tested API 35 or 36 image")
+    if checked(device, "shell", "getprop", "ro.build.version.sdk").strip() != str(TARGET_SDK):
+        raise ValueError("Frame instrumentation requires the current tested Android image")
 
 
 def connect_session(port: int, token: str):

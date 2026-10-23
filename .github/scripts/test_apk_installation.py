@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
@@ -89,12 +90,23 @@ def is_transient_adb_transport_failure(response_text: str) -> bool:
 
 
 def adb_transport_connected(adb: str, serial: str) -> bool:
-    """Independently distinguish a command timeout from an offline emulator."""
+    """Require a guest response, not just the server's cached transport state.
+
+    A hung guest can remain listed as ``device`` while installation, shell and
+    logcat all stop answering. Only a separate shell round trip distinguishes
+    that failure from a slow application/UI command on a healthy emulator.
+    """
     try:
         state = run([adb, "-s", serial, "get-state"], timeout=5)
+        if state.returncode != 0 or state.stdout.strip() != "device":
+            return False
+        heartbeat = run(
+            [adb, "-s", serial, "shell", "echo", "analyst-emulator-ready"],
+            timeout=5,
+        )
     except (subprocess.TimeoutExpired, OSError):
         return False
-    return state.returncode == 0 and state.stdout.strip() == "device"
+    return heartbeat.returncode == 0 and heartbeat.stdout.strip() == "analyst-emulator-ready"
 
 
 def classify_frame_failure(error: Exception, adb: str, serial: str, process) -> Exception:
@@ -131,7 +143,18 @@ def record_profile_check(device, results, exercise) -> None:
     result = {"test": "profile_ui", "success": False}
     results.append(result)
     try:
-        exercise(device)
+        receipt = exercise(device)
+        if not isinstance(receipt, dict) or set(receipt) != {
+            "ui_suite", "business_case_count", "business_cases", "portfolio_case_count", "portfolio_cases",
+        }:
+            raise ValueError("Profile UI did not return its completed runtime matrix")
+        fixtures = [row for row in results if row.get("test") == "debug_ui_fixture_install" and row.get("success") is True]
+        if len(fixtures) != 1:
+            raise ValueError("The UI receipt has no unique installed debug fixture")
+        result.update(receipt)
+        result["fixture_apk_sha256"] = fixtures[0].get("apk_sha256")
+        from installation_report import validate_current_ui
+        validate_current_ui(result, fixtures[0])
     except Exception as exc:
         result["error_type"] = type(exc).__name__
         raise
@@ -160,6 +183,59 @@ def collect_failure_diagnostics(device) -> None:
                 "EMULATOR_DIAGNOSTIC_UNAVAILABLE=" + type(exc).__name__,
                 flush=True,
             )
+
+
+def candidate_package_uid(output: str) -> str | None:
+    """Resolve only this installed APK's UID, including after its process died."""
+    matches = []
+    for line in output.splitlines():
+        match = re.fullmatch(r"package:ru\.omnicio\.app\.debug uid:([0-9]{1,10})", line.strip())
+        if match is not None:
+            value = int(match.group(1))
+            if 10000 <= value <= 2147483647:
+                matches.append(str(value))
+    return matches[0] if len(matches) == 1 else None
+
+
+def collect_graphics_diagnostics(device) -> None:
+    """Retain shader errors and app PIDs before unrelated log traffic hides them.
+
+    Read the bounded Android log buffers through tag/UID filters, not a global
+    last-N-lines query. The package UID still identifies the failed process after
+    SIGABRT; threadtime output retains its exact PID/TID. Each read has a deadline
+    and the printed excerpt is bounded. Diagnostics never turn a failure into a
+    pass or authorize an emulator retry.
+    """
+    commands = [(
+        "shader-main-system",
+        ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime",
+         "Filament:V", "filament:V", "Spectrum3D:V", "libc:F", "*:S"),
+    )]
+    try:
+        identity = device("shell", "cmd", "package", "list", "packages", "-U",
+                          "ru.omnicio.app.debug", timeout=10)
+        uid = candidate_package_uid(identity.stdout) if identity.returncode == 0 else None
+        if uid is not None:
+            commands.append((
+                "candidate-uid-" + uid,
+                ("logcat", "-d", "-b", "main", "-b", "system", "-v", "threadtime", "--uid=" + uid),
+            ))
+        else:
+            print("EMULATOR_GRAPHICS_IDENTITY=unavailable", flush=True)
+    except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
+        print("EMULATOR_GRAPHICS_IDENTITY=" + type(exc).__name__, flush=True)
+    for label, command in commands:
+        try:
+            diagnostic = device(*command, timeout=10)
+            if diagnostic.returncode:
+                print("EMULATOR_GRAPHICS_DIAGNOSTIC_UNAVAILABLE=" + label, flush=True)
+                continue
+            output = diagnostic.stdout
+            if len(output) > 32000:
+                output = output[:16000] + "\n[bounded diagnostic: middle omitted]\n" + output[-16000:]
+            print("EMULATOR_GRAPHICS_DIAGNOSTIC=" + label + "\n" + output, flush=True)
+        except (subprocess.TimeoutExpired, OSError, RuntimeError) as exc:
+            print("EMULATOR_GRAPHICS_DIAGNOSTIC_UNAVAILABLE=" + label + ":" + type(exc).__name__, flush=True)
 
 
 def run_with_transport_retry(
@@ -213,10 +289,17 @@ def run_attempt(
     api: int,
     work: Path,
     attempt: int,
+    page_size_bytes: int = 4096,
 ) -> list[dict[str, object]]:
     """Execute the complete publication-grade contract in one fresh AVD."""
     from artifact_test_identity import apk_digest, record_install
+    from emulator_graphics import (
+        EMULATOR_FEATURES, EMULATOR_GPU_MODE, read_filament_renderer,
+        require_guest_angle, snapshot_system_graphics,
+    )
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
+    from emulator_runtime import snapshot_runtime_environment
+    from emulator_boot_readiness import prepared_emulator_session
     from emulator_storage import configure_userdata, remove_disposable_avd
 
     avd_home = work / "avd"
@@ -232,7 +315,9 @@ def run_attempt(
         sdk / "cmdline-tools" / "latest" / "bin" / ("avdmanager" + batch)
     )
     name = f"analyst-install-{os.getpid()}-{attempt}"
-    image = f"system-images;android-{api};google_apis;x86_64"
+    from kernel_page_size import measured_record, system_image
+
+    image = system_image(api, page_size_bytes)
     create = run(
         [
             manager,
@@ -257,6 +342,7 @@ def run_attempt(
     log_path = work / "emulator.log"
     results: list[dict[str, object]] = []
     failed = True
+    system_graphics: dict[str, object] = {}
 
     last_uiautomator_dump_finished = 0.0
     process: subprocess.Popen[str] | None = None
@@ -330,6 +416,7 @@ def run_attempt(
                 "ADB_TRANSIENT_RECOVERY=" + (combined.strip() or "timeout"),
                 flush=True,
             )
+
             time.sleep(2)
             try:
                 wait = run(
@@ -366,6 +453,7 @@ def run_attempt(
             "test": label,
             "success": False,
             "apk_sha256": candidate_digest,
+            "system_graphics": system_graphics,
         }
         results.append(result)
         try:
@@ -387,6 +475,18 @@ def run_attempt(
             alive = device("shell", "pidof", "ru.omnicio.app.debug")
             if alive.returncode or not alive.stdout.strip():
                 raise RuntimeError(f"{label} process did not remain running")
+            identity = device("shell", "cmd", "package", "list", "packages", "-U",
+                              "ru.omnicio.app.debug", timeout=10)
+            uid = candidate_package_uid(identity.stdout) if identity.returncode == 0 else None
+            if uid is None:
+                raise RuntimeError("Could not identify the launched candidate's package UID")
+            # The UID can survive reinstalls/restarts: only this fresh pidof PID
+            # may supply the context header for this particular launch record.
+            renderer = read_filament_renderer(device, uid=uid, pid=alive.stdout.strip())
+            result["renderer"] = renderer
+            print("EMULATOR_FILAMENT_GLES=" + json.dumps(
+                {"launch": label, **renderer}, sort_keys=True), flush=True)
+            require_guest_angle(renderer)
             if apk_digest(apk) != candidate_digest:
                 raise RuntimeError("Candidate changed during emulator checks")
         except Exception as exc:
@@ -408,12 +508,23 @@ def run_attempt(
                 "-no-audio",
                 "-no-snapshot",
                 "-no-boot-anim",
+                # Fix the disposable device's local zone for the actual calendar
+                # UTC/Moscow date-boundary checks; never inherit the runner host.
+                # developer.android.com/studio/run/emulator-commandline#common
+                "-timezone",
+                "Etc/UTC",
                 "-gpu",
-                "swiftshader",
+                EMULATOR_GPU_MODE,
                 "-feature",
-                "-Vulkan",
+                # Guest ANGLE compiles the app's GLES and uses guest Vulkan.
+                # Windows host GLES can remain legacy SwiftShader even when a
+                # modern software Vulkan ICD is selected. Observe the app's
+                # actual context above; neither a flag nor SF proves this path.
+                EMULATOR_FEATURES,
                 "-memory",
-                "2048",
+                # current OS ps16k + Google services exhausted 2GiB: exit-info
+                # recorded LOW_MEMORY even for the foreground candidate.
+                "4096",
                 "-cores",
                 "2",
                 "-accel",
@@ -463,27 +574,45 @@ def run_attempt(
                 flush=True,
             )
             verify_emulator_identity(device, name, api)
-            package = "ru.omnicio.app.debug"
-            if previous:
-                install("previous_clean_install", previous)
-                install("upgrade_to_candidate", apk, update=True)
-                launch_candidate("upgrade_bootstrap_launch")
-                removed = device("uninstall", package)
-                if removed.returncode or "Success" not in removed.stdout:
-                    raise RuntimeError(
-                        "Could not reset disposable emulator package"
-                    )
-            install("candidate_clean_install", apk)
-            launch_candidate("bootstrap_activity_launch")
-            if api in {35, 36} and os.getenv("RUN_PROFILE_UI_TESTS") == "1":
-                from profile_ui_probe import exercise
+            with prepared_emulator_session(device, name, api) as preparation:
+                print("EMULATOR_RUNTIME_ENVIRONMENT=" + json.dumps(
+                    snapshot_runtime_environment(device, sdk, api, page_size_bytes=page_size_bytes), sort_keys=True), flush=True)
+                page_size = device("shell", "getconf", "PAGE_SIZE")
+                try:
+                    if page_size.returncode:
+                        raise RuntimeError("The booted kernel could not report its page size")
+                    kernel = measured_record(api, page_size.stdout, candidate_digest, page_size_bytes=page_size_bytes)
+                except (RuntimeError, ValueError):
+                    results.append({"test": "kernel_page_size", "success": False,
+                                    "android_api": api, "system_image": image,
+                                    "observed": page_size.stdout.strip()[:80]})
+                    raise
+                kernel["emulator_preparation"] = preparation
+                results.append(kernel)
+                print("KERNEL_PAGE_SIZE=" + json.dumps(kernel, sort_keys=True), flush=True)
+                system_graphics = snapshot_system_graphics(device)
+                print("EMULATOR_SYSTEM_GRAPHICS=" + json.dumps(system_graphics, sort_keys=True), flush=True)
+                package = "ru.omnicio.app.debug"
+                if previous:
+                    install("previous_clean_install", previous)
+                    install("upgrade_to_candidate", apk, update=True)
+                    launch_candidate("upgrade_bootstrap_launch")
+                    removed = device("uninstall", package)
+                    if removed.returncode or "Success" not in removed.stdout:
+                        raise RuntimeError(
+                            "Could not reset disposable emulator package"
+                        )
+                install("candidate_clean_install", apk)
+                launch_candidate("bootstrap_activity_launch")
+                if os.getenv("RUN_PROFILE_UI_TESTS") == "1":
+                    from profile_ui_probe import exercise
 
-                debug_apk = (
-                    Path(__file__).resolve().parents[2]
-                    / "app/build/outputs/apk/debug/app-debug.apk"
-                )
-                install("debug_ui_fixture_install", debug_apk, update=True)
-                record_profile_check(device, results, exercise)
+                    debug_apk = (
+                        Path(__file__).resolve().parents[2]
+                        / "app/build/outputs/apk/debug/app-debug.apk"
+                    )
+                    install("debug_ui_fixture_install", debug_apk, update=True)
+                    record_profile_check(device, results, exercise)
             failed = False
             return results
         except Exception as original:
@@ -496,6 +625,7 @@ def run_attempt(
             log.flush()
             _write_report(work / "install-results.json", results)
             if failed and not transport_lost:
+                collect_graphics_diagnostics(device)
                 collect_runtime_failure(device)
                 collect_failure_diagnostics(device)
             elif failed:
@@ -533,8 +663,8 @@ def run_attempt(
                 )[-5000:],
                 flush=True,
             )
-
-            # Retain logs/receipts, release only this stopped attempt's images.
+            # The emulator has exited. Keep its log and JSON report, but release
+            # owned disk images before a retry, other page-size profile, or another runner's lease.
             try:
                 remove_disposable_avd(avd_home, work, process=process)
             except (OSError, ValueError) as cleanup_error:
@@ -550,7 +680,8 @@ def main() -> None:
     parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--sdk", required=True, type=Path)
-    parser.add_argument("--api", default=36, type=int)
+    parser.add_argument("--api", type=int, choices=(37,), default=37)
+    parser.add_argument("--page-bytes", type=int, choices=(4096, 16384), default=4096)
     parser.add_argument("--work-dir", required=True, type=Path)
     args = parser.parse_args()
 
@@ -573,6 +704,7 @@ def main() -> None:
                 api=args.api,
                 work=attempt_work,
                 attempt=attempt,
+                page_size_bytes=args.page_bytes,
             )
         except Exception:
             report = attempt_work / "install-results.json"

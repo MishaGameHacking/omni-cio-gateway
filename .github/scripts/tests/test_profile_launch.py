@@ -58,6 +58,112 @@ RESUMED = "topResumedActivity=ActivityRecord{123 u0 " + ACTIVITY + " t12}"
 
 
 class ProfileLaunchTests(unittest.TestCase):
+    def test_foreground_timeout_requires_a_new_complete_pair_and_frame(self):
+        command = Mock(side_effect=[RESUMED, subprocess.TimeoutExpired("dumpsys", 4), RESUMED, RESUMED])
+        read_tree = Mock(side_effect=[tree(), tree()])
+        evidence = {}
+        self.assertIsNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+        self.assertEqual(evidence["foreground_after"], ["activity observation timed out"])
+        self.assertIsNotNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+        self.assertEqual(read_tree.call_count, 2)
+        self.assertEqual(command.call_count, 4)
+        command.assert_called_with("shell", "dumpsys", "-t", "2", "activity", "activities", timeout=4)
+
+    def test_incomplete_system_dump_cannot_authorize_a_frame(self):
+        read_tree = Mock(return_value=tree())
+        partial = RESUMED + "\n*** SERVICE 'activity' DUMP TIMEOUT (2s) EXPIRED ***"
+        command = Mock(return_value=partial)
+        self.assertIsNone(launch.profile_frame(command, read_tree, {}, "profile"))
+        read_tree.assert_not_called()
+
+    def test_expired_foreground_read_cannot_reuse_previous_identity(self):
+        command = Mock(side_effect=[subprocess.TimeoutExpired("dumpsys", 4), RESUMED, "other app"])
+        read_tree = Mock(return_value=tree())
+        evidence = {"foreground_before": [RESUMED], "foreground_after": [RESUMED]}
+        self.assertIsNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+        read_tree.assert_not_called()
+        self.assertIsNone(launch.profile_frame(command, read_tree, evidence, "profile"))
+
+    def test_generic_ready_marker_does_not_require_a_screen(self):
+        self.assertIsNotNone(ready_marker(tree(screen=""), None, None))
+        self.assertIsNone(ready_marker(tree(screen="", marker="not-ready"), None, None))
+
+    def test_scenario_without_screen_is_rejected_before_device_or_tree_access(self):
+        for scenario in ("ready", "empty", "partial", "error", "job", ""):
+            with self.subTest(scenario=scenario):
+                command, read_tree, wait = Mock(), Mock(), Mock()
+                with self.assertRaisesRegex(ValueError, "requires an explicit screen"):
+                    launch_profile(command, read_tree, wait, expected_screen=None, scenario=scenario)
+                command.assert_not_called()
+                read_tree.assert_not_called()
+                wait.assert_not_called()
+
+                unread_tree = Mock()
+                with self.assertRaisesRegex(ValueError, "requires an explicit screen"):
+                    ready_marker(unread_tree, None, scenario)
+                unread_tree.iter.assert_not_called()
+
+    def test_portfolio_launch_requires_exact_production_route_and_scenario(self):
+        ready = tree(screen="probe-screen:portfolio-history;probe-scenario:partial")
+        self.assertIsNotNone(ready_marker(ready, "portfolio-history", "partial"))
+        self.assertIsNone(ready_marker(ready, "portfolio-history", "ready"))
+        self.assertIsNone(ready_marker(ready, "portfolio-dossier", "ready"))
+        command = Mock(side_effect=["", "Status: ok", RESUMED, RESUMED])
+        launch_profile(command, lambda: ready, lambda read, message: read(), expected_screen="portfolio-history", scenario="partial")
+        self.assertEqual(command.call_args_list[1].args[-6:], ("--es", "spectrum_screen", "portfolio-history", "--es", "spectrum_scenario", "partial"))
+
+    def test_unsupported_portfolio_route_scenario_fails_before_adb(self):
+        for screen, scenario in (("portfolio-discovery", "partial"), ("portfolio-dossier", "error"),
+                                 ("portfolio-history", "job"), ("portfolio-quotes", "empty"),
+                                 ("portfolio-markets", "partial"), ("portfolio-appearance", "partial")):
+            command = Mock()
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock()
+            with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):
+                launch_profile(command, prepared_argument_1, prepared_argument_2, expected_screen=screen, scenario=scenario)
+            command.assert_not_called()
+
+    def test_portfolio_persistence_relaunch_requires_exact_run_identity(self):
+        run_id = "a" * 32
+        ready = tree(screen="probe-screen:portfolio-appearance;probe-scenario:ready;probe-run:" + run_id)
+        self.assertIsNotNone(ready_marker(ready, "portfolio-appearance", "ready", run_id))
+        self.assertIsNone(ready_marker(ready, "portfolio-appearance", "ready", "b" * 32))
+        command = Mock(side_effect=["", "Status: ok", RESUMED, RESUMED])
+        launch_profile(command, lambda: ready, lambda read, message: read(),
+                       expected_screen="portfolio-appearance", scenario="ready", run_id=run_id)
+        self.assertEqual(command.call_args_list[1].args[-3:], ("--es", "spectrum_probe_run", run_id))
+
+    def test_unknown_or_unsafe_fixture_run_is_rejected_before_any_command(self):
+        for screen, run_id in (("profile", "a" * 32), ("business-risk", "a" * 32),
+                               ("portfolio-history", "../user"), ("portfolio-history", "a" * 33),
+                               ("portfolio-history", "A" * 32), ("portfolio-history", 123)):
+            command = Mock()
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock()
+            with self.subTest(screen=screen, run_id=run_id), self.assertRaises(ValueError):
+                launch_profile(command, prepared_argument_1, prepared_argument_2, expected_screen=screen, run_id=run_id)
+            command.assert_not_called()
+
+    def test_business_launch_requires_exact_screen_and_scenario(self):
+        ready = tree(screen="probe-screen:business-risk;probe-scenario:partial")
+        self.assertIsNotNone(ready_marker(ready, "business-risk", "partial"))
+        self.assertIsNone(ready_marker(ready, "business-risk", "ready"))
+        self.assertIsNone(ready_marker(ready, "business-plans", "partial"))
+        command = Mock(side_effect=["", "Status: ok", RESUMED, RESUMED])
+        launch_profile(command, lambda: ready, lambda read, message: read(), expected_screen="business-risk", scenario="partial")
+        self.assertEqual(command.call_args_list[1].args[-6:], ("--es", "spectrum_screen", "business-risk", "--es", "spectrum_scenario", "partial"))
+
+    def test_unsupported_business_scenarios_fail_before_adb(self):
+        for screen, scenario in (("business-risk", "job"), ("business-strategy", "job"),
+                                 ("business-notifications", "job"), ("business-analysis", "job"), ("profile", "ready"),
+                                 ("business-plans", "unknown")):
+            command = Mock()
+            prepared_argument_1 = Mock()
+            prepared_argument_2 = Mock()
+            with self.subTest(screen=screen, scenario=scenario), self.assertRaises(ValueError):
+                launch_profile(command, prepared_argument_1, prepared_argument_2, expected_screen=screen, scenario=scenario)
+            command.assert_not_called()
+
     def test_host_launch_timeout_still_requires_exact_ready_screen(self):
         command = Mock(side_effect=["", subprocess.TimeoutExpired("am start", 15), RESUMED, RESUMED])
         read_tree = Mock(return_value=tree(screen="probe-screen:home"))

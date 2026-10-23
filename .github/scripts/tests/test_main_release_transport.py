@@ -126,9 +126,22 @@ class PrivateAdbTests(unittest.TestCase):
 
     def test_connected_transport_requires_exact_independent_state(self):
         for code, output, expected in ((0, "device\n", True), (0, "offline", False), (1, "device", False), (0, "", False)):
-            with self.subTest(output=output), patch.object(installation, "run", return_value=Mock(returncode=code, stdout=output)) as run:
+            responses = [Mock(returncode=code, stdout=output),
+                         Mock(returncode=0, stdout="analyst-emulator-ready\n")]
+            with self.subTest(output=output), patch.object(installation, "run", side_effect=responses) as run:
                 self.assertEqual(installation.adb_transport_connected("adb", "emulator-5600"), expected)
-                run.assert_called_once_with(["adb", "-s", "emulator-5600", "get-state"], timeout=5)
+                self.assertEqual(run.call_args_list[0].args[0], ["adb", "-s", "emulator-5600", "get-state"])
+                self.assertEqual(run.call_count, 2 if expected else 1)
+                if expected:
+                    run.assert_called_with(["adb", "-s", "emulator-5600", "shell", "echo", "analyst-emulator-ready"], timeout=5)
+
+    def test_cached_device_state_does_not_hide_a_hung_guest(self):
+        for response in (subprocess.TimeoutExpired("shell", 5), OSError("closed"),
+                         Mock(returncode=1, stdout="analyst-emulator-ready"),
+                         Mock(returncode=0, stdout="")):
+            responses = [Mock(returncode=0, stdout="device"), response]
+            with self.subTest(response=response), patch.object(installation, "run", side_effect=responses):
+                self.assertFalse(installation.adb_transport_connected("adb", "emulator-5600"))
 
     def test_transport_probe_timeout_is_not_connected(self):
         with patch.object(installation, "run", side_effect=subprocess.TimeoutExpired("get-state", 5)):

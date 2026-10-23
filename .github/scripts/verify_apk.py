@@ -6,8 +6,13 @@ import json
 from pathlib import Path
 import re
 import struct
+import sys
 import zipfile
 import zlib
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from check_native_alignment import NativeAlignmentError, check_elf, inspect_native_archive
+from apk_signing_identity import verify_signing
 
 
 class InvalidAPK(ValueError):
@@ -23,7 +28,7 @@ def check_dex(data: bytes) -> str:
     require(len(data) >= 112, "Truncated DEX header")
     version = data[4:7].decode("ascii", errors="replace")
     require(data[:4] == b"dex\n" and data[7] == 0, "Invalid DEX magic")
-    require(version in {"035", "037", "038", "039", "040"}, "Unsupported DEX version for the Android 15+ build")
+    require(version in {"035", "037", "038", "039", "040"}, "Unsupported DEX format in the current Android build")
     size, header, endian = struct.unpack_from("<III", data, 32)
     require(size == len(data) and header == 112 and endian == 0x12345678, "Invalid DEX header")
     # Required DEX identifier, NOT a trust mechanism. apksigner verifies authenticity.
@@ -33,20 +38,10 @@ def check_dex(data: bytes) -> str:
 
 
 def check_elf64(data: bytes) -> None:
-    require(len(data) >= 64 and data[:6] == b"\x7fELF\x02\x01", "Invalid little-endian ELF64")
-    offset = struct.unpack_from("<Q", data, 32)[0]
-    entry_size, count = struct.unpack_from("<HH", data, 54)
-    require(entry_size >= 56 and count > 0, "Invalid ELF program header table")
-    require(offset + count * entry_size <= len(data), "Truncated ELF program headers")
-    loads = 0
-    for index in range(count):
-        header = struct.unpack_from("<IIQQQQQQ", data, offset + index * entry_size)
-        if header[0] == 1:
-            loads += 1
-            alignment = header[7]
-            require(alignment >= 16384 and alignment & (alignment - 1) == 0, "ELF LOAD is not 16 KB aligned")
-            require((header[2] - header[3]) % alignment == 0, "ELF LOAD offset/address mismatch")
-    require(loads > 0, "ELF has no LOAD segment")
+    try:
+        require(check_elf(data)["bits"] == 64, "Expected ELF64")
+    except NativeAlignmentError as error:
+        raise InvalidAPK(str(error)) from error
 
 
 def inspect_archive(apk: Path) -> dict:
@@ -65,16 +60,62 @@ def inspect_archive(apk: Path) -> dict:
             if entry.filename.startswith("lib/") and entry.filename.endswith(".so"):
                 abi = entry.filename.split("/")[1]
                 native_abis.add(abi)
-                if abi in {"arm64-v8a", "x86_64"}:
-                    check_elf64(archive.read(entry))
-    if native_abis:
-        require({"arm64-v8a", "armeabi-v7a"} <= native_abis, "Phone ABIs missing from universal APK")
-    return {"abis": sorted(native_abis), "dex_versions": sorted(dex_versions)}
+    require({"arm64-v8a", "armeabi-v7a", "x86_64"} <= native_abis,
+            "Phone or emulator ABIs missing from universal 3D APK")
+    try:
+        native = inspect_native_archive(apk, require_stored=True)
+    except NativeAlignmentError as error:
+        raise InvalidAPK(str(error)) from error
+    packaged = {item["path"] for item in native["libraries"]}
+    for abi in ("arm64-v8a", "armeabi-v7a", "x86_64"):
+        for library in ("libfilament-jni.so", "libgltfio-jni.so"):
+            require(f"lib/{abi}/{library}" in packaged, "Required Filament JNI library missing")
+    return {"abis": sorted(native_abis), "dex_versions": sorted(dex_versions),
+            "native_alignment": native}
 
 
 def manifest_flag(xmltree: str, name: str) -> bool:
     match = re.search(r"A: android:" + re.escape(name) + r"\([^\n]*?\)=\(type 0x12\)(0x[0-9a-fA-F]+)", xmltree)
     return match is not None and int(match.group(1), 16) != 0
+
+
+def _sdk_value(badging: str, field: str) -> int:
+    matches = re.findall(r"^" + re.escape(field) + r":'([0-9]+)'$", badging, re.MULTILINE)
+    require(len(matches) == 1, "Missing or ambiguous SDK metadata")
+    return int(matches[0])
+
+
+def _activity_attribute(current: dict, line: str) -> None:
+    name = re.search(r'A: android:name\([^)]*\)="([^"]+)"', line)
+    orientation = re.search(r'A: android:screenOrientation\([^)]*\)=\(type 0x10\)(0x[0-9a-fA-F]+)', line)
+    if name:
+        current["name"] = name.group(1)
+    if orientation:
+        current["orientation"] = int(orientation.group(1), 16)
+
+
+def portrait_activities(xmltree: str) -> list[str]:
+    activities = []
+    current = None
+    depth = -1
+    for line in xmltree.splitlines():
+        element = re.match(r"(\s*)E: ([\w-]+)", line)
+        if element is not None:
+            if current is not None and len(element.group(1)) <= depth:
+                activities.append(current)
+                current = None
+            if element.group(2) == "activity":
+                current, depth = {}, len(element.group(1))
+        elif current is not None and len(line) - len(line.lstrip()) == depth + 2:
+            _activity_attribute(current, line)
+    if current is not None:
+        activities.append(current)
+    expected = ["ru.omnicio.app.BootstrapActivity", "ru.omnicio.app.MainActivity"]
+    for name in expected:
+        matches = [row for row in activities if row.get("name") in {name, name.removeprefix("ru.omnicio.app")}]
+        require(len(matches) == 1 and matches[0].get("orientation") == 1,
+                "Phone Activity must declare portrait: " + name)
+    return expected
 
 
 def check_manifest(badging: str, xmltree: str, version: int, non_debuggable: bool) -> dict:
@@ -83,14 +124,16 @@ def check_manifest(badging: str, xmltree: str, version: int, non_debuggable: boo
         raise InvalidAPK("Package metadata missing")
     require(package.group(1) == "ru.omnicio.app.debug", "Unexpected application ID")
     require(int(package.group(2)) == version, "Wrong versionCode")
-    require("sdkVersion:'35'" in badging, "Unexpected minimum Android version")
-    require("targetSdkVersion:'36'" in badging, "Unexpected target Android version")
+    require(_sdk_value(badging, "sdkVersion") == 37, "Unexpected minimum Android version")
+    require(_sdk_value(badging, "targetSdkVersion") == 37, "Unexpected target Android version")
     require(not manifest_flag(xmltree, "testOnly"), "testOnly APK cannot be distributed")
     require(not re.search(r"A: (?:android:)?(?:split|isSplitRequired)[(=]", xmltree), "Split APK is not standalone")
     if non_debuggable:
         require(not manifest_flag(xmltree, "debuggable"), "Distributed preview must not be debuggable")
+    locked = portrait_activities(xmltree)
     return {"package": package.group(1), "version_code": version, "version_name": package.group(3),
-            "min_sdk": 35, "target_sdk": 36, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False}
+            "min_sdk": 37, "target_sdk": 37, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False,
+            "phone_orientation": "portrait", "portrait_activities": locked}
 
 
 def output_directory() -> Path:
@@ -119,12 +162,11 @@ def main() -> None:
     if match is None:
         raise InvalidAPK("Expected versionCode missing")
     report = inspect_archive(apk)
-    signature = fixed_file(directory, "signature.txt").read_text(encoding="utf-8")
     alignment = fixed_file(directory, "alignment.txt").read_text(encoding="utf-8")
     badging = fixed_file(directory, "badging.txt").read_text(encoding="utf-8")
     manifest = fixed_file(directory, "manifest.txt").read_text(encoding="utf-8")
-    require("Verified using v2 scheme (APK Signature Scheme v2): true" in signature, "APK v2 signature missing")
-    require(re.findall(r"Signer #\d+ certificate SHA-256 digest: ([0-9a-f]+)", signature) == [expected], "Signing certificate changed")
+    identity = verify_signing(apk, expected)
+    print("APK_SIGNING_IDENTITY=" + json.dumps(identity, sort_keys=True), flush=True)
     require("Verification successful" in alignment, "APK alignment not verified")
     report.update(check_manifest(badging, manifest, int(match.group(1)), True))
     report.update({"sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size,

@@ -16,3 +16,4 @@ internal fun <A, P> resolveSelectedPosition(
     // position for a virtual one. Ambiguous identifiers are not selectable.
     return positions(account, selection.virtual).singleOrNull { positionKey(it) == selection.positionId }
 }
+

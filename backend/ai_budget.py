@@ -109,12 +109,14 @@ class MoneyLedger:
         return int(row[0])
 
     def reserve(self, *, user_id: int, key: str, route: str, model: str,
-                ceiling: int, user_cap: int, project_cap: int, at: int | None = None, job: tuple[str, str] | None = None) -> None:
+                ceiling: int, user_cap: int, project_cap: int, at: int | None = None, job: tuple[str, str] | None = None, guard=None) -> None:
         _validate_reservation(user_id, key, route, model, ceiling, user_cap, project_cap)
         now = int(time.time()) if at is None else at
         day = day_key(now)
         with transaction(self.connect) as db:
-            if job and not db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND user_id=? AND status='running' AND expires_at>?", (*job, user_id, now)).fetchone():
+            if guard is not None:
+                guard(db)
+            if job and not db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND user_id=? AND status='running' AND cancel_requested_at IS NULL AND expires_at>?", (*job, user_id, now)).fetchone():
                 raise BudgetDenied('ai_worker_lease_lost')
             if db.execute("SELECT 1 FROM ai_money_control WHERE name='paused'").fetchone():
                 raise BudgetDenied('ai_budget_reconciliation_required')

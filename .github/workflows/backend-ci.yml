@@ -18,7 +18,7 @@ jobs:
   test:
     name: Backend smoke test
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       TELEGRAM_CLIENT_ID: "123456"
       TELEGRAM_CLIENT_SECRET: test-only
@@ -41,16 +41,19 @@ jobs:
         run: |
           backend_venv="$RUNNER_TEMP/analyst-ai-backend-ci"
           python3 -m venv "$backend_venv"
-          "$backend_venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r backend/requirements.txt
+          "$backend_venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r backend/requirements-dev.txt
           echo "BACKEND_CI_VENV=$backend_venv" >> "$GITHUB_ENV"
+
+      - name: Audit syntax of all tracked Python sources
+        run: '"$BACKEND_CI_VENV/bin/python" .github/scripts/audit_python_sources.py'
 
       - name: Compile backend
         run: '"$BACKEND_CI_VENV/bin/python" -m compileall -q backend'
 
-      - name: Test Telegram callback and persistent backend sessions
+      - name: Run all backend unittest and pytest scenarios
         env:
           DATABASE_PATH: ${{ runner.temp }}/analyst-ai-backend-tests.sqlite3
-        run: '"$BACKEND_CI_VENV/bin/python" -m unittest discover -s backend/tests -p "test_*.py" -v'
+        run: '"$BACKEND_CI_VENV/bin/python" -m pytest backend/tests -q'
 
       - name: Verify health endpoint and OpenAPI
         env:
@@ -65,9 +68,9 @@ jobs:
               assert client.get('/openapi.json').status_code == 200
           PYCODE
 
-      - name: Require exact-head Sonar without new or accepted issues
+      - name: Read exact-head Sonar findings for remediation
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-        timeout-minutes: 4
+        timeout-minutes: 22
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
@@ -77,13 +80,13 @@ jobs:
             core.info('SONAR_GATE_TESTS=' + runTests());
             const ref = context.payload.pull_request.head.sha;
             let sonar = null;
-            for (let attempt = 0; attempt < 24; attempt++) {
+            for (let attempt = 0; attempt < 120; attempt++) {
               const checks = await github.paginate(github.rest.checks.listForRef, {
                 ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
               });
               sonar = newestSonarCheck(checks, ref);
               if (sonar?.status === 'completed') break;
-              await new Promise(resolve => setTimeout(resolve, 5000));
+              await new Promise(resolve => setTimeout(resolve, 10000));
             }
             if (!sonar || sonar.status !== 'completed') {
               core.setFailed('Exact-head Sonar result is not ready: quality has not been verified.');

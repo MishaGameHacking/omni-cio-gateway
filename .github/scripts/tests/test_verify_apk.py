@@ -10,8 +10,20 @@ from verify_apk import InvalidAPK, check_dex, check_elf64, check_manifest, manif
 
 BADGING = (
     "package: name='ru.omnicio.app.debug' versionCode='20' versionName='0.4.2-preview'\n"
-    "sdkVersion:'35'\ntargetSdkVersion:'36'"
+    "sdkVersion:'37'\ntargetSdkVersion:'37'"
 )
+PORTRAIT_MANIFEST = """E: manifest
+  E: application
+    E: activity
+      A: android:name(0x01010003)="ru.omnicio.app.BootstrapActivity"
+      A: android:screenOrientation(0x0101001e)=(type 0x10)0x1
+      E: intent-filter
+        E: action
+          A: android:name(0x01010003)="android.intent.action.MAIN"
+    E: activity
+      A: android:name(0x01010003)="ru.omnicio.app.MainActivity"
+      A: android:screenOrientation(0x0101001e)=(type 0x10)0x1
+"""
 
 
 def dex(version=b"039"):
@@ -68,7 +80,16 @@ class ArtifactChecks(unittest.TestCase):
         self.assertFalse(manifest_flag("", "testOnly"))
 
     def test_distribution_manifest(self):
-        self.assertEqual(check_manifest(BADGING, "", 20, True)["version_code"], 20)
+        report = check_manifest(BADGING, PORTRAIT_MANIFEST, 20, True)
+        self.assertEqual(report["version_code"], 20)
+        self.assertEqual(report["phone_orientation"], "portrait")
+
+    def test_either_unlocked_or_landscape_activity_blocks_distribution(self):
+        for bad in (PORTRAIT_MANIFEST.replace("(type 0x10)0x1", "(type 0x10)0x0", 1),
+                    PORTRAIT_MANIFEST.replace("(type 0x10)0x1", "(type 0x10)0xffffffff"),
+                    PORTRAIT_MANIFEST.replace("ru.omnicio.app.MainActivity", "other.Activity"), ""):
+            with self.subTest(manifest=bad), self.assertRaisesRegex(InvalidAPK, "must declare portrait"):
+                check_manifest(BADGING, bad, 20, True)
 
     def test_testonly_distribution_rejected(self):
         with self.assertRaises(InvalidAPK):
