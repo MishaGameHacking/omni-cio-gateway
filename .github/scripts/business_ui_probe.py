@@ -222,11 +222,7 @@ class _BusinessCase:
             if self.scenario == "partial":
                 self.probe.reveal("Подтверждена часть количества", "workspace-content")
                 self.probe.reveal("Сверено по операциям: 2 ед.", "workspace-content")
-                # The only unbound synthetic operation has three units.
-                control = self.reveal_prefix("", checkable=True, suffix=" · 3 ед.")
-                if not any("3 ед." in label for label in _control_labels(control)):
-                    raise AssertionError("Unexpected reconciliation operation")
-                self.probe.tap_node(control)
+                self.select_plan_operation()
                 self.probe.tap("Подтвердить связь выбранных операций", "workspace-content")
                 self.probe.reveal("Сверено по операциям: 5 ед.", "workspace-content", direction="start")
                 self.probe.reveal("Источник операций пока неполный. Итог исполнения не подтверждён.", "workspace-content")
@@ -249,6 +245,22 @@ class _BusinessCase:
                 )
                 self.probe.reveal("План: 5 ед. · лот 1", "workspace-content")
                 self.checks.extend(("native-quantity-input", "native-dialog-ime-insets", "new-confirmed-calculation"))
+
+    def select_plan_operation(self):
+        from profile_ui_probe import checkable_label
+
+        # The only unbound synthetic operation has three units.
+        control = self.reveal_prefix("", checkable=True, suffix=" · 3 ед.")
+        operation_labels = {label for label in _control_labels(control) if label.endswith(" · 3 ед.")}
+        if len(operation_labels) != 1 or control.get("checked") != "false":
+            raise AssertionError("Unexpected reconciliation operation")
+        operation_label = operation_labels.pop()
+        # Discovery can see a clipped or still-moving switch. Use the same
+        # fresh, settled native owner as ordinary labelled taps.
+        self.probe.tap(operation_label, "workspace-content")
+        self.probe.wait_for(lambda: (node if (node := checkable_label(self.probe.tree(), operation_label)) is not None
+                                    and node.get("checked") == "true" else None),
+                            "Reconciliation operation was not selected")
 
     def notifications(self):
         if self.scenario == "empty":
@@ -352,7 +364,7 @@ class _BusinessCase:
         self.probe.wait_for(lambda observe=self.observed: (value if (value := observe())["navigation"] == "instrument:synthetic-stock::" else None), "Position evidence opened a different destination")
         self.probe.tap("Показать синтетическую дату", "workspace-content")
         self.probe.wait_for(lambda observe=self.observed: (value if (value := observe())["navigation"] == "history:synthetic-history:synthetic-account:2026-10-17T10:00:00Z" else None), "History evidence lost its date/account")
-        self.probe.tap_visible("Ваш вопрос")
+        self.probe.tap_resource("assistant-question", "assistant-composer", direction="start")
         def ready_editor():
             tree = self.probe.tree()
             return empty_editor_focused(tree) and keyboard_visible(tree)
