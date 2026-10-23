@@ -14,6 +14,7 @@ SCROLL_AXES = {
     "education-content": "vertical",
     "portfolio-content": "vertical",
     "workspace-content": "vertical",
+    "assistant-composer": "vertical",
     "profile-tabs": "horizontal",
     "dossier-tabs": "horizontal",
     "quotes-intervals": "horizontal",

@@ -138,7 +138,12 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
             onCompleted = { cursors = listOf(""); messages.refresh(); threads.refresh(); jobId = null },
             onStateChanged = { jobState = it })
     }
+    val emptyHistory = messages.data != null && messages.error == null && !messages.busy && messageItems.isEmpty()
+    AssistantFailureReveal(listState, send.error, estimateAction.error, messageItems.size,
+        (if (hasEarlierMessages) 1 else 0) + (if (cursors.size > 1) 1 else 0),
+        emptyHistory, activeJob != null)
     val requestRecovered: (JSONObject) -> Unit = { point ->
+                    send.acknowledgeRecovery(point.text("request_id", ""))
                     if (checkpointMatches(point, request)) question = ""
                     if (point.text("request_id", "") == awaitingRequestId) { awaitingRequestId = null; pendingSend = null }
                     estimate = null; cursors = listOf(""); messages.refresh(); threads.refresh()
@@ -156,8 +161,8 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     // Preserve room for the native editor in landscape with large system text.
     val subtitle = if (WindowInsets.isImeVisible) "" else "Объяснения с проверяемыми основаниями"
     WorkspaceDetailPage("Ассистент", subtitle, onBack, SpectrumSymbol.Analyst, adaptToIme = true) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-            LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+        AssistantConversationLayout(padding, history = { historyModifier ->
+            LazyColumn(historyModifier.semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { AssistantContextCard(questionContext,
                     assistantIconState(jobId, jobState, send.error != null || estimateAction.error != null,
@@ -166,24 +171,53 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                 item { WorkspaceRequestState(threads); WorkspaceRequestState(messages); WorkspaceActionState(create) }
                 assistantHistoryPages(messages, cursors) { cursors = it }
                 items(messageItems, key = { it.text("id") }) { message -> AssistantMessage(message, onPortfolio, onActions, onStrategy) }
-                if (messages.data != null && messages.error == null && !messages.busy && messageItems.isEmpty()) item {
+                if (emptyHistory) item {
                     WorkspaceEmpty("С чего начнём?", "Спросите о позиции, изменениях капитала или правилах стратегии. Ответ появится после фактического запроса к модели.")
                 }
                 activeJob?.let { model -> item { WorkspaceJobPanel(model, onClose = { jobId = null }) } }
-                item { WorkspaceActionState(send); WorkspaceActionState(estimateAction) }
+                item(key = "assistant-request-state") { WorkspaceActionState(send); WorkspaceActionState(estimateAction) }
                 item { PendingJobRecovery(savedRequests, onThreadRecovered = { threadId = it }, onRequestRecovered = requestRecovered,
                     enabled = !send.busy && !estimateAction.busy && jobId == null,
                     onBusyChanged = { restoringJob = it }) { jobId = it } }
                 estimate?.let { value -> item { AssistantEstimateCard(value, estimateSignature == signature) } }
             }
+        }) { composerModifier ->
             AssistantComposer(question, tier, savedRequests.loading, needsRecovery, composerAvailability, valid,
                 approvedDeep,
-                { tier = it; estimate = null }, { question = it.take(4_000); estimate = null }) {
+                { tier = it; estimate = null }, { question = it.take(4_000); estimate = null },
+                modifier = composerModifier) {
                 sendQuestion()
             }
         }
     }
     if (editingContext) ChatContextEditor(questionContext) { editingContext = false }
+}
+
+@Composable
+private fun AssistantFailureReveal(listState: LazyListState, sendError: String?, estimateError: String?,
+    messageCount: Int, pageCount: Int, emptyHistory: Boolean, activeJob: Boolean) {
+    // The context and resource status precede pagination/messages. A new failed
+    // user action must expose its status even after a very long expanded answer.
+    val statusIndex = 2 + pageCount + messageCount + (if (emptyHistory) 1 else 0) + (if (activeJob) 1 else 0)
+    LaunchedEffect(sendError, estimateError) {
+        if (sendError != null || estimateError != null) listState.scrollToItem(statusIndex)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AssistantConversationLayout(padding: PaddingValues,
+    history: @Composable (Modifier) -> Unit, composer: @Composable (Modifier) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+        // Unweighted children are measured before the weighted history. Reserve
+        // half the reading viewport for messages when large text fills the editor.
+        // With the IME open, native focus can use the remaining available height.
+        val composerLimit = if (WindowInsets.isImeVisible) maxHeight else maxHeight * .5f
+        Column(Modifier.fillMaxSize()) {
+            history(Modifier.weight(1f).fillMaxWidth())
+            composer(Modifier.heightIn(max = composerLimit))
+        }
+    }
 }
 
 @Composable
@@ -397,14 +431,15 @@ private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
 @Composable
 private fun AssistantComposer(question: String, tier: Int, loading: Boolean, needsRecovery: Boolean,
     availability: AssistantComposerAvailability, valid: Boolean, approvedDeep: Boolean, onTier: (Int) -> Unit,
-    onQuestion: (String) -> Unit, onSend: () -> Unit) {
+    onQuestion: (String) -> Unit, modifier: Modifier = Modifier, onSend: () -> Unit) {
     // The parent consumes the page/IME insets. Keep this bounded viewport
     // scrollable so native focus can reveal the editor on short/large-font windows.
     val compact = LocalCompactWorkspaceInput.current
     val busy = !availability.canSubmit
-    SpectrumCard(Modifier.fillMaxWidth().padding(
+    SpectrumCard(modifier.fillMaxWidth().padding(
         horizontal = if (compact) 0.dp else 12.dp, vertical = if (compact) 0.dp else 8.dp)
-        .verticalScroll(rememberScrollState())) {
+        .verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }
+        .testTag("assistant-composer")) {
                     if (loading) Text("Проверяем сохранённые запросы…", style = MaterialTheme.typography.bodySmall)
                     else if (needsRecovery) Text("Сверьте сохранённый вопрос перед новой отправкой.", style = MaterialTheme.typography.bodySmall)
                     DetailFold("Глубина ответа: " + listOf("Авто", CHAT_DEPTH_BRIEF, CHAT_DEPTH_DETAIL, CHAT_DEPTH_DEEP)[tier]) {

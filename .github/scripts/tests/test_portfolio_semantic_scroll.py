@@ -222,6 +222,8 @@ class SemanticActionTests(unittest.TestCase):
             'PORTFOLIO_LIST = "portfolio-content"',
             'PROFILE_TABS = "profile-tabs"',
             'DOSSIER_TABS = "dossier-tabs"',
+            'ASSISTANT_COMPOSER = "assistant-composer"',
+            'case LIST_ASSISTANT_COMPOSER -> ASSISTANT_COMPOSER',
             'APP_PACKAGE = "ru.omnicio.app.debug"',
             "matches.size() != 1",
             "node.isVisibleToUser()",
@@ -250,8 +252,9 @@ class SemanticActionTests(unittest.TestCase):
     def test_profile_driver_has_no_coordinate_scroll_command(self):
         source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
         self.assertNotIn('"input", "swipe"', source)
+        callers = source + (SCRIPTS / "business_ui_probe.py").read_text(encoding="utf-8")
         for area in frames.SCROLL_LIST_CODES:
-            self.assertIn(area, source)
+            self.assertIn(area, callers)
         self.assertIn("reader.scroll_list(area, direction)", source)
 
     def test_allocation_label_and_real_screenshot_remain_required(self):

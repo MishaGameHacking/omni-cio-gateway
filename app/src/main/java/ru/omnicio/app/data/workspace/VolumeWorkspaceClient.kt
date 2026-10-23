@@ -12,7 +12,9 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
     override fun request(token: String, path: String, method: String, body: JSONObject?): VolumeReply {
         require(path == "/workspace" || path.startsWith("/workspace/") || path.startsWith("/workspace?"))
         require(method in setOf("GET", "POST", "PUT", "PATCH", "DELETE"))
-        require(!path.contains("..") && !path.contains('#'))
+        // Search punctuation is query data; traversal checks belong to the
+        // decoded path so escaped dot segments cannot evade the same guard.
+        require(!URI(path).path.contains("..") && !path.contains('#'))
         val encoded = body?.toString()?.toByteArray(Charsets.UTF_8)
         require(encoded == null || encoded.size <= REQUEST_LIMIT)
         var connection: HttpsURLConnection? = null

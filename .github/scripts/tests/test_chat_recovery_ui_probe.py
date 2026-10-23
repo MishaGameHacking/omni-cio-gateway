@@ -54,6 +54,7 @@ class RecoveryProbe:
         self.scrolls = 0
         self.post_taps = 0
         self.get_taps = 0
+        self.composer_actions = []
 
     def observed(self):
         return {"message_posts": int(self.phase != "before"),
@@ -70,9 +71,10 @@ class RecoveryProbe:
                           enabled=True if applied else self.stuck_enabled,
                           saved=applied and self.saved and self.scrolls > 0)
 
-    def tap_visible(self, text):
-        if text != recovery.SEND or self.phase != "before":
+    def tap(self, text, area):
+        if text != recovery.SEND or area != recovery.COMPOSER or self.phase != "before":
             raise AssertionError("Repeated message action")
+        self.composer_actions.append(("tap", text))
         self.post_taps += 1
         self.phase = "post"
 
@@ -83,6 +85,9 @@ class RecoveryProbe:
         self.phase = "get"
 
     def reveal(self, text, area):
+        if text == recovery.SEND and area == recovery.COMPOSER and self.phase == "post":
+            self.composer_actions.append(("reveal", text))
+            return
         if text != recovery.LOST_REPLY or area != recovery.HISTORY:
             raise AssertionError("A generic label search cannot prove saved delivery")
 
@@ -94,6 +99,11 @@ class RecoveryProbe:
         raise AssertionError(message)
 
     def _semantic_scroll_callback(self, area, direction):
+        if area == recovery.COMPOSER and direction == "start" and self.phase == "get":
+            self.composer_actions.append(("reveal-resource", recovery.QUESTION))
+            def scroll_composer(*_coordinates):
+                raise AssertionError("The whole model editor is already visible")
+            return scroll_composer
         if area != recovery.HISTORY or direction != "start":
             raise AssertionError("The latest assistant reply follows the saved question")
         def scroll(*_coordinates):
@@ -255,6 +265,10 @@ class ChatRecoveryApplicationTests(unittest.TestCase):
         self.assertTrue(result["saved_user_message_visible"])
         self.assertTrue(result["composer_cleared_and_enabled"])
         self.assertFalse(result["screen_remounted"])
+        self.assertEqual(probe.composer_actions, [
+            ("tap", recovery.SEND), ("reveal", recovery.SEND),
+            ("reveal-resource", recovery.QUESTION),
+        ])
 
     def test_successful_get_without_applied_recovery_cannot_pass_on_the_draft(self):
         for draft, enabled in (("UIprobe", True), ("", False)):
@@ -268,7 +282,57 @@ class ChatRecoveryApplicationTests(unittest.TestCase):
         probe = RecoveryProbe(applied_after_reads=1, saved=False)
         with self.assertRaisesRegex(AssertionError, "recovered user message"):
             recovery.exercise_chat_recovery(probe, probe.observed)
-        self.assertEqual((probe.post_taps, probe.get_taps, probe.scrolls), (1, 1, 10))
+        self.assertEqual((probe.post_taps, probe.get_taps, probe.scrolls), (1, 1, 20))
+
+    @patch("profile_scroll.time.sleep")
+    def test_long_answer_above_short_history_viewport_keeps_saved_message_reachable(self, _sleep):
+        from profile_scroll import _reveal_target
+
+        class PagedHistory:
+            # Logical saved text precedes the answer, sources and action rows.
+            # As in a padded Compose LazyColumn, a semantic action moves one
+            # content viewport. Offscreen text is absent from accessibility.
+            def __init__(self, height, qualified):
+                self.height, self.qualified = height, qualified
+                self.offset, self.scrolls = 2400, 0
+
+            def tree(self):
+                tree = chat_frame(saved=False)
+                history = tagged(tree, recovery.HISTORY)
+                history.set("bounds", f"[0,100][400,{100 + self.height}]")
+                top = 100 + 400 - self.offset
+                if top < 100 + self.height and top + 42 > 100:
+                    resource = recovery.USER_MESSAGE
+                    if self.qualified:
+                        resource = recovery.PACKAGE + ":id/" + resource
+                    chat_node(history, f"[20,{max(0, top)}][190,{top + 42}]",
+                              **{"resource-id": resource, "text": "UIprobe"})
+                return tree
+
+            def _semantic_scroll_callback(self, area, direction):
+                if area != recovery.HISTORY or direction != "start":
+                    raise AssertionError("Wrong recovery scroll target")
+                def scroll(*_coordinates):
+                    self.scrolls += 1
+                    self.offset = max(0, self.offset - self.height + 40)
+                return scroll
+
+        # Demonstrate the previous navigation limit, with the assertion intact.
+        old = PagedHistory(199, False)
+        old_scroll = old._semantic_scroll_callback(recovery.HISTORY, "start")
+        with self.assertRaisesRegex(AssertionError, "not reachable"):
+            _reveal_target(old.tree, old_scroll,
+                           recovery.persisted_user_message, "saved message",
+                           resource_id=recovery.HISTORY, max_swipes=10,
+                           direction="start", layout_timeout=12)
+        for height in (199, 400):
+            for qualified in (False, True):
+                with self.subTest(height=height, qualified=qualified):
+                    probe = PagedHistory(height, qualified)
+                    target = recovery.reveal_persisted_user_message(probe)
+                    self.assertEqual(target.get("text"), "UIprobe")
+                    self.assertIsNotNone(recovery.persisted_user_message(probe.tree()))
+                    self.assertLessEqual(probe.scrolls, 20)
 
 
 if __name__ == "__main__":
