@@ -7,7 +7,8 @@ import math
 from pathlib import Path
 import re
 
-from native_input_evidence import append_native_text, display_geometry, rotate_focused_draft
+from native_input_evidence import active_window_id, append_native_text, display_geometry, rotate_focused_draft
+from native_window_evidence import wait_for_new_app_window
 
 AREA = "workspace-content"
 TITLE = "GoalDraft"
@@ -75,7 +76,9 @@ def _case(probe, scale):
     metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Goal scene did not render")
     if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0, abs_tol=1e-6):
         raise AssertionError("Goal scene has a different actual font scale")
+    original_window = active_window_id(probe.tree())
     probe.tap("Добавить цель", AREA)
+    wait_for_new_app_window(probe, original_window, "Новая цель", AREA)
     probe.tap_resource("goal-title", AREA, direction="start")
     append_native_text(probe, "", TITLE)
     suffix = "-font-200" if math.isclose(scale, 2.0) else ""

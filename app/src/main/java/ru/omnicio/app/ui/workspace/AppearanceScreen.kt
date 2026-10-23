@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.Modifier
@@ -127,7 +128,9 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
         // reserve its space twice in an embedded workspace.
         val insets = if (adaptToIme) WindowInsets.safeDrawing else WindowInsets(0, 0, 0, 0)
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(insets)) {
-            val compact = adaptToIme && WindowInsets.isImeVisible && maxHeight < 240.dp
+            // Large text can consume the safe viewport even with the IME hidden.
+            // Keep the same content slot while the header yields its height.
+            val compact = adaptToIme && maxHeight < 240.dp * LocalDensity.current.fontScale
             CompositionLocalProvider(LocalCompactWorkspaceInput provides compact) {
                 Row(Modifier.fillMaxSize()) {
                     if (compact) Box(Modifier.width(56.dp).fillMaxHeight().padding(top = 4.dp),
