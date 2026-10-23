@@ -23,34 +23,28 @@ from html import escape
 from pathlib import Path
 from urllib.parse import urlencode
 
-import jwt
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 try:
     from . import app as legacy
+    from .telegram_oidc import (MAX_ID_TOKEN_LENGTH, TelegramKeyUnavailable,
+                                TelegramTokenError, verify_id_token)
 except ImportError:  # Production runs with /opt/analyst-ai/backend as cwd.
     import app as legacy
+    from telegram_oidc import (MAX_ID_TOKEN_LENGTH, TelegramKeyUnavailable,
+                               TelegramTokenError, verify_id_token)
 
 LOGGER = logging.getLogger(__name__)
 TELEGRAM_LOGIN_SCRIPT = "https://oauth.telegram.org/js/telegram-login.js?3"
 TELEGRAM_JWKS_PATH = Path(__file__).resolve().with_name("telegram_jwks.json")
-MAX_ID_TOKEN_LENGTH = 16_384
 BEGIN_IMMEDIATE = "BEGIN IMMEDIATE"
 
 
 class TelegramBrowserToken(BaseModel):
     state: str = Field(min_length=32, max_length=256)
     id_token: str = Field(min_length=64, max_length=MAX_ID_TOKEN_LENGTH)
-
-
-class TelegramTokenError(ValueError):
-    """The browser supplied a token that cannot authenticate a Telegram user."""
-
-
-class TelegramKeyUnavailable(RuntimeError):
-    """The pinned Telegram signing-key set is absent or structurally invalid."""
 
 
 def _safe_script_value(value: str) -> str:
@@ -267,71 +261,19 @@ def _consume_transaction(state: str) -> str | None:
     return str(transaction["verifier"])
 
 
-def _load_pinned_key(token: str):
-    try:
-        header = jwt.get_unverified_header(token)
-    except jwt.PyJWTError as error:
-        raise TelegramTokenError("invalid_header") from error
-    if header.get("alg") != "RS256" or not isinstance(header.get("kid"), str):
-        raise TelegramTokenError("unsupported_signing_header")
-    kid = header["kid"]
+def verify_browser_id_token(token: str, expected_nonce: str) -> dict:
     try:
         if TELEGRAM_JWKS_PATH.is_symlink():
             raise TelegramKeyUnavailable("jwks_symlink")
-        payload = json.loads(TELEGRAM_JWKS_PATH.read_text(encoding="utf-8"))
-        keys = payload.get("keys")
-        if not isinstance(keys, list):
-            raise TelegramKeyUnavailable("jwks_keys_missing")
-        matches = [
-            key for key in keys
-            if isinstance(key, dict)
-            and key.get("kid") == kid
-            and key.get("alg") == "RS256"
-            and key.get("kty") == "RSA"
-            and key.get("use", "sig") == "sig"
-            and ("key_ops" not in key or "verify" in key.get("key_ops", []))
-        ]
-        if len(matches) != 1:
-            raise TelegramKeyUnavailable("jwks_kid_unavailable")
-        return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(matches[0]))
-    except TelegramKeyUnavailable:
-        raise
-    except (OSError, ValueError, TypeError) as error:
+        with TELEGRAM_JWKS_PATH.open(encoding="utf-8") as source:
+            document = source.read(131_073)
+        if len(document) > 131_072:
+            raise TelegramKeyUnavailable("jwks_too_large")
+        jwks = json.loads(document)
+    except (OSError, ValueError) as error:
         raise TelegramKeyUnavailable("jwks_invalid") from error
-
-
-def _nonce_matches(received: object, expected: object) -> bool:
-    # Our login nonces are nonempty ASCII token_urlsafe strings. compare_digest
-    # rejects non-ASCII str with TypeError; malformed signed claims must instead
-    # follow the ordinary invalid-token response without relaxing signature checks.
-    if not isinstance(received, str) or not isinstance(expected, str):
-        return False
-    if not received or not expected or not received.isascii() or not expected.isascii():
-        return False
-    return secrets.compare_digest(received, expected)
-
-
-def verify_browser_id_token(token: str, expected_nonce: str) -> dict:
-    key = _load_pinned_key(token)
-    try:
-        claims = jwt.decode(
-            token,
-            key,
-            algorithms=["RS256"],
-            audience=legacy.TELEGRAM_CLIENT_ID,
-            issuer=legacy.TELEGRAM_ISSUER,
-            leeway=60,
-            options={"require": ["exp", "iat", "iss", "aud", "sub", "nonce"]},
-        )
-    except jwt.PyJWTError as error:
-        raise TelegramTokenError("invalid_claims_or_signature") from error
-    nonce = claims.get("nonce")
-    if not _nonce_matches(nonce, expected_nonce):
-        raise TelegramTokenError("nonce_mismatch")
-    subject = claims.get("sub")
-    if not isinstance(subject, (str, int)) or not str(subject).strip() or len(str(subject)) > 256:
-        raise TelegramTokenError("invalid_subject")
-    return claims
+    return verify_id_token(token, expected_nonce, client_id=legacy.TELEGRAM_CLIENT_ID,
+                           issuer=legacy.TELEGRAM_ISSUER, jwks=jwks)
 
 
 def _issue_login_code(claims: dict) -> str:

@@ -2,7 +2,7 @@ name: Backend CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, codex/spectrum-3d-100]
   push:
     branches: [main]
 

@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - codex/spectrum-3d-100
+      - codex/owner-enrollment-2026-10-22
   workflow_dispatch:
 permissions:
   contents: read
@@ -83,6 +84,7 @@ jobs:
             // the already-connected project; a denied inventory is never treated as zero.
             const targets = [{branch:'main'}];
             if (context.ref === 'refs/heads/codex/spectrum-3d-100') targets.push({pullRequest:'880'});
+            if (context.ref === 'refs/heads/codex/owner-enrollment-2026-10-22') targets.push({pullRequest:'887'});
             for (const target of targets) {
               const head = await resolveHead(target);
               await readFailedChecks(head);
@@ -104,9 +106,6 @@ jobs:
               try {
                 const newIssues = await readAllIssues(target,true);
                 const expectedNew = /\[(\d+) New issues?\]/.exec(check.output?.summary||'');
-                if (!expectedNew || Number(expectedNew[1])!==newIssues.length) {
-                  throw new Error('Sonar API count disagrees with exact-head check');
-                }
                 const issues = await readAllIssues(target,false);
                 const allKeys = new Set(issues.map(issue => issue.key));
                 if (!newIssues.every(issue => allKeys.has(issue.key))) {
@@ -118,6 +117,11 @@ jobs:
                     rule:issue.rule,type:issue.type,severity:issue.severity,impacts:issue.impacts||[],
                     component:issue.component,line:issue.line,textRange:issue.textRange,
                     message:issue.message,flows:issue.flows||[]}));
+                }
+                // Failed quality summaries may omit the count. Still expose the
+                // findings for repair, while keeping the completeness gate closed.
+                if (!expectedNew || Number(expectedNew[1])!==newIssues.length) {
+                  throw new Error('Sonar API count disagrees with exact-head check');
                 }
                 core.info('SONAR_COMPLETE_INVENTORY='+JSON.stringify({...target,head,check:check.id,
                   issues:issues.length,new_issues:newIssues.length,unique:issues.length,
