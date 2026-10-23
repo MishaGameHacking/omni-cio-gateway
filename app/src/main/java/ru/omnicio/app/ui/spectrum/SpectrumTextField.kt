@@ -204,7 +204,10 @@ private fun rememberEditorFocus(
     LaunchedEffect(imeVisible, focused.value, receiveFocusEvents, window.isWindowFocused) {
         if (receiveFocusEvents && focused.value && window.isWindowFocused &&
             lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            restoreKeyboard = imeVisible
+            restoreKeyboard = editorImeVisibilityForRestore(
+                composeVisible = imeVisible,
+                nativeVisible = view.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()),
+            )
             trace("ime-observed")
         }
     }

@@ -7,6 +7,10 @@ internal data class EditorInputCommands(
     val releaseInput: () -> Unit = {},
 )
 
+/** Compose insets can lag the current window; save its native IME visibility when available. */
+internal fun editorImeVisibilityForRestore(composeVisible: Boolean, nativeVisible: Boolean?): Boolean =
+    nativeVisible ?: composeVisible
+
 /** Restore a saved editor in a newly created input owner, without changing its IME intent. */
 internal suspend fun restoreEditorInput(
     showKeyboard: Boolean,
