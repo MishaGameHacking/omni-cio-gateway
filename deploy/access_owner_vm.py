@@ -87,7 +87,7 @@ def ensure_domain_dns(token, address):
 
     records = roots()
     if not records:
-        request(token, "POST", path, {"type": "A", "value": address, "ttl": 300})
+        request(token, "POST", path, {"type": "A", "subdomain": prepare.HOST, "value": address, "ttl": 300})
         records = roots()
     if len(records) != 1 or records[0].get("type") != "A" or records[0].get("data", {}).get("value") != address:
         raise prepare.ProbeError("domain_address_conflict_no_existing_record_changed")
@@ -101,6 +101,7 @@ def stage_server(token, server):
     values = [os.environ.get(k, "").strip() for k in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET")]
     if not all(values):
         raise prepare.ProbeError("telegram_credentials_missing")
+    ensure_domain_dns(token, address)
     with tempfile.TemporaryDirectory(prefix="owner-stage-", dir=os.environ["RUNNER_TEMP"]) as root:
         folder = Path(root)
         prepare.cloud.generate_key(folder / "client")
@@ -128,7 +129,6 @@ def stage_server(token, server):
             status = prepare.remote(command, "cloud-init status --wait", timeout=60)
             if b"status: done" not in status:
                 raise prepare.ProbeError("cloud_init_not_done")
-            ensure_domain_dns(token, address)
             report = prepare.stage(command, address, *values)
             print("OWNER_VM_PREPARED=" + json.dumps({"id": SERVER_ID, "ip": address, "hostname": prepare.HOST,
                 "backend_started": False, "owner_enrollment_required": True, **report}), flush=True)
