@@ -13,6 +13,7 @@ LOST_REPLY = "СИНТЕТИЧЕСКАЯ потеря ответа после п
 HISTORY = "workspace-content"
 USER_MESSAGE = "assistant-user-message"
 QUESTION = "assistant-question"
+COMPOSER = "assistant-composer"
 
 
 def _tagged_nodes(tree, resource):
@@ -48,6 +49,30 @@ def recovered_composer(tree):
     return editor if _visible_geometry(editor, parents, display[0]) is not None else None
 
 
+def reveal_composer_question(probe):
+    """Expose a usable field viewport before waiting for async acknowledgement.
+
+    A visible tag can describe only a clipped sliver above the Send button.
+    Geometry must be revealed even while recovery still disables the field;
+    recovered_composer separately requires the cleared, enabled native editor.
+    """
+    from profile_scroll import _reveal_target
+
+    def visible_question(tree):
+        field, display = _single_tag(tree, QUESTION), _display(tree)
+        if field is None or display is None:
+            return None
+        parents = {child: parent for parent in tree.iter() for child in parent}
+        return field if _visible_geometry(field, parents, display[0]) is not None else None
+
+    target = _reveal_target(probe.tree, probe._semantic_scroll_callback(COMPOSER, "start"),
+        visible_question, "the native question viewport", resource_id=COMPOSER,
+        max_swipes=10, direction="start", layout_timeout=12)
+    if target is None:
+        raise AssertionError("The assistant composer is not visible")
+    return target
+
+
 def persisted_user_message(tree):
     """Only the saved user-message text inside this history can prove delivery."""
     history = _single_tag(tree, HISTORY)
@@ -75,10 +100,14 @@ def persisted_user_message(tree):
 def reveal_persisted_user_message(probe):
     from profile_scroll import _reveal_target
 
+    # The independently scrollable composer can leave only 199px of history
+    # at font200. A long answer plus its source/action controls spans more than
+    # ten semantic pages. Use the helper's existing bounded 20-page search;
+    # keep its 12s deadline and require the same complete saved-message bounds.
     target = _reveal_target(
         probe.tree, probe._semantic_scroll_callback(HISTORY, "start"), persisted_user_message,
         "the recovered user message in chat history", resource_id=HISTORY,
-        max_swipes=10, direction="start", layout_timeout=12,
+        max_swipes=20, direction="start", layout_timeout=12,
     )
     if target is None:
         raise AssertionError("The recovered chat history is not visible")
@@ -145,11 +174,15 @@ def exercise_chat_recovery(probe, observed):
     before = observed()
     if before["message_posts"] or before["by_request_gets"]:
         raise AssertionError("The unsent draft triggered a request before the user sent it")
-    probe.tap_visible(SEND)
+    probe.tap(SEND, COMPOSER)
     probe.wait_for(lambda: accepted_single_request(observed()), "The server did not accept the one synthetic message POST")
     # Wait until the failure has reached production UI. Observing disabled Send
     # only during the still-running POST would miss the original regression.
-    probe.reveal(LOST_REPLY, "workspace-content")
+    # At font200 the 199px history viewport needs more than ten pages to
+    # traverse the expanded answer and its evidence before this exact error.
+    # Keep the same 12s deadline and fail if the production error is absent.
+    probe.reveal(LOST_REPLY, HISTORY, max_swipes=20)
+    probe.reveal(SEND, COMPOSER)
     probe.wait_for(lambda: native_send_button(probe.tree(), enabled=False),
                    "The uncertain request did not disable its native Send button")
     accepted = accepted_single_request(observed())
@@ -162,6 +195,7 @@ def exercise_chat_recovery(probe, observed):
     # GET counters change before local acknowledgement is saved/applied. The
     # composer is cleared and usable only after recovery and the confirmed job
     # finish; its former draft must never stand in for a saved history message.
+    reveal_composer_question(probe)
     probe.wait_for(lambda: recovered_composer(probe.tree()),
                    "Recovered chat did not clear its draft and release the native editor")
     reveal_persisted_user_message(probe)

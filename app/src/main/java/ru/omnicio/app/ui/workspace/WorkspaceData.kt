@@ -83,6 +83,7 @@ class WorkspaceAction(
     private val readBusy: () -> Boolean,
     val error: String?,
     val ambiguous: Boolean,
+    private val recover: (String) -> Unit = {},
     private val execute: (String, JSONObject?, String, Boolean, Boolean) -> Unit,
 ) {
     // A queued callback may still hold the wrapper from before perform().
@@ -90,9 +91,17 @@ class WorkspaceAction(
 
     fun perform(path: String, body: JSONObject? = null, method: String = "POST", job: Boolean = false,
         userInitiated: Boolean = true) = execute(path, body, method, job, userInitiated)
+
+    /** A server-confirmed job must be saved before acknowledging its original request. */
+    fun acknowledgeRecovery(requestId: String) {
+        if (!busy && requestId.isNotBlank()) recover(requestId)
+    }
 }
 
-data class WorkspaceRequestFailure(val reply: VolumeReply, val requestId: String?, val requiresRecovery: Boolean)
+data class WorkspaceRequestFailure(val reply: VolumeReply, val requestId: String?, val requiresRecovery: Boolean) {
+    fun afterRecovery(recoveredRequestId: String): WorkspaceRequestFailure? =
+        if (requiresRecovery && !requestId.isNullOrBlank() && requestId == recoveredRequestId) null else this
+}
 data class WorkspaceCheckpoints(val items: List<JSONObject>, val loading: Boolean, val error: String?, val revision: Long, val refresh: () -> Unit)
 
 /** The first read is gated, and durable writes refresh every mounted recovery panel. */
@@ -135,12 +144,16 @@ fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
     val feedback = rememberSpatialHapticFeedback()
     val reauthenticate = LocalReauthenticate.current
     var busy by remember(session.userId) { mutableStateOf(false) }
-    var error by remember(session.userId) { mutableStateOf<String?>(null) }
-    var ambiguous by remember(session.userId) { mutableStateOf(false) }
+    var failure by remember(session.userId) { mutableStateOf<WorkspaceRequestFailure?>(null) }
+    val reportFailure: (WorkspaceRequestFailure) -> Unit = {
+        failure = it
+        failedCallback(it)
+    }
     val invalidate = LocalWorkspaceInvalidate.current
-    return WorkspaceAction({ busy }, error, ambiguous) { path, body, method, tracked, userInitiated ->
+    return WorkspaceAction({ busy }, failure?.reply?.error, failure?.reply?.ambiguous == true,
+        recover = { failure = failure?.afterRecovery(it) }) { path, body, method, tracked, userInitiated ->
         if (!busy && session.token.isNotBlank()) {
-            busy = true; error = null; ambiguous = false
+            busy = true; failure = null
             scope.launch {
                 var checkpoint: String? = null
                 var prepared = JobCheckpointPreparation(false)
@@ -150,36 +163,34 @@ fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
                     val requestId = checkpoint
                     prepared = prepareWorkspaceRequest(checkpoints, session.userId, requestId, path, requestBody)
                     if (!prepared.persisted) {
-                        error = "Не удалось сохранить задание на устройстве. Сверьте сохранённые запросы; новый запрос не отправлен."
-                        val failure = VolumeReply(error = error, code = "checkpoint_not_saved")
-                        reportActionFeedback(failure, feedback, method, userInitiated)
-                        failedCallback(WorkspaceRequestFailure(failure, requestId, false))
+                        val reply = VolumeReply(error = "Не удалось сохранить задание на устройстве. Сверьте сохранённые запросы; новый запрос не отправлен.",
+                            code = "checkpoint_not_saved")
+                        reportActionFeedback(reply, feedback, method, userInitiated)
+                        reportFailure(WorkspaceRequestFailure(reply, requestId, false))
                         return@launch
                     }
                     requestId?.let(preparedCallback)
                     val reply = withContext(Dispatchers.IO) { client.request(session.token, path, method, requestBody) }
                     if (reply.signedOut) reauthenticate()
-                    error = reply.error; ambiguous = reply.ambiguous
                     reportActionFeedback(reply, feedback, method, userInitiated)
                     val result = reply.data
                     if (result != null) {
                         if (!saveJobAcknowledgement(checkpoints, session.userId, requestId, path, result)) {
-                            error = "Подтверждение задания не сохранено. Сверьте сохранённый запрос перед продолжением."
-                            ambiguous = true
-                            failedCallback(WorkspaceRequestFailure(reply.copy(data = null, error = error, ambiguous = true), requestId, true))
+                            val error = "Подтверждение задания не сохранено. Сверьте сохранённый запрос перед продолжением."
+                            reportFailure(WorkspaceRequestFailure(reply.copy(data = null, error = error, ambiguous = true), requestId, true))
                             return@launch
                         }
                         callback(result)
                         if (method != "GET") invalidate()
                     } else {
                         val removed = discardRejectedCheckpoint(checkpoints, session.userId, requestId, path, prepared, reply)
-                        failedCallback(WorkspaceRequestFailure(reply, requestId, requestId != null && !removed))
+                        reportFailure(WorkspaceRequestFailure(reply, requestId, requestId != null && !removed))
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) {
-                    ambiguous = checkpoint != null && prepared.persisted
-                    error = if (ambiguous) "Исход запроса не подтверждён. Сверьте сохранённое задание." else "Не удалось выполнить запрос. Попробуйте позже."
-                    failedCallback(WorkspaceRequestFailure(VolumeReply(error = error, ambiguous = ambiguous), checkpoint, ambiguous))
+                    val ambiguous = checkpoint != null && prepared.persisted
+                    val error = if (ambiguous) "Исход запроса не подтверждён. Сверьте сохранённое задание." else "Не удалось выполнить запрос. Попробуйте позже."
+                    reportFailure(WorkspaceRequestFailure(VolumeReply(error = error, ambiguous = ambiguous), checkpoint, ambiguous))
                 } finally { busy = false }
             }
         }

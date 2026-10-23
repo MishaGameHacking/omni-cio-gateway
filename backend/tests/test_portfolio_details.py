@@ -130,6 +130,14 @@ class DashboardApiTests(unittest.TestCase):
             db.commit()
         self.client = TestClient(backend.app)
         self.calls = []
+        # These scenarios replace BrokerReader.read with synthetic responses.
+        # Do not initialize a real proxy transport from the host environment.
+        transport = patch.object(backend.httpx, "Client", autospec=True)
+        self.broker_transport = transport.start()
+        self.addCleanup(transport.stop)
+        self.broker_transport.return_value.post.side_effect = AssertionError(
+            "Synthetic portfolio scenario unexpectedly reached the broker transport"
+        )
 
     def tearDown(self):
         self.client.close()

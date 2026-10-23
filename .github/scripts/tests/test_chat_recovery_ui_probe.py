@@ -54,6 +54,7 @@ class RecoveryProbe:
         self.scrolls = 0
         self.post_taps = 0
         self.get_taps = 0
+        self.composer_actions = []
 
     def observed(self):
         return {"message_posts": int(self.phase != "before"),
@@ -70,9 +71,10 @@ class RecoveryProbe:
                           enabled=True if applied else self.stuck_enabled,
                           saved=applied and self.saved and self.scrolls > 0)
 
-    def tap_visible(self, text):
-        if text != recovery.SEND or self.phase != "before":
+    def tap(self, text, area):
+        if text != recovery.SEND or area != recovery.COMPOSER or self.phase != "before":
             raise AssertionError("Repeated message action")
+        self.composer_actions.append(("tap", text))
         self.post_taps += 1
         self.phase = "post"
 
@@ -82,8 +84,11 @@ class RecoveryProbe:
         self.get_taps += 1
         self.phase = "get"
 
-    def reveal(self, text, area):
-        if text != recovery.LOST_REPLY or area != recovery.HISTORY:
+    def reveal(self, text, area, *, max_swipes=10):
+        if text == recovery.SEND and area == recovery.COMPOSER and self.phase == "post":
+            self.composer_actions.append(("reveal", text))
+            return
+        if text != recovery.LOST_REPLY or area != recovery.HISTORY or max_swipes != 20:
             raise AssertionError("A generic label search cannot prove saved delivery")
 
     def wait_for(self, read, message):
@@ -94,6 +99,11 @@ class RecoveryProbe:
         raise AssertionError(message)
 
     def _semantic_scroll_callback(self, area, direction):
+        if area == recovery.COMPOSER and direction == "start" and self.phase == "get":
+            self.composer_actions.append(("reveal-resource", recovery.QUESTION))
+            def scroll_composer(*_coordinates):
+                raise AssertionError("The whole model editor is already visible")
+            return scroll_composer
         if area != recovery.HISTORY or direction != "start":
             raise AssertionError("The latest assistant reply follows the saved question")
         def scroll(*_coordinates):
@@ -255,6 +265,10 @@ class ChatRecoveryApplicationTests(unittest.TestCase):
         self.assertTrue(result["saved_user_message_visible"])
         self.assertTrue(result["composer_cleared_and_enabled"])
         self.assertFalse(result["screen_remounted"])
+        self.assertEqual(probe.composer_actions, [
+            ("tap", recovery.SEND), ("reveal", recovery.SEND),
+            ("reveal-resource", recovery.QUESTION),
+        ])
 
     def test_successful_get_without_applied_recovery_cannot_pass_on_the_draft(self):
         for draft, enabled in (("UIprobe", True), ("", False)):
@@ -268,7 +282,123 @@ class ChatRecoveryApplicationTests(unittest.TestCase):
         probe = RecoveryProbe(applied_after_reads=1, saved=False)
         with self.assertRaisesRegex(AssertionError, "recovered user message"):
             recovery.exercise_chat_recovery(probe, probe.observed)
-        self.assertEqual((probe.post_taps, probe.get_taps, probe.scrolls), (1, 1, 10))
+        self.assertEqual((probe.post_taps, probe.get_taps, probe.scrolls), (1, 1, 20))
+
+    @patch("profile_scroll.time.sleep")
+    def test_long_answer_above_short_history_viewport_keeps_saved_message_reachable(self, _sleep):
+        from profile_scroll import _reveal_target
+
+        class PagedHistory:
+            # Logical saved text precedes the answer, sources and action rows.
+            # As in a padded Compose LazyColumn, a semantic action moves one
+            # content viewport. Offscreen text is absent from accessibility.
+            def __init__(self, height, qualified):
+                self.height, self.qualified = height, qualified
+                self.offset, self.scrolls = 2400, 0
+
+            def tree(self):
+                tree = chat_frame(saved=False)
+                history = tagged(tree, recovery.HISTORY)
+                history.set("bounds", f"[0,100][400,{100 + self.height}]")
+                top = 100 + 400 - self.offset
+                if top < 100 + self.height and top + 42 > 100:
+                    resource = recovery.USER_MESSAGE
+                    if self.qualified:
+                        resource = recovery.PACKAGE + ":id/" + resource
+                    chat_node(history, f"[20,{max(0, top)}][190,{top + 42}]",
+                              **{"resource-id": resource, "text": "UIprobe"})
+                return tree
+
+            def _semantic_scroll_callback(self, area, direction):
+                if area != recovery.HISTORY or direction != "start":
+                    raise AssertionError("Wrong recovery scroll target")
+                def scroll(*_coordinates):
+                    self.scrolls += 1
+                    self.offset = max(0, self.offset - self.height + 40)
+                return scroll
+
+        # Demonstrate the previous navigation limit, with the assertion intact.
+        old = PagedHistory(199, False)
+        old_scroll = old._semantic_scroll_callback(recovery.HISTORY, "start")
+        with self.assertRaisesRegex(AssertionError, "not reachable"):
+            _reveal_target(old.tree, old_scroll,
+                           recovery.persisted_user_message, "saved message",
+                           resource_id=recovery.HISTORY, max_swipes=10,
+                           direction="start", layout_timeout=12)
+        for height in (199, 400):
+            for qualified in (False, True):
+                with self.subTest(height=height, qualified=qualified):
+                    probe = PagedHistory(height, qualified)
+                    target = recovery.reveal_persisted_user_message(probe)
+                    self.assertEqual(target.get("text"), "UIprobe")
+                    self.assertIsNotNone(recovery.persisted_user_message(probe.tree()))
+                    self.assertLessEqual(probe.scrolls, 20)
+
+
+class FailureViewportProbe(RecoveryProbe):
+    """Exercise the real reveal path before any recovery GET can be sent."""
+    def __init__(self, height, *, missing=False, wrong_package=False):
+        super().__init__()
+        self.height, self.missing, self.wrong_package = height, missing, wrong_package
+        self.failure_offset = self.failure_scrolls = 0
+
+    def tree(self):
+        tree = super().tree()
+        if self.phase != "post":
+            return tree
+        history = tagged(tree, recovery.HISTORY)
+        history.set("bounds", f"[56,217][320,{217 + self.height}]")
+        top = 217 + 2_400 - self.failure_offset
+        if not self.missing and top < 217 + self.height and top + 180 > 217:
+            chat_node(history, f"[76,{max(217, top)}][300,{min(217 + self.height, top + 180)}]",
+                      text=recovery.LOST_REPLY,
+                      package="other.app" if self.wrong_package else recovery.PACKAGE)
+        return tree
+
+    def reveal(self, text, area, *, max_swipes=10):
+        if text == recovery.LOST_REPLY:
+            from profile_ui_probe import ProfileProbe
+            return ProfileProbe.reveal(self, text, area, max_swipes=max_swipes)
+        return super().reveal(text, area, max_swipes=max_swipes)
+
+    def _semantic_scroll_callback(self, area, direction):
+        if (area, direction, self.phase) == (recovery.HISTORY, "end", "post"):
+            def scroll(*_coordinates):
+                self.failure_scrolls += 1
+                self.failure_offset += self.height - 40
+            return scroll
+        return super()._semantic_scroll_callback(area, direction)
+
+
+class ChatFailureTraversalTests(unittest.TestCase):
+    @patch("profile_scroll.time.sleep")
+    def test_short_history_reaches_exact_failure_before_one_get(self, _sleep):
+        for height in (199, 400):
+            with self.subTest(height=height):
+                probe = FailureViewportProbe(height)
+                result = recovery.exercise_chat_recovery(probe, probe.observed)
+                self.assertTrue(result["send_disabled_while_uncertain"])
+                self.assertEqual((probe.post_taps, probe.get_taps), (1, 1))
+                self.assertLessEqual(probe.failure_scrolls, 20)
+                if height == 199:
+                    self.assertGreater(probe.failure_scrolls, 10)
+
+    @patch("profile_scroll.time.sleep")
+    def test_default_budget_reproduces_the_observed_short_viewport_failure(self, _sleep):
+        probe = FailureViewportProbe(199)
+        probe.tap(recovery.SEND, recovery.COMPOSER)
+        with self.assertRaisesRegex(AssertionError, "List target not reachable"):
+            probe.reveal(recovery.LOST_REPLY, recovery.HISTORY)
+        self.assertEqual((probe.failure_scrolls, probe.post_taps, probe.get_taps), (10, 1, 0))
+
+    @patch("profile_scroll.time.sleep")
+    def test_absent_or_foreign_error_never_permits_recovery_or_another_post(self, _sleep):
+        for changes in ({"missing": True}, {"wrong_package": True}):
+            with self.subTest(changes=changes):
+                probe = FailureViewportProbe(199, **changes)
+                with self.assertRaisesRegex(AssertionError, "List target not reachable"):
+                    recovery.exercise_chat_recovery(probe, probe.observed)
+                self.assertEqual((probe.failure_scrolls, probe.post_taps, probe.get_taps), (20, 1, 0))
 
 
 if __name__ == "__main__":

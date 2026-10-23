@@ -242,7 +242,7 @@ class ProfileProbe:
 
         return scroll
 
-    def reveal(self, text, area="profile-content", direction="end"):
+    def reveal(self, text, area="profile-content", direction="end", *, max_swipes=10):
         from profile_scroll import reveal_in_list
 
         target = reveal_in_list(
@@ -251,6 +251,7 @@ class ProfileProbe:
             text,
             resource_id=area,
             direction=direction,
+            max_swipes=max_swipes,
             layout_timeout=12,
         )
         if target is None:
@@ -306,17 +307,17 @@ class ProfileProbe:
         from native_input_evidence import dismiss_keyboard
         return dismiss_keyboard(self)
 
-    def tap(self, text, area="profile-content", direction="end"):
-        self.tap_node(self.label_tap_target(text, area, direction))
+    def tap(self, text, area="profile-content", direction="end", *, max_swipes=10):
+        self.tap_node(self.label_tap_target(text, area, direction, max_swipes=max_swipes))
 
-    def label_tap_target(self, text, area="profile-content", direction="end"):
+    def label_tap_target(self, text, area="profile-content", direction="end", *, max_swipes=10):
         """Reveal and observe the settled native action before any tap."""
         from native_label_target import settled_label
         from profile_scroll import reveal_in_list
 
         target = reveal_in_list(
             self.tree, self._semantic_scroll_callback(area, direction), text,
-            resource_id=area, direction=direction, layout_timeout=12, for_tap=True,
+            resource_id=area, direction=direction, max_swipes=max_swipes, layout_timeout=12, for_tap=True,
         )
         if target is None:
             raise AssertionError("Native action list is not visible: " + area)
