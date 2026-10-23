@@ -181,8 +181,31 @@ print(json.dumps(report))
 
 
 def develop_backend(command):
+    development_source = "7d33778a1467fad38e2e394ffec2a5dc490021a3"
+    archive = subprocess.check_output(["git", "archive", "--format=tar.gz", development_source], cwd=prepare.ROOT)
+    materialize = '''import hashlib,io,json,pathlib,sys,tarfile
+data=sys.stdin.buffer.read()
+root=pathlib.Path("/root/analyst-ai-development-7d33778a")
+assert not root.is_symlink()
+with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as source:
+    entries=source.getmembers()
+    assert all(item.isdir() or item.isfile() for item in entries)
+    if not root.exists():
+        root.mkdir(mode=0o700)
+        source.extractall(root,filter="data")
+    count=0
+    for item in entries:
+        if item.isfile():
+            path=root/item.name
+            assert path.resolve().is_relative_to(root) and path.is_file() and not path.is_symlink()
+            assert hashlib.sha256(path.read_bytes()).digest()==hashlib.sha256(source.extractfile(item).read()).digest()
+            count+=1
+print(json.dumps({"development_source":"7d33778a1467fad38e2e394ffec2a5dc490021a3","verified_files":count,"archive_sha256":hashlib.sha256(data).hexdigest()}))
+'''
+    materialized = prepare.remote(command, "python3 -c " + shlex.quote(materialize), archive, timeout=120)
+    print("OWNER_TIMEWEB_SOURCE=" + materialized.decode().strip(), flush=True)
     script = '''import json,os,pathlib,subprocess,tempfile
-root=pathlib.Path("/root/analyst-ai-source")
+root=pathlib.Path("/root/analyst-ai-development-7d33778a")
 venv=pathlib.Path("/root/analyst-ai-development-venv")
 def run(args,**kwargs):
     result=subprocess.run(args,cwd=root,capture_output=True,text=True,**kwargs)

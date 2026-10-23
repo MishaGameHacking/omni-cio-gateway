@@ -17,7 +17,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Fetch the exact checked server sources
-        run: git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
+        run: |
+          git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
+          git fetch --depth=1 origin 7d33778a1467fad38e2e394ffec2a5dc490021a3
       - name: Run isolated backend development checks on the prepared Timeweb VM
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
