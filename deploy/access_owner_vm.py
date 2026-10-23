@@ -181,11 +181,11 @@ print(json.dumps(report))
 
 
 def develop_backend(command):
-    development_source = "7d33778a1467fad38e2e394ffec2a5dc490021a3"
+    development_source = "79be182168e21ae8248e0e0dfa6deb0abfbacbcf"
     archive = subprocess.check_output(["git", "archive", "--format=tar.gz", development_source], cwd=prepare.ROOT)
     materialize = '''import hashlib,io,json,pathlib,sys,tarfile
 data=sys.stdin.buffer.read()
-root=pathlib.Path("/root/analyst-ai-development-7d33778a")
+root=pathlib.Path("/root/analyst-ai-development-79be1821")
 assert not root.is_symlink()
 with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as source:
     entries=source.getmembers()
@@ -200,19 +200,19 @@ with tarfile.open(fileobj=io.BytesIO(data),mode="r:gz") as source:
             assert path.resolve().is_relative_to(root) and path.is_file() and not path.is_symlink()
             assert hashlib.sha256(path.read_bytes()).digest()==hashlib.sha256(source.extractfile(item).read()).digest()
             count+=1
-print(json.dumps({"development_source":"7d33778a1467fad38e2e394ffec2a5dc490021a3","verified_files":count,"archive_sha256":hashlib.sha256(data).hexdigest()}))
+print(json.dumps({"development_source":"79be182168e21ae8248e0e0dfa6deb0abfbacbcf","verified_files":count,"archive_sha256":hashlib.sha256(data).hexdigest()}))
 '''
     materialized = prepare.remote(command, "python3 -c " + shlex.quote(materialize), archive, timeout=120)
     print("OWNER_TIMEWEB_SOURCE=" + materialized.decode().strip(), flush=True)
-    script = '''import json,os,pathlib,subprocess,tempfile
-root=pathlib.Path("/root/analyst-ai-development-7d33778a")
+    script = '''import json,os,pathlib,subprocess,sys,tempfile
+root=pathlib.Path("/root/analyst-ai-development-79be1821")
 venv=pathlib.Path("/root/analyst-ai-development-venv")
 def run(args,**kwargs):
     result=subprocess.run(args,cwd=root,capture_output=True,text=True,**kwargs)
     if result.returncode:
         print(json.dumps({"phase":args[0:3],"exit":result.returncode,"output":(result.stdout+result.stderr)[-18000:]}),flush=True)
         raise SystemExit(result.returncode)
-    return result.stdout
+    return result.stdout+result.stderr
 run(["apt-get","update","-qq"],timeout=300)
 run(["apt-get","install","-y","python3-venv"],env=dict(os.environ,DEBIAN_FRONTEND="noninteractive"),timeout=300)
 assert not venv.is_symlink()
@@ -224,8 +224,16 @@ with tempfile.TemporaryDirectory(prefix="analyst-development-") as temp:
          "TELEGRAM_CLIENT_ID":"123456","TELEGRAM_CLIENT_SECRET":"test-only","BACKEND_PUBLIC_URL":"https://example.invalid",
          "FERNET_KEY":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","ANALYSIS_SCHEDULER_ENABLED":"false",
          "AI_EXTERNAL_PROCESSING_APPROVED":"false","DATABASE_PATH":temp+"/tests.sqlite3"}
-    output=run([python,"-m","pytest","backend/tests","-q"],env=env,timeout=360)
-    print(json.dumps({"development_host":"timeweb-9408159","backend_tests":output[-6000:],"live_authentication_verified":False}),flush=True)
+    sys.path.insert(0,str(root/".github/scripts"))
+    import audit_python_sources
+    audit=audit_python_sources.audit(root,[str(path.relative_to(root)) for path in root.rglob("*.py")])
+    print(json.dumps({"development_host":"timeweb-9408159","python_source_audit":audit}),flush=True)
+    assert not audit["failures"],"python_source_audit_failed"
+    for phase,args in (("backend_tests",[python,"-m","pytest","backend/tests","-q"]),
+                       ("ci_script_tests",[python,"-m","unittest","discover","-s",".github/scripts/tests","-p","test_*.py"]),
+                       ("tool_tests",[python,"-m","unittest","discover","-s","tools/tests","-p","test_*.py"])):
+        output=run(args,env=env,timeout=360)
+        print(json.dumps({"development_host":"timeweb-9408159","development_source":"79be182168e21ae8248e0e0dfa6deb0abfbacbcf",phase:output[-6000:],"live_authentication_verified":False}),flush=True)
 run([python,"-m","pip","check"],timeout=60)
 '''
     result = subprocess.run(command + ["python3 -c " + shlex.quote(script)], capture_output=True, timeout=1200)
