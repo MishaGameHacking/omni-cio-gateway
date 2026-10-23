@@ -13,6 +13,7 @@ import time
 from chat_recovery_ui_probe import chat_counters
 
 SYNTHETIC_LIMIT_CHANGE = 'Синтетическое изменение лимита'
+SYNTHETIC_LIMIT_STATE = "notification-state-synthetic-notification"
 
 
 ROUTES = ("risk", "assistant", "plans", "strategy", "notifications", "analysis", "catalogue")
@@ -263,19 +264,22 @@ class _BusinessCase:
 
     def mark_notification_read(self):
         from native_input_evidence import active_window_id
-        from profile_scroll import visible_label
+        from profile_scroll import visible_resource
 
         original_window = active_window_id(self.probe.tree())
-        self.probe.tap(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
+        self.probe.tap(SYNTHETIC_LIMIT_CHANGE, "workspace-content", direction="start")
         self.probe.wait_for(lambda: active_window_id(self.probe.tree()) != original_window,
                             "Notification dialog did not become the active window")
         self.probe.tap("Отметить прочитанным", "workspace-content")
         self.probe.wait_for(lambda: active_window_id(self.probe.tree()) == original_window,
                             "Notification dialog did not close after acknowledgement")
-        self.probe.reveal(SYNTHETIC_LIMIT_CHANGE, "workspace-content")
+        self.probe.reveal_resource(SYNTHETIC_LIMIT_STATE, "workspace-content")
 
         def acknowledged_event():
-            node = visible_label(self.probe.tree(), SYNTHETIC_LIMIT_CHANGE)
+            tree = self.probe.tree()
+            if active_window_id(tree) != original_window:
+                return None
+            node = visible_resource(tree, SYNTHETIC_LIMIT_STATE)
             return node if node is not None and "Прочитано" in labels(node) else None
 
         self.probe.wait_for(acknowledged_event, "The selected event did not change to read")

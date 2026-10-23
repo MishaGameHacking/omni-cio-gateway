@@ -21,15 +21,18 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
     var end by rememberSaveable { mutableStateOf(current.end.orEmpty()) }
     var keepEvent by rememberSaveable(current.eventId) { mutableStateOf(current.eventId != null) }
     val accounts = portfolio?.accounts.orEmpty()
+    val accountIndex = accounts.indexOfFirst { it.id == accountId }
+    val validAccount = accountId == null || accountIndex >= 0
     val positions = accounts.filter { accountId == null || it.id == accountId }.flatMap { it.positions }.distinctBy { it.id }
     val selected = positions.firstOrNull { it.id == instrument }
     val validRange = (start.isBlank() && end.isBlank()) || runCatching { LocalDate.parse(start) <= LocalDate.parse(end) }.getOrDefault(false)
     WorkspaceDialog("Контекст следующего вопроса", onClose) {
         WorkspaceChoices("О чём говорим", listOf("Общий вопрос", "Портфель", "Инструмент"), mode) { mode = it }
         if (mode != 0) {
-            WorkspaceChoices("Счета", listOf("Все мои счета") + accounts.map { it.name }, if (accountId == null) 0 else accounts.indexOfFirst { it.id == accountId } + 1) {
+            WorkspaceChoices("Счета", listOf("Все мои счета") + accounts.map { it.name }, if (validAccount) accountIndex + 1 else -1) {
                 accountId = if (it == 0) null else accounts[it - 1].id; instrument = null
             }
+            if (!validAccount) Text("Выбранный счёт не найден в текущем снимке. Дождитесь загрузки или выберите доступный счёт, включая «Все мои счета».")
             if (mode == 2) {
                 WorkspaceTextInput(search, { search = it.take(100) }, "Найти инструмент", Modifier.fillMaxWidth())
                 selected?.let { Text("Выбрано: " + it.title, style = MaterialTheme.typography.titleMedium) }
@@ -59,7 +62,7 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
             select(editedChatContext(mode, base, instrument, accountId, start to end,
                 current.eventId.takeIf { keepEvent && instrument == current.instrumentUid }))
             onClose()
-        }, Modifier.fillMaxWidth(), (mode == 0 || validRange) && (mode != 2 || selected != null))
+        }, Modifier.fillMaxWidth(), (mode == 0 || validAccount && validRange) && (mode != 2 || selected != null))
         SpectrumSecondaryButton("Вернуться", onClose, Modifier.fillMaxWidth())
     }
 }

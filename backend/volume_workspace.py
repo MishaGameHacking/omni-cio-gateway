@@ -56,7 +56,13 @@ def _position_metadata(raw: dict, position: dict) -> dict:
     keys = {"sector": "sector", "country_of_risk": "countryOfRisk", "country_of_risk_name": "countryOfRiskName",
             "asset_uid": "assetUid", "lot": "lot", "exchange": "exchange", "isin": "isin",
             "instrument_currency": "currency"}
-    return {**{name: raw.get(key) or position.get(key) for name, key in keys.items()}, "source": raw.get("_source")}
+    result = {**{name: raw.get(key) or position.get(key) for name, key in keys.items()}, "source": raw.get("_source")}
+    currency = result["instrument_currency"]
+    # Normalize the broker's spelling at ingestion, before the strict internal
+    # contract is used by risk groups, scenarios and purchase limits.
+    if isinstance(currency, str) and currency.isascii():
+        result["instrument_currency"] = currency.upper()
+    return result
 
 
 def _workspace_position(account: dict, position: dict, raw: dict, ref: dict) -> tuple[dict, list]:
