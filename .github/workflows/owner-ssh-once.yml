@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-build-readonly-inspection
+  group: analyst-owner-temporary-access
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,39 +20,26 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Remove only the unpaid unstarted build trial and verify retained owner host
+      - name: Save verified migration blockers and standing owner authorization on Timeweb
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,sys,time
-          sys.path[:0]=["deploy","tools"]
-          import prepare_owner_vm as p
+          import json,shlex,subprocess,sys
+          sys.path.insert(0,"deploy")
           import access_owner_vm as access
-          from replace_unreachable_vm import remove_ip
-          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          sid=9409007
-          def inventory():
-              doc=p.read_resource(token,"servers")
-              assert p.summarize("servers",doc)["complete"]
-              return doc["servers"]
-          rows=inventory()
-          old=[s for s in rows if s["id"]==9408159]
-          assert len(old)==1 and old[0]["name"]=="analyst-ai-owner-route-20261023" and old[0]["status"]=="on"
-          new=[s for s in rows if s["id"]==sid]
-          assert len(new)<=1
-          if new:
-              s=new[0]
-              assert s["name"]=="analyst-ai-build-20261023" and s["comment"]=="Analyst AI Timeweb-only development authorized 2026-10-23" and s["preset_id"]==4245 and s["status"]=="no_paid","only_remove_unstarted_task_server"
-              p.cloud.request(token,"DELETE",f"/api/v1/servers/{sid}")
-          for attempt in range(24):
-              rows=inventory()
-              if not any(s["id"]==sid for s in rows):break
-              time.sleep(5)
-          else:raise RuntimeError("unstarted_server_cleanup_unconfirmed")
-          remove_ip(token,"d378efc5-0d10-4ef6-9eab-133f43b48f6f",sid)
-          rows=inventory()
-          assert {s["id"] for s in rows}=={9408159} and rows[0]["status"]=="on"
-          print("BUILD_CLEANUP=unstarted_server_and_its_address_absent_owner_server_running",flush=True)
+          import adopt_replacement_vm as adopt
+          import prepare_owner_vm as prepare
+          def authorized_command(command):
+              script="import hashlib,json,pathlib,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert root.is_dir() and not root.is_symlink()\ndef git(*args):\n    return subprocess.check_output([\"git\",*args],cwd=root,text=True).strip()\nassert git(\"rev-parse\",\"HEAD\")==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\npolicy=\"## OWNER 23.10.2026 — Timeweb и постоянное разрешение\\n\\nРазработка, редактирование приложения, сборка APK и все проверки выполняются\\nна Timeweb. GitHub хранит резервные копии исходников; OWNER отдельно разрешил\\nGitHub Actions как канал SSH-команд к Timeweb. Повторно спрашивать разрешение\\nна этот канал, необходимые исправления, проверки и развёртывание в согласованной\\nзадаче не нужно. Разрешение не заменяет фактическую проверку результата.\\nПодбирать минимально достаточные по цене серверы: Россия в приоритете,\\nзатем ближайшие страны. Ресурсы для этой задачи разрешены; не создавать\\nненужные экземпляры. Приложение и телефонный дизайн строго вертикальные.\\nИсправлять только подтверждённые ошибки существующего приложения; сохранить\\nвсе проверки и единый итоговый коммит исправлений. Секреты не публиковать.\\n\\n\"\nnote=\"## Проверка доступа и переноса сборки на Timeweb — 23.10.2026\\n\\nSSH к серверу 9408159 подтверждён через разрешённый канал GitHub Actions.\\nРазрешение OWNER сохранено в AGENTS.md, MASTER_PLAN.md и PLAN_STATUS.md.\\nИсходники разработки: 79be182168e21ae8248e0e0dfa6deb0abfbacbcf,\\nрабочий каталог /root/analyst-ai-development-79be1821.\\n\\nСервер имеет около 1 ГБ RAM, без Android SDK и /dev/kvm.\\nБолее дешёвые российские предложения 6751, 6761, 6753, 6763 и 2581\\nотклонены провайдером по отсутствию ресурсов; 2455 возвращает preset_not_found.\\nПробный сервер 9409007 (ru-2 / nsk-1, preset 4245, 4 CPU / 8 ГБ / 80 ГБ,\\n6800 руб./месяц без IPv4) остался no_paid и не стал доступен по SSH.\\nАккаунт не заблокирован, баланс положительный, но не покрывает 7000 руб.\\nна 30 дней сервера с IPv4. Точную платёжную информацию в журналы не выводили.\\nДокументация провайдера требует запас средств на 30 дней создаваемых серверов.\\nhttps://timeweb.cloud/docs/cloud-servers/manage-servers/create-server\\n\\n9409007 и его адрес d378efc5-0d10-4ef6-9eab-133f43b48f6f удалены;\\nинвентарь подтвердил отсутствие обоих ресурсов и работающий 9408159.\\nПроверка: https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40006850088\\nПроверка требования оплаты: https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40006543477\\n\\nПолный Android runtime API 37 / 16 КБ и 4 КБ на Timeweb ещё не пройден.\\nПоддержка KVM у незапустившегося сервера не проверена. Подпись APK сохранять;\\nсуществующий закрытый ключ ещё не переносился. Нового APK не опубликовано.\\nBackend ещё не запущен; реальная привязка владельца Telegram не выполнена.\\nНе считать ветку зелёной и не ослаблять проверки из-за инфраструктурного блока.\\n\\n\"\nfor name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    assert policy in (root/name).read_text(), \"owner_authorization_missing\"\np=root/\"docs/PLAN_STATUS.md\"\nvalue=p.read_text()\nif note not in value:\n    p.write_text(value.replace(policy,policy+note,1))\nprint(json.dumps({\"server_id\":9408159,\"owner_authorization_saved\":True,\"checkpoint_saved\":True,\"modified\":git(\"status\",\"--short\"),\"sha256\":{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\")},\"new_apk_published\":False,\"live_owner_verified\":False},ensure_ascii=False),flush=True)\n"
+              result=subprocess.run(command+["python3 -c "+shlex.quote(script)],capture_output=True,text=True,timeout=480)
+              for line in result.stdout.splitlines():
+                  if line.startswith("{"):
+                      print("OWNER_TIMEWEB_REMOTE="+json.dumps(json.loads(line),ensure_ascii=False),flush=True)
+              if result.returncode:
+                  print("OWNER_REMOTE_DIAGNOSTIC="+result.stderr[-6000:],flush=True)
+                  raise prepare.ProbeError("remote_inspection_failed_"+str(result.returncode))
+          access.develop_backend=authorized_command
+          adopt.run(development=True)
           PY
