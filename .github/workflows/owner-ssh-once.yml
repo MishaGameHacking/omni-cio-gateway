@@ -16,8 +16,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Bind the temporary installation key to the verified new VM
+      - name: Inspect the verified new VM and current network assignment
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/access_owner_vm.py attach
+        run: python3 deploy/access_owner_vm.py inspect

@@ -14,7 +14,7 @@ PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7lcv6ujGptd74KPdQGz3jCsZoV51
 
 
 def request(token, method, path, data=None):
-    allowed = method == "GET" and path in {"/ssh-keys", f"/servers/{SERVER_ID}", f"/projects/{prepare.PROJECT}/resources"}
+    allowed = method == "GET" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}", f"/projects/{prepare.PROJECT}/resources"}
     allowed |= method == "POST" and path in {"/ssh-keys", f"/servers/{SERVER_ID}/ssh-keys"}
     allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/9407735/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
@@ -34,7 +34,7 @@ def request(token, method, path, data=None):
 
 
 def run(mode):
-    if mode not in {"attach", "cleanup"}:
+    if mode not in {"inspect", "attach", "cleanup"}:
         raise prepare.ProbeError("invalid_access_mode")
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     prepare.cloud.PRESET_ID = prepare.PRESET
@@ -45,8 +45,16 @@ def run(mode):
         raise prepare.ProbeError("server_project_mismatch")
     print("OWNER_VM_OBSERVED=" + json.dumps({"id": SERVER_ID, "status": server.get("status"),
         "ip": prepare.cloud.public_ipv4(server), "location": server.get("location"),
-        "cpu": server.get("cpu"), "ram": server.get("ram")}), flush=True)
+        "cpu": server.get("cpu"), "ram": server.get("ram"), "availability_zone": server.get("availability_zone"),
+        "network_types": [n.get("type") for n in server.get("networks", [])]}), flush=True)
     document = request(token, "GET", "/ssh-keys")
+    if mode == "inspect":
+        print("OWNER_KEY_RESPONSE_SHAPE=" + json.dumps({"keys": list(document), "meta": document.get("meta"),
+            "list_lengths": {k: len(v) for k, v in document.items() if isinstance(v, list)}}), flush=True)
+        addresses = request(token, "GET", "/floating-ips")
+        print("OWNER_IP_INVENTORY=" + json.dumps({"meta": addresses.get("meta"),
+            "ips": [{k: v.get(k) for k in ("id", "resource_id", "resource_type", "availability_zone")} for v in addresses.get("ips", [])]}), flush=True)
+        return
     keys = document.get("ssh-keys")
     if not isinstance(keys, list) or document.get("meta", {}).get("total") != len(keys):
         raise prepare.ProbeError("incomplete_key_inventory")
