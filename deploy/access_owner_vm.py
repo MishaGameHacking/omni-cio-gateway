@@ -24,6 +24,7 @@ def request(token, method, path, data=None):
     allowed = method == "GET" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}", f"/projects/{prepare.PROJECT}/resources"}
     allowed |= method == "POST" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}/ssh-keys"}
     allowed |= method == "POST" and re.fullmatch(r"/floating-ips/[a-f0-9-]{36}/bind", path) is not None
+    allowed |= method == "PATCH" and path == "/domains/" + prepare.HOST
     allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/9407735/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
         raise prepare.ProbeError("unapproved_access_endpoint")
@@ -35,6 +36,8 @@ def request(token, method, path, data=None):
         with opener.open(req, timeout=30) as response:
             raw = response.read(2 * 1024 * 1024 + 1)
     except urllib.error.HTTPError as error:
+        print("OWNER_API_FAILURE=" + json.dumps({"method": method, "path": path, "status": error.code,
+            **prepare.cloud.error_details(error.read(2 * 1024 * 1024 + 1))}), flush=True)
         raise prepare.ProbeError("access_http_" + str(error.code)) from None
     except OSError:
         raise prepare.ProbeError("access_transport_failed_reconcile_before_retry") from None
@@ -100,9 +103,11 @@ def stage_server(token, server):
             if b"status: done" not in status:
                 raise prepare.ProbeError("cloud_init_not_done")
             existing = prepare.domain_api(token, "GET")
-            if existing is None:
-                prepare.domain_api(token, "POST")
-                prepare.domain_api(token, "PATCH", address=address)
+            domain = {} if existing is None else existing.get("domain", {})
+            if domain.get("is_technical") is not True or domain.get("linked_ip") not in {None, address}:
+                raise prepare.ProbeError("expected_new_technical_domain_changed")
+            if domain.get("linked_ip") is None:
+                request(token, "PATCH", "/domains/" + prepare.HOST, {"linked_ip": address})
             domain = prepare.domain_api(token, "GET").get("domain", {})
             if domain.get("linked_ip") != address or domain.get("is_technical") is not True:
                 raise prepare.ProbeError("technical_domain_binding_unverified")

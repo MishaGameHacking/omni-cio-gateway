@@ -18,10 +18,10 @@ jobs:
           persist-credentials: false
       - name: Fetch the exact checked server sources
         run: git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
-      - name: Inspect the domain after the provider conflict
+      - name: Bind the existing technical domain and stage the checked installer
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
           TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/access_owner_vm.py inspect
+        run: python3 deploy/access_owner_vm.py stage
