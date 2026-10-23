@@ -24,7 +24,7 @@ def request(token, method, path, data=None):
     allowed = method == "GET" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}", f"/projects/{prepare.PROJECT}/resources"}
     allowed |= method == "POST" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}/ssh-keys"}
     allowed |= method == "POST" and re.fullmatch(r"/floating-ips/[a-f0-9-]{36}/bind", path) is not None
-    allowed |= method == "PATCH" and path == "/domains/" + prepare.HOST
+    allowed |= method in {"GET", "POST"} and path == "/domains/" + prepare.HOST + "/dns-records"
     allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/9407735/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
         raise prepare.ProbeError("unapproved_access_endpoint")
@@ -68,6 +68,32 @@ def connect_ipv4(token, server):
     raise prepare.ProbeError("ip_binding_not_yet_verified_no_second_allocation")
 
 
+def ensure_domain_dns(token, address):
+    existing = prepare.domain_api(token, "GET")
+    domain = {} if existing is None else existing.get("domain", {})
+    if domain.get("is_technical") is not True or domain.get("linked_ip") not in {None, address}:
+        raise prepare.ProbeError("expected_new_technical_domain_changed")
+    path = "/domains/" + prepare.HOST + "/dns-records"
+
+    def roots():
+        document = request(token, "GET", path)
+        records = document.get("dns_records")
+        if not isinstance(records, list) or document.get("meta", {}).get("total") != len(records):
+            raise prepare.ProbeError("incomplete_domain_dns_inventory")
+        result = [row for row in records if row.get("data", {}).get("subdomain") in {None, "", "@", prepare.HOST, prepare.HOST + "."}
+                  and row.get("type") in {"A", "AAAA", "CNAME"}]
+        print("OWNER_DOMAIN_ADDRESS_RECORDS=" + json.dumps(result), flush=True)
+        return result
+
+    records = roots()
+    if not records:
+        request(token, "POST", path, {"type": "A", "value": address, "ttl": 300})
+        records = roots()
+    if len(records) != 1 or records[0].get("type") != "A" or records[0].get("data", {}).get("value") != address:
+        raise prepare.ProbeError("domain_address_conflict_no_existing_record_changed")
+    print("OWNER_DOMAIN_DNS_CONFIGURED=" + prepare.HOST, flush=True)
+
+
 def stage_server(token, server):
     address = prepare.cloud.public_ipv4(server)
     if address != "201.34.156.98":
@@ -102,15 +128,7 @@ def stage_server(token, server):
             status = prepare.remote(command, "cloud-init status --wait", timeout=60)
             if b"status: done" not in status:
                 raise prepare.ProbeError("cloud_init_not_done")
-            existing = prepare.domain_api(token, "GET")
-            domain = {} if existing is None else existing.get("domain", {})
-            if domain.get("is_technical") is not True or domain.get("linked_ip") not in {None, address}:
-                raise prepare.ProbeError("expected_new_technical_domain_changed")
-            if domain.get("linked_ip") is None:
-                request(token, "PATCH", "/domains/" + prepare.HOST, {"linked_ip": address})
-            domain = prepare.domain_api(token, "GET").get("domain", {})
-            if domain.get("linked_ip") != address or domain.get("is_technical") is not True:
-                raise prepare.ProbeError("technical_domain_binding_unverified")
+            ensure_domain_dns(token, address)
             report = prepare.stage(command, address, *values)
             print("OWNER_VM_PREPARED=" + json.dumps({"id": SERVER_ID, "ip": address, "hostname": prepare.HOST,
                 "backend_started": False, "owner_enrollment_required": True, **report}), flush=True)
