@@ -22,6 +22,35 @@ NAME = "analyst-ai-owner-route-20261023"
 CONFIGURATION = {"configurator_id": 153, "cpu": 1, "ram": 1024, "disk": 15360}
 MARKER = "Analyst AI replacement for verified Telegram route failure 2026-10-23"
 
+TELEGRAM_CHECK = '''import json,socket,ssl,urllib.request,urllib.error
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs): return None
+report={"host":"oauth.telegram.org","telegram_jwks_https":False,"phase":"dns"}
+try:
+    report["addresses"]=sorted({row[4][0] for row in socket.getaddrinfo("oauth.telegram.org",443,type=socket.SOCK_STREAM)})
+    report["phase"]="tcp_tls"
+    with socket.create_connection(("oauth.telegram.org",443),timeout=15) as raw:
+        with ssl.create_default_context().wrap_socket(raw,server_hostname="oauth.telegram.org") as conn:
+            report["tls"]=conn.version()
+    report["phase"]="jwks_https"
+    opener=urllib.request.build_opener(NoRedirect(),urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+    with opener.open("https://oauth.telegram.org/.well-known/jwks.json",timeout=20) as response:
+        raw=response.read(131073)
+        report.update({"status":response.status,"bytes":len(raw),"content_type":response.headers.get("Content-Type")})
+        report["phase"]="jwks_json"
+        if len(raw)>131072:
+            raise ValueError("oversized_public_key_response")
+        result=json.loads(raw)
+        report["public_key_count"]=len(result.get("keys",[])) if isinstance(result,dict) else 0
+        report["telegram_jwks_https"]=response.status==200 and isinstance(result,dict) and isinstance(result.get("keys"),list) and bool(result["keys"])
+except (OSError,ValueError) as error:
+    report["error"]=type(error).__name__
+    if isinstance(error,urllib.error.HTTPError): report["status"]=error.code
+    reason=getattr(error,"reason",error)
+    report["errno"]=getattr(reason,"errno",None)
+print(json.dumps(report))
+'''
+
 
 def validate(token):
     prepare.cloud.PRESET_ID = None
@@ -74,6 +103,14 @@ def remove_ip(token, identifier, server_id):
 
 
 def run():
+    preflight = json.loads(subprocess.check_output([sys.executable, "-c", TELEGRAM_CHECK], timeout=45))
+    print("OWNER_PUBLIC_TELEGRAM_ENDPOINT=" + json.dumps(preflight), flush=True)
+    if not preflight.get("telegram_jwks_https"):
+        raise prepare.ProbeError("telegram_public_endpoint_failed_no_vm_ordered")
+    if sys.argv[1:] == ["--endpoint-only"]:
+        return
+    if sys.argv[1:]:
+        raise prepare.ProbeError("unapproved_replacement_mode")
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     validate(token)
     prepare.NAME, prepare.MARKER = NAME, MARKER
@@ -106,17 +143,7 @@ def run():
                     raise prepare.ProbeError("replacement_ip_attributes_changed")
                 access.request(token, "POST", f"/floating-ips/{ip_id}/bind", {"resource_type": "server", "resource_id": server_id})
             command, address = prepare.ready(token, server_id, folder, host)
-            script = '''import json,socket,ssl,urllib.request
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self,*args,**kwargs): return None
-url="https://oauth.telegram.org/.well-known/jwks.json"
-opener=urllib.request.build_opener(NoRedirect(),urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
-with opener.open(url,timeout=20) as response:
-    result=json.loads(response.read(131073))
-    assert response.status==200 and isinstance(result.get("keys"),list) and result["keys"],"invalid_public_jwks"
-    print(json.dumps({"telegram_jwks_https":True,"public_key_count":len(result["keys"])}))
-'''
-            evidence = json.loads(prepare.remote(command, "python3 -c " + shlex.quote(script), timeout=30))
+            evidence = json.loads(prepare.remote(command, "python3 -c " + shlex.quote(TELEGRAM_CHECK), timeout=45))
             keep = evidence.get("telegram_jwks_https") is True
             print("OWNER_REPLACEMENT_REACHABILITY=" + json.dumps({"id": server_id, "ip": address, "ip_id": ip_id, **evidence}), flush=True)
         finally:

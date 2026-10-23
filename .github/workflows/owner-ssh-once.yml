@@ -18,8 +18,8 @@ jobs:
           persist-credentials: false
       - name: Fetch the exact checked server sources
         run: git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
-      - name: Check the next minimum offer after the same-price replacement was unavailable
+      - name: Diagnose the public Telegram key endpoint without ordering a VM
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/replace_unreachable_vm.py
+        run: python3 deploy/replace_unreachable_vm.py --endpoint-only
