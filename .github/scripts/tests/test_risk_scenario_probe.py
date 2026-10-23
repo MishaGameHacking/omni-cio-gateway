@@ -54,11 +54,13 @@ class RiskScenarioRotationOrderTests(unittest.TestCase):
         for scale, suffix in ((1.0, ""), (2.0, "-font-200")):
             case, events = scenario_case(scale)
 
-            def visible(_probe, text, name, *, dialog):
+            def visible(_probe, text, name, *, dialog, portrait_only):
+                self.assertTrue(portrait_only)
                 events.append(("visible-rotation", text, name, dialog))
                 return {"original": True}
 
-            def hidden(_probe, text, name, *, dialog):
+            def hidden(_probe, text, name, *, dialog, portrait_only):
+                self.assertTrue(portrait_only)
                 events.append(("hidden-rotation", text, name, dialog))
                 return {"hidden": True}
 

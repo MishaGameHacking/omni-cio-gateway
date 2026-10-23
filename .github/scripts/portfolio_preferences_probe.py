@@ -1,6 +1,5 @@
 """Saved appearance, temporary preview and real Activity recreation."""
 from business_ui_probe import labels
-from native_input_evidence import display_geometry
 from profile_launch import PACKAGE
 from spatial_frame_evidence import ready_spatial_metrics
 
@@ -54,30 +53,19 @@ def _preview(case):
 
 
 def _rotate_preview(case):
+    from emulator_rotation import portrait_turn, portrait_geometry
     p = case.probe
-    original_geometry = display_geometry(p.tree())
-    landscape = original_geometry[0] > original_geometry[1]
-    rotation = p.command("shell", "settings", "get", "system", "user_rotation").strip()
-    automatic = p.command("shell", "settings", "get", "system", "accelerometer_rotation").strip()
-    try:
-        p.command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
-        p.command("shell", "settings", "put", "system", "user_rotation", "0" if landscape else "1")
-        p.wait_for(lambda: (size if ((size := display_geometry(p.tree()))[0] > size[1]) != landscape else None),
-                   "Appearance Activity did not change its actual orientation")
+    original_geometry = portrait_geometry(p.tree())
+    with portrait_turn(p.command):
         _expect_preferences(case, PREVIEW)
         p.reveal(DIRTY, AREA, direction="start")
         case.capture("preview-rotation")
+        after = portrait_geometry(p.tree())
+        if after != original_geometry:
+            raise AssertionError("Appearance preview changed its portrait geometry")
         case.extra["appearance_rotation"] = {"before_geometry": original_geometry,
-                                              "after_geometry": display_geometry(p.tree()),
-                                              "unsaved_preview": PREVIEW}
-    finally:
-        for key, value in (("user_rotation", rotation), ("accelerometer_rotation", automatic)):
-            if value in {"0", "1", "2", "3"}:
-                p.command("shell", "settings", "put", "system", key, value)
-            else:
-                p.command("shell", "settings", "delete", "system", key)
-        p.wait_for(lambda: display_geometry(p.tree()) == original_geometry, "Appearance rotation did not restore its original geometry")
-        _expect_preferences(case, PREVIEW)
+            "after_geometry": after, "orientation_policy": "portrait", "unsaved_preview": PREVIEW}
+    _expect_preferences(case, PREVIEW)
 
 
 def exercise_appearance(case):

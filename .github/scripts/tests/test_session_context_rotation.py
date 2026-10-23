@@ -1,5 +1,6 @@
 """Unit simulations of the rotation contract, not an emulator certification."""
 import sys
+import itertools
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +23,7 @@ class SessionProbe:
         self.closed = True
         self.marker_visible = True
         self.reveal_restores_visibility = True
-        self.force_portrait = False
+        self.force_portrait = True
         self.workspace_visible = True
         self.package = "ru.omnicio.app.debug"
         self.reveals = []
@@ -62,8 +63,8 @@ class SessionProbe:
         return tree
 
     def reveal(self, text, area, **kwargs):
-        if self.force_portrait or self.turns % 4 != 1:
-            raise AssertionError("Scroll attempted before landscape")
+        if not self.force_portrait or self.settings["user_rotation"] != "1":
+            raise AssertionError("Scroll attempted without the portrait rotation request")
         self.reveals.append((text, area, kwargs))
         if self.reveal_restores_visibility:
             self.marker_visible = True
@@ -73,9 +74,9 @@ class SessionProbe:
     def capture(self, name):
         if self.hide_during_capture:
             self.marker_visible = False
-        size = (1280, 720) if self.turns % 2 else (720, 1280)
+        size = (720, 1280)
         if self.stale_images:
-            size = (720, 1280)
+            size = (1280, 720)
             self.stale_images -= 1
         if self.override_image:
             size = self.override_image
@@ -97,14 +98,17 @@ class SessionRotationTests(unittest.TestCase):
         self.boundary = patch.dict(sys.modules, {
             "spatial_frame_evidence": SimpleNamespace(read_screenshot=lambda image: image)
         })
+        clock = patch("emulator_rotation.time.monotonic", side_effect=itertools.count())
+        clock.start()
+        self.addCleanup(clock.stop)
         self.boundary.start()
         self.addCleanup(self.boundary.stop)
 
-    def test_physical_pose_and_logical_frame_agree(self):
+    def test_landscape_request_retains_portrait_native_and_png_geometry(self):
         probe = SessionProbe()
         session._rotate_signed_out(probe, "")
-        self.assertEqual(probe.turns, 4)
-        self.assertEqual(probe.images[-1][1], (1280, 720))
+        self.assertEqual(probe.turns, 0)
+        self.assertEqual(probe.images[-1][1], (720, 1280))
         self.assertEqual(probe.settings, probe.original)
 
     def test_both_font_case_names_preserved(self):
@@ -118,20 +122,20 @@ class SessionRotationTests(unittest.TestCase):
         probe = SessionProbe()
         probe.stale_images = 1
         session._rotate_signed_out(probe, "")
-        self.assertEqual([size for _, size in probe.images], [(720, 1280), (1280, 720)])
-        self.assertEqual(probe.turns, 4)
+        self.assertEqual([size for _, size in probe.images], [(1280, 720), (720, 1280), (720, 1280), (720, 1280)])
+        self.assertEqual(probe.turns, 0)
 
-    def test_scaled_landscape_is_not_accepted(self):
+    def test_scaled_portrait_is_not_accepted(self):
         probe = SessionProbe()
-        probe.override_image = (640, 360)
+        probe.override_image = (360, 640)
         with self.assertRaisesRegex(AssertionError, "did not agree"):
             session._rotate_signed_out(probe, "")
         self.assertEqual(probe.settings, probe.original)
-        self.assertEqual(probe.turns, 4)
+        self.assertEqual(probe.turns, 0)
 
-    def test_persistent_portrait_is_not_accepted(self):
+    def test_persistent_landscape_png_is_not_accepted(self):
         probe = SessionProbe()
-        probe.override_image = (720, 1280)
+        probe.override_image = (1280, 720)
         with self.assertRaisesRegex(AssertionError, "did not agree"):
             session._rotate_signed_out(probe, "")
         self.assertEqual(probe.settings, probe.original)
@@ -142,7 +146,7 @@ class SessionRotationTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             session._rotate_signed_out(probe, "")
         self.assertEqual(probe.settings, probe.original)
-        self.assertEqual(probe.turns, 4)
+        self.assertEqual(probe.turns, 0)
 
 
     def test_large_font_marker_is_revealed_after_rotation_not_required_before_scroll(self):
@@ -153,14 +157,14 @@ class SessionRotationTests(unittest.TestCase):
                 session._rotate_signed_out(probe, suffix)
                 self.assertEqual(probe.reveals, [(session.CLOSED, session.AREA, {"direction": "start"})])
                 self.assertTrue(probe.marker_visible)
-                self.assertEqual(probe.images[-1][1], (1280, 720))
+                self.assertEqual(probe.images[-1][1], (720, 1280))
                 self.assertEqual(probe.settings, probe.original)
-                self.assertEqual(probe.turns, 4)
+                self.assertEqual(probe.turns, 0)
 
-    def test_real_portrait_prevents_scrolling_and_capture(self):
+    def test_landscape_app_prevents_scrolling_and_capture(self):
         probe = SessionProbe()
-        probe.force_portrait = True
-        with self.assertRaisesRegex(AssertionError, "landscape"):
+        probe.force_portrait = False
+        with self.assertRaisesRegex(AssertionError, "portrait"):
             session._rotate_signed_out(probe, "")
         self.assertEqual(probe.reveals, [])
         self.assertEqual(probe.images, [])
@@ -169,16 +173,16 @@ class SessionRotationTests(unittest.TestCase):
     def test_hidden_workspace_is_not_a_ready_app_frame(self):
         probe = SessionProbe()
         probe.workspace_visible = False
-        with self.assertRaisesRegex(AssertionError, "landscape"):
+        with self.assertRaisesRegex(AssertionError, "portrait"):
             session._rotate_signed_out(probe, "")
         self.assertEqual(probe.reveals, [])
         self.assertEqual(probe.images, [])
-        self.assertEqual(probe.turns, 4)
+        self.assertEqual(probe.turns, 0)
 
     def test_foreign_app_cannot_supply_a_matching_label(self):
         probe = SessionProbe()
         probe.package = "com.android.settings"
-        with self.assertRaisesRegex(AssertionError, "landscape"):
+        with self.assertRaisesRegex(AssertionError, "portrait"):
             session._rotate_signed_out(probe, "")
         self.assertEqual(probe.reveals, [])
         self.assertEqual(probe.images, [])
@@ -198,13 +202,13 @@ class SessionRotationTests(unittest.TestCase):
         probe.hide_during_capture = True
         with self.assertRaisesRegex(AssertionError, "did not agree"):
             session._rotate_signed_out(probe, "")
-        self.assertEqual(probe.turns, 4)
+        self.assertEqual(probe.turns, 0)
         self.assertEqual(probe.settings, probe.original)
 
     def test_geometry_without_workspace_does_not_prove_rotation_of_our_screen(self):
         tree = Element("hierarchy", {"display-width": "1280", "display-height": "720"})
         SubElement(tree, "node", {"text": session.CLOSED, "visible-to-user": "true"})
-        self.assertIsNone(session._signed_out_landscape(tree))
+        self.assertIsNone(session._signed_out_portrait(tree))
 
     def test_wrong_package_marker_is_not_signed_out_state(self):
         probe = SessionProbe()
@@ -214,12 +218,12 @@ class SessionRotationTests(unittest.TestCase):
         for node in tree.iter("node"):
             if node.get("text") == session.CLOSED:
                 node.set("package", "foreign.app")
-        self.assertIsNone(session._signed_out_landscape(tree))
+        self.assertIsNone(session._signed_out_portrait(tree))
 
     def test_large_font_path_keeps_png_dimension_check(self):
         probe = SessionProbe()
         probe.marker_visible = False
-        probe.override_image = (640, 360)
+        probe.override_image = (360, 640)
         with self.assertRaisesRegex(AssertionError, "did not agree"):
             session._rotate_signed_out(probe, "-font-200")
         self.assertEqual(len(probe.reveals), 1)

@@ -46,20 +46,16 @@ def exercise_spatial(probe):
     _SpatialSession(probe).run()
 
 
-def landscape_ready(tree):
-    """Observe the recreated app configuration before sending any scroll action.
-
-    Settings writes are asynchronous. An old portrait marker can still look
-    ready while the active accessibility root changes during recreation.
-    """
+def portrait_ready(tree):
+    """Require the visible app and renderer to retain portrait configuration."""
     from profile_scroll import visible_resource
 
     width = int(tree.get("display-width", "0"))
     height = int(tree.get("display-height", "0"))
-    if not width > height > 0 or visible_resource(tree, "workspace-content") is None:
+    if not 0 < width < height or visible_resource(tree, "workspace-content") is None:
         return None
     actual = ready_spatial_metrics(tree)
-    return actual if actual is not None and actual.get("orientation") == "2" else None
+    return actual if actual is not None and actual.get("orientation") == "1" else None
 
 
 class _SpatialSession:
@@ -301,17 +297,16 @@ class _SpatialSession:
                         "reference_phone_fps_target_verified": False})
 
     def rotation(self):
-        from emulator_rotation import physical_quarter_turn, landscape_frame
+        from emulator_rotation import portrait_turn, portrait_frame
 
-        # Select a settled native tab before Activity recreation, not a moving
-        # text label. Rotate the physical AVD too: user_rotation alone leaves
-        # the console capture in a different coordinate system from Android.
+        # Request a landscape posture; the phone app must keep portrait and
+        # the same native tab, toggle, editor and rendered 3D state.
         self.probe.tap_resource("profile-tabs-item-0", "profile-tabs", direction="start")
         self.probe.find(CLICK_RESULT)
         self.probe.capture("spatial-rotation-before")
-        with physical_quarter_turn(self.probe.command):
-            self.probe.wait_for(lambda: landscape_ready(self.probe.tree()),
-                                "Recreated landscape app did not become ready")
+        with portrait_turn(self.probe.command):
+            self.probe.wait_for(lambda: portrait_ready(self.probe.tree()),
+                                "Portrait-only app did not retain its geometry")
             self.probe.capture("spatial-rotation-ready")
             self.probe.reveal_resource("spatial-click-result", "workspace-content")
             self.probe.find(CLICK_RESULT)
@@ -319,8 +314,8 @@ class _SpatialSession:
             edited = self.probe.reveal_resource("spatial-input", "workspace-content")
             if not any("3d" in node.get("text", "") for node in edited.iter("node")):
                 raise AssertionError("Rotation lost native text input state")
-            capture = landscape_frame(self.probe, landscape_ready, read_screenshot, "spatial-rotation")
-            self.records.append({"scenario": "rotation", "native_state_retained": True,
+            capture = portrait_frame(self.probe, portrait_ready, read_screenshot, "spatial-rotation")
+            self.records.append({"scenario": "portrait-during-landscape-request", "native_state_retained": True,
                                  "capture_dimensions": capture, "runtime": self.metrics()})
         self.metrics()
 

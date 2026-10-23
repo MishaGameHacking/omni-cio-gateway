@@ -48,11 +48,15 @@ def exercise_analysis(probe, scenario, observed):
     if scenario in {"empty", "partial"}:
         probe.reveal("Подтверждённых запусков ещё нет.", area)
         if scenario == "empty":
-            probe.reveal("Сохранённых проверок пока нет.", area)
+            # At font200 the 259px viewport needs more than ten semantic
+            # pages past the expanded morning/evening explanations.
+            probe.reveal("Сохранённых проверок пока нет.", area, max_swipes=20)
             probe.reveal("Для сравнения нужны два сохранённых вывода.", area)
             checks = ["no-invented-run-or-comparison"]
         else:
-            probe.reveal("Причина: С прошлого анализа прошло недостаточно времени", area)
+            # Saved morning/evening details also precede the partial state's
+            # last-check reason; ten short font200 pages stop inside the slots.
+            probe.reveal("Причина: С прошлого анализа прошло недостаточно времени", area, max_swipes=20)
             probe.reveal("Проверка условий не создала новый вывод модели.", area)
             probe.reveal("Платные обращения приостановлены.", area)
             probe.reveal("Модель пока недоступна: достигнут лимит расхода", area)

@@ -7,7 +7,8 @@ import math
 from pathlib import Path
 import re
 
-from native_input_evidence import append_native_text, display_geometry, rotate_focused_draft
+from native_input_evidence import active_window_id, append_native_text, rotate_focused_draft
+from native_window_evidence import wait_for_new_app_window
 
 AREA = "workspace-content"
 TITLE = "GoalDraft"
@@ -48,22 +49,13 @@ def _pending(probe):
 
 
 def _rotate_pending(probe, suffix):
-    original = display_geometry(probe.tree())
-    settings = {key: probe.command("shell", "settings", "get", "system", key).strip()
-                for key in ("accelerometer_rotation", "user_rotation")}
-    try:
-        probe.command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
-        probe.command("shell", "settings", "put", "system", "user_rotation", "1")
-        probe.wait_for(lambda: (size := display_geometry(probe.tree()))[0] > size[1], "Goal editor did not rotate")
+    from emulator_rotation import portrait_turn, portrait_geometry
+    original = portrait_geometry(probe.tree())
+    with portrait_turn(probe.command):
         _pending(probe)
         probe.capture("goal-pending-rotation" + suffix)
-    finally:
-        for key, value in settings.items():
-            if value in {"0", "1", "2", "3"}:
-                probe.command("shell", "settings", "put", "system", key, value)
-            else:
-                probe.command("shell", "settings", "delete", "system", key)
-        probe.wait_for(lambda: display_geometry(probe.tree()) == original, "Goal rotation did not restore the display")
+        if portrait_geometry(probe.tree()) != original:
+            raise AssertionError("Goal recovery left the original portrait geometry")
     _pending(probe)
 
 
@@ -75,11 +67,13 @@ def _case(probe, scale):
     metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Goal scene did not render")
     if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0, abs_tol=1e-6):
         raise AssertionError("Goal scene has a different actual font scale")
+    original_window = active_window_id(probe.tree())
     probe.tap("Добавить цель", AREA)
+    wait_for_new_app_window(probe, original_window, "Новая цель", AREA)
     probe.tap_resource("goal-title", AREA, direction="start")
     append_native_text(probe, "", TITLE)
     suffix = "-font-200" if math.isclose(scale, 2.0) else ""
-    draft = rotate_focused_draft(probe, TITLE, "goal-draft-rotation" + suffix, dialog=True)
+    draft = rotate_focused_draft(probe, TITLE, "goal-draft-rotation" + suffix, dialog=True, portrait_only=True)
     # At 200% the IME can cover the next editor after the rotation restores.
     # Dismiss only an observed keyboard, then require the new native focus
     # before typing so a missed tap cannot alter the preserved title draft.

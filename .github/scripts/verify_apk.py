@@ -85,6 +85,39 @@ def _sdk_value(badging: str, field: str) -> int:
     return int(matches[0])
 
 
+def _activity_attribute(current: dict, line: str) -> None:
+    name = re.search(r'A: android:name\([^)]*\)="([^"]+)"', line)
+    orientation = re.search(r'A: android:screenOrientation\([^)]*\)=\(type 0x10\)(0x[0-9a-fA-F]+)', line)
+    if name:
+        current["name"] = name.group(1)
+    if orientation:
+        current["orientation"] = int(orientation.group(1), 16)
+
+
+def portrait_activities(xmltree: str) -> list[str]:
+    activities = []
+    current = None
+    depth = -1
+    for line in xmltree.splitlines():
+        element = re.match(r"(\s*)E: ([\w-]+)", line)
+        if element is not None:
+            if current is not None and len(element.group(1)) <= depth:
+                activities.append(current)
+                current = None
+            if element.group(2) == "activity":
+                current, depth = {}, len(element.group(1))
+        elif current is not None and len(line) - len(line.lstrip()) == depth + 2:
+            _activity_attribute(current, line)
+    if current is not None:
+        activities.append(current)
+    expected = ["ru.omnicio.app.BootstrapActivity", "ru.omnicio.app.MainActivity"]
+    for name in expected:
+        matches = [row for row in activities if row.get("name") in {name, name.removeprefix("ru.omnicio.app")}]
+        require(len(matches) == 1 and matches[0].get("orientation") == 1,
+                "Phone Activity must declare portrait: " + name)
+    return expected
+
+
 def check_manifest(badging: str, xmltree: str, version: int, non_debuggable: bool) -> dict:
     package = re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging, re.M)
     if package is None:
@@ -97,8 +130,10 @@ def check_manifest(badging: str, xmltree: str, version: int, non_debuggable: boo
     require(not re.search(r"A: (?:android:)?(?:split|isSplitRequired)[(=]", xmltree), "Split APK is not standalone")
     if non_debuggable:
         require(not manifest_flag(xmltree, "debuggable"), "Distributed preview must not be debuggable")
+    locked = portrait_activities(xmltree)
     return {"package": package.group(1), "version_code": version, "version_name": package.group(3),
-            "min_sdk": 37, "target_sdk": 37, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False}
+            "min_sdk": 37, "target_sdk": 37, "debuggable": manifest_flag(xmltree, "debuggable"), "test_only": False,
+            "phone_orientation": "portrait", "portrait_activities": locked}
 
 
 def output_directory() -> Path:
