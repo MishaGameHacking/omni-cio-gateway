@@ -38,7 +38,7 @@ jobs:
           inventory=p.read_resource(token,"servers")
           assert p.summarize("servers",inventory)["complete"]
           assert {s["id"] for s in inventory["servers"]}=={9408159},"unexpected_existing_servers_no_order"
-          offers=[o for o in candidate_presets(p.read_catalog(token,"presets")) if o.get("location","").startswith("ru-") and o["price"]<=6800]
+          offers=[o for o in candidate_presets(p.read_catalog(token,"presets")) if o.get("location","").startswith("ru-") and o["price"]<=6800 and o["id"] not in {6751,6761,6753,6763,2581,2455}]
           offers.sort(key=lambda o:(o["price"],o["id"]))
           assert offers
           req=urllib.request.Request("https://api.timeweb.cloud/api/v1/presets/dedicated-servers",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
@@ -56,7 +56,7 @@ jobs:
                   doc=p.decode_response(e.read(2*1024*1024+1))
                   code=doc.get("error_code")
                   print("BUILD_ORDER_REFUSED="+json.dumps({"preset":body["preset_id"],"http":e.code,"code":code if isinstance(code,str) and re.fullmatch("[a-z_]{1,64}",code) else "unknown"}),flush=True)
-                  if code in {"no_free_node","servers_is_run_out_error"}:
+                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found"}:
                       current=p.read_resource(token,"servers")
                       assert p.summarize("servers",current)["complete"] and {s["id"] for s in current["servers"]}=={9408159},"reconcile_uncertain_creation"
                       return None
