@@ -1,0 +1,23 @@
+name: Temporary access to the new owner VM
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [deploy/access_owner_vm.py, .github/workflows/owner-ssh-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-owner-temporary-access
+  cancel-in-progress: false
+jobs:
+  access:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Bind the temporary installation key to the verified new VM
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 deploy/access_owner_vm.py attach
