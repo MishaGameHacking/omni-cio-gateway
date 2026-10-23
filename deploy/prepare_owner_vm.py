@@ -23,7 +23,7 @@ from timeweb_actions_probe import NoRedirect, ProbeError, decode_response, read_
 from timeweb_ci_catalog import ubuntu_images
 
 PROJECT = 2941515
-PRESET = 6767
+PRESET = 6769
 NAME = "analyst-ai-owner-20261023"
 HOST = "analyst-ai-2941515.twc1.net"
 MARKER = "Analyst AI owner installation 2026-10-23"
@@ -62,7 +62,7 @@ def validate(token):
     if len(matches) != 1:
         raise ProbeError("expected_offer_missing")
     offer = matches[0]
-    if tuple(offer.get(k) for k in ("cpu", "ram", "disk", "price", "location")) != (1, 1024, 15360, 350, "ru-4"):
+    if tuple(offer.get(k) for k in ("cpu", "ram", "disk", "price", "location")) != (1, 1024, 15360, 350, "ru-5"):
         raise ProbeError("offer_or_price_changed")
     if not any(x["id"] == 99 and x["version"] == "24.04" for x in ubuntu_images(read_catalog(token, "os"))):
         raise ProbeError("expected_os_missing")
