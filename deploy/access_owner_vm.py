@@ -1,11 +1,16 @@
 """Temporary administrative access to the one verified new VM; no VM creation."""
 import json
+import hashlib
+import io
 import ipaddress
 import os
 import re
+import shlex
+import socket
 import sys
 import subprocess
 import tempfile
+import tarfile
 import time
 from pathlib import Path
 import urllib.error
@@ -94,14 +99,62 @@ def ensure_domain_dns(token, address):
     print("OWNER_DOMAIN_DNS_CONFIGURED=" + prepare.HOST, flush=True)
 
 
-def stage_server(token, server):
+def verify_prepared_server(command, address):
+    archive = subprocess.check_output(["git", "archive", "--format=tar.gz", prepare.SOURCE, "backend", "deploy"], cwd=prepare.ROOT)
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
+        expected = {item.name: hashlib.sha256(source.extractfile(item).read()).hexdigest()
+                    for item in source.getmembers() if item.isfile()}
+    script = '''import hashlib,json,os,socket,ssl,stat,sys
+from pathlib import Path
+root=Path("/root/analyst-ai-source")
+expected=json.load(sys.stdin)
+for name,digest in expected.items():
+    path=root/name
+    assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()==digest,"source_mismatch"
+for path,mode in ((root,0o700),(Path("/root/analyst-ai-enrollment.json"),0o600)):
+    info=path.lstat()
+    assert info.st_uid==0 and stat.S_IMODE(info.st_mode)==mode and not path.is_symlink(),"private_permissions_mismatch"
+sys.path.insert(0,str(root/"deploy"))
+import install_owner_backend as installer
+values=installer.load_config(enrollment=True)
+installer.source_files()
+installer.check_target()
+report={"source_files_verified":len(expected),"private_permissions_verified":True,"empty_install_target_verified":True}
+try:
+    installer.check_address(values)
+    report["vm_dns_and_local_ip_verified"]=True
+except installer.InstallError as error:
+    report["vm_dns_and_local_ip_verified"]=False
+    report["address_error"]=str(error)
+try:
+    with socket.create_connection(("oauth.telegram.org",443),timeout=20) as raw:
+        with ssl.create_default_context().wrap_socket(raw,server_hostname="oauth.telegram.org") as conn:
+            report["telegram_direct_tls"]=conn.version()
+except (OSError,ssl.SSLError) as error:
+    report["telegram_tls_error"]=type(error).__name__
+print(json.dumps(report))
+'''
+    report = json.loads(prepare.remote(command, "python3 -c " + shlex.quote(script), json.dumps(expected).encode(), timeout=90))
+    try:
+        addresses = sorted({row[4][0] for row in socket.getaddrinfo(prepare.HOST, 443, type=socket.SOCK_STREAM)})
+    except OSError as error:
+        addresses = []
+        report["runner_dns_error"] = type(error).__name__
+    report["runner_dns_addresses"] = addresses
+    print("OWNER_PREPARATION_VERIFIED=" + json.dumps(report), flush=True)
+    if addresses != [address] or not report.get("vm_dns_and_local_ip_verified") or not report.get("telegram_direct_tls"):
+        raise prepare.ProbeError("live_install_prerequisite_not_verified")
+
+
+def stage_server(token, server, *, verify_only=False):
     address = prepare.cloud.public_ipv4(server)
     if address != "201.34.156.98":
         raise prepare.ProbeError("server_address_changed")
-    values = [os.environ.get(k, "").strip() for k in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET")]
-    if not all(values):
-        raise prepare.ProbeError("telegram_credentials_missing")
-    ensure_domain_dns(token, address)
+    if not verify_only:
+        values = [os.environ.get(k, "").strip() for k in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET")]
+        if not all(values):
+            raise prepare.ProbeError("telegram_credentials_missing")
+        ensure_domain_dns(token, address)
     with tempfile.TemporaryDirectory(prefix="owner-stage-", dir=os.environ["RUNNER_TEMP"]) as root:
         folder = Path(root)
         prepare.cloud.generate_key(folder / "client")
@@ -129,9 +182,12 @@ def stage_server(token, server):
             status = prepare.remote(command, "cloud-init status --wait", timeout=60)
             if b"status: done" not in status:
                 raise prepare.ProbeError("cloud_init_not_done")
-            report = prepare.stage(command, address, *values)
-            print("OWNER_VM_PREPARED=" + json.dumps({"id": SERVER_ID, "ip": address, "hostname": prepare.HOST,
-                "backend_started": False, "owner_enrollment_required": True, **report}), flush=True)
+            if verify_only:
+                verify_prepared_server(command, address)
+            else:
+                report = prepare.stage(command, address, *values)
+                print("OWNER_VM_PREPARED=" + json.dumps({"id": SERVER_ID, "ip": address, "hostname": prepare.HOST,
+                    "backend_started": False, "owner_enrollment_required": True, **report}), flush=True)
         finally:
             if attached:
                 request(token, "DELETE", f"/servers/{SERVER_ID}/ssh-keys/{identifier}")
@@ -140,7 +196,7 @@ def stage_server(token, server):
 
 
 def run(mode):
-    if mode not in {"inspect", "connect", "attach", "stage", "cleanup"}:
+    if mode not in {"inspect", "connect", "attach", "stage", "verify", "cleanup"}:
         raise prepare.ProbeError("invalid_access_mode")
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     prepare.cloud.PRESET_ID = prepare.PRESET
@@ -153,6 +209,9 @@ def run(mode):
         "ip": prepare.cloud.public_ipv4(server), "location": server.get("location"),
         "cpu": server.get("cpu"), "ram": server.get("ram"), "availability_zone": server.get("availability_zone"),
         "network_types": [n.get("type") for n in server.get("networks", [])]}), flush=True)
+    if mode == "verify":
+        stage_server(token, server, verify_only=True)
+        return
     if mode == "connect":
         connect_ipv4(token, server)
     document = request(token, "GET", "/ssh-keys")
