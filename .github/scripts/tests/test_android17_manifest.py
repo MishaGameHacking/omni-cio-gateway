@@ -1,6 +1,7 @@
 """Android 17-only manifest contract and modern navigation/security defaults."""
 from pathlib import Path
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -18,7 +19,14 @@ class Android17ManifestTests(unittest.TestCase):
             manifest.count('android:enableOnBackInvokedCallback="true"'),
             2,
         )
-        self.assertNotIn("screenOrientation", manifest)
+        android = "{http://schemas.android.com/apk/res/android}"
+        activities = ET.fromstring(manifest).findall("application/activity")
+        self.assertEqual(len(activities), 2)
+        for activity in activities:
+            self.assertEqual(activity.get(android + "screenOrientation"), "portrait")
+        debug = ET.parse(ROOT / "app/src/debug/AndroidManifest.xml").findall("application/activity")
+        self.assertEqual(len(debug), 1)
+        self.assertEqual(debug[0].get(android + "screenOrientation"), "portrait")
         self.assertNotIn("resizeableActivity", manifest)
         self.assertNotIn("maxAspectRatio", manifest)
         self.assertNotIn("minAspectRatio", manifest)

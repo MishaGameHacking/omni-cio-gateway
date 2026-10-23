@@ -24,7 +24,7 @@ def exercise_strategy_editor(probe, font_scale):
     probe.tap_resource(horizon, area, direction="start")
     append_native_text(probe, "", "48")
     suffix = "-font-200" if math.isclose(font_scale, 2.0) else ""
-    rotation = rotate_focused_draft(probe, "48", "business-strategy-draft-rotation" + suffix)
+    rotation = rotate_focused_draft(probe, "48", "business-strategy-draft-rotation" + suffix, portrait_only=True)
     probe.dismiss_keyboard()
     return {"old_months": 36, "new_months": 48, "empty_draft_blocks_preview": True,
             "rotation": rotation, "fixture": "synthetic-no-broker-or-model-call"}

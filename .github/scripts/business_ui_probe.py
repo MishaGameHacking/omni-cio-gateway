@@ -374,7 +374,7 @@ class _BusinessCase:
         self.probe.wait_for(ready_editor, "Assistant question is not visible and focused above the keyboard")
         self.probe.command("shell", "input", "text", "UIprobe")
         rotation_name = "business-assistant-draft-rotation" + ("-font-200" if math.isclose(self.font_scale, 2.0) else "")
-        self.draft_rotation = rotate_focused_draft(self.probe, "UIprobe", rotation_name)
+        self.draft_rotation = rotate_focused_draft(self.probe, "UIprobe", rotation_name, portrait_only=True)
         record_editor_restore_trace(self.probe, include_ime_history=True)
         self.checks.extend(("unsent-draft-survives-rotation", "native-input-focus-and-caret-retained"))
         self.probe.dismiss_keyboard()

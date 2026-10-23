@@ -5,6 +5,7 @@ pose. Drive the documented console rotation, then let the caller verify actual
 app configuration, native state and the unmodified console PNG independently.
 """
 from contextlib import contextmanager
+import time
 
 
 _ROTATION_SETTINGS = {"accelerometer_rotation": {"0", "1", "null"},
@@ -100,3 +101,63 @@ def landscape_frame(probe, ready, read_screenshot, name):
     except AssertionError as error:
         error.add_note("Last rotation dimensions: " + str(last))
         raise
+
+
+def portrait_geometry(tree):
+    width = int(tree.get("display-width", "0"))
+    height = int(tree.get("display-height", "0"))
+    if not 0 < width < height:
+        raise AssertionError("Portrait-only app changed to non-portrait geometry")
+    return width, height
+
+
+@contextmanager
+def portrait_turn(command):
+    """Request landscape through Android and restore both original settings.
+
+    A locked phone Activity must retain portrait. Do not rotate/rewrite PNGs or
+    replace the Activity's requested orientation to make the check pass.
+    """
+    saved = _saved_settings(command)
+    failure = None
+    try:
+        command("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+        command("shell", "settings", "put", "system", "user_rotation", "1")
+        requested = _saved_settings(command)
+        if requested != {"accelerometer_rotation": "0", "user_rotation": "1"}:
+            raise AssertionError("Landscape device request was not applied")
+        yield
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        errors = _restore(command, False, saved)
+        if errors:
+            message = "Failed to restore emulator rotation: " + "; ".join(errors)
+            if failure is None:
+                raise RuntimeError(message)
+            failure.add_note(message)
+
+
+def portrait_frame(probe, ready, read_screenshot, name):
+    """Keep native geometry and fresh unmodified PNG portrait across settled frames."""
+    started = time.monotonic()
+    samples = 0
+    def observe():
+        nonlocal samples
+        before = probe.tree()
+        expected = portrait_geometry(before)
+        if ready(before) is None:
+            return None
+        image = read_screenshot(probe.capture(name))
+        after = probe.tree()
+        current = portrait_geometry(after)
+        if ready(after) is None or expected != current or (image.width, image.height) != expected:
+            samples = 0
+            return None
+        samples += 1
+        if samples < 3 or time.monotonic() - started < 1.0:
+            return None
+        return {"app": list(expected), "png": [image.width, image.height], "after": list(current),
+                "orientation_policy": "portrait", "requested_user_rotation": 1, "samples": samples}
+    return probe.wait_for(observe, "Portrait app and physical emulator frame did not agree")

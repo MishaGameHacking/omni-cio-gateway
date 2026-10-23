@@ -27,44 +27,37 @@ def _context(probe, user, account="account-1", period="day"):
             raise AssertionError("Synthetic session context was not restored: " + text) from error
 
 
-def _landscape_geometry(tree):
+def _portrait_geometry(tree):
     from native_input_evidence import PACKAGE, display_geometry
 
     width, height = display_geometry(tree)
     workspace = any(node.get("resource-id") == AREA and node.get("package") == PACKAGE
                     and node.get("visible-to-user") == "true" for node in tree.iter("node"))
-    return (width, height) if width > height and workspace else None
+    return (width, height) if 0 < width < height and workspace else None
 
 
-def _signed_out_landscape(tree):
+def _signed_out_portrait(tree):
     from native_input_evidence import PACKAGE
 
-    geometry = _landscape_geometry(tree)
+    geometry = _portrait_geometry(tree)
     closed = any(node.get("text") == CLOSED and node.get("package") == PACKAGE
                  and node.get("visible-to-user") == "true" for node in tree.iter("node"))
     return geometry if closed else None
 
 
 def _rotate_signed_out(probe, suffix):
-    from emulator_rotation import physical_quarter_turn, landscape_frame
-    from native_input_evidence import display_geometry
+    from emulator_rotation import portrait_turn, portrait_frame, portrait_geometry
     from spatial_frame_evidence import read_screenshot
 
-    original = display_geometry(probe.tree())
-    # Use the same physical-AVD contract as the spatial scenario. A logical
-    # user_rotation setting alone can leave the console PNG in portrait.
-    with physical_quarter_turn(probe.command):
-        # At font 200% the signed-out label may be below the landscape fold.
-        # Wait for our rotated workspace before scrolling, not for a label that
-        # can become visible only after that scroll. The frame gate below still
-        # requires the signed-out label before AND after an unmodified PNG.
-        probe.wait_for(lambda: _landscape_geometry(probe.tree()),
-                       "Session workspace did not change to landscape")
+    original = portrait_geometry(probe.tree())
+    with portrait_turn(probe.command):
+        probe.wait_for(lambda: _portrait_geometry(probe.tree()),
+                       "Session workspace did not remain portrait")
         probe.reveal(CLOSED, AREA, direction="start")
-        landscape_frame(probe, _signed_out_landscape, read_screenshot,
-                        "session-context-signed-out-rotation" + suffix)
-    probe.wait_for(lambda: display_geometry(probe.tree()) == original,
-                   "Session rotation did not restore the original geometry")
+        portrait_frame(probe, _signed_out_portrait, read_screenshot,
+                       "session-context-signed-out-rotation" + suffix)
+    probe.wait_for(lambda: portrait_geometry(probe.tree()) == original,
+                   "Session turn did not restore the original portrait geometry")
 
 
 @contextmanager
@@ -123,7 +116,7 @@ def _case(probe, scale):
     probe.tap_resource("session-logout", AREA)
     probe.tap_resource(LOGIN_A, AREA)
     _context(probe, "A")
-    return {"font_scale": scale, "same_user_restored_after_rotation": True,
+    return {"font_scale": scale, "same_user_restored_after_rotation": True, "orientation_policy": "portrait",
             "different_user_isolated": True, "previous_user_evicted": True,
             "explicit_logout_cleared": True, "screenshot": name + ".png"}
 

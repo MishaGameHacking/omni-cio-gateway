@@ -426,5 +426,72 @@ class HiddenImeRotationTests(unittest.TestCase):
         self.assertEqual(output.call_args.args[0], "NATIVE_EDITOR_RESTORE_TRACE_UNAVAILABLE=RuntimeError")
 
 
+class PortraitProbe(RotationProbe):
+    """Phone manifest lock changes posture without changing Activity geometry."""
+    def __init__(self):
+        super().__init__()
+        self.settings = {"user_rotation": "0", "accelerometer_rotation": "1"}
+        self.landscape_geometry = (320, 640)
+
+    def command(self, *args, **kwargs):
+        if args[:4] == ("shell", "settings", "get", "system"):
+            return self.settings[args[4]]
+        previous = self.window
+        result = super().command(*args, **kwargs)
+        if args[:4] == ("shell", "settings", "put", "system"):
+            self.settings[args[4]] = args[5]
+            self.window = previous
+        return result
+
+
+class PortraitDraftTests(unittest.TestCase):
+    def run_case(self, probe, hidden=False):
+        method = native.rotate_dismissed_draft if hidden else native.rotate_focused_draft
+        with patch.object(native.time, "monotonic", side_effect=lambda: probe.elapsed):
+            return method(probe, "private draft", "portrait-turn", dialog=True, portrait_only=True)
+
+    def test_same_window_draft_caret_and_keyboard_survive_request_and_restore(self):
+        for hidden in (False, True):
+            with self.subTest(hidden=hidden):
+                probe = PortraitProbe()
+                result = self.run_case(probe, hidden)
+                self.assertEqual(result["orientation_policy"], "portrait")
+                self.assertEqual(result["after"]["window_id"], 71)
+                self.assertEqual((result["after"]["width"], result["after"]["height"]), (320, 640))
+                self.assertEqual(result["after"]["editor"], result["restored"]["editor"])
+                self.assertEqual(result["after"]["keyboard_visible"], not hidden)
+                self.assertEqual(probe.settings, {"user_rotation": "0", "accelerometer_rotation": "1"})
+
+    def test_landscape_app_fails_and_restores_original_settings(self):
+        probe = PortraitProbe()
+        probe.landscape_geometry = (640, 320)
+        with self.assertRaisesRegex(AssertionError, "non-portrait"):
+            self.run_case(probe)
+        self.assertEqual(probe.settings, {"user_rotation": "0", "accelerometer_rotation": "1"})
+
+    def test_wrong_text_caret_or_package_cannot_pass_portrait_lock(self):
+        for changes in ({"text": "changed"}, {"selection-start": "12"}, {"package": "foreign.app"}):
+            with self.subTest(changes=changes):
+                probe = PortraitProbe()
+                probe.landscape_changes = changes
+                with self.assertRaises(AssertionError):
+                    self.run_case(probe)
+                self.assertEqual(probe.settings["user_rotation"], "0")
+
+    def test_hidden_keyboard_reopening_is_still_rejected(self):
+        probe = PortraitProbe()
+        probe.reopen_after = 3
+        with self.assertRaisesRegex(AssertionError, "Dismissed native input-method"):
+            self.run_case(probe, hidden=True)
+        self.assertEqual(probe.settings["user_rotation"], "0")
+
+    def test_state_lost_during_capture_is_rejected(self):
+        probe = PortraitProbe()
+        probe.after_capture = lambda: setattr(probe, "selection", (12, 12))
+        with self.assertRaisesRegex(AssertionError, "Post-capture"):
+            self.run_case(probe)
+        self.assertEqual(probe.settings["user_rotation"], "0")
+
+
 if __name__ == "__main__":
     unittest.main()

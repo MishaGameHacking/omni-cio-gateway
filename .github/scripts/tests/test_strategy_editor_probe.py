@@ -139,7 +139,7 @@ class StrategyEditorTraversalTests(unittest.TestCase):
         self.assertEqual(probe.dismissals, 2)
         self.assertTrue(result["empty_draft_blocks_preview"])
         suffix = "-font-200" if font_scale == 2.0 else ""
-        rotation.assert_called_once_with(probe, "48", "business-strategy-draft-rotation" + suffix)
+        rotation.assert_called_once_with(probe, "48", "business-strategy-draft-rotation" + suffix, portrait_only=True)
 
     def test_horizon_below_choices_is_reached_at_normal_font(self):
         self.assert_editor_reached_and_revisited(1.0)

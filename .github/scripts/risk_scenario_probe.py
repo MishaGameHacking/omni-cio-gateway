@@ -67,10 +67,10 @@ def exercise_scenario_comparison(case):
     probe.tap("Сценарий B", AREA, direction="start")
     _enter_percent(probe, "5")
     suffix = "-font-200" if math.isclose(case.font_scale, 2.0) else ""
-    rotation = rotate_focused_draft(probe, "5", "business-risk-scenario-rotation" + suffix, dialog=True)
+    rotation = rotate_focused_draft(probe, "5", "business-risk-scenario-rotation" + suffix, dialog=True, portrait_only=True)
     # Collect after the complete visible rotation and its portrait restoration.
     record_editor_restore_trace(probe, include_ime_history=True)
-    hidden_rotation = rotate_dismissed_draft(probe, "5", "business-risk-hidden-ime-rotation" + suffix, dialog=True)
+    hidden_rotation = rotate_dismissed_draft(probe, "5", "business-risk-hidden-ime-rotation" + suffix, dialog=True, portrait_only=True)
     probe.tap(COMPARE, AREA)
     for scenario_id, change, after in (("A", "-10000", "90000"), ("B", "5000", "105000")):
         _record_value(probe, case.reader, scenario_id, "Исходный капитал: 100000 RUB")

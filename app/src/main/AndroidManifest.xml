@@ -20,6 +20,7 @@
         android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".BootstrapActivity"
+            android:screenOrientation="portrait"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"
             android:intentMatchingFlags="enforceIntentFilter|allowNullAction"
@@ -37,6 +38,7 @@
         </activity>
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:enableOnBackInvokedCallback="true"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"

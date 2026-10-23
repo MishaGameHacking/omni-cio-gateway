@@ -54,7 +54,9 @@ def exercise_analysis(probe, scenario, observed):
             probe.reveal("Для сравнения нужны два сохранённых вывода.", area)
             checks = ["no-invented-run-or-comparison"]
         else:
-            probe.reveal("Причина: С прошлого анализа прошло недостаточно времени", area)
+            # Saved morning/evening details also precede the partial state's
+            # last-check reason; ten short font200 pages stop inside the slots.
+            probe.reveal("Причина: С прошлого анализа прошло недостаточно времени", area, max_swipes=20)
             probe.reveal("Проверка условий не создала новый вывод модели.", area)
             probe.reveal("Платные обращения приостановлены.", area)
             probe.reveal("Модель пока недоступна: достигнут лимит расхода", area)

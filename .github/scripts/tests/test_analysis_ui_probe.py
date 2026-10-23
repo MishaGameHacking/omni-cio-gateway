@@ -30,9 +30,10 @@ class AnalysisValueEvidenceTests(unittest.TestCase):
 
 class AnalysisViewportProbe(ProfileProbe):
     """Logical content coordinates; offscreen labels are absent, as in LazyColumn."""
-    def __init__(self, height, *, missing=False, foreign=False, enabled=False):
+    def __init__(self, height, *, missing=False, foreign=False, enabled=False, scenario="empty"):
         super().__init__(None)
         self.height, self.missing, self.foreign, self.enabled = height, missing, foreign, enabled
+        self.scenario = scenario
         self.offset = self.scrolls = self.run_checks = 0
 
     def tree(self):
@@ -40,11 +41,17 @@ class AnalysisViewportProbe(ProfileProbe):
         tree = ET.Element("hierarchy")
         area = ET.SubElement(tree, "node", {"package": "ru.omnicio.app.debug", "resource-id": "workspace-content",
             "bounds": f"[0,{top}][320,{bottom}]", "scrollable": "true", "visible-to-user": "true"})
-        labels = [(0, "Подтверждённых запусков ещё нет."),
-                  (2700, "Сохранённых проверок пока нет."),
-                  (3000, "Для сравнения нужны два сохранённых вывода."), (3350, analysis.RUN)]
+        labels = ([(0, "Подтверждённых запусков ещё нет."),
+                   (2700, "Сохранённых проверок пока нет."),
+                   (3000, "Для сравнения нужны два сохранённых вывода."), (3350, analysis.RUN)]
+                  if self.scenario == "empty" else
+                  [(0, "Подтверждённых запусков ещё нет."),
+                   (3900, "Причина: С прошлого анализа прошло недостаточно времени"),
+                   (4200, "Проверка условий не создала новый вывод модели."),
+                   (5200, "Платные обращения приостановлены."),
+                   (5550, "Модель пока недоступна: достигнут лимит расхода"), (5900, analysis.RUN)])
         for position, label in labels:
-            history = position == 2700
+            history = position == labels[1][0]
             y = top + position - self.offset
             if self.missing and history or y >= bottom or y + 120 <= top:
                 continue
@@ -104,6 +111,40 @@ class AnalysisEmptyTraversalTests(unittest.TestCase):
         probe = AnalysisViewportProbe(259, enabled=True)
         with self.assertRaisesRegex(AssertionError, "Unavailable analysis exposes an enabled paid-run action"):
             analysis.exercise_analysis(probe, "empty", None)
+        self.assertEqual(probe.run_checks, 1)
+
+
+class AnalysisPartialTraversalTests(unittest.TestCase):
+    @patch("profile_scroll.time.sleep")
+    def test_default_budget_stops_before_reason_after_expanded_slot_details(self, _sleep):
+        probe = AnalysisViewportProbe(259, scenario="partial")
+        with self.assertRaisesRegex(AssertionError, "List target not reachable"):
+            probe.reveal("Причина: С прошлого анализа прошло недостаточно времени", "workspace-content")
+        self.assertEqual((probe.scrolls, probe.run_checks), (10, 0))
+
+    @patch("profile_scroll.time.sleep")
+    def test_partial_timeline_requires_reason_cost_block_and_disabled_action(self, _sleep):
+        for height in (259, 450):
+            with self.subTest(height=height):
+                probe = AnalysisViewportProbe(height, scenario="partial")
+                result = analysis.exercise_analysis(probe, "partial", lambda: self.fail("Unexpected request observation"))
+                self.assertEqual(result, ["cooldown-not-new-analysis", "unresolved-cost-blocks-paid-run", "unavailable-run-disabled"])
+                self.assertEqual(probe.run_checks, 1)
+
+    @patch("profile_scroll.time.sleep")
+    def test_missing_or_foreign_reason_never_reaches_paid_action_check(self, _sleep):
+        for changes in ({"missing": True}, {"foreign": True}):
+            with self.subTest(changes=changes):
+                probe = AnalysisViewportProbe(259, scenario="partial", **changes)
+                with self.assertRaisesRegex(AssertionError, "List target not reachable"):
+                    analysis.exercise_analysis(probe, "partial", None)
+                self.assertEqual((probe.scrolls, probe.run_checks), (20, 0))
+
+    @patch("profile_scroll.time.sleep")
+    def test_partial_timeline_still_rejects_enabled_paid_action(self, _sleep):
+        probe = AnalysisViewportProbe(259, scenario="partial", enabled=True)
+        with self.assertRaisesRegex(AssertionError, "Unavailable analysis exposes an enabled paid-run action"):
+            analysis.exercise_analysis(probe, "partial", None)
         self.assertEqual(probe.run_checks, 1)
 
 
