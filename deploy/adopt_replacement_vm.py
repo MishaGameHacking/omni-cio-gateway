@@ -55,18 +55,23 @@ def move_dns(token):
             "types": [row.get("type") for row in records], "address_records": [
                 {"id": row.get("id"), "type": row.get("type"), "fqdn": row.get("fqdn"), "value": row.get("data", {}).get("value")}
                 for row in records if row.get("type") in {"A", "AAAA", "CNAME"}]}), flush=True)
-        if result.get("meta", {}).get("total") != 1 or len(records) != 1:
+        if result.get("meta", {}).get("total") != len(records):
             raise prepare.ProbeError("adoption_dns_inventory_changed")
-        row = records[0]
+        addresses = [row for row in records if row.get("type") in {"A", "AAAA", "CNAME"} and row.get("fqdn") == prepare.HOST]
+        if len(addresses) != 1:
+            raise prepare.ProbeError("adoption_domain_address_conflict")
+        row = addresses[0]
         if row.get("id") != 95034169 or row.get("type") != "A" or row.get("fqdn") != prepare.HOST:
             raise prepare.ProbeError("adoption_dns_record_changed")
-        return row.get("data", {}).get("value")
-    current = exact_record()
+        preserved = {item["id"]: json.dumps(item, sort_keys=True) for item in records if item.get("id") != 95034169}
+        return row.get("data", {}).get("value"), preserved
+    current, preserved = exact_record()
     if current not in {OLD_IP, NEW_IP}:
         raise prepare.ProbeError("adoption_dns_address_changed")
     if current == OLD_IP:
         access.request(token, "PATCH", path + "/95034169", {"type": "A", "subdomain": prepare.HOST, "value": NEW_IP, "ttl": 300})
-    if exact_record() != NEW_IP:
+    updated, remaining = exact_record()
+    if updated != NEW_IP or remaining != preserved:
         raise prepare.ProbeError("adoption_dns_update_not_verified")
     print("OWNER_REPLACEMENT_DNS=" + json.dumps({"host": prepare.HOST, "ip": NEW_IP}), flush=True)
 
