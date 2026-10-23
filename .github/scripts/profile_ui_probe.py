@@ -242,7 +242,7 @@ class ProfileProbe:
 
         return scroll
 
-    def reveal(self, text, area="profile-content", direction="end"):
+    def reveal(self, text, area="profile-content", direction="end", *, max_swipes=10):
         from profile_scroll import reveal_in_list
 
         target = reveal_in_list(
@@ -251,6 +251,7 @@ class ProfileProbe:
             text,
             resource_id=area,
             direction=direction,
+            max_swipes=max_swipes,
             layout_timeout=12,
         )
         if target is None:

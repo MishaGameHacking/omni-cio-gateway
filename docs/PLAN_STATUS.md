@@ -66,8 +66,14 @@ F01/F16/F22/F23. OWNER уточнил: исправлять существующ
   font100/200, raw/qualified tags, отсутствие и disabled карточки. Старый tap
   воспроизводит отказ короткого viewport; новый делает ровно одно нажатие.
 
+- В `1a1e5068` поиск точного текста потери ответа в assistant/ready/font200
+  также исчерпал10 страниц истории199px. Для этого поиска установлен предел20
+  с прежним deadline12s. Три новые регрессии исполняют настоящий reveal перед
+  восстановлением: обе высоты истории, отсутствие/чужой package ошибки;
+  старый предел воспроизводит отказ. Без ошибки нет GET или повторного POST.
+
 Проверен охват запуска/обновления, сессий, сетевого клиента, хранения состояния,
-редакторов, переходов окон, backend и инфраструктуры CI. Локально: 943 CI tests
+редакторов, переходов окон, backend и инфраструктуры CI. Локально: 946 CI tests
 (2 предусмотренных environment skips с доступным JDK compiler), 61 Node tests, 52 tool tests,
 15 mesh tests и 11 native-alignment tests — PASS; bash syntax четырёх скриптов
 PASS. Python syntax audit: 334 source files, failures0. Полный backend suite:
@@ -78,6 +84,15 @@ Sonar и Android compile/JVM/lint должны повторно пройти н�
 
 Доказательства прежних кандидатов, не результат финального SHA:
 
+- `1a1e5068`: Backend39970599098 —1505/1409subtests PASS; Sonar39970585851
+  —0/0/unique0/all_types:true/complete:true. Android39970598792 build120472050473
+  —все варианты/JVM/lint,943 CI tests PASS. Runtime120477433428 подтвердил
+  API37/PAGE_SIZE16384, install/upgrade/launch, spatial/session/privacy/goals,
+  все30 business/font100 и4risk/font200. Assistant/ready/font200 остановился
+  на точном тексте потери ответа после10 страниц в истории199px.
+  Failure PNG SHA256 `0843a6bf513e6ff919a2f100fe72047ace67111c40bfac9929e56b2e058422f3`.
+  Preview SHA256 `873dd84426ece05a57a718e02098f53fd09c8ecdb7e152b19cdbbf48e68e9c7b`.
+  Профиль4096 не запускался; cleanup120486163714 PASS. APK не опубликован.
 - `9b7f310d`: Backend39964464224 —1505/1409subtests PASS; Sonar39964455783
   —0 общих/0 новых/unique0/all_types:true/complete:true; Android39964464136
   build120450685199 —все варианты/JVM/lint PASS. Runtime120455766022 подтвердил

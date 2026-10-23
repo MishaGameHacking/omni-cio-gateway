@@ -178,7 +178,10 @@ def exercise_chat_recovery(probe, observed):
     probe.wait_for(lambda: accepted_single_request(observed()), "The server did not accept the one synthetic message POST")
     # Wait until the failure has reached production UI. Observing disabled Send
     # only during the still-running POST would miss the original regression.
-    probe.reveal(LOST_REPLY, "workspace-content")
+    # At font200 the 199px history viewport needs more than ten pages to
+    # traverse the expanded answer and its evidence before this exact error.
+    # Keep the same 12s deadline and fail if the production error is absent.
+    probe.reveal(LOST_REPLY, HISTORY, max_swipes=20)
     probe.reveal(SEND, COMPOSER)
     probe.wait_for(lambda: native_send_button(probe.tree(), enabled=False),
                    "The uncertain request did not disable its native Send button")

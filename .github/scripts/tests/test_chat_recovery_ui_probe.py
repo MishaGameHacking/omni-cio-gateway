@@ -84,11 +84,11 @@ class RecoveryProbe:
         self.get_taps += 1
         self.phase = "get"
 
-    def reveal(self, text, area):
+    def reveal(self, text, area, *, max_swipes=10):
         if text == recovery.SEND and area == recovery.COMPOSER and self.phase == "post":
             self.composer_actions.append(("reveal", text))
             return
-        if text != recovery.LOST_REPLY or area != recovery.HISTORY:
+        if text != recovery.LOST_REPLY or area != recovery.HISTORY or max_swipes != 20:
             raise AssertionError("A generic label search cannot prove saved delivery")
 
     def wait_for(self, read, message):
@@ -333,6 +333,72 @@ class ChatRecoveryApplicationTests(unittest.TestCase):
                     self.assertEqual(target.get("text"), "UIprobe")
                     self.assertIsNotNone(recovery.persisted_user_message(probe.tree()))
                     self.assertLessEqual(probe.scrolls, 20)
+
+
+class FailureViewportProbe(RecoveryProbe):
+    """Exercise the real reveal path before any recovery GET can be sent."""
+    def __init__(self, height, *, missing=False, wrong_package=False):
+        super().__init__()
+        self.height, self.missing, self.wrong_package = height, missing, wrong_package
+        self.failure_offset = self.failure_scrolls = 0
+
+    def tree(self):
+        tree = super().tree()
+        if self.phase != "post":
+            return tree
+        history = tagged(tree, recovery.HISTORY)
+        history.set("bounds", f"[56,217][320,{217 + self.height}]")
+        top = 217 + 2_400 - self.failure_offset
+        if not self.missing and top < 217 + self.height and top + 180 > 217:
+            chat_node(history, f"[76,{max(217, top)}][300,{min(217 + self.height, top + 180)}]",
+                      text=recovery.LOST_REPLY,
+                      package="other.app" if self.wrong_package else recovery.PACKAGE)
+        return tree
+
+    def reveal(self, text, area, *, max_swipes=10):
+        if text == recovery.LOST_REPLY:
+            from profile_ui_probe import ProfileProbe
+            return ProfileProbe.reveal(self, text, area, max_swipes=max_swipes)
+        return super().reveal(text, area, max_swipes=max_swipes)
+
+    def _semantic_scroll_callback(self, area, direction):
+        if (area, direction, self.phase) == (recovery.HISTORY, "end", "post"):
+            def scroll(*_coordinates):
+                self.failure_scrolls += 1
+                self.failure_offset += self.height - 40
+            return scroll
+        return super()._semantic_scroll_callback(area, direction)
+
+
+class ChatFailureTraversalTests(unittest.TestCase):
+    @patch("profile_scroll.time.sleep")
+    def test_short_history_reaches_exact_failure_before_one_get(self, _sleep):
+        for height in (199, 400):
+            with self.subTest(height=height):
+                probe = FailureViewportProbe(height)
+                result = recovery.exercise_chat_recovery(probe, probe.observed)
+                self.assertTrue(result["send_disabled_while_uncertain"])
+                self.assertEqual((probe.post_taps, probe.get_taps), (1, 1))
+                self.assertLessEqual(probe.failure_scrolls, 20)
+                if height == 199:
+                    self.assertGreater(probe.failure_scrolls, 10)
+
+    @patch("profile_scroll.time.sleep")
+    def test_default_budget_reproduces_the_observed_short_viewport_failure(self, _sleep):
+        probe = FailureViewportProbe(199)
+        probe.tap(recovery.SEND, recovery.COMPOSER)
+        with self.assertRaisesRegex(AssertionError, "List target not reachable"):
+            probe.reveal(recovery.LOST_REPLY, recovery.HISTORY)
+        self.assertEqual((probe.failure_scrolls, probe.post_taps, probe.get_taps), (10, 1, 0))
+
+    @patch("profile_scroll.time.sleep")
+    def test_absent_or_foreign_error_never_permits_recovery_or_another_post(self, _sleep):
+        for changes in ({"missing": True}, {"wrong_package": True}):
+            with self.subTest(changes=changes):
+                probe = FailureViewportProbe(199, **changes)
+                with self.assertRaisesRegex(AssertionError, "List target not reachable"):
+                    recovery.exercise_chat_recovery(probe, probe.observed)
+                self.assertEqual((probe.failure_scrolls, probe.post_taps, probe.get_taps), (20, 1, 0))
 
 
 if __name__ == "__main__":
