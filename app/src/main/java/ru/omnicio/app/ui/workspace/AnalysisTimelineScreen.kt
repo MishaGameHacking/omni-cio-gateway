@@ -26,13 +26,16 @@ fun AnalysisTimelineScreen(onBack: () -> Unit) {
     var selectedCheck by rememberSaveable { mutableStateOf<String?>(null) }
     var confirm by rememberSaveable { mutableStateOf(false) }
     val run = rememberWorkspaceAction { selectedJob = it.optString("job_id").takeIf(String::isNotBlank); resource.refresh() }
+    val activeJob = selectedJob?.let { id ->
+        rememberWorkspaceJobState(id, onCompleted = { resource.refresh() })
+    }
     WorkspaceDetailPage("Работа аналитика", "Время, причины, основания и расход", onBack, SpectrumSymbol.Analyst) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
             .semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource) }
             item { PendingJobRecovery { selectedJob = it } }
-            selectedJob?.let { id -> item { WorkspaceJobPanel(id, { resource.refresh() }, { selectedJob = null }) } }
+            activeJob?.let { model -> item { WorkspaceJobPanel(model, onClose = { selectedJob = null }) } }
             item { LastAnalysisCard(ai) { resource.refresh(); refresh() } }
             item { SpectrumCard {
                 Text("Ближайшие проверки", style = MaterialTheme.typography.titleMedium)

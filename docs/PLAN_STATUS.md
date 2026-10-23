@@ -1,5 +1,74 @@
 # Выполнение главного плана Analyst AI
 
+## Восстановление заданий: направление проверки и владение состоянием — 23.10.2026
+
+Область F01/F16/F22/F23, продолжение app `2e644eb418c8ce8947cdeae115293a45137eb986`.
+
+### Фактический результат родителя
+
+- [Backend CI 39910907189](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39910907189):
+  1492 tests / 1409 subtests PASS, 22.91s; строгий Sonar gate PASS.
+- [Полный Sonar 39910903118](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39910903118):
+  check120274035873, 0 OPEN/CONFIRMED всех типов, 0 новых, unique:0, complete:true.
+- [Android CI 39910907192](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39910907192):
+  build120273725402 PASS, Gradle 9m9s, все варианты/JVM/lint; 882 CI tests,
+  3 предусмотренных environment skips. Runtime120277124735 подтвердил API37 /
+  getconf PAGE_SIZE=16384, install/upgrade/launch preview SHA-256
+  `c7063d9f99f00e90d0ca501173f18cf73841deb843a2666907a73dfbdf075a69`.
+  Полный UI проверялся отдельной debug-сборкой на синтетических данных.
+  Spatial, session, privacy, goals и business cases до plans/job прошли;
+  прежний отказ risk/ready visible+hidden IME при font100 пройден.
+  В plans/job/font100: `List target not reachable: Исход требует сверки`.
+  4096 не запускался; private APK не удержан. Cleanup120281404659 PASS,
+  `CI_PRIVATE_TRANSFER_CLEANUP=verified_absent`; итоговые gates FAILED.
+
+### Подтверждённая ошибка навигации probe
+
+Plans размещает WorkspaceJobPanel ниже PendingJobRecovery, Assistant — выше.
+Общий job probe после recovery всегда искал вверх. На реальном 16384 runtime
+сначала выполнена одна прокрутка к началу, затем девять получили performed=false;
+failure.png показывает верхнюю вводную карточку «Ваш план действий».
+Fixture сохраняет state=uncertain, а production отображает точный ожидаемый заголовок.
+Четыре запроса и ноль contract errors видны на снимке; вывод о назначении каждого
+запроса основан на исходниках, поскольку отдельный endpoint trace не сохранён.
+
+Probe теперь ищет вниз для plans и вверх для assistant. Лимиты поиска,
+настоящие accessibility-действия, точный заголовок и пояснение неопределённого
+исхода, а также запрет кнопки повтора остаются прежними. Это исправление
+проверки не доказывает отсутствия всех ошибок продукта; требуется новый runtime.
+
+### Отдельное исправление жизненного цикла выбранного задания
+
+Plans и AnalysisTimeline сохраняли ID задания на уровне экрана, но создавали
+его модель через WorkspaceJobPanel(id) внутри LazyColumn item. При удалении
+карточки из composition её LaunchedEffect и coroutine scopes отменяются,
+хотя выбранный ID остаётся: опрос, завершение и обновление данных зависели от
+видимости карточки. Это подтверждено устройством исходников, а не причиной
+ошибки поиска выше. Обе страницы используют существующий rememberWorkspaceJobState
+на уровне экрана и только отображают WorkspaceJobPanel(model) в прежнем месте.
+Сессионные/job keys, foreground, cancellation/retry/close и callbacks сохранены;
+shared-модель и Assistant не переписаны.
+
+### Локальная проверка нового изменения
+
+Четыре новых регрессионных теста выполняют настоящий _BusinessCase.job и
+reveal_in_list над обрезанными viewport-кадрами. Старый код падал для Plans
+при font1/font2; Assistant проходил. После исправления оба порядка проходят,
+отсутствующие heading/detail по-прежнему завершаются ошибкой в прежних пределах,
+recovery выполняется один раз. Это offline-проверка навигации, не показания устройства.
+Полный CI-набор: **886 tests PASS**, 4 предусмотренных environment skips.
+Из этих пропусков два Java host smoke отдельно прошли с проверенным JDK17:
+полный поток IME beyond diagnostic cap и predictive-back event contract.
+Локально не выполнены только два Android SDK-dependent host smoke.
+Аудит всех 321 отслеживаемых Python-файлов: 0 failures.
+Независимый обзор probe/tests и обоих Android callers, а также diff check PASS.
+Локальная чистая JVM-компиляция не проверяет Compose disposal; продолжение опроса
+вне экрана не объявляется измеренным. Backend исходники не менялись и его локальный
+набор не повторялся; новый удалённый gate остаётся обязательным.
+
+Новый SHA требует собственных Sonar, Gradle/JVM/lint и обеих полных API37-матриц
+на измеренных 16384/4096 байтах при font100/200. Результаты фиксируются в PR #880/#887.
+
 ## Сохранение native-видимости IME без запаздывающего снимка — 23.10.2026
 
 Область F22/F23, продолжение app `17605e2d0d83bc6ab5e69342ca50da7e8b125dac`.
