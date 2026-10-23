@@ -1,5 +1,65 @@
 # Выполнение главного плана Analyst AI
 
+## Preflight текущей попытки повторной сборки — 23.10.2026
+
+Область F23; родитель app `25e73835dfee05b7c22645ddf8e541dcf3e7caf7`,
+tree `cf09a5f7c622a8539fd0e92e2e3a878497d245a9`. Исправления ожидания окна,
+направления issuer lookup и весь Kotlin/backend остаются прежними.
+
+### Доказательства и причина
+
+- [Backend39925032850](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032850)
+  родителя PASS: 1505 tests / 1409 subtests, 24.86s; audit330.
+  [Полный Sonar39925027214](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925027214)
+  PASS: check120320038927, 0/0/unique0, all_types:true, complete:true.
+  CI merge `36c78c041148e90d62f07bc44b4428ee4e361b19` имеет то же дерево.
+- [Android39925032873 attempt1](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032873/attempts/1),
+  build120319322820: первый пакет `platforms/android-37.0` получил
+  `subprocess.TimeoutExpired` после 600s. CLI не вывел отдельной причины;
+  сеть, lock и конкретная причина ожидания не установлены. Gradle/runtime
+  не начались. Cleanup120323461186 подтвердил `verified_absent` в08:40:37UTC.
+- Одна повторная попытка2 на том же SHA прошла SDK и APK rule tests
+  (08:41:45/08:41:57UTC) и дошла до Gradle. Новый build120323801609
+  начал работу в08:41:21, а успешный preflight120323843846 сохранил время
+  исходного выполнения 08:29:47–08:30:03. Его результат был переиспользован.
+- Transfer identity включает GITHUB_RUN_ATTEMPT. Старый draft уже удалён,
+  нового `ci-transfer-39925032873-2` нет в полном списке releases (29 записей).
+  Поэтому upload этой попытки не получает обязательный пустой draft.
+  Это подтверждённая несовместимость orchestration с текущими guards;
+  не наблюдавшийся native UI FAIL и не повод ослаблять uploader.
+
+### Исправление и граница повторов
+
+Preflight выдаёт prepared_attempt только после успешного полного prepare.
+Build сохраняет зависимость от preflight и перед SDK сравнивает этот output
+с текущим github.run_attempt. При несовпадении выполняется тот же prepare
+для новой попытки; при совпадении повторного создания draft нет.
+При ошибке повторного prepare сразу выполняется cleanup, до остальных
+always-шагов; завершающая очистка workflow остаётся обязательной.
+Ownership, anonymous-denial, read-back, digest, upload и download проверки
+не меняются. SDK-платформа, timeout и signing также не меняются.
+
+Это поддерживает повтор **build job**. Для повторного runtime после успешной
+сборки и cleanup нужны новые входные APK: следует повторить build job с его
+зависимыми задачами либо весь workflow. Повтор job вместе с зависимыми
+задачами предусмотрен [GitHub REST API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
+Один runtime не может использовать
+удалённую передачу прежней попытки; соответствующий отказ сохраняется.
+
+### Проверка нового дерева
+
+Полный локальный CI-набор: **922 tests PASS**, 4 предусмотренных skips,
+0.951s. Transfer Node suite: **10/10 PASS**; workflow contract: **13/13 PASS**.
+Добавлены одна JS-регрессия полного lifecycle prepare1 → cleanup → отказ
+upload2 → prepare2 → upload2 и три Python-проверки output/condition/order.
+Исходный workflow не проходит все три новых contract-проверки.
+Production transfer module не менялся; его прежние guards сохраняются.
+Аудит всех **330 Python-файлов PASS**, failures:[]; working/staged diff check PASS.
+Собственные Backend/Sonar, Gradle/JVM/lint и обе полные API37-матрицы
+16384/4096 нового SHA обязательны.
+Физический телефон, Timeweb, Telegram owner binding и APK-канал остаются
+отдельными этапами; новый приватный APK пока не подтверждён.
+
 ## Смена окна перед прокруткой модального содержимого — 23.10.2026
 
 Область F01/F22/F23, продолжение app

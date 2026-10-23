@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
+    outputs:
+      prepared_attempt: ${{ steps.prepare.outputs.prepared_attempt }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       id: checkout
@@ -26,9 +28,12 @@ jobs:
         node --test .github/scripts/ci_private_transfer.test.cjs .github/scripts/require_main_release.test.cjs .github/scripts/authoritative_merge_gate.test.cjs
         python3 -m unittest discover -s tools/tests -p 'test_*.py'
     - name: Verify synthetic draft handoff and unauthenticated denial
+      id: prepare
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+        script: |
+          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+          core.setOutput('prepared_attempt', process.env.GITHUB_RUN_ATTEMPT);
     - name: Remove the temporary draft immediately if preparation fails
       if: failure() && steps.checkout.outcome == 'success'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -61,6 +66,17 @@ jobs:
       with:
         persist-credentials: false
         clean: true
+    - name: Prepare private handoff for the current rerun attempt
+      id: prepare_transfer
+      if: needs.transfer-preflight.outputs.prepared_attempt != format('{0}', github.run_attempt)
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+    - name: Remove the temporary draft immediately if rerun preparation fails
+      if: failure() && steps.prepare_transfer.outcome == 'failure'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
     - name: Prepare canonical 3D catalogue before packaging
       shell: cmd
       run: |
