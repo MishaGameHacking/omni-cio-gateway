@@ -564,7 +564,7 @@ def _scenario_position(item: dict, assumptions: list, currency: str) -> tuple:
     value = decimal(item.get("value"))
     metadata = item.get("metadata") or {}
     identities = {"instrument": uid, "sector": metadata.get("sector"), "country": metadata.get("country_of_risk"),
-                  "currency": (item.get("value") or {}).get("currency")}
+                  "currency": instrument_currency(item)}
     matches = [shock for shock in assumptions if shock["axis"] == "all" or shock["id"] == identities.get(shock["axis"])]
     matched = {(shock["axis"], shock["id"]) for shock in matches}
     unknown_membership = any(shock["axis"] != "all" and identities.get(shock["axis"]) is None and

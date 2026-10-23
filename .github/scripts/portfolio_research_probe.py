@@ -1,6 +1,6 @@
 """Search, comparison and dossier acceptance through actual production controls."""
 from datetime import timedelta
-from native_input_evidence import focused_editor
+from native_input_evidence import native_input_ready
 
 DOSSIER_SUFFIX = '/dossier'
 INSTRUMENTS_PATH = '/workspace/instruments/'
@@ -223,7 +223,7 @@ def _event_draft(case):
     p.tap_resource("assistant-event-question", AREA)
     question = "Как это событие может повлиять на мои позиции?"
     p.tap_visible("Ваш вопрос")
-    p.wait_for(lambda: focused_editor(p.tree(), question), "Event shortcut did not fill the real native draft")
+    p.wait_for(lambda: native_input_ready(p.tree(), question), "Event shortcut did not fill the real native draft and show its keyboard")
     p.dismiss_keyboard()
     after = case.observed()
     if any(row["method"] != "GET" for row in after["calls"]):

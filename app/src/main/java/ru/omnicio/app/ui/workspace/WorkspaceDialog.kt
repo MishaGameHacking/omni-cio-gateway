@@ -12,17 +12,22 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import ru.omnicio.app.ui.spatial.SpatialWindow
 import ru.omnicio.app.ui.spectrum.SpectrumCard
 
 /** Dialog content gets an actual surface in its own Window while sharing the Engine. */
 @Composable
 fun WorkspaceDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        SpatialWindow(Modifier.widthIn(max = 600.dp).fillMaxWidth().heightIn(max = 680.dp)) {
-            SpectrumCard(Modifier.verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), emphasized = true) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                content()
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(decorFitsSystemWindows = false)) {
+        // Keep the scroll viewport above system bars and the keyboard, including
+        // while the IME animates. safeDrawing consumes the insets once here.
+        Box(Modifier.safeDrawingPadding()) {
+            SpatialWindow(Modifier.widthIn(max = 600.dp).fillMaxWidth().heightIn(max = 680.dp)) {
+                SpectrumCard(Modifier.verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), emphasized = true) {
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                    content()
+                }
             }
         }
     }

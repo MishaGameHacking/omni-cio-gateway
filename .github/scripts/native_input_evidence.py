@@ -289,6 +289,15 @@ def _report_rotation_failure(probe, initial, dialog, selection, sample_count, im
         print("NATIVE_ROTATION_DIAGNOSTIC_UNAVAILABLE=" + type(error).__name__, flush=True)
 
 
+def native_input_ready(tree, text: str, selection: tuple[int, int] | None = None):
+    """Observe the focused value and real IME together, without inventing a caret."""
+    if not keyboard_visible(tree):
+        return None
+    if not text and selection is None:
+        return empty_editor_focused(tree)
+    return focused_editor(tree, text, selection)
+
+
 def append_native_text(probe, text: str, suffix: str) -> dict:
     """Type once after observing the real IME and the applied end-of-text caret.
 
@@ -297,17 +306,17 @@ def append_native_text(probe, text: str, suffix: str) -> dict:
     Never retry or replace missing input: the exact resulting text must pass.
     """
     def ready(expected, selection=None):
-        tree = probe.tree()
-        if not keyboard_visible(tree):
-            return None
-        return focused_editor(tree, expected, selection)
+        return native_input_ready(probe.tree(), expected, selection)
 
     _wait_editor(probe, lambda: ready(text),
                  "Native editor or keyboard is not ready for input", "input-ready", text)
-    probe.command("shell", "input", "keyevent", "KEYCODE_MOVE_END")
-    end = len(text.encode("utf-16-le")) // 2
-    _wait_editor(probe, lambda: ready(text, (end, end)),
-                 "Native cursor did not reach the end before typing", "input-caret", text)
+    # Compose may export -1/-1 for an empty editor. Its observed focus is enough
+    # before the first character; a nonempty draft still requires its real caret.
+    if text:
+        probe.command("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+        end = len(text.encode("utf-16-le")) // 2
+        _wait_editor(probe, lambda: ready(text, (end, end)),
+                     "Native cursor did not reach the end before typing", "input-caret", text)
     probe.command("shell", "input", "text", suffix)
     expected = text + suffix
     end = len(expected.encode("utf-16-le")) // 2

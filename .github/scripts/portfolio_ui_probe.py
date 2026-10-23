@@ -79,7 +79,7 @@ class PortfolioCase:
         raise AssertionError("Expected native portfolio text is not visible: " + text)
 
     def search(self, text):
-        from native_input_evidence import focused_editor
+        from native_input_evidence import append_native_text, native_input_ready
         if re.fullmatch(r"[A-Za-z0-9_-]{0,40}", text) is None:
             raise ValueError("Only bounded synthetic ASCII search terms belong to this fixture")
         self.probe.tap_visible("Поиск по приложению")
@@ -88,8 +88,10 @@ class PortfolioCase:
         self.probe.command("shell", "input", "keycombination", "113", "29")
         self.probe.command("shell", "input", "keyevent", "KEYCODE_DEL")
         if text:
-            self.probe.command("shell", "input", "text", text)
-        self.probe.wait_for(lambda: focused_editor(self.probe.tree(), text), "Search did not enter the actual native editor")
+            append_native_text(self.probe, "", text)
+        else:
+            self.probe.wait_for(lambda: native_input_ready(self.probe.tree(), ""),
+                                "Search did not clear the actual native editor")
         self.probe.dismiss_keyboard()
 
     def record_text(self, resource_id, text, *, direction="end"):

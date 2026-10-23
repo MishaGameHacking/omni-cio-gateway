@@ -229,19 +229,23 @@ class _BusinessCase:
                 self.probe.reveal("Источник операций пока неполный. Итог исполнения не подтверждён.", "workspace-content")
                 self.checks.extend(("real-partial-quantity", "bind-selected-operation", "incomplete-source-remains-explicit"))
             else:
+                from native_input_evidence import append_native_text
+                from plan_editor_probe import verify_plan_keyboard_viewport
+
                 self.probe.reveal("Расчёт подготовлен", "workspace-content")
                 self.probe.tap("Подготовить план", "workspace-content", direction="start")
                 self.probe.find("Подготовить действие")
                 self.probe.tap("Синтетическая акция", "workspace-content")
                 self.probe.tap("Количество единиц инструмента", "workspace-content")
-                self.probe.command("shell", "input", "text", "5")
+                append_native_text(self.probe, "", "5")
+                verify_plan_keyboard_viewport(self.probe)
                 self.probe.dismiss_keyboard()
                 self.probe.tap("Проверить и сохранить расчёт", "workspace-content")
                 self.probe.reveal(
                     "СИНТЕТИЧЕСКИЙ РАСЧЁТ · Покупка · Синтетическая акция", "workspace-content"
                 )
                 self.probe.reveal("План: 5 ед. · лот 1", "workspace-content")
-                self.checks.extend(("native-quantity-input", "new-confirmed-calculation"))
+                self.checks.extend(("native-quantity-input", "native-dialog-ime-insets", "new-confirmed-calculation"))
 
     def notifications(self):
         if self.scenario == "empty":
