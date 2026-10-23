@@ -24,8 +24,8 @@ from timeweb_ci_catalog import ubuntu_images
 
 PROJECT = 2941515
 PRESET = None
-CONFIGURATION = {"configurator_id": 11, "cpu": 1, "ram": 1024, "disk": 15360}
-CONFIG_LOCATION = "ru-1"
+CONFIGURATION = {"configurator_id": 19, "cpu": 1, "ram": 1024, "disk": 15360}
+CONFIG_LOCATION = "ru-2"
 CONFIG_PRICE = 1180
 NAME = "analyst-ai-owner-20261023"
 HOST = "analyst-ai-2941515.twc1.net"
