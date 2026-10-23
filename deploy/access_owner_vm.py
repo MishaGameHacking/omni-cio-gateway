@@ -104,7 +104,7 @@ def verify_prepared_server(command, address):
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
         expected = {item.name: hashlib.sha256(source.extractfile(item).read()).hexdigest()
                     for item in source.getmembers() if item.isfile()}
-    script = '''import hashlib,json,os,socket,ssl,stat,sys
+    script = '''import hashlib,json,os,socket,ssl,stat,sys,time
 from pathlib import Path
 root=Path("/root/analyst-ai-source")
 expected=json.load(sys.stdin)
@@ -123,18 +123,40 @@ report={"source_files_verified":len(expected),"private_permissions_verified":Tru
 try:
     installer.check_address(values)
     report["vm_dns_and_local_ip_verified"]=True
-except installer.InstallError as error:
+except (installer.InstallError,OSError) as error:
     report["vm_dns_and_local_ip_verified"]=False
     report["address_error"]=str(error)
-try:
-    with socket.create_connection(("oauth.telegram.org",443),timeout=20) as raw:
-        with ssl.create_default_context().wrap_socket(raw,server_hostname="oauth.telegram.org") as conn:
-            report["telegram_direct_tls"]=conn.version()
-except (OSError,ssl.SSLError) as error:
-    report["telegram_tls_error"]=type(error).__name__
+report["outbound_tls_checks"]=[]
+for hostname in ("oauth.telegram.org","api.timeweb.cloud","pypi.org"):
+    try:
+        endpoints=socket.getaddrinfo(hostname,443,type=socket.SOCK_STREAM)
+    except OSError as error:
+        report["outbound_tls_checks"].append({"hostname":hostname,"dns_error":type(error).__name__,"errno":error.errno})
+        continue
+    seen=set()
+    for family,kind,protocol,_,endpoint in endpoints:
+        if endpoint[0] in seen or len(seen)>=4:
+            continue
+        seen.add(endpoint[0])
+        result={"hostname":hostname,"address":endpoint[0],"family":int(family)}
+        started=time.monotonic()
+        try:
+            with socket.socket(family,kind,protocol) as raw:
+                raw.settimeout(12)
+                raw.connect(endpoint)
+                result["tcp_connected"]=True
+                with ssl.create_default_context().wrap_socket(raw,server_hostname=hostname) as conn:
+                    result["tls"]=conn.version()
+                    if hostname=="oauth.telegram.org":
+                        report["telegram_direct_tls"]=conn.version()
+        except (OSError,ssl.SSLError) as error:
+            result["error"]=type(error).__name__
+            result["errno"]=error.errno
+        result["seconds"]=round(time.monotonic()-started,2)
+        report["outbound_tls_checks"].append(result)
 print(json.dumps(report))
 '''
-    report = json.loads(prepare.remote(command, "python3 -c " + shlex.quote(script), json.dumps(expected).encode(), timeout=90))
+    report = json.loads(prepare.remote(command, "python3 -c " + shlex.quote(script), json.dumps(expected).encode(), timeout=180))
     try:
         addresses = sorted({row[4][0] for row in socket.getaddrinfo(prepare.HOST, 443, type=socket.SOCK_STREAM)})
     except OSError as error:
