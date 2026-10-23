@@ -140,10 +140,13 @@ print("unused_fresh_install_target_verified")
     print("OWNER_OLD_VM_RETIRED=" + json.dumps({"id": OLD_ID, "ip_id": OLD_IP_ID}), flush=True)
 
 
-def run(*, resume_staged=False):
+def run(*, resume_staged=False, development=False):
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     select_target(True)
     verified_target(token)
+    if development:
+        access.run("develop")
+        return
     move_dns(token)
     if not resume_staged:
         access.run("stage")
@@ -170,9 +173,9 @@ def run(*, resume_staged=False):
 
 if __name__ == "__main__":
     try:
-        if sys.argv[1:] not in ([], ["--resume-staged"]):
+        if sys.argv[1:] not in ([], ["--resume-staged"], ["--develop-staged"]):
             raise prepare.ProbeError("invalid_adoption_arguments")
-        run(resume_staged=sys.argv[1:] == ["--resume-staged"])
+        run(resume_staged=sys.argv[1:] == ["--resume-staged"], development=sys.argv[1:] == ["--develop-staged"])
     except (prepare.ProbeError,OSError,ValueError,KeyError,subprocess.SubprocessError) as error:
         print("OWNER_ADOPTION_ERROR=" + (str(error) if isinstance(error,prepare.ProbeError) else type(error).__name__), flush=True)
         sys.exit(1)

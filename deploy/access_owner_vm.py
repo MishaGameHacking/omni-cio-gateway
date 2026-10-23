@@ -180,7 +180,36 @@ print(json.dumps(report))
         raise prepare.ProbeError("live_install_prerequisite_not_verified")
 
 
-def stage_server(token, server, *, verify_only=False):
+def develop_backend(command):
+    script = '''import json,os,pathlib,subprocess,tempfile
+root=pathlib.Path("/root/analyst-ai-source")
+venv=pathlib.Path("/root/analyst-ai-development-venv")
+def run(args,**kwargs):
+    result=subprocess.run(args,cwd=root,capture_output=True,text=True,**kwargs)
+    if result.returncode:
+        print(json.dumps({"phase":args[0:3],"exit":result.returncode,"output":(result.stdout+result.stderr)[-18000:]}),flush=True)
+        raise SystemExit(result.returncode)
+    return result.stdout
+run(["apt-get","update","-qq"],timeout=300)
+run(["apt-get","install","-y","python3-venv"],env=dict(os.environ,DEBIAN_FRONTEND="noninteractive"),timeout=300)
+assert not venv.is_symlink()
+if not venv.exists(): run(["python3","-m","venv",str(venv)],timeout=120)
+python=str(venv/"bin/python")
+run([python,"-m","pip","install","--disable-pip-version-check","--no-cache-dir","-r","backend/requirements-dev.txt"],timeout=480)
+with tempfile.TemporaryDirectory(prefix="analyst-development-") as temp:
+    env={"PATH":str(venv/"bin")+":/usr/bin:/bin","HOME":temp,"LANG":"C.UTF-8","PYTHONPATH":str(root),
+         "TELEGRAM_CLIENT_ID":"123456","TELEGRAM_CLIENT_SECRET":"test-only","BACKEND_PUBLIC_URL":"https://example.invalid",
+         "FERNET_KEY":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","ANALYSIS_SCHEDULER_ENABLED":"false",
+         "AI_EXTERNAL_PROCESSING_APPROVED":"false","DATABASE_PATH":temp+"/tests.sqlite3"}
+    output=run([python,"-m","pytest","backend/tests","-q"],env=env,timeout=360)
+    print(json.dumps({"development_host":"timeweb-9408159","backend_tests":output[-6000:],"live_authentication_verified":False}),flush=True)
+run([python,"-m","pip","check"],timeout=60)
+'''
+    output = prepare.remote(command, "python3 -c " + shlex.quote(script), timeout=1200)
+    print("OWNER_TIMEWEB_DEVELOPMENT=" + output.decode().strip(), flush=True)
+
+
+def stage_server(token, server, *, verify_only=False, development=False):
     address = prepare.cloud.public_ipv4(server)
     if address != EXPECTED_IP:
         raise prepare.ProbeError("server_address_changed")
@@ -228,6 +257,8 @@ def stage_server(token, server, *, verify_only=False):
                 raise prepare.ProbeError("cloud_init_not_done")
             if verify_only:
                 verify_prepared_server(command, address)
+                if development:
+                    develop_backend(command)
             else:
                 report = prepare.stage(command, address, *values)
                 print("OWNER_VM_PREPARED=" + json.dumps({"id": SERVER_ID, "ip": address, "hostname": prepare.HOST,
@@ -240,7 +271,7 @@ def stage_server(token, server, *, verify_only=False):
 
 
 def run(mode):
-    if mode not in {"inspect", "connect", "attach", "stage", "verify", "cleanup"}:
+    if mode not in {"inspect", "connect", "attach", "stage", "verify", "develop", "cleanup"}:
         raise prepare.ProbeError("invalid_access_mode")
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     prepare.cloud.PRESET_ID = prepare.PRESET
@@ -253,8 +284,8 @@ def run(mode):
         "ip": prepare.cloud.public_ipv4(server), "location": server.get("location"),
         "cpu": server.get("cpu"), "ram": server.get("ram"), "availability_zone": server.get("availability_zone"),
         "network_types": [n.get("type") for n in server.get("networks", [])]}), flush=True)
-    if mode in {"stage", "verify"}:
-        stage_server(token, server, verify_only=mode == "verify")
+    if mode in {"stage", "verify", "develop"}:
+        stage_server(token, server, verify_only=mode != "stage", development=mode == "develop")
         return
     if mode == "connect":
         connect_ipv4(token, server)
