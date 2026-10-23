@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import socket
+import ssl
 import sys
 import subprocess
 import tempfile
@@ -104,7 +105,7 @@ def verify_prepared_server(command, address):
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
         expected = {item.name: hashlib.sha256(source.extractfile(item).read()).hexdigest()
                     for item in source.getmembers() if item.isfile()}
-    script = '''import hashlib,json,os,socket,ssl,stat,sys,time
+    script = '''import hashlib,json,os,socket,ssl,stat,subprocess,sys,time
 from pathlib import Path
 root=Path("/root/analyst-ai-source")
 expected=json.load(sys.stdin)
@@ -120,6 +121,12 @@ values=installer.load_config(enrollment=True)
 installer.source_files()
 installer.check_target()
 report={"source_files_verified":len(expected),"private_permissions_verified":True,"empty_install_target_verified":True}
+for name,command in (("telegram_route",["ip","route","get","149.154.167.99"]),("output_firewall",["iptables","-S","OUTPUT"]),("nft_rules",["nft","list","ruleset"])):
+    try:
+        result=subprocess.run(command,capture_output=True,text=True,timeout=10)
+        report[name]={"exit":result.returncode,"output":result.stdout[:8000]}
+    except OSError as error:
+        report[name]={"error":type(error).__name__}
 try:
     installer.check_address(values)
     report["vm_dns_and_local_ip_verified"]=True
@@ -172,6 +179,16 @@ def stage_server(token, server, *, verify_only=False):
     address = prepare.cloud.public_ipv4(server)
     if address != "201.34.156.98":
         raise prepare.ProbeError("server_address_changed")
+    if verify_only:
+        result = {"host": "oauth.telegram.org"}
+        try:
+            with socket.create_connection(("oauth.telegram.org", 443), timeout=15) as raw:
+                with ssl.create_default_context().wrap_socket(raw, server_hostname="oauth.telegram.org") as connection:
+                    result["tls"] = connection.version()
+        except OSError as error:
+            result["error"] = type(error).__name__
+            result["errno"] = error.errno
+        print("OWNER_RUNNER_TELEGRAM_TLS=" + json.dumps(result), flush=True)
     if not verify_only:
         values = [os.environ.get(k, "").strip() for k in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET")]
         if not all(values):
