@@ -11,13 +11,17 @@ concurrency:
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Connect one public IPv4 and the temporary installation key
+      - name: Fetch the exact checked server sources
+        run: git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
+      - name: Stage the existing owner installer and remove temporary access
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/access_owner_vm.py connect
+        run: python3 deploy/access_owner_vm.py stage

@@ -4,7 +4,10 @@ import ipaddress
 import os
 import re
 import sys
+import subprocess
+import tempfile
 import time
+from pathlib import Path
 import urllib.error
 import urllib.request
 import uuid
@@ -14,6 +17,7 @@ import prepare_owner_vm as prepare
 SERVER_ID = 9407735
 KEY_NAME = "analyst-ai-install-20261023"
 PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7lcv6ujGptd74KPdQGz3jCsZoV51WLNePFGRyrfit7 analyst-ai-install-20261023"
+HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPsWdiuF70XIWeWMiDBFvJF51PUVKnggvLcKk8JUOHSf"
 
 
 def request(token, method, path, data=None):
@@ -61,8 +65,59 @@ def connect_ipv4(token, server):
     raise prepare.ProbeError("ip_binding_not_yet_verified_no_second_allocation")
 
 
+def stage_server(token, server):
+    address = prepare.cloud.public_ipv4(server)
+    if address != "201.34.156.98":
+        raise prepare.ProbeError("server_address_changed")
+    values = [os.environ.get(k, "").strip() for k in ("TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET")]
+    if not all(values):
+        raise prepare.ProbeError("telegram_credentials_missing")
+    with tempfile.TemporaryDirectory(prefix="owner-stage-", dir=os.environ["RUNNER_TEMP"]) as root:
+        folder = Path(root)
+        prepare.cloud.generate_key(folder / "client")
+        public = (folder / "client.pub").read_text().strip()
+        name = "analyst-ai-stage-" + os.environ["GITHUB_RUN_ID"]
+        created = request(token, "POST", "/ssh-keys", {"name": name, "body": public, "is_default": False})
+        key = created.get("ssh_key", created.get("ssh-key", {}))
+        if key.get("body", "").split()[:2] != public.split()[:2] or type(key.get("id")) is not int:
+            raise prepare.ProbeError("stage_key_mismatch_reconcile_inventory")
+        identifier = key["id"]
+        print("OWNER_STAGE_KEY_ID=" + str(identifier), flush=True)
+        attached = False
+        try:
+            request(token, "POST", f"/servers/{SERVER_ID}/ssh-keys", {"ssh_key_ids": [identifier]})
+            attached = True
+            command = prepare.ssh_command(folder, address, HOST_KEY)
+            for attempt in range(12):
+                try:
+                    prepare.remote(command, "test $(id -u) = 0", timeout=12)
+                    break
+                except (prepare.ProbeError, subprocess.TimeoutExpired):
+                    if attempt == 11:
+                        raise prepare.ProbeError("stage_ssh_unreachable") from None
+                    time.sleep(5)
+            status = prepare.remote(command, "cloud-init status --wait", timeout=60)
+            if b"status: done" not in status:
+                raise prepare.ProbeError("cloud_init_not_done")
+            existing = prepare.domain_api(token, "GET")
+            if existing is None:
+                prepare.domain_api(token, "POST")
+                prepare.domain_api(token, "PATCH", address=address)
+            domain = prepare.domain_api(token, "GET").get("domain", {})
+            if domain.get("linked_ip") != address or domain.get("is_technical") is not True:
+                raise prepare.ProbeError("technical_domain_binding_unverified")
+            report = prepare.stage(command, address, *values)
+            print("OWNER_VM_PREPARED=" + json.dumps({"id": SERVER_ID, "ip": address, "hostname": prepare.HOST,
+                "backend_started": False, "owner_enrollment_required": True, **report}), flush=True)
+        finally:
+            if attached:
+                request(token, "DELETE", f"/servers/{SERVER_ID}/ssh-keys/{identifier}")
+            request(token, "DELETE", f"/ssh-keys/{identifier}")
+            print("OWNER_STAGE_KEY=removed", flush=True)
+
+
 def run(mode):
-    if mode not in {"inspect", "connect", "attach", "cleanup"}:
+    if mode not in {"inspect", "connect", "attach", "stage", "cleanup"}:
         raise prepare.ProbeError("invalid_access_mode")
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     prepare.cloud.PRESET_ID = prepare.PRESET
@@ -105,6 +160,8 @@ def run(mode):
     if type(identifier) is not int or identifier <= 0:
         raise prepare.ProbeError("invalid_temporary_key_id")
     print("OWNER_VM_TEMPORARY_KEY_ID=" + str(identifier), flush=True)
+    if mode == "stage":
+        stage_server(token, server)
     if mode in {"attach", "connect"}:
         request(token, "POST", f"/servers/{SERVER_ID}/ssh-keys", {"ssh_key_ids": [identifier]})
         print("OWNER_VM_TEMPORARY_KEY=attached", flush=True)
@@ -117,6 +174,6 @@ def run(mode):
 if __name__ == "__main__":
     try:
         run(sys.argv[1] if len(sys.argv) == 2 else "")
-    except (prepare.ProbeError, OSError, ValueError, KeyError) as error:
+    except (prepare.ProbeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         print("OWNER_VM_ACCESS_ERROR=" + (str(error) if isinstance(error, prepare.ProbeError) else type(error).__name__), flush=True)
         sys.exit(1)
