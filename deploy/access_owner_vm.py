@@ -1,10 +1,13 @@
 """Temporary administrative access to the one verified new VM; no VM creation."""
 import json
+import ipaddress
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
+import uuid
 
 import prepare_owner_vm as prepare
 
@@ -15,7 +18,8 @@ PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7lcv6ujGptd74KPdQGz3jCsZoV51
 
 def request(token, method, path, data=None):
     allowed = method == "GET" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}", f"/projects/{prepare.PROJECT}/resources"}
-    allowed |= method == "POST" and path in {"/ssh-keys", f"/servers/{SERVER_ID}/ssh-keys"}
+    allowed |= method == "POST" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}/ssh-keys"}
+    allowed |= method == "POST" and re.fullmatch(r"/floating-ips/[a-f0-9-]{36}/bind", path) is not None
     allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/9407735/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
         raise prepare.ProbeError("unapproved_access_endpoint")
@@ -33,8 +37,32 @@ def request(token, method, path, data=None):
     return prepare.decode_response(raw) if raw else {}
 
 
+def connect_ipv4(token, server):
+    if prepare.cloud.public_ipv4(server):
+        return
+    inventory = request(token, "GET", "/floating-ips")
+    if inventory.get("ips") != [] or inventory.get("meta", {}).get("total") != 0:
+        raise prepare.ProbeError("reconcile_existing_addresses_before_allocation")
+    if server.get("availability_zone") != "nsk-1":
+        raise prepare.ProbeError("unexpected_server_zone")
+    address = request(token, "POST", "/floating-ips", {"is_ddos_guard": False, "availability_zone": "nsk-1"})["ip"]
+    identifier = str(uuid.UUID(address["id"]))
+    ip = str(ipaddress.IPv4Address(address["ip"]))
+    print("OWNER_VM_IP_CREATED=" + json.dumps({"id": identifier, "ip": ip}), flush=True)
+    if not ipaddress.IPv4Address(ip).is_global or address.get("availability_zone") != "nsk-1" or address.get("is_ddos_guard") is not False:
+        raise prepare.ProbeError("allocated_ip_mismatch_reconcile_inventory")
+    request(token, "POST", f"/floating-ips/{identifier}/bind", {"resource_type": "server", "resource_id": SERVER_ID})
+    for _ in range(12):
+        current = prepare.owned_server(request(token, "GET", f"/servers/{SERVER_ID}"))
+        if prepare.cloud.public_ipv4(current) == ip:
+            print("OWNER_VM_IP_BOUND=" + ip, flush=True)
+            return
+        time.sleep(5)
+    raise prepare.ProbeError("ip_binding_not_yet_verified_no_second_allocation")
+
+
 def run(mode):
-    if mode not in {"inspect", "attach", "cleanup"}:
+    if mode not in {"inspect", "connect", "attach", "cleanup"}:
         raise prepare.ProbeError("invalid_access_mode")
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     prepare.cloud.PRESET_ID = prepare.PRESET
@@ -47,6 +75,8 @@ def run(mode):
         "ip": prepare.cloud.public_ipv4(server), "location": server.get("location"),
         "cpu": server.get("cpu"), "ram": server.get("ram"), "availability_zone": server.get("availability_zone"),
         "network_types": [n.get("type") for n in server.get("networks", [])]}), flush=True)
+    if mode == "connect":
+        connect_ipv4(token, server)
     document = request(token, "GET", "/ssh-keys")
     if mode == "inspect":
         print("OWNER_KEY_RESPONSE_SHAPE=" + json.dumps({"keys": list(document), "meta": document.get("meta"),
@@ -55,7 +85,7 @@ def run(mode):
         print("OWNER_IP_INVENTORY=" + json.dumps({"meta": addresses.get("meta"),
             "ips": [{k: v.get(k) for k in ("id", "resource_id", "resource_type", "availability_zone")} for v in addresses.get("ips", [])]}), flush=True)
         return
-    keys = document.get("ssh-keys")
+    keys = document.get("ssh_keys")
     if not isinstance(keys, list) or document.get("meta", {}).get("total") != len(keys):
         raise prepare.ProbeError("incomplete_key_inventory")
     matching = [k for k in keys if k.get("name") == KEY_NAME]
@@ -65,7 +95,8 @@ def run(mode):
         if mode == "cleanup":
             print("OWNER_VM_TEMPORARY_KEY=already_absent", flush=True)
             return
-        key = request(token, "POST", "/ssh-keys", {"name": KEY_NAME, "body": PUBLIC_KEY, "is_default": False})["ssh-key"]
+        created = request(token, "POST", "/ssh-keys", {"name": KEY_NAME, "body": PUBLIC_KEY, "is_default": False})
+        key = created.get("ssh_key", created.get("ssh-key", {}))
     else:
         key = matching[0]
     if key.get("body", "").split()[:2] != PUBLIC_KEY.split()[:2] or key.get("is_default") is not False:
@@ -74,7 +105,7 @@ def run(mode):
     if type(identifier) is not int or identifier <= 0:
         raise prepare.ProbeError("invalid_temporary_key_id")
     print("OWNER_VM_TEMPORARY_KEY_ID=" + str(identifier), flush=True)
-    if mode == "attach":
+    if mode in {"attach", "connect"}:
         request(token, "POST", f"/servers/{SERVER_ID}/ssh-keys", {"ssh_key_ids": [identifier]})
         print("OWNER_VM_TEMPORARY_KEY=attached", flush=True)
     else:
