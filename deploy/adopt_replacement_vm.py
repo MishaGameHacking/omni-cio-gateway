@@ -51,6 +51,10 @@ def move_dns(token):
     def exact_record():
         result = access.request(token, "GET", path)
         records = result.get("dns_records", [])
+        print("OWNER_ADOPTION_DNS_INVENTORY=" + json.dumps({"meta": result.get("meta"), "count": len(records),
+            "types": [row.get("type") for row in records], "address_records": [
+                {"id": row.get("id"), "type": row.get("type"), "fqdn": row.get("fqdn"), "value": row.get("data", {}).get("value")}
+                for row in records if row.get("type") in {"A", "AAAA", "CNAME"}]}), flush=True)
         if result.get("meta", {}).get("total") != 1 or len(records) != 1:
             raise prepare.ProbeError("adoption_dns_inventory_changed")
         row = records[0]
