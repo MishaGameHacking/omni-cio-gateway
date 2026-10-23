@@ -13,6 +13,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EditorInputRestorationTest {
+    @Test fun aVisibleNativeKeyboardSurvivesAStaleComposeSnapshotAndTheNextRecreation() = runBlocking {
+        // Observed runtime sequence: native IME was visible while Compose still reported false.
+        val ime = recreateFromSavedObservation(composeVisible = false, nativeVisible = true)
+        assertEquals(listOf(true), ime.explicitRequests)
+        assertTrue(ime.visible)
+    }
+
+    @Test fun nativeDismissalSurvivesAStaleVisibleComposeSnapshotAndTheNextRecreation() = runBlocking {
+        val ime = recreateFromSavedObservation(composeVisible = true, nativeVisible = false)
+        assertEquals(listOf(false), ime.explicitRequests)
+        assertEquals(0, ime.showRequests)
+        assertFalse(ime.visible)
+    }
+
+    @Test fun missingNativeInsetsRetainTheComposeObservationForTheNextRecreation() = runBlocking {
+        for (composeVisible in listOf(false, true)) {
+            val ime = recreateFromSavedObservation(composeVisible, nativeVisible = null)
+            assertEquals(listOf(composeVisible), ime.explicitRequests)
+            assertEquals(composeVisible, ime.visible)
+            if (!composeVisible) assertEquals(0, ime.showRequests)
+        }
+    }
+
     @Test(timeout = 5000) fun hiddenIntentPreventsEvenTheFirstQueuedShow() = runBlocking {
         val ime = QueuedIme()
         var windowReady = false
@@ -215,6 +238,23 @@ class EditorInputRestorationTest {
         }
         assertEquals(1, cleanups)
         assertTrue(ime.explicitRequests.isEmpty())
+    }
+
+    private suspend fun recreateFromSavedObservation(composeVisible: Boolean, nativeVisible: Boolean?): QueuedIme {
+        val savedKeyboardVisible = editorImeVisibilityForRestore(composeVisible, nativeVisible)
+        val ime = QueuedIme()
+        val restored = restoreEditorInput(
+            showKeyboard = savedKeyboardVisible,
+            readOnly = false,
+            requestFocus = ime::requestFocus,
+            awaitFocus = { ime.flushFrame(); yield() },
+            awaitWindowReady = { ime.flushFrame(); yield() },
+            awaitFrame = { ime.flushFrame(); yield() },
+            input = EditorInputCommands(setKeyboardVisible = ime::setKeyboardVisible),
+        )
+        ime.flushFrame()
+        assertTrue(restored)
+        return ime
     }
 
     private suspend fun assertCancelledRestore(visible: Boolean, cancelAt: String) = coroutineScope {

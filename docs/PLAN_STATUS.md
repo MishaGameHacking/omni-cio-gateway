@@ -1,5 +1,62 @@
 # Выполнение главного плана Analyst AI
 
+## Сохранение native-видимости IME без запаздывающего снимка — 23.10.2026
+
+Область F22/F23, продолжение app `17605e2d0d83bc6ab5e69342ca50da7e8b125dac`.
+Родитель имеет собственные [Backend CI 39909976410](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39909976410)
+1492 tests / 1409 subtests PASS (21.16s) и [полный Sonar 39909969954](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39909969954)
+на check120270915745: 0 OPEN/CONFIRMED всех типов, 0 новых, unique:0, complete:true.
+Это подтверждает устранение замечания сложности стратегии. Полный Android
+runtime для этого родителя ещё не подтверждён.
+
+### Неверная запись, подтверждённая нативным журналом
+
+В успешном восстановлении goal из runtime кандидата `8fedd5fe` editor7 при
+elapsed391943 уже имел rootImeVisible=true, focus/windowFocus=true и RESUMED,
+но Compose imeVisible=false. После request-show/restore-finished наблюдатель
+записал restoreKeyboard=false; при elapsed392012 повторил false, а только
+elapsed392122 вернул true. Интервал неправильного saveable состояния — 179 ms.
+Аналогичный переход editor4 длился 69 ms. Второй поворот внутри этого интервала
+в журнале не наблюдался, поэтому его последствие проверяется детерминированной
+регрессией сохранения состояния и следующего restore, а не объявляется
+воспроизведённым на эмуляторе.
+
+При сохранении false следующий owner не создаёт visible handoff и передаёт
+showKeyboard=false в restoreEditorInput, который явно ставит hide в очередь
+сразу после фокуса. Это отдельная ошибка источника сохранённой видимости.
+Она не доказывает и не исправляет случай, когда после best-effort show оба
+источника остаются false.
+
+### Узкое исправление источника наблюдения
+
+Текущий view.rootWindowInsets имеет приоритет над снимком Compose, когда native
+insets доступны. Native false также имеет приоритет над запоздавшим Compose true;
+при отсутствии native insets остаётся прежний Compose fallback. Условия
+receiveFocusEvents, фокуса поля/окна и RESUMED не изменены; нет новых запросов
+фокуса, retry, sleep, timeout или вмешательства в скрытую/read-only реставрацию.
+Регрессии проверяют сохранённое значение через настоящий restoreEditorInput.
+
+Kotlin 2.4.10 / Temurin 17.0.21+9 / JUnit 4.13.2: точные чистые production-
+декларации и исходные тестовые файлы скомпилированы; **38 tests PASS**
+(20 handoff, 11 restoration, 4 plan, 3 strategy). До смены приоритета источника
+тот же набор компилировался и падал ровно в двух новых случаях mismatch;
+оставшиеся 36, включая null fallback, проходили. Между red/green изменился
+только production EditorInputRestoration.kt, тестовые хеши совпадают, исходники
+не менялись во время зелёного запуска. Независимое ревью и diff check PASS.
+Android/Compose-обвязка, реальный Bundle и расписание WindowManager этим отдельным
+JVM-запуском не проверены. Наборы backend/Python CI не перезапускались локально:
+их исходные деревья не менялись после подтверждённых parent-gates.
+
+Сервер `986cea32285dee524ba1dc92282dd79118dddf95` имеет собственные
+[Backend CI 39910469778](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39910469778)
+1540 tests / 1481 subtests PASS (19.34s) и [полный Sonar 39910465155](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39910465155)
+на check120272556279: 0 OPEN/CONFIRMED всех типов, 0 новых, unique:0, complete:true.
+Эти результаты относятся к его родителю app176 и не заменяют новую синхронизацию.
+
+Новый SHA требует собственных удалённых проверок и обеих полных runtime-матриц
+API37 / измеренных 16384 и 4096. APK, физический телефон, live Timeweb/TLS/Telegram
+пока не объявляются проверенными. Текущие результаты фиксируются в PR #880/#887.
+
 ## Числовые границы, загрузка редакторов и передача IME — 23.10.2026
 
 Область F01/F07/F22/F23, продолжение PR #880 от
