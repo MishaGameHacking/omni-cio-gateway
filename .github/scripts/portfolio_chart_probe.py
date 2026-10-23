@@ -121,9 +121,9 @@ def _drag_range(case):
     return params
 
 
-def _select_history_bar(case, index, expected):
+def _select_history_bar(case, index, expected, *, direction="end"):
     p = case.probe
-    chart = p.resource_tap_target("history-bars", AREA, direction="start")
+    chart = p.resource_tap_target("history-bars", AREA, direction=direction)
     left, top, right, bottom = node_bounds(chart)
     p.command("shell", "input", "tap", str(left + int((right - left) * (index + .5) / 14)), str((top + bottom) // 2))
     selected_day = case.history_start + timedelta(days=index)
@@ -162,7 +162,7 @@ def exercise_history(case):
                                          "native_selected": selected_row.get("selected"), "exact_close": close.isoformat(),
                                          "visible_label": closing_label, "earlier_link_replaced_only_by_user_selection": True}
     p.tap("Подробнее о графике", AREA, direction="start")
-    _select_history_bar(case, 4, "0,00 ₽")
+    _select_history_bar(case, 4, "0,00 ₽", direction="start")
     _select_history_bar(case, 5, "-25,50 ₽")
     _select_history_bar(case, 7, "Нет наблюдений")
     p.reveal("За этот интервал снимков нет. Это не нулевой баланс.", AREA)

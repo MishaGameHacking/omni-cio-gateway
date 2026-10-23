@@ -11,6 +11,9 @@ def _calendar(case):
     zone = p.command("shell", "getprop", "persist.sys.timezone").strip()
     if zone != "Etc/UTC":
         raise AssertionError("Calendar acceptance requires the emulator's actual Etc/UTC timezone")
+    # The tabs are below the intro inside the page's vertical list.
+    p.reveal_resource("profile-tabs", AREA, direction="end",
+                      for_capture=True, minimum_size=(48, 48))
     p.tap("Сессии", "profile-tabs")
     case.call("/workspace/markets/calendar", {})
     p.reveal("SYNTHETIC-EXCHANGE", AREA)
@@ -45,6 +48,8 @@ def exercise_markets(case):
     p = case.probe
     p.find("Рынки и география")
     _calendar(case)
+    p.reveal_resource("profile-tabs", AREA, direction="start",
+                      for_capture=True, minimum_size=(48, 48))
     p.tap("География", "profile-tabs", direction="start")
     case.call("/workspace", {"currency": "RUB"})
     p.reveal("Ось: страна основного риска", AREA)

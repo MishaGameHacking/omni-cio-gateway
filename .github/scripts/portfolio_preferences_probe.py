@@ -111,7 +111,7 @@ def exercise_appearance(case):
     _expect_preferences(case, APPLIED)
     _preview(case)
     _rotate_preview(case)
-    p.tap("Отменить", AREA, direction="start")
+    p.tap("Отменить", AREA, direction="end")
     _expect_preferences(case, APPLIED)
     _reset(case)
     return ["appearance-explicit-apply", "same-user-process-restart-persistence",
