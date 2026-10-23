@@ -205,8 +205,15 @@ with tempfile.TemporaryDirectory(prefix="analyst-development-") as temp:
     print(json.dumps({"development_host":"timeweb-9408159","backend_tests":output[-6000:],"live_authentication_verified":False}),flush=True)
 run([python,"-m","pip","check"],timeout=60)
 '''
-    output = prepare.remote(command, "python3 -c " + shlex.quote(script), timeout=1200)
-    print("OWNER_TIMEWEB_DEVELOPMENT=" + output.decode().strip(), flush=True)
+    result = subprocess.run(command + ["python3 -c " + shlex.quote(script)], capture_output=True, timeout=1200)
+    # This command uses only synthetic test configuration. Preserve its bounded
+    # JSON diagnostics instead of hiding pytest collection failures behind SSH.
+    for line in result.stdout.decode(errors="replace").splitlines():
+        if line.startswith("{"):
+            report = json.loads(line)
+            print("OWNER_TIMEWEB_DEVELOPMENT=" + json.dumps(report), flush=True)
+    if result.returncode:
+        raise prepare.ProbeError("timeweb_development_failed_" + str(result.returncode))
 
 
 def stage_server(token, server, *, verify_only=False, development=False):
