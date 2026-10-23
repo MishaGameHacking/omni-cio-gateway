@@ -70,7 +70,12 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     LaunchedEffect(userId, configText, loaded, draftRevision) {
         if (loaded) draftSaved = withContext(Dispatchers.IO) { storage.saveJson(userId, "strategy_editor", JSONObject().put("config", JSONObject(configText))) }
     }
-    val edit: (JSONObject) -> Unit = { if (!previewAction.busy && !confirmAction.busy) { draftSaved = false; configText = it.toString(); preview = null; savedMessage = null } }
+    val editor = StrategyEditorAvailability(hasEditorState, previewAction.busy || confirmAction.busy)
+    val edit: (JSONObject) -> Unit = { next ->
+        StrategyEditorAvailability(hasEditorState, previewAction.busy || confirmAction.busy).editIfAllowed {
+            draftSaved = false; configText = next.toString(); preview = null; savedMessage = null
+        }
+    }
     val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
     SpatialBackHandler(onBack = leave)
     WorkspaceDetailPage("Моя стратегия", "Версии правил и влияние на текущий портфель", leave, SpectrumSymbol.Goal,
@@ -82,11 +87,17 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item { WorkspaceRequestState(resource) }
-                item { StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ } }
+                item {
+                    if (hasEditorState) StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ }
+                    else SpectrumCard {
+                        Text("Подготавливаем редактор стратегии", style = MaterialTheme.typography.titleLarge)
+                        Text("Ждём действующие правила и сохранённый черновик. После загрузки поля станут доступны.")
+                    }
+                }
                 when (tab) {
-                    0 -> item { StrategyGoalEditor(config, edit) }
-                    1 -> item { StrategyReserveEditor(config, edit) }
-                    2 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, edit) } }
+                    0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
+                    1 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
+                    2 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
                     else -> resource.data?.records("history").orEmpty().forEach { old -> item {
                         SpectrumCard {
                             Text("Версия " + old.optInt("version"), style = MaterialTheme.typography.titleMedium)
@@ -94,9 +105,9 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                             val previous = old.optJSONObject("config") ?: JSONObject()
                             StrategyDifference(active?.optJSONObject("config"), previous)
                             SpectrumSecondaryButton("Проверить возврат к этой версии", {
-                                previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
+                                if (loaded && editor.canEdit) previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
                                     .put("rollback_to_version", old.optInt("version")))
-                            }, Modifier.fillMaxWidth(), !previewAction.busy && !confirmAction.busy)
+                            }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
                         }
                     } }
                 }
@@ -129,6 +140,15 @@ private fun defaultStrategy(): JSONObject = JSONObject().put("goal", "preservati
     .put("limits", JSONObject().apply { limitTitles.keys.forEach { put(it, "100") } })
     .put("risk_level", "moderate").put("allowed_markets", JSONArray().put("MOEX"))
 
+/** A restored draft remains editable while its server state reloads. */
+internal data class StrategyEditorAvailability(val hasEditorState: Boolean, val operationBusy: Boolean) {
+    val canEdit: Boolean get() = hasEditorState && !operationBusy
+
+    fun editIfAllowed(update: () -> Unit) {
+        if (canEdit) update()
+    }
+}
+
 internal fun validStrategy(config: JSONObject): Boolean {
     val horizon = config.opt("horizon_months") as? Int ?: return false
     val amount = config.optJSONObject("reserve")?.optString("amount")?.toBigDecimalOrNull()
@@ -140,32 +160,33 @@ internal fun validStrategy(config: JSONObject): Boolean {
 }
 
 @Composable
-private fun StrategyGoalEditor(config: JSONObject, edit: (JSONObject) -> Unit) {
+private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
     val choices = listOf("preservation", "income", "growth")
     SpectrumCard {
         WorkspaceChoices("Цель", listOf("Сохранение капитала", "Регулярные выплаты", "Рост капитала"),
-            choices.indexOf(config.text("goal")).coerceAtLeast(0)) { edit(JSONObject(config.toString()).put("goal", choices[it])) }
+            choices.indexOf(config.text("goal")).coerceAtLeast(0), enabled) { edit(JSONObject(config.toString()).put("goal", choices[it])) }
         val riskLevels = listOf("conservative", "moderate", "aggressive")
         WorkspaceChoices("Отношение к риску", listOf("Консервативное", "Умеренное", "Высокое"),
-            riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0)) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
+            riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0), enabled) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
         WorkspaceTextInput(config.opt("horizon_months")?.toString().orEmpty(),
             { raw ->
                 val draft = raw.take(4)
                 edit(JSONObject(config.toString()).put("horizon_months", draft.toIntOrNull() ?: draft))
             },
-            "Горизонт, месяцев", Modifier.fillMaxWidth().testTag("strategy-horizon"), keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
+            "Горизонт, месяцев", Modifier.fillMaxWidth().testTag("strategy-horizon"), enabled = enabled,
+            keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
         Text("Выбор цели не добавляет ожидаемую прибыль к капиталу. Доступность инструмента проверяется у брокера.")
     }
 }
 
 @Composable
-private fun StrategyReserveEditor(config: JSONObject, edit: (JSONObject) -> Unit) {
+private fun StrategyReserveEditor(config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
     val reserve = config.getJSONObject("reserve")
     SpectrumCard {
         WorkspaceTextInput(reserve.text("amount", "0"), { raw ->
             edit(JSONObject(config.toString()).put("reserve", JSONObject(reserve.toString()).put("amount", raw.replace(',', '.').take(18))))
-        }, "Неприкосновенный резерв", Modifier.fillMaxWidth(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        WorkspaceChoices("Валюта резерва", listOf("RUB", "USD", "EUR"), listOf("RUB", "USD", "EUR").indexOf(reserve.text("currency")).coerceAtLeast(0)) {
+        }, "Неприкосновенный резерв", Modifier.fillMaxWidth(), enabled = enabled, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        WorkspaceChoices("Валюта резерва", listOf("RUB", "USD", "EUR"), listOf("RUB", "USD", "EUR").indexOf(reserve.text("currency")).coerceAtLeast(0), enabled) {
             edit(JSONObject(config.toString()).put("reserve", JSONObject(reserve.toString()).put("currency", listOf("RUB", "USD", "EUR")[it])))
         }
         Text("Сервер проверит достаточность оценки в той же валюте. Значение 0 означает, что резерв в этих правилах не задан.")
@@ -173,12 +194,12 @@ private fun StrategyReserveEditor(config: JSONObject, edit: (JSONObject) -> Unit
 }
 
 @Composable
-private fun StrategyLimitEditor(title: String, key: String, config: JSONObject, edit: (JSONObject) -> Unit) {
+private fun StrategyLimitEditor(title: String, key: String, config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
     val limits = config.getJSONObject("limits")
     SpectrumCard {
         WorkspaceTextInput(limits.text(key, "100"), { raw ->
             edit(JSONObject(config.toString()).put("limits", JSONObject(limits.toString()).put(key, raw.replace(',', '.').take(8))))
-        }, title + ", %", Modifier.fillMaxWidth(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        }, title + ", %", Modifier.fillMaxWidth(), enabled = enabled, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
         Text("Ограничение применяется к подтверждённой доле. 100% не ограничивает эту долю; неизвестные связи не считаются нулём.", style = MaterialTheme.typography.bodySmall)
     }
 }

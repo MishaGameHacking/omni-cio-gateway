@@ -559,6 +559,13 @@ def _scenario_assumptions(shocks: list[Shock]) -> tuple[list, set]:
     return assumptions, selectors
 
 
+def _scenario_money(value: Decimal, currency: str) -> dict:
+    result = money(value, currency)
+    if result is None:
+        raise HTTPException(422, "scenario_result_out_of_range")
+    return result
+
+
 def _scenario_position(item: dict, assumptions: list, currency: str) -> tuple:
     uid = item["instrument_uid"]
     value = decimal(item.get("value"))
@@ -573,15 +580,16 @@ def _scenario_position(item: dict, assumptions: list, currency: str) -> tuple:
     if len(matches) > 1:
         raise HTTPException(422, "scenario_overlapping_shocks")
     if unknown_membership:
-        return None, matched, True
+        return None, matched, True, ZERO
     if not matches:
-        return None, matched, False
+        return None, matched, False, ZERO
     if value is None or item["value"]["currency"] != currency or item.get("instrument_type") in {"futures", "option"}:
-        return None, matched, True
+        return None, matched, True, ZERO
     shock = decimal(matches[0]["percent"])
+    change = value * shock / 100
     result = {"instrument_uid": uid, "account_id": item["account_id"], "before": money(value, currency),
-              "shock_percent": text_number(shock), "estimated_change": money(value * shock / 100, currency)}
-    return result, matched, False
+              "shock_percent": text_number(shock), "estimated_change": _scenario_money(change, currency)}
+    return result, matched, False, change
 
 
 @financial_context
@@ -592,12 +600,13 @@ def _scenario(payload: Scenario, user: Any, snapshot: dict | None = None) -> dic
     assumptions, selectors = _scenario_assumptions(payload.shocks)
     output, unknown, total_change, matched_selectors = [], [], ZERO, set()
     for item in positions(snapshot):
-        result, matched, uncovered = _scenario_position(item, assumptions, payload.currency)
+        result, matched, uncovered, change = _scenario_position(item, assumptions, payload.currency)
         matched_selectors.update(matched)
         if uncovered:
             unknown.append(item["instrument_uid"])
         if result is not None:
-            total_change += decimal(result["estimated_change"])
+            # Calculated outputs can be more precise than accepted input strings.
+            total_change += change
             output.append(result)
     if selectors - matched_selectors:
         raise HTTPException(422, "scenario_selector_not_in_verified_positions")
@@ -607,8 +616,8 @@ def _scenario(payload: Scenario, user: Any, snapshot: dict | None = None) -> dic
         incomplete.append("capital_valuation_unavailable")
     complete = not unknown and not incomplete
     return {"snapshot_id": snapshot["snapshot_id"], "as_of": snapshot["as_of"], "assumptions": assumptions,
-            "baseline": money(baseline, payload.currency), "estimated_change": money(total_change, payload.currency),
-            "estimated_after": money(baseline + total_change, payload.currency) if baseline is not None and complete else None,
+            "baseline": money(baseline, payload.currency), "estimated_change": _scenario_money(total_change, payload.currency),
+            "estimated_after": _scenario_money(baseline + total_change, payload.currency) if baseline is not None and complete else None,
             "covered_positions": len(output), "total_positions": len(positions(snapshot)), "uncovered_instrument_uids": sorted(set(unknown)),
             "positions": output, "is_forecast": False, "basis": "user_shocks_linear_valuation_no_fx_or_derivative_model",
             "complete": complete, "incomplete_reasons": incomplete, "estimated_change_basis": "covered_positions_only"}

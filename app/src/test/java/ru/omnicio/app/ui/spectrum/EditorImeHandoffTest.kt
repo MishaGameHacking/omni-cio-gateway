@@ -1,11 +1,225 @@
 package ru.omnicio.app.ui.spectrum
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EditorImeHandoffTest {
+    @Test fun hostRemainsIneligibleThroughTargetFocusAndTheVisibleShowCommand() = runBlocking {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val dialog = FakeWindow(SECURE)
+        val host = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        host.acquire() // The parent effect runs before Dialog.show().
+        var ready = false
+        val editor = fixture.handoff(dialog, host) { ready }
+        editor.acquire()
+        assertEquals(SECURE or ALT, activity.flags)
+        assertEquals(SECURE or ALT, dialog.flags)
+        var showCommands = 0
+
+        val restored = restoreEditorInput(
+            showKeyboard = true, readOnly = false,
+            requestFocus = { ready = true; true }, awaitFocus = {},
+            awaitWindowReady = {
+                assertEquals(SECURE, dialog.flags)
+                assertEquals(SECURE or ALT, activity.flags)
+                host.windowReady()
+                assertEquals(SECURE or ALT, activity.flags)
+            },
+            awaitFrame = {},
+            input = EditorInputCommands(
+                setKeyboardVisible = { visible ->
+                    assertTrue(visible)
+                    assertEquals(SECURE or ALT, activity.flags)
+                    showCommands++
+                },
+                prepareInput = editor::handoff, releaseInput = editor::release,
+            ),
+        )
+        assertTrue(restored)
+        assertEquals(1, showCommands)
+        assertEquals(SECURE, activity.flags)
+        assertEquals(SECURE, dialog.flags)
+        host.release()
+        editor.release()
+        assertEquals(4, fixture.writes.size)
+    }
+
+    @Test fun alreadyPreparedChildRegistersBeforeTheParentAcquiresItsLease() {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val dialog = FakeWindow(0)
+        val host = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        val editor = fixture.handoff(dialog, host) { true }
+        editor.acquire()
+        host.acquire()
+        assertEquals(SECURE or ALT, activity.flags)
+        assertEquals(0, dialog.flags)
+        assertTrue(editor.handoff())
+        host.windowReady()
+        assertEquals(SECURE or ALT, activity.flags)
+
+        editor.release()
+        assertEquals(SECURE, activity.flags)
+        host.acquire()
+        editor.acquire()
+        assertEquals(SECURE, activity.flags)
+        assertEquals(2, fixture.writes.size)
+    }
+
+    @Test fun aDialogWithoutARestoredEditorReleasesItsHostOnlyAfterWindowFocus() {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val host = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        host.acquire()
+        assertEquals(SECURE or ALT, activity.flags)
+        host.windowReady()
+        assertEquals(SECURE, activity.flags)
+        host.release()
+        host.acquire()
+        assertEquals(2, fixture.writes.size)
+    }
+
+    @Test fun lateRestoredEditorReacquiresHostBeforeMakingItsWindowIneligible() {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val dialog = FakeWindow(0)
+        val host = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        host.acquire()
+        host.windowReady() // The portfolio is still loading, so the dialog has no editor yet.
+        assertEquals(SECURE, activity.flags)
+        var ready = false
+        val editor = EditorImeHandoff(
+            acquireLease = {
+                assertEquals(SECURE or ALT, activity.flags)
+                fixture.leases.acquire(dialog)
+            },
+            editorReady = { ready },
+            releasePrepared = { fixture.leases.releasePrepared(dialog) },
+            acquireHostLease = host::holdForEditor,
+        )
+
+        editor.acquire() // Accounts arrived and the saved quantity editor was composed.
+        assertEquals(ALT, dialog.flags)
+        assertEquals(SECURE or ALT, activity.flags)
+        ready = true
+        assertTrue(editor.handoff())
+        assertEquals(0, dialog.flags)
+        assertEquals(SECURE or ALT, activity.flags)
+        editor.release()
+        assertEquals(SECURE, activity.flags)
+        host.release()
+        assertEquals(6, fixture.writes.size)
+    }
+
+    @Test fun completedEditorCleanupCannotReleaseALaterHostHoldOrRearmADisposedDialog() {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val host = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        host.acquire()
+        host.windowReady()
+        val firstEditor = host.holdForEditor()
+        assertEquals(SECURE or ALT, activity.flags)
+        firstEditor()
+        assertEquals(SECURE, activity.flags)
+        val laterEditor = host.holdForEditor()
+        firstEditor()
+        assertEquals(SECURE or ALT, activity.flags)
+
+        host.release()
+        laterEditor()
+        host.holdForEditor()
+        host.acquire()
+        host.windowReady()
+        assertEquals(SECURE, activity.flags)
+        assertEquals(6, fixture.writes.size)
+    }
+
+    @Test fun cancellationBeforeTargetWindowFocusCleansBothStagesWhenTheDialogLeaves() = runBlocking {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val dialog = FakeWindow(0)
+        val host = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        host.acquire()
+        var ready = false
+        val editor = fixture.handoff(dialog, host) { ready }
+        editor.acquire()
+        val result = runCatching {
+            restoreEditorInput(
+                showKeyboard = true, readOnly = false,
+                requestFocus = { ready = true; true }, awaitFocus = {},
+                awaitWindowReady = { throw CancellationException("Dialog left before gaining focus") },
+                awaitFrame = {},
+                input = EditorInputCommands(
+                    setKeyboardVisible = { throw AssertionError("A canceled window cannot request IME") },
+                    prepareInput = editor::handoff, releaseInput = editor::release,
+                ),
+            )
+        }
+        assertTrue(result.exceptionOrNull() is CancellationException)
+        assertEquals(0, dialog.flags)
+        assertEquals(SECURE or ALT, activity.flags)
+        host.release()
+        assertEquals(SECURE, activity.flags)
+        editor.release()
+        host.windowReady()
+        assertEquals(4, fixture.writes.size)
+    }
+
+    @Test fun overlappingDialogsAndEditorsKeepTheirHostUntilEveryShowOrCleanupFinishes() {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val first = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        val second = DialogImeHostHandoff { fixture.leases.acquire(activity, releaseWhenPrepared = false) }
+        first.acquire()
+        second.acquire()
+        val firstEditor = first.holdForEditor()
+        val secondEditor = first.holdForEditor()
+        first.windowReady()
+        second.windowReady()
+        firstEditor()
+        firstEditor()
+        second.release()
+        assertEquals(SECURE or ALT, activity.flags)
+        secondEditor()
+        assertEquals(SECURE, activity.flags)
+        first.release()
+        assertEquals(2, fixture.writes.size)
+    }
+
+    @Test fun anUnderlyingPreparedEditorCannotReleaseTheModalHostGuardOrANewerEditorLease() {
+        val fixture = Fixture()
+        val activity = FakeWindow(SECURE)
+        val host = fixture.leases.acquire(activity, releaseWhenPrepared = false)
+        val oldEditor = fixture.leases.acquire(activity)
+        fixture.leases.releasePrepared(activity)
+        assertEquals(SECURE or ALT, activity.flags)
+        val currentEditor = fixture.leases.acquire(activity)
+        oldEditor()
+        host()
+        assertEquals(SECURE or ALT, activity.flags)
+        currentEditor()
+        assertEquals(SECURE, activity.flags)
+        assertEquals(2, fixture.writes.size)
+    }
+
+    @Test fun protectedHostCleanupPreservesOriginalAltAndUnrelatedFlagChanges() {
+        for (initialAlt in listOf(0, ALT)) {
+            val fixture = Fixture()
+            val window = FakeWindow(SECURE or initialAlt)
+            val host = DialogImeHostHandoff { fixture.leases.acquire(window, releaseWhenPrepared = false) }
+            host.acquire()
+            window.flags = (window.flags and SECURE.inv()) or KEEP_SCREEN_ON
+            fixture.leases.releasePrepared(window)
+            host.release()
+            assertEquals(KEEP_SCREEN_ON or initialAlt, window.flags)
+        }
+    }
+
     @Test fun temporarilyDisabledEditorRetainsOneHoldUntilItsSessionIsReady() {
         val fixture = Fixture()
         val window = FakeWindow(SECURE)
@@ -190,6 +404,13 @@ class EditorImeHandoffTest {
             acquireLease = { leases.acquire(window) },
             editorReady = ready,
             releasePrepared = { leases.releasePrepared(window) },
+        )
+
+        fun handoff(window: FakeWindow, host: DialogImeHostHandoff, ready: () -> Boolean) = EditorImeHandoff(
+            acquireLease = { leases.acquire(window) },
+            editorReady = ready,
+            releasePrepared = { leases.releasePrepared(window) },
+            acquireHostLease = host::holdForEditor,
         )
     }
 

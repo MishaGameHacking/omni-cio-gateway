@@ -80,11 +80,14 @@ fun workspaceForeground(): Boolean {
 }
 
 class WorkspaceAction(
-    val busy: Boolean,
+    private val readBusy: () -> Boolean,
     val error: String?,
     val ambiguous: Boolean,
     private val execute: (String, JSONObject?, String, Boolean, Boolean) -> Unit,
 ) {
+    // A queued callback may still hold the wrapper from before perform().
+    val busy: Boolean get() = readBusy()
+
     fun perform(path: String, body: JSONObject? = null, method: String = "POST", job: Boolean = false,
         userInitiated: Boolean = true) = execute(path, body, method, job, userInitiated)
 }
@@ -135,7 +138,7 @@ fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
     var error by remember(session.userId) { mutableStateOf<String?>(null) }
     var ambiguous by remember(session.userId) { mutableStateOf(false) }
     val invalidate = LocalWorkspaceInvalidate.current
-    return WorkspaceAction(busy, error, ambiguous) { path, body, method, tracked, userInitiated ->
+    return WorkspaceAction({ busy }, error, ambiguous) { path, body, method, tracked, userInitiated ->
         if (!busy && session.token.isNotBlank()) {
             busy = true; error = null; ambiguous = false
             scope.launch {
