@@ -27,7 +27,7 @@ PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7lcv6ujGptd74KPdQGz3jCsZoV51
 HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPsWdiuF70XIWeWMiDBFvJF51PUVKnggvLcKk8JUOHSf"
 
 
-def request(token, method, path, data=None):
+def request(token, method, path, data=None, *, api_version=1):
     allowed = method == "GET" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}", f"/projects/{prepare.PROJECT}/resources"}
     allowed |= method == "POST" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}/ssh-keys"}
     allowed |= method == "POST" and re.fullmatch(r"/floating-ips/[a-f0-9-]{36}/bind", path) is not None
@@ -36,7 +36,9 @@ def request(token, method, path, data=None):
     allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/" + str(SERVER_ID) + r"/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
         raise prepare.ProbeError("unapproved_access_endpoint")
-    req = urllib.request.Request("https://api.timeweb.cloud/api/v1" + path, method=method,
+    if api_version != 1 and not (api_version == 2 and method == "PATCH" and path == "/domains/" + prepare.HOST + "/dns-records/95034169"):
+        raise prepare.ProbeError("unapproved_api_version")
+    req = urllib.request.Request("https://api.timeweb.cloud/api/v" + str(api_version) + path, method=method,
         data=None if data is None else json.dumps(data).encode(),
         headers={"Authorization": "Bearer " + token, "Accept": "application/json", "Content-Type": "application/json"})
     try:
@@ -44,7 +46,7 @@ def request(token, method, path, data=None):
         with opener.open(req, timeout=30) as response:
             raw = response.read(2 * 1024 * 1024 + 1)
     except urllib.error.HTTPError as error:
-        print("OWNER_API_FAILURE=" + json.dumps({"method": method, "path": path, "status": error.code,
+        print("OWNER_API_FAILURE=" + json.dumps({"method": method, "version": api_version, "path": path, "status": error.code,
             **prepare.cloud.error_details(error.read(2 * 1024 * 1024 + 1))}), flush=True)
         raise prepare.ProbeError("access_http_" + str(error.code)) from None
     except OSError:

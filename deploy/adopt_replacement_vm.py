@@ -69,7 +69,7 @@ def move_dns(token):
     if current not in {OLD_IP, NEW_IP}:
         raise prepare.ProbeError("adoption_dns_address_changed")
     if current == OLD_IP:
-        access.request(token, "PATCH", path + "/95034169", {"type": "A", "subdomain": prepare.HOST, "value": NEW_IP, "ttl": 300})
+        access.request(token, "PATCH", path + "/95034169", {"type": "A", "value": NEW_IP, "ttl": 300}, api_version=2)
     updated, remaining = exact_record()
     if updated != NEW_IP or remaining != preserved:
         raise prepare.ProbeError("adoption_dns_update_not_verified")
