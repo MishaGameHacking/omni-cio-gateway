@@ -140,12 +140,17 @@ print("unused_fresh_install_target_verified")
     print("OWNER_OLD_VM_RETIRED=" + json.dumps({"id": OLD_ID, "ip_id": OLD_IP_ID}), flush=True)
 
 
-def run():
+def run(*, resume_staged=False):
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     select_target(True)
     verified_target(token)
     move_dns(token)
-    access.run("stage")
+    if not resume_staged:
+        access.run("stage")
+    else:
+        # Run 39989479609 already staged these exact sources and private config.
+        # Verify every file and permission below; never overwrite that state.
+        print("OWNER_RESUME_STAGED=verify_existing_target_without_overwrite", flush=True)
     for _ in range(60):
         try:
             addresses = {row[4][0] for row in socket.getaddrinfo(prepare.HOST,443,type=socket.SOCK_STREAM)}
@@ -165,7 +170,9 @@ def run():
 
 if __name__ == "__main__":
     try:
-        run()
+        if sys.argv[1:] not in ([], ["--resume-staged"]):
+            raise prepare.ProbeError("invalid_adoption_arguments")
+        run(resume_staged=sys.argv[1:] == ["--resume-staged"])
     except (prepare.ProbeError,OSError,ValueError,KeyError,subprocess.SubprocessError) as error:
         print("OWNER_ADOPTION_ERROR=" + (str(error) if isinstance(error,prepare.ProbeError) else type(error).__name__), flush=True)
         sys.exit(1)

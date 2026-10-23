@@ -24,4 +24,4 @@ jobs:
           TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
           TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/adopt_replacement_vm.py
+        run: python3 deploy/adopt_replacement_vm.py --resume-staged
