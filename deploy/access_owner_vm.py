@@ -21,6 +21,7 @@ import uuid
 import prepare_owner_vm as prepare
 
 SERVER_ID = 9407735
+EXPECTED_IP = "201.34.156.98"
 KEY_NAME = "analyst-ai-install-20261023"
 PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7lcv6ujGptd74KPdQGz3jCsZoV51WLNePFGRyrfit7 analyst-ai-install-20261023"
 HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPsWdiuF70XIWeWMiDBFvJF51PUVKnggvLcKk8JUOHSf"
@@ -31,7 +32,8 @@ def request(token, method, path, data=None):
     allowed |= method == "POST" and path in {"/ssh-keys", "/floating-ips", f"/servers/{SERVER_ID}/ssh-keys"}
     allowed |= method == "POST" and re.fullmatch(r"/floating-ips/[a-f0-9-]{36}/bind", path) is not None
     allowed |= method in {"GET", "POST"} and path == "/domains/" + prepare.HOST + "/dns-records"
-    allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/9407735/)?ssh-keys/[1-9]\d*", path) is not None
+    allowed |= method == "PATCH" and path == "/domains/" + prepare.HOST + "/dns-records/95034169"
+    allowed |= method == "DELETE" and re.fullmatch(r"/(?:servers/" + str(SERVER_ID) + r"/)?ssh-keys/[1-9]\d*", path) is not None
     if not allowed:
         raise prepare.ProbeError("unapproved_access_endpoint")
     req = urllib.request.Request("https://api.timeweb.cloud/api/v1" + path, method=method,
@@ -177,7 +179,7 @@ print(json.dumps(report))
 
 def stage_server(token, server, *, verify_only=False):
     address = prepare.cloud.public_ipv4(server)
-    if address != "201.34.156.98":
+    if address != EXPECTED_IP:
         raise prepare.ProbeError("server_address_changed")
     if verify_only:
         result = {"host": "oauth.telegram.org"}
@@ -248,8 +250,8 @@ def run(mode):
         "ip": prepare.cloud.public_ipv4(server), "location": server.get("location"),
         "cpu": server.get("cpu"), "ram": server.get("ram"), "availability_zone": server.get("availability_zone"),
         "network_types": [n.get("type") for n in server.get("networks", [])]}), flush=True)
-    if mode == "verify":
-        stage_server(token, server, verify_only=True)
+    if mode in {"stage", "verify"}:
+        stage_server(token, server, verify_only=mode == "verify")
         return
     if mode == "connect":
         connect_ipv4(token, server)

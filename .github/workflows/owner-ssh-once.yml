@@ -2,7 +2,7 @@ name: Temporary access to the new owner VM
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, .github/workflows/owner-ssh-once.yml]
+    paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
   contents: read
 concurrency:
@@ -18,8 +18,10 @@ jobs:
           persist-credentials: false
       - name: Fetch the exact checked server sources
         run: git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
-      - name: Verify the minimum Netherlands replacement with the corrected public-key probe
+      - name: Adopt the verified replacement and remove this task's unused former VM
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/replace_unreachable_vm.py
+        run: python3 deploy/adopt_replacement_vm.py
