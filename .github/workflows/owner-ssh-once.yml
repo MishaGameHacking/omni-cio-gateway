@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-temporary-access
+  group: analyst-build-readonly-inspection
   cancel-in-progress: false
 jobs:
   access:
@@ -20,100 +20,35 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Prepare the least expensive available Russian build host
+      - name: Inspect provider status and SSH reachability without changing the server
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.error,urllib.request,uuid
+          import json,os,socket,subprocess,sys,urllib.request
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
-          import access_owner_vm as access
-          from replace_unreachable_vm import remove_ip
-          from timeweb_ci_catalog import candidate_presets
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          name="analyst-ai-build-20261023"
-          marker="Analyst AI Timeweb-only development authorized 2026-10-23"
-          inventory=p.read_resource(token,"servers")
-          assert p.summarize("servers",inventory)["complete"]
-          assert {s["id"] for s in inventory["servers"]}=={9408159},"unexpected_existing_servers_no_order"
-          offers=[o for o in candidate_presets(p.read_catalog(token,"presets")) if o.get("location","").startswith("ru-") and o["price"]<=6800 and o["id"] not in {6751,6761,6753,6763,2581,2455}]
-          offers.sort(key=lambda o:(o["price"],o["id"]))
-          assert offers
-          req=urllib.request.Request("https://api.timeweb.cloud/api/v1/presets/dedicated-servers",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-          opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
-          with opener.open(req,timeout=30) as response:
-              dedicated=p.decode_response(response.read(2*1024*1024+1))
-          rows=dedicated.get("dedicated_servers_presets",[])
-          print("TIMEWEB_DEDICATED_CATALOG="+json.dumps({"keys":list(dedicated),"offers":sorted([{k:r.get(k) for k in ("id","price","location","is_pre_installed","cpu","memory","disk")} for r in rows],key=lambda r:r.get("price") or 1000000)[:8]}),flush=True)
-          def create(body):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(2*1024*1024+1))
+          doc=get("/servers/9409007");s=doc["server"]
+          assert s["name"]=="analyst-ai-build-20261023" and s["comment"]=="Analyst AI Timeweb-only development authorized 2026-10-23"
+          report={k:s.get(k) for k in ("id","status","cpu","ram","preset_id","availability_zone","created_at")}
+          report["ip"]=p.cloud.public_ipv4(s)
+          logs=get("/servers/9409007/logs")
+          report["provider_log_schema"]={k:type(v).__name__ for k,v in logs.items()}
+          report["provider_events"]=[{k:row.get(k) for k in ("id","type","action","status","date","created_at")} for row in logs.get("server_logs",[])][-10:]
+          if report["ip"]:
               try:
-                  with opener.open(req,timeout=30) as r: return p.decode_response(r.read(2*1024*1024+1))
-              except urllib.error.HTTPError as e:
-                  doc=p.decode_response(e.read(2*1024*1024+1))
-                  code=doc.get("error_code")
-                  print("BUILD_ORDER_REFUSED="+json.dumps({"preset":body["preset_id"],"http":e.code,"code":code if isinstance(code,str) and re.fullmatch("[a-z_]{1,64}",code) else "unknown"}),flush=True)
-                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found"}:
-                      current=p.read_resource(token,"servers")
-                      assert p.summarize("servers",current)["complete"] and {s["id"] for s in current["servers"]}=={9408159},"reconcile_uncertain_creation"
-                      return None
-                  raise
-          with tempfile.TemporaryDirectory(prefix="timeweb-build-",dir=os.environ["RUNNER_TEMP"]) as folder:
-              folder=pathlib.Path(folder)
-              for part in ("client","host"):p.cloud.generate_key(folder/part)
-              client=(folder/"client.pub").read_text().strip()
-              host=(folder/"host.pub").read_text().strip()
-              config={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,
-                      "ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,"runcmd":[["systemctl","restart","ssh"]]}
-              server=None
-              for offer in offers:
-                  print("BUILD_OFFER_ATTEMPT="+json.dumps(offer),flush=True)
-                  doc=create({"name":name,"hostname":name,"comment":marker,"preset_id":offer["id"],"os_id":99,"project_id":p.PROJECT,"cloud_init":"#cloud-config\n"+json.dumps(config)+"\n"})
-                  if doc is not None:
-                      server=doc["server"]
-                      break
-              if server is None:raise p.ProbeError("no_available_russian_build_offer_within_6800")
-              server_id=server["id"]
-              print("BUILD_SERVER_CREATED="+json.dumps({"id":server_id,"preset":offer,"host_key":host,"zone":server.get("availability_zone")}),flush=True)
-              p.cloud.PRESET_ID=offer["id"];p.cloud.OWNER_MARKER=marker
-              p.owned_server=lambda doc:p.cloud.owned_server(doc,name)
-              p.owned_server({"server":server})
-              access.SERVER_ID=server_id
-              command=None;ip_id=None;keep=False
-              try:
-                  address=p.cloud.public_ipv4(server)
-                  if not address:
-                      zone=server.get("availability_zone")
-                      assert isinstance(zone,str) and re.fullmatch("[a-z]{2,8}-[1-9][0-9]*",zone)
-                      ip=access.request(token,"POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":zone})["ip"]
-                      ip_id=str(uuid.UUID(ip["id"]))
-                      print("BUILD_IP_CREATED="+json.dumps({"id":ip_id,"ip":ip["ip"]}),flush=True)
-                      assert ip.get("availability_zone")==zone and ip.get("is_ddos_guard") is False and ipaddress.IPv4Address(ip["ip"]).is_global
-                      access.request(token,"POST",f"/floating-ips/{ip_id}/bind",{"resource_type":"server","resource_id":server_id})
-                  command,address=p.ready(token,server_id,folder,host)
-                  hardware=json.loads(p.remote(command,"python3 -c "+shlex.quote(p.cloud.REMOTE_PROBE)))
-                  keep=hardware["memory_kib"]>=7*1024*1024 and hardware["free_disk_bytes"]>=60*1024**3
-                  print("BUILD_SERVER_READY="+json.dumps({"id":server_id,"ip":address,"ip_id":ip_id,"monthly_vm_rub":offer["price"],"retained_for_build":keep,**hardware}),flush=True)
-                  if not keep: raise p.ProbeError("build_resources_insufficient")
-                  initialize="umask 077; mkdir -p /root/analyst-ai-build; test ! -e /root/analyst-ai-build/AGENTS.md && printf '%s\\n' 'Timeweb is the execution host for Analyst AI development, builds and checks. GitHub Actions is authorized command transport and backup. Never publish credentials. Preserve the existing APK signing certificate and all acceptance checks.' > /root/analyst-ai-build/AGENTS.md"
-                  p.remote(command,initialize)
-              finally:
-                  if keep and command:
-                      script="import pathlib,sys; p=pathlib.Path('/root/.ssh/authorized_keys'); key=sys.stdin.read().strip(); p.write_text('\\n'.join(line for line in p.read_text().splitlines() if key not in line)+'\\n')"
-                      p.remote(command,"python3 -c "+shlex.quote(script),client.encode())
-                      print("BUILD_BOOTSTRAP_KEY=removed",flush=True)
-                  else:
-                      current=p.owned_server(p.cloud.request(token,"GET",f"/api/v1/servers/{server_id}"))
-                      assert current["id"]==server_id
-                      p.cloud.request(token,"DELETE",f"/api/v1/servers/{server_id}")
-                      for attempt in range(24):
-                          rows=p.read_resource(token,"servers")
-                          if p.summarize("servers",rows)["complete"] and not any(s["id"]==server_id for s in rows["servers"]):break
-                          time.sleep(5)
-                      else:raise p.ProbeError("build_cleanup_unconfirmed")
-                      if ip_id:remove_ip(token,ip_id,server_id)
-                      print("BUILD_CLEANUP=server_and_address_absent",flush=True)
+                  with socket.create_connection((report["ip"],22),timeout=8) as conn:
+                      conn.settimeout(4);report["ssh_banner"]=conn.recv(200).decode(errors="replace")
+              except OSError as e:report["tcp_error"]={"type":type(e).__name__,"errno":e.errno}
+              scan=subprocess.run(["ssh-keyscan","-T","5","-t","ed25519",report["ip"]],capture_output=True,text=True,timeout=8)
+              keys=[line.split()[1:3] for line in scan.stdout.splitlines() if not line.startswith("#")]
+              report["pinned_host_key_seen"]=["ssh-ed25519","AAAAC3NzaC1lZDI1NTE5AAAAIGmwBxMAtvv3Qi5vfEfbsDoaLKC3eEusG/K94fCR2BXU"] in keys
+              report["host_key_count"]=len(keys)
+          print("TIMEWEB_BUILD_DIAGNOSIS="+json.dumps(report),flush=True)
           PY
