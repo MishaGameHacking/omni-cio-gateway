@@ -34,6 +34,7 @@ SCROLL_LIST_CODES = {
     "workspace-content": 5,
     "dossier-tabs": 6,
     "quotes-intervals": 7,
+    "assistant-composer": 8,
 }
 
 
