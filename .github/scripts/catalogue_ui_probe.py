@@ -1,8 +1,10 @@
 """Actual new-asset search and purchase-check UI, with synthetic network inputs."""
-from native_input_evidence import append_native_text
+from native_input_evidence import active_window_id, append_native_text
+from native_window_evidence import wait_for_new_app_window
 from profile_ui_probe import button_label, matching_node
 
 PURCHASE_ACTION = "Проверить ограничения"
+PURCHASE_DIALOG = "Проверить покупку"
 
 
 def exercise_catalogue(case):
@@ -17,7 +19,9 @@ def exercise_catalogue(case):
     probe.dismiss_keyboard()
     probe.tap("Найти", area)
     probe.reveal("СИНТЕТИЧЕСКИЙ НОВЫЙ АКТИВ", area)
-    probe.tap("Проверить покупку", area)
+    original_window = active_window_id(probe.tree())
+    probe.tap(PURCHASE_DIALOG, area)
+    wait_for_new_app_window(probe, original_window, PURCHASE_DIALOG, area)
     probe.reveal(PURCHASE_ACTION, area)
     disabled = probe.wait_for(lambda: button_label(probe.tree(), PURCHASE_ACTION), "Missing purchase-check button")
     if disabled.get("enabled") != "false":

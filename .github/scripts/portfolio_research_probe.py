@@ -1,6 +1,7 @@
 """Search, comparison and dossier acceptance through actual production controls."""
 from datetime import timedelta
-from native_input_evidence import native_input_ready
+from native_input_evidence import active_window_id, native_input_ready
+from native_window_evidence import wait_for_new_app_window
 
 DOSSIER_SUFFIX = '/dossier'
 INSTRUMENTS_PATH = '/workspace/instruments/'
@@ -20,8 +21,12 @@ AREA = "workspace-content"
 def _context_risks(case):
     from business_ui_probe import labels
     p = case.probe
+    original_window = active_window_id(p.tree())
     p.tap_resource("instrument-context-actions", AREA)
+    wait_for_new_app_window(p, original_window, "SYN-A", AREA)
+    original_window = active_window_id(p.tree())
     p.tap_resource("instrument-context-risks", AREA)
+    wait_for_new_app_window(p, original_window, "SYN-A", AREA)
     p.reveal("Риски этой бумаги", AREA)
     p.reveal("СИНТЕТИЧЕСКАЯ концентрация выбранной бумаги", AREA)
     p.reveal("42.4242%", AREA)
@@ -39,7 +44,9 @@ def _context_risks(case):
             break
     else:
         raise AssertionError("The bounded contextual risk panel could not be checked to its actual end")
+    original_window = active_window_id(p.tree())
     p.tap("Назад к действиям", AREA)
+    wait_for_new_app_window(p, original_window, "SYN-A", AREA)
     p.tap_resource("instrument-context-events", AREA)
     case.call("/workspace/risks", {"currency": "RUB"})
     case.call(INSTRUMENTS_PATH + SHARE_A + DOSSIER_SUFFIX, {})
@@ -131,7 +138,9 @@ def exercise_discovery(case):
     p.tap_visible(BACK_LABEL)  # Archive list -> the actual search screen.
     p.find("Найти и исследовать")
     case.search("RESEARCH")
+    original_window = active_window_id(p.tree())
     p.tap_resource("discovery-research-" + SHARE_A, AREA)
+    wait_for_new_app_window(p, original_window, "Закрыть разбор", AREA)
     p.reveal("Показана одна выбранная карточка. Общие выводы относятся к исходному анализу.", AREA)
     p.reveal("СИНТЕТИЧЕСКОЕ исследование RESEARCH", AREA)
     p.tap("Закрыть разбор", AREA, direction="start")
@@ -140,7 +149,9 @@ def exercise_discovery(case):
     p.tap("Наблюдение", "profile-tabs")
     case.search(SHARE_A)
     p.reveal("СИНТЕТИЧЕСКАЯ причина: изучить отчётность", AREA)
+    original_window = active_window_id(p.tree())
     p.tap("Открыть бумагу на всех счетах", AREA)
+    wait_for_new_app_window(p, original_window, "Закрыть досье", AREA)
     p.reveal("Эта бумага на всех счетах", AREA)
     p.reveal("СИНТЕТИЧЕСКИЙ счёт A", AREA)
     p.reveal("СИНТЕТИЧЕСКИЙ счёт B", AREA)
@@ -193,11 +204,13 @@ def _news(case):
 
 def _exact_holding(case):
     p = case.probe
+    original_window = active_window_id(p.tree())
     p.tap_resource("dossier-fact-news-" + EVENT, AREA, direction="start")
+    wait_for_new_app_window(p, original_window, "Контекст факта", AREA)
     p.reveal("Контекст факта", AREA)
     p.reveal("Первый СИНТЕТИЧЕСКИЙ подтверждённый факт", AREA)
     p.tap("Перейти к компании", AREA)
-    p.reveal("СИНТЕТИЧЕСКИЙ проверенный эмитент", AREA)
+    p.reveal("СИНТЕТИЧЕСКИЙ проверенный эмитент", AREA, direction="start")
     p.reveal("synthetic-issuer", AREA)
     p.tap("Мои позиции в этой бумаге", AREA)
     p.tap_resource("dossier-holding-" + ACCOUNT_B, AREA)

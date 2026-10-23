@@ -1,5 +1,95 @@
 # Выполнение главного плана Analyst AI
 
+## Смена окна перед прокруткой модального содержимого — 23.10.2026
+
+Область F01/F22/F23, продолжение app
+`b87f74d0b5a243e37003e8295a880c9181a02705`. Исправления валют, контекста
+счёта, процентного черновика и статуса выбранного уведомления сохраняются.
+
+### Проверенные результаты родителя
+
+- [Android CI 39920366222](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920366222):
+  build `120304104185` PASS — 906 CI tests с 3 предусмотренными skips,
+  Gradle всех вариантов, JVM и lint, 9m10s. CI checkout
+  `5142629e0cf0086814a688b3bc76f87f32398544` имеет то же дерево
+  `18d816621b46f5986c0082c7f2a606d46217754b`, что опубликованный app.
+- [Backend CI 39920366201](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920366201)
+  — 1505 tests / 1409 subtests PASS, 40.90s; аудит 327 Python-файлов
+  и strict Sonar PASS. [Полный Sonar 39920360758](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920360758)
+  — 0 OPEN/CONFIRMED всех типов, 0 новых, unique:0, all_types:true,
+  complete:true; exact-head check `120304511811`.
+- Runtime `120307938449` прошёл установку, обновление с 0.10.0/34 и запуск
+  preview на API37 с измеренными PAGE_SIZE 16384, native 3D, session,
+  privacy и goals. **26 business cases font100 PASS**: risk 4, assistant 5,
+  plans 5, strategy 4, notifications 4 и analysis 4. Новая проверка
+  прочтения именно выбранного события прошла настоящий Android.
+- `catalogue/ready/font100` остановился на первом reveal кнопки
+  «Проверить ограничения». Instrumentation сообщил
+  `frame_error=IOException: Expected one exact visible app list`;
+  `ConnectionError: UiAutomation session ended before a complete frame`
+  возник после закрытия соединения драйвером. ADB оставался подключён.
+  Новый app crash в сохранённых diagnostics не установлен.
+- Font200 business/portfolio и весь профиль 4096 не достигнуты.
+  Cleanup `120313746549` PASS, `verified_absent` в 08:15:38 UTC.
+  Приватный APK не создан. SHA-256 preview:
+  `291f065c79d49698331561e4c836370d3c1221875603bf5aff3919ce6707be57`,
+  29,853,394 bytes; отчёт сохраняет
+  `device_install_test=separate_required_check`.
+- Серверное слияние `469bab1964c1041125e01884a071e6b6df01e82c`
+  отдельно прошло [Backend CI 39920920957](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920920957)
+  — 1553 tests / 1481 subtests, 23.57s, и
+  [полный Sonar 39920913615](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920913615)
+  — 0/0, all_types:true, complete:true, check `120306479548`.
+
+### Причина и граница исправления
+
+`failure.png` показывает полностью открытый purchase dialog с видимой
+disabled кнопкой «Проверить ограничения» и кнопкой «Закрыть».
+Последний tap относился ещё к каталогу, window144. Сразу за ним обработчик
+вызывал reveal: старый кадр мог содержать прокручиваемый список каталога,
+а native scroll уже читал новый root диалога, содержимое которого помещается.
+Именно свежий native root используется строгим `findList()` драйвера.
+Число совпадений не выводилось в журнале, поэтому 0 против нескольких
+не объявляется измеренным. Код, timing и кадр согласуются с этой гонкой.
+
+Общий `wait_for_new_app_window` пассивно ожидает отличный от исходного
+валидный native window ID, ровно одну видимую enabled область приложения
+с точным tag и ожидаемый верхний маркер внутри неё. Признак scrollable
+не требуется для готовности: помещающийся диалог сразу отдаёт цель,
+а длинный затем использует прежнюю ограниченную semantic scroll.
+Те же переходы исследованы в portfolio modal flows; source-паттерн
+исправляется там до следующего полного runtime, без объявления их
+наблюдавшимися отказами. Native driver, протокол, лимиты и assertions
+пустой цены/результата/точной позиции не ослабляются.
+
+Дополнительный issuer lookup в `_exact_holding` идёт вверх после
+«Факт → Компания». Оба шага используют один ScrollState; после clamp
+новым размером содержимого первый Text эмитента может остаться выше
+viewport. Полный обработчик воспроизводит отказ исходного направления
+на модельных высотах 453 и 720 и проходит на 1300, где смещение становится 0.
+После исправления все три геометрии доходят до точных ACCOUNT_B/SHARE_A
+и selected-holding. Эти координаты не являются измерением Android/font200.
+
+### Проверки нового кандидата
+
+Общий локальный CI-набор: **919 tests PASS**, 4 предусмотренных skips,
+0.964s. Включены 9 новых catalogue tests и 4 portfolio traversal tests:
+задержанный старый кадр при открытии окна, помещающийся и прокручиваемый
+dialog, строгие package/window/list guards и полный путь к выбранной
+позиции. Проверены research/dossier, actions/risks/back на модельных
+масштабах 1/2; это регрессии последовательности, не замена Android runtime.
+При отключении только нового ожидания исходная гонка воспроизводится.
+Аудит всех **330 tracked Python-файлов PASS**, failures:[]; diff --check PASS.
+Backend, Kotlin и native driver не изменены относительно проверенного
+родителя; повторять неизменённые локальные backend/JVM suites не требовалось.
+Удалённые проверки нового SHA остаются обязательными.
+
+Новому SHA обязательны собственные полный Sonar, Gradle/JVM/lint и обе
+полные API37-матрицы с фактическими 16384/4096. `[private-apk]` сохраняет
+приватный draft только после всех gates. Физический телефон, live Timeweb,
+Telegram owner binding и обновление серверного APK остаются отдельными
+этапами; успешные локальные модели или серверный CI их не заменяют.
+
 ## Сохранение валют, черновика и статуса выбранного уведомления — 23.10.2026
 
 Область F01/F07/F11/F16/F22/F23, продолжение PR #880 от актуального
