@@ -23,7 +23,10 @@ from timeweb_actions_probe import NoRedirect, ProbeError, decode_response, read_
 from timeweb_ci_catalog import ubuntu_images
 
 PROJECT = 2941515
-PRESET = 2573
+PRESET = None
+CONFIGURATION = {"configurator_id": 149, "cpu": 1, "ram": 1024, "disk": 15360}
+CONFIG_LOCATION = "ru-4"
+CONFIG_PRICE = 590
 NAME = "analyst-ai-owner-20261023"
 HOST = "analyst-ai-2941515.twc1.net"
 MARKER = "Analyst AI owner installation 2026-10-23"
@@ -57,18 +60,38 @@ def validate(token):
         raise ProbeError("incomplete_server_inventory")
     if any(s.get("name") == NAME for s in inventory["servers"]):
         raise ProbeError("installation_already_exists_no_duplicate_order")
-    rows = read_catalog(token, "presets").get("server_presets", [])
-    matches = [p for p in rows if p.get("id") == PRESET]
+    request = urllib.request.Request("https://api.timeweb.cloud/api/v1/configurator/servers",
+        headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
+    try:
+        opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=verified_ssl_context()))
+        with opener.open(request, timeout=30) as response:
+            rows = decode_response(response.read(2 * 1024 * 1024 + 1)).get("server_configurators", [])
+    except OSError:
+        raise ProbeError("configurator_read_failed") from None
+    matches = [p for p in rows if p.get("id") == CONFIGURATION["configurator_id"]]
     if len(matches) != 1:
         raise ProbeError("expected_offer_missing")
     offer = matches[0]
-    if tuple(offer.get(k) for k in ("cpu", "ram", "disk", "price", "location")) != (1, 1024, 15360, 950, "ru-1"):
+    requirements, prices = offer["requirements"], offer["prices"]
+    size = tuple(CONFIGURATION[k] for k in ("cpu", "ram", "disk"))
+    minimum = tuple(requirements[k + "_min"] for k in ("cpu", "ram", "disk"))
+    price = prices["cpu"] * size[0] + prices["ram"] * size[1] / 1024 + prices["disk"] * size[2] / 1024
+    if size != minimum or price != CONFIG_PRICE or offer.get("location") != CONFIG_LOCATION:
         raise ProbeError("offer_or_price_changed")
     if not any(x["id"] == 99 and x["version"] == "24.04" for x in ubuntu_images(read_catalog(token, "os"))):
         raise ProbeError("expected_os_missing")
     if domain_api(token, "GET") is not None:
         raise ProbeError("hostname_already_exists_no_replacement")
-    print("OWNER_VM_OFFER=" + json.dumps({k: offer[k] for k in ("id", "price", "cpu", "ram", "disk", "location")}), flush=True)
+    print("OWNER_VM_OFFER=" + json.dumps({**CONFIGURATION, "price": price, "location": CONFIG_LOCATION}), flush=True)
+
+
+def owned_server(document):
+    server = cloud.owned_server(document, NAME)
+    if (server.get("configurator_id") != CONFIGURATION["configurator_id"]
+            or server.get("location") != CONFIG_LOCATION
+            or any(server.get(k) != CONFIGURATION[k] for k in ("cpu", "ram"))):
+        raise ProbeError("configured_server_mismatch_reconcile_inventory")
+    return server
 
 
 def ssh_command(folder, address, host_public):
@@ -91,7 +114,7 @@ def remote(command, script, data=None, *, timeout=45):
 
 def ready(token, server_id, folder, host_public):
     for _ in range(42):
-        server = cloud.owned_server(cloud.request(token, "GET", f"/api/v1/servers/{server_id}"), NAME)
+        server = owned_server(cloud.request(token, "GET", f"/api/v1/servers/{server_id}"))
         if server["id"] != server_id:
             raise ProbeError("server_id_changed")
         address = cloud.public_ipv4(server)
@@ -139,10 +162,10 @@ def prepare(token, telegram_id, telegram_secret):
             "ssh": {"emit_keys_to_console": False}, "no_ssh_fingerprints": True,
             "runcmd": [["systemctl", "restart", "ssh"]]}
         # No mutation retries: reconcile the stable name after any ambiguous POST.
-        server = cloud.owned_server(cloud.request(token, "POST", "/api/v1/servers", {
+        server = owned_server(cloud.request(token, "POST", "/api/v1/servers", {
             "name": NAME, "hostname": NAME, "comment": MARKER,
-            "preset_id": PRESET, "os_id": 99, "project_id": PROJECT,
-            "cloud_init": "#cloud-config\n" + json.dumps(config) + "\n"}), NAME)
+            "configuration": CONFIGURATION, "os_id": 99, "project_id": PROJECT,
+            "cloud_init": "#cloud-config\n" + json.dumps(config) + "\n"}))
         print("OWNER_VM_CREATED=" + json.dumps({"id": server["id"], "host_key": host_public}), flush=True)
         command, address = ready(token, server["id"], folder, host_public)
         try:
