@@ -1,5 +1,147 @@
 # Выполнение главного плана Analyst AI
 
+## Подготовленная синхронизация server с app 25e73835 — 23.10.2026
+
+Область F01/F02/F20/F22/F23. Родители подготовленного объединения:
+server `469bab1964c1041125e01884a071e6b6df01e82c` и
+app `25e73835dfee05b7c22645ddf8e541dcf3e7caf7`.
+
+Перенесены пять Python-путей app: общий барьер нового нативного окна,
+его вызовы catalogue/portfolio и две группы полных регрессионных обработчиков.
+Поиск эмитента после «Факт → Компания» направлен к началу того же списка.
+Наблюдавшийся Android catalogue FAIL и условная геометрическая регрессия
+issuer lookup различаются в сохранённой app-записи ниже. Native driver,
+Kotlin и backend при этом слиянии не изменены. README и этот реестр
+сохраняют все строки обоих родителей в исходном порядке; конфликты
+затронули только добавляемые в начало документальные разделы.
+
+### Локальная проверка объединённого дерева
+
+- Полный CI/release-набор: **946 tests за 0.970s, OK, skipped=4**.
+  Два пропуска требуют Android SDK, два — полного JDK для host-регрессий;
+  они не являются результатами native runtime или криптографической проверки APK.
+- Аудит всех **336 отслеживаемых Python-файлов**: **0 failures**,
+  compile-without-execution. Новые файлы включены в индекс до аудита.
+- Все **777 общих app-путей**, за исключением двух документов и набора
+  server-specific, совпадают с `25e73835` по Git blob/mode и набору путей.
+- Все **13 server-specific путей** сохранены точно из `469bab19`, включая
+  Telegram OIDC/owner enrollment, установщик и read-only inventory.
+- Все **340 путей `app/` и `ci-ui-driver/`**, а также **162 пути `backend/`**
+  точно совпадают с `469bab19`. Неизменённые локальные backend/JVM suites
+  повторно не запускались; предыдущие доказательства относятся к своему SHA.
+- `git diff --check`, `git diff --cached --check`, отсутствие конфликтов
+  индекса и незастейдженных изменений — PASS.
+
+### Собственные удалённые результаты app 25e73835
+
+- [Backend CI 39925032850](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032850),
+  job `120319209924`: **1505 tests / 1409 subtests PASS**, 24.86s;
+  аудит 330 Python-файлов — PASS.
+- [Полный Sonar 39925027214](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925027214),
+  job `120319189504`, check `120320038927`: **0 OPEN/CONFIRMED всех типов,
+  0 новых, unique:0, all_types:true, complete:true**.
+- На момент подготовки [Android CI 39925032873](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032873)
+  выполняет SDK37/Gradle в build job `120319322820`; runtime ожидается.
+  Результаты нового APK, обеих полных API37-матриц 16384/4096 и font100/200
+  этим локальным слиянием не объявляются пройденными.
+
+Новый server SHA требует собственных Backend CI и полного Sonar.
+Проверки app/server не заменяют физический телефон, установку нового
+Timeweb backend, DNS/TLS, реальный Telegram owner binding и доставку
+проверенных APK-байтов в канал обновления.
+
+## Сохранённые записи app/server
+
+## Смена окна перед прокруткой модального содержимого — 23.10.2026
+
+Область F01/F22/F23, продолжение app
+`b87f74d0b5a243e37003e8295a880c9181a02705`. Исправления валют, контекста
+счёта, процентного черновика и статуса выбранного уведомления сохраняются.
+
+### Проверенные результаты родителя
+
+- [Android CI 39920366222](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920366222):
+  build `120304104185` PASS — 906 CI tests с 3 предусмотренными skips,
+  Gradle всех вариантов, JVM и lint, 9m10s. CI checkout
+  `5142629e0cf0086814a688b3bc76f87f32398544` имеет то же дерево
+  `18d816621b46f5986c0082c7f2a606d46217754b`, что опубликованный app.
+- [Backend CI 39920366201](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920366201)
+  — 1505 tests / 1409 subtests PASS, 40.90s; аудит 327 Python-файлов
+  и strict Sonar PASS. [Полный Sonar 39920360758](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920360758)
+  — 0 OPEN/CONFIRMED всех типов, 0 новых, unique:0, all_types:true,
+  complete:true; exact-head check `120304511811`.
+- Runtime `120307938449` прошёл установку, обновление с 0.10.0/34 и запуск
+  preview на API37 с измеренными PAGE_SIZE 16384, native 3D, session,
+  privacy и goals. **26 business cases font100 PASS**: risk 4, assistant 5,
+  plans 5, strategy 4, notifications 4 и analysis 4. Новая проверка
+  прочтения именно выбранного события прошла настоящий Android.
+- `catalogue/ready/font100` остановился на первом reveal кнопки
+  «Проверить ограничения». Instrumentation сообщил
+  `frame_error=IOException: Expected one exact visible app list`;
+  `ConnectionError: UiAutomation session ended before a complete frame`
+  возник после закрытия соединения драйвером. ADB оставался подключён.
+  Новый app crash в сохранённых diagnostics не установлен.
+- Font200 business/portfolio и весь профиль 4096 не достигнуты.
+  Cleanup `120313746549` PASS, `verified_absent` в 08:15:38 UTC.
+  Приватный APK не создан. SHA-256 preview:
+  `291f065c79d49698331561e4c836370d3c1221875603bf5aff3919ce6707be57`,
+  29,853,394 bytes; отчёт сохраняет
+  `device_install_test=separate_required_check`.
+- Серверное слияние `469bab1964c1041125e01884a071e6b6df01e82c`
+  отдельно прошло [Backend CI 39920920957](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920920957)
+  — 1553 tests / 1481 subtests, 23.57s, и
+  [полный Sonar 39920913615](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39920913615)
+  — 0/0, all_types:true, complete:true, check `120306479548`.
+
+### Причина и граница исправления
+
+`failure.png` показывает полностью открытый purchase dialog с видимой
+disabled кнопкой «Проверить ограничения» и кнопкой «Закрыть».
+Последний tap относился ещё к каталогу, window144. Сразу за ним обработчик
+вызывал reveal: старый кадр мог содержать прокручиваемый список каталога,
+а native scroll уже читал новый root диалога, содержимое которого помещается.
+Именно свежий native root используется строгим `findList()` драйвера.
+Число совпадений не выводилось в журнале, поэтому 0 против нескольких
+не объявляется измеренным. Код, timing и кадр согласуются с этой гонкой.
+
+Общий `wait_for_new_app_window` пассивно ожидает отличный от исходного
+валидный native window ID, ровно одну видимую enabled область приложения
+с точным tag и ожидаемый верхний маркер внутри неё. Признак scrollable
+не требуется для готовности: помещающийся диалог сразу отдаёт цель,
+а длинный затем использует прежнюю ограниченную semantic scroll.
+Те же переходы исследованы в portfolio modal flows; source-паттерн
+исправляется там до следующего полного runtime, без объявления их
+наблюдавшимися отказами. Native driver, протокол, лимиты и assertions
+пустой цены/результата/точной позиции не ослабляются.
+
+Дополнительный issuer lookup в `_exact_holding` идёт вверх после
+«Факт → Компания». Оба шага используют один ScrollState; после clamp
+новым размером содержимого первый Text эмитента может остаться выше
+viewport. Полный обработчик воспроизводит отказ исходного направления
+на модельных высотах 453 и 720 и проходит на 1300, где смещение становится 0.
+После исправления все три геометрии доходят до точных ACCOUNT_B/SHARE_A
+и selected-holding. Эти координаты не являются измерением Android/font200.
+
+### Проверки нового кандидата
+
+Общий локальный CI-набор: **919 tests PASS**, 4 предусмотренных skips,
+0.964s. Включены 9 новых catalogue tests и 4 portfolio traversal tests:
+задержанный старый кадр при открытии окна, помещающийся и прокручиваемый
+dialog, строгие package/window/list guards и полный путь к выбранной
+позиции. Проверены research/dossier, actions/risks/back на модельных
+масштабах 1/2; это регрессии последовательности, не замена Android runtime.
+При отключении только нового ожидания исходная гонка воспроизводится.
+Аудит всех **330 tracked Python-файлов PASS**, failures:[]; diff --check PASS.
+Backend, Kotlin и native driver не изменены относительно проверенного
+родителя; повторять неизменённые локальные backend/JVM suites не требовалось.
+Удалённые проверки нового SHA остаются обязательными.
+
+Новому SHA обязательны собственные полный Sonar, Gradle/JVM/lint и обе
+полные API37-матрицы с фактическими 16384/4096. `[private-apk]` сохраняет
+приватный draft только после всех gates. Физический телефон, live Timeweb,
+Telegram owner binding и обновление серверного APK остаются отдельными
+этапами; успешные локальные модели или серверный CI их не заменяют.
+
 ## Подготовленная синхронизация server с app b87f74d0 — 23.10.2026
 
 Область F01/F02/F07/F11/F16/F20/F22/F23. Родители подготовленного объединения:
