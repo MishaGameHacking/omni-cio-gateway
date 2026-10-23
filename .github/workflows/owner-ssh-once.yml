@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
       - name: Fetch the exact checked server sources
         run: git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
-      - name: Check one same-price replacement for the observed Telegram route failure
+      - name: Check the next minimum offer after the same-price replacement was unavailable
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'

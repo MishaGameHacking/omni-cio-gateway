@@ -1,4 +1,4 @@
-"""Check one same-price replacement for the VM's observed Telegram route failure."""
+"""Check one replacement after cheaper offers failed availability or Telegram access."""
 import json
 import ipaddress
 import os
@@ -19,7 +19,7 @@ import prepare_owner_vm as prepare
 OLD_SERVER = 9407735
 OLD_IP_ID = "4121856b-33c2-457a-b328-8db251e9dd20"
 NAME = "analyst-ai-owner-route-20261023"
-CONFIGURATION = {"configurator_id": 31, "cpu": 1, "ram": 1024, "disk": 15360}
+CONFIGURATION = {"configurator_id": 155, "cpu": 1, "ram": 1024, "disk": 15360}
 MARKER = "Analyst AI replacement for verified Telegram route failure 2026-10-23"
 
 
@@ -49,9 +49,9 @@ def validate(token):
     sizes = tuple(CONFIGURATION[k] for k in ("cpu", "ram", "disk"))
     prices = offer["prices"]
     price = sizes[0] * prices["cpu"] + sizes[1] / 1024 * prices["ram"] + sizes[2] / 1024 * prices["disk"]
-    if offer.get("location") != "ru-3" or price != 1180 or sizes != tuple(offer["requirements"][k + "_min"] for k in ("cpu", "ram", "disk")):
-        raise prepare.ProbeError("same_price_replacement_offer_changed")
-    print("OWNER_REPLACEMENT_OFFER=" + json.dumps({**CONFIGURATION, "location": "ru-3", "monthly_vm_rub": price}), flush=True)
+    if offer.get("location") != "de-1" or price != 1620 or sizes != tuple(offer["requirements"][k + "_min"] for k in ("cpu", "ram", "disk")):
+        raise prepare.ProbeError("replacement_offer_or_price_changed")
+    print("OWNER_REPLACEMENT_OFFER=" + json.dumps({**CONFIGURATION, "location": "de-1", "monthly_vm_rub": price}), flush=True)
 
 
 def remove_ip(token, identifier, server_id):
@@ -77,7 +77,7 @@ def run():
     token = prepare.validated_token(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
     validate(token)
     prepare.NAME, prepare.MARKER = NAME, MARKER
-    prepare.CONFIGURATION, prepare.CONFIG_LOCATION = CONFIGURATION, "ru-3"
+    prepare.CONFIGURATION, prepare.CONFIG_LOCATION = CONFIGURATION, "de-1"
     prepare.cloud.OWNER_MARKER = MARKER
     with tempfile.TemporaryDirectory(prefix="owner-route-", dir=os.environ["RUNNER_TEMP"]) as root:
         folder = Path(root)
@@ -97,7 +97,7 @@ def run():
             address = prepare.cloud.public_ipv4(server)
             if not address:
                 zone = server.get("availability_zone", "")
-                if not re.fullmatch(r"msk-[1-9][0-9]*", zone):
+                if not re.fullmatch(r"[a-z]{2,8}-[1-9][0-9]*", zone):
                     raise prepare.ProbeError("replacement_zone_mismatch")
                 ip = access.request(token, "POST", "/floating-ips", {"is_ddos_guard": False, "availability_zone": zone})["ip"]
                 ip_id = str(uuid.UUID(ip["id"]))
