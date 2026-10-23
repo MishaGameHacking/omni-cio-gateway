@@ -22,7 +22,7 @@ NAME = "analyst-ai-owner-route-20261023"
 CONFIGURATION = {"configurator_id": 153, "cpu": 1, "ram": 1024, "disk": 15360}
 MARKER = "Analyst AI replacement for verified Telegram route failure 2026-10-23"
 
-TELEGRAM_CHECK = '''import json,socket,ssl,urllib.request,urllib.error
+TELEGRAM_CHECK = '''import gzip,io,json,socket,ssl,urllib.request,urllib.error
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs): return None
 report={"host":"oauth.telegram.org","telegram_jwks_https":False,"phase":"dns"}
@@ -34,12 +34,22 @@ try:
             report["tls"]=conn.version()
     report["phase"]="jwks_https"
     opener=urllib.request.build_opener(NoRedirect(),urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))
-    with opener.open("https://oauth.telegram.org/.well-known/jwks.json",timeout=20) as response:
+    request=urllib.request.Request("https://oauth.telegram.org/.well-known/jwks.json",headers={"Accept-Encoding":"identity","Accept":"application/json"})
+    with opener.open(request,timeout=20) as response:
         raw=response.read(131073)
-        report.update({"status":response.status,"bytes":len(raw),"content_type":response.headers.get("Content-Type")})
-        report["phase"]="jwks_json"
+        encoding=response.headers.get("Content-Encoding", "identity").lower()
+        report.update({"status":response.status,"bytes":len(raw),"content_type":response.headers.get("Content-Type"),"content_encoding":encoding,"public_response_prefix_hex":raw[:8].hex()})
         if len(raw)>131072:
             raise ValueError("oversized_public_key_response")
+        report["phase"]="jwks_decode"
+        if encoding=="gzip":
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as content:
+                raw=content.read(131073)
+        elif encoding not in ("identity", ""):
+            raise ValueError("unsupported_response_encoding")
+        if len(raw)>131072:
+            raise ValueError("oversized_decoded_public_key_response")
+        report["phase"]="jwks_json"
         result=json.loads(raw)
         report["public_key_count"]=len(result.get("keys",[])) if isinstance(result,dict) else 0
         report["telegram_jwks_https"]=response.status==200 and isinstance(result,dict) and isinstance(result.get("keys"),list) and bool(result["keys"])
