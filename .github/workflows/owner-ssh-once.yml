@@ -42,6 +42,8 @@ jobs:
               except InvalidOperation:return None
           report={"account_blocked":status.get("is_blocked"),"permanently_blocked":status.get("is_permanent_blocked"),"balance_positive":positive(fin.get("balance")),"paid_hours_positive":positive(fin.get("hours_left"))}
           rows=p.read_resource(token,"servers");assert p.summarize("servers",rows)["complete"]
+          report["build_month_with_ipv4_covered"]=Decimal(str(fin["balance"]))>=Decimal("7000")
+          report["all_current_services_month_covered"]=Decimal(str(fin["balance"]))>=Decimal(str(fin["monthly_fee"]))
           report["servers"]=[{k:s.get(k) for k in ("id","name","status","preset_id","availability_zone")} for s in rows["servers"]]
           print("TIMEWEB_START_BLOCKERS="+json.dumps(report),flush=True)
           PY
