@@ -163,7 +163,8 @@ fun NotificationEventsScreen(onBack: () -> Unit) {
             resource.data?.records("items").orEmpty().forEach { event -> item(key = event.text("id")) { SpectrumCard(onClick = { selected = event.text("id") }) {
                 Text(event.text("title"), style = MaterialTheme.typography.titleLarge)
                 Text(event.text("body", ""))
-                Text(notificationState(event.text("state")), style = MaterialTheme.typography.labelMedium)
+                Text(notificationState(event.text("state")), Modifier.testTag("notification-state-" + event.text("id")),
+                    style = MaterialTheme.typography.labelMedium)
                 Text(localMoment(event.text("created_at", "")), style = MaterialTheme.typography.bodySmall)
             } } }
         }

@@ -206,16 +206,20 @@ def ingest(user, raw, now: datetime) -> dict:
 
 
 def _monitor_accounts(raw, previous):
+    # Instrument facts are shared by UID; a newly held position on another
+    # account must not replace that evidence with an empty account history.
+    previous_metadata = {uid: row.get("metadata", {}) for (_, uid), row in previous.items()}
     metadata = {}
     accounts = []
     for account in raw.get("accounts", []):
         positions = []
         for item in account.get("positions", []):
             prior = previous.get((account["id"], item["id"]), {})
-            meta = prior.get("metadata", {})
+            meta = previous_metadata.get(item["id"], {})
             metadata[item["id"]] = {"sector": meta.get("sector"), "countryOfRisk": meta.get("country_of_risk"),
                                     "countryOfRiskName": meta.get("country_of_risk_name"), "assetUid": meta.get("asset_uid"),
-                                    "lot": meta.get("lot"), "isin": meta.get("isin"), "exchange": meta.get("exchange"), "_source": meta.get("source")}
+                                    "lot": meta.get("lot"), "isin": meta.get("isin"), "exchange": meta.get("exchange"),
+                                    "currency": meta.get("instrument_currency"), "_source": meta.get("source")}
             kind = item.get("instrumentType") or ("cash" if item["id"].startswith("cash:") else prior.get("instrument_type"))
             positions.append({**item, "instrumentType": kind,
                               "blocked": item.get("blocked", prior.get("blocked", False)),

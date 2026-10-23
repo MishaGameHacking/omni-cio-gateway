@@ -34,6 +34,7 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
         ratings = store.getStringSet("ratings", RatingChoices.toSet()).orEmpty().intersect(RatingChoices.toSet()),
     )) }
     var draft by rememberSaveable(userId, stateSaver = StrategyDraftSaver) { mutableStateOf(baseline) }
+    var percentages by rememberSaveable(userId, stateSaver = StrategyPercentDraftSaver) { mutableStateOf(StrategyPercentDraft(draft)) }
     var section by rememberSaveable { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -41,14 +42,21 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
     var saved by rememberSaveable { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
     var openActiveAfterLeave by remember { mutableStateOf(false) }
-    val dirty = draft != baseline
+    val candidate = percentages.applyTo(draft)
+    val valid = candidate != null && draft.ratings.isNotEmpty()
+    val dirty = draft != baseline || percentages != StrategyPercentDraft(baseline)
+    val changes = strategyChanges(baseline, candidate ?: draft) +
+        if (candidate == null) listOf("Проценты требуют исправления") else emptyList()
     val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
     BackHandler(onBack = leave)
-    val save = {
-        store.edit().putInt("goal", draft.goal).putInt("horizon", draft.horizon).putInt("market", draft.market)
-            .putInt("reserve", draft.reserve).putInt("company", draft.companyLimit).putInt("sector", draft.sectorLimit)
-            .putInt("reinvest", draft.reinvest).putBoolean("currency", draft.currencyIncome).putStringSet("ratings", draft.ratings).apply()
-        baseline = draft; saved = true
+    val save: () -> Boolean = {
+        percentages.applyTo(draft)?.takeIf { it.ratings.isNotEmpty() }?.let { verified ->
+            store.edit().putInt("goal", verified.goal).putInt("horizon", verified.horizon).putInt("market", verified.market)
+                .putInt("reserve", verified.reserve).putInt("company", verified.companyLimit).putInt("sector", verified.sectorLimit)
+                .putInt("reinvest", verified.reinvest).putBoolean("currency", verified.currencyIncome).putStringSet("ratings", verified.ratings).apply()
+            baseline = verified; draft = verified; percentages = StrategyPercentDraft(verified); saved = true
+            true
+        } ?: false
     }
     WorkspaceDetailPage("Моя стратегия", "Действующие правила и будущие изменения", leave, SpectrumSymbol.Goal) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
@@ -76,9 +84,9 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                         item { RatingDraftControl(draft.ratings) { draft = draft.copy(ratings = it) } }
                     }
                     2 -> {
-                        item { DraftSlider("Денежный резерв", "Деньги для ближайших потребностей; меньше средств участвует в инвестициях.", draft.reserve, 0f..50f) { draft = draft.copy(reserve = it) } }
-                        item { DraftSlider("Предел на компанию", "Несколько выпусков одного эмитента суммируются после подключения расчёта.", draft.companyLimit, 1f..15f) { draft = draft.copy(companyLimit = it) } }
-                        item { DraftSlider("Предел на отрасль", "Снижает зависимость от одной части экономики.", draft.sectorLimit, 5f..50f) { draft = draft.copy(sectorLimit = it) } }
+                        item { DraftSlider("Денежный резерв", "Деньги для ближайших потребностей; меньше средств участвует в инвестициях.", percentages, StrategyPercentField.Reserve, draft.reserve) { percentages = it } }
+                        item { DraftSlider("Предел на компанию", "Несколько выпусков одного эмитента суммируются после подключения расчёта.", percentages, StrategyPercentField.Company, draft.companyLimit) { percentages = it } }
+                        item { DraftSlider("Предел на отрасль", "Снижает зависимость от одной части экономики.", percentages, StrategyPercentField.Sector, draft.sectorLimit) { percentages = it } }
                     }
                     else -> {
                         item { SpectrumCard { WorkspaceChoices("Поступления", listOf("Реинвестировать", "Пополнять резерв", "Сохранять для выплат"), draft.reinvest) { draft = draft.copy(reinvest = it) } } }
@@ -86,22 +94,23 @@ fun StrategyWorkspaceScreen(userId: String, onBack: () -> Unit, onCurrentRules: 
                             Text("Валюта расчёта портфеля — отдельная настройка. Привязка выплат не устраняет валютный риск.") } }
                     }
                 }
-                item { DetailFold("Что изменено (${strategyChanges(baseline, draft).size})") {
-                    strategyChanges(baseline, draft).ifEmpty { listOf("Изменений нет") }.forEach { Text(it) }
+                item { DetailFold("Что изменено (${changes.size})") {
+                    changes.ifEmpty { listOf("Изменений нет") }.forEach { Text(it) }
                 } }
                 item { StrategyImpact(null) }
                 if (section < 3) item { SpectrumPrimaryButton("Далее", { selectSection(section + 1) }, Modifier.fillMaxWidth()) }
+                if (candidate == null) item { Text("Исправьте проценты во вкладке «Доли» перед сохранением.", color = MaterialTheme.colorScheme.error) }
                 if (draft.ratings.isEmpty()) item { Text("Выберите хотя бы один рейтинг.", color = MaterialTheme.colorScheme.error) }
-                item { SpectrumPrimaryButton(if (saved && !dirty) "Черновик сохранён" else "Сохранить черновик", save,
-                    Modifier.fillMaxWidth(), enabled = dirty && draft.ratings.isNotEmpty()) }
+                item { SpectrumPrimaryButton(if (saved && !dirty) "Черновик сохранён" else "Сохранить черновик", { save() },
+                    Modifier.fillMaxWidth(), enabled = dirty && valid) }
             }
         }
     }
     val finish = if (openActiveAfterLeave) onCurrentRules else onBack
-    if (leaving) DraftLeaveDialog(draft.ratings.isNotEmpty(),
+    if (leaving) DraftLeaveDialog(valid,
         onStay = { leaving = false; openActiveAfterLeave = false },
-        onSave = { save(); leaving = false; finish() },
-        onDiscard = { draft = baseline; leaving = false; finish() })
+        onSave = { if (save()) { leaving = false; finish() } },
+        onDiscard = { draft = baseline; percentages = StrategyPercentDraft(baseline); leaving = false; finish() })
 }
 
 internal fun strategyChanges(before: StrategyDraft, after: StrategyDraft): List<String> = listOfNotNull(
@@ -117,17 +126,18 @@ internal fun strategyChanges(before: StrategyDraft, after: StrategyDraft): List<
 )
 
 @Composable
-private fun DraftSlider(title: String, description: String, value: Int, range: ClosedFloatingPointRange<Float>, onChange: (Int) -> Unit) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
-    val parsed = text.toIntOrNull()
-    val valid = parsed != null && parsed.toFloat() in range
+private fun DraftSlider(title: String, description: String, draft: StrategyPercentDraft, field: StrategyPercentField,
+    fallback: Int, onChange: (StrategyPercentDraft) -> Unit) {
+    val range = field.range
+    val parsed = draft.value(field)
     SpectrumCard {
         Text(title, style = MaterialTheme.typography.titleMedium)
-        SpectrumTextField(text, { next -> text = next.take(3); next.toIntOrNull()?.takeIf { it.toFloat() in range }?.let(onChange) },
-            label = { Text("Проценты") }, trailingIcon = { Text("%") }, isError = !valid, singleLine = true,
+        SpectrumTextField(draft.text(field), { next -> onChange(draft.edit(field, next)) },
+            label = { Text("Проценты") }, trailingIcon = { Text("%") }, isError = parsed == null, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-        if (!valid) Text("От ${range.start.toInt()} до ${range.endInclusive.toInt()}%", color = MaterialTheme.colorScheme.error)
-        Slider(value.toFloat(), { onChange(it.roundToInt()) }, valueRange = range, steps = (range.endInclusive - range.start).toInt() - 1)
+        if (parsed == null) Text("От ${range.first} до ${range.last}%", color = MaterialTheme.colorScheme.error)
+        Slider((parsed ?: fallback).toFloat(), { onChange(draft.edit(field, it.roundToInt().toString())) },
+            valueRange = range.first.toFloat()..range.last.toFloat(), steps = range.last - range.first - 1)
         Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
 }
