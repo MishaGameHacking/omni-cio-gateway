@@ -214,7 +214,8 @@ def run(args,**kwargs):
         raise SystemExit(result.returncode)
     return result.stdout+result.stderr
 run(["apt-get","update","-qq"],timeout=300)
-run(["apt-get","install","-y","python3-venv"],env=dict(os.environ,DEBIAN_FRONTEND="noninteractive"),timeout=300)
+run(["apt-get","install","-y","python3-venv","nodejs"],env=dict(os.environ,DEBIAN_FRONTEND="noninteractive"),timeout=300)
+print(json.dumps({"development_host":"timeweb-9408159","node_version":run(["node","--version"],timeout=30).strip()}),flush=True)
 assert not venv.is_symlink()
 if not venv.exists(): run(["python3","-m","venv",str(venv)],timeout=120)
 python=str(venv/"bin/python")
