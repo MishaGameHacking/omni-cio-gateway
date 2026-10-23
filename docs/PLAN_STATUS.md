@@ -58,9 +58,16 @@ F01/F16/F22/F23. OWNER уточнил: исправлять существующ
   из переменных прокси хоста. Сохраняются те же ответы/проверки API и строгий
   отказ при неожиданном обращении к брокеру. Это устраняет пять локальных
   ImportError из-за необязательного SOCKS транспорта, не меняя production HTTP.
+- В assistant/job/font200 отдельный поиск заголовка сохранённых заданий также
+  исчерпывал 10 страниц в области истории 237px. Только этому поиску передаётся
+  существующий максимум 20 страниц, при прежнем общем deadline12s. Остальные
+  нажатия сохраняют максимум10; native owner, устойчивость геометрии и enabled
+  обязательны. Четыре новые регрессии исполняют настоящий обработчик и tap:
+  font100/200, raw/qualified tags, отсутствие и disabled карточки. Старый tap
+  воспроизводит отказ короткого viewport; новый делает ровно одно нажатие.
 
 Проверен охват запуска/обновления, сессий, сетевого клиента, хранения состояния,
-редакторов, переходов окон, backend и инфраструктуры CI. Локально: 939 CI tests
+редакторов, переходов окон, backend и инфраструктуры CI. Локально: 943 CI tests
 (2 предусмотренных environment skips с доступным JDK compiler), 61 Node tests, 52 tool tests,
 15 mesh tests и 11 native-alignment tests — PASS; bash syntax четырёх скриптов
 PASS. Python syntax audit: 334 source files, failures0. Полный backend suite:
@@ -71,6 +78,15 @@ Sonar и Android compile/JVM/lint должны повторно пройти н�
 
 Доказательства прежних кандидатов, не результат финального SHA:
 
+- `9b7f310d`: Backend39964464224 —1505/1409subtests PASS; Sonar39964455783
+  —0 общих/0 новых/unique0/all_types:true/complete:true; Android39964464136
+  build120450685199 —все варианты/JVM/lint PASS. Runtime120455766022 подтвердил
+  API37/PAGE_SIZE16384, установку/обновление/запуск, spatial/session/privacy/goals,
+  все30 business/font100 (включая исправленный plans/partial), risk/font200 и
+  assistant ready/empty/partial/error при font200. Отказ assistant/job/font200:
+  `List target not reachable: Сохранённые задания · 1`, swipes10, viewport237px.
+  Preview SHA256 `1a384051184960d96273213d4e4d4f0846b7d0b51f5a95028d773c9cf93c25d0`.
+  Профиль4096 не запускался; cleanup120464964804 PASS. APK не опубликован.
 - `3bbca44a`: Backend39959715887 — 1505/1409subtests PASS; Sonar39959704389
   — 0 общих/0 новых/unique0/all_types:true/complete:true. Android39959715888
   build120434956872 — все варианты/JVM/lint PASS за9m39s, 197 tasks,

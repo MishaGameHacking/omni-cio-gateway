@@ -152,7 +152,9 @@ class _BusinessCase:
     def job(self):
         from profile_ui_probe import matching_node
 
-        self.probe.tap("Сохранённые задания · 1", "workspace-content")
+        # At font200 the independently scrollable chat history is only 237px
+        # high. Its long answer can put recovery beyond ten semantic pages.
+        self.probe.tap("Сохранённые задания · 1", "workspace-content", max_swipes=20)
         self.probe.tap_resource("recover-request-synthetic-request", "workspace-content")
         # Plans appends the recovered job below saved requests; Assistant inserts it above.
         direction = "end" if self.route == "plans" else "start"
