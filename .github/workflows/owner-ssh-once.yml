@@ -20,10 +20,26 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Run isolated backend and delivery checks on the prepared Timeweb VM
+      - name: Record owner authorization and inspect the Timeweb development host
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-          TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
-          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
           PYTHONUNBUFFERED: '1'
-        run: python3 deploy/adopt_replacement_vm.py --develop-staged
+        run: |
+          python3 - <<'PY'
+          import json,shlex,subprocess,sys
+          sys.path.insert(0,"deploy")
+          import access_owner_vm as access
+          import adopt_replacement_vm as adopt
+          import prepare_owner_vm as prepare
+          def authorized_command(command):
+              script="import fcntl, hashlib, json, os, pathlib, shutil, subprocess\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert root.is_dir() and not root.is_symlink()\ndef run(args,timeout=120):\n    p=subprocess.run(args,cwd=root,text=True,capture_output=True,timeout=timeout)\n    if p.returncode:\n        raise RuntimeError(json.dumps({\"command\":args[:3],\"exit\":p.returncode,\"output\":(p.stdout+p.stderr)[-3000:]}))\n    return p.stdout.strip()\nif not (root/\".git\").exists():\n    run([\"git\",\"init\",\"-q\"])\n    run([\"git\",\"fetch\",\"--depth=1\",\"https://github.com/MishaGameHacking/omni-cio-gateway.git\",\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"],timeout=180)\n    run([\"git\",\"reset\",\"--mixed\",\"FETCH_HEAD\"])\n    assert not run([\"git\",\"status\",\"--porcelain\"]),\"archive_does_not_match_git\"\npolicy=\"\"\"## OWNER 23.10.2026 — Timeweb и постоянное разрешение\n\nРазработка, редактирование приложения, сборка APK и все проверки выполняются\nна Timeweb. GitHub хранит резервные копии исходников; OWNER отдельно разрешил\nGitHub Actions как канал SSH-команд к Timeweb. Повторно спрашивать разрешение\nна этот канал, необходимые исправления, проверки и развёртывание в согласованной\nзадаче не нужно. Разрешение не заменяет фактическую проверку результата.\nПодбирать минимально достаточные по цене серверы: Россия в приоритете,\nзатем ближайшие страны. Ресурсы для этой задачи разрешены; не создавать\nненужные экземпляры. Приложение и телефонный дизайн строго вертикальные.\nИсправлять только подтверждённые ошибки существующего приложения; сохранить\nвсе проверки и единый итоговый коммит исправлений. Секреты не публиковать.\n\n\"\"\"\nchanged=[]\nfor relative in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=root/relative\n    original=path.read_text()\n    if policy.strip() not in original:\n        first,separator,tail=original.partition(\"\\n\")\n        path.write_text(first+\"\\n\\n\"+policy+tail.lstrip(\"\\n\"))\n        changed.append(relative)\nreport={\"server_id\":9408159,\"source_head\":run([\"git\",\"rev-parse\",\"HEAD\"]),\"owner_policy_saved\":True,\n        \"changed_files\":changed,\"git_status\":run([\"git\",\"status\",\"--short\"]),\n        \"cpu_count\":os.cpu_count(),\"memory_kib\":next(line for line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if line.startswith(\"MemTotal:\")),\n        \"disk_free_gib\":round(shutil.disk_usage(root).free/1024**3,2),\n        \"kvm_exists\":pathlib.Path(\"/dev/kvm\").exists(),\"cpu_virtualization_flags\":sorted(set(pathlib.Path(\"/proc/cpuinfo\").read_text().split())&{\"vmx\",\"svm\"}),\n        \"tools\":{name:shutil.which(name) for name in (\"git\",\"java\",\"node\",\"adb\",\"sdkmanager\",\"emulator\",\"caddy\")},\n        \"android_locations\":[str(p) for p in (pathlib.Path(\"/opt/android-sdk\"),pathlib.Path(\"/root/Android/Sdk\"),pathlib.Path(\"/opt/android\")) if p.exists()]}\nif report[\"kvm_exists\"]:\n    try:\n        with open(\"/dev/kvm\",\"rb\",buffering=0) as d:\n            report[\"kvm_api_version\"]=fcntl.ioctl(d,0xAE00,0)\n    except OSError as e: report[\"kvm_error\"]=str(e)\nreport[\"services\"]={}\nfor unit in (\"analyst-ai-owner\",\"caddy\"):\n    p=subprocess.run([\"systemctl\",\"is-active\",unit],text=True,capture_output=True)\n    report[\"services\"][unit]=p.stdout.strip()\nprint(json.dumps(report,ensure_ascii=False),flush=True)\n"
+              result=subprocess.run(command+["python3 -c "+shlex.quote(script)],capture_output=True,text=True,timeout=480)
+              for line in result.stdout.splitlines():
+                  if line.startswith("{"):
+                      print("OWNER_TIMEWEB_REMOTE="+json.dumps(json.loads(line),ensure_ascii=False),flush=True)
+              if result.returncode:
+                  print("OWNER_REMOTE_DIAGNOSTIC="+result.stderr[-6000:],flush=True)
+                  raise prepare.ProbeError("remote_inspection_failed_"+str(result.returncode))
+          access.develop_backend=authorized_command
+          adopt.run(development=True)
+          PY
