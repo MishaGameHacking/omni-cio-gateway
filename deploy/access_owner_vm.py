@@ -134,6 +134,9 @@ def run(mode):
         connect_ipv4(token, server)
     document = request(token, "GET", "/ssh-keys")
     if mode == "inspect":
+        domain = prepare.domain_api(token, "GET")
+        print("OWNER_DOMAIN_OBSERVED=" + json.dumps(None if domain is None else {
+            k: domain.get("domain", {}).get(k) for k in ("fqdn", "idn_name", "is_technical", "linked_ip")}), flush=True)
         print("OWNER_KEY_RESPONSE_SHAPE=" + json.dumps({"keys": list(document), "meta": document.get("meta"),
             "list_lengths": {k: len(v) for k, v in document.items() if isinstance(v, list)}}), flush=True)
         addresses = request(token, "GET", "/floating-ips")
