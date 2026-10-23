@@ -1,5 +1,136 @@
 # Выполнение главного плана Analyst AI
 
+## Подготовленная синхронизация server с app 0bd11737 — 23.10.2026
+
+Область F23. Родители подготовленного объединения:
+server `70aea700625c7b2cf8861dbd86f01acf2f0f311d` и
+app `0bd11737cb6219f49be50caeb771e20c401c7bf2`
+(tree app `f739902da1e5366f5ee4c3414b6ee988510834c3`).
+
+Перенесены три недокументационных пути: Android workflow и его JS/Python
+регрессии. Успешный preflight выдаёт prepared_attempt; build при несовпадении
+с текущим run_attempt повторяет полный prepare перед SDK, а при ошибке
+сразу запускает cleanup до прочих always-шагов. Существующие ownership,
+anonymous-denial, read-back, digest и upload/download guards сохраняются.
+Production transfer module, Kotlin, native driver и backend не изменены.
+README и этот реестр сохраняют все строки обоих родителей в исходном
+порядке; конфликты были только между добавляемыми в начало разделами.
+
+### Локальная проверка объединённого дерева
+
+- Полный CI/release-набор: **949 tests за 1.032s, OK, skipped=4**.
+  Два пропуска требуют Android SDK, два — полного JDK для host-регрессий.
+- Аудит всех **336 отслеживаемых Python-файлов**: **0 failures**,
+  compile-without-execution; проверен индекс с разрешёнными конфликтами.
+- Все **777 общих app-путей**, кроме двух документов и server-specific
+  набора, совпадают с `0bd11737` по набору путей и Git blob/mode.
+- Все **13 server-specific путей** точно сохранены из `70aea700`, включая
+  Telegram OIDC/owner enrollment, установщик и read-only inventory.
+- Все **340 путей `app/` и `ci-ui-driver/`** и **162 пути `backend/`**
+  неизменны относительно `70aea700`; production `ci_private_transfer.cjs`
+  также совпадает с обоими родителями. Backend/JVM suites повторно не запускались.
+- Working/staged diff check — PASS; неразрешённых конфликтов индекса
+  и незастейдженных изменений нет. Независимое read-only review
+  трёх перенесённых путей и сохранённых server/source границ — APPROVE.
+
+### Доказательства родителей и границы приёмки
+
+Server `70aea700` прошёл собственный [Backend CI 39925790746](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925790746),
+job `120321704044`: **1553 tests / 1481 subtests**, 28.69s, audit336,
+health/OpenAPI и strict Sonar PASS. Его [полный Sonar 39925784357](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925784357),
+job `120321681542`, check `120322227864`, подтвердил **0 OPEN/CONFIRMED
+всех типов, 0 новых, unique:0, all_types:true, complete:true**.
+CI merge `992a9b01ba608f80ddc779e8af7f61fce6243518` имеет то же дерево
+`1774eb694c56d9a53cfbd198c013048b3fd259bf`, что этот server-родитель.
+
+App `0bd11737` прошёл собственный [Backend CI 39927331812](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927331812),
+job `120326843926`: **1505 tests / 1409 subtests PASS**, 20.62s,
+audit330 и strict Sonar PASS. [Полный Sonar 39927324925](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927324925),
+job `120326819752`, check `120327828515`: **0 OPEN/CONFIRMED всех типов,
+0 новых, unique:0, all_types:true, complete:true**.
+В [Android CI 39927331871](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927331871)
+preflight `120327281541` PASS; build `120327377022` прошёл SDK в
+08:50:42 UTC и выполняет Gradle. Runtime нового SHA ещё не подтверждён.
+
+App-родитель `25e73835` отдельно прошёл Backend **1505/1409** и полный
+Sonar **0/0**; ссылки сохранены в app-разделе ниже. Его Android attempt1
+остановился на SDK timeout 600s до Gradle/runtime. Attempt2 прошёл SDK
+и APK rule tests и дошёл до Gradle. После нового head она отменена
+в 08:49:42 UTC во время Gradle, без BUILD SUCCESSFUL, upload или runtime.
+[Cleanup job 120327130953](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032873/job/120327130953)
+подтвердил verified_absent в 08:49:49.116 UTC. В переиспользовании preflight
+была выявлена несовместимость с текущей transfer identity; это отдельный
+orchestration-дефект, а не наблюдавшийся runtime FAIL попытки2.
+
+Новый server SHA требует собственных Backend CI и полного Sonar.
+Приёмка app `0bd11737` включает собственные Gradle/JVM/lint и обе полные
+API37-матрицы с фактическими PAGE_SIZE 16384/4096 и font100/200.
+Локальные regression tests не подтверждают новый APK, физический телефон,
+live Timeweb, DNS/TLS, реальный Telegram owner binding или доставку
+проверенных APK-байтов в канал обновления.
+
+## Сохранённые записи app/server
+
+## Preflight текущей попытки повторной сборки — 23.10.2026
+
+Область F23; родитель app `25e73835dfee05b7c22645ddf8e541dcf3e7caf7`,
+tree `cf09a5f7c622a8539fd0e92e2e3a878497d245a9`. Исправления ожидания окна,
+направления issuer lookup и весь Kotlin/backend остаются прежними.
+
+### Доказательства и причина
+
+- [Backend39925032850](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032850)
+  родителя PASS: 1505 tests / 1409 subtests, 24.86s; audit330.
+  [Полный Sonar39925027214](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925027214)
+  PASS: check120320038927, 0/0/unique0, all_types:true, complete:true.
+  CI merge `36c78c041148e90d62f07bc44b4428ee4e361b19` имеет то же дерево.
+- [Android39925032873 attempt1](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925032873/attempts/1),
+  build120319322820: первый пакет `platforms/android-37.0` получил
+  `subprocess.TimeoutExpired` после 600s. CLI не вывел отдельной причины;
+  сеть, lock и конкретная причина ожидания не установлены. Gradle/runtime
+  не начались. Cleanup120323461186 подтвердил `verified_absent` в08:40:37UTC.
+- Одна повторная попытка2 на том же SHA прошла SDK и APK rule tests
+  (08:41:45/08:41:57UTC) и дошла до Gradle. Новый build120323801609
+  начал работу в08:41:21, а успешный preflight120323843846 сохранил время
+  исходного выполнения 08:29:47–08:30:03. Его результат был переиспользован.
+- Transfer identity включает GITHUB_RUN_ATTEMPT. Старый draft уже удалён,
+  нового `ci-transfer-39925032873-2` нет в полном списке releases (29 записей).
+  Поэтому upload этой попытки не получает обязательный пустой draft.
+  Это подтверждённая несовместимость orchestration с текущими guards;
+  не наблюдавшийся native UI FAIL и не повод ослаблять uploader.
+
+### Исправление и граница повторов
+
+Preflight выдаёт prepared_attempt только после успешного полного prepare.
+Build сохраняет зависимость от preflight и перед SDK сравнивает этот output
+с текущим github.run_attempt. При несовпадении выполняется тот же prepare
+для новой попытки; при совпадении повторного создания draft нет.
+При ошибке повторного prepare сразу выполняется cleanup, до остальных
+always-шагов; завершающая очистка workflow остаётся обязательной.
+Ownership, anonymous-denial, read-back, digest, upload и download проверки
+не меняются. SDK-платформа, timeout и signing также не меняются.
+
+Это поддерживает повтор **build job**. Для повторного runtime после успешной
+сборки и cleanup нужны новые входные APK: следует повторить build job с его
+зависимыми задачами либо весь workflow. Повтор job вместе с зависимыми
+задачами предусмотрен [GitHub REST API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run).
+Один runtime не может использовать
+удалённую передачу прежней попытки; соответствующий отказ сохраняется.
+
+### Проверка нового дерева
+
+Полный локальный CI-набор: **922 tests PASS**, 4 предусмотренных skips,
+0.951s. Transfer Node suite: **10/10 PASS**; workflow contract: **13/13 PASS**.
+Добавлены одна JS-регрессия полного lifecycle prepare1 → cleanup → отказ
+upload2 → prepare2 → upload2 и три Python-проверки output/condition/order.
+Исходный workflow не проходит все три новых contract-проверки.
+Production transfer module не менялся; его прежние guards сохраняются.
+Аудит всех **330 Python-файлов PASS**, failures:[]; working/staged diff check PASS.
+Собственные Backend/Sonar, Gradle/JVM/lint и обе полные API37-матрицы
+16384/4096 нового SHA обязательны.
+Физический телефон, Timeweb, Telegram owner binding и APK-канал остаются
+отдельными этапами; новый приватный APK пока не подтверждён.
+
 ## Подготовленная синхронизация server с app 25e73835 — 23.10.2026
 
 Область F01/F02/F20/F22/F23. Родители подготовленного объединения:

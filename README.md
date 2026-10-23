@@ -1,5 +1,55 @@
 # Analyst AI — Android-приложение и Timeweb backend
 
+**Подготовленная синхронизация server с app `0bd11737`, F23, 23.10.2026:**
+Родители — server `70aea700` и app `0bd11737`. Перенесена привязка
+успешного private preflight к номеру попытки сборки: повторная попытка
+при необходимости выполняет полный prepare до SDK и сразу очищает draft
+при ошибке подготовки. Production transfer и его строгие guards прежние.
+
+Локальный объединённый CI/release-набор: **949 tests, OK, skipped=4**,
+1.032s; аудит **336 Python-файлов**, 0 ошибок. Все **777 общих app-путей**
+совпадают с `0bd11737`, **13 server-specific путей** — с `70aea700`
+по Git blob/mode. Все **340 app/driver** и **162 backend-пути** неизменны
+относительно server-родителя; backend/JVM suites не повторялись.
+Истории обеих веток сохранены; working/staged diff check — PASS.
+
+Server `70aea700` отдельно прошёл [Backend CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925790746)
+**1553 tests / 1481 subtests**, 28.69s, audit336, и
+[полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39925784357)
+**0/0, unique:0, all_types:true, complete:true**. Эти результаты относятся
+к указанному родителю; новый server SHA требует собственных Backend/Sonar.
+App `0bd11737` также прошёл собственные [Backend CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927331812)
+**1505 tests / 1409 subtests**, 20.62s, audit330, strict Sonar и
+[полный Sonar](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927324925)
+**0/0, unique:0, all_types:true, complete:true**.
+В [Android CI](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/39927331871)
+preflight прошёл, SDK прошёл в 08:50:42 UTC; Gradle ещё выполняется.
+Полные Android-матрицы, приватный APK, физический телефон, live Timeweb
+и Telegram owner binding остаются отдельными проверками.
+Причина повторной сборки и различие SDK timeout / runtime — в
+[PLAN_STATUS](docs/PLAN_STATUS.md).
+
+**Далее сохранены app/server-записи соответствующих кандидатов.**
+
+**Приватная передача для каждой повторной сборки, F23, 23.10.2026:**
+Повтор Android-сборки теперь сопоставляет свой номер попытки с успешно
+проверенным preflight. Если GitHub использовал прежний результат, сборка
+выполняет полный private prepare для текущей попытки: синтетическую передачу,
+проверку чтением, недоступность без авторизации и удаление пробного asset.
+При сбое prepare выполняется немедленная очистка; ownership и upload guards
+сохраняются. Совпадающая попытка не создаёт второй draft.
+Локально: **922 CI tests PASS** с 4 предусмотренными skips; приватная
+передача — **10/10**, workflow contract — **13/13**.
+
+Это исправляет обнаруженную границу повторной **сборки** после SDK timeout.
+Повтор одного runtime после удаления временных APK требует заново запустить
+build job либо весь workflow. Подробности, результаты и ограничения — в
+[PLAN_STATUS](docs/PLAN_STATUS.md) и [PR #880](https://github.com/MishaGameHacking/omni-cio-gateway/pull/880).
+Обе полные Android API37-матрицы и новый приватный APK ещё должны пройти
+проверку; успешные Backend/Sonar относятся к своим указанным SHA.
+
+**Далее — история предыдущих кандидатов.**
+
 **Подготовленная синхронизация server с app `25e73835`, F01/F02/F20/F22/F23, 23.10.2026:**
 Родители — server `469bab19` и app `25e73835`. Перенесены ожидание нового
 нативного окна перед прокруткой catalogue/portfolio и поиск эмитента вверх

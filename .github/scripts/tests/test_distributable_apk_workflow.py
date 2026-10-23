@@ -22,6 +22,57 @@ class DistributableApkWorkflowTests(unittest.TestCase):
         self.assertIn(":app:assemblePreview", self.workflow)
         self.assertIn("RUN_PROFILE_UI_TESTS: '1'", self.workflow)
 
+    def test_preflight_exports_its_attempt_only_after_verified_preparation(self):
+        preflight = self.workflow[self.workflow.index("  transfer-preflight:"):
+                                  self.workflow.index("  build:")]
+        self.assertIn("prepared_attempt: ${{ steps.prepare.outputs.prepared_attempt }}", preflight)
+        preparation = preflight[preflight.index("- name: Verify synthetic draft handoff"):
+                                preflight.index("- name: Remove the temporary draft")]
+        self.assertIn("id: prepare\n", preparation)
+        self.assertIn(
+            "await require('./.github/scripts/ci_private_transfer.cjs')"
+            "({github, context, core, command:'prepare'});\n"
+            "          core.setOutput('prepared_attempt', process.env.GITHUB_RUN_ATTEMPT);",
+            preparation,
+        )
+        self.assertNotIn("continue-on-error", preparation)
+
+    def test_build_prepares_only_an_attempt_not_already_verified_by_preflight(self):
+        build = self.workflow[self.workflow.index("  build:"):self.workflow.index("  runtime:")]
+        self.assertEqual(build.count("    needs:\n"), 1)
+        self.assertIn("    needs:\n    - transfer-preflight\n", build)
+        preparation_start = build.index("- name: Prepare private handoff for the current rerun attempt")
+        cleanup_start = build.index("- name: Remove the temporary draft immediately if rerun preparation fails")
+        preparation = build[preparation_start:cleanup_start]
+        self.assertLess(build.index("- name: Checkout source"), preparation_start)
+        self.assertLess(preparation_start, build.index("- name: Ensure Android SDK 37 is installed"))
+        self.assertIn("id: prepare_transfer\n", preparation)
+        self.assertIn(
+            "if: needs.transfer-preflight.outputs.prepared_attempt != format('{0}', github.run_attempt)\n",
+            preparation,
+        )
+        self.assertIn(
+            "script: await require('./.github/scripts/ci_private_transfer.cjs')"
+            "({github, context, core, command:'prepare'});",
+            preparation,
+        )
+        self.assertNotIn("continue-on-error", preparation)
+
+    def test_failed_rerun_preparation_cleans_up_before_build_or_always_steps(self):
+        build = self.workflow[self.workflow.index("  build:"):self.workflow.index("  runtime:")]
+        cleanup_start = build.index("- name: Remove the temporary draft immediately if rerun preparation fails")
+        next_step = build.index("- name: Prepare canonical 3D catalogue before packaging")
+        cleanup = build[cleanup_start:next_step]
+        self.assertIn("if: failure() && steps.prepare_transfer.outcome == 'failure'\n", cleanup)
+        self.assertIn(
+            "script: await require('./.github/scripts/ci_private_transfer.cjs')"
+            "({github, context, core, command:'cleanup'});",
+            cleanup,
+        )
+        self.assertNotIn("continue-on-error", cleanup)
+        self.assertLess(cleanup_start, next_step)
+        self.assertLess(cleanup_start, build.index("if: always()"))
+
     def test_workflow_pins_the_real_installed_reference_apk(self):
         self.assertIn("Analyst-AI-0.10.0-preview-0a894dd.apk", self.workflow)
         self.assertIn("android-preview-0a894dddfa858efe6c7be60aea78935adec84c1b", self.workflow)

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const transfer = require('./ci_private_transfer.cjs');
 
 function fixture(options = {}) {
@@ -120,6 +121,44 @@ test('upload reuses the prepared draft and never creates another release after b
     unprepared.env.RUNNER_TEMP = folder;
     await assert.rejects(transfer({...unprepared, command: 'upload'}), /preflight-owned CI draft/);
     assert.deepEqual(unprepared.writes, []);
+  } finally {
+    fs.rmSync(folder, {recursive: true, force: true});
+  }
+});
+
+test('a rerun after cleanup needs its own complete private preflight before upload', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-handoff-rerun-test-'));
+  try {
+    const archive = Buffer.from('synthetic signed inputs for the rebuilt attempt');
+    fs.writeFileSync(path.join(folder, 'ci-handoff.zip'), archive);
+    const f = fixture();
+    f.env.RUNNER_TEMP = folder;
+    await transfer({...f, command: 'prepare'});
+    await transfer({...f, command: 'cleanup'});
+    assert.equal(f.writes.at(-1), 'CI_PRIVATE_TRANSFER_CLEANUP=verified_absent');
+
+    // GitHub can reuse the successful preflight job from attempt 1 after its
+    // draft was cleaned up. The attempt-2 uploader must still refuse it.
+    f.env.GITHUB_RUN_ATTEMPT = '2';
+    const afterCleanup = f.writes.length;
+    await assert.rejects(transfer({...f, command: 'upload'}), /preflight-owned CI draft/);
+    assert.equal(f.writes.length, afterCleanup);
+
+    await transfer({...f, command: 'prepare'});
+    const prepared = (await f.github.rest.repos.getRelease()).data;
+    assert.equal(prepared.tag_name, 'ci-transfer-42-2');
+    assert.equal(JSON.parse(prepared.body).attempt, '2');
+    assert.deepEqual(prepared.assets, []);
+    assert.deepEqual(f.writes.filter(value => Array.isArray(value) && value[0] === 'create')
+      .map(value => value[1].tag_name), ['ci-transfer-42-1', 'ci-transfer-42-2']);
+    assert.equal(f.writes.filter(value => value === 'delete-probe').length, 2);
+    assert.equal(f.writes.at(-1), 'CI_PRIVATE_TRANSFER_PREPARED=private_readback_passed_and_empty_draft_retained');
+
+    await transfer({...f, command: 'upload'});
+    assert.deepEqual(f.writes.filter(value => Array.isArray(value) && value[0] === 'archive_sha256'),
+      [['archive_sha256', crypto.createHash('sha256').update(archive).digest('hex')]]);
+    await transfer({...f, command: 'cleanup'});
+    assert.equal(f.writes.at(-1), 'CI_PRIVATE_TRANSFER_CLEANUP=verified_absent');
   } finally {
     fs.rmSync(folder, {recursive: true, force: true});
   }
