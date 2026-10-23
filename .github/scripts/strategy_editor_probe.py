@@ -10,7 +10,7 @@ from profile_ui_probe import button_label
 def exercise_strategy_editor(probe, font_scale):
     area = "workspace-content"
     horizon = "strategy-horizon"
-    probe.tap_resource(horizon, area, direction="start")
+    probe.tap_resource(horizon, area, direction="end")
     probe.wait_for(lambda: native_input_ready(probe.tree(), "36"), "Strategy horizon did not gain native focus and keyboard")
     probe.command("shell", "input", "keyevent", "KEYCODE_MOVE_END")
     for _ in range(2):

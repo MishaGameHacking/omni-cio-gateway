@@ -50,6 +50,9 @@ fun PlansWorkspaceScreen(onBack: () -> Unit) {
         }
         resource.refresh()
     }
+    val activeJob = jobId?.let { id ->
+        rememberWorkspaceJobState(id, onCompleted = { resource.refresh(); refreshPortfolio() })
+    }
     LaunchedEffect(foreground, handoff) {
         if (!foreground && handoff != null) leftApplication = true
         if (foreground && leftApplication && handoff != null) {
@@ -76,7 +79,7 @@ fun PlansWorkspaceScreen(onBack: () -> Unit) {
                 WorkspaceEmpty("Планов пока нет", "Подготовьте первый расчёт, чтобы затем открыть инструмент у брокера и сверить фактический результат.", "Подготовить план", { editor = true })
             }
             linkError?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
-            jobId?.let { id -> item { WorkspaceJobPanel(id, { resource.refresh(); refreshPortfolio() }, { jobId = null }) } }
+            activeJob?.let { model -> item { WorkspaceJobPanel(model, onClose = { jobId = null }) } }
             resource.data?.records("items").orEmpty().forEach { plan -> item(key = plan.text("id")) {
                 PlanCard(plan, enabled = !mutation.busy && !open.busy, onOpen = {
                     open.perform(planResourcePath + VolumeWorkspaceClient.encode(plan.text("id")) + "/open-broker",

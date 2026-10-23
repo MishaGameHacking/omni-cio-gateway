@@ -153,7 +153,9 @@ class _BusinessCase:
 
         self.probe.tap("Сохранённые задания · 1", "workspace-content")
         self.probe.tap_resource("recover-request-synthetic-request", "workspace-content")
-        self.probe.reveal("Исход требует сверки", "workspace-content", direction="start")
+        # Plans appends the recovered job below saved requests; Assistant inserts it above.
+        direction = "end" if self.route == "plans" else "start"
+        self.probe.reveal("Исход требует сверки", "workspace-content", direction=direction)
         self.probe.reveal(UNCERTAIN, "workspace-content")
         if matching_node(self.probe.tree(), "Повторить разрешённую задачу") is not None:
             raise AssertionError("Unknown paid request exposes an unsafe repeat action")
