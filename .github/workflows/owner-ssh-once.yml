@@ -2,36 +2,69 @@ name: Temporary access to the new owner VM
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [.github/workflows/owner-ssh-once.yml]
+    paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
   contents: read
 concurrency:
-  group: analyst-external-timeweb-https-check
+  group: analyst-timeweb-apk-owner-readiness
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 8
     steps:
-      - name: Verify the public Timeweb HTTPS enrollment endpoint
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Fetch the exact checked server sources
+        run: |
+          git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
+          git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
+      - name: Check update signing and private enrollment state on Timeweb
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import datetime,hashlib,http.client,json,ssl
-          host="analyst-ai-2941515.twc1.net"
-          context=ssl.create_default_context()
-          connection=http.client.HTTPSConnection(host,443,timeout=15,context=context)
-          connection.connect()
-          peer=connection.sock.getpeername()[0]
-          assert peer=="201.24.52.66","unexpected_public_server"
-          certificate=connection.sock.getpeercert()
-          digest=hashlib.sha256(connection.sock.getpeercert(binary_form=True)).hexdigest()
-          rows=[]
-          for path in ("/health","/workspace"):
-              connection.request("GET",path,headers={"Host":host})
-              with connection.getresponse() as response:
-                  body=response.read(256)
-                  rows.append({"path":path,"status":response.status,"enrollment_only":body==b"owner-enrollment-only"})
-                  assert response.status==404 and body==b"owner-enrollment-only","unexpected_public_enrollment_gate"
-          connection.close()
-          print("TIMEWEB_EXTERNAL_ENROLLMENT_TLS="+json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"public_ip":peer,"hostname":host,"certificate_sha256":digest,"certificate_not_after":certificate.get("notAfter"),"verified_tls":True,"routes":rows,"owner_authenticated":False}),flush=True)
+          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+          sys.path[:0]=["deploy","tools"]
+          import prepare_owner_vm as p
+          import access_owner_vm as access
+          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          def read_dedicated():
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/dedicated-servers/121673",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))["dedicated_server"]
+          dedicated=read_dedicated()
+          assert dedicated["id"]==121673 and dedicated["project_id"]==2941515
+          print("TIMEWEB_BUILDER_STATUS="+json.dumps({k:dedicated.get(k) for k in ("id","name","status","location","ip","autoinstall_ready")}),flush=True)
+          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
+          for server_id,name,ip,old_host in targets:
+              access.SERVER_ID=server_id
+              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
+              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
+              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                  folder=pathlib.Path(directory)
+                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                  key=created.get("ssh_key",created.get("ssh-key",{}))
+                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
+                  key_id=key["id"];attached=False
+                  try:
+                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
+                      command=p.ssh_command(folder,ip,old_host)
+                      command[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                      for attempt in range(12):
+                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
+                          except (p.ProbeError,subprocess.TimeoutExpired):
+                              if attempt==11:raise
+                              time.sleep(5)
+                      script="import datetime,hashlib,json,pathlib,re,subprocess,sys\nsys.path.insert(0,\"/root/analyst-ai-source\")\nfrom deploy import install_owner_backend as installer\nnow=datetime.datetime.now(datetime.timezone.utc)\nreport={\"server_id\":9413105,\"checked_at_utc\":now.isoformat()}\ndef run(args,timeout=30):\n    return subprocess.run(args,capture_output=True,text=True,check=False,timeout=timeout)\nwork=pathlib.Path(\"/root/analyst-owner-login-relay-retry-20261024\")\nsocket=work/\"tmux.sock\"\nowner=pathlib.Path(\"/root/analyst-ai-owner.json\")\nreport[\"owner_config_exists\"]=owner.exists()\nreport[\"backend_env_exists\"]=pathlib.Path(\"/etc/analyst-ai/backend.env\").exists()\nreport[\"backend_unit_exists\"]=installer.UNIT.exists()\nreport[\"caddy_active\"]=run([\"systemctl\",\"is-active\",\"caddy\"]).stdout.strip()\nreport[\"backend_active\"]=run([\"systemctl\",\"is-active\",\"analyst-ai-owner\"]).stdout.strip()\ncapture=run([\"tmux\",\"-S\",str(socket),\"capture-pane\",\"-p\",\"-J\",\"-S\",\"-150\",\"-t\",\"owner:0.0\"])\npane=capture.stdout\nreport[\"enrollment_pane_available\"]=capture.returncode==0\nreport[\"verified_identity_seen\"]=\"Verified Telegram identity (profile hints do not authorize access):\" in pane\nreport[\"binding_prompt_seen\"]=\"Check that this is your intended owner.\" in pane\nreport[\"enrollment_success_seen\"]=\"OWNER_ENROLLMENT_SAVED=\" in pane\nreport[\"enrollment_fixed_errors\"]=re.findall(r\"(?:OWNER_ENROLLMENT_ERROR|OWNER_BACKEND_INSTALL_ERROR)=([a-zA-Z0-9_]+)\",pane)\nfor code in (\"enrollment_expired\",\"confirmation_cancelled\",\"registered_redirect_not_confirmed\",\"token_exchange_failed\",\"telegram_jwks_unavailable\"):\n    if code in pane and code not in report[\"enrollment_fixed_errors\"]:report[\"enrollment_fixed_errors\"].append(code)\nstate=work/\"state.json\"\nif state.is_file():\n    data=json.loads(state.read_text())\n    expiry=data.get(\"expires_at_utc\")\n    report[\"enrollment_link_expires_utc\"]=expiry\n    report[\"enrollment_link_expired\"]=bool(expiry and datetime.datetime.fromisoformat(expiry)<now)\nconfig=installer.load_config(enrollment=True)\nreport[\"origin\"]=config[\"BACKEND_PUBLIC_URL\"]\nif owner.exists():\n    owner_cfg=installer.load_config()\n    report[\"owner_config_matches_origin\"]=owner_cfg[\"BACKEND_PUBLIC_URL\"]==config[\"BACKEND_PUBLIC_URL\"]\n    report[\"local_backend_probe\"]=installer.probe()\n    report[\"public_tls_backend_probe\"]=installer.probe(config[\"BACKEND_PUBLIC_URL\"].split(\"://\",1)[1])\nartifacts=pathlib.Path(\"/root/analyst-ai-artifacts\")\ncandidate=artifacts/\"690811a5a376181990a64f37d914c87eb6c919b7/Analyst-AI-0.11.0-preview-690811a5.apk\"\nold=artifacts/\"previous-0.10.0.apk\"\nbt=pathlib.Path(\"/opt/analyst-android-sdk/build-tools/37.0.0\")\nreport[\"apk\"]={}\nfor label,path in ((\"installed_line_source\",old),(\"candidate\",candidate)):\n    row={\"exists\":path.is_file()}\n    if path.is_file():\n        row[\"bytes\"]=path.stat().st_size\n        row[\"sha256\"]=hashlib.sha256(path.read_bytes()).hexdigest()\n        verify=run([str(bt/\"apksigner\"),\"verify\",\"--verbose\",\"--print-certs\",str(path)],60)\n        row[\"signature_valid\"]=verify.returncode==0\n        row[\"cert_sha256\"]=re.findall(r\"Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})\",verify.stdout)\n        badging=run([str(bt/\"aapt2\"),\"dump\",\"badging\",str(path)],60)\n        package=re.search(r\"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'\",badging.stdout,re.M)\n        if package:row.update(dict(zip((\"package\",\"version_code\",\"version_name\"),package.groups())))\n        for field,pattern in ((\"min_sdk\",r\"^sdkVersion:'([^']+)'\"),(\"target_sdk\",r\"^targetSdkVersion:'([^']+)'\")):\n            m=re.search(pattern,badging.stdout,re.M)\n            if m:row[field]=m.group(1)\n    report[\"apk\"][label]=row\nbefore=report[\"apk\"][\"installed_line_source\"];after=report[\"apk\"][\"candidate\"]\nreport[\"update_identity_matches\"]=bool(before.get(\"signature_valid\") and after.get(\"signature_valid\") and before.get(\"package\")==after.get(\"package\") and before.get(\"cert_sha256\") and before[\"cert_sha256\"]==after.get(\"cert_sha256\"))\nsource=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nreport[\"android_worktree_head\"]=run([\"git\",\"-C\",str(source),\"rev-parse\",\"HEAD\"]).stdout.strip()\nreport[\"android_worktree_changed_paths\"]=run([\"git\",\"-C\",str(source),\"diff\",\"--name-only\"]).stdout.splitlines()\nbackend_source=source/\"app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt\"\ntext=backend_source.read_text()\nreport[\"backend_placeholder_in_source\"]=\"backend-not-configured.invalid\" in text\nreport[\"kvm_available\"]=pathlib.Path(\"/dev/kvm\").exists()\ntarget=pathlib.Path(\"/root/analyst-apk-delivery-readiness-20261024.json\")\ntarget.write_text(json.dumps(report,indent=2)+\"\\n\");target.chmod(0o600)\nprint(\"TIMEWEB_APK_DELIVERY_READINESS=\"+json.dumps(report),flush=True)\n"
+                      output=p.remote(command,"/root/analyst-ai-development-venv/bin/python -u -c "+shlex.quote(script),timeout=180).decode()
+                      print(output,end="",flush=True)
+                  finally:
+                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
+                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
+                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
           PY
