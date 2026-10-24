@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Save the owner Russian-only minimum policy and rejected configuration on Timeweb
+      - name: Inspect Moscow and Saint Petersburg compute options for direct API creation
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -35,24 +35,32 @@ jobs:
               req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
+          fin=get("/account/finances")["finances"]
+          status=get("/account/status")["status"]
+          assert Decimal(str(fin["balance"]))>0 and not status["is_blocked"]
+          print("METRO_ACCOUNT="+json.dumps({"balance_positive":True,"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"blocked":False}),flush=True)
           servers=p.read_resource(token,"servers")
           assert p.summarize("servers",servers)["complete"]
-          assert {s["id"] for s in servers["servers"]}=={9408159},"inventory_changed_reconcile_before_status_write"
-          print("RUSSIA_FINAL_INVENTORY="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location")} for s in servers["servers"]]),flush=True)
-          import shlex
-          import access_owner_vm as access
-          import adopt_replacement_vm as adopt
-          original_select=adopt.select_target
-          observed=servers["servers"][0]
-          assert observed["ram"] in {1024,3072} and observed["cpu"]==1
-          def select_target(new):
-              original_select(new)
-              if new:p.CONFIGURATION["ram"]=observed["ram"]
-          adopt.select_target=select_target
-          def save_policy(command):
-              script="import hashlib,json,os,pathlib,subprocess\nos.umask(0o077)\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\nallowed={\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"}\nassert set(subprocess.check_output([\"git\",\"diff\",\"--name-only\"],cwd=root,text=True).splitlines())<=allowed\npolicy=\"\\n## OWNER 24.10.2026 — только Россия, минимальная конфигурация\\n\\nВладелец уточнил: «Создай конфигурацию на российском сервере! Выбери самый дешёвый, но необходимый нам! Без запаса!»\\nВыбирать только российскую локацию Timeweb, минимальную фактически достаточную конфигурацию и почасовое списание. Разработка, сборка и проверки выполняются на Timeweb; GitHub служит резервной копией и уже разрешённым транспортом доступа. Это заменяет прежнее разрешение выбирать любую страну. Новые функции не добавлять. Сохранять подпись APK, портретную ориентацию, существующие данные и полные проверки приложения. Наличие тарифа не доказывает возможность заказа, доступный KVM или успешную проверку APK.\\n\\n\"\nreport=[]\nfor name in sorted(allowed):\n    path=root/name\n    assert path.is_file() and not path.is_symlink()\n    before=path.read_text()\n    if \"## OWNER 24.10.2026 — только Россия, минимальная конфигурация\" not in before:\n        title,separator,rest=before.partition(\"\\n\")\n        assert separator and title.startswith(\"# \")\n        path.write_text(title+\"\\n\"+policy+rest)\n    after=path.read_bytes()\n    report.append({\"path\":name,\"sha256\":hashlib.sha256(after).hexdigest(),\"instruction_present\":policy.strip() in after.decode()})\nassert all(r[\"instruction_present\"] for r in report)\nconfig={\"status\":\"not_created_provider_rejected_requests\",\"russian_regions_only\":True,\"hourly_billing_required\":True,\"owner_requested_no_spare_capacity\":True,\"candidate\":{\"cpu\":2,\"ram_mib\":5120,\"disk_mib\":30720,\"configuration_ids\":[149,151],\"locations\":[\"ru-4\",\"ru-5\"],\"monthly_compute_rub\":1780,\"monthly_ipv4_rub\":200,\"monthly_total_rub\":1980},\"suitability_verified\":False,\"required_hardware_checks\":[\"actual_memory\",\"actual_free_disk\",\"ssh_host_identity\",\"KVM_API_version_12\",\"KVM_CREATE_VM\"],\"android_emulator_ram_mib\":4096,\"execution\":\"build_and_emulator_sequential\",\"provider_ticket\":12913059,\"preserve_existing_server_id\":9408159,\"apk_release_completed\":False}\ndestination=pathlib.Path(\"/root/analyst-ai-russian-server-config.json\")\nassert not destination.is_symlink()\ndestination.write_text(json.dumps(config,ensure_ascii=False,indent=2)+\"\\n\")\ndestination.chmod(0o600)\nassert json.loads(destination.read_text())==config\nprint(\"RUSSIA_MINIMUM_PLAN_SAVED=\"+json.dumps({\"server\":9408159,\"configuration_file\":str(destination),\"status\":config[\"status\"],\"candidate\":config[\"candidate\"],\"suitability_verified\":False,\"documents\":report},ensure_ascii=False),flush=True)\n"
-              out=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=90)
-              print(out.decode(),end="",flush=True)
-          access.develop_backend=save_policy
-          adopt.run(development=True)
+          print("METRO_CLOUD_INVENTORY="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location","availability_zone")} for s in servers["servers"]]),flush=True)
+          dedicated=get("/dedicated-servers")
+          print("METRO_DEDICATED_INVENTORY="+json.dumps({"meta":dedicated.get("meta"),"servers":[{k:s.get(k) for k in ("id","name","status","preset_id","price","location","project_id")} for s in dedicated.get("dedicated_servers",[])]}),flush=True)
+          offers=[]
+          for row in get("/presets/servers")["server_presets"]:
+              if row["location"] in {"ru-1","ru-3"} and 2<=row["cpu"]<=4 and 5120<=row["ram"]<=8192 and row["disk"]>=30720:
+                  offers.append({"kind":"preset",**{k:row[k] for k in ("id","location","cpu","ram","disk","price")}})
+          for c in get("/configurator/servers")["server_configurators"]:
+              if c["location"] not in {"ru-1","ru-3"}:continue
+              sizes={"cpu":2,"ram":5120,"disk":30720}
+              r=c["requirements"]
+              if not all(r[k+"_min"]<=v<=r[k+"_max"] and (v-r[k+"_min"])%r[k+"_step"]==0 for k,v in sizes.items()):continue
+              price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*5+Decimal(str(c["prices"]["disk"]))*30
+              offers.append({"kind":"configuration","id":c["id"],"location":c["location"],**sizes,"price":float(price),"details":c})
+          offers.sort(key=lambda x:Decimal(str(x["price"])))
+          print("METRO_CLOUD_CATALOG="+json.dumps(offers[:12]),flush=True)
+          presets=get("/presets/dedicated-servers")["dedicated_servers_presets"]
+          presets=[row for row in presets if row["location"] in {"ru-1","ru-3"}]
+          presets.sort(key=lambda x:Decimal(str(x["price"])))
+          print("METRO_DEDICATED_CATALOG="+json.dumps(presets[:5]),flush=True)
+          cheapest=presets[0]
+          print("METRO_DEDICATED_OPTIONS="+json.dumps({"preset_id":cheapest["id"],"options":get("/presets/dedicated-servers/"+str(cheapest["id"])+"/additional-services")}),flush=True)
           PY
