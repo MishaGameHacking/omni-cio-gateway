@@ -39,24 +39,48 @@ jobs:
                       raw=r.read(4194305);assert len(raw)<=4194304
                       return r.status,json.loads(raw) if raw else {}
               except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
-          from cryptography.hazmat.primitives import serialization,hashes
-          from cryptography.hazmat.primitives.asymmetric import padding
-          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-          import base64,secrets
-          report={}
-          for label,route in [("finances","/account/finances"),("costs","/account/services/cost"),("account_status","/account/status")]:
-              status,data=api("GET",route);assert status==200,(label,status)
-              if label=="finances":
-                  data={k:v for k,v in data.get("finances",data).items() if k in ("balance","currency","hourly_cost","hourly_fee","monthly_cost","monthly_fee","hours_left")}
-              report[label]=data
-          for sid in (9413105,9414261):
-              status,data=api("GET","/servers/"+str(sid));assert status==200
-              srv=data["server"]
-              report[str(sid)]={k:srv.get(k) for k in ("id","name","status","service","cpu","ram","location","preset_id","configurator_id")}
-              print("BILLING_SERVER="+json.dumps({"id":sid,"status":srv["status"],"service_fields":list(srv.get("service",{})) if isinstance(srv.get("service"),dict) else type(srv.get("service")).__name__}),flush=True)
-          key=secrets.token_bytes(32);nonce=secrets.token_bytes(12)
-          cipher=AESGCM(key).encrypt(nonce,json.dumps(report).encode(),b"Analyst resource audit 20261024")
-          pub=serialization.load_pem_public_key("-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAobFsluZHuxjS8aHckE6F\nmk5VuBR0dZrf8qUzu3eXGa8evI8Sc9wWXpFOx6DhSIu2AeHNFwyPYr7vlpZumuog\nfAZFSlAwDlroI9MD6TOkUc5mOgBJ8tv5q1PR/Vj49pGIaXwtXq7CkklGx7C4wLWn\nD5EZTETEj72r4itm1NCq+Th2O3MgQTFxyB6OHsH3FXefznaTK39dckfj9RIwVIMK\n7kBh6sYYEgHEl9ol1Xej8I4GSwwdgeqildoOIKQTMivwKcbCVigsWnGfV3iqlwWH\n3VcnwxoDY7z5MH0E/Uf+61WCvLyXIyvW26kc8stBWRwGSHHxexdAsNk8cVIJCvWY\nLvBsYPwmP+4lZ2wG1/4+tlRybEAm9bBwqasdcW71I0KmeMB3CaRUmgNp0Xx3OcI+\nmD+s8K//2Ub6MxAiDZbOeW7ena6UeJXf5X8WewKRqBG9Xlx2TGKA+lEjOG91kl/B\nUTjloW2hVbFd0FAYZE24ASMbMFwue/ywlFMHdmrnEgtFAgMBAAE=\n-----END PUBLIC KEY-----".encode())
-          wrapped=pub.encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
-          print("PRIVATE_RESOURCE_AUDIT="+json.dumps({k:base64.b64encode(v).decode() for k,v in {"key":wrapped,"nonce":nonce,"ciphertext":cipher}.items()}),flush=True)
+          
+          status,data=api("GET","/servers/9414261")
+          assert status==200
+          server=data["server"]
+          assert server["name"]=="analyst-ai-workspace-20261024" and server["project_id"]==2941515 and server["status"]=="no_paid" and p.cloud.public_ipv4(server) is None,"unpaid_order_changed_reconcile"
+          status,answer=api("DELETE","/servers/9414261")
+          print("UNPAID_WORKSPACE_DELETE="+str(status),flush=True);assert status==204
+          status,_=api("GET","/servers/9414261")
+          print("UNPAID_WORKSPACE_ABSENCE="+str(status),flush=True);assert status==404
+          status,data=api("GET","/account/finances");assert status==200
+          f=data.get("finances",data)
+          print("CURRENT_RESOURCE_COST="+json.dumps({k:f.get(k) for k in ("currency","hourly_cost","hourly_fee","monthly_cost","monthly_fee")}),flush=True)
+          status,inv=api("GET","/servers?limit=100&offset=0");assert status==200 and inv["meta"]["total"]==len(inv["servers"])
+          print("CURRENT_SERVERS="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location")} for s in inv["servers"]]),flush=True)
+          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
+          for server_id,name,ip,old_host in targets:
+              access.SERVER_ID=server_id
+              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
+              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
+              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                  folder=pathlib.Path(directory)
+                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                  key=created.get("ssh_key",created.get("ssh-key",{}))
+                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
+                  key_id=key["id"];attached=False
+                  try:
+                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
+                      command=p.ssh_command(folder,ip,old_host)
+                      command[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                      for attempt in range(12):
+                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
+                          except (p.ProbeError,subprocess.TimeoutExpired):
+                              if attempt==11:raise
+                              time.sleep(5)
+                      remote_script="import pathlib,subprocess,json,hashlib,os,shutil,datetime\nw=pathlib.Path(\"/root/analyst-workspace-preparation-20261024\")\nold=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\ndest=pathlib.Path(\"/srv/analyst-ai/workspace\")\ndef run(args,**kw):return subprocess.run(args,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,**kw).stdout\ndef digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()\nexpected={\n\".github/scripts/native_input_evidence.py\":\"4796e3e0db6ac74a7c95c62b1f0de150fa2607dc2015d4ab5d4dc287a59ac512\",\n\".github/scripts/tests/test_native_input_evidence.py\":\"72276f370bf159d1e8bd8f6ced70d8ccc6d3e8c03e4b89e05d2f7669e8edf326\",\n\"app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt\":\"472996c67ed0e78d17a2f657d55e176dec8796b9ef93cbd2957cfa108ac7aee2\",\n\"app/src/test/java/ru/omnicio/app/data/backend/BackendConfigTest.kt\":\"212de72fb4c423914b0011eee6fea863d2f79c6b10737fea95c5f77c4b026930\"}\nsrc=dest if dest.exists() else old\nassert run([\"git\",\"-C\",str(src),\"rev-parse\",\"HEAD\"]).decode().strip()==\"690811a5a376181990a64f37d914c87eb6c919b7\"\nassert all(digest(src/k)==v for k,v in expected.items())\nassert digest(w/\"before-resize-20261024T155110Z.tar.gz\")==\"d96c1b58c28235aed660d956ade9356b610fa81fd24b4e2bdc6807797efb3cfd\"\nkey=pathlib.Path(\"/root/.android/debug.keystore\");kh=digest(key)\ndest.parent.mkdir(parents=True,exist_ok=True,mode=0o755)\nif not dest.exists():\n    old.rename(dest);old.symlink_to(dest,target_is_directory=True)\nassert old.resolve()==dest\nrun([\"git\",\"-C\",str(dest),\"remote\",\"set-url\",\"origin\",\"https://github.com/MishaGameHacking/omni-cio-gateway.git\"])\nrun([\"git\",\"-C\",str(dest),\"config\",\"fetch.prune\",\"true\"])\nrun([\"git\",\"-C\",str(dest),\"config\",\"gc.auto\",\"0\"])\nargs=[\"git\",\"-C\",str(dest),\"fetch\",\"--prune\",\"--tags\",\"origin\",\"+refs/heads/*:refs/remotes/origin/*\"]\nif run([\"git\",\"-C\",str(dest),\"rev-parse\",\"--is-shallow-repository\"]).strip()==b\"true\":args.insert(4,\"--unshallow\")\nrun(args,timeout=600)\nlatest=\"0c6715b5e2dc74dfdc232a605b2ac063d767fc84\"\nif subprocess.run([\"git\",\"-C\",str(dest),\"cat-file\",\"-e\",latest+\"^{commit}\"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:\n    run([\"git\",\"-C\",str(dest),\"fetch\",\"origin\",latest],timeout=180)\ndocs=[\"AGENTS.md\",\"README.md\",\"MASTER_PLAN.md\",\"PLAN_STATUS.md\",\"deploy/resource_observer.py\",\"deploy/analyst-resource-observer.service\",\"deploy/analyst-resource-observer.timer\"]\nactual=[]\nfor name in docs:\n    r=subprocess.run([\"git\",\"-C\",str(dest),\"show\",latest+\":\"+name],stdout=subprocess.PIPE,stderr=subprocess.PIPE)\n    if r.returncode:\n        if name in (\"MASTER_PLAN.md\",\"PLAN_STATUS.md\"):continue\n        raise RuntimeError(\"required_backup_file_missing_\"+name)\n    path=dest/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(r.stdout);actual.append(name)\nassert all(digest(dest/k)==v for k,v in expected.items()) and digest(key)==kh\ngitfiles=run([\"git\",\"-C\",str(dest),\"ls-files\"]).decode().splitlines()\nrefs=run([\"git\",\"-C\",str(dest),\"for-each-ref\",\"--format=%(refname)\",\"refs/remotes/origin\",\"refs/tags\"]).decode().splitlines()\nplans=[x for x in gitfiles if pathlib.Path(x).name in (\"MASTER_PLAN.md\",\"PLAN_STATUS.md\")]\nreport={\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"workspace\":str(dest),\"head\":\"690811a5a376181990a64f37d914c87eb6c919b7\",\"tracked_files\":len(gitfiles),\"fetched_refs\":len(refs),\"preserved_changes\":len(expected),\"signing_key_preserved\":digest(key)==kh,\"latest_documentation\":actual,\"plan_paths\":plans,\"disk_free_bytes\":shutil.disk_usage(\"/\").free}\n(w/\"workspace-import.json\").write_text(json.dumps(report,indent=2));(w/\"workspace-import.json\").chmod(0o600)\nprint(\"WORKSPACE_IMPORT=\"+json.dumps(report),flush=True)\nprint(\"WORKSPACE_DEPLOY_FILES=\"+json.dumps([x for x in gitfiles if x.startswith(\"deploy/\")]),flush=True)\nprint(\"WORKSPACE_UPDATE_FILES=\"+json.dumps([x for x in gitfiles if \"release\" in x.lower() and x.startswith(\"backend/\")]),flush=True)\nprint(\"WORKSPACE_GRADLE=\"+(dest/\"gradle.properties\").read_text(),flush=True)\nprint(\"WORKSPACE_TEST_DEPS=\"+(dest/\"backend/requirements-dev.txt\").read_text(),flush=True)\nprint(\"WORKSPACE_HEALTH=\"+run([\"curl\",\"--fail\",\"--silent\",\"--max-time\",\"15\",\"https://analyst-ai-2941515.twc1.net/health\"]).decode(),flush=True)\n"
+                      result=subprocess.run([*command,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=800)
+                      print(result.stdout.decode(),flush=True)
+                      if result.returncode:print("WORKSPACE_PREP_ERROR="+result.stderr.decode()[-2500:],flush=True)
+                      assert result.returncode==0
+                  finally:
+                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
+                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
+                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
           PY
