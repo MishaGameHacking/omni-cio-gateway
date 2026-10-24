@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Read the dedicated server catalog and available Timeweb locations
+      - name: Read compact replacement configurations and actual activation credit
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -35,17 +35,22 @@ jobs:
               req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          balance=Decimal(str(get("/account/finances")["finances"]["balance"]))
-          doc=get("/presets/dedicated-servers")
-          offers=doc["dedicated_servers_presets"]
-          assert isinstance(offers,list)
-          ordered=sorted(offers,key=lambda x:Decimal(str(x["price"])))
-          selected=[]
-          for row in ordered[:12]:
-              selected.append({**{k:row.get(k) for k in ("id","description","price","cpu","memory","disk","location","is_pre_installed","is_ipmi_enabled")},"monthly_credit_covered":balance>=Decimal(str(row["price"]))+200})
-          print("TIMEWEB_DEDICATED_CANDIDATES="+json.dumps({"meta":doc.get("meta"),"offers":selected},ensure_ascii=False),flush=True)
-          print("TIMEWEB_LOCATIONS="+json.dumps(get("/locations",2),ensure_ascii=False),flush=True)
+          finances=get("/account/finances")["finances"]
+          balance=Decimal(str(finances["balance"]))
+          configs=get("/configurator/servers")["server_configurators"]
+          offers=[]
+          for c in configs:
+              if c["id"] not in (43,11,19,31,149,151,17):continue
+              if c["id"]==43:print("SPB_CONFIG_RECORD="+json.dumps(c),flush=True)
+              for disk in (40960,46080,51200,61440):
+                  sizes={"cpu":2,"ram":8192,"disk":disk}
+                  r=c["requirements"]
+                  if not all(r[k+"_min"]<=v<=r[k+"_max"] and (v-r[k+"_min"])%r[k+"_step"]==0 for k,v in sizes.items()):continue
+                  price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*8+Decimal(str(c["prices"]["disk"]))*disk/1024
+                  offers.append({"id":c["id"],"location":c["location"],**sizes,"monthly_rub":float(price),"activation_credit_covered":balance>=price+200})
+          print("REPLACEMENT_COMPACT_CANDIDATES="+json.dumps(offers),flush=True)
+          print("ACCOUNT_BILLING="+json.dumps({"hourly":Decimal(str(finances["hourly_fee"]))>0,"positive":balance>0}),flush=True)
           servers=p.read_resource(token,"servers")
           assert p.summarize("servers",servers)["complete"]
-          print("TIMEWEB_REPLACEMENT_CURRENT_INVENTORY="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location","availability_zone")} for s in servers["servers"]]),flush=True)
+          print("CURRENT_INVENTORY="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location","availability_zone")} for s in servers["servers"]]),flush=True)
           PY
