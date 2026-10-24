@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Verify completed owner binding and live protected backend
+      - name: Verify public HTTPS auth protection and inspect Android build resources
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -39,6 +39,32 @@ jobs:
           dedicated=read_dedicated()
           assert dedicated["id"]==121673 and dedicated["project_id"]==2941515
           print("TIMEWEB_BUILDER_STATUS="+json.dumps({k:dedicated.get(k) for k in ("id","name","status","location","ip","autoinstall_ready")}),flush=True)
+          import datetime,hashlib,http.client,ssl
+          host="analyst-ai-2941515.twc1.net"
+          connection=http.client.HTTPSConnection(host,443,timeout=15,context=ssl.create_default_context())
+          connection.connect()
+          peer=connection.sock.getpeername()[0]
+          assert peer=="201.24.52.66","unexpected_public_server"
+          certificate=connection.sock.getpeercert()
+          digest=hashlib.sha256(connection.sock.getpeercert(binary_form=True)).hexdigest()
+          observations=[]
+          for path,expected in (("/health",200),("/workspace",401),("/me",401),("/auth/telegram/owner-enrollment/callback",410)):
+              connection.request("GET",path,headers={"Host":host})
+              with connection.getresponse() as response:
+                  body=response.read(8192)
+                  assert response.status==expected,"external_route_gate_failed"
+                  if path=="/health":assert json.loads(body)=={"status":"ok"}
+                  observations.append({"path":path,"status":response.status})
+          connection.close()
+          print("TIMEWEB_EXTERNAL_BACKEND_VERIFIED="+json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"public_ip":peer,"host":host,"certificate_sha256":digest,"certificate_not_after":certificate.get("notAfter"),"verified_tls":True,"routes":observations}),flush=True)
+          def read_public_catalog():
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/presets/dedicated-servers",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))["dedicated_servers_presets"]
+          from decimal import Decimal
+          rows=sorted([r for r in read_public_catalog() if r.get("location") in {"ru-1","ru-3"}],key=lambda r:Decimal(str(r["price"])))
+          allowed=("id","name","location","price","cpu","memory","disks","disk","is_pre_installed","is_available","status")
+          print("TIMEWEB_CURRENT_DEDICATED_OFFERS="+json.dumps({"fields":sorted(rows[0]) if rows else [],"offers":[{k:r[k] for k in allowed if k in r} for r in rows[:12]],"cheapest_preinstalled":[{k:r[k] for k in allowed if k in r} for r in rows if r.get("is_pre_installed") is True][:3]}),flush=True)
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -65,7 +91,7 @@ jobs:
                       selected=[path for path in paths if (path.startswith("backend/") and pathlib.PurePosixPath(path).parent==pathlib.PurePosixPath("backend") and (path.endswith((".py",".json")) or path=="backend/requirements.txt")) or path in {"backend/certs/russian_trusted_root_ca.pem","deploy/install_owner_backend.py","deploy/enroll_owner.py","deploy/analyst-ai-owner.service"}]
                       expected={path:hashlib.sha256(subprocess.check_output(["git","show",reference+":"+path])).hexdigest() for path in selected}
                       assert len(expected)>30
-                      script="import datetime,hashlib,hmac,json,pathlib,re,stat,subprocess,sys\nroot=pathlib.Path(\"/root\");source=root/\"analyst-ai-source\";work=root/\"analyst-owner-login-relay-renewed-20261024-1344\"\nfor relative,digest in EXPECTED.items():\n    path=source/relative\n    assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()==digest,\"reviewed_source_changed\"\nsys.path.insert(0,str(source))\nfrom deploy import install_owner_backend as installer\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat()}\nif (work/\"completion-status.json\").is_file():\n    state=json.loads((work/\"completion-status.json\").read_text())\n    report[\"completion\"]={k:state[k] for k in (\"phase\",\"bound\",\"installer_exit\",\"owner_config_exists\",\"local_backend_probe\",\"public_tls_backend_probe\",\"checked_at_utc\") if k in state}\nreport[\"owner_config_exists\"]=installer.INPUT_CONFIG.exists()\nreport[\"backend_env_exists\"]=(installer.CONFIG/\"backend.env\").exists()\nreport[\"backend_unit_exists\"]=installer.UNIT.exists()\nreport[\"caddy_active\"]=subprocess.run([\"systemctl\",\"is-active\",\"caddy\"],capture_output=True,text=True).stdout.strip()\nreport[\"backend_active\"]=subprocess.run([\"systemctl\",\"is-active\",\"analyst-ai-owner\"],capture_output=True,text=True).stdout.strip()\nif installer.INPUT_CONFIG.exists():\n    values=installer.load_config()\n    expected=json.loads((root/\"analyst-owner-login-relay-retry-20261024/verified-identity.json\").read_text())[\"sub\"]\n    report[\"owner_matches_fresh_verified_account\"]=hmac.compare_digest(values[\"ANALYST_OWNER_TELEGRAM_SUB\"],expected)\n    report[\"origin\"]=values[\"BACKEND_PUBLIC_URL\"]\n    report[\"local_health_and_auth_probe\"]=installer.probe()\n    report[\"tls_health_and_auth_probe\"]=installer.probe(\"analyst-ai-2941515.twc1.net\")\n    report[\"env_mode\"]=oct(stat.S_IMODE((installer.CONFIG/\"backend.env\").stat().st_mode)) if report[\"backend_env_exists\"] else None\n    props=subprocess.run([\"systemctl\",\"show\",\"analyst-ai-owner\",\"-p\",\"MainPID\",\"-p\",\"ExecMainStatus\",\"-p\",\"NRestarts\",\"-p\",\"MemoryCurrent\",\"-p\",\"MemoryPeak\",\"-p\",\"User\"],capture_output=True,text=True)\n    report[\"backend_service\"]={k:v for line in props.stdout.splitlines() if \"=\" in line for k,v in [line.split(\"=\",1)]}\ncapture=subprocess.run([\"tmux\",\"-S\",str(work/\"tmux.sock\"),\"capture-pane\",\"-p\",\"-J\",\"-S\",\"-150\",\"-t\",\"owner:0.0\"],capture_output=True,text=True,timeout=10)\nif capture.returncode==0:\n    pane=capture.stdout\n    report[\"verified_identity_seen\"]=\"Verified Telegram identity (profile hints do not authorize access):\" in pane\n    report[\"installer_success_seen\"]=\"OWNER_BACKEND_INSTALL=local_health_auth_and_tls_verified_external_check_pending\" in pane\n    report[\"fixed_errors\"]=re.findall(r\"OWNER_(?:BACKEND_INSTALL|ENROLLMENT)_ERROR=[a-zA-Z0-9_]{1,120}\",pane)\nerror_log=work/\"completion-private.log\"\nreport[\"watcher_private_log_bytes\"]=error_log.stat().st_size if error_log.exists() else None\nif error_log.exists() and error_log.stat().st_size:\n    raw=error_log.read_text()\n    report[\"watcher_error_type\"]=raw.splitlines()[-1].split(\":\",1)[0]\n    report[\"watcher_error_lines\"]=re.findall(r'File \"[^\"]+\", line (\\d+)',raw)\ntarget=root/\"analyst-owner-live-verification-20261024.json\";target.write_text(json.dumps(report,indent=2)+\"\\n\");target.chmod(0o600)\nprint(\"TIMEWEB_OWNER_LIVE_VERIFICATION=\"+json.dumps(report),flush=True)\n"
+                      script="import datetime,json,pathlib,shutil,subprocess,sys\nroot=pathlib.Path(\"/root\");source=root/\"analyst-ai-source\"\nsys.path.insert(0,str(source))\nfrom deploy import install_owner_backend as installer\nassert installer.INPUT_CONFIG.exists()\nassert installer.probe() and installer.probe(\"analyst-ai-2941515.twc1.net\")\nvalues=installer.load_config();assert values[\"BACKEND_PUBLIC_URL\"]==\"https://analyst-ai-2941515.twc1.net\"\nmemory={}\nfor line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines():\n    key,_,value=line.partition(\":\")\n    if key in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\",\"SwapFree\"}:memory[key+\"_kib\"]=int(value.split()[0])\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"memory\":memory,\"free_bytes\":shutil.disk_usage(\"/\").free,\"kvm\":pathlib.Path(\"/dev/kvm\").exists(),\"compiler\":shutil.which(\"kotlinc\"),\"javac\":shutil.which(\"javac\"),\"jars\":{}}\nfor cache in (root/\".gradle/caches\",root/\".m2/repository\",root/\"analyst-ai-artifacts\"):\n    if cache.exists():\n        for pattern in (\"kotlin-compiler-embeddable-*.jar\",\"kotlin-compiler-*.jar\",\"kotlin-stdlib-*.jar\",\"junit-*.jar\",\"hamcrest-core-*.jar\"):\n            files=sorted(str(p) for p in cache.rglob(pattern))\n            if files:report[\"jars\"][str(cache)+\"/\"+pattern]=files[:12]\nandroid=root/\"analyst-ai-android-690811a5\"\nreport[\"android_head\"]=subprocess.check_output([\"git\",\"-C\",str(android),\"rev-parse\",\"HEAD\"],text=True).strip()\nreport[\"android_changed_paths\"]=subprocess.check_output([\"git\",\"-C\",str(android),\"diff\",\"--name-only\"],text=True).splitlines()\nprint(\"TIMEWEB_ANDROID_SOURCE_CAPACITY=\"+json.dumps(report),flush=True)\n"
                       script='EXPECTED='+repr(expected)+'\n'+script
                       output=p.remote(command,"/root/analyst-ai-development-venv/bin/python -u -c "+shlex.quote(script),timeout=1500).decode()
                       print(output,end="",flush=True)
