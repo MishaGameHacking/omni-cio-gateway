@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Diagnose the rejected direct Moscow dedicated-server request with redacted errors
+      - name: Create the Moscow physical work server with the API-validated shorter name
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -35,7 +35,7 @@ jobs:
               req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          name="analyst-ai-moscow-work-20261024"
+          name="analyst-ai-msk-20261024"
           marker="Analyst AI owner authorized Moscow work server 2026-10-24"
           def inventory():
               doc=get("/dedicated-servers")
