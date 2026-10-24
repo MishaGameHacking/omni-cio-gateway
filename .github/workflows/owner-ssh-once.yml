@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Create a compact Russian NVMe host and measure whether its hardware is usable
+      - name: Create the compact Russian configuration from remaining cheaper regions and zones
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -49,9 +49,9 @@ jobs:
           balance=Decimal(str(fin["balance"]))
           presets={r["id"]:r for r in get("/presets/servers")["server_presets"]}
           configs={r["id"]:r for r in get("/configurator/servers")["server_configurators"]}
-          specs=[(11,"ru-1","spb-1"),(31,"ru-3","msk-1"),(19,"ru-2","nsk-1"),(11,"ru-1","spb-2"),(11,"ru-1","spb-3"),(11,"ru-1","spb-4"),(11,"ru-1","spb-5")]
+          specs=[(149,1780,"ru-4","ekb-1"),(151,1780,"ru-5","kzn-1"),(43,2560,"ru-1","spb-1"),(43,2560,"ru-1","spb-2"),(43,2560,"ru-1","spb-3"),(43,2560,"ru-1","spb-4"),(43,2560,"ru-1","spb-5"),(11,3560,"ru-1","spb-2"),(11,3560,"ru-1","spb-3"),(11,3560,"ru-1","spb-4"),(11,3560,"ru-1","spb-5")]
           offers=[]
-          for identifier,location,zone in specs:
+          for identifier,expected,location,zone in specs:
               c=configs[identifier]
               assert c["location"]==location and location.startswith("ru-")
               sizes={"cpu":2,"ram":5120,"disk":30720}
@@ -59,9 +59,9 @@ jobs:
                   r=c["requirements"]
                   assert r[part+"_min"]<=size<=r[part+"_max"] and (size-r[part+"_min"])%r[part+"_step"]==0
               price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*5+Decimal(str(c["prices"]["disk"]))*30
-              assert price==3560
+              assert price==expected
               if balance>=price+200:
-                  offers.append({"kind":"configuration","id":identifier,"location":location,"zone":zone,"price":3560,**sizes,"request":{"availability_zone":zone,"configuration":{"configurator_id":identifier,**sizes}}})
+                  offers.append({"kind":"configuration","id":identifier,"location":location,"zone":zone,"price":expected,**sizes,"request":{"availability_zone":zone,"configuration":{"configurator_id":identifier,**sizes}}})
           assert offers,"no_activation_credit_for_minimum_alternative_russian_nvme_host"
           def create(body):
               req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
@@ -71,7 +71,7 @@ jobs:
               except urllib.error.HTTPError as e:
                   doc=p.decode_response(e.read(2*1024*1024+1));code=doc.get("error_code")
                   print("HOURLY_BUILD_REFUSED="+json.dumps({"http":e.code,"code":code if isinstance(code,str) and re.fullmatch("[a-z_]{1,64}",code) else "unknown"}),flush=True)
-                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found","configurator_not_found"}:
+                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found","configurator_not_found","location_not_available"}:
                       assert {s["id"] for s in inventory()}=={9408159},"reconcile_uncertain_creation"
                       return None
                   raise p.ProbeError("build_creation_http_"+str(e.code)) from None
