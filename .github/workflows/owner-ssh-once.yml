@@ -6,35 +6,59 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-temporary-access
+  group: analyst-owner-signing-transfer
   cancel-in-progress: false
 jobs:
   access:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: timeweb-signing-transport
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Fetch the exact checked server sources
+          path: timeweb-signing-transport
+      - name: Fetch exact reviewed server code and prepare native TLS transport
+        shell: cmd
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
+          if errorlevel 1 exit /b 1
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Prepare the existing hourly Timeweb server for Android compilation
+          if errorlevel 1 exit /b 1
+          set "ANALYST_SIGNING_TRANSPORT=%RUNNER_TEMP%\analyst-signing-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
+          echo ANALYST_SIGNING_TRANSPORT=%ANALYST_SIGNING_TRANSPORT%>>"%GITHUB_ENV%"
+          py -3 -m venv "%ANALYST_SIGNING_TRANSPORT%"
+          if errorlevel 1 exit /b 1
+          "%ANALYST_SIGNING_TRANSPORT%\Scripts\python.exe" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools\timeweb-actions-requirements.txt
+          if errorlevel 1 exit /b 1
+      - name: Transfer the existing signing key directly to the pinned Timeweb host
+        shell: '"${{ env.ANALYST_SIGNING_TRANSPORT }}\Scripts\python.exe" {0}'
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: '1'
         run: |
-          python3 - <<'PY'
-          import json,shlex,subprocess,sys
-          sys.path.insert(0,"deploy")
+          import hashlib,json,os,pathlib,shlex,stat,subprocess,sys
+          sys.path[:0]=["deploy",".github/scripts"]
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
           import prepare_owner_vm as prepare
-          def execute_remote(command):
-              script="import hashlib,json,os,pathlib,shutil,subprocess,sys,urllib.request,zipfile\nsource=\"690811a5a376181990a64f37d914c87eb6c919b7\"\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nsdk=pathlib.Path(\"/opt/analyst-android-sdk\")\nswap=pathlib.Path(\"/root/analyst-build.swap\")\ndef run(args,timeout=600,**kw):\n    print(\"TIMEWEB_PREPARE_PHASE=\"+json.dumps(args[:3]),flush=True)\n    subprocess.run(args,check=True,timeout=timeout,**kw)\nprint(\"TIMEWEB_BUILD_HOST=\"+json.dumps({\"server\":9408159,\"free_disk_gib\":round(shutil.disk_usage(\"/\").free/1024**3,2),\"memory_kib\":next(x for x in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if x.startswith(\"MemTotal:\")),\"kvm\":pathlib.Path(\"/dev/kvm\").exists()}),flush=True)\nassert shutil.disk_usage(\"/\").free>=8*1024**3,\"insufficient_disk_before_local_build\"\nactive_swaps=pathlib.Path(\"/proc/swaps\").read_text()\nif str(swap) not in active_swaps:\n    assert not swap.exists() and not swap.is_symlink(),\"unexpected_existing_swap_file\"\n    run([\"fallocate\",\"-l\",\"3G\",str(swap)],timeout=30)\n    swap.chmod(0o600)\n    run([\"mkswap\",\"-q\",str(swap)],timeout=30)\n    run([\"swapon\",str(swap)],timeout=30)\nassert str(swap) in pathlib.Path(\"/proc/swaps\").read_text()\nrun([\"apt-get\",\"update\",\"-qq\"],timeout=300)\nrun([\"apt-get\",\"install\",\"-y\",\"--no-install-recommends\",\"openjdk-17-jdk-headless\",\"unzip\",\"ca-certificates\"],timeout=600,env={**os.environ,\"DEBIAN_FRONTEND\":\"noninteractive\"})\nif not root.exists():\n    root.mkdir(mode=0o700)\n    run([\"git\",\"init\",\"-q\",str(root)],timeout=30)\n    run([\"git\",\"-C\",str(root),\"fetch\",\"--depth=1\",\"https://github.com/MishaGameHacking/omni-cio-gateway.git\",source],timeout=180)\n    run([\"git\",\"-C\",str(root),\"checkout\",\"--detach\",\"FETCH_HEAD\"],timeout=60)\nassert not root.is_symlink()\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()==source\nassert not subprocess.check_output([\"git\",\"status\",\"--porcelain\"],cwd=root,text=True).strip(),\"source_changes_require_review\"\nwrapper=root/\"gradle/wrapper/gradle-wrapper.jar\"\nassert hashlib.sha256(wrapper.read_bytes()).hexdigest()==\"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5\"\nsdk.mkdir(parents=True,exist_ok=True)\ncli=sdk/\"cmdline-tools/latest/bin/android\"\nif not cli.exists():\n    archive=pathlib.Path(\"/root/analyst-commandlinetools-linux-15859902.zip\")\n    url=\"https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip\"\n    print(\"TIMEWEB_ANDROID_TOOLS_DOWNLOAD=official_pinned_archive\",flush=True)\n    with urllib.request.urlopen(url,timeout=60) as response,archive.open(\"wb\") as output:\n        shutil.copyfileobj(response,output)\n    with archive.open(\"rb\") as inp:\n        assert hashlib.file_digest(inp,\"sha256\").hexdigest()==\"4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583\",\"official_android_tools_hash_mismatch\"\n    dest=sdk/\"cmdline-tools\"\n    dest.mkdir(exist_ok=True)\n    with zipfile.ZipFile(archive) as z:\n        for item in z.infolist():\n            assert not item.filename.startswith(\"/\") and \"..\" not in pathlib.PurePosixPath(item.filename).parts\n        z.extractall(dest)\n        for item in z.infolist():\n            mode=(item.external_attr>>16)&0o777\n            if mode:(dest/item.filename).chmod(mode)\n    (dest/\"cmdline-tools\").rename(dest/\"latest\")\n    archive.unlink()\nenv={**os.environ,\"ANDROID_SDK_ROOT\":str(sdk),\"ANDROID_HOME\":str(sdk),\"JAVA_HOME\":\"/usr/lib/jvm/java-17-openjdk-amd64\"}\nrun([\"python3\",\".github/scripts/prepare_android_sdk.py\",\"--sdk\",str(sdk)],cwd=root,env=env,timeout=1500)\nprint(\"TIMEWEB_ANDROID_BUILD_PREPARED=\"+json.dumps({\"server\":9408159,\"source\":source,\"sdk\":str(sdk),\"swap_gib\":3,\"free_disk_gib\":round(shutil.disk_usage(root).free/1024**3,2),\"kvm\":pathlib.Path(\"/dev/kvm\").exists()}),flush=True)\n"
-              result=subprocess.run(command+["python3 -u -c "+shlex.quote(script)],timeout=2100)
-              if result.returncode:raise prepare.ProbeError("timeweb_android_preparation_failed_"+str(result.returncode))
-          access.develop_backend=execute_remote
+          from verify_cached_jdk import discover
+          pin="bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
+          assert pathlib.Path(".github/apk-signing-certificate.sha256").read_text().strip()==pin
+          source=pathlib.Path.home()/".android"/"debug.keystore"
+          assert source.is_file() and not source.is_symlink(),"existing_signing_keystore_unavailable"
+          assert 512<=source.stat().st_size<=65536,"unexpected_keystore_size"
+          jdk=discover(os.environ["RUNNER_TOOL_CACHE"])
+          cert=subprocess.run([str(jdk/"bin/keytool.exe"),"-exportcert","-alias","androiddebugkey","-keystore",str(source),"-storepass","android"],capture_output=True,timeout=30)
+          assert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==pin,"existing_signing_certificate_mismatch"
+          def transfer(command):
+              script="import hashlib,json,os,pathlib,stat,subprocess,sys\npin=\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\"\nkeytool=pathlib.Path(\"/usr/lib/jvm/java-17-openjdk-amd64/bin/keytool\")\nassert keytool.is_file(),\"timeweb_java_not_prepared\"\ndata=sys.stdin.buffer.read(65537)\nassert 512<=len(data)<=65536,\"keystore_size_invalid\"\ndirectory=pathlib.Path(\"/root/.android\")\nassert not directory.is_symlink()\ndirectory.mkdir(mode=0o700,exist_ok=True)\nassert directory.stat().st_uid==0\ndirectory.chmod(0o700)\ndest=directory/\"debug.keystore\"\nif dest.exists() or dest.is_symlink():\n    info=dest.lstat()\n    assert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600\n    assert hashlib.sha256(dest.read_bytes()).digest()==hashlib.sha256(data).digest(),\"existing_signing_key_preserved\"\nelse:\n    fd=os.open(dest,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n    with os.fdopen(fd,\"wb\") as out:\n        out.write(data);out.flush();os.fsync(out.fileno())\ncert=subprocess.run([str(keytool),\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(dest),\"-storepass\",\"android\"],capture_output=True,timeout=30)\nassert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==pin,\"timeweb_signing_certificate_mismatch\"\nprint(json.dumps({\"server_id\":9408159,\"certificate_sha256\":pin,\"private_mode\":\"0600\",\"signing_identity_preserved\":True}),flush=True)\n"
+              output=prepare.remote(command,"python3 -c "+shlex.quote(script),source.read_bytes(),timeout=60)
+              report=json.loads(output)
+              assert report["signing_identity_preserved"] is True
+              print("TIMEWEB_SIGNING_IDENTITY="+json.dumps(report),flush=True)
+          access.develop_backend=transfer
           adopt.run(development=True)
-          PY
