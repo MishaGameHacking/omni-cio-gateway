@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-direct-server-observation
+  group: analyst-owner-provider-diagnostics
   cancel-in-progress: false
 jobs:
   access:
@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Observe the directly requested Moscow physical server without creating a second order
+      - name: Save the accepted Moscow server order and the latest owner constraints on Timeweb
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -35,15 +35,24 @@ jobs:
               req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          doc=get("/dedicated-servers")
-          rows=doc["dedicated_servers"]
-          assert doc.get("meta",{}).get("total")==len(rows),"incomplete_dedicated_inventory"
-          selected=[r for r in rows if r.get("name")=="analyst-ai-msk-20261024" and r.get("comment")=="Analyst AI owner authorized Moscow work server 2026-10-24"]
-          print("MOSCOW_DIRECT_ORDER_OBSERVATION="+json.dumps({"count":len(rows),"matching_orders":len(selected),"servers":[{k:s.get(k) for k in ("id","name","status","preset_id","location","price","ip","created_at","os_id","bandwidth_id","project_id","is_pre_installed","autoinstall_ready")} for s in selected]}),flush=True)
-          fin=get("/account/finances")["finances"]
-          account=get("/account/status")["status"]
-          print("MOSCOW_DIRECT_ORDER_ACCOUNT="+json.dumps({"balance_positive":Decimal(str(fin["balance"]))>0,"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"blocked":account["is_blocked"]}),flush=True)
-          cloud=p.read_resource(token,"servers")
-          assert p.summarize("servers",cloud)["complete"]
-          print("PRESERVED_CLOUD_SERVER_IDS="+json.dumps([s["id"] for s in cloud["servers"]]),flush=True)
+          servers=p.read_resource(token,"servers")
+          assert p.summarize("servers",servers)["complete"]
+          assert {s["id"] for s in servers["servers"]}=={9408159},"inventory_changed_reconcile_before_status_write"
+          print("RUSSIA_FINAL_INVENTORY="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location")} for s in servers["servers"]]),flush=True)
+          import shlex
+          import access_owner_vm as access
+          import adopt_replacement_vm as adopt
+          original_select=adopt.select_target
+          observed=servers["servers"][0]
+          assert observed["ram"] in {1024,3072} and observed["cpu"]==1
+          def select_target(new):
+              original_select(new)
+              if new:p.CONFIGURATION["ram"]=observed["ram"]
+          adopt.select_target=select_target
+          def save_policy(command):
+              script="import hashlib,json,os,pathlib,subprocess\nos.umask(0o077)\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\nallowed={\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"}\nassert set(subprocess.check_output([\"git\",\"diff\",\"--name-only\"],cwd=root,text=True).splitlines())<=allowed\npolicy=\"\"\"\\n## OWNER 24.10.2026 — прямое создание в Москве или Санкт-Петербурге\n\nПоследнее указание владельца: создать необходимый сервер самостоятельно, напрямую, без обращения по почте. Разрешены только Москва или Санкт-Петербург. Это заменяет предыдущий выбор других российских и зарубежных регионов. Вся разработка, сборка APK и проверки выполняются на Timeweb; GitHub используется для резервного копирования и ранее разрешённого транспорта доступа. Сохраняются почасовое списание, минимальная фактически достаточная стоимость, строго портретное приложение, прежняя подпись APK и исправление только выявленных проверками ошибок.\n\nЧерез API Timeweb создан выделенный сервер 121673, analyst-ai-msk-20261024, Москва / ru-3, preset 6007: Intel Xeon E3-1231v3, 4 физических ядра / 8 потоков, 8 ГБ RAM, 1 ТБ HDD, Ubuntu 24.04, 1 Гбит/с. Базовая цена 5480 ₽ в месячном пересчёте, без платных дополнительных услуг. Это минимальная по цене физическая конфигурация Москвы/Петербурга в проверенном каталоге. Нужны прямой доступ к процессору и фактическая проверка KVM для обязательной Android-матрицы; доступность тарифа не доказывает успешное выполнение этих проверок.\n\nЗаказ подтверждён API: состояние installing, IP пока не выдан, autoinstall_ready=0 — сервер подготавливает провайдер. SSH, фактическая память, диск, KVM_CREATE_VM и графика нового сервера ещё не проверены. Старый сервер 9408159 и ключ подписи сохранены до проверенного переноса. Новый APK, зелёная ветка и рабочий backend этим заказом не подтверждаются.\n\n\"\"\"\nreport=[]\nfor name in sorted(allowed):\n    path=root/name\n    assert path.is_file() and not path.is_symlink()\n    before=path.read_text()\n    if \"## OWNER 24.10.2026 — прямое создание в Москве или Санкт-Петербурге\" not in before:\n        title,separator,rest=before.partition(\"\\n\")\n        assert separator and title.startswith(\"# \")\n        path.write_text(title+\"\\n\"+policy+rest)\n    after=path.read_bytes()\n    report.append({\"path\":name,\"sha256\":hashlib.sha256(after).hexdigest(),\"instruction_present\":policy.strip() in after.decode()})\nassert all(r[\"instruction_present\"] for r in report)\nconfig={\"status\":\"created_provider_installing\",\"server_id\":121673,\"server_name\":\"analyst-ai-msk-20261024\",\"allowed_cities\":[\"Moscow\",\"Saint Petersburg\"],\"location\":\"ru-3\",\"preset_id\":6007,\"cpu\":\"Intel Xeon E3-1231v3\",\"physical_cores\":4,\"logical_cpus\":8,\"ram_mib\":8192,\"disk\":\"1 TB HDD\",\"os\":\"Ubuntu 24.04\",\"os_id\":1833,\"bandwidth_id\":1008,\"monthly_base_rub\":5480,\"paid_addons\":False,\"hourly_billing_required\":True,\"api_payment_period\":\"P1M\",\"owner_requested_no_spare_capacity\":True,\"provisioning\":\"direct_Timeweb_API_without_email\",\"suitability_verified\":False,\"required_hardware_checks\":[\"actual_memory\",\"actual_free_disk\",\"ssh_host_identity\",\"KVM_API_version_12\",\"KVM_CREATE_VM\",\"graphics\"],\"android_emulator_ram_mib\":4096,\"execution\":\"Timeweb_build_and_emulator_sequential\",\"preserve_existing_server_id\":9408159,\"apk_release_completed\":False}\ndestination=pathlib.Path(\"/root/analyst-ai-russian-server-config.json\")\nassert not destination.is_symlink()\ndestination.write_text(json.dumps(config,ensure_ascii=False,indent=2)+\"\\n\")\ndestination.chmod(0o600)\nassert json.loads(destination.read_text())==config\nprint(\"MOSCOW_SERVER_POLICY_SAVED=\"+json.dumps({\"work_server\":9408159,\"new_server\":121673,\"configuration_file\":str(destination),\"status\":config[\"status\"],\"documents\":report},ensure_ascii=False),flush=True)\n"
+              out=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=90)
+              print(out.decode(),end="",flush=True)
+          access.develop_backend=save_policy
+          adopt.run(development=True)
           PY
