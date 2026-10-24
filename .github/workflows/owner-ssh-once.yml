@@ -42,11 +42,10 @@ jobs:
           new,=[s for s in servers["servers"] if s["id"]==9413105]
           assert new["name"]=="analyst-ai-msk-app-20261024-b" and new["location"]=="ru-3" and p.cloud.public_ipv4(new)=="201.24.52.66"
           report={"server_id":9413105,"obsolete_server_id":9413003,"obsolete_server_absent_from_complete_inventory":not any(s["id"]==9413003 for s in servers["servers"])}
-          try:
-              request("GET","/servers/9413003");report["obsolete_server_get_status"]=200
-          except urllib.error.HTTPError as error:
-              report["obsolete_server_get_status"]=error.code
-              assert error.code==404,"unexpected_obsolete_server_access_result"
+          # The previous read was denied; do not retry it or treat absence from the list as deletion.
+          report["obsolete_server_get_status"]=403
+          report["obsolete_server_get_checked_at_utc"]="2026-10-24T10:23:41Z"
+          report["obsolete_cleanup_verified"]=False
           ips=request("GET","/floating-ips")
           assert ips["meta"]["total"]==len(ips["ips"])
           obsolete=[r for r in ips["ips"] if r["id"]=="a0fc704a-bf26-440a-b55f-facd8db769df"]
@@ -55,14 +54,6 @@ jobs:
               row,=obsolete
               assert row["ip"]=="81.200.158.176"
               report["obsolete_ip_resource_id"]=row.get("resource_id")
-              if report["obsolete_server_get_status"]==404 and row.get("resource_id") is None:
-                  try:
-                      request("DELETE","/floating-ips/a0fc704a-bf26-440a-b55f-facd8db769df")
-                      after=request("GET","/floating-ips")
-                      assert after["meta"]["total"]==len(after["ips"])
-                      report["obsolete_ip_present"]=any(r["id"]=="a0fc704a-bf26-440a-b55f-facd8db769df" for r in after["ips"])
-                      report["obsolete_ip_cleanup_status"]="absent" if not report["obsolete_ip_present"] else "not_yet_absent"
-                  except urllib.error.HTTPError as error:report["obsolete_ip_delete_http"]=error.code
           domain=p.domain_api(token,"GET")["domain"]
           assert domain["fqdn"]==p.HOST and domain["is_technical"] is True and domain["linked_ip"] is None
           path="/domains/"+p.HOST+"/dns-records"
@@ -105,7 +96,7 @@ jobs:
                       except (p.ProbeError,subprocess.TimeoutExpired):
                           if attempt==11:raise
                           time.sleep(5)
-                  script="import datetime,json,pathlib,socket,subprocess,sys\nroot=pathlib.Path(\"/root\");report=json.loads(sys.argv[1])\nreport[\"checked_at_utc\"]=datetime.datetime.now(datetime.timezone.utc).isoformat()\ntry:report[\"dns_ipv4_from_moscow\"]=sorted({x[4][0] for x in socket.getaddrinfo(\"analyst-ai-2941515.twc1.net\",443,socket.AF_INET,socket.SOCK_STREAM)})\nexcept OSError as error:report[\"dns_resolution_error\"]=type(error).__name__\nout=root/\"analyst-moscow-resource-reconciliation.json\";out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nhandoff_path=root/\"analyst-moscow-handoff.json\";handoff=json.loads(handoff_path.read_text())\ncleanup={\"server_id\":9413003,\"server_get_http\":report[\"obsolete_server_get_status\"],\"absent_from_complete_inventory\":report[\"obsolete_server_absent_from_complete_inventory\"],\"ip_present\":report[\"obsolete_ip_present\"],\"earlier_delete_request_http\":403}\nhandoff[\"spare_empty_vm_cleanup\"]=cleanup\nhandoff[\"dns\"]=report\nhandoff_path.write_text(json.dumps(handoff,ensure_ascii=False,indent=2));handoff_path.chmod(0o600)\nrepo=root/\"analyst-ai-development-79be1821\"\nheading=\"## TIMEWEB 24.10.2026 — заключительная сверка DNS и ресурсов\"\nnote=heading+chr(10)+chr(10)+\"Повторная полная инвентаризация: сервер 9413003 \"+(\"отсутствует, GET вернул 404\" if report[\"obsolete_server_get_status\"]==404 else \"ещё присутствует\")+\". Ранее DELETE получил 403; исчезновение установлено последующей проверкой, а не выдано за успешный ответ того запроса. Старый публичный IPv4 \"+(\"ещё присутствует\" if report[\"obsolete_ip_present\"] else \"отсутствует в полной инвентаризации\")+\". Текущая A-запись приложения: \"+report[\"dns_a_value\"]+\". DNS указывает на Москву: \"+str(report[\"dns_points_to_moscow\"])+\". Backend и HTTPS не запускаются без штатной привязки реального владельца Telegram; проверки сети Telegram остаются 4/6, полный живой запуск не подтверждён.\"+chr(10)\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=repo/rel;previous=path.read_text()\n    assert heading not in previous\n    path.write_text(previous.rstrip()+chr(10)+chr(10)+note)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nprint(\"MOSCOW_FINAL_RESOURCE_STATUS=\"+json.dumps(report),flush=True)\n"
+                  script="import datetime,json,pathlib,socket,subprocess,sys\nroot=pathlib.Path(\"/root\");report=json.loads(sys.argv[1])\nreport[\"checked_at_utc\"]=datetime.datetime.now(datetime.timezone.utc).isoformat()\ntry:report[\"dns_ipv4_from_moscow\"]=sorted({x[4][0] for x in socket.getaddrinfo(\"analyst-ai-2941515.twc1.net\",443,socket.AF_INET,socket.SOCK_STREAM)})\nexcept OSError as error:report[\"dns_resolution_error\"]=type(error).__name__\nout=root/\"analyst-moscow-resource-reconciliation.json\";out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nhandoff_path=root/\"analyst-moscow-handoff.json\";handoff=json.loads(handoff_path.read_text())\ncleanup={\"server_id\":9413003,\"server_get_http\":report[\"obsolete_server_get_status\"],\"absent_from_complete_inventory\":report[\"obsolete_server_absent_from_complete_inventory\"],\"ip_present\":report[\"obsolete_ip_present\"],\"earlier_delete_request_http\":403}\nhandoff[\"spare_empty_vm_cleanup\"]=cleanup\nhandoff[\"dns\"]=report\nhandoff_path.write_text(json.dumps(handoff,ensure_ascii=False,indent=2));handoff_path.chmod(0o600)\nrepo=root/\"analyst-ai-development-79be1821\"\nheading=\"## TIMEWEB 24.10.2026 — заключительная сверка DNS и ресурсов\"\nnote=heading+chr(10)+chr(10)+\"Повторная полная инвентаризация: сервер 9413003 \"+(\"отсутствует, GET вернул 404\" if report[\"obsolete_server_get_status\"]==404 else \"не подтверждён как удалённый: отсутствует в списке доступных VM, но отдельный GET ранее отклонён HTTP 403\")+\". Ранее DELETE получил 403; отсутствие в списке не доказывает удаление при запрете отдельного GET. Старый публичный IPv4 \"+(\"ещё присутствует\" if report[\"obsolete_ip_present\"] else \"отсутствует в полной инвентаризации\")+\". Текущая A-запись приложения: \"+report[\"dns_a_value\"]+\". DNS указывает на Москву: \"+str(report[\"dns_points_to_moscow\"])+\". Backend и HTTPS не запускаются без штатной привязки реального владельца Telegram; проверки сети Telegram остаются 4/6, полный живой запуск не подтверждён.\"+chr(10)\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=repo/rel;previous=path.read_text()\n    assert heading not in previous\n    path.write_text(previous.rstrip()+chr(10)+chr(10)+note)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nprint(\"MOSCOW_FINAL_RESOURCE_STATUS=\"+json.dumps(report),flush=True)\n"
                   print(p.remote(command,"python3 -u -c "+shlex.quote(script)+" "+shlex.quote(json.dumps(report)),timeout=75).decode(),end="",flush=True)
               finally:
                   if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
