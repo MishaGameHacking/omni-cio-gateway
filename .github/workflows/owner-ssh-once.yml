@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-apk-download-verification
+  group: analyst-timeweb-resource-audit
   cancel-in-progress: false
 jobs:
   access:
@@ -31,6 +31,31 @@ jobs:
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+
+          import concurrent.futures,datetime
+          def api_get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              try:
+                  with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=30) as response:return json.loads(response.read(4194305))
+              except urllib.error.HTTPError as error:return {"http_error":error.code,**p.cloud.error_details(error.read(4194305))}
+          paths=["/servers?limit=100&offset=0","/dedicated-servers","/floating-ips","/apps","/databases","/k8s/clusters","/balancers","/storages/buckets","/images","/network-drives","/cloud-ai/agents","/account/finances","/account/services/cost"]
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+              documents=dict(zip(paths,pool.map(api_get,paths)))
+          allowed={"id","name","status","project_id","cpu","ram","disk","size","size_gb","used","used_space","capacity","price","preset_id","location","availability_zone","resource_id","resource_type","ip","is_ddos_guard","created_at","autoinstall_ready","cpu_description","ram_description","hdd_description","is_pre_installed","comment"}
+          inventory={"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"resources":{}}
+          for path,doc in documents.items():
+              if path=="/account/finances":
+                  f=doc.get("finances",{})
+                  inventory["finances"]={k:f.get(k) for k in ("balance","currency","hourly_cost","hourly_fee","monthly_cost","monthly_fee","hours_left")}
+                  if "http_error" in doc:inventory["finances_error"]=doc["http_error"]
+              elif path=="/account/services/cost":inventory["service_costs"]=doc
+              else:
+                  safe={"meta":doc.get("meta"),"http_error":doc.get("http_error"),"keys":sorted(doc)}
+                  for key,value in doc.items():
+                      if isinstance(value,list):
+                          safe[key]=[{k:v for k,v in row.items() if k in allowed and isinstance(v,(str,int,float,bool,type(None)))} for row in value if isinstance(row,dict)]
+                  inventory["resources"][path]=safe
+
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -52,48 +77,12 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-
-                      script="import json,pathlib,subprocess\nw=pathlib.Path(\"/root/analyst-apk-direct-20261024\")\nr={}\nfor name in (\"delivery-status.json\",\"delivery.json\"):\n    p=w/name\n    if p.exists():r[name]=json.loads(p.read_text())\nif r.get(\"delivery-status.json\",{}).get(\"status\")==\"failed\":\n    for name in (\"publish.log\",\"delivery-failure.txt\"):\n        p=w/name\n        if p.exists():r[name]=p.read_text()[-5000:]\nprint(json.dumps(r,ensure_ascii=False))\n"
-                      result=json.loads(p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=30))
-                      print("TIMEWEB_APK_PUBLISH_STATUS="+json.dumps(result,ensure_ascii=False),flush=True)
-                      delivery=result.get("delivery.json")
-                      if delivery is not None:
-                          import datetime,http.client,re,ssl
-                          release=delivery["release"]
-                          assert release["package_name"]=="ru.omnicio.app.debug" and release["version_code"]==35
-                          assert re.fullmatch(r"/client/apk/Analyst-AI-35-[a-f0-9]{64}\.apk",release["apk_path"])
-                          host="analyst-ai-2941515.twc1.net"
-                          conn=http.client.HTTPSConnection(host,443,timeout=45,context=ssl.create_default_context())
-                          conn.connect();assert conn.sock.getpeername()[0]=="201.24.52.66"
-                          cert_sha=hashlib.sha256(conn.sock.getpeercert(binary_form=True)).hexdigest()
-                          conn.request("GET","/client/update-policy?package_name=ru.omnicio.app.debug",headers={"Host":host})
-                          with conn.getresponse() as response:
-                              assert response.status==200 and "no-store" in response.getheader("cache-control","")
-                              assert json.loads(response.read(16385))==release
-                          conn.request("GET",release["apk_path"],headers={"Host":host})
-                          digest=hashlib.sha256();count=0
-                          with conn.getresponse() as response:
-                              assert response.status==200 and response.getheader("content-type","").startswith("application/vnd.android.package-archive")
-                              assert int(response.getheader("content-length"))==release["apk_bytes"]
-                              assert response.getheader("X-Content-Type-Options")=="nosniff"
-                              while True:
-                                  chunk=response.read(262144)
-                                  if not chunk:break
-                                  count+=len(chunk);assert count<=release["apk_bytes"];digest.update(chunk)
-                          assert count==release["apk_bytes"] and digest.hexdigest()==release["apk_sha256"]
-                          for path,expected in (("/health",200),("/workspace",401)):
-                              conn.request("GET",path,headers={"Host":host})
-                              with conn.getresponse() as response:
-                                  body=response.read(8192);assert response.status==expected
-                                  if path=="/health":assert json.loads(body)=={"status":"ok"}
-                          conn.close()
-                          proof={"url":delivery["url"],"sha256":digest.hexdigest(),"bytes":count,"certificate_sha256":release["certificate_sha256"],"tls_certificate_sha256":cert_sha,"version_name":release["version_name"],"version_code":35,"public_download_verified":True,"backend_health":True,"unauthenticated_workspace_status":401,"verified_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}
-                          save="import json,os,pathlib,sys\nos.umask(0o077)\np=pathlib.Path('/root/analyst-apk-direct-20261024/external-download-verification.json')\np.write_text(json.dumps(json.load(sys.stdin),indent=2)+'\\n')\n"
-                          p.remote(command,"python3 -c "+shlex.quote(save),json.dumps(proof).encode(),timeout=30)
-                          print("TIMEWEB_DELIVERY_EXTERNAL_VERIFIED="+json.dumps(proof),flush=True)
-                      else:
-                          print("TIMEWEB_DELIVERY_NOT_PUBLISHED_YET=true",flush=True)
-
+                      script="import base64,datetime,hashlib,json,os,pathlib,subprocess,sys,time\nfrom cryptography.hazmat.primitives import hashes,serialization\nfrom cryptography.hazmat.primitives.asymmetric import padding\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\nos.umask(0o077)\ndata=json.load(sys.stdin)\nwork=pathlib.Path(\"/root/analyst-resource-audit-20261024\");work.mkdir(mode=0o700,exist_ok=True)\n(work/\"inventory-before-cleanup.json\").write_text(json.dumps(data[\"inventory\"],ensure_ascii=False,indent=2)+\"\\n\")\nrepo=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nscript=repo/\"deploy/resource_observer.py\"\nif script.exists():assert script.read_text()==data[\"observer\"]\nelse:script.write_text(data[\"observer\"])\ninstall=pathlib.Path(\"/usr/local/lib/analyst-ai-ops\");install.mkdir(mode=0o755,exist_ok=True)\ntarget=install/\"resource_observer.py\";target.write_text(data[\"observer\"]);target.chmod(0o755)\nunit=\"[Unit]\\nDescription=Measure Analyst AI resource use without changing capacity\\nAfter=analyst-ai-owner.service\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/python3 /usr/local/lib/analyst-ai-ops/resource_observer.py\\nUser=root\\nNice=19\\nCPUQuota=10%\\nMemoryMax=64M\\nNoNewPrivileges=true\\nProtectHome=true\\nProtectSystem=strict\\nReadWritePaths=/var/lib/analyst-ai-ops\\n\"\ntimer=\"[Unit]\\nDescription=Periodic bounded Analyst AI resource measurements\\n[Timer]\\nOnBootSec=2min\\nOnUnitActiveSec=5min\\nRandomizedDelaySec=20s\\nPersistent=true\\n[Install]\\nWantedBy=timers.target\\n\"\npathlib.Path(\"/var/lib/analyst-ai-ops\").mkdir(mode=0o700,exist_ok=True)\nfor name,text in ((\"analyst-resource-observer.service\",unit),(\"analyst-resource-observer.timer\",timer)):\n    destination=pathlib.Path(\"/etc/systemd/system\")/name\n    assert not destination.is_symlink()\n    if destination.exists():assert destination.read_text()==text\n    else:destination.write_text(text);destination.chmod(0o644)\nsubprocess.run([\"systemd-analyze\",\"verify\",\"/etc/systemd/system/analyst-resource-observer.service\",\"/etc/systemd/system/analyst-resource-observer.timer\"],check=True,capture_output=True,timeout=20)\nsubprocess.run([\"systemctl\",\"daemon-reload\"],check=True,capture_output=True,timeout=20)\nsubprocess.run([\"systemctl\",\"enable\",\"--now\",\"analyst-resource-observer.timer\"],check=True,capture_output=True,timeout=20)\nsubprocess.run([\"systemctl\",\"start\",\"analyst-resource-observer.service\"],check=True,capture_output=True,timeout=25)\ntime.sleep(8)\nsubprocess.run([\"systemctl\",\"start\",\"analyst-resource-observer.service\"],check=True,capture_output=True,timeout=25)\nsample=json.loads(pathlib.Path(\"/var/lib/analyst-ai-ops/latest-resource-sample.json\").read_text())\nassert sample[\"health\"][\"ok\"] and sample[\"services\"][\"analyst-ai-owner\"][\"ActiveState\"]==\"active\"\nfor name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    p=repo/name;text=p.read_text()\n    if data[\"policy\"].splitlines()[0] not in text:p.write_text(text.rstrip()+\"\\n\\n\"+data[\"policy\"]+\"\\n\")\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True,timeout=15)\nreport={\"inventory\":data[\"inventory\"],\"sample\":sample,\"resource_observer_enabled\":subprocess.check_output([\"systemctl\",\"is-enabled\",\"analyst-resource-observer.timer\"],text=True).strip()==\"enabled\",\"policy_saved_on_timeweb\":True,\"measurements_scope\":\"Current baseline, not an authenticated 5-user peak-load test\"}\ndelivery=pathlib.Path(\"/root/analyst-apk-direct-20261024/delivery-status.json\")\nif delivery.exists():report[\"apk_delivery\"]=json.loads(delivery.read_text())\npublic=serialization.load_pem_public_key(data[\"public_key\"].encode())\nkey=os.urandom(32);nonce=os.urandom(12);aad=b\"Analyst resource audit 20261024\"\ncipher=AESGCM(key).encrypt(nonce,json.dumps(report,ensure_ascii=False).encode(),aad)\nenvelope={\"key\":base64.b64encode(public.encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))).decode(),\"nonce\":base64.b64encode(nonce).decode(),\"ciphertext\":base64.b64encode(cipher).decode()}\n(work/\"audit-report.json\").write_text(json.dumps(report,ensure_ascii=False,indent=2)+\"\\n\")\nprint(\"PRIVATE_RESOURCE_AUDIT=\"+json.dumps(envelope),flush=True)\nprint(\"RESOURCE_POLICY_SAVED=true\",flush=True)\n"
+                      payload={"inventory":inventory,"observer":"#!/usr/bin/env python3\n\"\"\"Bounded local resource measurements; no cloud mutations or paid API calls.\"\"\"\nimport datetime,json,os,pathlib,shutil,subprocess,time,urllib.request\nos.umask(0o077)\nroot=pathlib.Path(\"/var/lib/analyst-ai-ops\")\nroot.mkdir(mode=0o700,exist_ok=True)\nnow=int(time.time())\nmem={l.split(\":\")[0]:int(l.split()[1])*1024 for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith((\"MemTotal:\",\"MemAvailable:\",\"SwapTotal:\",\"SwapFree:\"))}\ncpu=[int(x) for x in pathlib.Path(\"/proc/stat\").read_text().splitlines()[0].split()[1:]]\nstate_file=root/\"previous-resource-sample.json\"\nprevious=json.loads(state_file.read_text()) if state_file.exists() else None\nsample={\"at\":now,\"at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"memory\":mem,\"cpu_busy_percent\":None,\"disk\":dict(zip((\"total\",\"used\",\"free\"),shutil.disk_usage(\"/\"))),\"services\":{}}\nif previous and now>previous[\"at\"]:\n    ticks=sum(cpu)-sum(previous[\"cpu\"])\n    idle=cpu[3]+cpu[4]-previous[\"cpu\"][3]-previous[\"cpu\"][4]\n    if ticks>0:sample[\"cpu_busy_percent\"]=round(100*(ticks-idle)/ticks,2)\nstate_file.write_text(json.dumps({\"at\":now,\"cpu\":cpu})+\"\\n\")\nfor unit in (\"analyst-ai-owner\",\"caddy\"):\n    command=[\"systemctl\",\"show\",unit,\"-p\",\"ActiveState\",\"-p\",\"NRestarts\",\"-p\",\"MemoryCurrent\",\"-p\",\"MemoryPeak\",\"-p\",\"CPUUsageNSec\",\"-p\",\"ControlGroup\"]\n    result=subprocess.run(command,capture_output=True,text=True,timeout=8)\n    values=dict(l.split(\"=\",1) for l in result.stdout.splitlines() if \"=\" in l)\n    entry={k:values.get(k) for k in (\"ActiveState\",\"NRestarts\",\"MemoryCurrent\",\"MemoryPeak\",\"CPUUsageNSec\")}\n    cg=values.get(\"ControlGroup\",\"\")\n    if cg.startswith(\"/system.slice/\"):\n        events=pathlib.Path(\"/sys/fs/cgroup\"+cg+\"/memory.events\")\n        if events.is_file():entry[\"memory_events\"]=dict(l.split() for l in events.read_text().splitlines())\n    sample[\"services\"][unit]=entry\nstart=time.monotonic()\ntry:\n    with urllib.request.urlopen(\"http://127.0.0.1:8080/health\",timeout=5) as response:\n        sample[\"health\"]={\"ok\":response.status==200 and json.load(response)=={\"status\":\"ok\"},\"milliseconds\":round((time.monotonic()-start)*1000,2)}\nexcept Exception as error:sample[\"health\"]={\"ok\":False,\"error_type\":type(error).__name__}\ndata=pathlib.Path(\"/var/lib/analyst-ai\")\nsample[\"sqlite_bytes\"]=sum(p.stat().st_size for p in data.rglob(\"*\") if p.is_file() and (p.suffix in {\".db\",\".sqlite\",\".sqlite3\"} or p.name.endswith((\"-wal\",\"-shm\"))))\npath=root/\"resource-usage.jsonl\"\nrows=[]\nif path.exists():\n    with path.open() as f:\n        for line in f:\n            try:\n                old=json.loads(line)\n                if old.get(\"at\",0)>=now-14*86400:rows.append(old)\n            except ValueError:continue\nrows=rows[-4031:]+[sample]\ntemporary=root/\"resource-usage.tmp\"\ntemporary.write_text(\"\".join(json.dumps(row,separators=(\",\",\":\"))+\"\\n\" for row in rows))\ntemporary.replace(path)\n(root/\"latest-resource-sample.json\").write_text(json.dumps(sample,indent=2)+\"\\n\")\nprint(json.dumps({\"sample_recorded\":True,\"health_ok\":sample[\"health\"][\"ok\"]}))\n","policy":"## OWNER 24.10.2026 — мощность по фактической потребности\n\nДля всех ресурсов Timeweb выбирать необходимую производительность по измеренной\nнагрузке и требованиям приложения, без избыточного запаса. Не выбирать тариф\nтолько по минимальной цене и не заказывать более мощный без подтвержденной причины.\nЭто уточнение отменяет прежние ограничения региона: страна, город и тип ресурса\nне фиксированы; выбирать их по доступности зависимостей, задержкам, надежности\nи полной стоимости. Разработка и сборка остаются на Timeweb; GitHub — резервная\nкопия и уже разрешенный административный транспорт.\n\nРазделять постоянный backend, данные и резервные копии, оплачиваемые по запросам\nAI-вызовы, временные сборки/проверки. Сборочную мощность не держать круглосуточно\nдля обслуживания телефона. Сначала сохранять и проверять результат, затем удалять\nвременную VM и ненужный IP. Для каждой платной сущности нужны назначение, измерение\nпотребности и условие завершения использования. Проверять полную стоимость,\nсрок тарификации и фактическое прекращение списаний; выключение не равно удалению.\n100% постоянной загрузки не является целевым показателем: цель — нужные задержки,\nотсутствие OOM/ошибок и оплачиваемая мощность, обоснованная реальными измерениями.\nНе обещать оплату VPS за фактический процент CPU, если провайдер тарифицирует\nвыделенные ресурсы по времени. Изменять размер только после определения узкого\nместа; платные K8s/балансировщик/отдельную БД не добавлять без доказанной нужды.\n","public_key":"-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAobFsluZHuxjS8aHckE6F\nmk5VuBR0dZrf8qUzu3eXGa8evI8Sc9wWXpFOx6DhSIu2AeHNFwyPYr7vlpZumuog\nfAZFSlAwDlroI9MD6TOkUc5mOgBJ8tv5q1PR/Vj49pGIaXwtXq7CkklGx7C4wLWn\nD5EZTETEj72r4itm1NCq+Th2O3MgQTFxyB6OHsH3FXefznaTK39dckfj9RIwVIMK\n7kBh6sYYEgHEl9ol1Xej8I4GSwwdgeqildoOIKQTMivwKcbCVigsWnGfV3iqlwWH\n3VcnwxoDY7z5MH0E/Uf+61WCvLyXIyvW26kc8stBWRwGSHHxexdAsNk8cVIJCvWY\nLvBsYPwmP+4lZ2wG1/4+tlRybEAm9bBwqasdcW71I0KmeMB3CaRUmgNp0Xx3OcI+\nmD+s8K//2Ub6MxAiDZbOeW7ena6UeJXf5X8WewKRqBG9Xlx2TGKA+lEjOG91kl/B\nUTjloW2hVbFd0FAYZE24ASMbMFwue/ywlFMHdmrnEgtFAgMBAAE=\n-----END PUBLIC KEY-----\n"}
+                      outcome=subprocess.run(command+["/opt/analyst-ai/venv/bin/python -u -c "+shlex.quote(script)],input=json.dumps(payload).encode(),capture_output=True,timeout=150)
+                      if outcome.returncode:print("RESOURCE_ACTION_DIAGNOSTIC="+json.dumps({"exit":outcome.returncode,"stderr":outcome.stderr.decode(errors="replace")[-3500:]}),flush=True)
+                      else:print(outcome.stdout.decode(),flush=True)
+                      assert outcome.returncode==0,"resource_observer_not_verified"
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
