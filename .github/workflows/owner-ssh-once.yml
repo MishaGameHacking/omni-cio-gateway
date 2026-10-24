@@ -32,6 +32,16 @@ jobs:
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+
+          req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers/9414261",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=30) as r:s=json.loads(r.read(4194304))["server"]
+          assert s["id"]==9414261 and s["name"]=="analyst-ai-workspace-20261024" and s["project_id"]==2941515
+          safe={k:s.get(k) for k in ("id","name","status","created_at","cpu","ram","location","availability_zone","configurator_id","preset_id")}
+          safe["keys"]=sorted(s)
+          safe["networks"]=[{k:n.get(k) for k in ("type","name","is_nat","id","ips")} for n in s.get("networks",[])]
+          print("TARGET_SERVER_STATE="+json.dumps(safe),flush=True)
+          target_ip=p.cloud.public_ipv4(s)
+
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -53,63 +63,8 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      target_public=p.remote(command,"python3 -c "+shlex.quote("import json,pathlib,subprocess\nw=pathlib.Path(\"/root/analyst-workspace-preparation-20261024\")\nk=w/\"target-access\"\nif not k.exists():subprocess.run([\"ssh-keygen\",\"-q\",\"-t\",\"ed25519\",\"-N\",\"\",\"-f\",str(k)],check=True)\nk.chmod(0o600)\nprint((w/\"target-access.pub\").read_text().strip())\n"),timeout=30).decode().strip()
-                      assert target_public.startswith("ssh-ed25519 ")
-
-                      def api(method,path,body=None):
-                          req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
-                          try:
-                              with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
-                                  raw=r.read(4194305);assert len(raw)<=4194304
-                                  return r.status,json.loads(raw) if raw else {}
-                          except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
-                      status,inventory=api("GET","/servers?limit=100&offset=0");assert status==200 and inventory["meta"]["total"]==len(inventory["servers"])
-                      name="analyst-ai-workspace-20261024"
-                      assert not any(x["name"]==name for x in inventory["servers"]),"target_exists_reconcile_no_duplicate"
-                      status,catalog=api("GET","/configurator/servers");assert status==200
-                      choices=[]
-                      for offer in catalog["server_configurators"]:
-                          if offer.get("location") not in ("nl-1","de-1","fi-1","pl-1") or offer.get("disk_type")!="nvme":continue
-                          requirements=offer["requirements"]
-                          if requirements.get("gpu_min") not in (None,0):continue
-                          if any(not(requirements[k+"_min"]<=v<=requirements[k+"_max"] and (v-requirements[k+"_min"])%requirements[k+"_step"]==0) for k,v in (("cpu",2),("ram",6144),("disk",40960))):continue
-                          prices=offer["prices"]
-                          price=prices["cpu"]*2+prices["ram"]*6+prices["disk"]*40
-                          if 0<price<=6160:choices.append((price,offer["id"],offer["location"]))
-                      assert choices,"suitable_hourly_offer_unavailable"
-                      choices.sort()
-                      assert any(x["id"]==99 and x["version"]=="24.04" for x in p.ubuntu_images(p.read_catalog(token,"os")))
-                      p.cloud.generate_key(folder/"target-host")
-                      host_public=(folder/"target-host.pub").read_text().strip()
-                      config={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[target_public]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,"ssh_keys":{"ed25519_private":(folder/"target-host").read_text(),"ed25519_public":host_public},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,"runcmd":[["systemctl","restart","ssh"]]}
-                      created=None
-                      for price,cid,location in choices[:4]:
-                          cfg={"configurator_id":cid,"cpu":2,"ram":6144,"disk":40960}
-                          plan={"name":name,"configuration":cfg,"base_monthly_rub":price,"location":location,"host_public":host_public,"replacement_for":9413105,"role":"single permanent app/development/build server"}
-                          storeplan="import json,os,pathlib,sys;os.umask(0o077);pathlib.Path('/root/analyst-workspace-preparation-20261024/target-plan.json').write_text(json.dumps(json.load(sys.stdin),indent=2)+'\\n')"
-                          p.remote(command,"python3 -c "+shlex.quote(storeplan),json.dumps(plan).encode(),timeout=25)
-                          print("WORKSPACE_TARGET_OFFER="+json.dumps(plan),flush=True)
-                          status,answer=api("POST","/servers",{"name":name,"hostname":name,"comment":"Permanent single Analyst AI workspace; replaces VM9413105 after verified migration 2026-10-24","configuration":cfg,"os_id":99,"project_id":2941515,"cloud_init":"#cloud-config\n"+json.dumps(config)+"\n"})
-                          if status in (200,201,202):
-                              s=answer["server"];assert s["name"]==name and s["project_id"]==2941515
-                              created={**plan,"id":s["id"],"ip":p.cloud.public_ipv4(s)}
-                              break
-                          print("WORKSPACE_TARGET_REJECTED="+json.dumps({"status":status,**answer}),flush=True)
-                          assert status==409 and answer.get("error_code") in ("no_free_node","location_not_available","not_available"),"creation_denied_stop"
-                      assert created is not None,"no_target_created"
-                      storetarget="import json,os,pathlib,sys;os.umask(0o077);d=json.load(sys.stdin);w=pathlib.Path('/root/analyst-workspace-preparation-20261024');(w/'target.json').write_text(json.dumps(d,indent=2)+'\\n');(w/'target-known-hosts').write_text((d.get('ip') or '')+' '+d['host_public']+'\\n')"
-                      p.remote(command,"python3 -c "+shlex.quote(storetarget),json.dumps(created).encode(),timeout=25)
-                      print("WORKSPACE_TARGET_CREATED="+json.dumps(created),flush=True)
-                      for _ in range(45):
-                          status,answer=api("GET","/servers/"+str(created["id"]));assert status==200
-                          s=answer["server"];ip=p.cloud.public_ipv4(s)
-                          if s.get("status")=="on" and ip:
-                              created["ip"]=ip
-                              p.remote(command,"python3 -c "+shlex.quote(storetarget),json.dumps(created).encode(),timeout=25)
-                              print("WORKSPACE_TARGET_ON="+json.dumps(created),flush=True);break
-                          time.sleep(8)
-                      else:raise RuntimeError("target_installing_do_not_create_another")
-
+                      payload={"ip":target_ip,"status":s["status"],"script":"BOOTSTRAP=\"import json,os,pathlib,subprocess\\nos.umask(0o077)\\nw=pathlib.Path(\\\"/root/analyst-workspace-bootstrap\\\");w.mkdir(mode=0o700,exist_ok=True)\\nlog=(w/\\\"bootstrap.log\\\").open(\\\"a\\\")\\nenv=os.environ.copy();env[\\\"DEBIAN_FRONTEND\\\"]=\\\"noninteractive\\\"\\nsubprocess.run([\\\"apt-get\\\",\\\"update\\\"],env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=300)\\nsubprocess.run([\\\"apt-get\\\",\\\"install\\\",\\\"-y\\\",\\\"--no-install-recommends\\\",\\\"python3-venv\\\",\\\"openjdk-17-jdk-headless\\\",\\\"ca-certificates\\\",\\\"caddy\\\",\\\"git\\\",\\\"rsync\\\",\\\"curl\\\",\\\"unzip\\\",\\\"zip\\\",\\\"xz-utils\\\",\\\"nodejs\\\",\\\"libglu1-mesa\\\",\\\"libvulkan1\\\",\\\"mesa-vulkan-drivers\\\",\\\"libgl1\\\",\\\"libpulse0\\\",\\\"libx11-xcb1\\\",\\\"libxcb-cursor0\\\",\\\"xvfb\\\",\\\"xauth\\\"],env=env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=900)\\nsubprocess.run([\\\"systemctl\\\",\\\"disable\\\",\\\"--now\\\",\\\"caddy\\\"],check=True,stdout=log,stderr=subprocess.STDOUT)\\nif subprocess.run([\\\"id\\\",\\\"analyst-ai\\\"],capture_output=True).returncode:subprocess.run([\\\"useradd\\\",\\\"--system\\\",\\\"--user-group\\\",\\\"--home-dir\\\",\\\"/var/lib/analyst-ai\\\",\\\"--no-create-home\\\",\\\"--shell\\\",\\\"/usr/sbin/nologin\\\",\\\"analyst-ai\\\"],check=True)\\nssh=pathlib.Path(\\\"/etc/ssh/sshd_config.d/99-analyst-key-only.conf\\\")\\nssh.write_text(\\\"PasswordAuthentication no\\\\nKbdInteractiveAuthentication no\\\\nPermitRootLogin prohibit-password\\\\n\\\")\\nsubprocess.run([\\\"sshd\\\",\\\"-t\\\"],check=True,stdout=log,stderr=subprocess.STDOUT)\\nsubprocess.run([\\\"systemctl\\\",\\\"reload\\\",\\\"ssh\\\"],check=True,stdout=log,stderr=subprocess.STDOUT)\\nsubprocess.run([\\\"passwd\\\",\\\"-l\\\",\\\"root\\\"],check=True,stdout=log,stderr=subprocess.STDOUT)\\n(w/\\\"ready.json\\\").write_text(json.dumps({\\\"ready\\\":True,\\\"cpu\\\":os.cpu_count()})+\\\"\\\\n\\\")\\nprint(\\\"BOOTSTRAP_READY=true\\\")\\n\"\nimport datetime,hashlib,json,os,pathlib,shlex,subprocess,sys,time,traceback\nos.umask(0o077)\nw=pathlib.Path(\"/root/analyst-workspace-preparation-20261024\");d=json.loads((w/\"target.json\").read_text())\nassert d[\"name\"]==\"analyst-ai-workspace-20261024\" and d[\"id\"]!=9413105 and d[\"ip\"]\nssh=[\"ssh\",\"-F\",\"/dev/null\",\"-i\",str(w/\"target-access\"),\"-o\",\"BatchMode=yes\",\"-o\",\"IdentitiesOnly=yes\",\"-o\",\"StrictHostKeyChecking=yes\",\"-o\",\"HostKeyAlgorithms=ssh-ed25519\",\"-o\",\"UserKnownHostsFile=\"+str(w/\"target-known-hosts\"),\"-o\",\"ConnectTimeout=8\",\"-o\",\"ServerAliveInterval=20\",\"-o\",\"ServerAliveCountMax=3\",\"root@\"+d[\"ip\"]]\nreport={\"status\":\"starting\",\"target_id\":d[\"id\"],\"started\":datetime.datetime.now(datetime.timezone.utc).isoformat()}\ndef save():\n    p=w/\"migration-staging.tmp\";p.write_text(json.dumps(report,indent=2)+\"\\n\");p.replace(w/\"migration-staging.json\")\ndef remote(code,timeout=60):\n    r=subprocess.run(ssh+[\"python3 -u -c \"+shlex.quote(code)],capture_output=True,timeout=timeout)\n    if r.returncode:\n        (w/\"target-last-error.txt\").write_bytes(r.stderr)\n        raise RuntimeError(\"target_command_failed_\"+str(r.returncode))\n    return r.stdout\ntry:\n    for _ in range(30):\n        try:\n            remote(\"import os;assert os.getuid()==0\",20);break\n        except (RuntimeError,subprocess.TimeoutExpired):time.sleep(5)\n    else:raise RuntimeError(\"pinned_target_ssh_unavailable\")\n    report[\"status\"]=\"installing_tools\";save()\n    remote(BOOTSTRAP,1500)\n    roots=[\"root/analyst-ai-source\",\"root/analyst-ai-development-79be1821\",\"root/analyst-ai-android-690811a5\",\"root/analyst-ai-artifacts\",\"root/analyst-ai-development-venv\",\"root/analyst-apk-direct-20261024\",\"root/analyst-caret-diagnostic-20261024\",\"root/analyst-live-origin-20261024\",\"root/analyst-resource-audit-20261024\",\"root/analyst-ai-enrollment.json\",\"root/analyst-ai-owner.json\",\"root/.android\",\"root/.gradle\",\"opt/analyst-android-sdk\",\"opt/analyst-ai\",\"etc/analyst-ai\",\"etc/systemd/system/analyst-ai-owner.service\",\"etc/systemd/system/caddy.service.d\",\"etc/systemd/system/analyst-resource-observer.service\",\"etc/systemd/system/analyst-resource-observer.timer\",\"usr/local/lib/analyst-ai-ops\",\"var/lib/analyst-ai-ops\",\"var/lib/caddy\"]\n    for p in roots:assert pathlib.Path(\"/\"+p).exists(),p\n    manifest={}\n    for base in (\"root/analyst-ai-source\",\"root/analyst-ai-development-79be1821\",\"root/analyst-ai-android-690811a5\",\"opt/analyst-ai/backend\"):\n        for p in pathlib.Path(\"/\"+base).rglob(\"*\"):\n            if p.is_file() and not p.is_symlink() and \".git\" not in p.parts and \"build\" not in p.parts and \"__pycache__\" not in p.parts and \".gradle\" not in p.parts:\n                manifest[str(p)]=hashlib.file_digest(p.open(\"rb\"),\"sha256\").hexdigest()\n    for name in (\"/root/.android/debug.keystore\",\"/etc/analyst-ai/backend.env\",\"/root/analyst-apk-direct-20261024/Analyst-AI-0.11.0-preview.apk\"):\n        p=pathlib.Path(name);manifest[name]=hashlib.file_digest(p.open(\"rb\"),\"sha256\").hexdigest()\n    report[\"status\"]=\"copying_existing_sources_tools_and_identity\";save()\n    with (w/\"transfer.log\").open(\"wb\") as log:\n        source=subprocess.Popen([\"tar\",\"-cpf\",\"-\",\"-C\",\"/\",*roots],stdout=subprocess.PIPE,stderr=log)\n        target=subprocess.Popen(ssh+[\"umask 077; tar -xpf - -C /\"],stdin=source.stdout,stdout=log,stderr=log)\n        source.stdout.close()\n        target_exit=target.wait(timeout=900);source_exit=source.wait(timeout=30)\n        assert target_exit==source_exit==0,\"source_transfer_failed\"\n    proof=remote(\"import hashlib,json,pathlib;expected=\"+repr(manifest)+\";assert all(hashlib.file_digest(pathlib.Path(p).open('rb'),'sha256').hexdigest()==h for p,h in expected.items());print(json.dumps({'files':len(expected),'all_sha256_match':True}))\",180)\n    report[\"copy_proof\"]=json.loads(proof)\n    remote(\"import grp,os,pathlib,subprocess;subprocess.run(['chown','-R','caddy:caddy','/var/lib/caddy'],check=True);os.chown('/etc/analyst-ai',0,grp.getgrnam('caddy').gr_gid);os.chown('/etc/analyst-ai/Caddyfile',0,grp.getgrnam('caddy').gr_gid);subprocess.run(['/opt/analyst-ai/venv/bin/python','-m','pip','check'],check=True);subprocess.run(['systemctl','daemon-reload'],check=True);subprocess.run(['systemd-analyze','verify','/etc/systemd/system/analyst-ai-owner.service'],check=True)\",90)\n    report[\"status\"]=\"ready_for_data_cutover\";report[\"finished\"]=datetime.datetime.now(datetime.timezone.utc).isoformat();save()\nexcept BaseException as e:\n    report[\"status\"]=\"failed\";report[\"error_type\"]=type(e).__name__;report[\"error\"]=str(e);save()\n    (w/\"migration-staging-failure.txt\").write_text(traceback.format_exc())\n    raise\n"}
+                      print(p.remote(command,"python3 -c "+shlex.quote("import json,os,pathlib,subprocess,sys\nos.umask(0o077);data=json.load(sys.stdin);w=pathlib.Path(\"/root/analyst-workspace-preparation-20261024\")\nt=json.loads((w/\"target.json\").read_text());assert t[\"id\"]==9414261\nif data[\"ip\"]:\n    t[\"ip\"]=data[\"ip\"];(w/\"target.json\").write_text(json.dumps(t,indent=2)+\"\\n\");(w/\"target-known-hosts\").write_text(t[\"ip\"]+\" \"+t[\"host_public\"]+\"\\n\")\n(w/\"migration-staging.py\").write_text(data[\"script\"])\nif data[\"ip\"] and data[\"status\"]==\"on\":\n    unit=\"analyst-workspace-staging\"\n    active=subprocess.run([\"systemctl\",\"is-active\",\"--quiet\",unit],capture_output=True).returncode==0\n    if not active:\n        subprocess.run([\"systemd-run\",\"--unit\",unit,\"--no-block\",\"--property=Type=oneshot\",\"--property=RemainAfterExit=yes\",\"--property=Nice=10\",\"--property=MemoryMax=512M\",\"/usr/bin/python3\",str(w/\"migration-staging.py\")],check=True,capture_output=True)\n    print(\"MIGRATION_STAGING_STARTED=true\")\nelse:print(\"MIGRATION_TARGET_NOT_READY=true\")\n"),json.dumps(payload).encode(),timeout=40).decode(),flush=True)
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
