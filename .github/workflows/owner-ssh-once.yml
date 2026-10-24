@@ -26,7 +26,7 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.request,uuid
+          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error,uuid
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
@@ -34,7 +34,7 @@ jobs:
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
           name="analyst-ai-spb-20261024"
           marker="Analyst AI first cloud server relocation to Saint Petersburg 2026-10-24"
-          cfg={"configurator_id":11,"cpu":1,"ram":1024,"disk":15360}
+          cfg={"configurator_id":43,"cpu":1,"ram":1024,"disk":15360}
           opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
           def get(path):
               req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
@@ -45,14 +45,23 @@ jobs:
               return doc["servers"]
           before=inventory()
           assert len(before)==1 and before[0]["id"]==9408159 and before[0]["name"]=="analyst-ai-owner-route-20261023" and before[0]["location"]=="nl-1","reconcile_inventory_before_any_order"
-          offer,=[r for r in get("/configurator/servers")["server_configurators"] if r["id"]==cfg["configurator_id"]]
-          assert offer["location"]=="ru-1"
-          assert all(cfg[k]==offer["requirements"][k+"_min"] for k in ("cpu","ram","disk"))
-          price=sum(cfg[k]*offer["prices"][k]/(1 if k=="cpu" else 1024) for k in ("cpu","ram","disk"))
-          assert price==1180
+          offers=p.read_catalog(token,"presets")["server_presets"]
+          candidates=[]
+          for preset_id,monthly in ((2573,950),(2447,1180),(2611,1950)):
+              offer,=[r for r in offers if r["id"]==preset_id]
+              assert offer["location"]=="ru-1" and offer["cpu"]==1 and offer["ram"]==1024 and offer["disk"]==15360 and offer["price"]==monthly
+              candidates.append(offer)
           assert any(r["id"]==99 and r["version"]=="24.04" for r in p.read_catalog(token,"os")["servers_os"])
-          p.NAME=name;p.MARKER=marker;p.CONFIGURATION=cfg;p.CONFIG_LOCATION="ru-1"
-          p.cloud.OWNER_MARKER=marker;p.cloud.PRESET_ID=None
+          selected=None
+          def verify(document):
+              s=document["server"]
+              assert selected is not None and s["name"]==name and s["comment"]==marker and s["location"]=="ru-1"
+              assert s["preset_id"]==selected["id"] and s["cpu"]==1 and s["ram"]==1024
+              assert re.fullmatch(r"spb-[1-5]",s["availability_zone"])
+              return s
+          p.owned_server=verify
+          p.NAME=name;p.MARKER=marker;p.CONFIG_LOCATION="ru-1"
+          p.cloud.OWNER_MARKER=marker
           with tempfile.TemporaryDirectory(prefix="analyst-spb-",dir=os.environ["RUNNER_TEMP"]) as temp:
               folder=pathlib.Path(temp)
               p.cloud.generate_key(folder/"client");p.cloud.generate_key(folder/"host")
@@ -60,13 +69,32 @@ jobs:
               cloud={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,
                   "ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,
                   "runcmd":[["systemctl","restart","ssh"]]}
-              print("SPB_SELECTED_OFFER="+json.dumps({**cfg,"location":"ru-1","monthly_vm_rub":price,"host_key":host}),flush=True)
-              try:
-                  created=p.cloud.request(token,"POST","/api/v1/servers",{"name":name,"hostname":name,"comment":marker,"configuration":cfg,"os_id":99,"project_id":2941515,"cloud_init":"#cloud-config\n"+json.dumps(cloud)+"\n"})
-              except p.ProbeError:
-                  current=inventory()
-                  print("SPB_AFTER_CREATE_FAILURE="+json.dumps([{k:r.get(k) for k in ("id","name","location","availability_zone","status")} for r in current]),flush=True)
-                  raise
+              created=None
+              for offer in candidates:
+                  for zone in ("spb-1","spb-2","spb-3","spb-4","spb-5"):
+                      current=inventory()
+                      assert len(current)==1 and current[0]["id"]==9408159,"reconcile_inventory_before_next_offer"
+                      selected=offer;price=offer["price"]
+                      print("SPB_SELECTED_OFFER="+json.dumps({"preset_id":offer["id"],"cpu":1,"ram":1024,"disk":15360,"location":"ru-1","zone":zone,"monthly_vm_rub":price,"host_key":host}),flush=True)
+                      body={"name":name,"hostname":name,"comment":marker,"preset_id":offer["id"],"availability_zone":zone,"os_id":99,"project_id":2941515,"cloud_init":"#cloud-config\\n"+json.dumps(cloud)+"\\n"}
+                      req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+                      try:
+                          with opener.open(req,timeout=30) as response:created=p.decode_response(response.read(4*1024*1024+1))
+                      except urllib.error.HTTPError as error:
+                          details=p.cloud.error_details(error.read(1024*1024))
+                          print("SPB_CAPACITY_REFUSAL="+json.dumps({"preset_id":offer["id"],"zone":zone,"status":error.code,**details}),flush=True)
+                          current=inventory()
+                          assert len(current)==1 and current[0]["id"]==9408159,"ambiguous_create_reconcile_before_retry"
+                          if details.get("error_code") not in {"no_free_node","preset_not_found","servers_is_run_out"}:raise p.ProbeError("unexpected_spb_create_rejection")
+                          continue
+                      except OSError:
+                          current=inventory()
+                          print("SPB_AMBIGUOUS_CREATE="+json.dumps([{k:r.get(k) for k in ("id","name","location","availability_zone","status")} for r in current]),flush=True)
+                          raise p.ProbeError("spb_create_transport_error_no_retry") from None
+                      break
+                  if created is not None:break
+              if created is None:raise p.ProbeError("no_available_spb_minimal_preset_in_checked_zones")
+              cfg={"preset_id":selected["id"],"cpu":1,"ram":1024,"disk":15360}
               server=p.owned_server(created);sid=server["id"];access.SERVER_ID=sid
               assert sid!=9408159 and server["location"]=="ru-1"
               print("SPB_SERVER_CREATED="+json.dumps({"id":sid,"name":name,"location":server["location"],"zone":server.get("availability_zone"),"host_key":host,"old_server_preserved":True}),flush=True)
