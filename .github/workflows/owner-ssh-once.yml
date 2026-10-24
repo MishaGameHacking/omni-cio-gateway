@@ -5,14 +5,13 @@ on:
     paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: analyst-owner-build-observation
-  cancel-in-progress: true
+  group: analyst-owner-provider-diagnostics
+  cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -21,87 +20,45 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Wait until the hard reboot observer is stopped
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PYTHONUNBUFFERED: '1'
-        run: |
-          python3 - <<'PY'
-          import json,os,time,urllib.request
-          deadline=time.monotonic()+180
-          while time.monotonic()<deadline:
-              request=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/actions/runs/40065307830",headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"})
-              with urllib.request.urlopen(request,timeout=30) as response:result=json.loads(response.read(100000))
-              print("PRIOR_HARD_REBOOT_OBSERVER="+json.dumps({"status":result["status"],"conclusion":result["conclusion"]}),flush=True)
-              if result["status"]=="completed":break
-              time.sleep(10)
-          assert result["status"]=="completed","earlier_observer_has_not_stopped"
-          PY
-      - name: Restore the original hourly RAM allocation after the provider hard reboot
+      - name: Recheck the Timeweb VM after owner approval to contact support
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,socket,sys,time,urllib.request,urllib.error
+          import json,os,re,shlex,socket,subprocess,sys,urllib.request
           from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as prepare
+          import access_owner_vm as access
+          import adopt_replacement_vm as adopt
           token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          class ProviderError(Exception):
-              def __init__(self,status,code):
-                  self.status=status;self.code=code
-                  super().__init__("timeweb_"+str(status)+"_"+code)
-          def api(method,path,data=None):
-              assert (method=="GET" and path in {"/servers/9408159","/servers?limit=100","/account/finances","/account/status"}) or (method=="POST" and path=="/servers/9408159/reboot") or (method=="PATCH" and path=="/servers/9408159")
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if data is None else json.dumps(data).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
-              try:
-                  with opener.open(req,timeout=40) as response:
-                      raw=response.read(2*1024*1024+1)
-                      return prepare.decode_response(raw) if raw else {}
-              except urllib.error.HTTPError as error:
-                  details=prepare.cloud.error_details(error.read(2*1024*1024+1))
-                  code=details.get("error_code") or "unknown"
-                  print("TIMEWEB_RECOVERY_API_FAILURE="+json.dumps({"method":method,"path":path,"status":error.code,**details}),flush=True)
-                  raise ProviderError(error.code,code) from None
-          def current():
-              server=api("GET","/servers/9408159")["server"]
-              assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["comment"]=="Analyst AI replacement for verified Telegram route failure 2026-10-23"
-              assert server["configurator_id"]==153 and server["cpu"]==1 and server["ram"] in {1024,3072} and prepare.cloud.public_ipv4(server)=="201.34.146.244"
-              return server
-          def ssh_probe():
-              report={"tcp_connected":False,"ssh_banner_ready":False}
-              try:
-                  with socket.create_connection(("201.34.146.244",22),timeout=8) as connection:
-                      report["tcp_connected"]=True
-                      connection.settimeout(8)
-                      report["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
-              except OSError as error:report["error"]=type(error).__name__
-              return report
-          def observe(label):
-              server=current();probe=ssh_probe()
-              print(label+"="+json.dumps({"at_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),**{k:server.get(k) for k in ("id","status","cpu","ram","configurator_id")},**probe}),flush=True)
-              return server,probe
+              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
+          server=get("/servers/9408159")["server"]
+          assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["configurator_id"]==153
+          print("TIMEWEB_RESIZE_PROVIDER_STATE="+json.dumps({k:server.get(k) for k in ("id","status","cpu","ram","configurator_id","start_at","availability_zone")}),flush=True)
+          document=get("/servers/9408159/logs?limit=100")
+          records=document.get("server_logs",[])
+          output=[]
+          for row in records:
+              event=str(row.get("event",""))
+              if re.search("config|reboot|migrat|memory|конфигурац|перезагруз|перенос|памят",event,re.I) and not re.search("парол|password|token|токен|secret|ключ",event,re.I):
+                  output.append({"logged_at":row.get("logged_at"),"event":event[:700]})
+          print("TIMEWEB_RESIZE_PROVIDER_EVENTS="+json.dumps({"meta":document.get("meta"),"response_id":document.get("response_id"),"events":output[-20:]},ensure_ascii=False),flush=True)
+          probe={"tcp_connected":False,"ssh_banner_ready":False}
           try:
-              server,probe=observe("TIMEWEB_ORIGINAL_RAM_INITIAL")
-              if server["ram"]==3072:
-                  api("PATCH","/servers/9408159",{"configurator":{"configurator_id":153,"cpu":1,"ram":1024,"disk":15360}})
-                  print("TIMEWEB_ORIGINAL_RAM_RESTORE_ACCEPTED=true",flush=True)
-              deadline=time.monotonic()+600;good=0;reported=False
-              while time.monotonic()<deadline:
-                  server,probe=observe("TIMEWEB_ORIGINAL_RAM_PROGRESS")
-                  if server["ram"]==1024 and not reported:
-                      print("TIMEWEB_ORIGINAL_RAM_PROVIDER_CONFIRMED=1024",flush=True);reported=True
-                  good=good+1 if server["ram"]==1024 and server["status"]=="on" and probe["ssh_banner_ready"] else 0
-                  if good>=2:break
-                  time.sleep(15)
-              if good<2:raise RuntimeError("ssh_not_ready_after_original_ram_restore")
-              print("TIMEWEB_HOURLY_COST_RESTORED=original_1cpu_1024mb_and_ssh_banner_ready",flush=True)
-          finally:
-              observe("TIMEWEB_RECOVERY_FINAL")
-              inventory=api("GET","/servers?limit=100")
-              fin=api("GET","/account/finances")["finances"]
-              account=api("GET","/account/status")["status"]
-              print("TIMEWEB_FINAL_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":Decimal(str(fin["balance"]))>0,"blocked":account["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]],"meta":inventory.get("meta")}),flush=True)
+              with socket.create_connection(("201.34.146.244",22),timeout=10) as connection:
+                  probe["tcp_connected"]=True
+                  connection.settimeout(10)
+                  probe["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
+          except OSError as error:
+              probe["error"]=type(error).__name__
+          print("TIMEWEB_POST_RESIZE_TCP="+json.dumps(probe),flush=True)
+          fin=get("/account/finances")["finances"]
+          status=get("/account/status")["status"]
+          inventory=get("/servers?limit=100")
+          print("TIMEWEB_CURRENT_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":Decimal(str(fin["balance"]))>0,"blocked":status["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]],"meta":inventory.get("meta")}),flush=True)
           PY
