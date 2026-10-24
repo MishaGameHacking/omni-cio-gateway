@@ -4,9 +4,8 @@ import java.net.URI
 import javax.net.ssl.HttpsURLConnection
 
 object BackendConfig {
-    // Set the shared host only after fresh Timeweb/TLS/Telegram verification.
-    // The old VM was deleted; its address is never a safe fallback.
-    const val HOST = "backend-not-configured.invalid"
+    // Verified owner installation on Timeweb; every client shares this HTTPS origin.
+    const val HOST = "analyst-ai-2941515.twc1.net"
     const val BASE_URL = "https://$HOST"
     const val UNAVAILABLE_MESSAGE = "Новый сервер Analyst AI ещё не настроен. Вход и синхронизация пока недоступны."
     private const val RETIRED_HOST = "176.98.178.81.sslip.io"

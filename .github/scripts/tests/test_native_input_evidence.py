@@ -39,6 +39,58 @@ def restore_record(**changes):
 
 
 class NativeInputEvidenceTests(unittest.TestCase):
+
+    def test_stuck_caret_reports_native_state_without_advancing_or_disclosing_text(self):
+        probe = Mock()
+        root = frame(text="private draft")
+        root.set("keyboard-visible", "true")
+        probe.tree.return_value = root
+        failure = AssertionError("native caret did not move")
+
+        def wait(read, _message):
+            result = read()
+            if result is None:
+                raise failure
+            return result
+
+        probe.wait_for.side_effect = wait
+        with patch("builtins.print") as output, self.assertRaises(AssertionError) as caught:
+            native.rotate_focused_draft(probe, "private draft", "portrait-caret", portrait_only=True)
+        self.assertIs(caught.exception, failure)
+        lines = [call.args[0] for call in output.call_args_list]
+        records = [json.loads(line.split("=", 1)[1]) for line in lines
+                   if line.startswith("NATIVE_EDITOR_FAILURE=")]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["phase"], "rotation-caret")
+        self.assertEqual(records[0]["sample"], "post-timeout")
+        self.assertEqual(records[0]["editors"][0]["selection-end"], "5")
+        self.assertTrue(records[0]["editors"][0]["expected_text_matches"])
+        self.assertNotIn("private draft", "\n".join(lines))
+        self.assertEqual([call.args for call in probe.command.call_args_list],
+                         [("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")] * 2)
+        probe.capture.assert_not_called()
+
+    def test_failed_caret_diagnostic_preserves_original_failure(self):
+        probe = Mock()
+        root = frame(text="private draft")
+        probe.tree.side_effect = [root, root, ConnectionError("private transport detail")]
+        failure = AssertionError("native caret did not move")
+
+        def wait(read, _message):
+            result = read()
+            if result is None:
+                raise failure
+            return result
+
+        probe.wait_for.side_effect = wait
+        with patch("builtins.print") as output, self.assertRaises(AssertionError) as caught:
+            native.rotate_focused_draft(probe, "private draft", "portrait-caret", portrait_only=True)
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(output.call_args.args[0], "NATIVE_EDITOR_DIAGNOSTIC_UNAVAILABLE=ConnectionError")
+        self.assertEqual([call.args for call in probe.command.call_args_list],
+                         [("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")] * 2)
+        probe.capture.assert_not_called()
+
     def test_failed_rotation_records_native_state_without_text_and_still_fails(self):
         root = frame(text="private draft", focused="false")
         root.set("keyboard-visible", "false")

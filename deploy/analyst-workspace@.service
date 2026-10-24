@@ -1,0 +1,38 @@
+[Unit]
+Description=Analyst AI workspace stage %i on the permanent Timeweb server
+After=network-online.target analyst-ai-owner.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=analyst-build
+Group=analyst-build
+WorkingDirectory=/srv/analyst-ai/workspace
+ExecStart=/var/lib/analyst-ai-build/venv/bin/python /srv/analyst-ai/workspace/deploy/timeweb_workspace.py %i
+Environment=ANDROID_HOME=/opt/analyst-android-sdk
+Environment=ANDROID_SDK_ROOT=/opt/analyst-android-sdk
+Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+Environment=GRADLE_USER_HOME=/var/cache/analyst-ai/gradle
+Environment=PYTHONUNBUFFERED=1
+UMask=0027
+Nice=10
+CPUWeight=20
+IOWeight=20
+MemoryAccounting=yes
+CPUAccounting=yes
+MemoryHigh=384M
+MemoryMax=448M
+TasksMax=512
+TimeoutStartSec=4h
+TimeoutStopSec=45
+KillMode=control-group
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/analyst-ai/workspace /var/lib/analyst-ai-build /var/cache/analyst-ai /opt/analyst-android-sdk
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

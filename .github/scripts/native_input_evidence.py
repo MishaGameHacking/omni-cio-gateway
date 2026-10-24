@@ -414,8 +414,9 @@ def rotate_focused_draft(probe, text: str, name: str, *, dialog=False, portrait_
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     expected = max(0, before["selection_end"] - 2)
-    before = probe.wait_for(lambda: focused_editor(probe.tree(), text, (expected, expected)),
-                            "Native cursor did not move within the unsent question")
+    before = _wait_editor(probe, lambda: focused_editor(probe.tree(), text, (expected, expected)),
+                          "Native cursor did not move within the focused editor",
+                          "rotation-caret", text)
     def input_window():
         tree = probe.tree()
         return tree if keyboard_visible(tree) else None
