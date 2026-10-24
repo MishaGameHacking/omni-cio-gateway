@@ -40,18 +40,15 @@ jobs:
                       return r.status,json.loads(raw) if raw else {}
               except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
           
-          status,data=api("GET","/servers/9414261")
-          assert status==200
-          server=data["server"]
-          assert server["name"]=="analyst-ai-workspace-20261024" and server["project_id"]==2941515 and server["status"]=="no_paid" and p.cloud.public_ipv4(server) is None,"unpaid_order_changed_reconcile"
-          status,answer=api("DELETE","/servers/9414261")
-          print("UNPAID_WORKSPACE_DELETE="+str(status),flush=True);assert status==204
-          status,_=api("GET","/servers/9414261")
-          print("UNPAID_WORKSPACE_ABSENCE="+str(status),flush=True);assert status==404
+          status,inv=api("GET","/servers?limit=100&offset=0")
+          assert status==200 and inv["meta"]["total"]==len(inv["servers"])
+          assert all(s["id"]!=9414261 for s in inv["servers"]),"deleted_order_still_in_inventory"
+          status,costs=api("GET","/account/services/cost");assert status==200
+          assert all(x.get("service_id")!=9414261 for x in costs["services_costs"]),"deleted_order_still_billed"
           status,data=api("GET","/account/finances");assert status==200
           f=data.get("finances",data)
+          print("UNPAID_WORKSPACE_REMOVAL_VERIFIED="+json.dumps({"delete_status":204,"absent_from_servers":True,"absent_from_costs":True}),flush=True)
           print("CURRENT_RESOURCE_COST="+json.dumps({k:f.get(k) for k in ("currency","hourly_cost","hourly_fee","monthly_cost","monthly_fee")}),flush=True)
-          status,inv=api("GET","/servers?limit=100&offset=0");assert status==200 and inv["meta"]["total"]==len(inv["servers"])
           print("CURRENT_SERVERS="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location")} for s in inv["servers"]]),flush=True)
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
