@@ -47,16 +47,16 @@ jobs:
           assert len(before)==1 and before[0]["id"]==9408159 and before[0]["name"]=="analyst-ai-owner-route-20261023" and before[0]["location"]=="nl-1","reconcile_inventory_before_any_order"
           offers=p.read_catalog(token,"presets")["server_presets"]
           candidates=[]
-          for preset_id,monthly in ((2573,950),(2447,1180),(2611,1950)):
+          for preset_id,monthly in ((2447,1180),(2575,1500),(2449,1940),(2611,1950)):
               offer,=[r for r in offers if r["id"]==preset_id]
-              assert offer["location"]=="ru-1" and offer["cpu"]==1 and offer["ram"]==1024 and offer["disk"]==15360 and offer["price"]==monthly
+              assert offer["location"]=="ru-1" and offer["cpu"]==1 and offer["ram"] in (1024,2048) and offer["disk"] in (15360,30720) and offer["price"]==monthly
               candidates.append(offer)
           assert any(r["id"]==99 and r["version"]=="24.04" for r in p.read_catalog(token,"os")["servers_os"])
           selected=None
           def verify(document):
               s=document["server"]
               assert selected is not None and s["name"]==name and s["comment"]==marker and s["location"]=="ru-1"
-              assert s["preset_id"]==selected["id"] and s["cpu"]==1 and s["ram"]==1024
+              assert s["preset_id"]==selected["id"] and s["cpu"]==selected["cpu"] and s["ram"]==selected["ram"]
               assert re.fullmatch(r"spb-[1-5]",s["availability_zone"])
               return s
           p.owned_server=verify
@@ -75,7 +75,7 @@ jobs:
                       current=inventory()
                       assert len(current)==1 and current[0]["id"]==9408159,"reconcile_inventory_before_next_offer"
                       selected=offer;price=offer["price"]
-                      print("SPB_SELECTED_OFFER="+json.dumps({"preset_id":offer["id"],"cpu":1,"ram":1024,"disk":15360,"location":"ru-1","zone":zone,"monthly_vm_rub":price,"host_key":host}),flush=True)
+                      print("SPB_SELECTED_OFFER="+json.dumps({"preset_id":offer["id"],"cpu":offer["cpu"],"ram":offer["ram"],"disk":offer["disk"],"location":"ru-1","zone":zone,"monthly_vm_rub":price,"host_key":host}),flush=True)
                       body={"name":name,"hostname":name,"comment":marker,"preset_id":offer["id"],"availability_zone":zone,"os_id":99,"project_id":2941515,"cloud_init":"#cloud-config\\n"+json.dumps(cloud)+"\\n"}
                       req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
                       try:
@@ -85,7 +85,7 @@ jobs:
                           print("SPB_CAPACITY_REFUSAL="+json.dumps({"preset_id":offer["id"],"zone":zone,"status":error.code,**details}),flush=True)
                           current=inventory()
                           assert len(current)==1 and current[0]["id"]==9408159,"ambiguous_create_reconcile_before_retry"
-                          if details.get("error_code") not in {"no_free_node","preset_not_found","servers_is_run_out"}:raise p.ProbeError("unexpected_spb_create_rejection")
+                          if details.get("error_code") not in {"no_free_node","preset_not_found","servers_is_run_out","servers_is_run_out_error"}:raise p.ProbeError("unexpected_spb_create_rejection")
                           continue
                       except OSError:
                           current=inventory()
@@ -94,7 +94,7 @@ jobs:
                       break
                   if created is not None:break
               if created is None:raise p.ProbeError("no_available_spb_minimal_preset_in_checked_zones")
-              cfg={"preset_id":selected["id"],"cpu":1,"ram":1024,"disk":15360}
+              cfg={"preset_id":selected["id"],"cpu":selected["cpu"],"ram":selected["ram"],"disk":selected["disk"]}
               server=p.owned_server(created);sid=server["id"];access.SERVER_ID=sid
               assert sid!=9408159 and server["location"]=="ru-1"
               print("SPB_SERVER_CREATED="+json.dumps({"id":sid,"name":name,"location":server["location"],"zone":server.get("availability_zone"),"host_key":host,"old_server_preserved":True}),flush=True)
@@ -115,7 +115,7 @@ jobs:
                   check="import datetime,json,os,pathlib,shutil; print(json.dumps({'cpu':os.cpu_count(),'memory_kib':int(next(x.split()[1] for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemTotal:'))),'free_disk_bytes':shutil.disk_usage('/').free,'os_release':pathlib.Path('/etc/os-release').read_text(),'checked_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat()}))"
                   hardware=json.loads(p.remote(command,"python3 -c "+shlex.quote(check),timeout=30))
                   telegram=json.loads(p.remote(command,"python3 -c "+shlex.quote(replacement.TELEGRAM_CHECK),timeout=60))
-                  ready=hardware["memory_kib"]>=800000 and hardware["free_disk_bytes"]>=5*1024**3 and 'VERSION_ID="24.04"' in hardware["os_release"] and telegram.get("telegram_jwks_https") is True
+                  ready=hardware["memory_kib"]>=selected["ram"]*1024*0.8 and hardware["free_disk_bytes"]>=5*1024**3 and 'VERSION_ID="24.04"' in hardware["os_release"] and telegram.get("telegram_jwks_https") is True
                   proof={"id":sid,"name":name,"project_id":2941515,"location":"ru-1","ip":address,"ip_id":ip_id,"host_key":host,"configuration":cfg,"monthly_vm_rub":price,"hardware":hardware,"telegram":telegram,"basic_readiness":ready,"application_started":False,"migration_verified":False,"old_server_id":9408159}
                   p.remote(command,"umask 077; test ! -e /root/analyst-spb-readiness.json && cat > /root/analyst-spb-readiness.json",json.dumps(proof,indent=2).encode(),timeout=30)
                   print("SPB_READINESS="+json.dumps(proof),flush=True)
