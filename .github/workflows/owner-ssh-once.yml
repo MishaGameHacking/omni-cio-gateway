@@ -32,20 +32,6 @@ jobs:
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-
-          def get(path):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=30) as r:
-                  raw=r.read(4194305);assert len(raw)<=4194304
-                  return json.loads(raw)
-          doc=get("/presets/dedicated-servers")
-          rows=doc["dedicated_servers_presets"] if "dedicated_servers_presets" in doc else doc.get("dedicated_server_presets",doc.get("presets",[]))
-          if not rows:print("DEDICATED_CATALOG_KEYS="+json.dumps(sorted(doc)),flush=True)
-          else:
-              allowed={"id","name","cpu","ram","disk","price","location","bandwidth","cpu_description","ram_description","hdd_description","is_pre_installed","autoinstall_ready","period","price_month","prices","available","is_available"}
-              safe=[{k:v for k,v in x.items() if k in allowed} for x in rows]
-              print("DEDICATED_CATALOG="+json.dumps(safe),flush=True)
-
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -67,11 +53,52 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import json,pathlib,subprocess,tarfile\nroot=pathlib.Path(\"/root\");w=root/\"analyst-workspace-preparation-20261024\"\nwith tarfile.open(root/\"analyst-apk-direct-20261024/build-evidence.tar.gz\") as tar:\n    b=tar.extractfile(\"analyst-apk-build/build.py\").read().decode()\n(w/\"previous-build.py\").write_text(b)\nprint(\"BUILD_SCRIPT=\"+json.dumps(b),flush=True)\nsdk=pathlib.Path(\"/opt/analyst-android-sdk\")\nprint(\"SDK_TOOLS=\"+json.dumps([str(x) for x in (sdk/\"cmdline-tools/latest/bin\").iterdir()]),flush=True)\nrepo=root/\"analyst-ai-android-690811a5\"\np=subprocess.run([\"git\",\"remote\",\"get-url\",\"origin\"],cwd=repo,capture_output=True,text=True)\nprint(\"SOURCE_REMOTE_OK=\"+json.dumps(p.stdout.strip()==\"https://github.com/MishaGameHacking/omni-cio-gateway.git\"),flush=True)\nprint(\"DEPENDENCY_FILES=\"+json.dumps([str(p.relative_to(repo)) for p in repo.glob(\"**/*requirements*.txt\") if \".git\" not in p.parts and \"build\" not in p.parts]),flush=True)\n"
-                      outcome=subprocess.run(command+["python3 -u -c "+shlex.quote(script)],capture_output=True,timeout=60)
-                      print(outcome.stdout.decode(),flush=True)
-                      if outcome.returncode:print("INSPECT_FAILURE="+outcome.stderr.decode(errors="replace")[-1000:],flush=True)
-                      assert outcome.returncode==0
+                      script="import hashlib,json,pathlib\nw=pathlib.Path(\"/root/analyst-workspace-preparation-20261024\")\np=json.loads((w/\"resize-preservation.json\").read_text())\nassert hashlib.file_digest(pathlib.Path(p[\"archive\"]).open(\"rb\"),\"sha256\").hexdigest()==p[\"sha256\"]\nassert p[\"sqlite_consistent\"] and p[\"signing_key_preserved\"] and p[\"source_bundles_verified\"]\nprint(\"RESIZE_BACKUP_VERIFIED=true\")\n"
+                      print(p.remote(command,"python3 -c "+shlex.quote(script),timeout=30).decode(),flush=True)
+                      def api(method,path,body=None):
+                          req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+                          try:
+                              with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                                  raw=r.read(4194305);assert len(raw)<=4194304
+                                  return r.status,json.loads(raw) if raw else {}
+                          except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+                      status,doc=api("GET","/configurator/servers");assert status==200
+                      offers={x["id"]:x for x in doc["server_configurators"]}
+                      attempts=[];accepted=False
+                      choices=[({"configurator":{"configurator_id":31,"cpu":2,"ram":6144,"disk":40960}},4200),({"configurator":{"configurator_id":159,"cpu":2,"ram":6144,"disk":40960}},6160),({"preset_id":4801},3640),({"preset_id":6873},5280)]
+                      status,catalog=api("GET","/presets/servers");assert status==200
+                      presets={x["id"]:x for x in catalog["server_presets"]}
+                      for payload,price in choices:
+                          if "configurator" in payload:
+                              cfg=payload["configurator"];offer=offers[cfg["configurator_id"]]
+                              assert offer["location"]=="ru-3" and offer["disk_type"]=="nvme"
+                              q=offer["prices"];calculated=q["cpu"]*cfg["cpu"]+q["ram"]*cfg["ram"]/1024+q["disk"]*cfg["disk"]/1024
+                          else:
+                              offer=presets[payload["preset_id"]];calculated=offer["price"]
+                              assert offer["location"]=="ru-3" and offer["cpu"]==2 and offer["ram"]==4096 and offer["disk"]==51200
+                          assert calculated==price,"price_changed"
+                          status,reply=api("PATCH","/servers/9413105",payload)
+                          attempt={"configuration":payload,"monthly_base_rub":price,"status":status}
+                          if status not in (200,201,202,204):attempt.update(reply)
+                          attempts.append(attempt);print("RESIZE_ATTEMPT="+json.dumps(attempt),flush=True)
+                          if status in (200,201,202,204):accepted=True;break
+                          assert status==409 and reply.get("error_code") in ("no_free_node","location_not_available","not_available"),"resize_denied_stop"
+
+                      assert accepted,"no_matching_existing_server_configuration_available"
+                      check="import json,os,pathlib,shutil,subprocess; m=int(next(x.split()[1] for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemTotal:'))); d=shutil.disk_usage('/'); print(json.dumps({'cpu':os.cpu_count(),'memory_kib':m,'disk_bytes':d.total,'free_bytes':d.free,'backend':subprocess.check_output(['systemctl','is-active','analyst-ai-owner'],text=True).strip()})); assert os.cpu_count()==2 and m>3500000 and d.total>28000000000"
+                      verified=None
+                      for attempt in range(45):
+                          status,state=api("GET","/servers/9413105")
+                          assert status==200 and state["server"]["id"]==9413105 and p.cloud.public_ipv4(state["server"])=="201.24.52.66"
+                          if state["server"].get("status")=="on":
+                              try:verified=json.loads(p.remote(command,"python3 -c "+shlex.quote(check),timeout=20));break
+                              except (p.ProbeError,subprocess.TimeoutExpired,ValueError):pass
+                          time.sleep(8)
+                      assert verified is not None,"resize_completion_not_verified"
+                      store="import json,os,pathlib,sys; os.umask(0o077); p=pathlib.Path('/root/analyst-workspace-preparation-20261024/resize-result.json');p.write_text(json.dumps(json.load(sys.stdin),indent=2)+'\\n')"
+                      p.remote(command,"python3 -c "+shlex.quote(store),json.dumps({"attempts":attempts,"verified":verified}).encode(),timeout=20)
+                      print("RESIZE_VERIFIED="+json.dumps(verified),flush=True)
+
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
