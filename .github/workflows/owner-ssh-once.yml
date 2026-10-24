@@ -31,16 +31,6 @@ jobs:
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def api_get(path):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              with urllib.request.urlopen(req,timeout=30) as r:return json.loads(r.read(4194305))
-          d=api_get("/dedicated-servers/121673")["dedicated_server"]
-          assert d["id"]==121673 and d["project_id"]==2941515
-          print("BUILDER_CURRENT="+json.dumps({k:d.get(k) for k in ("id","status","ip","autoinstall_ready")}),flush=True)
-          offers=api_get("/presets/servers")
-          rows=offers.get("server_presets",offers.get("presets",[]))
-          chosen=[{k:r.get(k) for k in ("id","cpu","ram","disk","price","location","availability_zone","type","cpu_frequency")} for r in rows if r.get("location")=="ru-3" and 4096<=r.get("ram",0)<=8192]
-          print("BUILD_VM_OFFERS="+json.dumps(chosen),flush=True)
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -62,7 +52,7 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import hashlib,json,pathlib,shutil,subprocess,datetime,os\nr=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nitems=[]\nfor root in (pathlib.Path(\"/root\"),pathlib.Path(\"/opt\")):\n    for p in root.iterdir():\n        if any(x in p.name for x in (\"gradle\",\"android\",\"build\",\"artifact\")):\n            items.append({\"path\":str(p),\"dir\":p.is_dir()})\nrep={\"checked_at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"memory\":{l.split(\":\")[0]:l.split(\":\")[1].strip() for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith((\"MemTotal:\",\"MemAvailable:\",\"SwapTotal:\"))},\"disk_free\":shutil.disk_usage(\"/\").free,\"build_roots\":items,\"source_status\":subprocess.check_output([\"git\",\"status\",\"--short\"],cwd=r,text=True),\"gradle_cached\":pathlib.Path(\"/root/.gradle/caches\").exists(),\"apk_outputs\":[str(p) for p in (r/\"app/build\").rglob(\"*.apk\")],\"caddyfile\":pathlib.Path(\"/etc/caddy/Caddyfile\").read_text(),\"services\":subprocess.check_output([\"systemctl\",\"is-active\",\"analyst-ai-owner\",\"caddy\"],text=True).splitlines()}\nprint(\"TIMEWEB_APK_PREPARE=\"+json.dumps(rep))\n"
+                      script="import json,pathlib,shutil,subprocess,datetime,traceback\nr=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nrep={\"checked_at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"memory\":{l.split(\":\")[0]:l.split(\":\")[1].strip() for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith((\"MemTotal:\",\"MemAvailable:\",\"SwapTotal:\"))},\"disk_free\":shutil.disk_usage(\"/\").free,\"gradle_cached\":pathlib.Path(\"/root/.gradle/caches\").exists(),\"roots\":[str(p) for p in pathlib.Path(\"/root\").iterdir() if any(x in p.name for x in (\"gradle\",\"android\",\"artifact\",\"build\"))],\"source_exists\":r.is_dir()}\nif r.is_dir():rep[\"source_status\"]=subprocess.check_output([\"git\",\"status\",\"--short\"],cwd=r,text=True);rep[\"apk_outputs\"]=[str(p) for p in (r/\"app/build\").rglob(\"*.apk\")]\nrep[\"caddy_configs\"]=[str(p) for p in pathlib.Path(\"/etc/caddy\").rglob(\"*\") if p.is_file()]\nrep[\"owner_service\"]=subprocess.run([\"systemctl\",\"is-active\",\"analyst-ai-owner\"],capture_output=True,text=True).stdout.strip()\nprint(\"TIMEWEB_APK_PREPARE=\"+json.dumps(rep),flush=True)\n"
                       output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=210).decode()
                       print(output,end="",flush=True)
                   finally:
