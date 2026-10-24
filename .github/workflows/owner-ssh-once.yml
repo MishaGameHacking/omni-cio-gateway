@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Create the minimum Moscow physical server directly through the authenticated Timeweb API
+      - name: Diagnose the rejected direct Moscow dedicated-server request with redacted errors
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -73,6 +73,21 @@ jobs:
               code=err.get("error_code")
               failure={"http":error.code,"code":code if isinstance(code,str) and re.fullmatch("[a-zA-Z0-9_]{1,100}",code) else "unknown"}
               print("MOSCOW_DEDICATED_CREATE_REFUSED="+json.dumps(failure),flush=True)
+              def safe_error(value,depth=0):
+                  if depth>4:return "nested"
+                  if isinstance(value,dict):
+                      return {str(k)[:80]:safe_error(v,depth+1) for k,v in value.items() if not re.search("token|password|secret|cookie|authorization|request|headers|balance",str(k),re.I)}
+                  if isinstance(value,list):return [safe_error(v,depth+1) for v in value[:20]]
+                  if isinstance(value,str):
+                      if re.search("баланс|средств|недостаточ|insufficient|balance|money|credit",value,re.I):
+                          return {"billing_related":True,"insufficient_funds":bool(re.search("недостаточ|insufficient|not enough",value,re.I))}
+                      text=value.replace(token,"[redacted]")
+                      text=re.sub(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+","[redacted-jwt]",text)
+                      text=re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}","[redacted-email]",text)
+                      return text[:1400]
+                  if value is None or isinstance(value,(bool,int,float)):return value
+                  return type(value).__name__
+              print("MOSCOW_DEDICATED_VALIDATION_DETAIL="+json.dumps(safe_error(err),ensure_ascii=False),flush=True)
           except OSError as error:
               failure={"transport_error":type(error).__name__,"duplicate_post_forbidden":True}
               print("MOSCOW_DEDICATED_CREATE_UNCERTAIN="+json.dumps(failure),flush=True)
