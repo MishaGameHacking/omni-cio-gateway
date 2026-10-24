@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-spb-provision
+  group: analyst-timeweb-spb-alternative-catalog
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,111 +20,30 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Create the smallest available Saint Petersburg VM with valid cloud-init and verify SSH
+      - name: Read current Saint Petersburg offers in increasing size and reconcile inventory
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error,uuid
+          import json,os,sys,urllib.request
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
-          import access_owner_vm as access
-          import replace_unreachable_vm as replacement
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          name="analyst-ai-spb-20261024"
-          marker="Analyst AI first cloud server relocation to Saint Petersburg 2026-10-24"
-          cfg={"configurator_id":43,"cpu":1,"ram":1024,"disk":15360}
           opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
           def get(path):
               req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          def inventory():
-              doc=p.read_resource(token,"servers")
-              assert p.summarize("servers",doc)["complete"],"incomplete_inventory"
-              return doc["servers"]
-          before=inventory()
-          expected_inventory={9408159:("analyst-ai-owner-route-20261023","nl-1"),9413003:("analyst-ai-msk-app-20261024","ru-3")}
-          assert {s["id"]:(s["name"],s["location"]) for s in before}==expected_inventory,"reconcile_inventory_before_any_order"
-          offers=p.read_catalog(token,"presets")["server_presets"]
-          candidates=[]
-          for preset_id,monthly in ((2573,950),(2575,1500),(2611,1950),(2577,2120),(2579,2780),(2613,2900),(2615,4200),(2581,5120),(2617,5500),(2455,6800),(6841,8720),(2619,10400)):
-              offer,=[r for r in offers if r["id"]==preset_id]
-              assert offer["location"]=="ru-1" and offer["cpu"]<=4 and offer["ram"]<=8192 and offer["disk"]<=81920 and offer["price"]==monthly and offer["bandwidth"] in (100,200,1000)
-              candidates.append(offer)
-          assert any(r["id"]==99 and r["version"]=="24.04" for r in p.read_catalog(token,"os")["servers_os"])
-          selected=None
-          def verify(document):
-              s=document["server"]
-              assert selected is not None and s["name"]==name and s["comment"]==marker and s["location"]=="ru-1"
-              assert s["preset_id"]==selected["id"] and s["cpu"]==selected["cpu"] and s["ram"]==selected["ram"]
-              assert re.fullmatch(r"spb-[1-4]",s["availability_zone"])
-              return s
-          p.owned_server=verify
-          p.NAME=name;p.MARKER=marker;p.CONFIG_LOCATION="ru-1"
-          p.cloud.OWNER_MARKER=marker
-          with tempfile.TemporaryDirectory(prefix="analyst-spb-",dir=os.environ["RUNNER_TEMP"]) as temp:
-              folder=pathlib.Path(temp)
-              p.cloud.generate_key(folder/"client");p.cloud.generate_key(folder/"host")
-              client=(folder/"client.pub").read_text().strip();host=(folder/"host.pub").read_text().strip()
-              cloud={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,
-                  "ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,
-                  "runcmd":[["systemctl","restart","ssh"]]}
-              created=None
-              for offer in candidates:
-                  for zone in ("spb-1","spb-2","spb-3","spb-4"):
-                      current=inventory()
-                      assert {s["id"]:(s["name"],s["location"]) for s in current}==expected_inventory,"reconcile_inventory_before_next_offer"
-                      selected=offer;price=offer["price"]
-                      print("SPB_SELECTED_OFFER="+json.dumps({"preset_id":offer["id"],"cpu":offer["cpu"],"ram":offer["ram"],"disk":offer["disk"],"location":"ru-1","zone":zone,"monthly_vm_rub":price,"bandwidth_mbps":offer["bandwidth"],"host_key":host}),flush=True)
-                      body={"name":name,"hostname":name,"comment":marker,"preset_id":offer["id"],"availability_zone":zone,"os_id":99,"project_id":2941515,"bandwidth":offer["bandwidth"],"cloud_init":"#cloud-config"+chr(10)+json.dumps(cloud)+chr(10)}
-                      assert body["cloud_init"].startswith("#cloud-config"+chr(10)) and json.loads(body["cloud_init"].splitlines()[1])==cloud,"invalid_cloud_init"
-                      req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
-                      try:
-                          with opener.open(req,timeout=30) as response:created=p.decode_response(response.read(4*1024*1024+1))
-                      except urllib.error.HTTPError as error:
-                          details=p.cloud.error_details(error.read(1024*1024))
-                          print("SPB_CAPACITY_REFUSAL="+json.dumps({"preset_id":offer["id"],"zone":zone,"status":error.code,**details}),flush=True)
-                          current=inventory()
-                          assert {s["id"]:(s["name"],s["location"]) for s in current}==expected_inventory,"ambiguous_create_reconcile_before_retry"
-                          if details.get("error_code") not in {"no_free_node","preset_not_found","servers_is_run_out","servers_is_run_out_error"}:raise p.ProbeError("unexpected_spb_create_rejection")
-                          continue
-                      except OSError:
-                          current=inventory()
-                          print("SPB_AMBIGUOUS_CREATE="+json.dumps([{k:r.get(k) for k in ("id","name","location","availability_zone","status")} for r in current]),flush=True)
-                          raise p.ProbeError("spb_create_transport_error_no_retry") from None
-                      break
-                  if created is not None:break
-              if created is None:raise p.ProbeError("spb_all_network_classes_through_8gb_unavailable")
-              cfg={"preset_id":selected["id"],"cpu":selected["cpu"],"ram":selected["ram"],"disk":selected["disk"]}
-              server=p.owned_server(created);sid=server["id"];access.SERVER_ID=sid
-              assert sid!=9408159 and server["location"]=="ru-1"
-              print("SPB_SERVER_CREATED="+json.dumps({"id":sid,"name":name,"location":server["location"],"zone":server.get("availability_zone"),"host_key":host,"old_server_preserved":True}),flush=True)
-              ip_id=None
-              if not p.cloud.public_ipv4(server):
-                  zone=server["availability_zone"];assert re.fullmatch(r"spb-[1-4]",zone)
-                  ips=access.request(token,"GET","/floating-ips")
-                  assert ips.get("meta",{}).get("total")==len(ips["ips"])
-                  existing=[r for r in ips["ips"] if r.get("resource_id")==sid]
-                  assert not existing,"reconcile_new_server_addresses"
-                  doc=access.request(token,"POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":zone})
-                  address=doc["ip"];ip_id=str(uuid.UUID(address["id"]))
-                  assert address["availability_zone"]==zone and address["is_ddos_guard"] is False and ipaddress.IPv4Address(address["ip"]).is_global
-                  print("SPB_IPV4_CREATED="+json.dumps({"id":ip_id,"ip":address["ip"],"zone":zone}),flush=True)
-                  access.request(token,"POST","/floating-ips/"+ip_id+"/bind",{"resource_type":"server","resource_id":sid})
-              command,address=p.ready(token,sid,folder,host)
-              try:
-                  check="import datetime,json,os,pathlib,shutil; print(json.dumps({'cpu':os.cpu_count(),'memory_kib':int(next(x.split()[1] for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemTotal:'))),'free_disk_bytes':shutil.disk_usage('/').free,'os_release':pathlib.Path('/etc/os-release').read_text(),'checked_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat()}))"
-                  hardware=json.loads(p.remote(command,"python3 -c "+shlex.quote(check),timeout=30))
-                  telegram=json.loads(p.remote(command,"python3 -c "+shlex.quote(replacement.TELEGRAM_CHECK),timeout=60))
-                  ready=hardware["memory_kib"]>=selected["ram"]*1024*0.8 and hardware["free_disk_bytes"]>=5*1024**3 and 'VERSION_ID="24.04"' in hardware["os_release"] and telegram.get("telegram_jwks_https") is True
-                  proof={"id":sid,"name":name,"project_id":2941515,"location":"ru-1","ip":address,"ip_id":ip_id,"host_key":host,"configuration":cfg,"bandwidth_mbps":selected["bandwidth"],"monthly_vm_rub":price,"hardware":hardware,"telegram":telegram,"basic_readiness":ready,"application_started":False,"migration_verified":False,"old_server_id":9408159}
-                  p.remote(command,"umask 077; test ! -e /root/analyst-spb-readiness.json && cat > /root/analyst-spb-readiness.json",json.dumps(proof,indent=2).encode(),timeout=30)
-                  print("SPB_READINESS="+json.dumps(proof),flush=True)
-                  if not ready:raise p.ProbeError("spb_not_ready_no_migration_or_dns_change")
-              finally:
-                  script="python3 -c 'import pathlib,sys; p=pathlib.Path(\"/root/.ssh/authorized_keys\"); k=sys.stdin.read().strip(); p.write_text(\"\\n\".join(x for x in p.read_text().splitlines() if k not in x)+\"\\n\")'"
-                  p.remote(command,script,client.encode(),timeout=30)
-                  print("SPB_TEMPORARY_ACCESS=removed",flush=True)
+          doc=p.read_resource(token,"servers")
+          assert p.summarize("servers",doc)["complete"]
+          print("SPB_CURRENT_INVENTORY="+json.dumps([{k:r.get(k) for k in ("id","name","location","availability_zone","cpu","ram","preset_id","configurator_id","status")} for r in doc["servers"]]),flush=True)
+          presets=get("/presets/dedicated-servers")
+          print("SPB_DEDICATED_CATALOG_KEYS="+json.dumps(sorted(presets)),flush=True)
+          rows=presets.get("dedicated_servers_presets",presets.get("dedicated_server_presets",[]))
+          selected=[r for r in rows if r.get("location")=="ru-1"]
+          print("SPB_DEDICATED_OFFERS="+json.dumps(sorted(selected,key=lambda r:r.get("price",10**9))[:12]),flush=True)
+          current=get("/dedicated-servers?limit=100&offset=0")
+          rows=current.get("dedicated_servers",[])
+          print("SPB_DEDICATED_INVENTORY="+json.dumps([{k:r.get(k) for k in ("id","name","location","preset_id","status","ip","autoinstall_ready","price")} for r in rows]),flush=True)
           
           PY
