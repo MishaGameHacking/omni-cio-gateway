@@ -4,14 +4,14 @@ on:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
-  contents: read
+  contents: write
 concurrency:
-  group: analyst-timeweb-caret-repair-observation
+  group: analyst-timeweb-check-dependencies
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Read the failed on-server regression check evidence
+      - name: Install missing check dependencies and verify the repair on Timeweb
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -52,9 +52,27 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import json,pathlib,re,subprocess\nroot=pathlib.Path(\"/root\");repo=root/\"analyst-ai-android-690811a5\";logs=root/\"analyst-caret-diagnostic-20261024\"\nreport={\"head\":subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=repo,text=True).strip(),\"changes\":subprocess.check_output([\"git\",\"status\",\"--porcelain\",\"--untracked-files=no\"],cwd=repo,text=True).splitlines(),\"log_dir_exists\":logs.exists(),\"logs\":{}}\nfor name in (\"before\",\"after\",\"all-scripts\"):\n    path=logs/(name+\".log\")\n    if path.is_file():\n        text=path.read_text(errors=\"replace\")\n        report[\"logs\"][name]={\"tail\":text[-5000:] if name==\"before\" else \"\\n\".join(line for line in text.splitlines() if re.match(r\"^(ERROR|FAIL|Ran |FAILED|OK|ModuleNotFoundError|ImportError)\",line))[-3000:]}\npath=logs/\"verification.json\"\nif path.is_file():report[\"verification\"]=json.loads(path.read_text())\nprint(\"TIMEWEB_DIAGNOSTIC_REPAIR_STATE=\"+json.dumps(report),flush=True)\n"
-                      output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=360).decode()
+                      script="import datetime,hashlib,json,os,pathlib,re,shutil,subprocess,traceback\nroot=pathlib.Path(\"/root\");repo=root/\"analyst-ai-android-690811a5\";logdir=root/\"analyst-caret-diagnostic-20261024\";python=root/\"analyst-ai-development-venv/bin/python\"\nreport_path=logdir/\"verification.json\";report=json.loads(report_path.read_text());report[\"dependency_repair\"]={}\ndef save():\n    report[\"checked_at_utc\"]=datetime.datetime.now(datetime.timezone.utc).isoformat()\n    report_path.write_text(json.dumps(report,indent=2)+\"\\n\");report_path.chmod(0o600)\ndef run_logged(name,args,timeout=600,env=None):\n    target=logdir/(name+\".log\")\n    with target.open(\"w\") as stream:\n        target.chmod(0o600)\n        result=subprocess.run(args,cwd=repo,env=env,stdout=stream,stderr=subprocess.STDOUT,timeout=timeout)\n    data=target.read_bytes()\n    return result.returncode,data\ntry:\n    changes=subprocess.check_output([\"git\",\"diff\",\"--name-only\"],cwd=repo,text=True).splitlines()\n    assert sorted(changes)==[\".github/scripts/native_input_evidence.py\",\".github/scripts/tests/test_native_input_evidence.py\"]\n    failed=(logdir/\"all-scripts.log\").read_text()\n    missing_node=shutil.which(\"node\") is None\n    report[\"dependency_repair\"][\"node_was_missing\"]=missing_node\n    assert missing_node and \"Node is required for the Sonar quality gate\" in failed,\"inspect_actual_node_failure\"\n    assert shutil.disk_usage(root).free>5*1024**3,\"insufficient_free_disk\"\n    aptenv=dict(os.environ,DEBIAN_FRONTEND=\"noninteractive\",NEEDRESTART_MODE=\"a\")\n    status,data=run_logged(\"apt-index\",[\"apt-get\",\"update\"],env=aptenv);assert status==0,\"apt_index_failed\"\n    packages=[\"nodejs\"]\n    if shutil.which(\"javac\") is None:packages.append(\"openjdk-17-jdk-headless\")\n    status,data=run_logged(\"apt-check-dependencies\",[\"apt-get\",\"install\",\"-y\",\"--no-install-recommends\",*packages],env=aptenv);assert status==0,\"apt_dependencies_failed\"\n    report[\"dependency_repair\"][\"installed_packages\"]=packages\n    report[\"dependency_repair\"][\"node_version\"]=subprocess.check_output([\"node\",\"--version\"],text=True).strip()\n    report[\"dependency_repair\"][\"javac_version\"]=subprocess.check_output([\"javac\",\"-version\"],text=True,stderr=subprocess.STDOUT).strip()\n    env=dict(os.environ,PYTHONPATH=str(repo/\".github/scripts\")+os.pathsep+str(repo/\".github/scripts/tests\"),PYTHONDONTWRITEBYTECODE=\"1\",JAVA_HOME=\"/usr/lib/jvm/java-17-openjdk-amd64\")\n    result_file=logdir/\"python-script-tests.json\"\n    runner=\"import json,pathlib,sys,unittest\\nsuite=unittest.defaultTestLoader.discover('.github/scripts/tests',pattern='test_*.py')\\nr=unittest.TextTestRunner(verbosity=2).run(suite)\\npath=pathlib.Path(\"+repr(str(result_file))+\")\\npath.write_text(json.dumps({'tests':r.testsRun,'failures':len(r.failures),'errors':len(r.errors),'skipped':[{'test':t.id(),'reason':reason} for t,reason in r.skipped]},indent=2)+'\\\\n');path.chmod(0o600)\\nsys.exit(0 if r.wasSuccessful() else 1)\\n\"\n    code,data=run_logged(\"all-scripts-with-dependencies\",[str(python),\"-c\",runner],timeout=240,env=env)\n    result=json.loads(result_file.read_text())\n    report[\"all_scripts_after_dependency_repair\"]={\"exit\":code,**result,\"log_sha256\":hashlib.sha256(data).hexdigest()}\n    save()\n    print(\"TIMEWEB_CARET_DIAGNOSTIC=\"+json.dumps(report),flush=True)\n    assert code==0 and result[\"tests\"]>=962 and result[\"failures\"]==0 and result[\"errors\"]==0,\"remaining_script_test_failure\"\n    development=root/\"analyst-ai-development-79be1821\"\n    note=\"Продолжение F01/F23 24.10.2026: на Timeweb 9413105 устранён недостаток диагностики подтверждённого Android-сбоя run39993098373 (strategy/ready;font=2.0, курсор до поворота). В рабочем дереве 690811a5 ожидание курсора использует существующую ограниченную диагностику без текста; исходный отказ не подавляется, ввод/ожидаемая позиция/портретная проверка не изменены. Два отрицательных сценария не проходили до исправления и проходят после. Общий запуск обнаружил отсутствие Node; на Timeweb установлены Node и JDK для существующих host-проверок. Результат: \"+str(result[\"tests\"])+\" тестов, \"+str(result[\"failures\"])+\" failures, \"+str(result[\"errors\"])+\" errors, \"+str(len(result[\"skipped\"]))+\" skips (реальные SDK-smoke требуют Android SDK; это не успех этих проверок). Журнал и хеши /root/analyst-caret-diagnostic-20261024/verification.json. Android runtime не запускался, сбой курсора ещё не исправлен и выпуск не разрешён результатом unit-тестов. APK не изменён. Полная матрица требует готовности Timeweb 121673; живой Telegram owner binding, доступный AI-ключ и новый Trusted Origin остаются незавершёнными.\\n\"\n    for rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n        path=development/rel;body=path.read_text();assert note not in body;path.write_text(body.rstrip()+\"\\n\\n\"+note)\n    for directory in (repo,development):subprocess.run([\"git\",\"diff\",\"--check\"],cwd=directory,check=True,capture_output=True)\n    print(\"TIMEWEB_CARET_REPAIR_COMPLETED=true\",flush=True)\nexcept Exception as error:\n    report[\"repair_error_type\"]=type(error).__name__\n    path=logdir/\"dependency-repair-error.log\";path.write_text(traceback.format_exc());path.chmod(0o600)\n    save()\n    print(\"TIMEWEB_CARET_REPAIR_COMPLETED=false;error_type=\"+type(error).__name__,flush=True)\n"
+                      output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=1200).decode()
                       print(output,end="",flush=True)
+                      assert "TIMEWEB_CARET_REPAIR_COMPLETED=true" in output,"on_server_repair_failed_inspect_private_report"
+                      docs=json.loads(p.remote(command,"python3 -c "+shlex.quote("import json,pathlib\nroot=pathlib.Path(\"/root\");repo=root/\"analyst-ai-development-79be1821\"\nsecret=json.loads((root/\"analyst-ai-enrollment.json\").read_text())[\"TELEGRAM_CLIENT_SECRET\"]\nfiles={rel:(repo/rel).read_text() for rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\")}\nfiles.update({rel:(root/\"analyst-ai-android-690811a5\"/rel).read_text() for rel in (\".github/scripts/native_input_evidence.py\",\".github/scripts/tests/test_native_input_evidence.py\")})\nassert all(secret not in text and \"-----BEGIN OPENSSH PRIVATE KEY-----\" not in text and \"-----BEGIN PRIVATE KEY-----\" not in text for text in files.values())\nprint(json.dumps(files))\n"),timeout=30))
+                      assert set(docs)=={"AGENTS.md","docs/MASTER_PLAN.md","docs/PLAN_STATUS.md",".github/scripts/native_input_evidence.py",".github/scripts/tests/test_native_input_evidence.py"}
+                      def gh(method,path,body=None):
+                          data=None if body is None else json.dumps(body).encode()
+                          req=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway"+path,method=method,data=data,headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","Content-Type":"application/json","X-GitHub-Api-Version":"2022-11-28"})
+                          with urllib.request.urlopen(req,timeout=30) as response:
+                              raw=response.read(4*1024*1024+1)
+                          return json.loads(raw) if raw else {}
+                      ref=gh("GET","/git/ref/heads/codex/timeweb-owner-prepare-2026-10-23")
+                      assert ref["object"]["sha"]==os.environ["GITHUB_SHA"],"backup_ref_changed"
+                      commit=gh("GET","/git/commits/"+ref["object"]["sha"])
+                      tree=gh("POST","/git/trees",{"base_tree":commit["tree"]["sha"],"tree":[{"path":path,"mode":"100644","type":"blob","content":text} for path,text in docs.items()]})
+                      backed=gh("POST","/git/commits",{"message":"Back up cursor failure diagnostics developed and tested on Timeweb","tree":tree["sha"],"parents":[ref["object"]["sha"]]})
+                      current=gh("GET","/git/ref/heads/codex/timeweb-owner-prepare-2026-10-23")
+                      assert current["object"]["sha"]==ref["object"]["sha"],"backup_ref_changed"
+                      gh("PATCH","/git/refs/heads/codex/timeweb-owner-prepare-2026-10-23",{"sha":backed["sha"],"force":False})
+                      print("TIMEWEB_DOCUMENT_BACKUP="+json.dumps({"sha":backed["sha"],"tree":tree["sha"],"files":sorted(docs),"edited_on":"Timeweb 9413105"}),flush=True)
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
