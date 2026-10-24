@@ -24,6 +24,11 @@ jobs:
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
+          TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
+          OWNER_TELEGRAM_SUB: ${{ secrets.OWNER_TELEGRAM_SUB }}
+          FERNET_KEY: ${{ secrets.FERNET_KEY }}
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
@@ -39,71 +44,38 @@ jobs:
                       raw=r.read(4194305);assert len(raw)<=4194304
                       return r.status,json.loads(raw) if raw else {}
               except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+          def with_ams(remote_script, *, timeout=300):
+              sid=9415007;ip="83.217.195.29";host="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIItaYR3yYmfPA7lJwNgOBGMr0Tu/ioG+Zarm+Utc33z0"
+              status,data=api("GET","/servers/"+str(sid));assert status==200
+              server=data["server"]
+              assert server["name"]=="Analyst AI PRO" and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
+              access.SERVER_ID=sid
+              with tempfile.TemporaryDirectory(prefix="analyst-ams-admin-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                  folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-ams-admin-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                  key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
+                  assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
+                  attached=False
+                  try:
+                      access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
+                      cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                      for attempt in range(12):
+                          try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
+                          except (p.ProbeError,subprocess.TimeoutExpired):
+                              if attempt==11:raise
+                              time.sleep(5)
+                      result=subprocess.run([*cmd,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                      print(result.stdout.decode(errors="replace"),flush=True)
+                      if result.returncode:
+                          print("AMS_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-4000:],flush=True)
+                          raise RuntimeError("remote_task_failed")
+                  finally:
+                      if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                      access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                      print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
-          import ipaddress
-          def must(method,path,body=None):
-              status,data=api(method,path,body)
-              if status not in (200,201,204):
-                  print("AMS_API_ERROR="+json.dumps({"method":method,"path":path,"status":status,"details":data}),flush=True)
-                  raise RuntimeError("timeweb_operation_failed_reconcile_before_retry")
-              return data
-          inventory=must("GET","/servers")
-          assert inventory.get("servers")==[] and inventory.get("meta",{}).get("total")==0,"existing_server_reconcile_no_duplicate"
-          offer,=[x for x in must("GET","/configurator/servers")["server_configurators"] if x.get("id")==153]
-          assert offer["location"]=="nl-1" and offer["disk_type"]=="nvme"
-          price=offer["prices"]["cpu"]*4+offer["prices"]["ram"]*6+offer["prices"]["disk"]*30
-          assert price==6640,"price_changed"
-          finance=must("GET","/account/finances").get("finances",{})
-          assert float(finance.get("balance",0))>=7020,"balance_changed"
-          for path in ["/servers/9413105","/servers/9413105/disks","/restore-points","/images"]:
-              status,data=api("GET",path)
-              if status==200:
-                  rows=data.get("images",data.get("restore_points",data.get("disks",[])))
-                  print("RECOVERY_INVENTORY="+json.dumps({"path":path,"status":status,"rows":[{k:v for k,v in x.items() if k in ("id","name","status","server_id","vds_id","disk_id","size","created_at","location")} for x in rows],"keys":list(data)}),flush=True)
-              else:print("RECOVERY_INVENTORY="+json.dumps({"path":path,"status":status,"error":data}),flush=True)
-          with tempfile.TemporaryDirectory(prefix="analyst-ams-create-",dir=os.environ["RUNNER_TEMP"]) as directory:
-              folder=pathlib.Path(directory)
-              p.cloud.generate_key(folder/"client");p.cloud.generate_key(folder/"host")
-              client=(folder/"client.pub").read_text().strip();host=(folder/"host.pub").read_text().strip()
-              print("AMS_HOST_PIN="+host,flush=True)
-              config={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,
-                  "ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,
-                  "runcmd":[["systemctl","restart","ssh"]]}
-              payload={"name":"Analyst AI PRO","hostname":"analyst-ai-ams-main","comment":"Analyst AI main development and application server; owner requested Amsterdam 2026-10-24",
-                  "configuration":{"configurator_id":153,"cpu":4,"ram":6144,"disk":30720},"os_id":99,"project_id":2941515,"availability_zone":"ams-1",
-                  "cloud_init":"#cloud-config\n"+json.dumps(config)+"\n"}
-              server=must("POST","/servers",payload)["server"]
-              sid=server["id"]
-              assert server["name"]=="Analyst AI PRO" and server["project_id"]==2941515 and server["cpu"]==4 and server["ram"]==6144
-              print("AMS_SERVER_CREATED="+json.dumps({k:server.get(k) for k in ["id","name","status","location","availability_zone","cpu","ram","configurator_id"]}),flush=True)
-              # Allocate only after the server creation succeeded. Never retry either POST blindly.
-              if not p.cloud.public_ipv4(server):
-                  ips=must("GET","/floating-ips")
-                  assert not ips.get("ips",[]) and ips.get("meta",{}).get("total")==0,"existing_ip_reconcile"
-                  record=must("POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":"ams-1"})["ip"]
-                  ip=record["ip"];ipid=record["id"]
-                  assert ipaddress.ip_address(ip).is_global and record.get("availability_zone")=="ams-1"
-                  print("AMS_IPV4_CREATED="+json.dumps({"id":ipid,"ip":ip}),flush=True)
-                  must("POST","/floating-ips/"+str(ipid)+"/bind",{"resource_type":"server","resource_id":sid})
-              command=None
-              for attempt in range(42):
-                  server=must("GET","/servers/"+str(sid))["server"];ip=p.cloud.public_ipv4(server)
-                  if ip:
-                      command=p.ssh_command(folder,ip,host)
-                      try:
-                          p.remote(command,"cloud-init status --wait >/dev/null && test $(id -u) = 0",timeout=20)
-                          break
-                      except (p.ProbeError,subprocess.TimeoutExpired):pass
-                  if attempt%6==0:print("AMS_WAIT="+json.dumps({"id":sid,"status":server.get("status"),"ipv4":ip,"attempt":attempt}),flush=True)
-                  time.sleep(8)
-              else:raise RuntimeError("new_server_ssh_not_ready_no_second_order")
-              try:
-                  result=subprocess.run([*command,"python3 -"],input="\nimport os,pathlib,json,subprocess,shutil,socket,urllib.request,datetime\nreport={\"at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"cpu\":os.cpu_count(),\"memory_kib\":int(next(l.split()[1] for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith(\"MemTotal:\"))),\"disk_total\":shutil.disk_usage(\"/\").total,\"disk_free\":shutil.disk_usage(\"/\").free,\"kvm\":pathlib.Path(\"/dev/kvm\").exists(),\"cpu_virtualization\":any(x in pathlib.Path(\"/proc/cpuinfo\").read_text().split() for x in [\"vmx\",\"svm\"]),\"os\":dict(l.split(\"=\",1) for l in pathlib.Path(\"/etc/os-release\").read_text().splitlines() if \"=\" in l).get(\"PRETTY_NAME\")}\nfor host,path in [(\"oauth.telegram.org\",\"/.well-known/jwks.json\"),(\"dl.google.com\",\"/android/repository/repository2-1.xml\"),(\"github.com\",\"/\")]:\n    start=__import__(\"time\").monotonic()\n    try:\n        with urllib.request.urlopen(\"https://\"+host+path,timeout=20) as res:\n            sample=res.read(1024);report[host]={\"status\":res.status,\"ms\":round((__import__(\"time\").monotonic()-start)*1000)}\n    except Exception as e: report[host]={\"error\":type(e).__name__}\nbase=pathlib.Path(\"/var/lib/analyst-ai-ops\");base.mkdir(mode=0o700,exist_ok=True)\nproof=base/\"server-provisioning.json\";proof.write_text(json.dumps(report,indent=2)+\"\\n\");proof.chmod(0o600)\nprint(\"AMS_HARDWARE=\"+json.dumps(report),flush=True)\n".encode(),capture_output=True,timeout=120)
-                  print(result.stdout.decode(errors="replace"),flush=True)
-                  if result.returncode:raise RuntimeError("hardware_inspection_failed")
-                  print("AMS_SERVER_READY="+json.dumps({"id":sid,"ip":ip,"host_pin":host,"base_monthly":price,"ipv4_monthly":200}),flush=True)
-              finally:
-                  remove="python3 -c "+shlex.quote("import pathlib,sys; p=pathlib.Path('/root/.ssh/authorized_keys'); k=sys.stdin.read().strip(); p.write_text('\\n'.join(x for x in p.read_text().splitlines() if k not in x)+'\\n')")
-                  p.remote(command,remove,client.encode())
-                  print("AMS_BOOTSTRAP_KEY_REMOVED=true",flush=True)
+          status,data=api("GET","/servers/9415007/disks");assert status==200
+          print("AMS_DISKS="+json.dumps(data),flush=True)
+          print("RESTORE_SECRET_PRESENCE="+json.dumps({k:bool(os.environ.get(k,"").strip()) for k in ("TELEGRAM_CLIENT_ID","TELEGRAM_CLIENT_SECRET","OWNER_TELEGRAM_SUB","FERNET_KEY","TIMEWEB_AI_TOKEN")}),flush=True)
+          with_ams("\nimport pathlib,subprocess,json\nscript=pathlib.Path(\"/root/analyst-ams-bootstrap.py\")\nassert not script.exists(),\"bootstrap_already_staged\"\nscript.write_text(\"\\nimport pathlib,subprocess,os,pwd,json,datetime,shutil,urllib.request,hashlib,tempfile,zipfile\\nroot=pathlib.Path(\\\"/srv/analyst-ai/workspace\\\")\\nstate=pathlib.Path(\\\"/var/lib/analyst-ai-build\\\")\\nops=pathlib.Path(\\\"/var/lib/analyst-ai-ops\\\")\\ndef run(args,*,user=False,timeout=1800):\\n    cmd=([\\\"runuser\\\",\\\"-u\\\",\\\"analyst-build\\\",\\\"--\\\"] if user else [])+[str(x) for x in args]\\n    subprocess.run(cmd,check=True,timeout=timeout,cwd=root if root.exists() else \\\"/\\\",env={**os.environ,\\\"DEBIAN_FRONTEND\\\":\\\"noninteractive\\\",\\\"PYTHONUNBUFFERED\\\":\\\"1\\\",\\\"JAVA_HOME\\\":\\\"/usr/lib/jvm/java-17-openjdk-amd64\\\"})\\nreport={\\\"started_at\\\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\\\"server_id\\\":9415007,\\\"stage\\\":\\\"packages\\\"}\\ndef checkpoint(stage):\\n    report[\\\"stage\\\"]=stage\\n    target=ops/\\\"workspace-bootstrap.json\\\";target.write_text(json.dumps(report,indent=2)+\\\"\\\\n\\\");target.chmod(0o600)\\ntry:\\n    checkpoint(\\\"packages\\\")\\n    run([\\\"apt-get\\\",\\\"update\\\"])\\n    run([\\\"apt-get\\\",\\\"install\\\",\\\"-y\\\",\\\"--no-install-recommends\\\",\\\"ca-certificates\\\",\\\"git\\\",\\\"curl\\\",\\\"unzip\\\",\\\"zip\\\",\\\"openjdk-17-jdk-headless\\\",\\\"python3-venv\\\",\\\"nodejs\\\",\\\"rsync\\\",\\\"xvfb\\\",\\\"xauth\\\",\\\"libvulkan1\\\",\\\"mesa-vulkan-drivers\\\",\\\"vulkan-tools\\\",\\\"libgl1\\\",\\\"libnss3\\\",\\\"libpulse0\\\",\\\"libxcb-cursor0\\\",\\\"caddy\\\",\\\"ufw\\\"])\\n    run([\\\"systemctl\\\",\\\"disable\\\",\\\"--now\\\",\\\"caddy\\\"])\\n    try:owner=pwd.getpwnam(\\\"analyst-build\\\")\\n    except KeyError:\\n        run([\\\"useradd\\\",\\\"--system\\\",\\\"--user-group\\\",\\\"--home-dir\\\",str(state),\\\"--create-home\\\",\\\"--shell\\\",\\\"/usr/sbin/nologin\\\",\\\"analyst-build\\\"]);owner=pwd.getpwnam(\\\"analyst-build\\\")\\n    for directory in [root,state,pathlib.Path(\\\"/var/cache/analyst-ai/gradle\\\"),pathlib.Path(\\\"/opt/analyst-android-sdk\\\")]:\\n        directory.mkdir(parents=True,exist_ok=True);os.chown(directory,owner.pw_uid,owner.pw_gid)\\n    root.parent.chmod(0o755);state.chmod(0o750)\\n    checkpoint(\\\"restore_public_sources\\\")\\n    assert not (root/\\\".git\\\").exists(),\\\"workspace_already_exists\\\"\\n    run([\\\"git\\\",\\\"init\\\"],user=True)\\n    run([\\\"git\\\",\\\"remote\\\",\\\"add\\\",\\\"origin\\\",\\\"https://github.com/MishaGameHacking/omni-cio-gateway.git\\\"],user=True)\\n    run([\\\"git\\\",\\\"fetch\\\",\\\"--depth=1\\\",\\\"origin\\\",\\\"9a735a60329f594a3ca52f0c2e34860bbb17e5d8\\\"],user=True)\\n    run([\\\"git\\\",\\\"checkout\\\",\\\"--detach\\\",\\\"9a735a60329f594a3ca52f0c2e34860bbb17e5d8\\\"],user=True)\\n    os.environ.update({\\\"GIT_CONFIG_COUNT\\\":\\\"1\\\",\\\"GIT_CONFIG_KEY_0\\\":\\\"safe.directory\\\",\\\"GIT_CONFIG_VALUE_0\\\":str(root)})\\n    import ast,hashlib\\n    def workflow_remote(commit):\\n        path=\\\".github/workflows/owner-ssh-once.yml\\\"\\n        body=subprocess.check_output([\\\"git\\\",\\\"show\\\",commit+\\\":\\\"+path],cwd=root,text=True)\\n        line=next(l.strip() for l in body.splitlines() if l.strip().startswith(\\\"remote_script=\\\"))\\n        return ast.literal_eval(line.split(\\\"=\\\",1)[1])\\n    for revision in [\\\"94c9ff5385ecc6d926aa724edee9e336fc59005c\\\",\\\"0914dcbcd715d37f43919dd84720e58e1480432a\\\"]:\\n        run([\\\"git\\\",\\\"-C\\\",str(root),\\\"fetch\\\",\\\"--depth=1\\\",\\\"origin\\\",revision],user=True)\\n    native=workflow_remote(\\\"94c9ff5385ecc6d926aa724edee9e336fc59005c\\\")\\n    assignment=next(n for n in ast.parse(native).body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id==\\\"files\\\")\\n    assert isinstance(assignment.value,ast.Call) and isinstance(assignment.value.args[0],ast.Constant)\\n    files=json.loads(assignment.value.args[0].value)\\n    assert set(files)=={\\\".github/scripts/native_renderer_evidence.py\\\",\\\".github/scripts/tests/test_native_renderer_evidence.py\\\"}\\n    for rel,body in files.items():(root/rel).write_text(body)\\n    phased=workflow_remote(\\\"0914dcbcd715d37f43919dd84720e58e1480432a\\\")\\n    piece=phased[phased.index('pipeline=root/\\\"deploy/timeweb_workspace.py\\\"'):phased.index(\\\"\\\\n\\\\nimport pathlib,json,subprocess,os,pwd,hashlib,datetime\\\")]\\n    exec(compile(piece,\\\"verified-pipeline-recovery\\\",\\\"exec\\\"))\\n    changes={}\\n    piece=phased[phased.index('path=root/\\\".github/scripts/test_apk_installation.py\\\"'):phased.index('subprocess.run([\\\"systemctl\\\",\\\"reset-failed\\\"')]\\n    exec(compile(piece,\\\"verified-native-gate-recovery\\\",\\\"exec\\\"))\\n    path=root/\\\"deploy/timeweb_workspace.py\\\"\\n    body=path.read_text()\\n    old='gradle_flags=[\\\"--no-daemon\\\",\\\"--no-parallel\\\",\\\"--max-workers=1\\\",*extra]'\\n    new='gradle_flags=[\\\"--no-daemon\\\",*([\\\"--no-parallel\\\",\\\"--max-workers=1\\\"] if os.environ.get(\\\"ANALYST_BUILD_PROFILE\\\") == \\\"bounded-swap\\\" else [\\\"--parallel\\\",\\\"--max-workers=2\\\"]),*extra]'\\n    assert body.count(old)==1\\n    path.write_text(body.replace(old,new))\\n    checkpoint(\\\"python_environment\\\")\\n    run([\\\"python3\\\",\\\"-m\\\",\\\"venv\\\",state/\\\"venv\\\"],user=True)\\n    run([state/\\\"venv/bin/python\\\",\\\"-m\\\",\\\"pip\\\",\\\"install\\\",\\\"--only-binary=:all:\\\",\\\"-r\\\",root/\\\"backend/requirements.txt\\\",\\\"-r\\\",root/\\\"backend/requirements-dev.txt\\\"],user=True)\\n    checkpoint(\\\"android_sdk\\\")\\n    sdk=pathlib.Path(\\\"/opt/analyst-android-sdk\\\")\\n    with tempfile.TemporaryDirectory(prefix=\\\"analyst-sdk-\\\",dir=\\\"/var/tmp\\\") as temporary:\\n        archive=pathlib.Path(temporary)/\\\"tools.zip\\\"\\n        with urllib.request.urlopen(\\\"https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip\\\",timeout=60) as source,archive.open(\\\"wb\\\") as target:shutil.copyfileobj(source,target)\\n        assert hashlib.sha256(archive.read_bytes()).hexdigest()==\\\"4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583\\\",\\\"android_tools_checksum_mismatch\\\"\\n        with zipfile.ZipFile(archive) as z:\\n            assert all(not pathlib.PurePosixPath(n).is_absolute() and \\\"..\\\" not in pathlib.PurePosixPath(n).parts for n in z.namelist())\\n        run([\\\"unzip\\\",\\\"-q\\\",archive,\\\"-d\\\",sdk/\\\"cmdline-tools\\\"])\\n        (sdk/\\\"cmdline-tools/cmdline-tools\\\").rename(sdk/\\\"cmdline-tools/latest\\\")\\n    run([\\\"chown\\\",\\\"-R\\\",\\\"analyst-build:analyst-build\\\",str(sdk),str(root),str(state)])\\n    run([state/\\\"venv/bin/python\\\",root/\\\".github/scripts/prepare_android_sdk.py\\\",\\\"--sdk\\\",sdk],user=True)\\n    checkpoint(\\\"services_and_limits\\\")\\n    shutil.copy2(root/\\\"deploy/analyst-workspace\\\",\\\"/usr/local/bin/analyst-workspace\\\");pathlib.Path(\\\"/usr/local/bin/analyst-workspace\\\").chmod(0o755)\\n    shutil.copy2(root/\\\"deploy/analyst-workspace@.service\\\",\\\"/etc/systemd/system/analyst-workspace@.service\\\")\\n    for stage,high,maximum in [(\\\"check\\\",\\\"1536M\\\",\\\"2048M\\\"),(\\\"build\\\",\\\"4096M\\\",\\\"4800M\\\"),(\\\"runtime\\\",\\\"4800M\\\",\\\"5200M\\\")]:\\n        directory=pathlib.Path(\\\"/etc/systemd/system/analyst-workspace@\\\"+stage+\\\".service.d\\\");directory.mkdir(parents=True,exist_ok=True)\\n        (directory/\\\"resources.conf\\\").write_text(\\\"[Service]\\\\nMemoryHigh=\\\"+high+\\\"\\\\nMemoryMax=\\\"+maximum+\\\"\\\\nMemorySwapMax=512M\\\\n\\\")\\n    swap=pathlib.Path(\\\"/var/swap/analyst-build.swap\\\");swap.parent.mkdir(mode=0o700,parents=True,exist_ok=True)\\n    if not swap.exists():\\n        run([\\\"fallocate\\\",\\\"-l\\\",\\\"1G\\\",swap]);swap.chmod(0o600);run([\\\"mkswap\\\",swap]);run([\\\"swapon\\\",swap])\\n        with pathlib.Path(\\\"/etc/fstab\\\").open(\\\"a\\\") as f:f.write(\\\"\\\\n\\\"+str(swap)+\\\" none swap sw 0 0\\\\n\\\")\\n    pathlib.Path(\\\"/etc/sysctl.d/90-analyst-build.conf\\\").write_text(\\\"vm.swappiness=10\\\\n\\\");run([\\\"sysctl\\\",\\\"-p\\\",\\\"/etc/sysctl.d/90-analyst-build.conf\\\"])\\n    for port in (\\\"22/tcp\\\",\\\"80/tcp\\\",\\\"443/tcp\\\"):run([\\\"ufw\\\",\\\"allow\\\",port])\\n    run([\\\"ufw\\\",\\\"--force\\\",\\\"enable\\\"])\\n    note=\\\"\\\\n\\\\n## Основной сервер Amsterdam — 24.10.2026\\\\n\\\\nOWNER явно разрешил создание нового сервера в Амстердаме. Через API создан один\\\\nAnalyst AI PRO / 9415007 / 83.217.195.29 / ams-1: 4 vCPU, 6 ГБ RAM, 30 ГБ NVMe,\\\\nUbuntu 24.04.5. SSH и HTTPS к Telegram/Google/GitHub проверены. KVM и VMX/SVM\\\\nотсутствуют; быстрый Android runtime не подтверждён. Сборка APK не требует KVM.\\\\n\\\\nПеред созданием список облачных серверов оказался пуст; прежний 9413105 отсутствует\\\\nв аккаунте. Снапшоты и образы также отсутствуют. Рабочие исходники восстановлены\\\\nиз резервной копии 9a735a60329f594a3ca52f0c2e34860bbb17e5d8; последние\\\\nпубличные изменения harness восстановлены из закреплённых операций Timeweb.\\\\nПрежняя приватная база, конфигурация владельца и signing key пока не восстановлены;\\\\nих отсутствие нельзя заменять новой подписью или считать переносом данных.\\\\n\\\\nВсе изменения/проверки выполняются на Timeweb. GitHub — резервная копия\\\\nи разрешённый канал административных команд. Используется основной сервер,\\\\nдубли не создаются. Для 6 ГБ сняты старые ограничения 550 МБ: build максимум\\\\n4800 МБ, два Gradle worker; все прежние gates сохранены.\\\\n\\\"\\n    for rel in [\\\"AGENTS.md\\\",\\\"docs/MASTER_PLAN.md\\\",\\\"docs/PLAN_STATUS.md\\\",\\\"docs/TIMEWEB_WORKSPACE.md\\\"]:\\n        path=root/rel;path.write_text(path.read_text()+note);os.chown(path,owner.pw_uid,owner.pw_gid)\\n    run([\\\"git\\\",\\\"diff\\\",\\\"--check\\\"],user=True)\\n    run([\\\"systemctl\\\",\\\"daemon-reload\\\"])\\n    run([\\\"/usr/local/bin/analyst-workspace\\\",\\\"check\\\"])\\n    report.update({\\\"status\\\":\\\"prepared\\\",\\\"source_backup\\\":\\\"9a735a60329f594a3ca52f0c2e34860bbb17e5d8\\\",\\\"native_gate_recovered\\\":True,\\\"disk_free\\\":shutil.disk_usage(root).free,\\\"signing_key_present\\\":(state/\\\".android/debug.keystore\\\").exists(),\\\"check\\\":\\\"started\\\",\\\"kvm\\\":pathlib.Path(\\\"/dev/kvm\\\").exists()})\\n    checkpoint(\\\"ready_for_checks\\\")\\n    print(\\\"AMS_WORKSPACE_PREPARED=\\\"+json.dumps(report),flush=True)\\nexcept Exception as error:\\n    report.update({\\\"status\\\":\\\"failed\\\",\\\"error_type\\\":type(error).__name__})\\n    checkpoint(report[\\\"stage\\\"])\\n    raise\\n\");script.chmod(0o700)\ncompile(script.read_text(),str(script),\"exec\")\nsubprocess.run([\"systemd-run\",\"--unit=analyst-ams-bootstrap\",\"--property=Type=exec\",\"--property=RuntimeMaxSec=30min\",\"--property=StandardOutput=append:/var/log/analyst-ams-bootstrap.log\",\"--property=StandardError=append:/var/log/analyst-ams-bootstrap.log\",\"/usr/bin/python3\",str(script)],check=True)\nprint(\"AMS_WORKSPACE_BOOTSTRAP_STARTED=true\",flush=True)\n")
           PY
