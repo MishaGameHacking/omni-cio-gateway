@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-android-build
+  group: analyst-owner-direct-server-observation
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 85
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,40 +20,79 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Build and verify the existing portrait Android application entirely on Timeweb
+      - name: Continue Moscow readiness and KVM checks while the app builds on Timeweb
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,subprocess,sys,urllib.request
+          import ipaddress,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
           from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def get(path,version=1):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          servers=p.read_resource(token,"servers")
-          assert p.summarize("servers",servers)["complete"]
-          assert {s["id"] for s in servers["servers"]}=={9408159},"inventory_changed_reconcile_before_status_write"
-          print("RUSSIA_FINAL_INVENTORY="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location")} for s in servers["servers"]]),flush=True)
-          import shlex
-          import access_owner_vm as access
-          import adopt_replacement_vm as adopt
-          original_select=adopt.select_target
-          observed=servers["servers"][0]
-          assert observed["ram"] in {1024,3072} and observed["cpu"]==1
-          def select_target(new):
-              original_select(new)
-              if new:p.CONFIGURATION["ram"]=observed["ram"]
-          adopt.select_target=select_target
-          def build_android(command):
-              build="import fcntl,hashlib,json,os,pathlib,shutil,signal,stat,subprocess,sys,time,xml.etree.ElementTree as ET\nos.umask(0o077)\nrun_id=sys.argv[1]\nassert run_id.isdecimal()\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nsource=\"690811a5a376181990a64f37d914c87eb6c919b7\"\nsdk=pathlib.Path(\"/opt/analyst-android-sdk\")\njava=pathlib.Path(\"/usr/lib/jvm/java-17-openjdk-amd64\")\npin=\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\"\nassert root.is_dir() and not root.is_symlink()\nlock=open(\"/root/analyst-android-build.lock\",\"a\")\nfcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()==source\nassert not subprocess.check_output([\"git\",\"status\",\"--porcelain\",\"--untracked-files=no\"],cwd=root)\nmem={line.split(\":\",1)[0]:int(line.split(\":\",1)[1].split()[0]) for line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if line.startswith((\"MemTotal:\",\"MemAvailable:\"))}\nassert mem[\"MemTotal\"]>=2600*1024 and mem[\"MemAvailable\"]>=2200*1024,\"insufficient_actual_memory\"\nswap=pathlib.Path(\"/root/analyst-build.swap\")\ninfo=swap.lstat()\nassert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600\nassert 3*1024**3<=info.st_size<=4*1024**3,\"unexpected_existing_swap_size\"\nif str(swap) not in pathlib.Path(\"/proc/swaps\").read_text():\n    assert subprocess.check_output([\"blkid\",\"-p\",\"-o\",\"value\",\"-s\",\"TYPE\",str(swap)],text=True).strip()==\"swap\"\n    subprocess.run([\"swapon\",str(swap)],check=True)\nassert str(swap) in pathlib.Path(\"/proc/swaps\").read_text()\nassert shutil.disk_usage(root).free>=5*1024**3,\"insufficient_disk_for_compilation\"\nkey=pathlib.Path(\"/root/.android/debug.keystore\")\ninfo=key.lstat()\nassert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600\ncert=subprocess.run([str(java/\"bin/keytool\"),\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(key),\"-storepass\",\"android\"],capture_output=True,timeout=30)\nassert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==pin,\"signing_identity_not_preserved\"\nenv={\"PATH\":str(java/\"bin\")+\":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\",\"HOME\":\"/root\",\"LANG\":\"C.UTF-8\",\"JAVA_HOME\":str(java),\"ANDROID_SDK_ROOT\":str(sdk),\"ANDROID_HOME\":str(sdk),\"PYTHONUNBUFFERED\":\"1\"}\nreport={\"host\":\"timeweb-9408159\",\"source\":source,\"started_at_utc\":time.strftime(\"%Y-%m-%dT%H:%M:%SZ\",time.gmtime()),\"runtime_matrix_passed\":False,\"phases\":[]}\nreport_path=pathlib.Path(\"/root/analyst-android-build-\"+run_id+\".json\")\nlog_path=pathlib.Path(\"/root/analyst-android-build-\"+run_id+\".log\")\nassert not report_path.exists() and not log_path.exists()\nreport[\"run_id\"]=run_id\nreport[\"status\"]=\"running\"\nreport[\"report_path\"]=str(report_path)\nreport[\"log_path\"]=str(log_path)\nreport[\"actual_memory_kib\"]=mem\nlog_stream=log_path.open(\"x\",buffering=1)\nactive=pathlib.Path(\"/root/analyst-android-active-build.json\")\nassert not active.is_symlink()\nactive.write_text(json.dumps({\"run_id\":run_id,\"report\":str(report_path),\"log\":str(log_path),\"source\":source,\"server\":9408159})+\"\\n\")\nactive.chmod(0o600)\ndef save():\n    report[\"free_disk_gib\"]=round(shutil.disk_usage(root).free/1024**3,2)\n    temporary=report_path.with_suffix(\".tmp\")\n    temporary.write_text(json.dumps(report,indent=2)+\"\\n\")\n    os.replace(temporary,report_path)\ndef run(args,timeout=300,out=None):\n    print(\"TIMEWEB_BUILD_PHASE=\"+json.dumps(args),flush=True)\n    report[\"active_command\"]=args\n    save()\n    started=time.monotonic()\n    process=subprocess.Popen(args,cwd=root,env=env,stdout=log_stream if out is None else out,stderr=subprocess.STDOUT,start_new_session=True)\n    try:\n        code=process.wait(timeout=timeout)\n    except subprocess.TimeoutExpired:\n        os.killpg(process.pid,signal.SIGTERM)\n        try:process.wait(timeout=15)\n        except subprocess.TimeoutExpired:\n            os.killpg(process.pid,signal.SIGKILL);process.wait()\n        report[\"phases\"].append({\"command\":args,\"exit\":\"timeout\",\"seconds\":round(time.monotonic()-started,1)})\n        report[\"status\"]=\"failed_timeout\"\n        save()\n        raise\n    report[\"phases\"].append({\"command\":args,\"exit\":code,\"seconds\":round(time.monotonic()-started,1)})\n    save()\n    report[\"active_command\"]=None\n    if code:\n        report[\"status\"]=\"failed\"\n        save()\n        tail=log_path.read_bytes()[-18000:].decode(\"utf-8\",\"replace\")\n        print(\"TIMEWEB_BUILD_FAILURE_TAIL=\"+tail,flush=True)\n        raise SystemExit(code)\n    save()\nprint(\"TIMEWEB_BUILD_START=\"+json.dumps({\"server\":9408159,\"source\":source,\"max_workers\":1,\"parallel\":False,\"kvm\":pathlib.Path(\"/dev/kvm\").exists(),\"disk_free_gib\":round(shutil.disk_usage(root).free/1024**3,2)}),flush=True)\nsave()\nrun([\"python3\",\"tools/prepare_spectrum_checkout.py\"])\nrun([\"python3\",\"-c\",\"import importlib.util,pathlib; spec=importlib.util.spec_from_file_location('sdk_check','.github/scripts/prepare_android_sdk.py'); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); packages=module.required_sdk_packages()[:2]; [module._verify_package(pathlib.Path('/opt/analyst-android-sdk'),package) for package in packages]; print('REQUIRED_BUILD_SDK_VERIFIED='+str(packages))\"])\nrun([\"./gradlew\",\":app:testDebugUnitTest\",\":app:lintDebug\",\":app:lintPreview\",\":app:assembleDebug\",\":app:assembleRelease\",\":app:assemblePreview\",\":ci-ui-driver:lintDebug\",\":ci-ui-driver:assembleDebug\",\"--stacktrace\",\"--no-parallel\",\"--max-workers=1\"],timeout=4200)\nfor args in ([\"python3\",\"tools/test_native_alignment.py\"],[\"python3\",\"tools/generate_spectrum_meshes.py\",\"--check\",\"--check-apk\"],[\"python3\",\"tools/test_spectrum_meshes.py\"]):run(args)\nout=root/\"app/build/outputs/apk/preview\"\nbuild=sdk/\"build-tools/37.0.0\"\napk=out/\"app-preview.apk\"\nfor filename,args in ((\"signature.txt\",[str(java/\"bin/java\"),\"-jar\",str(build/\"lib/apksigner.jar\"),\"verify\",\"--verbose\",\"--print-certs\",str(apk)]),(\"alignment.txt\",[str(build/\"zipalign\"),\"-c\",\"-P\",\"16\",\"-v\",\"4\",str(apk)]),(\"badging.txt\",[str(build/\"aapt\"),\"dump\",\"badging\",str(apk)]),(\"manifest.txt\",[str(build/\"aapt\"),\"dump\",\"xmltree\",str(apk),\"AndroidManifest.xml\"])):\n    with (out/filename).open(\"w\") as target:run(args,out=target)\nrun([\"python3\",\".github/scripts/verify_apk.py\"])\ncounts={\"suites\":0,\"tests\":0,\"failures\":0,\"errors\":0,\"skipped\":0}\nfor path in (root/\"app/build/test-results/testDebugUnitTest\").glob(\"TEST-*.xml\"):\n    suite=ET.parse(path).getroot()\n    counts[\"suites\"]+=1\n    for name in (\"tests\",\"failures\",\"errors\",\"skipped\"):counts[name]+=int(suite.get(name,0))\nassert counts[\"tests\"]>0 and counts[\"failures\"]==0 and counts[\"errors\"]==0\nreport[\"jvm_tests\"]=counts\nreport[\"apk\"]=json.loads((out/\"apk-verification.json\").read_text())\nreport[\"completed_at_utc\"]=time.strftime(\"%Y-%m-%dT%H:%M:%SZ\",time.gmtime())\nreport[\"build_and_static_verification_passed\"]=True\nreport[\"status\"]=\"build_verified_runtime_pending\"\nsave()\nprint(\"TIMEWEB_ANDROID_BUILD_RESULT=\"+json.dumps(report,sort_keys=True),flush=True)\n"
-              stable=command[:-1]+["-o","ServerAliveInterval=30","-o","ServerAliveCountMax=6",command[-1]]
-              result=subprocess.run(stable+["python3 -u -c "+shlex.quote(build)+" "+shlex.quote(os.environ["GITHUB_RUN_ID"])],timeout=4650)
-              if result.returncode:raise p.ProbeError("timeweb_android_build_failed_"+str(result.returncode))
-          access.develop_backend=build_android
-          adopt.run(development=True)
+          def owned(s):
+              assert s["id"]==121673 and s["name"]=="analyst-ai-msk-20261024" and s["comment"]=="Analyst AI owner authorized Moscow work server 2026-10-24"
+              assert s["preset_id"]==6007 and s["location"]=="ru-3" and s["project_id"]==2941515 and Decimal(str(s["price"]))==5480
+              return s
+          previous=None
+          server=None
+          for attempt in range(60):
+              server=owned(get("/dedicated-servers/121673")["dedicated_server"])
+              safe={k:server.get(k) for k in ("id","name","status","location","price","ip","os_id","autoinstall_ready")}
+              if safe!=previous or attempt%20==0:
+                  print("MOSCOW_READY_OBSERVATION="+json.dumps(safe),flush=True)
+                  previous=safe
+              if server.get("status") in {"on","installed"} and server.get("ip"):
+                  break
+              time.sleep(15)
+          else:
+              print("MOSCOW_STILL_PROVIDER_INSTALLING="+json.dumps({"id":121673,"status":server.get("status"),"ip_assigned":bool(server.get("ip")),"ssh_verified":False,"kvm_verified":False}),flush=True)
+              sys.exit(0)
+          address=str(ipaddress.IPv4Address(server["ip"]))
+          assert ipaddress.ip_address(address).is_global,"non_global_dedicated_address"
+          password=server.get("password")
+          assert isinstance(password,str) and 8<=len(password)<=1024 and "\n" not in password,"root_credential_not_ready"
+          with tempfile.TemporaryDirectory(prefix="moscow-first-access-",dir=os.environ["RUNNER_TEMP"]) as temp:
+              folder=pathlib.Path(temp)
+              folder.chmod(0o700)
+              scan=subprocess.run(["ssh-keyscan","-T","10","-t","ed25519",address],capture_output=True,text=True,check=False,timeout=30)
+              keys={line for line in scan.stdout.splitlines() if line.startswith(address+" ssh-ed25519 ")}
+              assert len(keys)==1,"dedicated_ssh_ed25519_not_ready"
+              line=keys.pop()
+              public=" ".join(line.split()[1:3])
+              known=folder/"known_hosts"
+              known.write_text(address+" "+public+"\n")
+              known.chmod(0o600)
+              fingerprint=subprocess.check_output(["ssh-keygen","-l","-f",str(known)],text=True).split()[1]
+              print("MOSCOW_SSH_FIRST_USE_PIN="+json.dumps({"server_id":121673,"ip":address,"host_public_key":public,"fingerprint":fingerprint,"source":"first_connection_to_authenticated_API_assigned_IP"}),flush=True)
+              secret=folder/"root_password"
+              secret.write_text(password+"\n")
+              secret.chmod(0o600)
+              askpass=folder/"askpass"
+              askpass.write_text("#!/bin/sh\nexec cat "+shlex.quote(str(secret))+"\n")
+              askpass.chmod(0o700)
+              config=folder/"ssh_config"
+              config.write_text("")
+              environment=os.environ.copy()
+              environment.update({"SSH_ASKPASS":str(askpass),"SSH_ASKPASS_REQUIRE":"force","DISPLAY":":0"})
+              command=["ssh","-F",str(config),"-o","BatchMode=no","-o","PreferredAuthentications=password","-o","PubkeyAuthentication=no","-o","NumberOfPasswordPrompts=1","-o","ConnectTimeout=10","-o","StrictHostKeyChecking=yes","-o","HostKeyAlgorithms=ssh-ed25519","-o","UserKnownHostsFile="+str(known),"root@"+address]
+              script="import datetime,fcntl,json,os,pathlib,shutil,socket,ssl,subprocess\nos.umask(0o077)\nassert os.geteuid()==0,\"root_required\"\nmem={}\nfor line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines():\n    key,value=line.split(\":\",1)\n    if key in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\"}:mem[key+\"_kib\"]=int(value.split()[0])\ncpuinfo=pathlib.Path(\"/proc/cpuinfo\").read_text()\nflags=set(next((line.split(\":\",1)[1].split() for line in cpuinfo.splitlines() if line.startswith(\"flags\")),[]))\nlscpu=json.loads(subprocess.check_output([\"lscpu\",\"-J\"],text=True))\ncpu={row[\"field\"].rstrip(\":\"):row[\"data\"] for row in lscpu[\"lscpu\"] if row[\"field\"].rstrip(\":\") in {\"Architecture\",\"CPU(s)\",\"Model name\",\"Core(s) per socket\",\"Socket(s)\",\"Thread(s) per core\",\"Virtualization\",\"Hypervisor vendor\"}}\nos_release={}\nfor line in pathlib.Path(\"/etc/os-release\").read_text().splitlines():\n    key,sep,value=line.partition(\"=\")\n    if key in {\"ID\",\"VERSION_ID\",\"PRETTY_NAME\"}:os_release[key]=value.strip('\"')\nvirt=subprocess.run([\"systemd-detect-virt\"],capture_output=True,text=True,check=False).stdout.strip()\nkvm={\"cpu_vmx\":\"vmx\" in flags,\"cpu_svm\":\"svm\" in flags,\"api_version\":None,\"create_vm\":False}\nmodule=\"kvm_intel\" if \"vmx\" in flags else \"kvm_amd\" if \"svm\" in flags else None\nif module:\n    kvm[\"module_load_rc\"]=subprocess.run([\"modprobe\",module],capture_output=True,check=False).returncode\nkvm[\"device_exists\"]=pathlib.Path(\"/dev/kvm\").exists()\nif kvm[\"device_exists\"]:\n    try:\n        device=os.open(\"/dev/kvm\",os.O_RDWR|os.O_CLOEXEC)\n        try:\n            kvm[\"api_version\"]=fcntl.ioctl(device,0xAE00,0)\n            if kvm[\"api_version\"]==12:\n                guest=fcntl.ioctl(device,0xAE01,0)\n                os.close(guest)\n                kvm[\"create_vm\"]=True\n        finally:os.close(device)\n    except OSError as error:kvm[\"error\"]={\"type\":type(error).__name__,\"errno\":error.errno}\nnetwork={}\nfor host in (\"oauth.telegram.org\",\"dl.google.com\",\"repo.maven.apache.org\"):\n    try:\n        with socket.create_connection((host,443),timeout=10) as raw:\n            with ssl.create_default_context().wrap_socket(raw,server_hostname=host) as tls:\n                network[host]={\"tls_verified\":True,\"tls_version\":tls.version()}\n    except OSError as error:network[host]={\"tls_verified\":False,\"error\":type(error).__name__,\"errno\":error.errno}\ndisk=shutil.disk_usage(\"/\")\nreport={\"server_id\":121673,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"ssh_root_verified\":True,\"os\":os_release,\"cpu\":cpu,\"virtualization\":virt,\"memory\":mem,\"disk\":{\"total_bytes\":disk.total,\"free_bytes\":disk.free},\"kvm\":kvm,\"outbound_tls\":network}\nreport[\"hardware_suitable\"]=mem[\"MemTotal_kib\"]>=7*1024*1024 and os.cpu_count()>=4 and disk.free>=30*1024**3 and kvm[\"create_vm\"] and os_release.get(\"ID\")==\"ubuntu\" and os_release.get(\"VERSION_ID\")==\"24.04\"\nreport[\"full_application_checks_complete\"]=False\ntarget=pathlib.Path(\"/root/analyst-moscow-hardware-proof.json\")\nassert not target.is_symlink()\ntarget.write_text(json.dumps(report,ensure_ascii=False,indent=2)+\"\\n\")\ntarget.chmod(0o600)\nprint(\"MOSCOW_PHYSICAL_HARDWARE=\"+json.dumps(report,ensure_ascii=False),flush=True)\n"
+              result=subprocess.run(command+["python3 -u -c "+shlex.quote(script)],capture_output=True,env=environment,start_new_session=True,timeout=120)
+              secret.unlink(missing_ok=True)
+              assert result.returncode==0,"dedicated_ssh_probe_failed_rc_"+str(result.returncode)
+              lines=result.stdout.decode().splitlines()
+              records=[line for line in lines if line.startswith("MOSCOW_PHYSICAL_HARDWARE=")]
+              assert len(records)==1,"dedicated_probe_result_missing"
+              report=json.loads(records[0].split("=",1)[1])
+              assert report["server_id"]==121673 and report["ssh_root_verified"]
+              print(records[0],flush=True)
+              if not report["hardware_suitable"]:raise p.ProbeError("dedicated_hardware_gate_failed_preserve_old_server")
+              print("MOSCOW_SSH_KVM_READY_FOR_MIGRATION=121673",flush=True)
+          assert owned(get("/dedicated-servers/121673")["dedicated_server"])["ip"]==address
+          
           PY
