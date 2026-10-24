@@ -49,7 +49,7 @@ jobs:
           balance=Decimal(str(fin["balance"]))
           presets={r["id"]:r for r in get("/presets/servers")["server_presets"]}
           configs={r["id"]:r for r in get("/configurator/servers")["server_configurators"]}
-          specs=[(149,6144,51200,2220,"ru-4"),(151,6144,51200,2220,"ru-5"),(43,6144,51200,3220,"ru-1"),(149,4096,40960,1700,"ru-4"),(151,4096,40960,1700,"ru-5"),(43,4096,40960,2560,"ru-1"),(11,4096,40960,3400,"ru-1"),(19,4096,40960,3400,"ru-2"),(31,4096,40960,3400,"ru-3"),(17,6144,51200,1740,"pl-1"),(17,4096,40960,1380,"pl-1")]
+          specs=[(31,4096,40960,3400,"ru-3"),(17,6144,51200,1740,"pl-1"),(17,4096,40960,1380,"pl-1")]
           offers=[]
           for identifier,ram,disk,expected,location in specs:
               c=configs[identifier]
@@ -70,7 +70,7 @@ jobs:
               except urllib.error.HTTPError as e:
                   doc=p.decode_response(e.read(2*1024*1024+1));code=doc.get("error_code")
                   print("HOURLY_BUILD_REFUSED="+json.dumps({"http":e.code,"code":code if isinstance(code,str) and re.fullmatch("[a-z_]{1,64}",code) else "unknown"}),flush=True)
-                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found","configurator_not_found"}:
+                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found","configurator_not_found","location_not_available"}:
                       assert {s["id"] for s in inventory()}=={9408159},"reconcile_uncertain_creation"
                       return None
                   raise p.ProbeError("build_creation_http_"+str(e.code)) from None
