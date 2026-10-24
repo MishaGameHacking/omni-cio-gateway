@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-tls-error-readout
+  group: analyst-timeweb-certificate-bounded-retry
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Read certificate issuer errors without handshake noise
+      - name: Retry certificate issuance once the CA retry-after period has elapsed
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -39,6 +39,15 @@ jobs:
           dedicated=read_dedicated()
           assert dedicated["id"]==121673 and dedicated["project_id"]==2941515
           print("TIMEWEB_BUILDER_STATUS="+json.dumps({k:dedicated.get(k) for k in ("id","name","status","location","ip","autoinstall_ready")}),flush=True)
+          try:
+              opener=urllib.request.build_opener(p.NoRedirect())
+              request=urllib.request.Request("http://analyst-ai-2941515.twc1.net/health",headers={"User-Agent":"Analyst-AI-deployment-check"})
+              try:
+                  with opener.open(request,timeout=10) as response:status=response.status
+              except urllib.error.HTTPError as response:status=response.code
+              print("TIMEWEB_PUBLIC_HTTP_REACHABILITY="+json.dumps({"status":status,"reachable":True}),flush=True)
+          except Exception as error:
+              print("TIMEWEB_PUBLIC_HTTP_REACHABILITY="+json.dumps({"reachable":False,"error_type":type(error).__name__}),flush=True)
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -59,8 +68,8 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import datetime,json,pathlib,re,subprocess,sys\nsys.path.insert(0,\"/root/analyst-ai-source\")\nfrom deploy import install_owner_backend as installer\nwork=pathlib.Path(\"/root/analyst-owner-login-relay-20261024\");path=pathlib.Path(\"/var/lib/caddy/analyst-enrollment-tls.log\")\nassert not installer.INPUT_CONFIG.exists() and not installer.UNIT.exists()\nevents=[];total=0\nfor line in path.read_text(errors=\"replace\").splitlines():\n    try:item=json.loads(line)\n    except ValueError:continue\n    total+=1\n    if not isinstance(item,dict) or item.get(\"logger\")==\"tls.handshake\":continue\n    fields={key:re.sub(r\"https?://\\S+\",\"[url]\",str(item[key]))[:2000] for key in (\"level\",\"logger\",\"msg\",\"error\",\"attempt\",\"retrying_in\",\"identifier\",\"issuer\",\"ca\",\"elapsed\") if key in item}\n    if fields:events.append(fields)\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"total_records\":total,\"non_handshake_events\":events[-45:],\"tls_ready_now\":installer.enrollment_tls_ready(\"analyst-ai-2941515.twc1.net\"),\"caddy_version\":subprocess.check_output([\"caddy\",\"version\"],text=True).strip()}\ntarget=work/\"tls-issuer-filtered.json\";target.write_text(json.dumps(report,indent=2)+\"\\n\");target.chmod(0o600)\nprint(\"TIMEWEB_TLS_ISSUER_ERRORS=\"+json.dumps(report),flush=True)\n"
-                      output=p.remote(command,"/root/analyst-ai-development-venv/bin/python -u -c "+shlex.quote(script),timeout=240).decode()
+                      script="import datetime,json,os,pathlib,re,subprocess,sys,time,traceback\nsys.path.insert(0,\"/root/analyst-ai-source\")\nfrom deploy import install_owner_backend as installer\nwork=pathlib.Path(\"/root/analyst-owner-login-relay-20261024\");host=\"analyst-ai-2941515.twc1.net\";config=installer.CONFIG/\"Caddyfile\";original=installer.caddy_text(host,enrollment=True);changed=False\nretry_at=datetime.datetime(2026,10,24,13,2,55,tzinfo=datetime.timezone.utc).timestamp()\nreport={\"server_id\":9413105,\"retry_after_utc\":\"2026-10-24T13:02:52+00:00\",\"phase\":\"waiting_for_ca_limit\",\"owner_bound\":False}\ndef run(args,timeout=40):return subprocess.run(args,capture_output=True,text=True,timeout=timeout)\ndef save():\n    report[\"checked_at_utc\"]=datetime.datetime.now(datetime.timezone.utc).isoformat()\n    path=work/\"certificate-retry.json\";path.write_text(json.dumps(report,indent=2)+\"\\n\");path.chmod(0o600)\ntry:\n    assert not installer.INPUT_CONFIG.exists() and not installer.UNIT.exists() and not (installer.CONFIG/\"backend.env\").exists()\n    assert installer.STATE.is_dir() and not any(installer.STATE.iterdir())\n    assert config.read_text()==original\n    assert time.time()<retry_at+600,\"retry_window_passed_reassess\"\n    assert run([\"systemctl\",\"stop\",\"caddy\"]).returncode==0\n    save()\n    while time.time()<retry_at:\n        time.sleep(min(15,max(.1,retry_at-time.time())))\n    log=pathlib.Path(\"/var/lib/caddy/analyst-enrollment-tls.log\")\n    initial_size=log.stat().st_size\n    logging=\"\\tlog enrollment_tls {\\n\\t\\tinclude tls http.acme_client\\n\\t\\tlevel INFO\\n\\t\\toutput file \"+str(log)+\"\\n\\t\\tformat json\\n\\t}\\n\"\n    config.write_text(original.replace(\"}\\n\"+host,logging+\"}\\n\"+host,1));changed=True\n    result=run([\"caddy\",\"validate\",\"--config\",str(config),\"--adapter\",\"caddyfile\"]);assert result.returncode==0,\"retry_configuration_invalid\"\n    assert run([\"systemctl\",\"start\",\"caddy\"]).returncode==0\n    report[\"phase\"]=\"retrying_certificate\";save()\n    for attempt in range(36):\n        if installer.enrollment_tls_ready(host):report[\"phase\"]=\"certificate_ready\";break\n        time.sleep(5)\n    with log.open(\"rb\") as source:\n        source.seek(initial_size);content=source.read(500000).decode(\"utf-8\",\"replace\")\n    events=[]\n    for line in content.splitlines():\n        try:item=json.loads(line)\n        except ValueError:continue\n        if not isinstance(item,dict) or item.get(\"logger\")==\"tls.handshake\":continue\n        events.append({key:re.sub(r\"https?://\\S+\",\"[url]\",str(item[key]))[:1600] for key in (\"level\",\"logger\",\"msg\",\"error\",\"attempt\",\"retrying_in\",\"identifier\",\"issuer\") if key in item})\n    report[\"issuer_events\"]=events[-35:]\nexcept Exception as error:\n    report[\"phase\"]=\"retry_error\";report[\"error_type\"]=type(error).__name__\n    path=work/\"certificate-retry-error.log\";path.write_text(traceback.format_exc());path.chmod(0o600)\nfinally:\n    if changed:\n        config.write_text(original)\n        restored=run([\"systemctl\",\"reload\",\"caddy\"]);report[\"original_logging_restored\"]=restored.returncode==0\n    report[\"tls_verified\"]=installer.enrollment_tls_ready(host)\n    if not report[\"tls_verified\"]:\n        report[\"service_stopped_after_failed_retry\"]=run([\"systemctl\",\"stop\",\"caddy\"]).returncode==0\n    report[\"owner_bound\"]=installer.INPUT_CONFIG.exists()\n    save()\nprint(\"TIMEWEB_CERTIFICATE_RETRY=\"+json.dumps(report),flush=True)\n"
+                      output=p.remote(command,"/root/analyst-ai-development-venv/bin/python -u -c "+shlex.quote(script),timeout=1500).decode()
                       print(output,end="",flush=True)
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
