@@ -24,9 +24,6 @@ jobs:
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-          OWNER_SUB_SECRET: ${{ secrets.ANALYST_OWNER_TELEGRAM_SUB }}
-          OWNER_SUB_VAR: ${{ vars.ANALYST_OWNER_TELEGRAM_SUB }}
-          OWNER_SUB_OLD_VAR: ${{ vars.OWNER_TELEGRAM_SUB }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
@@ -73,7 +70,5 @@ jobs:
                       access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
-          print("AMS_OWNER_BACKUP_PRESENCE="+json.dumps({name:bool(os.environ.get(name)) for name in ("OWNER_SUB_SECRET","OWNER_SUB_VAR","OWNER_SUB_OLD_VAR")}),flush=True)
-          
-          with_ams("\nimport pathlib,subprocess,json,shutil,os\nstate=pathlib.Path(\"/var/lib/analyst-ai-build\")\np=state/\"runtime-result.json\"\nif p.exists():\n report=json.loads(p.read_text());print(\"AMS_RUNTIME_RESULT=\"+json.dumps(report),flush=True)\n folder=pathlib.Path(report[\"log_directory\"])\n for name in (\"runtime-16384.log\",\"runtime-4096.log\",\"failure.log\"):\n  log=folder/name\n  if log.exists():print(\"AMS_RUNTIME_LOG=\"+json.dumps({\"name\":name,\"lines\":log.read_text(errors=\"replace\").splitlines()[-40:]}),flush=True)\nroot=pathlib.Path(\"/srv/analyst-ai/workspace/app/build/outputs/apk/preview\")\nfor folder in root.glob(\"install-api37-*\"):\n for name in (\"emulator.log\",\"emulator-output.log\",\"result.json\"):\n  path=folder/name\n  if path.is_file():print(\"AMS_EMULATOR_OUTPUT=\"+json.dumps({\"path\":str(path),\"lines\":path.read_text(errors=\"replace\").splitlines()[-45:]}),flush=True)\nprint(\"AMS_RUNTIME_RESOURCES=\"+subprocess.check_output([\"systemctl\",\"show\",\"analyst-workspace@runtime.service\",\"-p\",\"ActiveState\",\"-p\",\"SubState\",\"-p\",\"Result\",\"-p\",\"MemoryCurrent\",\"-p\",\"MemoryPeak\",\"-p\",\"MemorySwapCurrent\",\"-p\",\"CPUUsageNSec\"],text=True).replace(\"\\n\",\" \"),flush=True)\nprint(\"AMS_DISK_FREE=\"+str(shutil.disk_usage(\"/\").free),flush=True)\n",timeout=90)
+          with_ams("\nimport pathlib,subprocess,json,shutil,os\nstate=pathlib.Path(\"/var/lib/analyst-ai-build\")\np=state/\"runtime-result.json\"\nif p.exists():\n report=json.loads(p.read_text());print(\"AMS_RUNTIME_RESULT=\"+json.dumps(report),flush=True)\n folder=pathlib.Path(report[\"log_directory\"])\n for name in (\"runtime-16384.log\",\"runtime-4096.log\",\"failure.log\"):\n  log=folder/name\n  if log.exists():print(\"AMS_RUNTIME_LOG=\"+json.dumps({\"name\":name,\"lines\":log.read_text(errors=\"replace\").splitlines()[-40:]}),flush=True)\nroot=pathlib.Path(\"/srv/analyst-ai/workspace/app/build/outputs/apk/preview\")\nfor folder in [*root.glob(\"install-api37-*\"),*root.glob(\"install-api37-*/attempt-*\")]:\n for name in (\"emulator.log\",\"emulator-output.log\",\"install-results.json\"):\n  path=folder/name\n  if path.is_file():print(\"AMS_EMULATOR_OUTPUT=\"+json.dumps({\"path\":str(path),\"lines\":path.read_text(errors=\"replace\").splitlines()[-45:]}),flush=True)\nprint(\"AMS_RUNTIME_RESOURCES=\"+subprocess.check_output([\"systemctl\",\"show\",\"analyst-workspace@runtime.service\",\"-p\",\"ActiveState\",\"-p\",\"SubState\",\"-p\",\"Result\",\"-p\",\"MemoryCurrent\",\"-p\",\"MemoryPeak\",\"-p\",\"MemorySwapCurrent\",\"-p\",\"CPUUsageNSec\"],text=True).replace(\"\\n\",\" \"),flush=True)\nprint(\"AMS_DISK_FREE=\"+str(shutil.disk_usage(\"/\").free),flush=True)\n\np=pathlib.Path(\"/var/lib/analyst-ai-ops/runtime-preparation.json\")\nif p.exists():print(\"AMS_RUNTIME_PREPARATION=\"+p.read_text().replace(\"\\n\",\" \"),flush=True)\n",timeout=90)
           PY
