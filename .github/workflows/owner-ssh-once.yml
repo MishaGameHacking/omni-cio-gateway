@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-build-observation
+  group: analyst-owner-temporary-access
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,48 +20,130 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Verify recovered SSH, source revisions and the existing APK signing identity
+      - name: Provision a smaller host for sequential Android build and full emulator checks
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,shlex,socket,sys,time,urllib.request
+          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.error,urllib.request,uuid
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
-          import prepare_owner_vm as prepare
+          import prepare_owner_vm as p
           import access_owner_vm as access
-          import adopt_replacement_vm as adopt
-          token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def current():
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers/9408159",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
-              with opener.open(req,timeout=30) as response:server=prepare.decode_response(response.read(2*1024*1024+1))["server"]
-              assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["comment"]=="Analyst AI replacement for verified Telegram route failure 2026-10-23"
-              assert server["configurator_id"]==153 and server["cpu"]==1 and server["ram"] in {1024,3072} and prepare.cloud.public_ipv4(server)=="201.34.146.244"
-              return server
-          deadline=time.monotonic()+120;good=0
-          while time.monotonic()<deadline:
-              server=current()
-              report={"at_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),**{k:server.get(k) for k in ("id","status","cpu","ram")},"ssh_banner_ready":False}
+          from replace_unreachable_vm import remove_ip
+          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          name="analyst-ai-replacement-20261024"
+          marker="Analyst AI owner requested replacement 2026-10-24"
+          def inventory():
+              doc=p.read_resource(token,"servers")
+              assert p.summarize("servers",doc)["complete"]
+              return doc["servers"]
+          assert {s["id"] for s in inventory()}=={9408159},"unexpected_existing_servers_no_order"
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as r:return p.decode_response(r.read(2*1024*1024+1))
+          fin=get("/account/finances")["finances"]
+          assert Decimal(str(fin["hourly_fee"]))>0,"hourly_billing_not_verified"
+          balance=Decimal(str(fin["balance"]))
+          presets={r["id"]:r for r in get("/presets/servers")["server_presets"]}
+          configs={r["id"]:r for r in get("/configurator/servers")["server_configurators"]}
+          specs=[(149,2220,"ru-4","ekb-1"),(151,2220,"ru-5","kzn-1"),(43,3220,"ru-1","spb-1"),(43,3220,"ru-1","spb-2"),(43,3220,"ru-1","spb-3"),(43,3220,"ru-1","spb-4"),(17,1740,"pl-1","gdn-1")]
+          offers=[]
+          for identifier,expected,location,zone in specs:
+              c=configs[identifier]
+              assert c["location"]==location
+              sizes={"cpu":2,"ram":6144,"disk":51200}
+              for part,size in sizes.items():
+                  r=c["requirements"]
+                  assert r[part+"_min"]<=size<=r[part+"_max"] and (size-r[part+"_min"])%r[part+"_step"]==0
+              price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*6+Decimal(str(c["prices"]["disk"]))*50
+              assert price==expected
+              if balance>=price+200:
+                  offers.append({"kind":"configuration","id":identifier,"location":location,"price":expected,"zone":zone,**sizes,"request":{"availability_zone":zone,"configuration":{"configurator_id":identifier,**sizes}}})
+          assert offers,"no_activation_credit_for_sequential_build_and_runtime_host"
+          def create(body):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               try:
-                  with socket.create_connection(("201.34.146.244",22),timeout=8) as connection:
-                      connection.settimeout(8);report["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
-              except OSError as error:report["error"]=type(error).__name__
-              print("TIMEWEB_SUPPORT_RECOVERY_OBSERVATION="+json.dumps(report),flush=True)
-              good=good+1 if server["status"]=="on" and report["ssh_banner_ready"] else 0
-              if good>=2:break
-              time.sleep(15)
-          if good<2:raise prepare.ProbeError("provider_ticket_12913059_still_waiting_for_ssh")
-          active_memory=current()["ram"]
-          original_select=adopt.select_target
-          def select_target(new):
-              original_select(new)
-              if new:prepare.CONFIGURATION["ram"]=active_memory
-          adopt.select_target=select_target
-          def verify_remote(command):
-              script="import hashlib,json,pathlib,shutil,stat,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nassert root.is_dir() and not root.is_symlink()\nhead=subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()\nassert head==\"690811a5a376181990a64f37d914c87eb6c919b7\",\"unexpected_app_source_head\"\nassert not subprocess.check_output([\"git\",\"status\",\"--porcelain\",\"--untracked-files=no\"],cwd=root),\"app_source_changed\"\nkey=pathlib.Path(\"/root/.android/debug.keystore\")\ninfo=key.lstat()\nassert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600,\"signing_key_permissions_changed\"\ncert=subprocess.run([\"/usr/lib/jvm/java-17-openjdk-amd64/bin/keytool\",\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(key),\"-storepass\",\"android\"],capture_output=True,timeout=30)\nassert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\",\"signing_identity_changed\"\ndevelopment=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=development,text=True).strip()==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\nchanges=subprocess.check_output([\"git\",\"diff\",\"--name-only\"],cwd=development,text=True).splitlines()\nassert set(changes)<= {\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"},\"unreviewed_backend_changes\"\nmem={x.split(\":\")[0]:int(x.split()[1]) for x in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if x.split(\":\")[0] in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\",\"SwapFree\"}}\nprint(\"TIMEWEB_RECOVERED_FILES=\"+json.dumps({\"app_source\":head,\"app_tracked_files_clean\":True,\"signing_certificate_preserved\":True,\"server_development_changes\":changes,\"memory_kib\":mem,\"free_disk_gib\":round(shutil.disk_usage(root).free/1024**3,2),\"kvm_available\":pathlib.Path(\"/dev/kvm\").exists(),\"apk_present\":(root/\"app/build/outputs/apk/preview/app-preview.apk\").is_file()}),flush=True)\n"
-              result=prepare.remote(command,"python3 -u -c "+shlex.quote(script),timeout=120)
-              print(result.decode("utf-8"),end="",flush=True)
-          access.develop_backend=verify_remote
-          adopt.run(development=True)
+                  with opener.open(req,timeout=30) as r:return p.decode_response(r.read(2*1024*1024+1))
+              except urllib.error.HTTPError as e:
+                  doc=p.decode_response(e.read(2*1024*1024+1));code=doc.get("error_code")
+                  print("HOURLY_BUILD_REFUSED="+json.dumps({"http":e.code,"code":code if isinstance(code,str) and re.fullmatch("[a-z_]{1,64}",code) else "unknown"}),flush=True)
+                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found","configurator_not_found"}:
+                      assert {s["id"] for s in inventory()}=={9408159},"reconcile_uncertain_creation"
+                      return None
+                  raise p.ProbeError("build_creation_http_"+str(e.code)) from None
+          with tempfile.TemporaryDirectory(prefix="timeweb-hourly-",dir=os.environ["RUNNER_TEMP"]) as temp:
+              folder=pathlib.Path(temp)
+              for part in ("client","host"):p.cloud.generate_key(folder/part)
+              client=(folder/"client.pub").read_text().strip()
+              host=(folder/"host.pub").read_text().strip()
+              config={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,"ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,"runcmd":[["systemctl","restart","ssh"]]}
+              server=None
+              for offer in offers:
+                  print("HOURLY_BUILD_ATTEMPT="+json.dumps({k:v for k,v in offer.items() if k!="request"}),flush=True)
+                  doc=create({"name":name,"hostname":name,"comment":marker,"os_id":99,"project_id":p.PROJECT,"cloud_init":"#cloud-config\n"+json.dumps(config)+"\n",**offer["request"]})
+                  if doc is not None:
+                      server=doc["server"];break
+              if server is None:raise p.ProbeError("affordable_russia_and_poland_offers_unavailable")
+              sid=server["id"];access.SERVER_ID=sid
+              print("HOURLY_BUILD_CREATED="+json.dumps({"id":sid,"offer":{k:v for k,v in offer.items() if k!="request"},"host_key":host,"status":server.get("status"),"zone":server.get("availability_zone")}),flush=True)
+              def owned(doc):
+                  s=doc["server"]
+                  assert s["id"]==sid and s["name"]==name and s["comment"]==marker and s["location"]==offer["location"] and s["availability_zone"]==offer["zone"]
+                  assert all(s[k]==offer[k] for k in ("cpu","ram"))
+                  if offer["kind"]=="preset":assert s["preset_id"]==offer["id"]
+                  else:assert s["configurator_id"]==offer["id"] and s["preset_id"] is None
+                  return s
+              owned({"server":server})
+              command=None;ip_id=None;keep=False
+              try:
+                  if server.get("status")=="no_paid":raise p.ProbeError("activation_refused_despite_credit_no_ip_created")
+                  address=p.cloud.public_ipv4(server)
+                  if not address:
+                      zone=server["availability_zone"];assert re.fullmatch("[a-z]{2,8}-[1-9][0-9]*",zone)
+                      ip=access.request(token,"POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":zone})["ip"]
+                      ip_id=str(uuid.UUID(ip["id"]))
+                      assert ip["availability_zone"]==zone and ip["is_ddos_guard"] is False and ipaddress.IPv4Address(ip["ip"]).is_global
+                      print("HOURLY_BUILD_IP="+json.dumps({"id":ip_id,"ip":ip["ip"]}),flush=True)
+                      access.request(token,"POST",f"/floating-ips/{ip_id}/bind",{"resource_type":"server","resource_id":sid})
+                  for attempt in range(24):
+                      server=owned(p.cloud.request(token,"GET",f"/api/v1/servers/{sid}"))
+                      if server["status"]=="no_paid":raise p.ProbeError("activation_became_unpaid")
+                      address=p.cloud.public_ipv4(server)
+                      if address:
+                          command=p.ssh_command(folder,address,host)
+                          try:
+                              p.remote(command,"cloud-init status --wait >/dev/null && test -d /root",timeout=15)
+                              break
+                          except (p.ProbeError,subprocess.TimeoutExpired):pass
+                      time.sleep(8)
+                  else:raise p.ProbeError("hourly_build_ssh_readiness_failed")
+                  probe_script="import fcntl,json,os,pathlib,shutil,subprocess\nflags=pathlib.Path(\"/proc/cpuinfo\").read_text().split()\nvendor=\"kvm_intel\" if \"vmx\" in flags else \"kvm_amd\" if \"svm\" in flags else None\nif vendor:\n    subprocess.run([\"modprobe\",vendor],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=20,check=False)\nmemory=pathlib.Path(\"/proc/meminfo\").read_text()\nreport={\"cpu_count\":os.cpu_count(),\"free_disk_bytes\":shutil.disk_usage(\"/\").free,\"memory_kib\":int(next(line.split()[1] for line in memory.splitlines() if line.startswith(\"MemTotal:\"))),\"virtualization_flag\":vendor is not None,\"kvm_device\":pathlib.Path(\"/dev/kvm\").exists(),\"kvm_api_version\":None,\"kvm_create_vm\":False}\nif report[\"kvm_device\"]:\n    try:\n        with open(\"/dev/kvm\",\"r+b\",buffering=0) as device:\n            report[\"kvm_api_version\"]=fcntl.ioctl(device,0xAE00,0)\n            vm=fcntl.ioctl(device,0xAE01,0)\n            os.close(vm)\n            report[\"kvm_create_vm\"]=True\n    except OSError as error:report[\"kvm_error\"]=type(error).__name__\nprint(json.dumps(report))\n"
+                  hardware=json.loads(p.remote(command,"python3 -c "+shlex.quote(probe_script)))
+                  print("REPLACEMENT_HARDWARE="+json.dumps({"id":sid,**hardware}),flush=True)
+                  assert hardware["memory_kib"]>=5*1024*1024 and hardware["free_disk_bytes"]>=40*1024**3,"allocated_build_resources_inadequate"
+                  assert hardware["kvm_api_version"]==12 and hardware["kvm_create_vm"],"replacement_hardware_lacks_required_nested_virtualization"
+                  p.remote(command,"umask 077; mkdir -p /root/analyst-ai-build")
+                  keep=True
+                  print("HOURLY_BUILD_READY="+json.dumps({"id":sid,"ip":address,"ip_id":ip_id,"monthly_vm_rub":offer["price"],"hourly_billing":True,"retained_for_build":True,"full_runtime_host":hardware["kvm_api_version"]==12,**hardware}),flush=True)
+              finally:
+                  if keep and command:
+                      script="import pathlib,sys; p=pathlib.Path('/root/.ssh/authorized_keys'); key=sys.stdin.read().strip(); p.write_text('\\n'.join(line for line in p.read_text().splitlines() if key not in line)+'\\n')"
+                      p.remote(command,"python3 -c "+shlex.quote(script),client.encode())
+                      print("HOURLY_BUILD_BOOTSTRAP_KEY=removed",flush=True)
+                  else:
+                      rows=inventory()
+                      match=[s for s in rows if s["id"]==sid]
+                      if match:
+                          owned({"server":match[0]})
+                          p.cloud.request(token,"DELETE",f"/api/v1/servers/{sid}")
+                      for attempt in range(24):
+                          if not any(s["id"]==sid for s in inventory()):break
+                          time.sleep(5)
+                      else:raise p.ProbeError("hourly_build_cleanup_unconfirmed")
+                      if ip_id:remove_ip(token,ip_id,sid)
+                      print("HOURLY_BUILD_CLEANUP=server_and_address_absent",flush=True)
           PY
