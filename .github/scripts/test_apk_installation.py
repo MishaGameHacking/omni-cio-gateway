@@ -294,9 +294,9 @@ def run_attempt(
     """Execute the complete publication-grade contract in one fresh AVD."""
     from artifact_test_identity import apk_digest, record_install
     from emulator_graphics import (
-        EMULATOR_FEATURES, EMULATOR_GPU_MODE, read_filament_renderer,
-        require_guest_angle, snapshot_system_graphics,
+        EMULATOR_FEATURES, EMULATOR_GPU_MODE, snapshot_system_graphics,
     )
+    from native_renderer_evidence import read_native_renderer
     from emulator_lease import collect_runtime_failure, verify_emulator_identity
     from emulator_runtime import snapshot_runtime_environment
     from emulator_boot_readiness import prepared_emulator_session
@@ -480,13 +480,13 @@ def run_attempt(
             uid = candidate_package_uid(identity.stdout) if identity.returncode == 0 else None
             if uid is None:
                 raise RuntimeError("Could not identify the launched candidate's package UID")
-            # The UID can survive reinstalls/restarts: only this fresh pidof PID
-            # may supply the context header for this particular launch record.
-            renderer = read_filament_renderer(device, uid=uid, pid=alive.stdout.strip())
+            # Native 2D uses Android HWUI, with no Filament engine. Require
+            # completed frames from this exact still-running candidate process.
+            # Full interaction/performance evidence is collected separately.
+            renderer = read_native_renderer(device, uid=uid, pid=alive.stdout.strip())
             result["renderer"] = renderer
-            print("EMULATOR_FILAMENT_GLES=" + json.dumps(
+            print("EMULATOR_NATIVE_HWUI=" + json.dumps(
                 {"launch": label, **renderer}, sort_keys=True), flush=True)
-            require_guest_angle(renderer)
             if apk_digest(apk) != candidate_digest:
                 raise RuntimeError("Candidate changed during emulator checks")
         except Exception as exc:
@@ -516,10 +516,9 @@ def run_attempt(
                 "-gpu",
                 EMULATOR_GPU_MODE,
                 "-feature",
-                # Guest ANGLE compiles the app's GLES and uses guest Vulkan.
-                # Windows host GLES can remain legacy SwiftShader even when a
-                # modern software Vulkan ICD is selected. Observe the app's
-                # actual context above; neither a flag nor SF proves this path.
+                # Keep the tested software graphics environment. The native
+                # candidate's own completed HWUI frames are measured separately;
+                # requested flags or SurfaceFlinger alone do not prove rendering.
                 EMULATOR_FEATURES,
                 "-memory",
                 # current OS ps16k + Google services exhausted 2GiB: exit-info

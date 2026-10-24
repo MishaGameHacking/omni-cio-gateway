@@ -88,7 +88,7 @@ def main():
                 cert=subprocess.check_output(["keytool","-exportcert","-alias","androiddebugkey","-keystore",str(STATE/".android/debug.keystore"),"-storepass","android"],stderr=subprocess.DEVNULL)
                 assert hashlib.sha256(cert).hexdigest()==CERT,"signing_identity_changed"
                 run("assets",[PY,"tools/prepare_spectrum_checkout.py"])
-                extra=["-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=384m -Dfile.encoding=UTF-8"] if os.environ.get("ANALYST_BUILD_PROFILE") == "bounded-swap" else []
+                extra=["-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"] if os.environ.get("ANALYST_BUILD_PROFILE") == "bounded-swap" else []
                 try:
                     with urllib.request.urlopen("https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.pom",timeout=10) as response:assert b"<artifactId>junit</artifactId>" in response.read(100000)
                 except Exception:
@@ -96,7 +96,22 @@ def main():
                     init=folder/"maven-mirror.init.gradle"
                     init.write_text("settingsEvaluated { s -> [s.pluginManagement.repositories,s.dependencyResolutionManagement.repositories].each { rs -> rs.each { r -> if (r instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository && r.url.host == 'repo.maven.apache.org') r.setUrl('https://maven-central.storage-download.googleapis.com/maven2/') } } }\n")
                     extra+=["--init-script",str(init)]
-                run("gradle",["./gradlew",":app:testDebugUnitTest",":app:lintDebug",":app:lintPreview",":app:assembleDebug",":app:assembleRelease",":app:assemblePreview",":ci-ui-driver:lintDebug",":ci-ui-driver:assembleDebug","--no-daemon","--no-parallel","--max-workers=1",*extra],7200)
+                gradle_flags=["--no-daemon",*(["--no-parallel","--max-workers=1"] if os.environ.get("ANALYST_BUILD_PROFILE") == "bounded-swap" else ["--parallel","--max-workers=2"]),*extra]
+                tasks=[":app:testDebugUnitTest",":app:lintDebug",":app:lintPreview",
+                    ":app:assembleDebug",":app:assembleRelease",":app:assemblePreview",
+                    ":ci-ui-driver:lintDebug",":ci-ui-driver:assembleDebug"]
+                if os.environ.get("ANALYST_BUILD_PROFILE") == "bounded-swap":
+                    # Measured combined Kotlin/lint classloader retention caused
+                    # sustained paging and a metaspace exhaustion warning on 1GiB.
+                    # Fresh sequential JVMs retain every gate and reuse disk caches.
+                    for label,batch in [
+                        ("unit",[tasks[0]]),("debug-lint",[tasks[1]]),
+                        ("preview-lint",[tasks[2]]),("debug-apk",[tasks[3]]),
+                        ("release-apk",[tasks[4]]),("preview-apk",[tasks[5]]),
+                        ("driver",tasks[6:])]:
+                        run("gradle-"+label,["./gradlew",*batch,*gradle_flags],7200)
+                else:
+                    run("gradle",["./gradlew",*tasks,*gradle_flags],7200)
                 run("mesh-apk-check",[PY,"tools/generate_spectrum_meshes.py","--check","--check-apk"])
                 out=ROOT/"app/build/outputs/apk/preview";apk=out/"app-preview.apk";bt=SDK/"build-tools/37.0.0"
                 for name,args in [("signature.txt",[bt/"apksigner","verify","--verbose","--print-certs",apk]),("alignment.txt",[bt/"zipalign","-c","-P","16","-v","4",apk]),("badging.txt",[bt/"aapt","dump","badging",apk]),("manifest.txt",[bt/"aapt","dump","xmltree",apk,"AndroidManifest.xml"])]:
