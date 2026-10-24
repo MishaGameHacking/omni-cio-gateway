@@ -65,7 +65,9 @@ jobs:
                   if attached:access.request(token,"DELETE","/servers/9408159/ssh-keys/"+str(identifier))
                   access.request(token,"DELETE","/ssh-keys/"+str(identifier))
                   print("TIMEWEB_MONITOR_KEY=removed",flush=True)
-          new=access.request(token,"GET","/dedicated-servers/121673")["dedicated_server"]
+          req=urllib.request.Request("https://api.timeweb.cloud/api/v1/dedicated-servers/121673",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+          with opener.open(req,timeout=30) as response:new=p.decode_response(response.read(4*1024*1024+1))["dedicated_server"]
           assert new["id"]==121673 and new["name"]=="analyst-ai-msk-20261024" and new["preset_id"]==6007 and new["location"]=="ru-3"
           print("MOSCOW_ORDER_CURRENT="+json.dumps({k:new.get(k) for k in ("id","status","ip","price","autoinstall_ready")}),flush=True)
           
