@@ -39,9 +39,6 @@ jobs:
                       raw=r.read(4194305);assert len(raw)<=4194304
                       return r.status,json.loads(raw) if raw else {}
               except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
-          catalog_status,catalog=api("GET","/configurator/servers")
-          rows=catalog.get("server_configurators",[]) if isinstance(catalog,dict) else []
-          print("REDESIGN_CURRENT_CONFIGURATORS="+json.dumps({"status":catalog_status,"items":[row for row in rows if row.get("id") in (31,159)]}),flush=True)
           targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
           for server_id,name,ip,old_host in targets:
               access.SERVER_ID=server_id
@@ -63,10 +60,30 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      remote_script="import pathlib,json,subprocess,shutil\nstate=pathlib.Path(\"/var/lib/analyst-ai-build\")\nfor stage in (\"check\",\"build\"):\n    p=state/(stage+\"-result.json\")\n    if p.exists():\n        d=json.loads(p.read_text());print(\"REDESIGN_STAGE=\"+json.dumps(d),flush=True)\n        for step in d.get(\"steps\",[]):\n            if step[\"exit_code\"]:\n                lines=pathlib.Path(step[\"log\"]).read_text().splitlines()\n                picked=[l[:450] for l in lines if l.startswith((\"FAIL:\",\"ERROR:\",\"FAILED \",\"Ran \",\"e: \",\"w: \")) or \"Compilation error\" in l or \"OutOfMemory\" in l]\n                print(\"REDESIGN_FAILURES=\"+json.dumps(picked[:45]),flush=True)\n        folder=pathlib.Path(d[\"log_directory\"])\n        gl=folder/\"gradle.log\"\n        if gl.exists():print(\"REDESIGN_GRADLE_TAIL=\"+json.dumps(gl.read_text().splitlines()[-22:]),flush=True)\nmetrics=pathlib.Path(\"/var/lib/analyst-ai-ops/redesign-build-metrics.jsonl\")\nif metrics.exists():print(\"REDESIGN_METRICS=\"+metrics.read_text()[-4000:],flush=True)\nprint(\"REDESIGN_DISK_FREE=\"+str(shutil.disk_usage(state).free),flush=True)\nprint(\"REDESIGN_SERVICE=\"+subprocess.check_output([\"systemctl\",\"show\",\"analyst-workspace@build.service\",\"-p\",\"ActiveState\",\"-p\",\"SubState\",\"-p\",\"MemoryCurrent\",\"-p\",\"MemorySwapCurrent\",\"-p\",\"CPUUsageNSec\"],text=True).replace(\"\\n\",\" \"),flush=True)\nprint(\"REDESIGN_BACKEND=\"+subprocess.check_output([\"systemctl\",\"is-active\",\"analyst-ai-owner.service\"],text=True).strip(),flush=True)\n"
-                      result=subprocess.run([*command,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=120)
+                      remote_script="import pathlib,subprocess,json,sqlite3,tarfile,hashlib,datetime,shutil\nroot=pathlib.Path(\"/srv/analyst-ai/workspace\");state=pathlib.Path(\"/var/lib/analyst-ai-build\")\nsubprocess.run([\"systemctl\",\"stop\",\"analyst-redesign-build-controller.service\"],check=False)\nstage=state/\"build-result.json\"\nif stage.exists():\n    r=json.loads(stage.read_text())\n    gl=pathlib.Path(r[\"log_directory\"])/\"gradle.log\"\n    if gl.exists():\n        lines=gl.read_text().splitlines()\n        print(\"REDESIGN_PRE_REVISION_BUILD=\"+json.dumps([s[:600] for s in lines if s.startswith((\"e: \",\"FAILURE:\",\"* What went wrong:\"))]+lines[-12:]),flush=True)\n    if r.get(\"status\")==\"running\":\n        subprocess.run([\"systemctl\",\"stop\",\"analyst-workspace@build.service\"],check=True)\n        r.update(status=\"interrupted\",error=\"owner_added_live_synchronization_scope\",finished_at=datetime.datetime.now(datetime.timezone.utc).isoformat())\n        stage.write_text(json.dumps(r,indent=2)+\"\\n\")\nbackup=pathlib.Path(\"/root/analyst-redesign-20261024/before-runtime-resize-\"+datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y%m%dT%H%M%SZ\"))\nbackup.mkdir(mode=0o700)\nsource=sqlite3.connect(\"/var/lib/analyst-ai/backend.db\")\ndestination=sqlite3.connect(backup/\"backend.db\")\nsource.backup(destination)\nassert destination.execute(\"PRAGMA integrity_check\").fetchone()[0]==\"ok\"\nsource.close();destination.close();(backup/\"backend.db\").chmod(0o600)\narchive=backup/\"protected-state.tar.gz\"\ndef keep(item):\n    parts=pathlib.PurePosixPath(item.name).parts\n    if \"build\" in parts or \".gradle\" in parts or \"__pycache__\" in parts or \".pytest_cache\" in parts:return None\n    return item\nwith tarfile.open(archive,\"w:gz\",compresslevel=1) as tar:\n    for name in (\"srv/analyst-ai/workspace\",\"etc/analyst-ai\",\"etc/systemd/system/analyst-ai-owner.service\",\"var/lib/caddy\",\"root/.android/debug.keystore\",\"root/analyst-ai-owner.json\",\"root/analyst-ai-enrollment.json\"):\n        p=pathlib.Path(\"/\")/name\n        if p.exists():tar.add(p,arcname=name,filter=keep)\narchive.chmod(0o600)\nproof={\"archive\":str(archive),\"bytes\":archive.stat().st_size,\"sha256\":hashlib.sha256(archive.read_bytes()).hexdigest(),\"database_integrity\":\"ok\"}\n(backup/\"proof.json\").write_text(json.dumps(proof,indent=2));(backup/\"proof.json\").chmod(0o600)\nagents=root/\"AGENTS.md\";text=agents.read_text()\ndirective=\"\"\"## Owner instruction — 2026-10-24: live server updates\nServer-side data, rules and completed AI results must reach the open app without an APK reinstall. Add authenticated, user-scoped live invalidation with reconnect/backoff and foreground lifecycle handling; unchanged data must not trigger paid work, broker calls or APK updates. Preserve editors, scroll, privacy, auth, idempotency and budget checks. Native UI/client changes still require a signed APK update. All development and tests stay on this one Timeweb server.\n\"\"\"\nif \"2026-10-24: live server updates\" not in text:agents.write_text(directive+\"\\n\"+text)\nprint(\"REDESIGN_PRE_RESIZE_BACKUP=\"+json.dumps(proof),flush=True)\n"
+                      result=subprocess.run([*command,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=240)
                       print(result.stdout.decode(errors="replace"),flush=True)
-                      if result.returncode:raise RuntimeError("status_failed")
+                      if result.returncode:
+                          print(result.stderr.decode(errors="replace")[-4000:],flush=True)
+                          raise RuntimeError("pre_resize_backup_failed")
+                      status,catalog=api("GET","/configurator/servers")
+                      assert status==200
+                      selected=next(row for row in catalog["server_configurators"] if row["id"]==31)
+                      configuration={"configurator_id":31,"cpu":1,"ram":6144,"disk":30720}
+                      price=selected["prices"]["cpu"]+6*selected["prices"]["ram"]+30*selected["prices"]["disk"]
+                      assert selected["location"]=="ru-3" and price==3540
+                      status,reply=api("PATCH","/servers/"+str(server_id),{"configuration":configuration})
+                      print("REDESIGN_SAME_SERVER_RESIZE="+json.dumps({"server_id":server_id,"status":status,"configuration":configuration,"base_monthly_rub":price,"error":reply if status>=400 else None}),flush=True)
+                      if status<400:
+                          time.sleep(20)
+                          for attempt in range(18):
+                              try:
+                                  output=p.remote(command,"python3 -c "+shlex.quote("import pathlib,json,shutil;print(json.dumps({\"memory\":pathlib.Path(\"/proc/meminfo\").read_text().splitlines()[0],\"disk_free\":shutil.disk_usage(\"/\").free}))"),timeout=12)
+                                  print("REDESIGN_RESIZED_HOST="+output.decode(),flush=True)
+                                  break
+                              except (p.ProbeError,subprocess.TimeoutExpired):
+                                  if attempt==17:raise
+                                  time.sleep(5)
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
