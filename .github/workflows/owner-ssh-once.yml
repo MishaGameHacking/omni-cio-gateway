@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-build-observation
+  group: analyst-owner-temporary-access
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 14
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,48 +20,55 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Observe provider recovery and verify the existing Timeweb files
+      - name: Refresh the catalog for the owner-requested Timeweb server replacement
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,shlex,socket,sys,time,urllib.request
+          import json,os,shlex,subprocess,sys,urllib.request
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as prepare
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
           token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def current():
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers/9408159",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
-              with opener.open(req,timeout=30) as response:server=prepare.decode_response(response.read(2*1024*1024+1))["server"]
-              assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["comment"]=="Analyst AI replacement for verified Telegram route failure 2026-10-23"
-              assert server["configurator_id"]==153 and server["cpu"]==1 and server["ram"] in {1024,3072} and prepare.cloud.public_ipv4(server)=="201.34.146.244"
-              return server
-          deadline=time.monotonic()+480;good=0
-          while time.monotonic()<deadline:
-              server=current()
-              report={"at_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),**{k:server.get(k) for k in ("id","status","cpu","ram")},"ssh_banner_ready":False}
-              try:
-                  with socket.create_connection(("201.34.146.244",22),timeout=8) as connection:
-                      connection.settimeout(8);report["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
-              except OSError as error:report["error"]=type(error).__name__
-              print("TIMEWEB_SUPPORT_RECOVERY_OBSERVATION="+json.dumps(report),flush=True)
-              good=good+1 if server["status"]=="on" and report["ssh_banner_ready"] else 0
-              if good>=2:break
-              time.sleep(15)
-          if good<2:raise prepare.ProbeError("provider_ticket_12913059_still_waiting_for_ssh")
-          active_memory=current()["ram"]
-          original_select=adopt.select_target
-          def select_target(new):
-              original_select(new)
-              if new:prepare.CONFIGURATION["ram"]=active_memory
-          adopt.select_target=select_target
-          def verify_remote(command):
-              script="import hashlib,json,pathlib,shutil,stat,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nassert root.is_dir() and not root.is_symlink()\nhead=subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()\nassert head==\"690811a5a376181990a64f37d914c87eb6c919b7\",\"unexpected_app_source_head\"\nassert not subprocess.check_output([\"git\",\"status\",\"--porcelain\",\"--untracked-files=no\"],cwd=root),\"app_source_changed\"\nkey=pathlib.Path(\"/root/.android/debug.keystore\")\ninfo=key.lstat()\nassert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600,\"signing_key_permissions_changed\"\ncert=subprocess.run([\"/usr/lib/jvm/java-17-openjdk-amd64/bin/keytool\",\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(key),\"-storepass\",\"android\"],capture_output=True,timeout=30)\nassert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\",\"signing_identity_changed\"\ndevelopment=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=development,text=True).strip()==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\nchanges=subprocess.check_output([\"git\",\"diff\",\"--name-only\"],cwd=development,text=True).splitlines()\nassert set(changes)<= {\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"},\"unreviewed_backend_changes\"\nmem={x.split(\":\")[0]:int(x.split()[1]) for x in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if x.split(\":\")[0] in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\",\"SwapFree\"}}\nprint(\"TIMEWEB_RECOVERED_FILES=\"+json.dumps({\"app_source\":head,\"app_tracked_files_clean\":True,\"signing_certificate_preserved\":True,\"server_development_changes\":changes,\"memory_kib\":mem,\"free_disk_gib\":round(shutil.disk_usage(root).free/1024**3,2),\"kvm_available\":pathlib.Path(\"/dev/kvm\").exists(),\"apk_present\":(root/\"app/build/outputs/apk/preview/app-preview.apk\").is_file()}),flush=True)\n"
-              result=prepare.remote(command,"python3 -u -c "+shlex.quote(script),timeout=120)
-              print(result.decode("utf-8"),end="",flush=True)
-          access.develop_backend=verify_remote
-          adopt.run(development=True)
+              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
+          fin=get("/account/finances")["finances"]
+          status=get("/account/status")["status"]
+          balance=Decimal(str(fin["balance"]))
+          inventory=prepare.read_resource(token,"servers")
+          assert prepare.summarize("servers",inventory)["complete"]
+          print("TIMEWEB_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":balance>0,"blocked":status["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]]}),flush=True)
+          presets=get("/presets/servers")["server_presets"]
+          offers=[]
+          for p in presets:
+              if p["cpu"]>=2 and p["ram"]>=8192 and p["disk"]>=61440:
+                  row={k:p.get(k) for k in ("id","location","cpu","ram","disk","price")}
+                  row["kind"]="preset"
+                  row["activation_credit_covered"]=balance>=Decimal(str(p["price"]))+Decimal("200")
+                  offers.append(row)
+          configs=get("/configurator/servers")["server_configurators"]
+          for c in configs:
+              r=c["requirements"]
+              sizes={}
+              for part,wanted in (("cpu",2),("ram",8192),("disk",61440)):
+                  minimum,step,maximum=(int(r[part+"_"+suffix]) for suffix in ("min","step","max"))
+                  sizes[part]=minimum+max(0,(wanted-minimum+step-1)//step)*step
+                  if sizes[part]>maximum:break
+              else:
+                  if all(k in c.get("prices",{}) for k in ("cpu","ram","disk")):
+                      price=Decimal(str(c["prices"]["cpu"]))*sizes["cpu"]+Decimal(str(c["prices"]["ram"]))*sizes["ram"]/1024+Decimal(str(c["prices"]["disk"]))*sizes["disk"]/1024
+                      offers.append({"kind":"configuration","id":c["id"],"location":c["location"],**sizes,"price":float(price),"activation_credit_covered":balance>=price+Decimal("200")})
+          offers.sort(key=lambda r:(not str(r["location"]).startswith("ru-"),r["price"],r["id"]))
+          seen={}
+          selected=[]
+          for row in offers:
+              location=row["location"]
+              if seen.get(location,0)>=3:continue
+              selected.append(row);seen[location]=seen.get(location,0)+1
+          print("TIMEWEB_HOURLY_CANDIDATES="+json.dumps(selected),flush=True)
           PY
