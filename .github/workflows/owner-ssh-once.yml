@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-build-observation
+  group: analyst-owner-provider-diagnostics
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 110
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,84 +20,41 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Wait for the actual Timeweb SSH recovery, build and restore the original hourly cost
+      - name: Read provider operation history and distinguish TCP from SSH banner failure
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,shlex,socket,subprocess,sys,time,urllib.request,urllib.error
+          import json,os,re,shlex,socket,subprocess,sys,urllib.request
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
+          import prepare_owner_vm as prepare
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
-          import prepare_owner_vm as prepare
           token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          active_memory=3072
-          original_select=adopt.select_target
-          def select_target(new):
-              original_select(new)
-              if new:prepare.CONFIGURATION["ram"]=active_memory
-          adopt.select_target=select_target
-          adopt.select_target(True)
-          adopt.verified_target(token)
-          class Busy(prepare.ProbeError):pass
-          def api(method,path,data=None):
-              assert (method=="GET" and path=="/servers/9408159") or (method=="PATCH" and path=="/servers/9408159")
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if data is None else json.dumps(data).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
-              try:
-                  with opener.open(req,timeout=40) as response:
-                      raw=response.read(2*1024*1024+1)
-                      return prepare.decode_response(raw) if raw else {}
-              except urllib.error.HTTPError as error:
-                  details=prepare.cloud.error_details(error.read(2*1024*1024+1))
-                  print("TIMEWEB_RAM_API_FAILURE="+json.dumps({"method":method,"status":error.code,**details}),flush=True)
-                  if details.get("error_code")=="vds_is_busy":raise Busy("provider_operation_in_progress") from None
-                  raise prepare.ProbeError("timeweb_ram_change_http_"+str(error.code)) from None
-          def identity(current):
-              assert current["id"]==9408159 and current["name"]=="analyst-ai-owner-route-20261023" and current["comment"]=="Analyst AI replacement for verified Telegram route failure 2026-10-23"
-              assert current["configurator_id"]==153 and current["cpu"]==1 and prepare.cloud.public_ipv4(current)=="201.34.146.244"
-              assert current["ram"] in {1024,3072}
-          def ready(memory,seconds=600):
-              good=0;deadline=time.monotonic()+seconds
-              while time.monotonic()<deadline:
-                  current=api("GET","/servers/9408159")["server"];identity(current)
-                  report={k:current.get(k) for k in ("id","status","ram","cpu","is_qemu_agent","start_at")}
-                  try:
-                      with socket.create_connection(("201.34.146.244",22),timeout=8) as connection:
-                          connection.settimeout(8);banner=connection.recv(256)
-                      report["ssh_banner_ready"]=banner.startswith(b"SSH-2.0-")
-                  except OSError as error:
-                      report["ssh_banner_ready"]=False;report["connection_error"]=type(error).__name__
-                  print("TIMEWEB_POST_RESIZE_READINESS="+json.dumps(report),flush=True)
-                  if current["ram"]==memory and current["status"]=="on" and report["ssh_banner_ready"]:good+=1
-                  else:good=0
-                  if good>=2:return
-                  time.sleep(15)
-              raise prepare.ProbeError("timeweb_ssh_not_ready_after_resize")
+              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
+          server=get("/servers/9408159")["server"]
+          assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["configurator_id"]==153
+          print("TIMEWEB_RESIZE_PROVIDER_STATE="+json.dumps({k:server.get(k) for k in ("id","status","cpu","ram","configurator_id","start_at","availability_zone")}),flush=True)
+          document=get("/servers/9408159/logs?limit=100")
+          records=document.get("server_logs",[])
+          output=[]
+          for row in records:
+              event=str(row.get("event",""))
+              if re.search("config|reboot|migrat|memory|конфигурац|перезагруз|перенос|памят",event,re.I) and not re.search("парол|password|token|токен|secret|ключ",event,re.I):
+                  output.append({"logged_at":row.get("logged_at"),"event":event[:700]})
+          print("TIMEWEB_RESIZE_PROVIDER_EVENTS="+json.dumps({"meta":document.get("meta"),"response_id":document.get("response_id"),"events":output[-20:]},ensure_ascii=False),flush=True)
+          probe={"tcp_connected":False,"ssh_banner_ready":False}
           try:
-              ready(3072)
-              def build_remote(command):
-                  script="import fcntl,hashlib,json,os,pathlib,shutil,signal,stat,subprocess,sys,time,xml.etree.ElementTree as ET\nos.umask(0o077)\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nsource=\"690811a5a376181990a64f37d914c87eb6c919b7\"\nsdk=pathlib.Path(\"/opt/analyst-android-sdk\")\njava=pathlib.Path(\"/usr/lib/jvm/java-17-openjdk-amd64\")\npin=\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\"\nassert root.is_dir() and not root.is_symlink()\nlock=open(\"/root/analyst-android-build.lock\",\"a\")\nfcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()==source\nassert not subprocess.check_output([\"git\",\"status\",\"--porcelain\",\"--untracked-files=no\"],cwd=root)\nswap=pathlib.Path(\"/root/analyst-build.swap\")\nswap_info=swap.lstat()\nassert stat.S_ISREG(swap_info.st_mode) and swap_info.st_uid==0 and stat.S_IMODE(swap_info.st_mode)==0o600 and swap_info.st_size==3*1024**3\nif str(swap) not in pathlib.Path(\"/proc/swaps\").read_text():subprocess.run([\"swapon\",str(swap)],check=True,timeout=30)\nassert str(swap) in pathlib.Path(\"/proc/swaps\").read_text()\nactual_memory=int(next(x.split()[1] for x in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if x.startswith(\"MemTotal:\")))\nassert actual_memory>=int(sys.argv[1])*1024-200*1024,\"configured_ram_not_available_in_guest\"\nassert shutil.disk_usage(root).free>=4*1024**3,\"insufficient_disk_for_compilation\"\nkey=pathlib.Path(\"/root/.android/debug.keystore\")\ninfo=key.lstat()\nassert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600\ncert=subprocess.run([str(java/\"bin/keytool\"),\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(key),\"-storepass\",\"android\"],capture_output=True,timeout=30)\nassert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==pin,\"signing_identity_not_preserved\"\nenv={\"PATH\":str(java/\"bin\")+\":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\",\"HOME\":\"/root\",\"LANG\":\"C.UTF-8\",\"JAVA_HOME\":str(java),\"ANDROID_SDK_ROOT\":str(sdk),\"ANDROID_HOME\":str(sdk),\"PYTHONUNBUFFERED\":\"1\"}\nreport={\"host\":\"timeweb-9408159\",\"source\":source,\"started_at_utc\":time.strftime(\"%Y-%m-%dT%H:%M:%SZ\",time.gmtime()),\"runtime_matrix_passed\":False,\"phases\":[]}\nreport_path=pathlib.Path(\"/root/analyst-android-build-result.json\")\ndef save():\n    report[\"free_disk_gib\"]=round(shutil.disk_usage(root).free/1024**3,2)\n    report_path.write_text(json.dumps(report,indent=2)+\"\\n\")\ndef run(args,timeout=300,out=None):\n    print(\"TIMEWEB_BUILD_PHASE=\"+json.dumps(args),flush=True)\n    started=time.monotonic()\n    process=subprocess.Popen(args,cwd=root,env=env,stdout=out,stderr=subprocess.STDOUT,start_new_session=True)\n    try:\n        code=process.wait(timeout=timeout)\n    except subprocess.TimeoutExpired:\n        os.killpg(process.pid,signal.SIGTERM)\n        try:process.wait(timeout=15)\n        except subprocess.TimeoutExpired:\n            os.killpg(process.pid,signal.SIGKILL);process.wait()\n        report[\"phases\"].append({\"command\":args,\"exit\":\"timeout\",\"seconds\":round(time.monotonic()-started,1)})\n        save()\n        raise\n    report[\"phases\"].append({\"command\":args,\"exit\":code,\"seconds\":round(time.monotonic()-started,1)})\n    save()\n    if code:raise SystemExit(code)\nprint(\"TIMEWEB_BUILD_START=\"+json.dumps({\"server\":9408159,\"source\":source,\"max_workers\":1,\"parallel\":False,\"kvm\":pathlib.Path(\"/dev/kvm\").exists(),\"disk_free_gib\":round(shutil.disk_usage(root).free/1024**3,2)}),flush=True)\nsave()\nrun([\"python3\",\"tools/prepare_spectrum_checkout.py\"])\nrun([\"./gradlew\",\":app:testDebugUnitTest\",\":app:lintDebug\",\":app:lintPreview\",\":app:assembleDebug\",\":app:assembleRelease\",\":app:assemblePreview\",\":ci-ui-driver:lintDebug\",\":ci-ui-driver:assembleDebug\",\"--stacktrace\",\"--no-parallel\",\"--max-workers=1\"],timeout=4200)\nfor args in ([\"python3\",\"tools/test_native_alignment.py\"],[\"python3\",\"tools/generate_spectrum_meshes.py\",\"--check\",\"--check-apk\"],[\"python3\",\"tools/test_spectrum_meshes.py\"]):run(args)\nout=root/\"app/build/outputs/apk/preview\"\nbuild=sdk/\"build-tools/37.0.0\"\napk=out/\"app-preview.apk\"\nfor filename,args in ((\"signature.txt\",[str(java/\"bin/java\"),\"-jar\",str(build/\"lib/apksigner.jar\"),\"verify\",\"--verbose\",\"--print-certs\",str(apk)]),(\"alignment.txt\",[str(build/\"zipalign\"),\"-c\",\"-P\",\"16\",\"-v\",\"4\",str(apk)]),(\"badging.txt\",[str(build/\"aapt\"),\"dump\",\"badging\",str(apk)]),(\"manifest.txt\",[str(build/\"aapt\"),\"dump\",\"xmltree\",str(apk),\"AndroidManifest.xml\"])):\n    with (out/filename).open(\"w\") as target:run(args,out=target)\nrun([\"python3\",\".github/scripts/verify_apk.py\"])\ncounts={\"suites\":0,\"tests\":0,\"failures\":0,\"errors\":0,\"skipped\":0}\nfor path in (root/\"app/build/test-results/testDebugUnitTest\").glob(\"TEST-*.xml\"):\n    suite=ET.parse(path).getroot()\n    counts[\"suites\"]+=1\n    for name in (\"tests\",\"failures\",\"errors\",\"skipped\"):counts[name]+=int(suite.get(name,0))\nassert counts[\"tests\"]>0 and counts[\"failures\"]==0 and counts[\"errors\"]==0\nreport[\"jvm_tests\"]=counts\nreport[\"apk\"]=json.loads((out/\"apk-verification.json\").read_text())\nreport[\"completed_at_utc\"]=time.strftime(\"%Y-%m-%dT%H:%M:%SZ\",time.gmtime())\nreport[\"build_and_static_verification_passed\"]=True\nsave()\nprint(\"TIMEWEB_ANDROID_BUILD_RESULT=\"+json.dumps(report,sort_keys=True),flush=True)\n"
-                  stable=command[:-1]+["-o","ServerAliveInterval=30","-o","ServerAliveCountMax=6",command[-1]]
-                  result=subprocess.run(stable+["python3 -u -c "+shlex.quote(script)+" "+str(active_memory)],timeout=4650)
-                  if result.returncode:raise prepare.ProbeError("timeweb_android_build_failed_"+str(result.returncode))
-              access.develop_backend=build_remote
-              adopt.run(development=True)
-          finally:
-              pending=False;restored=False;deadline=time.monotonic()+900
-              while time.monotonic()<deadline:
-                  current=api("GET","/servers/9408159")["server"];identity(current)
-                  if current["ram"]==1024 and current["status"]=="on":
-                      restored=True;break
-                  if not pending and current["ram"]==3072 and current["status"]=="on":
-                      try:
-                          api("PATCH","/servers/9408159",{"configurator":{"configurator_id":153,"cpu":1,"ram":1024,"disk":15360}})
-                          pending=True
-                      except Busy:pass
-                  time.sleep(15)
-              if not restored:raise prepare.ProbeError("original_hourly_ram_not_restored_provider_pending")
-              active_memory=1024;adopt.select_target(True);adopt.verified_target(token)
-              ready(1024,seconds=600)
-              print("TIMEWEB_HOURLY_COST_RESTORED=original_1cpu_1024mb_and_ssh_ready",flush=True)
+              with socket.create_connection(("201.34.146.244",22),timeout=10) as connection:
+                  probe["tcp_connected"]=True
+                  connection.settimeout(10)
+                  probe["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
+          except OSError as error:
+              probe["error"]=type(error).__name__
+          print("TIMEWEB_POST_RESIZE_TCP="+json.dumps(probe),flush=True)
           PY
