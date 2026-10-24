@@ -47,9 +47,9 @@ jobs:
           assert len(before)==1 and before[0]["id"]==9408159 and before[0]["name"]=="analyst-ai-owner-route-20261023" and before[0]["location"]=="nl-1","reconcile_inventory_before_any_order"
           offers=p.read_catalog(token,"presets")["server_presets"]
           candidates=[]
-          for preset_id,monthly in ((2447,1180),(2575,1500),(2449,1940),(2611,1950)):
+          for preset_id,monthly in ((2577,2120),(2451,2600)):
               offer,=[r for r in offers if r["id"]==preset_id]
-              assert offer["location"]=="ru-1" and offer["cpu"]==1 and offer["ram"] in (1024,2048) and offer["disk"] in (15360,30720) and offer["price"]==monthly
+              assert offer["location"]=="ru-1" and offer["cpu"]==2 and offer["ram"]==2048 and offer["disk"]==40960 and offer["price"]==monthly
               candidates.append(offer)
           assert any(r["id"]==99 and r["version"]=="24.04" for r in p.read_catalog(token,"os")["servers_os"])
           selected=None
