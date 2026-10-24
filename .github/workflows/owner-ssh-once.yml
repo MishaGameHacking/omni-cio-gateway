@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-provider-diagnostics
+  group: analyst-owner-build-observation
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,54 +20,48 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Record the replacement blocker and verify that old resources remain intact
+      - name: Verify recovered SSH, source revisions and the existing APK signing identity
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,re,shlex,socket,subprocess,sys,urllib.request
-          from decimal import Decimal
+          import json,os,shlex,socket,sys,time,urllib.request
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as prepare
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
           token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def get(path):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          def current():
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers/9408159",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
-              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
-          server=get("/servers/9408159")["server"]
-          assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["configurator_id"]==153
-          print("TIMEWEB_RESIZE_PROVIDER_STATE="+json.dumps({k:server.get(k) for k in ("id","status","cpu","ram","configurator_id","start_at","availability_zone")}),flush=True)
-          document=get("/servers/9408159/logs?limit=100")
-          records=document.get("server_logs",[])
-          output=[]
-          for row in records:
-              event=str(row.get("event",""))
-              if re.search("config|reboot|migrat|memory|конфигурац|перезагруз|перенос|памят",event,re.I) and not re.search("парол|password|token|токен|secret|ключ",event,re.I):
-                  output.append({"logged_at":row.get("logged_at"),"event":event[:700]})
-          print("TIMEWEB_RESIZE_PROVIDER_EVENTS="+json.dumps({"meta":document.get("meta"),"response_id":document.get("response_id"),"events":output[-20:]},ensure_ascii=False),flush=True)
-          probe={"tcp_connected":False,"ssh_banner_ready":False}
-          try:
-              with socket.create_connection(("201.34.146.244",22),timeout=10) as connection:
-                  probe["tcp_connected"]=True
-                  connection.settimeout(10)
-                  probe["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
-          except OSError as error:
-              probe["error"]=type(error).__name__
-          print("TIMEWEB_POST_RESIZE_TCP="+json.dumps(probe),flush=True)
-          fin=get("/account/finances")["finances"]
-          status=get("/account/status")["status"]
-          inventory=get("/servers?limit=100")
-          print("TIMEWEB_CURRENT_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":Decimal(str(fin["balance"]))>0,"blocked":status["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]],"meta":inventory.get("meta")}),flush=True)
-          dedicated=get("/dedicated-servers")
-          print("TIMEWEB_DEDICATED_INVENTORY="+json.dumps({"meta":dedicated.get("meta"),"servers":[{k:s.get(k) for k in ("id","name","status","cpu_description","ram_description","preset_id","location")} for s in dedicated.get("dedicated_servers",[])]}),flush=True)
-          addresses=get("/floating-ips")
-          print("TIMEWEB_ADDRESS_INVENTORY="+json.dumps({"meta":addresses.get("meta"),"ips":[{k:s.get(k) for k in ("id","resource_id","resource_type","availability_zone")} for s in addresses.get("ips",[])]}),flush=True)
-          keys=get("/ssh-keys")
-          rows=keys.get("ssh_keys",[])
-          assert isinstance(rows,list) and keys.get("meta",{}).get("total")==len(rows)
-          print("TIMEWEB_ACCESS_KEYS="+json.dumps({"count":len(rows),"task_temporary_keys":[{"id":s["id"],"name":s["name"]} for s in rows if str(s.get("name","")).startswith(("analyst-ai-stage-","analyst-ai-retire-","analyst-ai-install-"))]}),flush=True)
-          print("REPLACEMENT_STATUS="+json.dumps({"created":False,"verified_new_servers":0,"cloud_allocation_attempts":12,"provider_codes":["no_free_node","servers_is_run_out_error"],"provider_ticket":12913059,"old_server_deleted":False,"apk_released":False,"full_runtime_passed":False}),flush=True)
+              with opener.open(req,timeout=30) as response:server=prepare.decode_response(response.read(2*1024*1024+1))["server"]
+              assert server["id"]==9408159 and server["name"]=="analyst-ai-owner-route-20261023" and server["comment"]=="Analyst AI replacement for verified Telegram route failure 2026-10-23"
+              assert server["configurator_id"]==153 and server["cpu"]==1 and server["ram"] in {1024,3072} and prepare.cloud.public_ipv4(server)=="201.34.146.244"
+              return server
+          deadline=time.monotonic()+120;good=0
+          while time.monotonic()<deadline:
+              server=current()
+              report={"at_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),**{k:server.get(k) for k in ("id","status","cpu","ram")},"ssh_banner_ready":False}
+              try:
+                  with socket.create_connection(("201.34.146.244",22),timeout=8) as connection:
+                      connection.settimeout(8);report["ssh_banner_ready"]=connection.recv(256).startswith(b"SSH-2.0-")
+              except OSError as error:report["error"]=type(error).__name__
+              print("TIMEWEB_SUPPORT_RECOVERY_OBSERVATION="+json.dumps(report),flush=True)
+              good=good+1 if server["status"]=="on" and report["ssh_banner_ready"] else 0
+              if good>=2:break
+              time.sleep(15)
+          if good<2:raise prepare.ProbeError("provider_ticket_12913059_still_waiting_for_ssh")
+          active_memory=current()["ram"]
+          original_select=adopt.select_target
+          def select_target(new):
+              original_select(new)
+              if new:prepare.CONFIGURATION["ram"]=active_memory
+          adopt.select_target=select_target
+          def verify_remote(command):
+              script="import hashlib,json,pathlib,shutil,stat,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nassert root.is_dir() and not root.is_symlink()\nhead=subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()\nassert head==\"690811a5a376181990a64f37d914c87eb6c919b7\",\"unexpected_app_source_head\"\nassert not subprocess.check_output([\"git\",\"status\",\"--porcelain\",\"--untracked-files=no\"],cwd=root),\"app_source_changed\"\nkey=pathlib.Path(\"/root/.android/debug.keystore\")\ninfo=key.lstat()\nassert stat.S_ISREG(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600,\"signing_key_permissions_changed\"\ncert=subprocess.run([\"/usr/lib/jvm/java-17-openjdk-amd64/bin/keytool\",\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(key),\"-storepass\",\"android\"],capture_output=True,timeout=30)\nassert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\",\"signing_identity_changed\"\ndevelopment=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=development,text=True).strip()==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\nchanges=subprocess.check_output([\"git\",\"diff\",\"--name-only\"],cwd=development,text=True).splitlines()\nassert set(changes)<= {\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"},\"unreviewed_backend_changes\"\nmem={x.split(\":\")[0]:int(x.split()[1]) for x in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if x.split(\":\")[0] in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\",\"SwapFree\"}}\nprint(\"TIMEWEB_RECOVERED_FILES=\"+json.dumps({\"app_source\":head,\"app_tracked_files_clean\":True,\"signing_certificate_preserved\":True,\"server_development_changes\":changes,\"memory_kib\":mem,\"free_disk_gib\":round(shutil.disk_usage(root).free/1024**3,2),\"kvm_available\":pathlib.Path(\"/dev/kvm\").exists(),\"apk_present\":(root/\"app/build/outputs/apk/preview/app-preview.apk\").is_file()}),flush=True)\n"
+              result=prepare.remote(command,"python3 -u -c "+shlex.quote(script),timeout=120)
+              print(result.decode("utf-8"),end="",flush=True)
+          access.develop_backend=verify_remote
+          adopt.run(development=True)
           PY
