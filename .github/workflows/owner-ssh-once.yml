@@ -61,7 +61,7 @@ jobs:
                           import datetime,http.client,re,ssl
                           release=delivery["release"]
                           assert release["package_name"]=="ru.omnicio.app.debug" and release["version_code"]==35
-                          assert re.fullmatch(r"/client/apk/Analyst-AI-35-[a-f0-9]{64}\\.apk",release["apk_path"])
+                          assert re.fullmatch(r"/client/apk/Analyst-AI-35-[a-f0-9]{64}\.apk",release["apk_path"])
                           host="analyst-ai-2941515.twc1.net"
                           conn=http.client.HTTPSConnection(host,443,timeout=45,context=ssl.create_default_context())
                           conn.connect();assert conn.sock.getpeername()[0]=="201.24.52.66"
