@@ -2,74 +2,36 @@ name: Temporary access to the new owner VM
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
+    paths: [.github/workflows/owner-ssh-once.yml]
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-private-owner-enrollment-after-tls
+  group: analyst-external-timeweb-https-check
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 2
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Fetch the exact checked server sources
-        run: |
-          git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
-          git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Resume the fresh private owner installation only after certificate verification
-        env:
-          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-          PYTHONUNBUFFERED: '1'
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify the public Timeweb HTTPS enrollment endpoint
         run: |
           python3 - <<'PY'
-          import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
-          sys.path[:0]=["deploy","tools"]
-          import prepare_owner_vm as p
-          import access_owner_vm as access
-          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def read_dedicated():
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/dedicated-servers/121673",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
-              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))["dedicated_server"]
-          dedicated=read_dedicated()
-          assert dedicated["id"]==121673 and dedicated["project_id"]==2941515
-          print("TIMEWEB_BUILDER_STATUS="+json.dumps({k:dedicated.get(k) for k in ("id","name","status","location","ip","autoinstall_ready")}),flush=True)
-          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
-          for server_id,name,ip,old_host in targets:
-              access.SERVER_ID=server_id
-              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
-              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
-              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
-                  folder=pathlib.Path(directory)
-                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
-                  key=created.get("ssh_key",created.get("ssh-key",{}))
-                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-                  key_id=key["id"];attached=False
-                  try:
-                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
-                      command=p.ssh_command(folder,ip,old_host)
-                      for attempt in range(12):
-                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
-                          except (p.ProbeError,subprocess.TimeoutExpired):
-                              if attempt==11:raise
-                              time.sleep(5)
-                      reference="fd01d2ac090103cf64557c97aeaf36bc290e2cec"
-                      paths=subprocess.check_output(["git","ls-tree","-r","--name-only",reference],text=True).splitlines()
-                      selected=[path for path in paths if (path.startswith("backend/") and pathlib.PurePosixPath(path).parent==pathlib.PurePosixPath("backend") and (path.endswith((".py",".json")) or path=="backend/requirements.txt")) or path in {"backend/certs/russian_trusted_root_ca.pem","deploy/install_owner_backend.py","deploy/enroll_owner.py","deploy/analyst-ai-owner.service"}]
-                      expected={path:hashlib.sha256(subprocess.check_output(["git","show",reference+":"+path])).hexdigest() for path in selected}
-                      assert len(expected)>30
-                      script="import json,pathlib,subprocess,sys,time\nprevious=pathlib.Path(\"/root/analyst-owner-login-relay-20261024\")\ndeadline=time.time()+600\nwhile time.time()<deadline:\n    try:certificate=json.loads((previous/\"certificate-retry.json\").read_text())\n    except (OSError,ValueError):certificate={}\n    if certificate.get(\"tls_verified\") is True and certificate.get(\"original_logging_restored\") is True:break\n    if certificate.get(\"tls_verified\") is False and certificate.get(\"service_stopped_after_failed_retry\"):\n        print(\"TIMEWEB_OWNER_ENROLLMENT_CONSOLE=\"+json.dumps({\"server_id\":9413105,\"phase\":\"certificate_retry_failed\",\"owner_bound\":False}),flush=True);sys.exit(0)\n    time.sleep(5)\nelse:\n    print(\"TIMEWEB_OWNER_ENROLLMENT_CONSOLE=\"+json.dumps({\"server_id\":9413105,\"phase\":\"certificate_retry_not_finished\",\"owner_bound\":False}),flush=True);sys.exit(0)\nprepared=subprocess.run([\"/root/analyst-ai-development-venv/bin/python\",str(previous/\"prepare_fresh_retry.py\"),\"--prepare\"],capture_output=True,text=True,timeout=180)\nif prepared.returncode:\n    log=previous/\"fresh-retry-execution-error.log\";log.write_text(prepared.stdout+prepared.stderr);log.chmod(0o600)\n    print(\"TIMEWEB_OWNER_ENROLLMENT_CONSOLE=\"+json.dumps({\"server_id\":9413105,\"phase\":\"fresh_retry_preparation_failed\",\"owner_bound\":False}),flush=True);sys.exit(0)\nfor line in prepared.stdout.splitlines():\n    if line.startswith(\"TIMEWEB_FRESH_RETRY_PREPARED=\"):print(line,flush=True)\nimport base64,datetime,hashlib,json,os,pathlib,re,secrets,shlex,stat,subprocess,sys,termios,time,traceback,urllib.parse\nfrom cryptography.hazmat.primitives import hashes,serialization\nfrom cryptography.hazmat.primitives.asymmetric import padding\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\nroot=pathlib.Path(\"/root\");source=root/\"analyst-ai-source\";work=root/\"analyst-owner-login-relay-retry-20261024\"\nreport={\"server_id\":9413105,\"phase\":\"starting\",\"owner_bound\":False}\ndef save():\n    path=work/\"state.json\";path.write_text(json.dumps(report,indent=2)+\"\\n\");path.chmod(0o600)\ndef command(args,**kwargs):\n    return subprocess.run(args,capture_output=True,check=True,timeout=30,**kwargs).stdout\nsocket=work/\"tmux.sock\"\ndef tmux(*args,**kwargs):return command([\"tmux\",\"-S\",str(socket),*args],**kwargs)\ntry:\n    for relative,digest in EXPECTED.items():\n        path=source/relative\n        assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()==digest,\"reviewed_source_mismatch\"\n    sys.path.insert(0,str(source))\n    from deploy import install_owner_backend as installer\n    values=installer.load_config(enrollment=True);installer.check_target();installer.check_address(values);installer.source_files()\n    assert values[\"TELEGRAM_CLIENT_ID\"]==\"8634181713\"\n    assert values[\"TELEGRAM_ENROLLMENT_REDIRECT_URI\"]==\"https://analyst-ai-2941515.twc1.net/auth/telegram/owner-enrollment/callback\"\n    assert not work.exists() and not work.is_symlink(),\"existing_private_console_refused\"\n    work.mkdir(mode=0o700)\n    public=\"-----BEGIN PUBLIC KEY-----\\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAobFsluZHuxjS8aHckE6F\\nmk5VuBR0dZrf8qUzu3eXGa8evI8Sc9wWXpFOx6DhSIu2AeHNFwyPYr7vlpZumuog\\nfAZFSlAwDlroI9MD6TOkUc5mOgBJ8tv5q1PR/Vj49pGIaXwtXq7CkklGx7C4wLWn\\nD5EZTETEj72r4itm1NCq+Th2O3MgQTFxyB6OHsH3FXefznaTK39dckfj9RIwVIMK\\n7kBh6sYYEgHEl9ol1Xej8I4GSwwdgeqildoOIKQTMivwKcbCVigsWnGfV3iqlwWH\\n3VcnwxoDY7z5MH0E/Uf+61WCvLyXIyvW26kc8stBWRwGSHHxexdAsNk8cVIJCvWY\\nLvBsYPwmP+4lZ2wG1/4+tlRybEAm9bBwqasdcW71I0KmeMB3CaRUmgNp0Xx3OcI+\\nmD+s8K//2Ub6MxAiDZbOeW7ena6UeJXf5X8WewKRqBG9Xlx2TGKA+lEjOG91kl/B\\nUTjloW2hVbFd0FAYZE24ASMbMFwue/ywlFMHdmrnEgtFAgMBAAE=\\n-----END PUBLIC KEY-----\\n\"\n    (work/\"public.pem\").write_text(public);(work/\"public.pem\").chmod(0o600)\n    with (work/\"package-install.log\").open(\"w\") as log:\n        (work/\"package-install.log\").chmod(0o600)\n        installed=subprocess.run([\"apt-get\",\"install\",\"-y\",\"--no-install-recommends\",\"tmux\"],stdout=log,stderr=subprocess.STDOUT,timeout=300,env=dict(os.environ,DEBIAN_FRONTEND=\"noninteractive\",NEEDRESTART_MODE=\"a\"))\n    assert installed.returncode==0,\"private_terminal_package_failed\"\n    config=work/\"tmux.conf\";config.write_text(\"set -g history-limit 200\\nset -g remain-on-exit on\\nset -g status off\\n\");config.chmod(0o600)\n    python=str(root/\"analyst-ai-development-venv/bin/python\")\n    bootstrap=\"import os;os.fchmod(0,0o600);os.execv(\"+repr(python)+\",\"+repr([python,str(source/\"deploy/install_owner_backend.py\"),\"--install\",\"--enroll-owner\"])+\")\"\n    launch=\"exec \"+shlex.quote(python)+\" -c \"+shlex.quote(bootstrap)\n    command([\"tmux\",\"-S\",str(socket),\"-f\",str(config),\"new-session\",\"-d\",\"-s\",\"owner\",\"-x\",\"240\",\"-y\",\"50\",launch])\n    socket.chmod(0o600)\n    report[\"phase\"]=\"installing\";save()\n    registered=False;url=None;deadline=time.monotonic()+480\n    while time.monotonic()<deadline:\n        pane=tmux(\"capture-pane\",\"-p\",\"-J\",\"-S\",\"-150\",\"-t\",\"owner:0.0\").decode(\"utf-8\",\"replace\")\n        if \"Type REGISTERED followed by the exact redirect URI:\" in pane and not registered:\n            tty=tmux(\"display-message\",\"-p\",\"-t\",\"owner:0.0\",\"#{pane_tty}\").decode().strip()\n            descriptor=os.open(tty,os.O_RDONLY|os.O_NOCTTY|os.O_NOFOLLOW)\n            try:\n                info=os.fstat(descriptor)\n                private=stat.S_ISCHR(info.st_mode) and info.st_uid==0 and stat.S_IMODE(info.st_mode)==0o600\n                ready=not termios.tcgetattr(descriptor)[3]&termios.ECHO\n            finally:os.close(descriptor)\n            assert private,\"terminal_privacy_failed\"\n            if ready:\n                assert installer.enrollment_tls_ready(\"analyst-ai-2941515.twc1.net\"),\"enrollment_tls_not_ready\"\n                tmux(\"send-keys\",\"-l\",\"-t\",\"owner:0.0\",\"REGISTERED \"+values[\"TELEGRAM_ENROLLMENT_REDIRECT_URI\"])\n                tmux(\"send-keys\",\"-t\",\"owner:0.0\",\"Enter\");registered=True\n                report[\"phase\"]=\"waiting_for_login_link\";save()\n        found=re.search(r\"https://oauth\\.telegram\\.org/auth\\?[^\\s\\x00-\\x20]{1,4096}\",pane)\n        if found:\n            url=found.group(0);query=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)\n            assert query.get(\"client_id\")==[values[\"TELEGRAM_CLIENT_ID\"]] and query.get(\"redirect_uri\")==[values[\"TELEGRAM_ENROLLMENT_REDIRECT_URI\"]]\n            assert query.get(\"response_type\")==[\"code\"] and query.get(\"code_challenge_method\")==[\"S256\"] and set(query)=={\"client_id\",\"redirect_uri\",\"response_type\",\"scope\",\"state\",\"nonce\",\"code_challenge\",\"code_challenge_method\"}\n            assert registered\n            break\n        if tmux(\"display-message\",\"-p\",\"-t\",\"owner:0.0\",\"#{pane_dead}\").decode().strip()==\"1\":\n            report[\"phase\"]=\"installation_stopped\"\n            report[\"exit\"]=tmux(\"display-message\",\"-p\",\"-t\",\"owner:0.0\",\"#{pane_dead_status}\").decode().strip()\n            report[\"fixed_errors\"]=re.findall(r\"OWNER_(?:BACKEND_INSTALL|ENROLLMENT)_ERROR=[a-zA-Z0-9_]{1,120}\",pane)\n            break\n        time.sleep(2)\n    if url:\n        now=datetime.datetime.now(datetime.timezone.utc)\n        report.update(phase=\"awaiting_owner_login\",tls_verified=True,expires_at_utc=(now+datetime.timedelta(seconds=590)).isoformat(),server_clock_utc=now.isoformat())\n        payload={\"authorization_url\":url,\"expires_at_utc\":report[\"expires_at_utc\"],\"server_id\":9413105,\"origin\":values[\"BACKEND_PUBLIC_URL\"]}\n        aad=b\"Analyst AI owner enrollment relay v1 / Timeweb 9413105\"\n        key=secrets.token_bytes(32);nonce=secrets.token_bytes(12)\n        public_key=serialization.load_pem_public_key(public.encode())\n        sealed={\"version\":1,\"wrapped_key\":base64.b64encode(public_key.encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=aad))).decode(),\"nonce\":base64.b64encode(nonce).decode(),\"ciphertext\":base64.b64encode(AESGCM(key).encrypt(nonce,json.dumps(payload).encode(),aad)).decode()}\n        path=work/\"sealed-login.json\";path.write_text(json.dumps(sealed)+\"\\n\");path.chmod(0o600)\n        report[\"sealed\"]=sealed\n    report[\"owner_bound\"]=installer.INPUT_CONFIG.exists()\n    save()\nexcept Exception as error:\n    report.update(phase=\"preparation_error\",error_type=type(error).__name__)\n    if work.exists():\n        path=work/\"preparation-error.log\";path.write_text(traceback.format_exc());path.chmod(0o600);save()\nprint(\"TIMEWEB_OWNER_ENROLLMENT_CONSOLE=\"+json.dumps(report),flush=True)\n"
-                      script='EXPECTED='+repr(expected)+'\n'+script
-                      output=p.remote(command,"/root/analyst-ai-development-venv/bin/python -u -c "+shlex.quote(script),timeout=1500).decode()
-                      print(output,end="",flush=True)
-                  finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
-                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
+          import datetime,hashlib,http.client,json,ssl
+          host="analyst-ai-2941515.twc1.net"
+          context=ssl.create_default_context()
+          connection=http.client.HTTPSConnection(host,443,timeout=15,context=context)
+          connection.connect()
+          peer=connection.sock.getpeername()[0]
+          assert peer=="201.24.52.66","unexpected_public_server"
+          certificate=connection.sock.getpeercert()
+          digest=hashlib.sha256(connection.sock.getpeercert(binary_form=True)).hexdigest()
+          rows=[]
+          for path in ("/health","/workspace"):
+              connection.request("GET",path,headers={"Host":host})
+              with connection.getresponse() as response:
+                  body=response.read(256)
+                  rows.append({"path":path,"status":response.status,"enrollment_only":body==b"owner-enrollment-only"})
+                  assert response.status==404 and body==b"owner-enrollment-only","unexpected_public_enrollment_gate"
+          connection.close()
+          print("TIMEWEB_EXTERNAL_ENROLLMENT_TLS="+json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"public_ip":peer,"hostname":host,"certificate_sha256":digest,"certificate_not_after":certificate.get("notAfter"),"verified_tls":True,"routes":rows,"owner_authenticated":False}),flush=True)
           PY
