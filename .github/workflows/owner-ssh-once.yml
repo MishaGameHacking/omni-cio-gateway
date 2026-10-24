@@ -5,9 +5,10 @@ on:
     paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: analyst-owner-build-observation
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   access:
     runs-on: ubuntu-24.04
@@ -20,6 +21,25 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
+      - name: Wait until earlier recovery transports have stopped
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          remaining={40064038336,40064892720}
+          deadline=time.monotonic()+180
+          while remaining and time.monotonic()<deadline:
+              for run_id in list(remaining):
+                  request=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/actions/runs/"+str(run_id),headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"})
+                  with urllib.request.urlopen(request,timeout=30) as response:
+                      result=json.loads(response.read(100000))
+                  print("PRIOR_RECOVERY_TRANSPORT="+json.dumps({"run_id":run_id,"status":result["status"],"conclusion":result["conclusion"]}),flush=True)
+                  if result["status"]=="completed":remaining.remove(run_id)
+              if remaining:time.sleep(10)
+          assert not remaining,"earlier_transport_has_not_stopped"
+          PY
       - name: Recover the existing Timeweb VM after provider resize completion
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
