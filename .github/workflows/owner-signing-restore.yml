@@ -4,7 +4,7 @@ on:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [.github/workflows/owner-signing-restore.yml]
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: analyst-ams-signing-restore
   cancel-in-progress: false
@@ -17,7 +17,7 @@ jobs:
         with:
           path: analyst-ams-administration
           persist-credentials: false
-      - name: Prepare verified administrative TLS transport
+      - name: Prepare authenticated encrypted administrative transfer
         shell: cmd
         working-directory: analyst-ams-administration
         run: |
@@ -25,11 +25,13 @@ jobs:
           if errorlevel 1 exit /b 1
           "%RUNNER_TEMP%\analyst-key-transport\Scripts\python.exe" -m pip install --require-hashes --only-binary=:all: -r tools\timeweb-actions-requirements.txt
           if errorlevel 1 exit /b 1
-      - name: Restore the checked signing identity with bounded SSH diagnostics
+          "%RUNNER_TEMP%\analyst-key-transport\Scripts\python.exe" -m pip install --only-binary=:all: cryptography==50.0.0
+          if errorlevel 1 exit /b 1
+      - name: Encrypt for the verified Timeweb recipient and upload a private draft
         shell: cmd
         working-directory: analyst-ams-administration
         env:
-          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           "%RUNNER_TEMP%\analyst-key-transport\Scripts\python.exe" deploy\restore_ams_signing.py
           if errorlevel 1 exit /b 1
