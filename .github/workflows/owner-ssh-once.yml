@@ -20,49 +20,126 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Inspect smaller hourly build configurations after provider capacity refusals
+      - name: Prepare a smaller hourly host after measured provider capacity refusals
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,shlex,subprocess,sys,urllib.request
+          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.error,urllib.request,uuid
           from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
-          import prepare_owner_vm as prepare
+          import prepare_owner_vm as p
           import access_owner_vm as access
-          import adopt_replacement_vm as adopt
-          token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          from replace_unreachable_vm import remove_ip
+          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          name="analyst-ai-build-20261024"
+          marker="Analyst AI authorized hourly build host 2026-10-24"
+          def inventory():
+              doc=p.read_resource(token,"servers")
+              assert p.summarize("servers",doc)["complete"]
+              return doc["servers"]
+          assert {s["id"] for s in inventory()}=={9408159},"unexpected_existing_servers_no_order"
           def get(path):
               req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
-              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as r:return p.decode_response(r.read(2*1024*1024+1))
           fin=get("/account/finances")["finances"]
-          status=get("/account/status")["status"]
+          assert Decimal(str(fin["hourly_fee"]))>0,"hourly_billing_not_verified"
           balance=Decimal(str(fin["balance"]))
-          inventory=prepare.read_resource(token,"servers")
-          assert prepare.summarize("servers",inventory)["complete"]
-          print("TIMEWEB_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":balance>0,"blocked":status["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]]}),flush=True)
-          configs=get("/configurator/servers")["server_configurators"]
+          presets={r["id"]:r for r in get("/presets/servers")["server_presets"]}
+          configs={r["id"]:r for r in get("/configurator/servers")["server_configurators"]}
+          specs=[(149,6144,51200,2220,"ru-4"),(151,6144,51200,2220,"ru-5"),(43,6144,51200,3220,"ru-1"),(149,4096,40960,1700,"ru-4"),(151,4096,40960,1700,"ru-5"),(43,4096,40960,2560,"ru-1"),(11,4096,40960,3400,"ru-1"),(19,4096,40960,3400,"ru-2"),(31,4096,40960,3400,"ru-3"),(17,6144,51200,1740,"pl-1"),(17,4096,40960,1380,"pl-1")]
           offers=[]
-          for c in configs:
-              if c["location"] not in {"ru-1","ru-2","ru-3","ru-4","ru-5","pl-1","nl-1"}:continue
-              if c["id"] not in {43,11,19,31,149,151,17,153}:continue
-              for ram,disk,role in ((6144,51200,"build_and_runtime_trial"),(4096,40960,"build")):
-                  sizes={"cpu":2,"ram":ram,"disk":disk}
+          for identifier,ram,disk,expected,location in specs:
+              c=configs[identifier]
+              assert c["location"]==location
+              sizes={"cpu":2,"ram":ram,"disk":disk}
+              for part,size in sizes.items():
                   r=c["requirements"]
-                  if not all(r[k+"_min"]<=v<=r[k+"_max"] and (v-r[k+"_min"])%r[k+"_step"]==0 for k,v in sizes.items()):continue
-                  price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*ram/1024+Decimal(str(c["prices"]["disk"]))*disk/1024
-                  offers.append({"id":c["id"],"location":c["location"],**sizes,"role":role,"price":float(price),"activation_credit_covered":balance>=price+200})
-          print("TIMEWEB_SMALL_BUILD_CANDIDATES="+json.dumps(offers),flush=True)
-          def hourly_command(command):
-              script="import hashlib,json,pathlib,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert root.is_dir() and not root.is_symlink()\npolicy=\"\"\"## OWNER 24.10.2026 — почасовая оплата Timeweb\n\nOWNER требует почасовую оплату и продолжение текущей работы.\nИспользовать почасовую тарификацию облачных ресурсов. Не оформлять месячный\nили годовой пакет оплаты и не подключать автопополнение ради этой задачи.\nПроверять реальную доступность и достаточность более дешёвых конфигураций.\nНенужные временные серверы и их платные адреса удалять после проверки.\nРазрешённый канал команд GitHub Actions и разработка только на Timeweb,\nвертикальный дизайн и все обязательные проверки остаются в силе.\n\n\"\"\"\nfor name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    p=root/name\n    value=p.read_text()\n    if policy not in value:\n        first,sep,tail=value.partition(\"\\n\")\n        p.write_text(first+\"\\n\\n\"+policy+tail.lstrip(\"\\n\"))\nprint(json.dumps({\"server_id\":9408159,\"hourly_preference_saved\":True,\"source_head\":subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip(),\"modified\":subprocess.check_output([\"git\",\"status\",\"--short\"],cwd=root,text=True).strip()},ensure_ascii=False),flush=True)\n"
-              result=subprocess.run(command+["python3 -c "+shlex.quote(script)],capture_output=True,text=True,timeout=180)
-              for line in result.stdout.splitlines():
-                  if line.startswith("{"):print("OWNER_TIMEWEB_HOURLY="+json.dumps(json.loads(line),ensure_ascii=False),flush=True)
-              if result.returncode:
-                  print("OWNER_REMOTE_DIAGNOSTIC="+result.stderr[-3000:],flush=True)
-                  raise prepare.ProbeError("hourly_preference_checkpoint_failed")
-          access.develop_backend=hourly_command
-          adopt.run(development=True)
+                  assert r[part+"_min"]<=size<=r[part+"_max"] and (size-r[part+"_min"])%r[part+"_step"]==0
+              price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*ram/1024+Decimal(str(c["prices"]["disk"]))*disk/1024
+              assert price==expected
+              if balance>=price+200:offers.append({"kind":"configuration","id":identifier,"location":location,"price":expected,**sizes,"request":{"configuration":{"configurator_id":identifier,**sizes}}})
+          assert offers,"no_activation_credit_for_smallest_adequate_offer"
+          def create(body):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              try:
+                  with opener.open(req,timeout=30) as r:return p.decode_response(r.read(2*1024*1024+1))
+              except urllib.error.HTTPError as e:
+                  doc=p.decode_response(e.read(2*1024*1024+1));code=doc.get("error_code")
+                  print("HOURLY_BUILD_REFUSED="+json.dumps({"http":e.code,"code":code if isinstance(code,str) and re.fullmatch("[a-z_]{1,64}",code) else "unknown"}),flush=True)
+                  if code in {"no_free_node","servers_is_run_out_error","preset_not_found","configurator_not_found"}:
+                      assert {s["id"] for s in inventory()}=={9408159},"reconcile_uncertain_creation"
+                      return None
+                  raise p.ProbeError("build_creation_http_"+str(e.code)) from None
+          with tempfile.TemporaryDirectory(prefix="timeweb-hourly-",dir=os.environ["RUNNER_TEMP"]) as temp:
+              folder=pathlib.Path(temp)
+              for part in ("client","host"):p.cloud.generate_key(folder/part)
+              client=(folder/"client.pub").read_text().strip()
+              host=(folder/"host.pub").read_text().strip()
+              config={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,"ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,"runcmd":[["systemctl","restart","ssh"]]}
+              server=None
+              for offer in offers:
+                  print("HOURLY_BUILD_ATTEMPT="+json.dumps({k:v for k,v in offer.items() if k!="request"}),flush=True)
+                  doc=create({"name":name,"hostname":name,"comment":marker,"os_id":99,"project_id":p.PROJECT,"cloud_init":"#cloud-config\n"+json.dumps(config)+"\n",**offer["request"]})
+                  if doc is not None:
+                      server=doc["server"];break
+              if server is None:raise p.ProbeError("affordable_russia_and_poland_offers_unavailable")
+              sid=server["id"];access.SERVER_ID=sid
+              print("HOURLY_BUILD_CREATED="+json.dumps({"id":sid,"offer":{k:v for k,v in offer.items() if k!="request"},"host_key":host,"status":server.get("status"),"zone":server.get("availability_zone")}),flush=True)
+              def owned(doc):
+                  s=doc["server"]
+                  assert s["id"]==sid and s["name"]==name and s["comment"]==marker and s["location"]==offer["location"]
+                  assert all(s[k]==offer[k] for k in ("cpu","ram"))
+                  if offer["kind"]=="preset":assert s["preset_id"]==offer["id"]
+                  else:assert s["configurator_id"]==offer["id"] and s["preset_id"] is None
+                  return s
+              owned({"server":server})
+              command=None;ip_id=None;keep=False
+              try:
+                  if server.get("status")=="no_paid":raise p.ProbeError("activation_refused_despite_credit_no_ip_created")
+                  address=p.cloud.public_ipv4(server)
+                  if not address:
+                      zone=server["availability_zone"];assert re.fullmatch("[a-z]{2,8}-[1-9][0-9]*",zone)
+                      ip=access.request(token,"POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":zone})["ip"]
+                      ip_id=str(uuid.UUID(ip["id"]))
+                      assert ip["availability_zone"]==zone and ip["is_ddos_guard"] is False and ipaddress.IPv4Address(ip["ip"]).is_global
+                      print("HOURLY_BUILD_IP="+json.dumps({"id":ip_id,"ip":ip["ip"]}),flush=True)
+                      access.request(token,"POST",f"/floating-ips/{ip_id}/bind",{"resource_type":"server","resource_id":sid})
+                  for attempt in range(24):
+                      server=owned(p.cloud.request(token,"GET",f"/api/v1/servers/{sid}"))
+                      if server["status"]=="no_paid":raise p.ProbeError("activation_became_unpaid")
+                      address=p.cloud.public_ipv4(server)
+                      if address:
+                          command=p.ssh_command(folder,address,host)
+                          try:
+                              p.remote(command,"cloud-init status --wait >/dev/null && test -d /root",timeout=15)
+                              break
+                          except (p.ProbeError,subprocess.TimeoutExpired):pass
+                      time.sleep(8)
+                  else:raise p.ProbeError("hourly_build_ssh_readiness_failed")
+                  hardware=json.loads(p.remote(command,"python3 -c "+shlex.quote(p.cloud.REMOTE_PROBE)))
+                  assert hardware["memory_kib"]>=(offer["ram"]-512)*1024 and hardware["free_disk_bytes"]>=30*1024**3,"allocated_build_resources_inadequate"
+                  p.remote(command,"umask 077; mkdir -p /root/analyst-ai-build")
+                  keep=True
+                  print("HOURLY_BUILD_READY="+json.dumps({"id":sid,"ip":address,"ip_id":ip_id,"monthly_vm_rub":offer["price"],"hourly_billing":True,"retained_for_build":True,"full_runtime_host":hardware["kvm_api_version"]==12 and hardware["memory_kib"]>=5*1024*1024,**hardware}),flush=True)
+              finally:
+                  if keep and command:
+                      script="import pathlib,sys; p=pathlib.Path('/root/.ssh/authorized_keys'); key=sys.stdin.read().strip(); p.write_text('\\n'.join(line for line in p.read_text().splitlines() if key not in line)+'\\n')"
+                      p.remote(command,"python3 -c "+shlex.quote(script),client.encode())
+                      print("HOURLY_BUILD_BOOTSTRAP_KEY=removed",flush=True)
+                  else:
+                      rows=inventory()
+                      match=[s for s in rows if s["id"]==sid]
+                      if match:
+                          owned({"server":match[0]})
+                          p.cloud.request(token,"DELETE",f"/api/v1/servers/{sid}")
+                      for attempt in range(24):
+                          if not any(s["id"]==sid for s in inventory()):break
+                          time.sleep(5)
+                      else:raise p.ProbeError("hourly_build_cleanup_unconfirmed")
+                      if ip_id:remove_ip(token,ip_id,sid)
+                      print("HOURLY_BUILD_CLEANUP=server_and_address_absent",flush=True)
           PY
