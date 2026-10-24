@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-provider-diagnostics
+  group: analyst-owner-direct-server-observation
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,13 +20,13 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Create the Moscow physical work server with the API-validated shorter name
+      - name: Observe the directly requested Moscow physical server without creating a second order
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,re,sys,time,urllib.error,urllib.request
+          import json,os,sys,urllib.request
           from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
@@ -35,91 +35,15 @@ jobs:
               req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
               opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
               with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          name="analyst-ai-msk-20261024"
-          marker="Analyst AI owner authorized Moscow work server 2026-10-24"
-          def inventory():
-              doc=get("/dedicated-servers")
-              rows=doc["dedicated_servers"]
-              assert isinstance(rows,list) and doc.get("meta",{}).get("total")==len(rows),"incomplete_dedicated_inventory"
-              return rows
-          assert inventory()==[],"existing_dedicated_order_reconcile_without_duplicate"
-          old=p.read_resource(token,"servers")
-          assert p.summarize("servers",old)["complete"] and {s["id"] for s in old["servers"]}=={9408159}
+          doc=get("/dedicated-servers")
+          rows=doc["dedicated_servers"]
+          assert doc.get("meta",{}).get("total")==len(rows),"incomplete_dedicated_inventory"
+          selected=[r for r in rows if r.get("name")=="analyst-ai-msk-20261024" and r.get("comment")=="Analyst AI owner authorized Moscow work server 2026-10-24"]
+          print("MOSCOW_DIRECT_ORDER_OBSERVATION="+json.dumps({"count":len(rows),"matching_orders":len(selected),"servers":[{k:s.get(k) for k in ("id","name","status","preset_id","location","price","ip","created_at","os_id","bandwidth_id","project_id","is_pre_installed","autoinstall_ready")} for s in selected]}),flush=True)
           fin=get("/account/finances")["finances"]
           account=get("/account/status")["status"]
-          assert Decimal(str(fin["balance"]))>0 and Decimal(str(fin["hourly_fee"]))>0 and not account["is_blocked"]
-          catalog=get("/presets/dedicated-servers")["dedicated_servers_presets"]
-          candidates=sorted([row for row in catalog if row["location"] in {"ru-1","ru-3"} and row["memory"]["size"]>=8192 and row["cpu"]["count"]>=2],key=lambda r:Decimal(str(r["price"])))
-          preset=candidates[0]
-          assert preset["id"]==6007 and preset["location"]=="ru-3" and Decimal(str(preset["price"]))==5480
-          options=get("/presets/dedicated-servers/6007/additional-services")["dedicated_server_additional_services"]
-          by_id={row["id"]:row for row in options}
-          assert by_id[1833]["name"]=="dedicated_ubuntu_24_04" and Decimal(str(by_id[1833]["price"]))==0
-          assert by_id[1008]["name"]=="dedicated_net_bandwidth_main_1Gb" and Decimal(str(by_id[1008]["price"]))==0
-          body={"preset_id":6007,"os_id":1833,"bandwidth_id":1008,"payment_period":"P1M","name":name,"comment":marker,"project_id":p.PROJECT}
-          print("MOSCOW_DEDICATED_CREATE_REQUEST="+json.dumps({"preset_id":6007,"location":"ru-3","cpu_cores":4,"ram_mib":8192,"disk":"1 TB HDD","os":"Ubuntu 24.04","monthly_base_rub":5480,"selected_addon_price":0,"payment_period":"P1M","account_hourly_billing":True}),flush=True)
-          req=urllib.request.Request("https://api.timeweb.cloud/api/v1/dedicated-servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
-          opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
-          created=None
-          failure=None
-          try:
-              with opener.open(req,timeout=45) as response:
-                  doc=p.decode_response(response.read(4*1024*1024+1))
-                  created=doc["dedicated_server"]
-          except urllib.error.HTTPError as error:
-              raw=error.read(2*1024*1024+1)
-              try:err=p.decode_response(raw)
-              except Exception:err={}
-              code=err.get("error_code")
-              failure={"http":error.code,"code":code if isinstance(code,str) and re.fullmatch("[a-zA-Z0-9_]{1,100}",code) else "unknown"}
-              print("MOSCOW_DEDICATED_CREATE_REFUSED="+json.dumps(failure),flush=True)
-              def safe_error(value,depth=0):
-                  if depth>4:return "nested"
-                  if isinstance(value,dict):
-                      return {str(k)[:80]:safe_error(v,depth+1) for k,v in value.items() if not re.search("token|password|secret|cookie|authorization|request|headers|balance",str(k),re.I)}
-                  if isinstance(value,list):return [safe_error(v,depth+1) for v in value[:20]]
-                  if isinstance(value,str):
-                      if re.search("баланс|средств|недостаточ|insufficient|balance|money|credit",value,re.I):
-                          return {"billing_related":True,"insufficient_funds":bool(re.search("недостаточ|insufficient|not enough",value,re.I))}
-                      text=value.replace(token,"[redacted]")
-                      text=re.sub(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+","[redacted-jwt]",text)
-                      text=re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}","[redacted-email]",text)
-                      return text[:1400]
-                  if value is None or isinstance(value,(bool,int,float)):return value
-                  return type(value).__name__
-              print("MOSCOW_DEDICATED_VALIDATION_DETAIL="+json.dumps(safe_error(err),ensure_ascii=False),flush=True)
-          except OSError as error:
-              failure={"transport_error":type(error).__name__,"duplicate_post_forbidden":True}
-              print("MOSCOW_DEDICATED_CREATE_UNCERTAIN="+json.dumps(failure),flush=True)
-          if created is None:
-              rows=inventory()
-              matching=[r for r in rows if r.get("name")==name and r.get("comment")==marker and r.get("preset_id")==6007]
-              if len(matching)==1:created=matching[0]
-              elif not rows:
-                  print("MOSCOW_DEDICATED_RECONCILIATION="+json.dumps({"dedicated_servers":0,"old_cloud_server_preserved":True}),flush=True)
-                  raise p.ProbeError("dedicated_create_not_accepted_no_second_order")
-              else:raise p.ProbeError("unexpected_dedicated_inventory_reconcile_manually")
-          sid=created["id"]
-          def owned(s):
-              assert s["id"]==sid and s["name"]==name and s["comment"]==marker and s["preset_id"]==6007 and s["location"]=="ru-3"
-              assert Decimal(str(s["price"]))==5480,"unexpected_order_price"
-              return s
-          def public(s):
-              return {k:s.get(k) for k in ("id","name","status","preset_id","location","price","ip","created_at","os_id","bandwidth_id","project_id","is_pre_installed","autoinstall_ready")}
-          owned(created)
-          print("MOSCOW_DEDICATED_CREATED="+json.dumps(public(created)),flush=True)
-          last=None
-          for attempt in range(24):
-              current=owned(get("/dedicated-servers/"+str(sid))["dedicated_server"])
-              summary=public(current)
-              if summary!=last:
-                  print("MOSCOW_DEDICATED_CURRENT="+json.dumps(summary),flush=True)
-                  last=summary
-              if current.get("status") in {"on","installed"} and current.get("ip"):
-                  print("MOSCOW_DEDICATED_READY_FOR_SSH="+json.dumps({"id":sid,"ip":current["ip"],"hardware_checks_pending":True}),flush=True)
-                  break
-              time.sleep(15)
-          else:
-              print("MOSCOW_DEDICATED_PROVIDER_PREPARING="+json.dumps({"id":sid,"status":current.get("status"),"ssh_verified":False,"kvm_verified":False}),flush=True)
-          assert any(r["id"]==sid for r in inventory()),"created_server_not_retained"
+          print("MOSCOW_DIRECT_ORDER_ACCOUNT="+json.dumps({"balance_positive":Decimal(str(fin["balance"]))>0,"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"blocked":account["is_blocked"]}),flush=True)
+          cloud=p.read_resource(token,"servers")
+          assert p.summarize("servers",cloud)["complete"]
+          print("PRESERVED_CLOUD_SERVER_IDS="+json.dumps([s["id"] for s in cloud["servers"]]),flush=True)
           PY
