@@ -24,6 +24,11 @@ jobs:
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
+          TELEGRAM_CLIENT_ID: ${{ vars.TELEGRAM_CLIENT_ID }}
+          TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
+          OWNER_TELEGRAM_SUB: ${{ secrets.OWNER_TELEGRAM_SUB }}
+          FERNET_KEY: ${{ secrets.FERNET_KEY }}
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
@@ -69,12 +74,20 @@ jobs:
                       access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
-          request=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/releases?per_page=100",headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","User-Agent":"analyst-timeweb-recovery"})
-          with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(request,timeout=30) as r:
-              releases=json.loads(r.read(4194304))
-          print("APP_RELEASE_RECOVERY="+json.dumps([{"id":r["id"],"name":r.get("name"),"tag":r["tag_name"],"draft":r["draft"],"assets":[{"id":a["id"],"name":a["name"],"size":a["size"]} for a in r["assets"]]} for r in releases if r["draft"] or "0.11" in str(r.get("name"))]),flush=True)
-          for path in ["/domains/analyst-ai-2941515.twc1.net","/domains/analyst-ai-2941515.twc1.net/dns-records"]:
-              status,data=api("GET",path)
-              print("AMS_DOMAIN_RECOVERY="+json.dumps({"path":path,"status":status,"data":data}),flush=True)
-          with_ams("\nimport pathlib,subprocess,json,xml.etree.ElementTree as ET,hashlib\nstate=pathlib.Path(\"/var/lib/analyst-ai-build\")\np=state/\"check-result.json\"\nif p.exists():\n    d=json.loads(p.read_text());print(\"AMS_CHECK=\"+json.dumps(d),flush=True)\n    for step in d.get(\"steps\",[]):\n        log=pathlib.Path(step[\"log\"]).read_text(errors=\"replace\")\n        if step[\"exit_code\"]:print(\"AMS_CHECK_FAILURE=\"+json.dumps(log.splitlines()[-35:]),flush=True)\n        elif step[\"name\"] in (\"host-tests\",\"tools-tests\",\"node-tests\",\"backend-tests\",\"workspace-guard-tests\"):\n            print(\"AMS_TEST_TOTAL=\"+json.dumps({\"name\":step[\"name\"],\"tail\":log.splitlines()[-5:]}),flush=True)\nkey=state/\".android/debug.keystore\"\nprint(\"AMS_SIGNING_KEY_PRESENT=\"+str(key.is_file()),flush=True)\nif key.is_file():\n    cert=subprocess.check_output([\"keytool\",\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(key),\"-storepass\",\"android\"],stderr=subprocess.DEVNULL)\n    print(\"AMS_CERT_SHA256=\"+hashlib.sha256(cert).hexdigest(),flush=True)\nr=subprocess.run([\"journalctl\",\"-u\",\"ssh\",\"--since\",\"2026-10-24 20:22:00\",\"--no-pager\",\"-o\",\"cat\"],stdout=subprocess.PIPE,text=True,timeout=20)\nprint(\"AMS_SSH_TRANSPORT=\"+json.dumps([l for l in r.stdout.splitlines() if any(t in l for t in [\"Accepted publickey\",\"Failed publickey\",\"Connection closed\",\"Unable to negotiate\",\"maximum authentication\"])][-18:]),flush=True)\n")
+          host="analyst-ai-2941515.twc1.net";ip="83.217.195.29"
+          status,data=api("GET","/domains/"+host+"/dns-records");assert status==200
+          records=[r for r in data["dns_records"] if r["type"] in ("A","AAAA","CNAME") and r.get("data",{}).get("subdomain") in (None,"","@",host)]
+          assert len(records)==1 and records[0]["id"]==95069313 and records[0]["data"]["value"]=="201.24.52.66","dns_changed_reconcile"
+          request=urllib.request.Request("https://api.timeweb.cloud/api/v2/domains/"+host+"/dns-records/95069313",method="PATCH",data=json.dumps({"type":"A","value":ip,"ttl":300}).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
+          with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(request,timeout=45) as response:
+              assert response.status in (200,201);result=json.loads(response.read(65536))
+          print("AMS_DNS_UPDATED="+json.dumps(result),flush=True)
+          status,data=api("PATCH","/domains/"+host,{"linked_ip":ip})
+          print("AMS_DOMAIN_LINK="+json.dumps({"status":status,"linked_ip":data.get("domain",{}).get("linked_ip")}),flush=True)
+          status,data=api("GET","/domains/"+host+"/dns-records");assert status==200
+          roots=[r for r in data["dns_records"] if r["type"]=="A" and r.get("data",{}).get("subdomain") in (None,"","@",host)]
+          assert len(roots)==1 and roots[0]["data"]["value"]==ip
+          print("AMS_DNS_READBACK="+json.dumps(roots),flush=True)
+          values={"TELEGRAM_CLIENT_ID":os.environ["TELEGRAM_CLIENT_ID"],"TELEGRAM_CLIENT_SECRET":os.environ["TELEGRAM_CLIENT_SECRET"],"BACKEND_PUBLIC_URL":"https://"+host,"EXPECTED_PUBLIC_IPV4":ip,"TELEGRAM_ENROLLMENT_REDIRECT_URI":"https://"+host+"/auth/telegram/owner-enrollment/callback"}
+          with_ams("enrollment_values="+repr(values)+"\n"+"\nimport pathlib,subprocess,json,os,runpy,socket,time\nroot=pathlib.Path(\"/srv/analyst-ai/workspace\")\nvalidate=runpy.run_path(str(root/\"deploy/install_owner_backend.py\"))[\"validated_enrollment_config\"]\nconfig=validate(enrollment_values)\npath=pathlib.Path(\"/root/analyst-ai-enrollment.json\")\nassert not path.exists(),\"enrollment_configuration_already_exists\"\nfd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\nwith os.fdopen(fd,\"w\") as f:json.dump(config,f)\nsubprocess.run([\"python3\",str(root/\"deploy/install_owner_backend.py\"),\"--enroll-owner\"],check=True,cwd=root,timeout=30)\n# Keep the existing application hostname under this account during recovery.\ncaddy=pathlib.Path(\"/etc/caddy/Caddyfile\")\nsaved=pathlib.Path(\"/root/analyst-caddy-package-default\")\nif not saved.exists():saved.write_bytes(caddy.read_bytes());saved.chmod(0o600)\ncaddy.write_text('analyst-ai-2941515.twc1.net {\\n\\theader Cache-Control \"no-store\"\\n\\theader Retry-After \"60\"\\n\\trespond \"Application service is being restored.\" 503\\n}\\n')\ncaddy.chmod(0o644)\nsubprocess.run([\"caddy\",\"validate\",\"--config\",str(caddy)],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,check=True)\nsubprocess.run([\"systemctl\",\"enable\",\"--now\",\"caddy\"],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)\nprint(\"AMS_DOMAIN_TLS_SERVICE=\"+json.dumps({\"domain\":\"analyst-ai-2941515.twc1.net\",\"mode\":\"maintenance_503\",\"owner_binding\":\"required\",\"private_enrollment_config\":\"validated\",\"private_database_restored\":False}),flush=True)\n")
           PY
