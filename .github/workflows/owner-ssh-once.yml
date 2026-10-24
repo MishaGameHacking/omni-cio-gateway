@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-owner-build-observation
+  group: analyst-owner-provider-diagnostics
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,26 +20,57 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Diagnose guest memory visibility and hotplug state without changing the VM
+      - name: Select the minimum Russian configuration and measure the existing build files
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,shlex,socket,sys,time,urllib.request
+          import json,os,sys,urllib.request
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
-          import prepare_owner_vm as prepare
+          import prepare_owner_vm as p
+          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          def get(path,version=1):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
+          finances=get("/account/finances")["finances"]
+          balance=Decimal(str(finances["balance"]))
+          status=get("/account/status")["status"]
+          assert not status["is_blocked"] and Decimal(str(finances["hourly_fee"]))>0
+          servers=p.read_resource(token,"servers")
+          assert p.summarize("servers",servers)["complete"]
+          print("RUSSIA_CURRENT_SERVERS="+json.dumps([{k:s.get(k) for k in ("id","name","status","cpu","ram","location","availability_zone")} for s in servers["servers"]]),flush=True)
+          offers=[]
+          for row in get("/presets/servers")["server_presets"]:
+              if row["location"].startswith("ru-") and row["cpu"]>=2 and row["ram"]>=6144 and row["disk"]>=40960:
+                  price=Decimal(str(row["price"]))
+                  offers.append({"kind":"preset",**{k:row[k] for k in ("id","location","cpu","ram","disk")},"monthly_rub":float(price),"with_ipv4_rub":float(price+200),"activation_credit_covered":balance>=price+200})
+          for c in get("/configurator/servers")["server_configurators"]:
+              if not c["location"].startswith("ru-"):continue
+              sizes={"cpu":2,"ram":6144,"disk":40960}
+              r=c["requirements"]
+              if not all(r[k+"_min"]<=v<=r[k+"_max"] and (v-r[k+"_min"])%r[k+"_step"]==0 for k,v in sizes.items()):continue
+              price=Decimal(str(c["prices"]["cpu"]))*2+Decimal(str(c["prices"]["ram"]))*6+Decimal(str(c["prices"]["disk"]))*40
+              offers.append({"kind":"configuration","id":c["id"],"location":c["location"],**sizes,"monthly_rub":float(price),"with_ipv4_rub":float(price+200),"activation_credit_covered":balance>=price+200})
+          offers.sort(key=lambda r:(r["monthly_rub"],r["ram"],r["cpu"],r["disk"]))
+          print("RUSSIA_MINIMUM_CATALOG="+json.dumps(offers[:18]),flush=True)
+          print("RUSSIA_SELECTED_POLICY="+json.dumps({"russian_locations_only":True,"no_parallel_build_and_emulator":True,"guest_ram_mib":4096,"minimum_host_ram_mib":6144,"required_kvm_api":12,"hourly_billing":True,"budget_padding":False}),flush=True)
+          import shlex
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
           original_select=adopt.select_target
+          observed=next(s for s in servers["servers"] if s["id"]==9408159)
+          assert observed["ram"] in {1024,3072} and observed["cpu"]==1
           def select_target(new):
               original_select(new)
-              if new:prepare.CONFIGURATION["ram"]=3072
+              if new:p.CONFIGURATION["ram"]=observed["ram"]
           adopt.select_target=select_target
-          def execute_remote(command):
-              remote="import fcntl,json,pathlib,subprocess\nroot=pathlib.Path(\"/sys/devices/system/memory\")\nmeminfo={x.split(\":\")[0]:int(x.split()[1]) for x in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if x.split(\":\")[0] in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\",\"SwapFree\"}}\nstates={}\nfor path in root.glob(\"memory[0-9]*/state\"):\n    states[path.parent.name]=path.read_text().strip()\ncpu=pathlib.Path(\"/proc/cpuinfo\").read_text().split()\nreport={\"memory_kib\":meminfo,\"memory_block_states\":states,\"auto_online_blocks\":(root/\"auto_online_blocks\").read_text().strip() if (root/\"auto_online_blocks\").exists() else None,\"block_size_hex\":(root/\"block_size_bytes\").read_text().strip() if (root/\"block_size_bytes\").exists() else None,\"boot_memory_limits\":[v for v in pathlib.Path(\"/proc/cmdline\").read_text().split() if v.startswith((\"mem=\",\"memmap=\"))],\"cpu_vmx\":\"vmx\" in cpu,\"cpu_svm\":\"svm\" in cpu,\"kvm_device\":pathlib.Path(\"/dev/kvm\").exists(),\"kvm_api\":None}\nfor name,args in ((\"lsmem\",[\"lsmem\",\"--json\"]),(\"dmi_memory\",[\"dmidecode\",\"--type\",\"memory\"])):\n    try:\n        r=subprocess.run(args,capture_output=True,text=True,timeout=20)\n        if name==\"lsmem\" and r.returncode==0:\n            report[name]=json.loads(r.stdout)\n        else:\n            report[name]={\"exit\":r.returncode,\"sizes\":[line.strip() for line in r.stdout.splitlines() if line.strip().startswith((\"Size:\",\"Maximum Capacity:\",\"Number Of Devices:\"))]}\n    except (OSError,ValueError,subprocess.TimeoutExpired) as error:report[name]={\"error\":type(error).__name__}\nif report[\"kvm_device\"]:\n    try:\n        with open(\"/dev/kvm\",\"r+b\",buffering=0) as dev:report[\"kvm_api\"]=fcntl.ioctl(dev,0xAE00,0)\n    except OSError as error:report[\"kvm_error\"]=type(error).__name__\nprint(\"TIMEWEB_GUEST_MEMORY_DIAG=\"+json.dumps(report),flush=True)\n"
-              result=prepare.remote(command,"python3 -u -c "+shlex.quote(remote),timeout=90)
-              print(result.decode("utf-8"),end="",flush=True)
-          access.develop_backend=execute_remote
+          def verify_disk(command):
+              script="import json,pathlib,shutil,subprocess\npaths=[\"/root/analyst-ai-android-690811a5\",\"/opt/analyst-android-sdk\",\"/root/.gradle\",\"/root/.android\",\"/root/analyst-build.swap\"]\nsizes={}\nfor path in paths:\n    result=subprocess.run([\"du\",\"-sxB1\",path],capture_output=True,text=True,timeout=30)\n    assert result.returncode==0\n    sizes[path]=int(result.stdout.split()[0])\ndisk=shutil.disk_usage(\"/\")\nprint(\"TIMEWEB_BUILD_DISK_BASELINE=\"+json.dumps({\"components_bytes\":sizes,\"root_total_bytes\":disk.total,\"root_used_bytes\":disk.used,\"root_free_bytes\":disk.free}),flush=True)\n"
+              out=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=90)
+              print(out.decode(),end="",flush=True)
+          access.develop_backend=verify_disk
           adopt.run(development=True)
           PY
