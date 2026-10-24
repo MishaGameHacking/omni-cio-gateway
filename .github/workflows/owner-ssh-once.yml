@@ -4,14 +4,14 @@ on:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: analyst-timeweb-auth-dependency-audit
+  group: analyst-timeweb-current-builder-readiness
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,91 +20,79 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Verify public login and back up the completed Timeweb owner installation and app fix
+      - name: Recheck Timeweb Android builder after live owner backend setup
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+          import ipaddress,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
-          import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          import datetime,hashlib,http.client,ssl
-          host="analyst-ai-2941515.twc1.net"
-          connection=http.client.HTTPSConnection(host,443,timeout=15,context=ssl.create_default_context())
-          connection.connect()
-          assert connection.sock.getpeername()[0]=="201.24.52.66"
-          cert_sha=hashlib.sha256(connection.sock.getpeercert(binary_form=True)).hexdigest()
-          routes=[]
-          for path,expected in (("/health",200),("/workspace",401),("/me",401),("/auth/telegram/owner-enrollment/callback",410)):
-              connection.request("GET",path,headers={"Host":host})
-              with connection.getresponse() as response:
-                  body=response.read(8192);assert response.status==expected
-                  if path=="/health":assert json.loads(body)=={"status":"ok"}
-                  routes.append({"path":path,"status":response.status})
-          connection.request("GET","/auth/telegram/start",headers={"Host":host})
-          with connection.getresponse() as response:
-              html=response.read(131073)
-              assert response.status==200 and len(html)<=131072
-              assert response.getheader("content-type","").startswith("text/html")
-              assert "no-store" in response.getheader("cache-control","")
-              assert response.getheader("Cross-Origin-Opener-Policy")=="same-origin-allow-popups"
-              assert response.getheader("Referrer-Policy")=="no-referrer"
-              text=html.decode()
-              assert "https://analyst-ai-2941515.twc1.net/auth/telegram/complete" in text
-              assert "176.98.178.81.sslip.io" not in text and "backend-not-configured.invalid" not in text
-              routes.append({"path":"/auth/telegram/start","status":200,"no_store":True,"same_origin_allow_popups":True,"correct_completion_origin":True})
-          connection.close()
-          public_proof={"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"host":host,"public_ip":"201.24.52.66","verified_tls":True,"certificate_sha256":cert_sha,"routes":routes}
-          print("TIMEWEB_EXTERNAL_BACKEND_FINAL="+json.dumps(public_proof),flush=True)
-          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
-          for server_id,name,ip,old_host in targets:
-              access.SERVER_ID=server_id
-              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
-              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
-              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
-                  folder=pathlib.Path(directory)
-                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
-                  key=created.get("ssh_key",created.get("ssh-key",{}))
-                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-                  key_id=key["id"];attached=False
-                  try:
-                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
-                      command=p.ssh_command(folder,ip,old_host)
-                      command[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
-                      for attempt in range(12):
-                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
-                          except (p.ProbeError,subprocess.TimeoutExpired):
-                              if attempt==11:raise
-                              time.sleep(5)
-                      expected={relative:hashlib.sha256(subprocess.check_output(["git","show","HEAD:"+relative])).hexdigest() for relative in (".github/scripts/native_input_evidence.py",".github/scripts/tests/test_native_input_evidence.py")}
-                      script="import datetime,hashlib,hmac,json,pathlib,re,subprocess,sys\nroot=pathlib.Path(\"/root\");source=root/\"analyst-ai-source\";android=root/\"analyst-ai-android-690811a5\";development=root/\"analyst-ai-development-79be1821\";work=root/\"analyst-live-origin-20261024\"\nsys.path.insert(0,str(source))\nfrom deploy import install_owner_backend as installer\nconfig=installer.load_config()\nexpected=json.loads((root/\"analyst-owner-login-relay-retry-20261024/verified-identity.json\").read_text())[\"sub\"]\nassert hmac.compare_digest(config[\"ANALYST_OWNER_TELEGRAM_SUB\"],expected)\nassert installer.probe() and installer.probe(\"analyst-ai-2941515.twc1.net\")\nreport=json.loads((work/\"verification.json\").read_text())\nassert report[\"phase\"]==\"origin_configured_targeted_jvm_tests_passed\"\nassert report[\"after_configuration\"][\"test_exit\"]==0 and report[\"after_configuration\"][\"passed\"]==[\"3\"]\nassert report[\"before_configuration\"][\"failure_summary\"]==[\"Tests run: 3,  Failures: 2\"]\nfor relative,digest in report[\"source_sha256\"].items():\n    assert hashlib.sha256((android/relative).read_bytes()).hexdigest()==digest\nassert 'const val HOST = \"analyst-ai-2941515.twc1.net\"' in (android/\"app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt\").read_text()\napk=root/\"analyst-ai-artifacts/690811a5a376181990a64f37d914c87eb6c919b7/Analyst-AI-0.11.0-preview-690811a5.apk\"\nassert hashlib.file_digest(apk.open(\"rb\"),\"sha256\").hexdigest()==\"71feb07dd0379a56ec25513194535a145bd5663dadc77611c50cdc442fccd27d\"\nenv_text=(installer.CONFIG/\"backend.env\").read_text()\nai_configured=any(line.startswith(\"TIMEWEB_AI_TOKEN=\") and line.split(\"=\",1)[1] not in {'\"\"',\"''\",\"\"} for line in env_text.splitlines())\nsource_diff=subprocess.check_output([\"git\",\"diff\",\"--binary\"],cwd=android)\n(work/\"android-source.diff\").write_bytes(source_diff)\n(work/\"android-source.diff\").chmod(0o600)\nfinal={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"owner_bound\":True,\"local_backend_verified\":True,\"public_backend\":PUBLIC_PROOF,\"android_origin_configured\":True,\"targeted_jvm_tests\":3,\"new_apk_built\":False,\"new_apk_published\":False,\"ai_credential_configured\":ai_configured,\"android_source_diff_sha256\":hashlib.sha256(source_diff).hexdigest()}\npath=work/\"release-readiness.json\";path.write_text(json.dumps(final,indent=2)+\"\\n\");path.chmod(0o600)\nconsole=root/\"analyst-owner-login-relay-renewed-20261024-1344\"\nsocket=console/\"tmux.sock\"\nif socket.exists():\n    capture=subprocess.check_output([\"tmux\",\"-S\",str(socket),\"capture-pane\",\"-p\",\"-J\",\"-S\",\"-150\",\"-t\",\"owner:0.0\"],text=True,timeout=10)\n    assert \"OWNER_BACKEND_INSTALL=local_health_auth_and_tls_verified_external_check_pending\" in capture\n    assert subprocess.check_output([\"tmux\",\"-S\",str(socket),\"display-message\",\"-p\",\"-t\",\"owner:0.0\",\"#{pane_dead}\"],text=True,timeout=10).strip()==\"1\"\n    subprocess.run([\"tmux\",\"-S\",str(socket),\"kill-server\"],check=True,capture_output=True,timeout=10)\n    final[\"finished_private_console_stopped\"]=True\n    path.write_text(json.dumps(final,indent=2)+\"\\n\")\nnote=\"F01/F02/F22/F23, 24.10.2026: живой вход владельца завершён. На Timeweb9413105 сохранена root-only конфигурация подтверждённого Telegram OIDC subject, создана новая БД и запущен один analyst-ai-owner service под отдельным пользователем. Проверены локальные и внешние HTTPS-запросы: health200, workspace/me401 без сессии, прежний одноразовый owner callback410. Обычная страница Telegram-входа200 отдаёт no-store, same-origin-allow-popups и новый completion origin. Внешняя проверка run40100066145 и повторная проверка текущего запуска. Чувствительные идентификаторы и ссылки входа не публикуются. В Android-исходниках на Timeweb адрес backend-not-configured.invalid заменён на analyst-ai-2941515.twc1.net; старый хост и чужие origins не становятся fallback. Три Kotlin/JUnit проверки прошли после двух отказов с исходной заглушкой (run40101013444, Kotlin2.4.10/JDK17, ограниченный MemoryMax448MiB). Прямые Maven endpoints дали TLS timeout; те же JUnit4.13.2/Hamcrest1.3 загружены с документированного Google Cloud mirror и проверены по checksum. DiffSHA256 \"+final[\"android_source_diff_sha256\"]+\". Компиляция всего Android, обе runtime-матрицы, исправление курсора при font200, выпуск и установка нового APK остаются незавершёнными: прежний файл 71feb07d не пересобран и содержит старую заглушку. Подпись/package/versionCode35 и строгая вертикальная ориентация сохранены. Московский Android-сервер121673 всё ещё устанавливается провайдером без IP; в актуальном каталоге RU не нашлось preinstalled предложения, дополнительных заказов не делалось. AI credential configured=\"+str(ai_configured)+\": успешные health/авторизация не означают подключение ИИ или проверку портфеля. Прежние записи выше/ниже сохраняют историческое состояние на свои даты.\\n\"\nfor relative in (\"AGENTS.md\",\"README.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=development/relative;body=path.read_text();assert note not in body\n    path.write_text(body.rstrip()+\"\\n\\n\"+note)\nreadme=development/\"README.md\";body=readme.read_text();heading,separator,rest=body.partition(\"\\n\")\nblock=\"\\n**24.10.2026 — сервер владельца запущен; APK 0.11.0 ещё не выпущен.**\\nTelegram-владелец привязан, HTTPS и защита личных маршрутов проверены извне.\\nНа Timeweb в Android-исходниках установлен новый адрес сервера; три проверки\\nподключения проходят. Новый APK ещё требует полной Android-матрицы и исправления\\nнаблюдавшейся ошибки курсора. Выделенный Android-сервер ожидает установки Timeweb;\\nрабочее подключение ИИ пока не настроено. На телефоне остаётся опубликованный 0.10.0.\\nПодробности и границы готовности — в [PLAN_STATUS](docs/PLAN_STATUS.md).\\n\\n\"\nassert block not in body\nreadme.write_text(heading+separator+block+rest)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=development,capture_output=True,check=True)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=android,capture_output=True,check=True)\nprint(\"TIMEWEB_RELEASE_READINESS_CHECKPOINT=\"+json.dumps(final),flush=True)\n"
-                      script="PUBLIC_PROOF="+repr(public_proof)+"\n"+script
-                      output=p.remote(command,"/root/analyst-ai-development-venv/bin/python -u -c "+shlex.quote(script),timeout=180).decode()
-                      print(output,end="",flush=True)
-                      docs=json.loads(p.remote(command,"python3 -c "+shlex.quote("import json,pathlib\nroot=pathlib.Path(\"/root\");repo=root/\"analyst-ai-development-79be1821\"\nsecret=json.loads((root/\"analyst-ai-enrollment.json\").read_text())[\"TELEGRAM_CLIENT_SECRET\"]\nfiles={rel:(repo/rel).read_text() for rel in (\"AGENTS.md\",\"README.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\")}\nfiles.update({rel:(root/\"analyst-ai-android-690811a5\"/rel).read_text() for rel in (\".github/scripts/native_input_evidence.py\",\".github/scripts/tests/test_native_input_evidence.py\",\"app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt\",\"app/src/test/java/ru/omnicio/app/data/backend/BackendConfigTest.kt\")})\nassert all(secret not in text and \"-----BEGIN OPENSSH PRIVATE KEY-----\" not in text and \"-----BEGIN PRIVATE KEY-----\" not in text for text in files.values())\nprint(json.dumps(files))\n"),timeout=30))
-                      assert set(docs)=={"AGENTS.md","README.md","docs/MASTER_PLAN.md","docs/PLAN_STATUS.md",".github/scripts/native_input_evidence.py",".github/scripts/tests/test_native_input_evidence.py","app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt","app/src/test/java/ru/omnicio/app/data/backend/BackendConfigTest.kt"}
-                      def gh(method,path,body=None):
-                          data=None if body is None else json.dumps(body).encode()
-                          req=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway"+path,method=method,data=data,headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","Content-Type":"application/json","X-GitHub-Api-Version":"2022-11-28"})
-                          with urllib.request.urlopen(req,timeout=30) as response:
-                              raw=response.read(4*1024*1024+1)
-                          return json.loads(raw) if raw else {}
-                      ref=gh("GET","/git/ref/heads/codex/timeweb-owner-prepare-2026-10-23")
-                      assert ref["object"]["sha"]==os.environ["GITHUB_SHA"],"backup_ref_changed"
-                      commit=gh("GET","/git/commits/"+ref["object"]["sha"])
-                      tree=gh("POST","/git/trees",{"base_tree":commit["tree"]["sha"],"tree":[{"path":path,"mode":"100644","type":"blob","content":text} for path,text in docs.items()]})
-                      backed=gh("POST","/git/commits",{"message":"Back up live owner backend and tested Android origin configuration from Timeweb","tree":tree["sha"],"parents":[ref["object"]["sha"]]})
-                      current=gh("GET","/git/ref/heads/codex/timeweb-owner-prepare-2026-10-23")
-                      assert current["object"]["sha"]==ref["object"]["sha"],"backup_ref_changed"
-                      gh("PATCH","/git/refs/heads/codex/timeweb-owner-prepare-2026-10-23",{"sha":backed["sha"],"force":False})
-                      print("TIMEWEB_DOCUMENT_BACKUP="+json.dumps({"sha":backed["sha"],"tree":tree["sha"],"files":sorted(docs),"edited_on":"Timeweb 9413105"}),flush=True)
-                  finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
-                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
+          def owned(s):
+              assert s["id"]==121673 and s["name"]=="analyst-ai-msk-20261024" and s["comment"]=="Analyst AI owner authorized Moscow work server 2026-10-24"
+              assert s["preset_id"]==6007 and s["location"]=="ru-3" and s["project_id"]==2941515 and Decimal(str(s["price"]))==5480
+              return s
+          previous=None
+          server=None
+          for attempt in range(1):
+              server=owned(get("/dedicated-servers/121673")["dedicated_server"])
+              safe={k:server.get(k) for k in ("id","name","status","location","price","ip","os_id","autoinstall_ready")}
+              if safe!=previous or attempt%20==0:
+                  print("MOSCOW_READY_OBSERVATION="+json.dumps(safe),flush=True)
+                  previous=safe
+              if server.get("status") in {"on","installed"} and server.get("ip"):
+                  break
+              time.sleep(15)
+          else:
+              print("MOSCOW_STILL_PROVIDER_INSTALLING="+json.dumps({"id":121673,"status":server.get("status"),"ip_assigned":bool(server.get("ip")),"ssh_verified":False,"kvm_verified":False}),flush=True)
+              sys.exit(0)
+          address=str(ipaddress.IPv4Address(server["ip"]))
+          assert ipaddress.ip_address(address).is_global,"non_global_dedicated_address"
+          password=server.get("password")
+          assert isinstance(password,str) and 8<=len(password)<=1024 and "\n" not in password and "hidden_by_runtime_policy" not in password and not password.startswith("[REDACTED"),"root_credential_not_ready_or_redacted"
+          with tempfile.TemporaryDirectory(prefix="moscow-first-access-",dir=os.environ["RUNNER_TEMP"]) as temp:
+              folder=pathlib.Path(temp)
+              folder.chmod(0o700)
+              scan=subprocess.run(["ssh-keyscan","-T","10","-t","ed25519",address],capture_output=True,text=True,check=False,timeout=30)
+              keys={line for line in scan.stdout.splitlines() if line.startswith(address+" ssh-ed25519 ")}
+              assert len(keys)==1,"dedicated_ssh_ed25519_not_ready"
+              line=keys.pop()
+              public=" ".join(line.split()[1:3])
+              known=folder/"known_hosts"
+              known.write_text(address+" "+public+"\n")
+              known.chmod(0o600)
+              fingerprint=subprocess.check_output(["ssh-keygen","-l","-f",str(known)],text=True).split()[1]
+              print("MOSCOW_SSH_FIRST_USE_PIN="+json.dumps({"server_id":121673,"ip":address,"host_public_key":public,"fingerprint":fingerprint,"source":"first_connection_to_authenticated_API_assigned_IP"}),flush=True)
+              secret=folder/"root_password"
+              secret.write_text(password+"\n")
+              secret.chmod(0o600)
+              askpass=folder/"askpass"
+              askpass.write_text("#!/bin/sh\nexec cat "+shlex.quote(str(secret))+"\n")
+              askpass.chmod(0o700)
+              config=folder/"ssh_config"
+              config.write_text("")
+              environment=os.environ.copy()
+              environment.update({"SSH_ASKPASS":str(askpass),"SSH_ASKPASS_REQUIRE":"force","DISPLAY":":0"})
+              command=["ssh","-F",str(config),"-o","BatchMode=no","-o","PreferredAuthentications=password","-o","PubkeyAuthentication=no","-o","NumberOfPasswordPrompts=1","-o","ConnectTimeout=10","-o","StrictHostKeyChecking=yes","-o","HostKeyAlgorithms=ssh-ed25519","-o","UserKnownHostsFile="+str(known),"root@"+address]
+              script="import datetime,fcntl,json,os,pathlib,shutil,socket,ssl,subprocess\nos.umask(0o077)\nassert os.geteuid()==0,\"root_required\"\nmem={}\nfor line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines():\n    key,value=line.split(\":\",1)\n    if key in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\"}:mem[key+\"_kib\"]=int(value.split()[0])\ncpuinfo=pathlib.Path(\"/proc/cpuinfo\").read_text()\nflags=set(next((line.split(\":\",1)[1].split() for line in cpuinfo.splitlines() if line.startswith(\"flags\")),[]))\nlscpu=json.loads(subprocess.check_output([\"lscpu\",\"-J\"],text=True))\ncpu={row[\"field\"].rstrip(\":\"):row[\"data\"] for row in lscpu[\"lscpu\"] if row[\"field\"].rstrip(\":\") in {\"Architecture\",\"CPU(s)\",\"Model name\",\"Core(s) per socket\",\"Socket(s)\",\"Thread(s) per core\",\"Virtualization\",\"Hypervisor vendor\"}}\nos_release={}\nfor line in pathlib.Path(\"/etc/os-release\").read_text().splitlines():\n    key,sep,value=line.partition(\"=\")\n    if key in {\"ID\",\"VERSION_ID\",\"PRETTY_NAME\"}:os_release[key]=value.strip('\"')\nvirt=subprocess.run([\"systemd-detect-virt\"],capture_output=True,text=True,check=False).stdout.strip()\nkvm={\"cpu_vmx\":\"vmx\" in flags,\"cpu_svm\":\"svm\" in flags,\"api_version\":None,\"create_vm\":False}\nmodule=\"kvm_intel\" if \"vmx\" in flags else \"kvm_amd\" if \"svm\" in flags else None\nif module:\n    kvm[\"module_load_rc\"]=subprocess.run([\"modprobe\",module],capture_output=True,check=False).returncode\nkvm[\"device_exists\"]=pathlib.Path(\"/dev/kvm\").exists()\nif kvm[\"device_exists\"]:\n    try:\n        device=os.open(\"/dev/kvm\",os.O_RDWR|os.O_CLOEXEC)\n        try:\n            kvm[\"api_version\"]=fcntl.ioctl(device,0xAE00,0)\n            if kvm[\"api_version\"]==12:\n                guest=fcntl.ioctl(device,0xAE01,0)\n                os.close(guest)\n                kvm[\"create_vm\"]=True\n        finally:os.close(device)\n    except OSError as error:kvm[\"error\"]={\"type\":type(error).__name__,\"errno\":error.errno}\nnetwork={}\nfor host in (\"oauth.telegram.org\",\"dl.google.com\",\"repo.maven.apache.org\"):\n    try:\n        with socket.create_connection((host,443),timeout=10) as raw:\n            with ssl.create_default_context().wrap_socket(raw,server_hostname=host) as tls:\n                network[host]={\"tls_verified\":True,\"tls_version\":tls.version()}\n    except OSError as error:network[host]={\"tls_verified\":False,\"error\":type(error).__name__,\"errno\":error.errno}\ndisk=shutil.disk_usage(\"/\")\nreport={\"server_id\":121673,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"ssh_root_verified\":True,\"os\":os_release,\"cpu\":cpu,\"virtualization\":virt,\"memory\":mem,\"disk\":{\"total_bytes\":disk.total,\"free_bytes\":disk.free},\"kvm\":kvm,\"outbound_tls\":network}\nreport[\"hardware_suitable\"]=mem[\"MemTotal_kib\"]>=7*1024*1024 and os.cpu_count()>=4 and disk.free>=30*1024**3 and kvm[\"create_vm\"] and os_release.get(\"ID\")==\"ubuntu\" and os_release.get(\"VERSION_ID\")==\"24.04\"\nreport[\"full_application_checks_complete\"]=False\ntarget=pathlib.Path(\"/root/analyst-moscow-hardware-proof.json\")\nassert not target.is_symlink()\ntarget.write_text(json.dumps(report,ensure_ascii=False,indent=2)+\"\\n\")\ntarget.chmod(0o600)\nprint(\"MOSCOW_PHYSICAL_HARDWARE=\"+json.dumps(report,ensure_ascii=False),flush=True)\n"
+              result=subprocess.run(command+["python3 -u -c "+shlex.quote(script)],capture_output=True,env=environment,start_new_session=True,timeout=120)
+              secret.unlink(missing_ok=True)
+              assert result.returncode==0,"dedicated_ssh_probe_failed_rc_"+str(result.returncode)
+              lines=result.stdout.decode().splitlines()
+              records=[line for line in lines if line.startswith("MOSCOW_PHYSICAL_HARDWARE=")]
+              assert len(records)==1,"dedicated_probe_result_missing"
+              report=json.loads(records[0].split("=",1)[1])
+              assert report["server_id"]==121673 and report["ssh_root_verified"]
+              print(records[0],flush=True)
+              if not report["hardware_suitable"]:raise p.ProbeError("dedicated_hardware_gate_failed_preserve_old_server")
+              print("MOSCOW_SSH_KVM_READY_FOR_MIGRATION=121673",flush=True)
+          assert owned(get("/dedicated-servers/121673")["dedicated_server"])["ip"]==address
+          
           PY
