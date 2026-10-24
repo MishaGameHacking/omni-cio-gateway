@@ -68,14 +68,5 @@ jobs:
                       if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
                       access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
-          
-          status,data=api("PATCH","/servers/9415007/disks/26145305/auto-backups",{"is_enabled":True,"copy_count":1,"creation_start_at":"2026-10-25T00:00:00Z","interval":"day"})
-          print("AMS_BACKUP_SETUP="+json.dumps({"status":status,"result":data}),flush=True)
-          assert status==200,"backup_setup_not_confirmed"
-          status,data=api("GET","/servers/9415007/disks/26145305/auto-backups")
-          print("AMS_BACKUP_READBACK="+json.dumps({"status":status,"result":data}),flush=True)
-          status,data=api("GET","/account/finances")
-          finance=data.get("finances",data)
-          print("AMS_BILLING="+json.dumps({k:finance.get(k) for k in ["balance","currency","monthly_cost","hourly_cost"]}),flush=True)
-          with_ams("\nimport pathlib,subprocess,json,shutil\nprint(\"AMS_BOOTSTRAP_SERVICE=\"+subprocess.check_output([\"systemctl\",\"show\",\"analyst-ams-bootstrap.service\",\"-p\",\"ActiveState\",\"-p\",\"SubState\",\"-p\",\"ExecMainStatus\"],text=True).replace(\"\\n\",\" \"),flush=True)\nproof=pathlib.Path(\"/var/lib/analyst-ai-ops/workspace-bootstrap.json\")\nif proof.exists(): print(\"AMS_BOOTSTRAP_REPORT=\"+proof.read_text(),flush=True)\nlog=pathlib.Path(\"/var/log/analyst-ams-bootstrap.log\")\nif log.exists():print(\"AMS_BOOTSTRAP_TAIL=\"+json.dumps(log.read_text(errors=\"replace\").splitlines()[-26:]),flush=True)\ncheck=pathlib.Path(\"/var/lib/analyst-ai-build/check-result.json\")\nif check.exists():print(\"AMS_CHECK_RESULT=\"+check.read_text(),flush=True)\nprint(\"AMS_FREE_DISK=\"+str(shutil.disk_usage(\"/\").free),flush=True)\n")
+          with_ams("\nimport pathlib,json,subprocess\nstate=pathlib.Path(\"/var/lib/analyst-ai-build\")\nd=json.loads((state/\"check-result.json\").read_text())\nprint(\"AMS_CHECK_SUMMARY=\"+json.dumps(d),flush=True)\nfor step in d.get(\"steps\",[]):\n    if step[\"exit_code\"]:\n        log=pathlib.Path(step[\"log\"]).read_text(errors=\"replace\")\n        lines=log.splitlines()\n        print(\"AMS_CHECK_FAILURE_DETAIL=\"+json.dumps(lines[-180:]),flush=True)\nprint(\"AMS_WORKSPACE_GIT=\"+subprocess.check_output([\"runuser\",\"-u\",\"analyst-build\",\"--\",\"git\",\"-C\",\"/srv/analyst-ai/workspace\",\"status\",\"--short\"],text=True),flush=True)\nprint(\"AMS_SIGNING_KEY_PRESENT=\"+str((state/\".android/debug.keystore\").is_file()),flush=True)\n")
           PY
