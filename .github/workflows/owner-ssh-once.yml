@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-moscow-final-handoff
+  group: analyst-timeweb-moscow-resource-reconciliation
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,39 +20,75 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Save verified Moscow configuration and remaining live deployment blockers
+      - name: Reconcile the disappeared unused VM and point the owned application DNS to Moscow
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
+          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          access.SERVER_ID=9413105
-          server=access.request(token,"GET","/servers/9413105")["server"]
-          assert server["id"]==9413105 and server["name"]=="analyst-ai-msk-app-20261024-b" and server["location"]=="ru-3" and server["preset_id"]==6867 and p.cloud.public_ipv4(server)=="201.24.52.66"
           opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
-          def get(path):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(2*1024*1024+1))
-          document=p.read_resource(token,"servers")
-          assert p.summarize("servers",document)["complete"]
-          inventory={"servers":[{**{k:s.get(k) for k in ("id","name","status","location","cpu","ram","preset_id")},"public_ipv4":p.cloud.public_ipv4(s)} for s in document["servers"]]}
-          physical=get("/dedicated-servers/121673")["dedicated_server"]
-          assert physical["id"]==121673 and physical["name"]=="analyst-ai-msk-20261024"
-          inventory["builder"]={k:physical.get(k) for k in ("id","status","ip","price","autoinstall_ready")}
-          finances=get("/account/finances")["finances"]
-          inventory["account_aggregate_costs"]={k:finances.get(k) for k in ("hourly_cost","hourly_fee","monthly_cost","monthly_fee","currency")}
+          def request(method,path,data=None,version=1):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v"+str(version)+path,method=method,data=None if data is None else json.dumps(data).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+              with opener.open(req,timeout=30) as response:
+                  raw=response.read(2*1024*1024+1)
+                  return p.decode_response(raw) if raw else {}
+          servers=p.read_resource(token,"servers")
+          assert p.summarize("servers",servers)["complete"]
+          new,=[s for s in servers["servers"] if s["id"]==9413105]
+          assert new["name"]=="analyst-ai-msk-app-20261024-b" and new["location"]=="ru-3" and p.cloud.public_ipv4(new)=="201.24.52.66"
+          report={"server_id":9413105,"obsolete_server_id":9413003,"obsolete_server_absent_from_complete_inventory":not any(s["id"]==9413003 for s in servers["servers"])}
+          try:
+              request("GET","/servers/9413003");report["obsolete_server_get_status"]=200
+          except urllib.error.HTTPError as error:
+              report["obsolete_server_get_status"]=error.code
+              assert error.code==404,"unexpected_obsolete_server_access_result"
+          ips=request("GET","/floating-ips")
+          assert ips["meta"]["total"]==len(ips["ips"])
+          obsolete=[r for r in ips["ips"] if r["id"]=="a0fc704a-bf26-440a-b55f-facd8db769df"]
+          report["obsolete_ip_present"]=bool(obsolete)
+          if obsolete:
+              row,=obsolete
+              assert row["ip"]=="81.200.158.176"
+              report["obsolete_ip_resource_id"]=row.get("resource_id")
+              if report["obsolete_server_get_status"]==404 and row.get("resource_id") is None:
+                  try:
+                      request("DELETE","/floating-ips/a0fc704a-bf26-440a-b55f-facd8db769df")
+                      after=request("GET","/floating-ips")
+                      assert after["meta"]["total"]==len(after["ips"])
+                      report["obsolete_ip_present"]=any(r["id"]=="a0fc704a-bf26-440a-b55f-facd8db769df" for r in after["ips"])
+                      report["obsolete_ip_cleanup_status"]="absent" if not report["obsolete_ip_present"] else "not_yet_absent"
+                  except urllib.error.HTTPError as error:report["obsolete_ip_delete_http"]=error.code
           domain=p.domain_api(token,"GET")["domain"]
-          assert domain["fqdn"]==p.HOST and domain["is_technical"] is True
-          dns=get("/domains/"+p.HOST+"/dns-records")
-          assert dns["meta"]["total"]==len(dns["dns_records"])
-          inventory["hostname"]=p.HOST
-          inventory["current_address_records"]=[{"id":r["id"],"type":r["type"],"fqdn":r.get("fqdn"),"value":r.get("data",{}).get("value")} for r in dns["dns_records"] if r["type"] in ("A","AAAA","CNAME")]
-          print("MOSCOW_FINAL_INVENTORY="+json.dumps({k:v for k,v in inventory.items() if k!="account_aggregate_costs"}),flush=True)
+          assert domain["fqdn"]==p.HOST and domain["is_technical"] is True and domain["linked_ip"] is None
+          path="/domains/"+p.HOST+"/dns-records"
+          def records():
+              d=request("GET",path)
+              assert d["meta"]["total"]==len(d["dns_records"])
+              return d["dns_records"]
+          before=records()
+          addresses=[r for r in before if r["type"] in ("A","AAAA","CNAME") and r.get("fqdn")==p.HOST]
+          row,=addresses
+          assert row["id"]==95036473 and row["type"]=="A" and row["data"]["value"] in ("201.34.146.244","201.24.52.66")
+          preserved={r["id"]:json.dumps(r,sort_keys=True) for r in before if r["id"]!=95036473}
+          if row["data"]["value"]=="201.34.146.244":
+              try:
+                  request("PATCH",path+"/95036473",{"type":"A","value":"201.24.52.66","ttl":300},version=2)
+                  report["dns_patch_http"]=200
+              except urllib.error.HTTPError as error:
+                  report["dns_patch_http"]=error.code
+                  report["dns_patch_error"]=p.cloud.error_details(error.read(2*1024*1024+1))
+          after=records()
+          assert {r["id"]:json.dumps(r,sort_keys=True) for r in after if r["id"]!=95036473}==preserved,"unrelated_dns_records_changed"
+          row,=[r for r in after if r["id"]==95036473]
+          report["dns_a_value"]=row["data"]["value"]
+          report["dns_points_to_moscow"]=row["data"]["value"]=="201.24.52.66"
+          print("MOSCOW_RESOURCE_RECONCILIATION="+json.dumps(report),flush=True)
+          access.SERVER_ID=9413105
           
           with tempfile.TemporaryDirectory(prefix="analyst-msk-network-",dir=os.environ["RUNNER_TEMP"]) as directory:
               folder=pathlib.Path(directory)
@@ -69,8 +105,8 @@ jobs:
                       except (p.ProbeError,subprocess.TimeoutExpired):
                           if attempt==11:raise
                           time.sleep(5)
-                  script="import datetime,hashlib,json,os,pathlib,stat,subprocess,sys\nroot=pathlib.Path(\"/root\");repo=root/\"analyst-ai-development-79be1821\"\nvalidation=json.loads((root/\"analyst-moscow-validation.json\").read_text())\nmigration=json.loads((root/\"analyst-moscow-migration.json\").read_text())\nnetwork=json.loads((root/\"analyst-jwks-ipv4-comparison.json\").read_text())\nassert validation[\"complete\"] and migration[\"all_file_hashes_verified\"] and migration[\"original_signing_key_preserved\"]\nassert validation[\"backend_tests\"][\"failures\"]==0 and validation[\"backend_tests\"][\"errors\"]==0\ninventory=json.loads(sys.argv[1])\nenrollment=json.loads((root/\"analyst-ai-enrollment.json\").read_text())\nassert enrollment[\"EXPECTED_PUBLIC_IPV4\"]==\"201.24.52.66\"\nsafe={\"server_id\":9413105,\"city\":\"Moscow\",\"location\":\"ru-3\",\"public_ipv4\":\"201.24.52.66\",\"cpu\":1,\"ram_mib\":1024,\"disk_gib\":15,\"monthly_vm_rub\":1720,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"migration_verified\":True,\"original_signing_key_preserved\":True,\"apk_sha256\":migration[\"apk_sha256\"],\"backend_tests\":validation[\"backend_tests\"],\"server_test_peak_rss_kib\":max(x[\"child_peak_rss_kib\"] for x in validation[\"steps\"]),\"free_disk_bytes\":validation[\"free_disk_bytes\"],\"telegram_ipv4_checks\":{\"passed\":sum(x[\"verified_jwks\"] for x in network[\"checks\"]),\"total\":len(network[\"checks\"]),\"all_passed\":network[\"all_passed\"]},\"backend_service_installed\":pathlib.Path(\"/etc/systemd/system/analyst-ai-owner.service\").exists(),\"owner_binding_complete\":pathlib.Path(\"/root/analyst-ai-owner.json\").exists(),\"application_started\":False,\"runtime_android_matrix_complete\":False,\"spare_empty_vm_cleanup\":{\"server_id\":9413003,\"status\":\"provider_rejected_delete_http_403\"},\"original_build_server_retained\":9408159,\"inventory\":inventory}\nassert not safe[\"backend_service_installed\"] and not safe[\"owner_binding_complete\"]\nout=root/\"analyst-moscow-handoff.json\";out.write_text(json.dumps(safe,ensure_ascii=False,indent=2));out.chmod(0o600)\ncfg=root/\"analyst-ai-russian-server-config.json\";values=json.loads(cfg.read_text())\nvalues[\"latest_owner_location_request\"]={\"date\":\"2026-10-24\",\"region\":\"ru-3\",\"city\":\"Moscow\",\"minimum_adequate_resources\":True,\"billing\":\"hourly\",\"status\":\"files_and_backend_tests_verified_live_owner_setup_pending\",\"cloud_server_id\":9413105,\"public_ipv4\":\"201.24.52.66\"}\nfd=os.open(cfg,os.O_WRONLY|os.O_TRUNC|os.O_NOFOLLOW,0o600)\nwith os.fdopen(fd,\"w\") as stream:stream.write(json.dumps(values,ensure_ascii=False,indent=2)+chr(10))\nheading=\"## TIMEWEB 24.10.2026 — проверенный перенос в Москву\"\nnote=heading+chr(10)+chr(10)+(\n\"Текущий сервер приложения — 9413105, analyst-ai-msk-app-20261024-b, Москва (ru-3/msk-1), 201.24.52.66, 1 vCPU / 1 ГБ RAM / 15 ГБ NVMe. Выбран доступный минимальный профиль; базовый тариф 1720 руб./месяц плюс IPv4. Более дешёвый preset 4795 отклонён провайдером no_free_node. Исходники, APK и прежний ключ подписи перенесены: \"+str(migration[\"file_count\"])+\" файлов, все SHA-256 совпали; секреты и расшифрование оставались на Timeweb. В архиве отсутствовали пустые каталоги refs Git; структура восстановлена, оба HEAD подтверждены. Проверки backend выполнялись в Москве на SHA \"+validation[\"source_sha\"]+\": \"+str(validation[\"backend_tests\"][\"tests\"])+\" тестов, \"+str(validation[\"backend_tests\"][\"failures\"])+\" failures, \"+str(validation[\"backend_tests\"][\"errors\"])+\" errors; syntax, compile, pip check, health/OpenAPI и проверка конфигурации установщика прошли. Это проверка изолированного backend, не запущенное личное приложение. \"\n\"Живая привязка владельца Telegram, DNS/TLS, рабочий AI-ключ, полный Android runtime 4/16 КиБ и выпуск остаются отдельными незавершёнными проверками. Из Москвы Telegram JWKS прошёл \"+str(safe[\"telegram_ipv4_checks\"][\"passed\"])+\" из \"+str(safe[\"telegram_ipv4_checks\"][\"total\"])+\" прямых IPv4-проверок, со старого сервера — 6 из 6; неподтверждённая настройка gai.conf возвращена. Сервер 9413003 пуст и не является рабочим: его DELETE отклонён Timeweb HTTP 403, удаление не подтверждено. Старый 9408159 сохраняет исходные файлы и среду Android до завершения переноса среды сборки/готовности заказанного физического сервера. Новые серверы по предыдущим указаниям о Петербурге не заказывать. Разработка и проверки остаются в Timeweb; GitHub используется как резервная копия и ранее разрешённый API/SSH-транспорт. Приложение строго вертикальное; текущий APK не объявляется готовым к выпуску по одним unit-тестам.\"+chr(10))\nchanged=[]\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=repo/rel;previous=path.read_text()\n    previous=previous.replace(\"Используется уже выделенный облачный сервер 9413003,\",\"Для первой попытки был выделен облачный сервер 9413003; актуальный рабочий сервер подготовки — 9413105 (см. результаты ниже). Исходная конфигурация:\")\n    assert heading not in previous\n    path.write_text(previous.rstrip()+chr(10)+chr(10)+note);changed.append(rel)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nsafe[\"updated_documents\"]=changed\nsafe[\"inventory\"]={k:v for k,v in inventory.items() if k!=\"account_aggregate_costs\"}\nprint(\"MOSCOW_HANDOFF=\"+json.dumps(safe),flush=True)\n"
-                  print(p.remote(command,"python3 -u -c "+shlex.quote(script)+" "+shlex.quote(json.dumps(inventory)),timeout=75).decode(),end="",flush=True)
+                  script="import datetime,json,pathlib,socket,subprocess,sys\nroot=pathlib.Path(\"/root\");report=json.loads(sys.argv[1])\nreport[\"checked_at_utc\"]=datetime.datetime.now(datetime.timezone.utc).isoformat()\ntry:report[\"dns_ipv4_from_moscow\"]=sorted({x[4][0] for x in socket.getaddrinfo(\"analyst-ai-2941515.twc1.net\",443,socket.AF_INET,socket.SOCK_STREAM)})\nexcept OSError as error:report[\"dns_resolution_error\"]=type(error).__name__\nout=root/\"analyst-moscow-resource-reconciliation.json\";out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nhandoff_path=root/\"analyst-moscow-handoff.json\";handoff=json.loads(handoff_path.read_text())\ncleanup={\"server_id\":9413003,\"server_get_http\":report[\"obsolete_server_get_status\"],\"absent_from_complete_inventory\":report[\"obsolete_server_absent_from_complete_inventory\"],\"ip_present\":report[\"obsolete_ip_present\"],\"earlier_delete_request_http\":403}\nhandoff[\"spare_empty_vm_cleanup\"]=cleanup\nhandoff[\"dns\"]=report\nhandoff_path.write_text(json.dumps(handoff,ensure_ascii=False,indent=2));handoff_path.chmod(0o600)\nrepo=root/\"analyst-ai-development-79be1821\"\nheading=\"## TIMEWEB 24.10.2026 — заключительная сверка DNS и ресурсов\"\nnote=heading+chr(10)+chr(10)+\"Повторная полная инвентаризация: сервер 9413003 \"+(\"отсутствует, GET вернул 404\" if report[\"obsolete_server_get_status\"]==404 else \"ещё присутствует\")+\". Ранее DELETE получил 403; исчезновение установлено последующей проверкой, а не выдано за успешный ответ того запроса. Старый публичный IPv4 \"+(\"ещё присутствует\" if report[\"obsolete_ip_present\"] else \"отсутствует в полной инвентаризации\")+\". Текущая A-запись приложения: \"+report[\"dns_a_value\"]+\". DNS указывает на Москву: \"+str(report[\"dns_points_to_moscow\"])+\". Backend и HTTPS не запускаются без штатной привязки реального владельца Telegram; проверки сети Telegram остаются 4/6, полный живой запуск не подтверждён.\"+chr(10)\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=repo/rel;previous=path.read_text()\n    assert heading not in previous\n    path.write_text(previous.rstrip()+chr(10)+chr(10)+note)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nprint(\"MOSCOW_FINAL_RESOURCE_STATUS=\"+json.dumps(report),flush=True)\n"
+                  print(p.remote(command,"python3 -u -c "+shlex.quote(script)+" "+shlex.quote(json.dumps(report)),timeout=75).decode(),end="",flush=True)
               finally:
                   if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
                   access.request(token,"DELETE","/ssh-keys/"+str(key_id))
