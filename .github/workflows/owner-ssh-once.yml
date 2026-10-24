@@ -39,35 +39,27 @@ jobs:
                       raw=r.read(4194305);assert len(raw)<=4194304
                       return r.status,json.loads(raw) if raw else {}
               except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
-          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
-          for server_id,name,ip,old_host in targets:
-              access.SERVER_ID=server_id
-              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
-              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
-              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
-                  folder=pathlib.Path(directory)
-                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
-                  key=created.get("ssh_key",created.get("ssh-key",{}))
-                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-                  key_id=key["id"];attached=False
-                  try:
-                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
-                      command=p.ssh_command(folder,ip,old_host)
-                      command[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
-                      for attempt in range(12):
-                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
-                          except (p.ProbeError,subprocess.TimeoutExpired):
-                              if attempt==11:raise
-                              time.sleep(5)
-                      remote_script="import pathlib,json,subprocess,sqlite3,os,pwd,datetime\nroot=pathlib.Path(\"/srv/analyst-ai/workspace\")\nstate=pathlib.Path(\"/var/lib/analyst-ai-build\")\nowner=pwd.getpwnam(\"analyst-build\")\ndirectory=pathlib.Path(\"/root/analyst-redesign-20261024/before-owner-resize\")\ndirectory.mkdir(mode=0o700,exist_ok=True)\ntarget=directory/\"backend.db\"\nwith sqlite3.connect(\"file:/var/lib/analyst-ai/backend.db?mode=ro\",uri=True) as source:\n    with sqlite3.connect(target) as destination:\n        source.backup(destination)\n        assert destination.execute(\"PRAGMA integrity_check\").fetchone()[0]==\"ok\"\ntarget.chmod(0o600)\nnote=\"\"\"\n\n## Подготовка изменения конфигурации — 24.10.2026, 22:00–22:10 МСК\n\nВладелец предложил изменить три параметра основного сервера через панель.\nЦелевые значения для следующей проверки: 1 CPU, 6 ГБ RAM, 30 ГБ NVMe.\nЭто оценка под последовательную сборку и Android-эмулятор, а не потребление\nрабочего API. На скриншоте доступен Ultra: расчёт по показанным ставкам\n640 + 6×600 + 30×32 = 5200 ₽/месяц без IP и дополнительных услуг.\nДоступность конфигурации и аппаратного ускорения этим расчётом не подтверждается.\n\nСерверный публичный контроль 24.10.2026, 21:56 МСК:\nhealth=200, update-policy=200 с прежними 0.11.0-preview /35 и SHA-256\nbc2ca96b41a14433ff3f0bf085066728ec7ed6de904cb27ac5b960df515dbccc,\nнеавторизованный live=401.\n\nДо изменения только инструментов сборки и проверки успешно выполнены\n152 Android unit-теста, без ошибок и пропусков. Обнаружены предупреждение\nGradle о metaspace и высокая подкачка; ограниченный профиль теперь выполняет\nвесь прежний набор Gradle-задач последовательными отдельными JVM.\nОстановленная сборка не считается успешной. Сборка и её контроллер\nприостановлены для перезагрузки; основной API остаётся запущенным.\nПовторный запуск полного check выполняется штатной командой restart:\nstart уже завершившегося RemainAfterExit-сервиса не запускает проверки заново.\nЗащита привязки результатов к исходникам отклонила сборку со старым check.\n\nПроверка запуска кандидата переведена с обязательного Filament-контекста\nна завершённые реальные HWUI-кадры того же PID и package. Сохранены обе\nстраничные конфигурации, установка/обновление и полная UI-матрица.\nВосемь новых проверок парсера пройдены на Timeweb; они не подменяют запуск Android.\n\"\"\"\np=root/\"docs/LIVE_UPDATES_0.12.md\"\nassert \"## Подготовка изменения конфигурации\" not in p.read_text()\np.write_text(p.read_text().rstrip()+note+\"\\n\");os.chown(p,owner.pw_uid,owner.pw_gid)\nsubprocess.run([\"/usr/local/bin/analyst-workspace\",\"check\"],check=True,timeout=20)\nprint(\"OWNER_RESIZE_PREPARED=\"+json.dumps({\"at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\n    \"consistent_database_copy\":\"integrity_ok\",\"new_servers\":0,\n    \"check\":\"restarted_for_current_sources\",\"build\":\"paused\",\n    \"backend\":subprocess.check_output([\"systemctl\",\"is-active\",\"analyst-ai-owner.service\"],text=True).strip()}),flush=True)\n"
-                      result=subprocess.run([*command,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=300)
-                      print(result.stdout.decode(errors="replace"),flush=True)
-                      if result.returncode:
-                          print("REDESIGN_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-5000:],flush=True)
-                          raise RuntimeError("remote_task_failed")
-                  finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
-                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
+          
+          def selected(value, fields):
+              return {key:value.get(key) for key in fields if key in value}
+          for path in ["/servers","/configurator/servers","/os/servers","/account/finances","/projects/2941515/resources","/floating-ips"]:
+              status,data=api("GET",path)
+              if status!=200:
+                  print("INVENTORY_ERROR="+json.dumps({"path":path,"status":status,"details":data}),flush=True)
+                  continue
+              if path=="/servers":
+                  rows=data.get("servers",[])
+                  print("SERVER_INVENTORY="+json.dumps([selected(s,["id","name","project_id","status","location","availability_zone","cpu","ram","disk","configurator_id","preset_id","networks","is_qemu_agent"]) for s in rows]),flush=True)
+              elif path=="/configurator/servers":
+                  rows=data.get("server_configurators",[])
+                  print("AMS_CONFIGURATORS="+json.dumps([s for s in rows if "ams" in json.dumps(s).lower() or s.get("location")=="nl-1"]),flush=True)
+              elif path=="/os/servers":
+                  print("UBUNTU_IMAGES="+json.dumps([s for s in data.get("servers_os",data.get("os",[])) if "ubuntu" in json.dumps(s).lower()]),flush=True)
+                  print("OS_RESPONSE_KEYS="+json.dumps(list(data)),flush=True)
+              elif path=="/account/finances":
+                  print("ACCOUNT_FINANCES="+json.dumps(selected(data.get("finances",data),["balance","currency","monthly_cost","total_paid","hourly_cost","money_source","is_payer"])) ,flush=True)
+              elif path=="/projects/2941515/resources":
+                  print("PROJECT_RESOURCES="+json.dumps(data),flush=True)
+              else:
+                  print("FLOATING_IPS="+json.dumps([selected(s,["id","ip","server_id","resource_id","resource_type","availability_zone","location","is_ddos_guard"]) for s in data.get("floating_ips",[])]),flush=True)
           PY
