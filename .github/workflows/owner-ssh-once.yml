@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-moscow-dns-confirmation
+  group: analyst-timeweb-moscow-dns-source-diagnostic
   cancel-in-progress: false
 jobs:
   access:
@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Verify actual DNS resolution on Moscow after the provider record changed
+      - name: Compare system name resolution with public DNS without changing records
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -49,11 +49,8 @@ jobs:
                       except (p.ProbeError,subprocess.TimeoutExpired):
                           if attempt==11:raise
                           time.sleep(5)
-                  script="import datetime,json,pathlib,shutil,socket,subprocess,time\nroot=pathlib.Path(\"/root\");report={\"server_id\":9413105,\"hostname\":\"analyst-ai-2941515.twc1.net\",\"expected_ipv4\":\"201.24.52.66\",\"observations\":[]}\nif shutil.which(\"resolvectl\"):\n    cleared=subprocess.run([\"resolvectl\",\"flush-caches\"],capture_output=True,timeout=15)\n    report[\"local_dns_cache_flush_exit\"]=cleared.returncode\nfor attempt in range(5):\n    try:addresses=sorted({x[4][0] for x in socket.getaddrinfo(report[\"hostname\"],443,socket.AF_INET,socket.SOCK_STREAM)})\n    except OSError as error:addresses=[];report[\"last_error\"]=type(error).__name__\n    report[\"observations\"].append({\"at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"addresses\":addresses})\n    if addresses==[report[\"expected_ipv4\"]]:break\n    if attempt<4:time.sleep(15)\nreport[\"verified\"]=report[\"observations\"][-1][\"addresses\"]==[report[\"expected_ipv4\"]]\nout=root/\"analyst-moscow-dns-confirmation.json\";out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nhandoff_path=root/\"analyst-moscow-handoff.json\";handoff=json.loads(handoff_path.read_text());handoff[\"dns_confirmation\"]=report\nhandoff_path.write_text(json.dumps(handoff,ensure_ascii=False,indent=2));handoff_path.chmod(0o600)\nready_path=root/\"analyst-moscow-readiness.json\";ready=json.loads(ready_path.read_text());ready[\"dns_resolves_to_moscow\"]=report[\"verified\"]\nready_path.write_text(json.dumps(ready,indent=2));ready_path.chmod(0o600)\nrepo=root/\"analyst-ai-development-79be1821\";heading=\"## TIMEWEB 24.10.2026 — итог проверки DNS после смены адреса\"\nnote=heading+chr(10)+chr(10)+\"После смены A-записи и очистки только локального DNS-кэша фактическое разрешение домена из Москвы: \"+\", \".join(report[\"observations\"][-1][\"addresses\"])+\". Совпадение с 201.24.52.66: \"+str(report[\"verified\"])+\". Это подтверждение DNS, не подтверждение HTTPS, привязки владельца или рабочего приложения.\"+chr(10)\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=repo/rel;old=path.read_text();assert heading not in old\n    path.write_text(old.rstrip()+chr(10)+chr(10)+note)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nprint(\"MOSCOW_DNS_CONFIRMATION=\"+json.dumps(report),flush=True)\n"
-                  output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=150).decode()
-                  print(output,end="",flush=True)
-                  result=json.loads(next(line.split("=",1)[1] for line in output.splitlines() if line.startswith("MOSCOW_DNS_CONFIRMATION=")))
-                  assert result["verified"],"dns_not_yet_resolving_to_verified_moscow_address"
+                  script="import concurrent.futures,datetime,json,pathlib,socket,ssl,subprocess,urllib.request\nhost=\"analyst-ai-2941515.twc1.net\"\nreport={\"server_id\":9413105,\"at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat()}\nreport[\"hosts_file_matches\"]=[line for line in pathlib.Path(\"/etc/hosts\").read_text().splitlines() if host in line.split()]\nreport[\"nss_hosts_rules\"]=[line for line in pathlib.Path(\"/etc/nsswitch.conf\").read_text().splitlines() if line.startswith(\"hosts:\")]\nreport[\"resolver_file_nameservers\"]=[line for line in pathlib.Path(\"/etc/resolv.conf\").read_text().splitlines() if line.startswith(\"nameserver \")]\nreport[\"system_ipv4\"]=sorted({x[4][0] for x in socket.getaddrinfo(host,443,socket.AF_INET,socket.SOCK_STREAM)})\ndef query(label,url):\n    row={\"resolver\":label}\n    try:\n        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))\n        req=urllib.request.Request(url,headers={\"Accept\":\"application/dns-json\"})\n        with opener.open(req,timeout=12) as response:\n            data=json.loads(response.read(131072));row[\"http_status\"]=response.status\n        row.update({k:data.get(k) for k in (\"Status\",\"AD\",\"Answer\",\"Authority\")})\n    except Exception as error:row[\"error_type\"]=type(error).__name__\n    return row\nqueries=[(\"google-A\",\"https://dns.google/resolve?name=\"+host+\"&type=A\"),(\"cloudflare-A\",\"https://cloudflare-dns.com/dns-query?name=\"+host+\"&type=A\"),(\"google-NS\",\"https://dns.google/resolve?name=twc1.net&type=NS\")]\nwith concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:report[\"public_dns\"]=list(pool.map(lambda item:query(*item),queries))\np=pathlib.Path(\"/root/analyst-moscow-dns-diagnostic.json\");p.write_text(json.dumps(report,indent=2));p.chmod(0o600)\nprint(\"MOSCOW_DNS_DIAGNOSTIC=\"+json.dumps(report),flush=True)\n"
+                  print(p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=75).decode(),end="",flush=True)
               finally:
                   if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
                   access.request(token,"DELETE","/ssh-keys/"+str(key_id))
