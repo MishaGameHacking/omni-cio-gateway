@@ -31,10 +31,14 @@ with tempfile.TemporaryDirectory(prefix="analyst-signing-restore-",dir=os.enviro
         access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
         cmd=p.ssh_command(folder,ip,host)
         for attempt in range(12):
-            try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
-            except (p.ProbeError,subprocess.TimeoutExpired):
+            try:
+                probe=subprocess.run(cmd+["test $(id -u) = 0"],capture_output=True,timeout=12)
+                if probe.returncode==0:break
+                if attempt in (0,5,11):print("AMS_SIGNING_SSH_DIAGNOSTIC="+json.dumps({"attempt":attempt,"code":probe.returncode,"error":probe.stderr.decode(errors="replace")[-1800:]}),flush=True)
+                if attempt==11:raise RuntimeError("signing_ssh_transport_failed")
+            except subprocess.TimeoutExpired:
                 if attempt==11:raise
-                time.sleep(5)
+            time.sleep(5)
         out=p.remote(cmd,"python3 -c "+shlex.quote("\nimport sys,pathlib,os,pwd,tempfile,subprocess,hashlib,json\nraw=sys.stdin.buffer.read(65537)\nassert 256<=len(raw)<=65536,\"invalid_keystore_size\"\nowner=pwd.getpwnam(\"analyst-build\")\ndirectory=pathlib.Path(\"/var/lib/analyst-ai-build/.android\")\ndirectory.mkdir(mode=0o700,exist_ok=True);os.chown(directory,owner.pw_uid,owner.pw_gid);directory.chmod(0o700)\ntarget=directory/\"debug.keystore\"\nwith tempfile.NamedTemporaryFile(dir=directory,delete=False) as f:\n    f.write(raw);temporary=pathlib.Path(f.name)\ntry:\n    temporary.chmod(0o600)\n    cert=subprocess.check_output([\"keytool\",\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",str(temporary),\"-storepass\",\"android\"],stderr=subprocess.DEVNULL)\n    digest=hashlib.sha256(cert).hexdigest()\n    assert digest==\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\",\"signing_certificate_mismatch\"\n    if target.exists():\n        assert hashlib.sha256(target.read_bytes()).digest()==hashlib.sha256(raw).digest(),\"existing_keystore_changed\"\n    else:\n        os.chown(temporary,owner.pw_uid,owner.pw_gid);os.link(temporary,target)\n    print(\"AMS_ORIGINAL_SIGNING_KEY_RESTORED=\"+json.dumps({\"certificate_sha256\":digest,\"mode\":oct(target.stat().st_mode&0o777),\"build_user_can_read\":target.stat().st_uid==owner.pw_uid}),flush=True)\nfinally:\n    temporary.unlink(missing_ok=True)\n"),source.read_bytes(),timeout=40)
         print(out.decode(errors="replace"),flush=True)
     finally:
