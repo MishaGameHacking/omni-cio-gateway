@@ -407,20 +407,23 @@ def _post_capture_rotation(read, after):
     return observation
 
 
-def rotate_focused_draft(probe, text: str, name: str, *, dialog=False) -> dict:
+def rotate_focused_draft(probe, text: str, name: str, *, dialog=False, portrait_only=False) -> dict:
     """Rotate the real Activity while the unsent native editor retains its caret."""
     before = _wait_editor(probe, lambda: focused_editor(probe.tree(), text),
                             "Draft did not enter the native focused editor", "before", text)
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     probe.command("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     expected = max(0, before["selection_end"] - 2)
-    before = probe.wait_for(lambda: focused_editor(probe.tree(), text, (expected, expected)),
-                            "Native cursor did not move within the unsent question")
+    before = _wait_editor(probe, lambda: focused_editor(probe.tree(), text, (expected, expected)),
+                          "Native cursor did not move within the focused editor",
+                          "rotation-caret", text)
     def input_window():
         tree = probe.tree()
         return tree if keyboard_visible(tree) else None
 
     initial = probe.wait_for(input_window, "Focused draft did not show its native input-method window")
+    if portrait_only:
+        return _portrait_draft(probe, text, name, before, initial, keyboard_expected=True)
     return _rotate_observed_draft(probe, text, name, before, initial, dialog=dialog, keyboard_expected=True)
 
 
@@ -433,7 +436,7 @@ def _focused_input(tree, text, selection=None, *, keyboard_expected):
     return (tree, editor) if editor is not None else None
 
 
-def rotate_dismissed_draft(probe, text: str, name: str, *, dialog=False) -> dict:
+def rotate_dismissed_draft(probe, text: str, name: str, *, dialog=False, portrait_only=False) -> dict:
     """Dismiss once, then rotate without refocusing or changing the actual caret."""
     _, before = _wait_editor(probe, lambda: _focused_input(probe.tree(), text, keyboard_expected=True),
                               "Focused draft did not have an input-method window to dismiss", "before-dismiss", text)
@@ -443,9 +446,34 @@ def rotate_dismissed_draft(probe, text: str, name: str, *, dialog=False) -> dict
     initial, _ = _wait_editor(probe,
         lambda: _focused_input(probe.tree(), text, selection, keyboard_expected=False),
         "Dismissing the keyboard lost the focused draft or exact caret", "dismissed", text)
-    result = _rotate_observed_draft(probe, text, name, before, initial, dialog=dialog, keyboard_expected=False)
+    result = (_portrait_draft(probe, text, name, before, initial, keyboard_expected=False) if portrait_only else
+              _rotate_observed_draft(probe, text, name, before, initial, dialog=dialog, keyboard_expected=False))
     result["scenario"] = "dismissed-keyboard-focus-caret-rotation"
     return result
+
+
+def _portrait_draft(probe, text, name, before, initial, *, keyboard_expected):
+    from emulator_rotation import portrait_geometry, portrait_turn
+    original = portrait_geometry(initial)
+    selection = before["selection_start"], before["selection_end"]
+    def read():
+        tree = probe.tree()
+        if portrait_geometry(tree) != original:
+            return None
+        value = _focused_input(tree, text, selection, keyboard_expected=keyboard_expected)
+        if value is None:
+            return None
+        return {"editor": value[1], "width": original[0], "height": original[1],
+                "window_id": active_window_id(tree), "keyboard_visible": keyboard_expected,
+                "frame": _frame_diagnostic(tree)}
+    with portrait_turn(probe.command):
+        after = _wait_rotation_editor(probe, read, "Portrait turn lost draft, caret or keyboard state", "portrait", text)
+        probe.capture(name)
+        post_capture = _post_capture_rotation(read, after)
+    restored = _wait_rotation_editor(probe, read, "Restoring device posture lost the portrait draft", "restored", text)
+    return {"scenario": "portrait-draft-during-landscape-request", "orientation_policy": "portrait",
+            "requested_user_rotation": 1, "before": before, "after": after, "post_capture": post_capture,
+            "restored": restored, "screenshot": name + ".png", "screen_reader_perception_verified": False}
 
 
 def _rotate_observed_draft(probe, text, name, before, initial, *, dialog, keyboard_expected):
