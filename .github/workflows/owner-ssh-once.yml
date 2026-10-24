@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-moscow-ipv4
+  group: analyst-timeweb-moscow-network-evidence
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Prefer working IPv4 on the new Moscow VM and verify six real Telegram key requests
+      - name: Read the precise failed Telegram check result without changing network settings
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -30,7 +30,6 @@ jobs:
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
-          import replace_unreachable_vm as replacement
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
           access.SERVER_ID=9413105
           server=access.request(token,"GET","/servers/9413105")["server"]
@@ -50,8 +49,8 @@ jobs:
                       except (p.ProbeError,subprocess.TimeoutExpired):
                           if attempt==11:raise
                           time.sleep(5)
-                  script="import datetime,hashlib,json,os,pathlib,socket,subprocess,sys,time\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat()}\nreport[\"address_order_before\"]=[{\"family\":int(x[0]),\"address\":x[4][0]} for x in socket.getaddrinfo(\"oauth.telegram.org\",443,type=socket.SOCK_STREAM)]\ngai=pathlib.Path(\"/etc/gai.conf\")\nassert gai.is_file() and not gai.is_symlink()\nold=gai.read_text()\nmarker=\"# Analyst AI: prefer working IPv4 over unconfigured public IPv6\"\nactive=[l.strip() for l in old.splitlines() if l.strip() and not l.lstrip().startswith(\"#\")]\nreport[\"ipv6_global_addresses\"]=json.loads(subprocess.check_output([\"ip\",\"-j\",\"-6\",\"addr\",\"show\",\"scope\",\"global\"],text=True))\nif marker not in old:\n    assert not active,\"unexpected_existing_address_selection_policy\"\n    backup=pathlib.Path(\"/root/analyst-gai.conf.before\")\n    assert not backup.exists() and not backup.is_symlink()\n    backup.write_text(old);backup.chmod(0o600)\n    additions=chr(10)+marker+chr(10)+\"precedence ::1/128 50\"+chr(10)+\"precedence ::/0 40\"+chr(10)+\"precedence 2002::/16 30\"+chr(10)+\"precedence ::/96 20\"+chr(10)+\"precedence ::ffff:0:0/96 100\"+chr(10)\n    gai.write_text(old.rstrip()+chr(10)+additions)\n    report[\"address_selection_changed\"]=True\nelse:report[\"address_selection_changed\"]=False\nreport[\"gai_sha256\"]=hashlib.sha256(gai.read_bytes()).hexdigest()\norder=\"import socket,json; print(json.dumps([{'family':int(x[0]),'address':x[4][0]} for x in socket.getaddrinfo('oauth.telegram.org',443,type=socket.SOCK_STREAM)]))\"\nreport[\"address_order_after\"]=json.loads(subprocess.check_output([\"python3\",\"-c\",order],text=True))\nreport[\"checks\"]=[]\nfor attempt in range(6):\n    result=subprocess.run([\"python3\",\"-c\",sys.argv[1]],capture_output=True,text=True,timeout=50)\n    assert result.returncode==0,\"network_check_script_failed\"\n    check=json.loads(result.stdout)\n    report[\"checks\"].append(check)\n    print(\"MOSCOW_TELEGRAM_RECHECK=\"+json.dumps({\"attempt\":attempt+1,**check}),flush=True)\n    time.sleep(1)\nreport[\"all_checks_passed\"]=all(x.get(\"telegram_jwks_https\") is True for x in report[\"checks\"])\nout=pathlib.Path(\"/root/analyst-moscow-ipv4-preference.json\")\nout.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nif report[\"all_checks_passed\"]:\n    path=pathlib.Path(\"/root/analyst-moscow-readiness.json\")\n    proof=json.loads(path.read_text())\n    proof[\"initial_telegram_check\"]=proof[\"telegram\"]\n    proof[\"telegram\"]=report[\"checks\"][-1]\n    proof[\"telegram_rechecks_passed\"]=len(report[\"checks\"])\n    proof[\"basic_readiness\"]=True\n    path.write_text(json.dumps(proof,indent=2));path.chmod(0o600)\nprint(\"MOSCOW_IPV4_PREFERENCE=\"+json.dumps(report),flush=True)\nassert report[\"all_checks_passed\"],\"telegram_connectivity_not_yet_stable\"\n"
-                  print(p.remote(command,"python3 -u -c "+shlex.quote(script)+" "+shlex.quote(replacement.TELEGRAM_CHECK),timeout=350).decode(),end="",flush=True)
+                  script="import json,pathlib\nfor name in (\"analyst-moscow-ipv4-preference.json\",\"analyst-moscow-network.json\",\"analyst-moscow-readiness.json\"):\n    path=pathlib.Path(\"/root\")/name\n    print(\"MOSCOW_SAVED_PROOF=\"+json.dumps({\"name\":name,\"exists\":path.exists(),\"report\":json.loads(path.read_text()) if path.exists() else None}),flush=True)\npath=pathlib.Path(\"/etc/gai.conf\")\nprint(\"MOSCOW_GAI_ACTIVE=\"+json.dumps([x for x in path.read_text().splitlines() if x.strip() and not x.lstrip().startswith(\"#\")]),flush=True)\n"
+                  print(p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=40).decode(),end="",flush=True)
               finally:
                   if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
                   access.request(token,"DELETE","/ssh-keys/"+str(key_id))
