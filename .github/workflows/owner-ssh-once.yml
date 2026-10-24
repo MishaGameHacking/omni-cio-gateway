@@ -40,26 +40,70 @@ jobs:
                       return r.status,json.loads(raw) if raw else {}
               except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
           
-          def selected(value, fields):
-              return {key:value.get(key) for key in fields if key in value}
-          for path in ["/servers","/configurator/servers","/os/servers","/account/finances","/projects/2941515/resources","/floating-ips"]:
+          import ipaddress
+          def must(method,path,body=None):
+              status,data=api(method,path,body)
+              if status not in (200,201,204):
+                  print("AMS_API_ERROR="+json.dumps({"method":method,"path":path,"status":status,"details":data}),flush=True)
+                  raise RuntimeError("timeweb_operation_failed_reconcile_before_retry")
+              return data
+          inventory=must("GET","/servers")
+          assert inventory.get("servers")==[] and inventory.get("meta",{}).get("total")==0,"existing_server_reconcile_no_duplicate"
+          offer,=[x for x in must("GET","/configurator/servers")["server_configurators"] if x.get("id")==153]
+          assert offer["location"]=="nl-1" and offer["disk_type"]=="nvme"
+          price=offer["prices"]["cpu"]*4+offer["prices"]["ram"]*6+offer["prices"]["disk"]*30
+          assert price==6640,"price_changed"
+          finance=must("GET","/account/finances").get("finances",{})
+          assert float(finance.get("balance",0))>=7020,"balance_changed"
+          for path in ["/servers/9413105","/servers/9413105/disks","/restore-points","/images"]:
               status,data=api("GET",path)
-              if status!=200:
-                  print("INVENTORY_ERROR="+json.dumps({"path":path,"status":status,"details":data}),flush=True)
-                  continue
-              if path=="/servers":
-                  rows=data.get("servers",[])
-                  print("SERVER_INVENTORY="+json.dumps([selected(s,["id","name","project_id","status","location","availability_zone","cpu","ram","disk","configurator_id","preset_id","networks","is_qemu_agent"]) for s in rows]),flush=True)
-              elif path=="/configurator/servers":
-                  rows=data.get("server_configurators",[])
-                  print("AMS_CONFIGURATORS="+json.dumps([s for s in rows if "ams" in json.dumps(s).lower() or s.get("location")=="nl-1"]),flush=True)
-              elif path=="/os/servers":
-                  print("UBUNTU_IMAGES="+json.dumps([s for s in data.get("servers_os",data.get("os",[])) if "ubuntu" in json.dumps(s).lower()]),flush=True)
-                  print("OS_RESPONSE_KEYS="+json.dumps(list(data)),flush=True)
-              elif path=="/account/finances":
-                  print("ACCOUNT_FINANCES="+json.dumps(selected(data.get("finances",data),["balance","currency","monthly_cost","total_paid","hourly_cost","money_source","is_payer"])) ,flush=True)
-              elif path=="/projects/2941515/resources":
-                  print("PROJECT_RESOURCES="+json.dumps(data),flush=True)
-              else:
-                  print("FLOATING_IPS="+json.dumps([selected(s,["id","ip","server_id","resource_id","resource_type","availability_zone","location","is_ddos_guard"]) for s in data.get("floating_ips",[])]),flush=True)
+              if status==200:
+                  rows=data.get("images",data.get("restore_points",data.get("disks",[])))
+                  print("RECOVERY_INVENTORY="+json.dumps({"path":path,"status":status,"rows":[{k:v for k,v in x.items() if k in ("id","name","status","server_id","vds_id","disk_id","size","created_at","location")} for x in rows],"keys":list(data)}),flush=True)
+              else:print("RECOVERY_INVENTORY="+json.dumps({"path":path,"status":status,"error":data}),flush=True)
+          with tempfile.TemporaryDirectory(prefix="analyst-ams-create-",dir=os.environ["RUNNER_TEMP"]) as directory:
+              folder=pathlib.Path(directory)
+              p.cloud.generate_key(folder/"client");p.cloud.generate_key(folder/"host")
+              client=(folder/"client.pub").read_text().strip();host=(folder/"host.pub").read_text().strip()
+              print("AMS_HOST_PIN="+host,flush=True)
+              config={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,
+                  "ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,
+                  "runcmd":[["systemctl","restart","ssh"]]}
+              payload={"name":"Analyst AI PRO","hostname":"analyst-ai-ams-main","comment":"Analyst AI main development and application server; owner requested Amsterdam 2026-10-24",
+                  "configuration":{"configurator_id":153,"cpu":4,"ram":6144,"disk":30720},"os_id":99,"project_id":2941515,"availability_zone":"ams-1",
+                  "cloud_init":"#cloud-config\n"+json.dumps(config)+"\n"}
+              server=must("POST","/servers",payload)["server"]
+              sid=server["id"]
+              assert server["name"]=="Analyst AI PRO" and server["project_id"]==2941515 and server["cpu"]==4 and server["ram"]==6144
+              print("AMS_SERVER_CREATED="+json.dumps({k:server.get(k) for k in ["id","name","status","location","availability_zone","cpu","ram","configurator_id"]}),flush=True)
+              # Allocate only after the server creation succeeded. Never retry either POST blindly.
+              if not p.cloud.public_ipv4(server):
+                  ips=must("GET","/floating-ips")
+                  assert not ips.get("ips",[]) and ips.get("meta",{}).get("total")==0,"existing_ip_reconcile"
+                  record=must("POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":"ams-1"})["ip"]
+                  ip=record["ip"];ipid=record["id"]
+                  assert ipaddress.ip_address(ip).is_global and record.get("availability_zone")=="ams-1"
+                  print("AMS_IPV4_CREATED="+json.dumps({"id":ipid,"ip":ip}),flush=True)
+                  must("POST","/floating-ips/"+str(ipid)+"/bind",{"resource_type":"server","resource_id":sid})
+              command=None
+              for attempt in range(42):
+                  server=must("GET","/servers/"+str(sid))["server"];ip=p.cloud.public_ipv4(server)
+                  if ip:
+                      command=p.ssh_command(folder,ip,host)
+                      try:
+                          p.remote(command,"cloud-init status --wait >/dev/null && test $(id -u) = 0",timeout=20)
+                          break
+                      except (p.ProbeError,subprocess.TimeoutExpired):pass
+                  if attempt%6==0:print("AMS_WAIT="+json.dumps({"id":sid,"status":server.get("status"),"ipv4":ip,"attempt":attempt}),flush=True)
+                  time.sleep(8)
+              else:raise RuntimeError("new_server_ssh_not_ready_no_second_order")
+              try:
+                  result=subprocess.run([*command,"python3 -"],input="\nimport os,pathlib,json,subprocess,shutil,socket,urllib.request,datetime\nreport={\"at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"cpu\":os.cpu_count(),\"memory_kib\":int(next(l.split()[1] for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith(\"MemTotal:\"))),\"disk_total\":shutil.disk_usage(\"/\").total,\"disk_free\":shutil.disk_usage(\"/\").free,\"kvm\":pathlib.Path(\"/dev/kvm\").exists(),\"cpu_virtualization\":any(x in pathlib.Path(\"/proc/cpuinfo\").read_text().split() for x in [\"vmx\",\"svm\"]),\"os\":dict(l.split(\"=\",1) for l in pathlib.Path(\"/etc/os-release\").read_text().splitlines() if \"=\" in l).get(\"PRETTY_NAME\")}\nfor host,path in [(\"oauth.telegram.org\",\"/.well-known/jwks.json\"),(\"dl.google.com\",\"/android/repository/repository2-1.xml\"),(\"github.com\",\"/\")]:\n    start=__import__(\"time\").monotonic()\n    try:\n        with urllib.request.urlopen(\"https://\"+host+path,timeout=20) as res:\n            sample=res.read(1024);report[host]={\"status\":res.status,\"ms\":round((__import__(\"time\").monotonic()-start)*1000)}\n    except Exception as e: report[host]={\"error\":type(e).__name__}\nbase=pathlib.Path(\"/var/lib/analyst-ai-ops\");base.mkdir(mode=0o700,exist_ok=True)\nproof=base/\"server-provisioning.json\";proof.write_text(json.dumps(report,indent=2)+\"\\n\");proof.chmod(0o600)\nprint(\"AMS_HARDWARE=\"+json.dumps(report),flush=True)\n".encode(),capture_output=True,timeout=120)
+                  print(result.stdout.decode(errors="replace"),flush=True)
+                  if result.returncode:raise RuntimeError("hardware_inspection_failed")
+                  print("AMS_SERVER_READY="+json.dumps({"id":sid,"ip":ip,"host_pin":host,"base_monthly":price,"ipv4_monthly":200}),flush=True)
+              finally:
+                  remove="python3 -c "+shlex.quote("import pathlib,sys; p=pathlib.Path('/root/.ssh/authorized_keys'); k=sys.stdin.read().strip(); p.write_text('\\n'.join(x for x in p.read_text().splitlines() if k not in x)+'\\n')")
+                  p.remote(command,remove,client.encode())
+                  print("AMS_BOOTSTRAP_KEY_REMOVED=true",flush=True)
           PY
