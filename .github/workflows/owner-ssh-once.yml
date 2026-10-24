@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-moscow-final-dns-defaults
+  group: analyst-timeweb-cleanup-inventory
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,43 +20,33 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Keep provider DNS defaults when both have propagated and verify final Moscow resolution
+      - name: Inspect current authorized Timeweb application resources for cleanup
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
+          import ipaddress,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
-          import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          access.SERVER_ID=9413105
-          server=access.request(token,"GET","/servers/9413105")["server"]
-          assert server["id"]==9413105 and server["name"]=="analyst-ai-msk-app-20261024-b" and server["location"]=="ru-3" and server["preset_id"]==6867 and p.cloud.public_ipv4(server)=="201.24.52.66"
-          with tempfile.TemporaryDirectory(prefix="analyst-msk-network-",dir=os.environ["RUNNER_TEMP"]) as directory:
-              folder=pathlib.Path(directory)
-              p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-              created=access.request(token,"POST","/ssh-keys",{"name":"analyst-network-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
-              key=created.get("ssh_key",created.get("ssh-key",{}))
-              assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-              key_id=key["id"];attached=False
-              try:
-                  access.request(token,"POST","/servers/9413105/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
-                  command=p.ssh_command(folder,"201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdYBqa8Tvw/Bfy8VPCfwaGIsLhWbB9ak603JEmDwuHE")
-                  for attempt in range(12):
-                      try:p.remote(command,"test $(id -u) = 0",timeout=12);break
-                      except (p.ProbeError,subprocess.TimeoutExpired):
-                          if attempt==11:raise
-                          time.sleep(5)
-                  script="import datetime,json,os,pathlib,socket,struct,subprocess,time\nroot=pathlib.Path(\"/root\");host=\"analyst-ai-2941515.twc1.net\";expected=\"201.24.52.66\"\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"provider_probes\":[],\"provider_defaults_restored\":False}\ndef skip_name(data,offset):\n    for _ in range(128):\n        assert offset<len(data)\n        n=data[offset]\n        if n&0xc0==0xc0:\n            assert offset+1<len(data);return offset+2\n        assert n<64\n        offset+=1\n        if n==0:return offset\n        offset+=n\n    raise ValueError(\"invalid_dns_name\")\ndef query(server):\n    ident=int.from_bytes(os.urandom(2),\"big\")\n    name=b\"\".join(bytes([len(part)])+part.encode() for part in host.split(\".\"))+b\"\\0\"\n    packet=struct.pack(\"!6H\",ident,0x0100,1,0,0,0)+name+struct.pack(\"!HH\",1,1)\n    with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as sock:\n        sock.settimeout(5);sock.connect((server,53));sock.send(packet);data=sock.recv(65535)\n    rid,flags,questions,answers,_,_=struct.unpack_from(\"!6H\",data)\n    assert rid==ident and flags&0x8000 and flags&15==0 and questions==1 and not flags&0x0200\n    offset=skip_name(data,12)+4;rows=[]\n    for _ in range(answers):\n        offset=skip_name(data,offset)\n        kind,cls,ttl,length=struct.unpack_from(\"!HHIH\",data,offset);offset+=10\n        assert offset+length<=len(data)\n        if kind==1 and cls==1 and length==4:rows.append({\"address\":socket.inet_ntoa(data[offset:offset+4]),\"ttl\":ttl})\n        offset+=length\n    return rows\n\nconfig=pathlib.Path(\"/etc/systemd/resolved.conf.d/80-analyst-working-dns.conf\")\ncontent=\"[Resolve]\\nDNS=\\nDNS=8.8.8.8 8.8.4.4\\nDomains=~.\\n\"\nassert config.is_file() and not config.is_symlink() and config.read_text()==content\nfor server in (\"85.193.93.193\",\"85.193.93.194\"):\n    row={\"server\":server}\n    try:\n        row[\"answers\"]=query(server);row[\"current\"]=sorted({r[\"address\"] for r in row[\"answers\"]})==[expected]\n    except Exception as error:row.update({\"current\":False,\"error_type\":type(error).__name__})\n    report[\"provider_probes\"].append(row)\nif all(row[\"current\"] for row in report[\"provider_probes\"]):\n    config.unlink()\n    subprocess.run([\"systemctl\",\"restart\",\"systemd-resolved\"],check=True,capture_output=True,timeout=25)\n    subprocess.run([\"resolvectl\",\"flush-caches\"],check=True,capture_output=True,timeout=15)\n    time.sleep(2)\n    addresses=sorted({x[4][0] for x in socket.getaddrinfo(host,443,socket.AF_INET,socket.SOCK_STREAM)})\n    report[\"system_after_restoring_defaults\"]=addresses\n    if addresses==[expected]:report[\"provider_defaults_restored\"]=True\n    else:\n        fd=os.open(config,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)\n        with os.fdopen(fd,\"w\") as stream:stream.write(content)\n        subprocess.run([\"systemctl\",\"restart\",\"systemd-resolved\"],check=True,capture_output=True,timeout=25)\n        report[\"working_override_restored_after_failed_validation\"]=True\nreport[\"final_ipv4\"]=sorted({x[4][0] for x in socket.getaddrinfo(host,443,socket.AF_INET,socket.SOCK_STREAM)})\nreport[\"verified\"]=report[\"final_ipv4\"]==[expected]\nreport[\"active_dns_servers\"]=subprocess.check_output([\"resolvectl\",\"dns\"],text=True).strip()\nreport[\"active_domains\"]=subprocess.check_output([\"resolvectl\",\"domain\"],text=True).strip()\nreport[\"temporary_dns_override_present\"]=config.exists()\nout=root/\"analyst-moscow-final-dns.json\";out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\npath=root/\"analyst-moscow-handoff.json\";values=json.loads(path.read_text());values[\"final_dns\"]=report\npath.write_text(json.dumps(values,ensure_ascii=False,indent=2));path.chmod(0o600)\npath=root/\"analyst-moscow-readiness.json\";values=json.loads(path.read_text());values[\"dns_resolves_to_moscow\"]=report[\"verified\"]\npath.write_text(json.dumps(values,indent=2));path.chmod(0o600)\nrepo=root/\"analyst-ai-development-79be1821\";heading=\"## TIMEWEB 24.10.2026 — финальная настройка DNS\"\nnote=heading+chr(10)+chr(10)+\"DNS изменился до применения дополнительной настройки resolver: это зафиксировано полем system_before=201.24.52.66 предыдущего отчёта, поэтому нельзя приписывать распространение записи только переключению DNS. Оба штатных DNS Timeweb проверены прямыми запросами: \"+json.dumps(report[\"provider_probes\"],ensure_ascii=False)+\". Возврат к штатным настройкам подтверждён: \"+str(report[\"provider_defaults_restored\"])+\". Итоговое системное разрешение: \"+\", \".join(report[\"final_ipv4\"])+\". Дополнительный override существует: \"+str(report[\"temporary_dns_override_present\"])+\". Рабочий backend/HTTPS и реальная привязка владельца этим не подменяются.\"+chr(10)\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    p=repo/rel;previous=p.read_text();assert heading not in previous\n    p.write_text(previous.rstrip()+chr(10)+chr(10)+note)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nprint(\"MOSCOW_FINAL_DNS=\"+json.dumps(report),flush=True)\n"
-                  output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=120).decode()
-                  print(output,end="",flush=True)
-                  result=json.loads(next(line.split("=",1)[1] for line in output.splitlines() if line.startswith("MOSCOW_FINAL_DNS=")))
-                  assert result["verified"],"final_moscow_dns_failed"
-              finally:
-                  if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
-                  access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                  print("MOSCOW_NETWORK_KEY=removed",flush=True)
-          
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
+          def owned(s):
+              assert s["id"]==121673 and s["name"]=="analyst-ai-msk-20261024" and s["comment"]=="Analyst AI owner authorized Moscow work server 2026-10-24"
+              assert s["preset_id"]==6007 and s["location"]=="ru-3" and s["project_id"]==2941515 and Decimal(str(s["price"]))==5480
+              return s
+          document=p.read_resource(token,"servers")
+          assert p.summarize("servers",document)["complete"]
+          print("CLEANUP_SERVERS="+json.dumps([{**{k:s.get(k) for k in ("id","name","comment","status","location","cpu","ram","preset_id","project_id")},"ip":p.cloud.public_ipv4(s)} for s in document["servers"]]),flush=True)
+          project=get("/projects/2941515/resources")
+          print("CLEANUP_PROJECT_RESOURCES="+json.dumps(project),flush=True)
+          ips=get("/floating-ips")
+          assert ips.get("meta",{}).get("total")==len(ips["ips"])
+          print("CLEANUP_FLOATING_IPS="+json.dumps([{k:r.get(k) for k in ("id","ip","resource_id","resource_type","location","is_ddos_guard","availability_zone")} for r in ips["ips"]]),flush=True)
+          physical=owned(get("/dedicated-servers/121673")["dedicated_server"])
+          print("CLEANUP_BUILDER="+json.dumps({k:physical.get(k) for k in ("id","name","status","location","price","ip","os_id","autoinstall_ready","payment_period")}),flush=True)
           PY
