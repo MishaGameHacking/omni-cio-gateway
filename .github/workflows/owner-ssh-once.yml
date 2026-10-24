@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-apk-delivery
+  group: analyst-timeweb-apk-provider-observer
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,54 +20,34 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Prepare the user-requested installable APK on Timeweb
+      - name: Read provisioning progress for the temporary APK build machine
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+          import ipaddress,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
+          from decimal import Decimal
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
-          import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")]
-          for server_id,name,ip,old_host in targets:
-              access.SERVER_ID=server_id
-              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
-              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
-              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
-                  folder=pathlib.Path(directory)
-                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
-                  key=created.get("ssh_key",created.get("ssh-key",{}))
-                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-                  key_id=key["id"];attached=False
-                  try:
-                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
-                      command=p.ssh_command(folder,ip,old_host)
-                      command[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
-                      for attempt in range(12):
-                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
-                          except (p.ProbeError,subprocess.TimeoutExpired):
-                              if attempt==11:raise
-                              time.sleep(5)
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
+          def owned(s):
+              assert s["id"]==121673 and s["name"]=="analyst-ai-msk-20261024" and s["comment"]=="Analyst AI owner authorized Moscow work server 2026-10-24"
+              assert s["preset_id"]==6007 and s["location"]=="ru-3" and s["project_id"]==2941515 and Decimal(str(s["price"]))==5480
+              return s
 
-                      record=json.loads(p.remote(command,"cat /root/analyst-apk-direct-20261024/builder.json",timeout=30))
-                      assert record["name"]=="analyst-apk-build-msk-20261024"
-                      bf=folder/"builder";bf.mkdir(mode=0o700)
-                      (bf/"client").write_bytes(p.remote(command,"cat /root/analyst-apk-direct-20261024/builder-key",timeout=30));(bf/"client").chmod(0o600)
-                      bc=p.ssh_command(bf,record["ip"],record["host_public"]);bc[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
-                      build_script="import datetime,fcntl,hashlib,json,os,pathlib,re,shutil,signal,subprocess,sys,time,traceback,urllib.request,xml.etree.ElementTree as ET,zipfile\nos.umask(0o077)\nroot=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nwork=pathlib.Path(\"/root/analyst-apk-build\")\nsdk=pathlib.Path(\"/opt/analyst-android-sdk\")\njava=pathlib.Path(\"/usr/lib/jvm/java-17-openjdk-amd64\")\npin=\"bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\"\nreport={\"status\":\"starting\",\"runtime_matrix_passed\":False,\"physical_phone_tested\":False,\"ai_configured\":False,\"started_at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"phases\":[]}\nlog=work/\"build.log\"\nenv=os.environ.copy()\nenv.update({\"JAVA_HOME\":str(java),\"ANDROID_HOME\":str(sdk),\"ANDROID_SDK_ROOT\":str(sdk),\"LANG\":\"C.UTF-8\",\"PYTHONUNBUFFERED\":\"1\"})\nenv[\"PATH\"]=str(java/\"bin\")+\":\"+env.get(\"PATH\",\"/usr/bin:/bin\")\ndef save():\n    temp=work/\"result.tmp\"\n    temp.write_text(json.dumps(report,ensure_ascii=False,indent=2)+\"\\n\")\n    temp.replace(work/\"result.json\")\ndef run(args,timeout=300,out=None):\n    report[\"phase\"]=args;save()\n    started=time.monotonic()\n    with log.open(\"a\",buffering=1) as stream:\n        print(\"COMMAND \"+json.dumps(args),file=stream,flush=True)\n        proc=subprocess.Popen(args,cwd=root,env=env,stdout=stream if out is None else out,stderr=subprocess.STDOUT,start_new_session=True)\n        try:code=proc.wait(timeout=timeout)\n        except subprocess.TimeoutExpired:\n            os.killpg(proc.pid,signal.SIGTERM)\n            try:proc.wait(timeout=15)\n            except subprocess.TimeoutExpired:os.killpg(proc.pid,signal.SIGKILL);proc.wait()\n            raise RuntimeError(\"bounded_command_timeout\")\n    report[\"phases\"].append({\"command\":args,\"exit\":code,\"seconds\":round(time.monotonic()-started,1)})\n    save()\n    assert code==0,\"command_failed_\"+str(code)\ntry:\n    lock=open(work/\"build.lock\",\"a\");fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)\n    for _ in range(150):\n        setup=subprocess.check_output([\"systemctl\",\"show\",\"analyst-apk-setup\",\"-p\",\"ActiveState\",\"-p\",\"SubState\",\"-p\",\"ExecMainStatus\"],text=True)\n        if \"ActiveState=inactive\" in setup and \"ExecMainStatus=0\" in setup:break\n        if \"ActiveState=failed\" in setup:raise RuntimeError(\"java_setup_failed\")\n        report[\"phase\"]=\"waiting_for_jdk\";save();time.sleep(5)\n    else:raise RuntimeError(\"java_setup_timeout\")\n    assert java.joinpath(\"bin/javac\").is_file()\n    expected={\n      \".github/scripts/native_input_evidence.py\":\"4796e3e0db6ac74a7c95c62b1f0de150fa2607dc2015d4ab5d4dc287a59ac512\",\n      \".github/scripts/tests/test_native_input_evidence.py\":\"72276f370bf159d1e8bd8f6ced70d8ccc6d3e8c03e4b89e05d2f7669e8edf326\",\n      \"app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt\":\"472996c67ed0e78d17a2f657d55e176dec8796b9ef93cbd2957cfa108ac7aee2\",\n      \"app/src/test/java/ru/omnicio/app/data/backend/BackendConfigTest.kt\":\"212de72fb4c423914b0011eee6fea863d2f79c6b10737fea95c5f77c4b026930\"}\n    for rel,sha in expected.items():assert hashlib.sha256((root/rel).read_bytes()).hexdigest()==sha,\"source_hash_mismatch_\"+rel\n    source=subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip()\n    assert source==\"690811a5a376181990a64f37d914c87eb6c919b7\"\n    diff=subprocess.check_output([\"git\",\"diff\",\"--binary\"],cwd=root)\n    report.update({\"source_head\":source,\"source_diff_sha256\":hashlib.sha256(diff).hexdigest(),\"changed_files\":expected})\n    assert report[\"source_diff_sha256\"]==\"9a5cd88b474118a675c8c98f845d10ad665b5769e5f6ccb4ed2c0b93c58d6f02\"\n    (work/\"source.diff\").write_bytes(diff)\n    assert hashlib.sha256((root/\"gradle/wrapper/gradle-wrapper.jar\").read_bytes()).hexdigest()==\"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5\"\n    cert=subprocess.run([str(java/\"bin/keytool\"),\"-exportcert\",\"-alias\",\"androiddebugkey\",\"-keystore\",\"/root/.android/debug.keystore\",\"-storepass\",\"android\"],capture_output=True,timeout=30)\n    assert cert.returncode==0 and hashlib.sha256(cert.stdout).hexdigest()==pin,\"signing_identity_mismatch\"\n    mem={l.split(\":\")[0]:int(l.split()[1]) for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith((\"MemTotal:\",\"MemAvailable:\",\"SwapTotal:\"))}\n    assert mem[\"MemTotal\"]>=3500*1024 and shutil.disk_usage(\"/\").free>=10*1024**3\n    report[\"memory_kib\"]=mem\n    swap=work/\"build.swap\"\n    if not swap.exists():\n        run([\"fallocate\",\"-l\",\"2G\",str(swap)]);swap.chmod(0o600);run([\"mkswap\",str(swap)])\n    if str(swap) not in pathlib.Path(\"/proc/swaps\").read_text():run([\"swapon\",str(swap)])\n    run([\"python3\",\"tools/prepare_spectrum_checkout.py\"])\n    run([\"git\",\"diff\",\"--check\"])\n    run([\"python3\",\"-c\",\"import importlib.util,pathlib; s=importlib.util.spec_from_file_location('sdk','.github/scripts/prepare_android_sdk.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m);[m._verify_package(pathlib.Path('/opt/analyst-android-sdk'),p) for p in m.required_sdk_packages()[:2]]\"])\n    mirror=False\n    for name,url in ((\"maven_central\",\"https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.pom\"),(\"google_mirror\",\"https://maven-central.storage-download.googleapis.com/maven2/junit/junit/4.13.2/junit-4.13.2.pom\")):\n        try:\n            with urllib.request.urlopen(url,timeout=8) as response:body=response.read(100000)\n            assert b\"<artifactId>junit</artifactId>\" in body\n            report[name]={\"ok\":True}\n            if name==\"maven_central\":break\n            mirror=True\n        except Exception as e:report[name]={\"ok\":False,\"error_type\":type(e).__name__}\n    extra=[]\n    if mirror:\n        init=work/\"maven-mirror.init.gradle\"\n        init.write_text(\"settingsEvaluated { settings ->\\n  [settings.pluginManagement.repositories, settings.dependencyResolutionManagement.repositories].each { repositories ->\\n    repositories.each { repository ->\\n      if (repository instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository && repository.url.host == 'repo.maven.apache.org') {\\n        repository.setUrl('https://maven-central.storage-download.googleapis.com/maven2/')\\n      }\\n    }\\n  }\\n}\\n\")\n        extra=[\"--init-script\",str(init)]\n    report[\"central_mirror_used\"]=mirror;report[\"status\"]=\"building\";save()\n    run([\"./gradlew\",\":app:assemblePreview\",\":app:testDebugUnitTest\",\":app:lintPreview\",\"--no-daemon\",\"--no-parallel\",\"--max-workers=1\",\"--stacktrace\",*extra],timeout=3600)\n    run([\"python3\",\"tools/generate_spectrum_meshes.py\",\"--check\",\"--check-apk\"])\n    out=root/\"app/build/outputs/apk/preview\";apk=out/\"app-preview.apk\";bt=sdk/\"build-tools/37.0.0\"\n    for filename,args in ((\"signature.txt\",[str(java/\"bin/java\"),\"-jar\",str(bt/\"lib/apksigner.jar\"),\"verify\",\"--verbose\",\"--print-certs\",str(apk)]),(\"alignment.txt\",[str(bt/\"zipalign\"),\"-c\",\"-P\",\"16\",\"-v\",\"4\",str(apk)]),(\"badging.txt\",[str(bt/\"aapt\"),\"dump\",\"badging\",str(apk)]),(\"manifest.txt\",[str(bt/\"aapt\"),\"dump\",\"xmltree\",str(apk),\"AndroidManifest.xml\"])):\n        with (out/filename).open(\"w\") as stream:run(args,out=stream)\n    run([\"python3\",\".github/scripts/verify_apk.py\"])\n    counts={\"suites\":0,\"tests\":0,\"failures\":0,\"errors\":0,\"skipped\":0}\n    for p in (root/\"app/build/test-results/testDebugUnitTest\").glob(\"TEST-*.xml\"):\n        suite=ET.parse(p).getroot();counts[\"suites\"]+=1\n        for k in (\"tests\",\"failures\",\"errors\",\"skipped\"):counts[k]+=int(suite.get(k,0))\n    assert counts[\"tests\"]>=143 and counts[\"failures\"]==counts[\"errors\"]==counts[\"skipped\"]==0\n    report[\"jvm_tests\"]=counts\n    with zipfile.ZipFile(apk) as z:\n        dex=b\"\".join(z.read(n) for n in z.namelist() if re.fullmatch(r\"classes\\d*\\.dex\",n))\n    assert b\"analyst-ai-2941515.twc1.net\" in dex,\"live_origin_not_in_apk\"\n    assert b\"backend-not-configured.invalid\" not in dex,\"placeholder_origin_in_apk\"\n    report[\"apk\"]=json.loads((out/\"apk-verification.json\").read_text())\n    assert report[\"apk\"][\"version_code\"]==35 and report[\"apk\"][\"version_name\"]==\"0.11.0-preview\"\n    report[\"compiled_live_origin\"]=True\n    previous=pathlib.Path(\"/root/analyst-ai-artifacts/previous-0.10.0.apk\")\n    assert hashlib.sha256(previous.read_bytes()).hexdigest()==\"3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3\"\n    prev=subprocess.run([str(java/\"bin/java\"),\"-jar\",str(bt/\"lib/apksigner.jar\"),\"verify\",\"--verbose\",\"--print-certs\",str(previous)],capture_output=True,text=True,timeout=90)\n    assert prev.returncode==0 and pin in prev.stdout.lower()\n    report[\"previous_signature_matches\"]=True\n    target=work/\"Analyst-AI-0.11.0-preview.apk\";shutil.copyfile(apk,target);target.chmod(0o600)\n    report[\"delivery_apk\"]=str(target)\n    report[\"status\"]=\"build_verified_runtime_pending\";report[\"phase\"]=\"finished\";report[\"finished_at\"]=datetime.datetime.now(datetime.timezone.utc).isoformat();save()\nexcept BaseException as error:\n    report[\"status\"]=\"failed\";report[\"error_type\"]=type(error).__name__;report[\"error\"]=str(error);save()\n    with (work/\"failure.txt\").open(\"w\") as stream:traceback.print_exc(file=stream)\n    raise\n"
-                      launch="import json,os,pathlib,subprocess,sys\nos.umask(0o077)\nw=pathlib.Path('/root/analyst-apk-build')\nassert w.is_dir() and pathlib.Path('/root/analyst-ai-android-690811a5').is_dir()\nassert not (w/'build.py').exists() and not (w/'result.json').exists(),'build_already_started_read_result'\n(w/'build.py').write_bytes(sys.stdin.buffer.read())\nsubprocess.run(['systemd-run','--unit=analyst-apk-direct-build','--property=Type=oneshot','--property=MemoryMax=3584M','--property=MemorySwapMax=2048M','--property=StandardOutput=append:/root/analyst-apk-build/runner.log','--property=StandardError=append:/root/analyst-apk-build/runner.log','/usr/bin/python3','-u',str(w/'build.py')],check=True,capture_output=True)\nprint('TIMEWEB_DIRECT_APK_BUILD_STARTED=true')\n"
-                      print(p.remote(bc,"python3 -c "+shlex.quote(launch),build_script.encode(),timeout=30).decode(),flush=True)
-                      time.sleep(12)
-                      status="import json,pathlib,subprocess\np=pathlib.Path('/root/analyst-apk-build/result.json')\nprint('TIMEWEB_DIRECT_APK_BUILD_STATUS='+p.read_text() if p.exists() else 'TIMEWEB_DIRECT_APK_BUILD_STATUS=starting')\n"
-                      print(p.remote(bc,"python3 -c "+shlex.quote(status),timeout=30).decode(),flush=True)
-                      print("TIMEWEB_BUILD_HOST="+json.dumps(record),flush=True)
-
-                  finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
-                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
+          req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          with urllib.request.urlopen(req,timeout=30) as response:rows=json.loads(response.read(4194305))
+          assert p.summarize("servers",rows)["complete"]
+          result=[]
+          for s in rows["servers"]:
+              if s.get("name")=="analyst-apk-build-msk-20261024":
+                  safe={k:s.get(k) for k in ("id","name","status","cpu","ram","location","availability_zone","preset_id")}
+                  safe["public_ip"]=p.cloud.public_ipv4(s)
+                  result.append(safe)
+          print("APK_BUILD_PROVIDER_STATUS="+json.dumps(result),flush=True)
           PY
