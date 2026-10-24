@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-preserve-build-evidence
+  group: analyst-timeweb-build-evidence-transfer
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,42 +20,77 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Inventory necessary sources and Android build evidence on Timeweb
+      - name: Preserve exact Android outputs and test reports on Moscow before cleanup
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,os,pathlib,shlex,subprocess,sys,tempfile,time
+          import concurrent.futures,json,os,pathlib,shlex,shutil,subprocess,sys,tempfile,time
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
+          import adopt_replacement_vm as adopt
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          targets=[(9413105,"analyst-ai-msk-app-20261024-b","201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l"),(9408159,"analyst-ai-owner-route-20261023","201.34.146.244","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHV5M7lARkfgXm/r87ZaU31LX3KENsB5L+i3z0iJ0/kC")]
-          for server_id,name,ip,old_host in targets:
-              access.SERVER_ID=server_id
-              server=access.request(token,"GET","/servers/"+str(server_id))["server"]
-              assert server["id"]==server_id and server["name"]==name and server["project_id"]==2941515 and p.cloud.public_ipv4(server)==ip
-              with tempfile.TemporaryDirectory(prefix="analyst-host-rotation-",dir=os.environ["RUNNER_TEMP"]) as directory:
-                  folder=pathlib.Path(directory)
-                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-preservation-"+str(server_id)+"-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
-                  key=created.get("ssh_key",created.get("ssh-key",{}))
-                  assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-                  key_id=key["id"];attached=False
-                  try:
-                      access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
-                      command=p.ssh_command(folder,ip,old_host)
+          adopt.select_target(True);p.CONFIGURATION["ram"]=3072;adopt.verified_target(token)
+          access.SERVER_ID=9413105
+          new=access.request(token,"GET","/servers/9413105")["server"]
+          assert new["id"]==9413105 and new["name"]=="analyst-ai-msk-app-20261024-b" and new["location"]=="ru-3" and new["preset_id"]==6867 and p.cloud.public_ipv4(new)=="201.24.52.66"
+          targets={9408159:("201.34.146.244","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHV5M7lARkfgXm/r87ZaU31LX3KENsB5L+i3z0iJ0/kC"),9413105:("201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIYcnB6AxkxAqExaE7FZsq6+fmwNTHmn/OZm9x4pb2l")}
+          attached=[];key_id=None;transfer_key_id=None;transfer_path=None;commands={}
+          with tempfile.TemporaryDirectory(prefix="analyst-private-migration-",dir=os.environ["RUNNER_TEMP"]) as directory:
+              folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client")
+              public=(folder/"client.pub").read_text().strip()
+              created=access.request(token,"POST","/ssh-keys",{"name":"analyst-private-migrate-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+              key=created.get("ssh_key",created.get("ssh-key",{}))
+              assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
+              key_id=key["id"]
+              try:
+                  for sid,(address,pin) in targets.items():
+                      access.SERVER_ID=sid
+                      access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached.append(sid)
+                      current=folder/str(sid);current.mkdir();shutil.copyfile(folder/"client",current/"client");(current/"client").chmod(0o600)
+                      commands[sid]=p.ssh_command(current,address,pin)
                       for attempt in range(12):
-                          try:p.remote(command,"test $(id -u) = 0",timeout=12);break
+                          try:p.remote(commands[sid],"test $(id -u) = 0",timeout=12);break
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import datetime,hashlib,json,os,pathlib,shutil,subprocess\nroot=pathlib.Path(\"/root\")\nreport={\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"disk_free_bytes\":shutil.disk_usage(\"/\").free,\"repos\":[],\"build_evidence\":[],\"kvm_device\":pathlib.Path(\"/dev/kvm\").exists()}\nfor name in (\"analyst-ai-source\",\"analyst-ai-development-79be1821\",\"analyst-ai-android-690811a5\"):\n    path=root/name\n    if not path.exists():continue\n    entry={\"directory\":name}\n    if (path/\".git\").is_dir():\n        entry[\"head\"]=subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=path,text=True).strip()\n        entry[\"changes\"]=subprocess.check_output([\"git\",\"status\",\"--porcelain\"],cwd=path,text=True).splitlines()\n    report[\"repos\"].append(entry)\nfiles=[]\nfor rel in (\"analyst-ai-android-690811a5/app/build/outputs\",\"analyst-ai-android-690811a5/app/build/reports\",\"analyst-ai-android-690811a5/app/build/test-results\",\"analyst-ai-android-690811a5/ci-ui-driver/build/outputs\",\"analyst-ai-android-690811a5/ci-ui-driver/build/reports\"):\n    folder=root/rel\n    if not folder.is_dir():continue\n    count=0;size=0\n    for path in sorted(folder.rglob(\"*\")):\n        if not path.is_file():continue\n        assert not path.is_symlink() and all(not x.is_symlink() for x in path.parents)\n        st=path.stat();assert st.st_uid==0\n        hasher=hashlib.sha256()\n        with path.open(\"rb\") as source:\n            for data in iter(lambda:source.read(1024*1024),b\"\"):hasher.update(data)\n        files.append({\"path\":path.relative_to(root).as_posix(),\"bytes\":st.st_size,\"sha256\":hasher.hexdigest(),\"mode\":st.st_mode&0o777})\n        count+=1;size+=st.st_size\n    report[\"build_evidence\"].append({\"directory\":rel,\"files\":count,\"bytes\":size})\nif files:\n    assert len(files)==len({x[\"path\"] for x in files})\n    manifest={\"source_server_id\":9408159,\"destination_server_id\":9413105,\"files\":files}\n    path=root/\"analyst-build-evidence-transfer-9413105.json\"\n    assert not path.is_symlink()\n    path.write_text(json.dumps(manifest,sort_keys=True,indent=2)+\"\\n\");path.chmod(0o600)\n    report[\"transfer\"]={\"manifest_sha256\":hashlib.sha256(path.read_bytes()).hexdigest(),\"files\":len(files),\"bytes\":sum(x[\"bytes\"] for x in files)}\nfor name in (\"analyst-ai-artifacts\",\"analyst-ai-android-690811a5\",\"analyst-ai-development-79be1821\"):\n    p=root/name\n    if p.exists():report[name+\"_bytes\"]=int(subprocess.check_output([\"du\",\"-sb\",str(p)],text=True).split()[0])\nreport[\"android_sdk_present\"]=pathlib.Path(\"/opt/analyst-android-sdk\").exists()\nreport[\"app_signing_key_present\"]=(root/\".android/debug.keystore\").is_file()\nreport[\"java_process_count\"]=len(subprocess.run([\"pgrep\",\"-x\",\"java\"],capture_output=True,text=True).stdout.splitlines())\ntarget=root/\"analyst-cleanup-preservation-inventory.json\";target.write_text(json.dumps(report,indent=2)+\"\\n\");target.chmod(0o600)\nprint(\"PRESERVATION_INVENTORY=\"+json.dumps(report),flush=True)\n"
-                      output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=90).decode()
+                  setup="import json,os,pathlib,subprocess,tempfile\nfolder=pathlib.Path(tempfile.mkdtemp(prefix=\"analyst-moscow-cms-\",dir=\"/root\"));folder.chmod(0o700)\nprivate=folder/\"recipient.key\";cert=folder/\"recipient.pem\"\nsubprocess.run([\"openssl\",\"req\",\"-new\",\"-newkey\",\"rsa:3072\",\"-x509\",\"-nodes\",\"-days\",\"1\",\"-subj\",\"/CN=analyst-private-migration\",\"-keyout\",str(private),\"-out\",str(cert)],check=True,capture_output=True,timeout=30)\nprivate.chmod(0o600);cert.chmod(0o600)\nencrypt=[\"openssl\",\"cms\",\"-encrypt\",\"-aes-256-gcm\",\"-binary\",\"-outform\",\"DER\",\"-stream\",\"-recip\",str(cert),\"-keyopt\",\"rsa_padding_mode:oaep\",\"-keyopt\",\"rsa_oaep_md:sha256\",\"-keyopt\",\"rsa_mgf1_md:sha256\"]\ndecrypt=[\"openssl\",\"cms\",\"-decrypt\",\"-binary\",\"-inform\",\"DER\",\"-recip\",str(cert),\"-inkey\",str(private)]\nsample=os.urandom(32768)\nencoded=subprocess.run(encrypt,input=sample,capture_output=True,check=True,timeout=15).stdout\ndecoded=subprocess.run(decrypt,input=encoded,capture_output=True,check=True,timeout=15).stdout\nassert decoded==sample\nmodified=bytearray(encoded);modified[len(modified)//2]^=1\nassert subprocess.run(decrypt,input=modified,capture_output=True,timeout=15).returncode!=0\nprint(json.dumps({\"path\":str(folder),\"certificate\":cert.read_text(),\"authenticated_encryption_selftest\":True}))\n"
+                  destination=json.loads(p.remote(commands[9413105],"python3 -c "+shlex.quote(setup),timeout=75))
+                  transfer_path=destination["path"]
+                  assert transfer_path.startswith("/root/analyst-moscow-cms-") and "/" not in transfer_path[len("/root/"):]
+                  assert destination["authenticated_encryption_selftest"] is True
+                  print("MOSCOW_TRANSFER_ENCRYPTION_SELFTEST=passed",flush=True)
+                  prep="import hashlib,json,pathlib\npath=pathlib.Path(\"/root/analyst-build-evidence-transfer-9413105.json\")\nassert hashlib.sha256(path.read_bytes()).hexdigest()==\"3dd48a2d26cad200cf8fd07271af9e6a64b57fae640cf04666ca6e0aed477bda\"\ndoc=json.loads(path.read_text())\nassert doc[\"source_server_id\"]==9408159 and doc[\"destination_server_id\"]==9413105 and len(doc[\"files\"])==103\nassert sum(x[\"bytes\"] for x in doc[\"files\"])==255205115\nprint(json.dumps({\"manifest_sha256\":hashlib.sha256(path.read_bytes()).hexdigest(),\"file_count\":len(doc[\"files\"])}),flush=True)\n"
+                  manifest=json.loads(p.remote(commands[9408159],"python3 -c "+shlex.quote(prep),timeout=45))
+                  assert manifest["file_count"]==103
+                  source_script="import hashlib,json,pathlib,subprocess,sys,tarfile,tempfile\nroot=pathlib.Path(\"/root\");manifest=root/\"analyst-build-evidence-transfer-9413105.json\"\nassert hashlib.sha256(manifest.read_bytes()).hexdigest()==sys.argv[1]\ndoc=json.loads(manifest.read_text())\nassert doc[\"source_server_id\"]==9408159 and doc[\"destination_server_id\"]==9413105\nnames=[]\nfor row in doc[\"files\"]:\n    rel=pathlib.PurePosixPath(row[\"path\"]);path=root/rel\n    assert not rel.is_absolute() and \"..\" not in rel.parts and str(rel)==row[\"path\"]\n    assert path.is_file() and not path.is_symlink() and all(not p.is_symlink() for p in path.parents)\n    assert path.stat().st_size==row[\"bytes\"] and hashlib.sha256(path.read_bytes()).hexdigest()==row[\"sha256\"]\n    names.append(row[\"path\"])\nassert len(names)==103 and len(names)==len(set(names))\nnames.append(manifest.name)\nwith tempfile.TemporaryDirectory(prefix=\"analyst-cms-send-\",dir=\"/root\") as directory:\n    certificate=pathlib.Path(directory)/\"recipient.pem\";certificate.write_text(sys.argv[2]);certificate.chmod(0o600)\n    encrypt=subprocess.Popen([\"openssl\",\"cms\",\"-encrypt\",\"-aes-256-gcm\",\"-binary\",\"-outform\",\"DER\",\"-stream\",\"-recip\",str(certificate),\"-keyopt\",\"rsa_padding_mode:oaep\",\"-keyopt\",\"rsa_oaep_md:sha256\",\"-keyopt\",\"rsa_mgf1_md:sha256\"],stdin=subprocess.PIPE,stdout=sys.stdout.buffer,stderr=subprocess.PIPE)\n    try:\n        with tarfile.open(fileobj=encrypt.stdin,mode=\"w|gz\") as archive:\n            for name in names:archive.add(root/name,arcname=name,recursive=False)\n        encrypt.stdin.close();encrypt.stdin=None\n        _,errors=encrypt.communicate(timeout=120)\n    except Exception:\n        encrypt.kill();encrypt.wait();raise\n    assert encrypt.returncode==0,\"source_authenticated_encryption_failed\"\n"
+                  receive_script="import hashlib,json,os,pathlib,subprocess,sys,tarfile\nroot=pathlib.Path(\"/root\");folder=pathlib.Path(sys.argv[1]);digest=sys.argv[2]\nassert folder.parent==root and folder.name.startswith(\"analyst-moscow-cms-\") and folder.is_dir() and not folder.is_symlink()\nreport={\"server_id\":9413105,\"phase\":\"receive_ciphertext\",\"manifest_sha256\":digest,\"plaintext_remained_on_timeweb\":True}\nout=root/\"analyst-build-encrypted-transfer.json\"\ndef save():\n    out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\ntry:\n    encrypted=folder/\"transfer.cms\"\n    total=0;hasher=hashlib.sha256()\n    fd=os.open(encrypted,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n    with os.fdopen(fd,\"wb\") as target:\n        while True:\n            data=sys.stdin.buffer.read(1024*1024)\n            if not data:break\n            total+=len(data);assert total<512*1024*1024\n            hasher.update(data);target.write(data)\n    report[\"ciphertext_bytes\"]=total;report[\"ciphertext_sha256\"]=hasher.hexdigest();report[\"phase\"]=\"authenticate_and_decrypt\";save()\n    archive=folder/\"transfer.tar.gz\"\n    fd=os.open(archive,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n    with os.fdopen(fd,\"wb\") as target:\n        result=subprocess.run([\"openssl\",\"cms\",\"-decrypt\",\"-binary\",\"-inform\",\"DER\",\"-recip\",str(folder/\"recipient.pem\"),\"-inkey\",str(folder/\"recipient.key\"),\"-in\",str(encrypted)],stdout=target,stderr=subprocess.PIPE,timeout=240)\n    assert result.returncode==0,\"authenticated_decryption_failed\"\n    stage=root/\"analyst-build-transfer-9408159\"\n    assert not stage.exists() and not stage.is_symlink()\n    stage.mkdir(mode=0o700)\n    report[\"phase\"]=\"verify_archive_members\";save()\n    with tarfile.open(archive,mode=\"r:gz\") as tar:\n        members=tar.getmembers()\n        assert len(members)==104\n        for member in members:\n            rel=pathlib.PurePosixPath(member.name)\n            assert member.isfile() and not rel.is_absolute() and \"..\" not in rel.parts and str(rel)==member.name\n        entry=tar.getmember(\"analyst-build-evidence-transfer-9413105.json\")\n        manifest_bytes=tar.extractfile(entry).read(2*1024*1024)\n        assert hashlib.sha256(manifest_bytes).hexdigest()==digest\n        doc=json.loads(manifest_bytes)\n        assert len(doc[\"files\"])==103 and doc[\"source_server_id\"]==9408159 and doc[\"destination_server_id\"]==9413105\n        expected={row[\"path\"]:row for row in doc[\"files\"]}\n        assert len(expected)==103\n        assert {m.name for m in members}==set(expected)|{entry.name}\n        for member in members:\n            path=stage/member.name;path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)\n            content=tar.extractfile(member)\n            row=expected.get(member.name);hasher=hashlib.sha256();written=0\n            fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n            with os.fdopen(fd,\"wb\") as target:\n                while True:\n                    data=content.read(1024*1024)\n                    if not data:break\n                    written+=len(data);hasher.update(data);target.write(data)\n            if row:assert written==row[\"bytes\"] and hasher.hexdigest()==row[\"sha256\"]\n    report[\"phase\"]=\"promote_verified_files\";save()\n    result=subprocess.run([\"python3\",\"-u\",\"-c\",sys.argv[3],digest],capture_output=True,text=True,timeout=90)\n    if result.returncode:\n        log=root/\"analyst-build-encrypted-transfer-error.log\";log.write_text(result.stderr);log.chmod(0o600)\n    assert result.returncode==0,\"destination_verification_failed\"\n    print(result.stdout,end=\"\",flush=True)\n    report[\"phase\"]=\"verified\";save()\nexcept Exception as error:\n    report[\"error_type\"]=type(error).__name__;save()\nprint(\"MOSCOW_ENCRYPTED_TRANSFER=\"+json.dumps(report),flush=True)\n"
+                  verify="import datetime,hashlib,json,os,pathlib,shutil,sys\nroot=pathlib.Path(\"/root\");stage=root/\"analyst-build-transfer-9408159\"\nmanifest=stage/\"analyst-build-evidence-transfer-9413105.json\"\nassert hashlib.sha256(manifest.read_bytes()).hexdigest()==sys.argv[1]\ndoc=json.loads(manifest.read_text())\nassert doc[\"source_server_id\"]==9408159 and doc[\"destination_server_id\"]==9413105 and len(doc[\"files\"])==103\nexpected={row[\"path\"] for row in doc[\"files\"]}|{manifest.name}\nactual={str(x.relative_to(stage)) for x in stage.rglob(\"*\") if x.is_file()}\nassert actual==expected\nfor row in doc[\"files\"]:\n    source=stage/row[\"path\"];target=root/row[\"path\"]\n    assert source.is_file() and not source.is_symlink() and source.stat().st_uid==0\n    assert source.stat().st_size==row[\"bytes\"] and hashlib.sha256(source.read_bytes()).hexdigest()==row[\"sha256\"]\n    assert not target.is_symlink() and all(not p.is_symlink() for p in target.parents)\n    if target.exists():assert target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest()==row[\"sha256\"],\"conflicting_existing_output\"\nfor row in doc[\"files\"]:\n    source=stage/row[\"path\"];target=root/row[\"path\"]\n    target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)\n    if not target.exists():os.replace(source,target)\n    target.chmod(row[\"mode\"])\n    assert target.stat().st_size==row[\"bytes\"] and hashlib.sha256(target.read_bytes()).hexdigest()==row[\"sha256\"]\nsaved=root/manifest.name\nassert not saved.exists() and not saved.is_symlink()\nos.replace(manifest,saved);saved.chmod(0o600)\nshutil.rmtree(stage)\nreport={\"source_server_id\":9408159,\"destination_server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"file_count\":len(doc[\"files\"]),\"total_bytes\":sum(x[\"bytes\"] for x in doc[\"files\"]),\"manifest_sha256\":sys.argv[1],\"all_file_hashes_verified\":True,\"all_modes_verified\":True}\nout=root/\"analyst-moscow-build-evidence-migration.json\";out.write_text(json.dumps(report,indent=2)+\"\\n\");out.chmod(0o600)\nprint(\"BUILD_EVIDENCE_MIGRATION_VERIFIED=\"+json.dumps(report),flush=True)\n"
+                  digest=manifest["manifest_sha256"]
+                  with tempfile.TemporaryFile() as source_errors,tempfile.TemporaryFile() as destination_errors:
+                      producer=subprocess.Popen(commands[9408159]+["python3 -u -c "+shlex.quote(source_script)+" "+shlex.quote(digest)+" "+shlex.quote(destination["certificate"])],stdout=subprocess.PIPE,stderr=source_errors)
+                      consumer=subprocess.Popen(commands[9413105]+["python3 -u -c "+shlex.quote(receive_script)+" "+shlex.quote(transfer_path)+" "+shlex.quote(digest)+" "+shlex.quote(verify)],stdin=producer.stdout,stdout=subprocess.PIPE,stderr=destination_errors)
+                      producer.stdout.close()
+                      try:
+                          output=consumer.communicate(timeout=600)[0].decode()
+                          source_exit=producer.wait(timeout=30)
+                      except Exception:
+                          consumer.kill();producer.kill();consumer.wait();producer.wait();raise
                       print(output,end="",flush=True)
-                  finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
-                      access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                      print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
+                      assert source_exit==0 and consumer.returncode==0,"encrypted_transport_failed"
+                      progress=json.loads(next(line.split("=",1)[1] for line in output.splitlines() if line.startswith("MOSCOW_ENCRYPTED_TRANSFER=")))
+                      assert progress["phase"]=="verified","encrypted_migration_failed_read_saved_progress"
+              finally:
+                  if transfer_path is not None:
+                      cleanup="import pathlib,shutil; p=pathlib.Path("+repr(transfer_path)+"); assert p.parent==pathlib.Path('/root') and p.name.startswith('analyst-moscow-cms-') and not p.is_symlink(); shutil.rmtree(p)"
+                      try:p.remote(commands[9413105],"python3 -c "+shlex.quote(cleanup),timeout=30)
+                      except Exception:print("MOSCOW_CMS_TEMPORARY_CLEANUP=pending_private_root_directory",flush=True)
+                  for sid in attached:
+                      access.SERVER_ID=sid
+                      access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(key_id))
+                  if key_id is not None:access.request(token,"DELETE","/ssh-keys/"+str(key_id))
+                  print("MOSCOW_MIGRATION_TEMPORARY_KEYS=removed",flush=True)
+          
           PY
