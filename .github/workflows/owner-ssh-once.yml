@@ -20,26 +20,65 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Save verified migration blockers and standing owner authorization on Timeweb
+      - name: Verify hourly billing and affordable Timeweb build configurations
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,shlex,subprocess,sys
-          sys.path.insert(0,"deploy")
+          import json,os,shlex,subprocess,sys,urllib.request
+          from decimal import Decimal
+          sys.path[:0]=["deploy","tools"]
+          import prepare_owner_vm as prepare
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
-          import prepare_owner_vm as prepare
-          def authorized_command(command):
-              script="import hashlib,json,pathlib,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert root.is_dir() and not root.is_symlink()\ndef git(*args):\n    return subprocess.check_output([\"git\",*args],cwd=root,text=True).strip()\nassert git(\"rev-parse\",\"HEAD\")==\"79be182168e21ae8248e0e0dfa6deb0abfbacbcf\"\npolicy=\"## OWNER 23.10.2026 — Timeweb и постоянное разрешение\\n\\nРазработка, редактирование приложения, сборка APK и все проверки выполняются\\nна Timeweb. GitHub хранит резервные копии исходников; OWNER отдельно разрешил\\nGitHub Actions как канал SSH-команд к Timeweb. Повторно спрашивать разрешение\\nна этот канал, необходимые исправления, проверки и развёртывание в согласованной\\nзадаче не нужно. Разрешение не заменяет фактическую проверку результата.\\nПодбирать минимально достаточные по цене серверы: Россия в приоритете,\\nзатем ближайшие страны. Ресурсы для этой задачи разрешены; не создавать\\nненужные экземпляры. Приложение и телефонный дизайн строго вертикальные.\\nИсправлять только подтверждённые ошибки существующего приложения; сохранить\\nвсе проверки и единый итоговый коммит исправлений. Секреты не публиковать.\\n\\n\"\nnote=\"## Проверка доступа и переноса сборки на Timeweb — 23.10.2026\\n\\nSSH к серверу 9408159 подтверждён через разрешённый канал GitHub Actions.\\nРазрешение OWNER сохранено в AGENTS.md, MASTER_PLAN.md и PLAN_STATUS.md.\\nИсходники разработки: 79be182168e21ae8248e0e0dfa6deb0abfbacbcf,\\nрабочий каталог /root/analyst-ai-development-79be1821.\\n\\nСервер имеет около 1 ГБ RAM, без Android SDK и /dev/kvm.\\nБолее дешёвые российские предложения 6751, 6761, 6753, 6763 и 2581\\nотклонены провайдером по отсутствию ресурсов; 2455 возвращает preset_not_found.\\nПробный сервер 9409007 (ru-2 / nsk-1, preset 4245, 4 CPU / 8 ГБ / 80 ГБ,\\n6800 руб./месяц без IPv4) остался no_paid и не стал доступен по SSH.\\nАккаунт не заблокирован, баланс положительный, но не покрывает 7000 руб.\\nна 30 дней сервера с IPv4. Точную платёжную информацию в журналы не выводили.\\nДокументация провайдера требует запас средств на 30 дней создаваемых серверов.\\nhttps://timeweb.cloud/docs/cloud-servers/manage-servers/create-server\\n\\n9409007 и его адрес d378efc5-0d10-4ef6-9eab-133f43b48f6f удалены;\\nинвентарь подтвердил отсутствие обоих ресурсов и работающий 9408159.\\nПроверка: https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40006850088\\nПроверка требования оплаты: https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40006543477\\n\\nПолный Android runtime API 37 / 16 КБ и 4 КБ на Timeweb ещё не пройден.\\nПоддержка KVM у незапустившегося сервера не проверена. Подпись APK сохранять;\\nсуществующий закрытый ключ ещё не переносился. Нового APK не опубликовано.\\nBackend ещё не запущен; реальная привязка владельца Telegram не выполнена.\\nНе считать ветку зелёной и не ослаблять проверки из-за инфраструктурного блока.\\n\\n\"\nfor name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    assert policy in (root/name).read_text(), \"owner_authorization_missing\"\np=root/\"docs/PLAN_STATUS.md\"\nvalue=p.read_text()\nif note not in value:\n    p.write_text(value.replace(policy,policy+note,1))\nprint(json.dumps({\"server_id\":9408159,\"owner_authorization_saved\":True,\"checkpoint_saved\":True,\"modified\":git(\"status\",\"--short\"),\"sha256\":{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\")},\"new_apk_published\":False,\"live_owner_verified\":False},ensure_ascii=False),flush=True)\n"
-              result=subprocess.run(command+["python3 -c "+shlex.quote(script)],capture_output=True,text=True,timeout=480)
+          token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
+          fin=get("/account/finances")["finances"]
+          status=get("/account/status")["status"]
+          balance=Decimal(str(fin["balance"]))
+          inventory=prepare.read_resource(token,"servers")
+          assert prepare.summarize("servers",inventory)["complete"]
+          print("TIMEWEB_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":balance>0,"blocked":status["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]]}),flush=True)
+          presets=get("/presets/servers")["server_presets"]
+          offers=[]
+          for p in presets:
+              if p["cpu"]>=2 and p["ram"]>=8192 and p["disk"]>=40960:
+                  row={k:p.get(k) for k in ("id","location","cpu","ram","disk","price")}
+                  row["kind"]="preset"
+                  row["activation_credit_covered"]=balance>=Decimal(str(p["price"]))+Decimal("200")
+                  offers.append(row)
+          configs=get("/configurator/servers")["server_configurators"]
+          for c in configs:
+              r=c["requirements"]
+              sizes={}
+              for part,wanted in (("cpu",2),("ram",8192),("disk",61440)):
+                  minimum,step,maximum=(int(r[part+"_"+suffix]) for suffix in ("min","step","max"))
+                  sizes[part]=minimum+max(0,(wanted-minimum+step-1)//step)*step
+                  if sizes[part]>maximum:break
+              else:
+                  if all(k in c.get("prices",{}) for k in ("cpu","ram","disk")):
+                      price=Decimal(str(c["prices"]["cpu"]))*sizes["cpu"]+Decimal(str(c["prices"]["ram"]))*sizes["ram"]/1024+Decimal(str(c["prices"]["disk"]))*sizes["disk"]/1024
+                      offers.append({"kind":"configuration","id":c["id"],"location":c["location"],**sizes,"price":float(price),"activation_credit_covered":balance>=price+Decimal("200")})
+          offers.sort(key=lambda r:(not str(r["location"]).startswith("ru-"),r["price"],r["id"]))
+          seen={}
+          selected=[]
+          for row in offers:
+              location=row["location"]
+              if seen.get(location,0)>=3:continue
+              selected.append(row);seen[location]=seen.get(location,0)+1
+          print("TIMEWEB_HOURLY_CANDIDATES="+json.dumps(selected),flush=True)
+          def hourly_command(command):
+              script="import hashlib,json,pathlib,subprocess\nroot=pathlib.Path(\"/root/analyst-ai-development-79be1821\")\nassert root.is_dir() and not root.is_symlink()\npolicy=\"\"\"## OWNER 24.10.2026 — почасовая оплата Timeweb\n\nOWNER требует почасовую оплату и продолжение текущей работы.\nИспользовать почасовую тарификацию облачных ресурсов. Не оформлять месячный\nили годовой пакет оплаты и не подключать автопополнение ради этой задачи.\nПроверять реальную доступность и достаточность более дешёвых конфигураций.\nНенужные временные серверы и их платные адреса удалять после проверки.\nРазрешённый канал команд GitHub Actions и разработка только на Timeweb,\nвертикальный дизайн и все обязательные проверки остаются в силе.\n\n\"\"\"\nfor name in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    p=root/name\n    value=p.read_text()\n    if policy not in value:\n        first,sep,tail=value.partition(\"\\n\")\n        p.write_text(first+\"\\n\\n\"+policy+tail.lstrip(\"\\n\"))\nprint(json.dumps({\"server_id\":9408159,\"hourly_preference_saved\":True,\"source_head\":subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root,text=True).strip(),\"modified\":subprocess.check_output([\"git\",\"status\",\"--short\"],cwd=root,text=True).strip()},ensure_ascii=False),flush=True)\n"
+              result=subprocess.run(command+["python3 -c "+shlex.quote(script)],capture_output=True,text=True,timeout=180)
               for line in result.stdout.splitlines():
-                  if line.startswith("{"):
-                      print("OWNER_TIMEWEB_REMOTE="+json.dumps(json.loads(line),ensure_ascii=False),flush=True)
+                  if line.startswith("{"):print("OWNER_TIMEWEB_HOURLY="+json.dumps(json.loads(line),ensure_ascii=False),flush=True)
               if result.returncode:
-                  print("OWNER_REMOTE_DIAGNOSTIC="+result.stderr[-6000:],flush=True)
-                  raise prepare.ProbeError("remote_inspection_failed_"+str(result.returncode))
-          access.develop_backend=authorized_command
+                  print("OWNER_REMOTE_DIAGNOSTIC="+result.stderr[-3000:],flush=True)
+                  raise prepare.ProbeError("hourly_preference_checkpoint_failed")
+          access.develop_backend=hourly_command
           adopt.run(development=True)
           PY
