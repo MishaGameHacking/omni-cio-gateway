@@ -4,14 +4,14 @@ on:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: analyst-timeweb-final-jwks-evidence
+  group: analyst-timeweb-telegram-route-comparison
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,14 +20,13 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Verify Telegram transport with compression and supported-key parsing on Timeweb
+      - name: Compare Telegram connectivity from one temporary additional Timeweb IP
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+          import ipaddress,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
@@ -44,6 +43,7 @@ jobs:
                   key=created.get("ssh_key",created.get("ssh-key",{}))
                   assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
                   key_id=key["id"];attached=False
+                  comparison_id=None;comparison_bound=False;keep_comparison=False
                   try:
                       access.request(token,"POST","/servers/"+str(server_id)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
                       command=p.ssh_command(folder,ip,old_host)
@@ -52,27 +52,39 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import datetime,gzip,json,pathlib,subprocess\nroot=pathlib.Path(\"/root\");probes=[]\nfor attempt in range(6):\n    result=subprocess.run([\"curl\",\"--ipv4\",\"--compressed\",\"--fail\",\"--silent\",\"--show-error\",\"--connect-timeout\",\"5\",\"--max-time\",\"10\",\"https://oauth.telegram.org/.well-known/jwks.json\"],capture_output=True,timeout=15)\n    row={\"attempt\":attempt+1,\"curl_exit\":result.returncode,\"tls_http_ok\":result.returncode==0,\"usable_rs256_key\":False}\n    if result.returncode==0:\n        data=result.stdout\n        try:\n            if data.startswith(b\"\\x1f\\x8b\"):data=gzip.decompress(data)\n            assert len(data)<=128*1024\n            document=json.loads(data)\n            keys=document.get(\"keys\",[])\n            assert isinstance(keys,list) and len(keys)<=32\n            row[\"key_types\"]=sorted({str(k.get(\"kty\",\"\")) for k in keys})\n            row[\"usable_rs256_key\"]=any(k.get(\"kty\")==\"RSA\" and k.get(\"alg\",\"RS256\")==\"RS256\" and all(isinstance(k.get(name),str) and k[name] for name in (\"kid\",\"n\",\"e\")) for k in keys)\n        except (AssertionError,ValueError,TypeError,OSError):row[\"parse_error\"]=True\n    probes.append(row)\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"probes\":probes,\"successes\":sum(x[\"usable_rs256_key\"] for x in probes),\"attempts\":len(probes),\"owner_login_tested\":False}\npath=root/\"analyst-moscow-latest-telegram-network.json\";path.write_text(json.dumps(report,indent=2)+\"\\n\");path.chmod(0o600)\nready_path=root/\"analyst-timeweb-next-release-readiness.json\";ready=json.loads(ready_path.read_text());ready[\"telegram_jwks_probes\"]=probes;ready[\"telegram_rechecked_at_utc\"]=report[\"checked_at_utc\"]\nready_path.write_text(json.dumps(ready,indent=2)+\"\\n\");ready_path.chmod(0o600)\nrepo=root/\"analyst-ai-development-79be1821\"\nnote=\"Сверка диагностики JWKS 24.10.2026: проверка принимает HTTP compression и ищет пригодный RSA/RS256 ключ среди опубликованных ключей, а не требует RSA у каждого элемента. Прежнее valid_jwks=false при успешном curl не доказывало отказ Telegram. Уточнённый результат: \"+json.dumps(report,ensure_ascii=False)+\". Серверный код и проверки авторизации не ослаблялись.\\n\"\nfor rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    path=repo/rel;text=path.read_text();assert note not in text;path.write_text(text.rstrip()+\"\\n\\n\"+note)\nsubprocess.run([\"git\",\"diff\",\"--check\"],cwd=repo,check=True,capture_output=True)\nprint(\"TELEGRAM_NETWORK_FINAL=\"+json.dumps(report),flush=True)\n"
-                      output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=240).decode()
-                      print(output,end="",flush=True)
-                      docs=json.loads(p.remote(command,"python3 -c "+shlex.quote("import json,pathlib\nroot=pathlib.Path(\"/root\");repo=root/\"analyst-ai-development-79be1821\"\nsecret=json.loads((root/\"analyst-ai-enrollment.json\").read_text())[\"TELEGRAM_CLIENT_SECRET\"]\nfiles={rel:(repo/rel).read_text() for rel in (\"AGENTS.md\",\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\")}\nassert all(secret not in text and \"-----BEGIN OPENSSH PRIVATE KEY-----\" not in text and \"-----BEGIN PRIVATE KEY-----\" not in text for text in files.values())\nprint(json.dumps(files))\n"),timeout=30))
-                      assert set(docs)=={"AGENTS.md","docs/MASTER_PLAN.md","docs/PLAN_STATUS.md"}
-                      def gh(method,path,body=None):
+                      opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+                      def api(method,path,body=None):
                           data=None if body is None else json.dumps(body).encode()
-                          req=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway"+path,method=method,data=data,headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","Content-Type":"application/json","X-GitHub-Api-Version":"2022-11-28"})
-                          with urllib.request.urlopen(req,timeout=30) as response:
-                              raw=response.read(4*1024*1024+1)
-                          return json.loads(raw) if raw else {}
-                      ref=gh("GET","/git/ref/heads/codex/timeweb-owner-prepare-2026-10-23")
-                      assert ref["object"]["sha"]==os.environ["GITHUB_SHA"],"backup_ref_changed"
-                      commit=gh("GET","/git/commits/"+ref["object"]["sha"])
-                      tree=gh("POST","/git/trees",{"base_tree":commit["tree"]["sha"],"tree":[{"path":path,"mode":"100644","type":"blob","content":text} for path,text in docs.items()]})
-                      backed=gh("POST","/git/commits",{"message":"Back up Timeweb cleanup evidence and current owner instructions","tree":tree["sha"],"parents":[ref["object"]["sha"]]})
-                      current=gh("GET","/git/ref/heads/codex/timeweb-owner-prepare-2026-10-23")
-                      assert current["object"]["sha"]==ref["object"]["sha"],"backup_ref_changed"
-                      gh("PATCH","/git/refs/heads/codex/timeweb-owner-prepare-2026-10-23",{"sha":backed["sha"],"force":False})
-                      print("TIMEWEB_DOCUMENT_BACKUP="+json.dumps({"sha":backed["sha"],"tree":tree["sha"],"files":sorted(docs),"edited_on":"Timeweb 9413105"}),flush=True)
+                          req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=data,headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+                          try:
+                              with opener.open(req,timeout=30) as response:
+                                  status=response.status;raw=response.read(2*1024*1024+1)
+                              return status,p.decode_response(raw) if raw else {}
+                          except urllib.error.HTTPError as error:
+                              print("COMPARISON_API_FAILURE="+json.dumps({"method":method,"path":path,"status":error.code}),flush=True)
+                              raise p.ProbeError("comparison_api_failed_"+str(error.code)) from None
+                      before=api("GET","/floating-ips")[1]
+                      assert before["meta"]["total"]==len(before["ips"])==1
+                      assert before["ips"][0]["id"]=="40e88e4d-7807-4c99-80a3-f384db68e93a" and before["ips"][0]["resource_id"]==9413105
+                      created=api("POST","/floating-ips",{"availability_zone":"msk-1","is_ddos_guard":False})[1]["ip"]
+                      comparison_id=created["id"];comparison_ip=str(ipaddress.IPv4Address(created["ip"]))
+                      assert created["availability_zone"]=="msk-1" and created["is_ddos_guard"] is False and comparison_ip!="201.24.52.66"
+                      print("TEMPORARY_COMPARISON_IP="+json.dumps({"id":comparison_id,"ip":comparison_ip,"server_id":9413105}),flush=True)
+                      api("POST","/floating-ips/"+comparison_id+"/bind",{"resource_type":"server","resource_id":9413105});comparison_bound=True
+                      script="import datetime,ipaddress,json,pathlib,subprocess,sys,time\nroot=pathlib.Path(\"/root\");new_ip=str(ipaddress.IPv4Address(sys.argv[1]));old_ip=\"201.24.52.66\"\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"original_ip\":old_ip,\"comparison_ip\":new_ip,\"new_ip_present\":False,\"probes\":[],\"new_ip_successes\":0,\"original_ip_successes\":0,\"comparison_improved\":False}\nfor attempt in range(30):\n    interfaces=json.loads(subprocess.check_output([\"ip\",\"-j\",\"-4\",\"address\",\"show\"],text=True))\n    addresses={a[\"local\"] for iface in interfaces for a in iface.get(\"addr_info\",[]) if a.get(\"family\")==\"inet\"}\n    assert old_ip in addresses,\"original_address_disappeared\"\n    if new_ip in addresses:report[\"new_ip_present\"]=True;break\n    time.sleep(2)\ndef check(address,label,attempt):\n    result=subprocess.run([\"curl\",\"--interface\",address,\"--ipv4\",\"--compressed\",\"--fail\",\"--silent\",\"--show-error\",\"--connect-timeout\",\"5\",\"--max-time\",\"10\",\"https://oauth.telegram.org/.well-known/jwks.json\"],capture_output=True,timeout=15)\n    usable=False\n    if result.returncode==0:\n        try:\n            data=json.loads(result.stdout)\n            usable=any(k.get(\"kty\")==\"RSA\" and k.get(\"alg\",\"RS256\")==\"RS256\" and all(isinstance(k.get(n),str) and k[n] for n in (\"kid\",\"n\",\"e\")) for k in data.get(\"keys\",[]))\n        except (ValueError,TypeError):pass\n    return {\"source\":label,\"attempt\":attempt,\"curl_exit\":result.returncode,\"usable_rs256_key\":bool(usable)}\nif report[\"new_ip_present\"]:\n    for attempt in range(1,7):\n        report[\"probes\"].append(check(old_ip,\"original\",attempt))\n        report[\"probes\"].append(check(new_ip,\"comparison\",attempt))\n    report[\"original_ip_successes\"]=sum(x[\"usable_rs256_key\"] for x in report[\"probes\"] if x[\"source\"]==\"original\")\n    report[\"new_ip_successes\"]=sum(x[\"usable_rs256_key\"] for x in report[\"probes\"] if x[\"source\"]==\"comparison\")\n    if report[\"new_ip_successes\"]==6 and report[\"original_ip_successes\"]<6:\n        for attempt in range(7,19):report[\"probes\"].append(check(new_ip,\"comparison\",attempt))\n        report[\"new_ip_successes\"]=sum(x[\"usable_rs256_key\"] for x in report[\"probes\"] if x[\"source\"]==\"comparison\")\n        report[\"comparison_improved\"]=report[\"new_ip_successes\"]==18\ntarget=root/\"analyst-telegram-source-ip-comparison.json\";target.write_text(json.dumps(report,indent=2)+\"\\n\");target.chmod(0o600)\nprint(\"TELEGRAM_SOURCE_IP_COMPARISON=\"+json.dumps(report),flush=True)\n"
+                      output=p.remote(command,"python3 -u -c "+shlex.quote(script)+" "+shlex.quote(comparison_ip),timeout=360).decode()
+                      print(output,end="",flush=True)
+                      report=json.loads(next(line.split("=",1)[1] for line in output.splitlines() if line.startswith("TELEGRAM_SOURCE_IP_COMPARISON=")))
+                      keep_comparison=report["comparison_improved"] is True
                   finally:
+                      if comparison_id is not None and not keep_comparison:
+                          if comparison_bound:api("POST","/floating-ips/"+comparison_id+"/unbind")
+                          api("DELETE","/floating-ips/"+comparison_id)
+                          inventory=api("GET","/floating-ips")[1]
+                          assert inventory["meta"]["total"]==len(inventory["ips"]) and not any(x["id"]==comparison_id for x in inventory["ips"])
+                          print("TEMPORARY_COMPARISON_IP_REMOVED="+comparison_id,flush=True)
+                      elif comparison_id is not None:
+                          print("VERIFIED_IMPROVED_IP_PENDING_CUTOVER="+json.dumps({"id":comparison_id,"ip":comparison_ip}),flush=True)
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
                       print("REMEDIATION_TEMP_KEY_REMOVED="+str(server_id),flush=True)
