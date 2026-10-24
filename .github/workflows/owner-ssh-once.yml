@@ -11,7 +11,7 @@ concurrency:
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,21 +20,36 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Observe actual memory, disk and build progress on Timeweb
+      - name: Read the current host memory pricing before any resize
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import json,shlex,subprocess,sys
-          sys.path.insert(0,"deploy")
+          import json,os,shlex,subprocess,sys,urllib.request
+          from decimal import Decimal
+          sys.path[:0]=["deploy","tools"]
+          import prepare_owner_vm as prepare
           import access_owner_vm as access
           import adopt_replacement_vm as adopt
-          import prepare_owner_vm as prepare
-          def execute_remote(command):
-              script="import json,pathlib,shutil,subprocess,time\nfor sample in range(3):\n    mem={line.split()[0].rstrip(\":\"):int(line.split()[1]) for line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if line.startswith((\"MemTotal:\",\"MemAvailable:\",\"SwapTotal:\",\"SwapFree:\"))}\n    processes=[]\n    for directory in pathlib.Path(\"/proc\").iterdir():\n        if not directory.name.isdecimal():continue\n        try:\n            name=(directory/\"comm\").read_text().strip()\n            if name not in {\"java\",\"aapt2\"}:continue\n            rows=(directory/\"status\").read_text().splitlines()\n            details={\"pid\":int(directory.name),\"name\":name}\n            for line in rows:\n                if line.startswith((\"State:\",\"VmRSS:\",\"VmSwap:\",\"Threads:\")):\n                    key,_,value=line.partition(\":\");details[key]=value.strip()\n            processes.append(details)\n        except (FileNotFoundError,ProcessLookupError,PermissionError):continue\n    report={\"time_utc\":time.strftime(\"%Y-%m-%dT%H:%M:%SZ\",time.gmtime()),\"memory_kib\":mem,\"disk_free_gib\":round(shutil.disk_usage(\"/\").free/1024**3,2),\"build_processes\":processes,\"ephemeral_encryption_key_removed\":not pathlib.Path(\"/root/analyst-signing-transfer-40062413701\").exists()}\n    progress=pathlib.Path(\"/root/analyst-android-build-result.json\")\n    if progress.is_file():\n        data=json.loads(progress.read_text())\n        report[\"completed_phases\"]=data.get(\"phases\",[])\n        report[\"completed_at_utc\"]=data.get(\"completed_at_utc\")\n    kernel=subprocess.run([\"dmesg\",\"--level=err,crit,alert,emerg\"],capture_output=True,text=True,timeout=10)\n    report[\"kernel_oom_lines\"]=[line for line in kernel.stdout.splitlines() if \"out of memory\" in line.lower() or \"killed process\" in line.lower()][-6:]\n    print(\"TIMEWEB_BUILD_RESOURCE_SNAPSHOT=\"+json.dumps(report,sort_keys=True),flush=True)\n    if sample<2:time.sleep(20)\n"
-              result=subprocess.run(command+["python3 -u -c "+shlex.quote(script)],timeout=180)
-              if result.returncode:raise prepare.ProbeError("timeweb_build_observation_failed_"+str(result.returncode))
-          access.develop_backend=execute_remote
-          adopt.run(development=True)
+          token=prepare.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          def get(path):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+              opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
+              with opener.open(req,timeout=30) as response:return prepare.decode_response(response.read(2*1024*1024+1))
+          fin=get("/account/finances")["finances"]
+          status=get("/account/status")["status"]
+          balance=Decimal(str(fin["balance"]))
+          inventory=prepare.read_resource(token,"servers")
+          assert prepare.summarize("servers",inventory)["complete"]
+          print("TIMEWEB_HOURLY_ACCOUNT="+json.dumps({"hourly_billing":Decimal(str(fin["hourly_fee"]))>0,"balance_positive":balance>0,"blocked":status["is_blocked"],"servers":[{k:s.get(k) for k in ("id","name","status","cpu","ram","availability_zone")} for s in inventory["servers"]]}),flush=True)
+          configs=get("/configurator/servers")["server_configurators"]
+          config=next(c for c in configs if c["id"]==153)
+          assert config["location"]=="nl-1"
+          print("TIMEWEB_EXISTING_HOST_CONFIGURATOR="+json.dumps({k:config.get(k) for k in ("id","location","requirements","prices")}),flush=True)
+          candidates=[]
+          for memory in (2048,3072,4096):
+              price=Decimal(str(config["prices"]["cpu"]))+Decimal(str(config["prices"]["ram"]))*Decimal(memory)/1024+Decimal(str(config["prices"]["disk"]))*15
+              candidates.append({"cpu":1,"ram":memory,"disk":15360,"monthly_price_rub":float(price),"monthly_credit_covered":balance>=price+200})
+          print("TIMEWEB_TEMPORARY_RAM_OPTIONS="+json.dumps(candidates),flush=True)
           PY
