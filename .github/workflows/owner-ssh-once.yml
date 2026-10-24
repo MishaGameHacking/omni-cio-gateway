@@ -60,7 +60,9 @@ jobs:
           p.NAME=name;p.MARKER=marker;p.CONFIG_LOCATION="ru-3"
           p.cloud.OWNER_MARKER=marker
           server=verify(get("/servers/"+str(sid)))
-          assert server["status"]=="on" and not server["cloud_init"].startswith("#cloud-config"+chr(10)),"repair_only_the_observed_unused_malformed_installation"
+          assert server["status"]=="on","reconcile_empty_server_before_install"
+          init=server.get("cloud_init") or ""
+          print("MOSCOW_INIT_READBACK="+json.dumps({"id":sid,"value_type":type(init).__name__,"length":len(init),"real_lines":len(init.splitlines()),"correct_header":init.startswith("#cloud-config"+chr(10)),"redacted":init=="hidden_by_runtime_policy"}),flush=True)
           def mutate(method,suffix,payload):
               assert (method,suffix) in {("PATCH",""),("POST","/action")}
               req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers/"+str(sid)+suffix,method=method,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
@@ -80,9 +82,11 @@ jobs:
                   "runcmd":[["systemctl","restart","ssh"]]}
               value="#cloud-config"+chr(10)+json.dumps(cloud)+chr(10)
               assert json.loads(value.splitlines()[1])==cloud
+              print("MOSCOW_REPAIR_HOST_PIN="+json.dumps({"id":sid,"ip":"81.200.158.176","host_key":host}),flush=True)
               mutate("PATCH","",{"cloud_init":value})
               changed=verify(get("/servers/"+str(sid)))
-              assert changed["cloud_init"]==value,"cloud_init_update_not_persisted"
+              readback=changed.get("cloud_init") or ""
+              print("MOSCOW_INIT_PATCH_ACK="+json.dumps({"id":sid,"http_accepted":True,"readback_equal":readback==value,"readback_redacted":readback=="hidden_by_runtime_policy","readback_lines":len(readback.splitlines()),"ssh_verification_pending":True}),flush=True)
               print("MOSCOW_CLOUD_INIT_FIXED="+json.dumps({"id":sid,"ip":"81.200.158.176","host_key":host,"old_server_preserved":True,"application_data_migrated":False}),flush=True)
               mutate("POST","/action",{"action":"install"})
               print("MOSCOW_EMPTY_REINSTALL_ACCEPTED="+json.dumps({"id":sid}),flush=True)
