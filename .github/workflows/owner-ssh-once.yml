@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-moscow-clean-replacement
+  group: analyst-timeweb-moscow-network
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,144 +20,50 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Create and verify a clean minimum Moscow replacement after the provider busy error
+      - name: Diagnose the observed Telegram network failure on Timeweb and remove the unused empty VM
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import ipaddress,json,os,pathlib,re,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error,uuid
+          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
-          import replace_unreachable_vm as replacement
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          name="analyst-ai-msk-app-20261024-b"
-          marker="Analyst AI verified minimum Moscow replacement 2026-10-24"
-          cfg={"configurator_id":43,"cpu":1,"ram":1024,"disk":15360}
-          opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
-          def get(path):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
-              with opener.open(req,timeout=30) as response:return p.decode_response(response.read(4*1024*1024+1))
-          def inventory():
-              doc=p.read_resource(token,"servers")
-              assert p.summarize("servers",doc)["complete"],"incomplete_inventory"
-              return doc["servers"]
-          before=inventory()
-          expected_inventory={9408159:("analyst-ai-owner-route-20261023","nl-1"),9413003:("analyst-ai-msk-app-20261024","ru-3")}
-          assert {s["id"]:(s["name"],s["location"]) for s in before}==expected_inventory,"reconcile_inventory_before_any_order"
-          offers=p.read_catalog(token,"presets")["server_presets"]
-          candidates=[]
-          for preset_id,cpu,ram,disk,monthly in ((4795,1,1024,15360,1180),(6867,1,1024,15360,1720)):
-              offer,=[r for r in offers if r["id"]==preset_id]
-              assert offer["location"]=="ru-3" and offer["cpu"]==cpu and offer["ram"]==ram and offer["disk"]==disk and offer["price"]==monthly and offer["bandwidth"]==1000
-              candidates.append(offer)
-          assert any(r["id"]==99 and r["version"]=="24.04" for r in p.read_catalog(token,"os")["servers_os"])
-          selected=None
-          def verify(document):
-              s=document["server"]
-              assert selected is not None and s["name"]==name and s["comment"]==marker and s["location"]=="ru-3"
-              assert s["preset_id"]==selected["id"] and s["cpu"]==selected["cpu"] and s["ram"]==selected["ram"]
-              assert re.fullmatch(r"msk-1",s["availability_zone"])
-              return s
-          p.owned_server=verify
-          p.NAME=name;p.MARKER=marker;p.CONFIG_LOCATION="ru-3"
-          p.cloud.OWNER_MARKER=marker
-          with tempfile.TemporaryDirectory(prefix="analyst-moscow-",dir=os.environ["RUNNER_TEMP"]) as temp:
-              folder=pathlib.Path(temp)
-              p.cloud.generate_key(folder/"client");p.cloud.generate_key(folder/"host")
-              client=(folder/"client.pub").read_text().strip();host=(folder/"host.pub").read_text().strip()
-              cloud={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[client]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,
-                  "ssh_keys":{"ed25519_private":(folder/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,
-                  "runcmd":[["systemctl","restart","ssh"]]}
-              registered=access.request(token,"POST","/ssh-keys",{"name":"analyst-clean-msk-"+os.environ["GITHUB_RUN_ID"],"body":client,"is_default":False})
-              key=registered.get("ssh_key",registered.get("ssh-key",{}))
-              assert type(key.get("id")) is int and key.get("body","").split()[:2]==client.split()[:2]
-              key_id=key["id"]
-              sid=None
+          access.SERVER_ID=9413105
+          server=access.request(token,"GET","/servers/9413105")["server"]
+          assert server["id"]==9413105 and server["name"]=="analyst-ai-msk-app-20261024-b" and server["location"]=="ru-3" and server["preset_id"]==6867 and p.cloud.public_ipv4(server)=="201.24.52.66"
+          with tempfile.TemporaryDirectory(prefix="analyst-msk-network-",dir=os.environ["RUNNER_TEMP"]) as directory:
+              folder=pathlib.Path(directory)
+              p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+              created=access.request(token,"POST","/ssh-keys",{"name":"analyst-network-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+              key=created.get("ssh_key",created.get("ssh-key",{}))
+              assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
+              key_id=key["id"];attached=False
               try:
-                  created=None
-                  for offer in candidates:
-                      for zone in ("msk-1",):
-                          current=inventory()
-                          assert {s["id"]:(s["name"],s["location"]) for s in current}==expected_inventory,"reconcile_inventory_before_next_offer"
-                          selected=offer;price=offer["price"]
-                          print("MOSCOW_SELECTED_OFFER="+json.dumps({"preset_id":offer["id"],"cpu":offer["cpu"],"ram":offer["ram"],"disk":offer["disk"],"location":"ru-3","zone":zone,"monthly_vm_rub":price,"host_key":host}),flush=True)
-                          body={"name":name,"hostname":name,"comment":marker,"preset_id":offer["id"],"availability_zone":zone,"os_id":99,"project_id":2941515,"bandwidth":1000,"ssh_keys_ids":[key_id],"cloud_init":"#cloud-config"+chr(10)+json.dumps(cloud)+chr(10)}
-                          assert body["cloud_init"].startswith("#cloud-config"+chr(10)) and json.loads(body["cloud_init"].splitlines()[1])==cloud
-                          req=urllib.request.Request("https://api.timeweb.cloud/api/v1/servers",method="POST",data=json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
-                          try:
-                              with opener.open(req,timeout=30) as response:created=p.decode_response(response.read(4*1024*1024+1))
-                          except urllib.error.HTTPError as error:
-                              details=p.cloud.error_details(error.read(1024*1024))
-                              print("MOSCOW_CAPACITY_REFUSAL="+json.dumps({"preset_id":offer["id"],"zone":zone,"status":error.code,**details}),flush=True)
-                              current=inventory()
-                              assert {s["id"]:(s["name"],s["location"]) for s in current}==expected_inventory,"ambiguous_create_reconcile_before_retry"
-                              if details.get("error_code") not in {"no_free_node","preset_not_found","servers_is_run_out","servers_is_run_out_error"}:raise p.ProbeError("unexpected_moscow_create_rejection")
-                              continue
-                          except OSError:
-                              current=inventory()
-                              print("MOSCOW_AMBIGUOUS_CREATE="+json.dumps([{k:r.get(k) for k in ("id","name","location","availability_zone","status")} for r in current]),flush=True)
-                              raise p.ProbeError("moscow_create_transport_error_no_retry") from None
-                          break
-                      if created is not None:break
-                  if created is None:raise p.ProbeError("no_available_moscow_minimal_preset_in_checked_zones")
-                  cfg={"preset_id":selected["id"],"cpu":selected["cpu"],"ram":selected["ram"],"disk":selected["disk"]}
-                  server=p.owned_server(created);sid=server["id"];access.SERVER_ID=sid
-                  assert sid!=9408159 and server["location"]=="ru-3" and server["availability_zone"]=="msk-1"
-                  print("MOSCOW_SERVER_CREATED="+json.dumps({"id":sid,"name":name,"location":server["location"],"zone":server.get("availability_zone"),"host_key":host,"old_server_preserved":True}),flush=True)
-                  ip_id=None
-                  if not p.cloud.public_ipv4(server):
-                      zone=server["availability_zone"];assert re.fullmatch(r"msk-1",zone)
-                      ips=access.request(token,"GET","/floating-ips")
-                      assert ips.get("meta",{}).get("total")==len(ips["ips"])
-                      existing=[r for r in ips["ips"] if r.get("resource_id")==sid]
-                      assert not existing,"reconcile_new_server_addresses"
-                      doc=access.request(token,"POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":zone})
-                      address=doc["ip"];ip_id=str(uuid.UUID(address["id"]))
-                      assert address["availability_zone"]==zone and address["is_ddos_guard"] is False and ipaddress.IPv4Address(address["ip"]).is_global
-                      print("MOSCOW_IPV4_CREATED="+json.dumps({"id":ip_id,"ip":address["ip"],"zone":zone}),flush=True)
-                      access.request(token,"POST","/floating-ips/"+ip_id+"/bind",{"resource_type":"server","resource_id":sid})
-                  print("MOSCOW_PINNED_ACCESS_WAIT="+json.dumps({"id":sid,"host_key":host}),flush=True)
-                  command=None
-                  last=None
-                  for attempt in range(36):
-                      current=p.owned_server(get("/servers/"+str(sid)))
-                      address=p.cloud.public_ipv4(current)
-                      if address:
-                          command=p.ssh_command(folder,address,host)
-                          try:
-                              result=subprocess.run(command+["cloud-init status --wait >/dev/null && test $(id -u) = 0"],capture_output=True,timeout=20)
-                              if result.returncode==0:break
-                              err=result.stderr.decode("utf-8","replace")
-                              reason="host_key_mismatch" if "REMOTE HOST IDENTIFICATION HAS CHANGED" in err or "Host key verification failed" in err else "public_key_auth_failed" if "Permission denied" in err else "connection_timeout" if "timed out" in err else "connection_refused" if "Connection refused" in err else "remote_command_failed"
-                          except subprocess.TimeoutExpired:reason="cloud_init_or_transport_timeout"
-                      else:reason="public_ip_pending"
-                      state={"id":sid,"status":current["status"],"reason":reason}
-                      if state!=last:print("MOSCOW_SSH_WAIT="+json.dumps(state),flush=True);last=state
-                      time.sleep(5)
-                  else:raise p.ProbeError("clean_moscow_pinned_ssh_timeout")
-                  print("MOSCOW_PINNED_SSH=verified",flush=True)
-                  try:
-                      check="import datetime,json,os,pathlib,shutil; print(json.dumps({'cpu':os.cpu_count(),'memory_kib':int(next(x.split()[1] for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemTotal:'))),'free_disk_bytes':shutil.disk_usage('/').free,'os_release':pathlib.Path('/etc/os-release').read_text(),'checked_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat()}))"
-                      hardware=json.loads(p.remote(command,"python3 -c "+shlex.quote(check),timeout=30))
-                      telegram=json.loads(p.remote(command,"python3 -c "+shlex.quote(replacement.TELEGRAM_CHECK),timeout=60))
-                      ready=hardware["memory_kib"]>=selected["ram"]*1024*0.8 and hardware["free_disk_bytes"]>=5*1024**3 and 'VERSION_ID="24.04"' in hardware["os_release"] and telegram.get("telegram_jwks_https") is True
-                      print(p.remote(command,"python3 -c "+shlex.quote("import datetime,json,os,pathlib,re,shutil,subprocess\ndef run(args):\n    p=subprocess.run(args,capture_output=True,text=True,timeout=25)\n    return p.returncode,p.stdout.strip()\nreport={\"server_id\":SERVER_ID_PLACEHOLDER,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"memory\":{},\"free_disk_bytes\":shutil.disk_usage(\"/\").free,\"reboot_required\":pathlib.Path(\"/var/run/reboot-required\").exists()}\nfor line in pathlib.Path(\"/proc/meminfo\").read_text().splitlines():\n    k,_,v=line.partition(\":\")\n    if k in {\"MemTotal\",\"MemAvailable\",\"SwapTotal\",\"SwapFree\"}:report[\"memory\"][k+\"_kib\"]=int(v.split()[0])\ncode,out=run([\"cloud-init\",\"status\",\"--format\",\"json\"])\ntry:\n    status=json.loads(out)\n    report[\"cloud_init\"]={\"returncode\":code,\"status\":status.get(\"status\"),\"extended_status\":status.get(\"extended_status\"),\"errors_count\":len(status.get(\"errors\",[])),\"recoverable_error_keys\":sorted(status.get(\"recoverable_errors\",{}))}\nexcept Exception:report[\"cloud_init\"]={\"returncode\":code,\"json_valid\":False}\ncode,out=run([\"systemctl\",\"--failed\",\"--plain\",\"--no-legend\",\"--no-pager\"])\nreport[\"failed_units\"]=[line.split()[0] for line in out.splitlines() if line.split() and re.fullmatch(\"[A-Za-z0-9_.@:-]+\",line.split()[0])]\nreport[\"units\"]={}\nfor unit in (\"qemu-guest-agent.service\",\"ssh.service\",\"cloud-final.service\",\"systemd-networkd.service\"):\n    code,out=run([\"systemctl\",\"show\",unit,\"-p\",\"ActiveState\",\"-p\",\"SubState\",\"-p\",\"Result\",\"-p\",\"ExecMainStatus\"])\n    report[\"units\"][unit]={k:v for line in out.splitlines() if \"=\" in line for k,v in [line.split(\"=\",1)]}\ncode,out=run([\"/usr/sbin/sshd\",\"-T\"])\nreport[\"ssh_effective\"]={line.split()[0]:\" \".join(line.split()[1:]) for line in out.splitlines() if line.split() and line.split()[0] in {\"permitrootlogin\",\"passwordauthentication\",\"pubkeyauthentication\",\"kbdinteractiveauthentication\"}}\ncode,out=run([\"journalctl\",\"-k\",\"-b\",\"-g\",\"Out of memory|Killed process|oom-kill\",\"--no-pager\",\"-o\",\"cat\"])\nreport[\"kernel_oom_log_lines\"]=len([l for l in out.splitlines() if l and not l.startswith(\"--\")])\n\ncode,out=run([\"dpkg-query\",\"-W\",\"-f=\"+chr(36)+\"{db:Status-Status} \"+chr(36)+\"{binary:Package} \"+chr(36)+\"{Version}\"+chr(10)])\nreport[\"php_packages\"]=[line for line in out.splitlines() if line.startswith(\"installed \") and any(t in line.split()[1].lower() for t in (\"php\",\"frankenphp\"))]\nreport[\"php_executables\"]={name:shutil.which(name) for name in (\"php\",\"php-cgi\",\"php-fpm\",\"frankenphp\",\"lsphp\")}\ncode,out=run([\"systemctl\",\"list-unit-files\",\"--no-legend\",\"--no-pager\"])\nreport[\"php_unit_files\"]=[line.split()[0] for line in out.splitlines() if \"php\" in line.lower()]\nreport[\"php_runtime_present\"]=bool(report[\"php_packages\"] or any(report[\"php_executables\"].values()) or report[\"php_unit_files\"])\np=pathlib.Path(\"/root/analyst-moscow-health.json\")\nassert not p.is_symlink()\nfd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)\nwith os.fdopen(fd,\"w\") as f:f.write(json.dumps(report,indent=2)+\"\\n\")\nprint(\"MOSCOW_APP_HEALTH=\"+json.dumps(report),flush=True)\n\n\nassert not report[\"php_runtime_present\"],\"unexpected_php_runtime_requires_security_update\"\nassert not report[\"failed_units\"] and report[\"cloud_init\"][\"status\"]==\"done\",\"guest_health_check_failed\"\n".replace("SERVER_ID_PLACEHOLDER",str(sid))),timeout=90).decode(),end="",flush=True)
-                      proof={"id":sid,"name":name,"project_id":2941515,"location":"ru-3","ip":address,"ip_id":ip_id,"host_key":host,"configuration":cfg,"monthly_vm_rub":price,"hardware":hardware,"telegram":telegram,"basic_readiness":ready,"application_started":False,"migration_verified":False,"old_server_id":9408159}
-                      p.remote(command,"umask 077; test ! -e /root/analyst-moscow-readiness.json && cat > /root/analyst-moscow-readiness.json",json.dumps(proof,indent=2).encode(),timeout=30)
-                      print("MOSCOW_READINESS="+json.dumps(proof),flush=True)
-                      if not ready:raise p.ProbeError("moscow_not_ready_no_migration_or_dns_change")
-                  finally:
-                      script="python3 -c 'import pathlib,sys; p=pathlib.Path(\"/root/.ssh/authorized_keys\"); k=sys.stdin.read().strip(); p.write_text(\"\\n\".join(x for x in p.read_text().splitlines() if k not in x)+\"\\n\")'"
-                      p.remote(command,script,client.encode(),timeout=30)
-                      print("MOSCOW_TEMPORARY_ACCESS=removed",flush=True)
-              
+                  access.request(token,"POST","/servers/9413105/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
+                  command=p.ssh_command(folder,"201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdYBqa8Tvw/Bfy8VPCfwaGIsLhWbB9ak603JEmDwuHE")
+                  for attempt in range(12):
+                      try:p.remote(command,"test $(id -u) = 0",timeout=12);break
+                      except (p.ProbeError,subprocess.TimeoutExpired):
+                          if attempt==11:raise
+                          time.sleep(5)
+                  script="import datetime,hashlib,json,pathlib,socket,ssl,subprocess,time,urllib.request,urllib.error\nreport={\"server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"attempts\":[]}\ndef call(args,timeout=25):\n    p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)\n    return {\"exit\":p.returncode,\"stdout\":p.stdout[:8000],\"stderr\":p.stderr[:1500]}\nreport[\"route4\"]=call([\"ip\",\"-4\",\"route\",\"get\",\"149.154.167.99\"])\nreport[\"route6\"]=call([\"ip\",\"-6\",\"route\",\"get\",\"2001:67c:4e8:f004::9\"])\nreport[\"output_firewall\"]=call([\"iptables\",\"-S\",\"OUTPUT\"])\nfor host,path in ((\"oauth.telegram.org\",\"/.well-known/jwks.json\"),(\"pypi.org\",\"/simple/\"),(\"api.timeweb.cloud\",\"/api/v1/os/servers\")):\n    for attempt in range(3 if host==\"oauth.telegram.org\" else 1):\n        row={\"host\":host,\"attempt\":attempt+1}\n        started=time.monotonic()\n        try:\n            req=urllib.request.Request(\"https://\"+host+path,headers={\"Accept\":\"application/json\",\"Accept-Encoding\":\"identity\"})\n            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))\n            with opener.open(req,timeout=15) as response:\n                data=response.read(131073)\n                row.update({\"http_status\":response.status,\"bytes\":len(data),\"encoding\":response.headers.get(\"Content-Encoding\"),\"tls_verified\":True})\n                if host==\"oauth.telegram.org\":row[\"jwks_key_count\"]=len(json.loads(data).get(\"keys\",[]))\n        except Exception as error:\n            reason=getattr(error,\"reason\",error)\n            row.update({\"error\":type(error).__name__,\"errno\":getattr(reason,\"errno\",None),\"http_status\":getattr(error,\"code\",None)})\n        row[\"seconds\"]=round(time.monotonic()-started,3);report[\"attempts\"].append(row)\nfor family in (\"-4\",\"-6\"):\n    path=pathlib.Path(\"/root/analyst-public-jwks-\"+family[1:]+\".json\")\n    result=call([\"curl\",family,\"--proto\",\"=https\",\"--connect-timeout\",\"6\",\"--max-time\",\"18\",\"--silent\",\"--show-error\",\"--header\",\"Accept-Encoding: identity\",\"--output\",str(path),\"--write-out\",\"%{http_code} %{remote_ip} %{time_connect} %{time_appconnect} %{time_total}\",\"https://oauth.telegram.org/.well-known/jwks.json\"],timeout=22)\n    if path.exists():\n        try:result[\"jwks_key_count\"]=len(json.loads(path.read_bytes()).get(\"keys\",[]))\n        except Exception:result[\"jwks_json_valid\"]=False\n        path.unlink()\n    report[\"curl\"+family]=result\nout=pathlib.Path(\"/root/analyst-moscow-network.json\")\nout.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nprint(\"MOSCOW_NETWORK_DIAGNOSTIC=\"+json.dumps(report),flush=True)\n"
+                  print(p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=180).decode(),end="",flush=True)
               finally:
-                  if sid is not None:
-                      access.SERVER_ID=sid
-                      access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(key_id))
+                  if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
                   access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                  print("MOSCOW_CREATION_KEY=removed",flush=True)
+                  print("MOSCOW_NETWORK_KEY=removed",flush=True)
+          old=p.cloud.request(token,"GET","/api/v1/servers/9413003")["server"]
+          assert old["id"]==9413003 and old["name"]=="analyst-ai-msk-app-20261024" and old["comment"]=="Analyst AI first cloud server relocation to Moscow 2026-10-24" and old["preset_id"]==6867 and old["location"]=="ru-3" and p.cloud.public_ipv4(old)=="81.200.158.176"
+          try:
+              p.cloud.delete_and_verify(token,9413003)
+              print("MOSCOW_UNUSED_VM_REMOVED=9413003",flush=True)
+              import replace_unreachable_vm as replacement
+              replacement.remove_ip(token,"a0fc704a-bf26-440a-b55f-facd8db769df",9413003)
+              print("MOSCOW_UNUSED_IP_REMOVED=a0fc704a-bf26-440a-b55f-facd8db769df",flush=True)
+          except p.ProbeError as error:
+              print("MOSCOW_UNUSED_CLEANUP_PENDING="+json.dumps({"server_id":9413003,"reason":str(error)}),flush=True)
           
           PY
