@@ -5,10 +5,9 @@ on:
     paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: analyst-owner-build-observation
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
@@ -21,26 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Wait until earlier recovery transports have stopped
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PYTHONUNBUFFERED: '1'
-        run: |
-          python3 - <<'PY'
-          import json,os,time,urllib.request
-          remaining={40064038336,40064892720}
-          deadline=time.monotonic()+180
-          while remaining and time.monotonic()<deadline:
-              for run_id in list(remaining):
-                  request=urllib.request.Request("https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/actions/runs/"+str(run_id),headers={"Authorization":"Bearer "+os.environ["GH_TOKEN"],"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"})
-                  with urllib.request.urlopen(request,timeout=30) as response:
-                      result=json.loads(response.read(100000))
-                  print("PRIOR_RECOVERY_TRANSPORT="+json.dumps({"run_id":run_id,"status":result["status"],"conclusion":result["conclusion"]}),flush=True)
-                  if result["status"]=="completed":remaining.remove(run_id)
-              if remaining:time.sleep(10)
-          assert not remaining,"earlier_transport_has_not_stopped"
-          PY
-      - name: Recover the existing Timeweb VM after provider resize completion
+      - name: Attempt one provider hard reboot after the confirmed soft reboot refusal
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -56,7 +36,7 @@ jobs:
                   self.status=status;self.code=code
                   super().__init__("timeweb_"+str(status)+"_"+code)
           def api(method,path,data=None):
-              assert (method=="GET" and path in {"/servers/9408159","/servers?limit=100","/account/finances","/account/status"}) or (method=="POST" and path=="/servers/9408159/reboot") or (method=="PATCH" and path=="/servers/9408159")
+              assert (method=="GET" and path in {"/servers/9408159","/servers?limit=100","/account/finances","/account/status"}) or (method=="POST" and path=="/servers/9408159/hard-reboot") or (method=="PATCH" and path=="/servers/9408159")
               req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if data is None else json.dumps(data).encode(),headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json"})
               opener=urllib.request.build_opener(prepare.NoRedirect(),urllib.request.HTTPSHandler(context=prepare.verified_ssl_context()))
               try:
@@ -90,15 +70,15 @@ jobs:
               server,probe=observe("TIMEWEB_RECOVERY_INITIAL")
               if not probe["ssh_banner_ready"]:
                   assert server["status"]=="on","provider_operation_not_settled"
-                  api("POST","/servers/9408159/reboot")
-                  print("TIMEWEB_SOFT_REBOOT_ACCEPTED=true",flush=True)
+                  api("POST","/servers/9408159/hard-reboot")
+                  print("TIMEWEB_HARD_REBOOT_ACCEPTED=true",flush=True)
                   deadline=time.monotonic()+600;good=0
                   while time.monotonic()<deadline:
                       time.sleep(15)
-                      server,probe=observe("TIMEWEB_SOFT_REBOOT_PROGRESS")
+                      server,probe=observe("TIMEWEB_HARD_REBOOT_PROGRESS")
                       good=good+1 if server["status"]=="on" and probe["ssh_banner_ready"] else 0
                       if good>=2:break
-                  if good<2:raise RuntimeError("ssh_not_ready_after_soft_reboot")
+                  if good<2:raise RuntimeError("ssh_not_ready_after_hard_reboot")
               server=current()
               if server["ram"]==3072:
                   api("PATCH","/servers/9408159",{"configurator":{"configurator_id":153,"cpu":1,"ram":1024,"disk":15360}})
