@@ -34,12 +34,14 @@ jobs:
           "%ANALYST_SIGNING_TRANSPORT%\Scripts\python.exe" -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --no-deps -r tools\timeweb-actions-requirements.txt
           if errorlevel 1 exit /b 1
       - name: Transfer the existing signing key directly to the pinned Timeweb host
-        shell: '"${{ env.ANALYST_SIGNING_TRANSPORT }}\Scripts\python.exe" {0}'
+        shell: powershell
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: '1'
         run: |
+          $transportScript = Join-Path $env:ANALYST_SIGNING_TRANSPORT 'transfer_signing.py'
+          $transportCode = @'
           import hashlib,json,os,pathlib,shlex,stat,subprocess,sys
           sys.path[:0]=["deploy",".github/scripts"]
           import access_owner_vm as access
@@ -62,3 +64,7 @@ jobs:
               print("TIMEWEB_SIGNING_IDENTITY="+json.dumps(report),flush=True)
           access.develop_backend=transfer
           adopt.run(development=True)
+          '@
+          [System.IO.File]::WriteAllText($transportScript, $transportCode, [System.Text.UTF8Encoding]::new($false))
+          & (Join-Path $env:ANALYST_SIGNING_TRANSPORT 'Scripts\python.exe') $transportScript
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
