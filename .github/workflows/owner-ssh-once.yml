@@ -11,7 +11,7 @@ concurrency:
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 24
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,7 +20,7 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Prepare the user-requested installable APK on Timeweb
+      - name: Stage the exact app sources and preserved signing identity on a temporary Moscow build VM
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
@@ -52,9 +52,76 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      script="import json,pathlib,shutil,subprocess,datetime,traceback\nr=pathlib.Path(\"/root/analyst-ai-android-690811a5\")\nrep={\"checked_at\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"memory\":{l.split(\":\")[0]:l.split(\":\")[1].strip() for l in pathlib.Path(\"/proc/meminfo\").read_text().splitlines() if l.startswith((\"MemTotal:\",\"MemAvailable:\",\"SwapTotal:\"))},\"disk_free\":shutil.disk_usage(\"/\").free,\"gradle_cached\":pathlib.Path(\"/root/.gradle/caches\").exists(),\"roots\":[str(p) for p in pathlib.Path(\"/root\").iterdir() if any(x in p.name for x in (\"gradle\",\"android\",\"artifact\",\"build\"))],\"source_exists\":r.is_dir()}\nif r.is_dir():rep[\"source_status\"]=subprocess.check_output([\"git\",\"status\",\"--short\"],cwd=r,text=True);rep[\"apk_outputs\"]=[str(p) for p in (r/\"app/build\").rglob(\"*.apk\")]\nrep[\"caddy_configs\"]=[str(p) for p in pathlib.Path(\"/etc/caddy\").rglob(\"*\") if p.is_file()]\nrep[\"owner_service\"]=subprocess.run([\"systemctl\",\"is-active\",\"analyst-ai-owner\"],capture_output=True,text=True).stdout.strip()\nprint(\"TIMEWEB_APK_PREPARE=\"+json.dumps(rep),flush=True)\n"
-                      output=p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=210).decode()
-                      print(output,end="",flush=True)
+
+                      import ipaddress,uuid
+                      def api(method,path,body=None):
+                          req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+                          with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as response:
+                              raw=response.read(4194305)
+                          return json.loads(raw) if raw else {}
+                      inventory=api("GET","/servers")
+                      assert p.summarize("servers",inventory)["complete"]
+                      build_name="analyst-apk-build-msk-20261024"
+                      assert not any(s.get("name")==build_name for s in inventory["servers"]),"existing_build_vm_reconcile"
+                      presets=api("GET","/presets/servers")["server_presets"]
+                      byid={s["id"]:s for s in presets}
+                      for preset_id,expected_price in ((4801,3640),(6849,4600),(6873,5280)):
+                          offer=byid[preset_id]
+                          assert offer["ram"]==4096 and offer["location"]=="ru-3" and offer["price"]==expected_price
+                      bf=folder/"build";bf.mkdir(mode=0o700)
+                      p.cloud.generate_key(bf/"client");p.cloud.generate_key(bf/"host")
+                      pub=(bf/"client.pub").read_text().strip();host=(bf/"host.pub").read_text().strip()
+                      cloud={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[pub]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,"ssh_keys":{"ed25519_private":(bf/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,"runcmd":[["systemctl","restart","ssh"]]}
+                      created=None
+                      for preset_id in (4801,6849,6873):
+                          try:
+                              created=api("POST","/servers",{"name":build_name,"hostname":build_name,"comment":"Temporary APK build requested by OWNER 2026-10-24; delete after delivery","preset_id":preset_id,"os_id":99,"project_id":2941515,"cloud_init":"#cloud-config\n"+json.dumps(cloud)+"\n"})["server"]
+                              break
+                          except urllib.error.HTTPError as e:
+                              details=p.cloud.error_details(e.read(4194305))
+                              print("APK_BUILD_OFFER_UNAVAILABLE="+json.dumps({"preset":preset_id,"http":e.code,**details}),flush=True)
+                              if e.code!=409 or details.get("error_code")!="no_free_node":raise
+                      assert created is not None,"no_minimum_moscow_build_offer_available"
+                      sid=created["id"]
+                      assert created["name"]==build_name and created["project_id"]==2941515 and created["location"]=="ru-3" and created["ram"]==4096
+                      record={"id":sid,"name":build_name,"host_public":host,"preset":created["preset_id"],"price_monthly":byid[created["preset_id"]]["price"],"ip":p.cloud.public_ipv4(created),"ip_id":None}
+                      def save_record():
+                          private_script="import json,os,pathlib,sys\nos.umask(0o077)\np=pathlib.Path('/root/analyst-apk-direct-20261024');p.mkdir(exist_ok=True,mode=0o700)\nd=json.load(sys.stdin)\n(p/'builder.json').write_text(json.dumps(d['record'])+'\\n')\n(p/'builder-key').write_text(d['key'])\n(p/'builder-key').chmod(0o600)\n"
+                          p.remote(command,"python3 -c "+shlex.quote(private_script),json.dumps({"record":record,"key":(bf/"client").read_text()}).encode(),timeout=30)
+                      save_record()
+                      print("APK_BUILD_VM_CREATED="+json.dumps(record),flush=True)
+                      if not record["ip"]:
+                          zone=created["availability_zone"]
+                          assert zone.startswith("msk")
+                          floating=api("POST","/floating-ips",{"is_ddos_guard":False,"availability_zone":zone})["ip"]
+                          record["ip_id"]=str(uuid.UUID(floating["id"]));record["ip"]=str(ipaddress.IPv4Address(floating["ip"]))
+                          assert ipaddress.ip_address(record["ip"]).is_global and floating["availability_zone"]==zone
+                          save_record()
+                          api("POST","/floating-ips/"+record["ip_id"]+"/bind",{"resource_type":"server","resource_id":sid})
+                      save_record()
+                      print("APK_BUILD_VM_ADDRESS="+json.dumps(record),flush=True)
+                      bc=p.ssh_command(bf,record["ip"],host);bc[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                      for attempt in range(50):
+                          s=api("GET","/servers/"+str(sid))["server"]
+                          assert s["name"]==build_name and s["project_id"]==2941515
+                          try:
+                              p.remote(bc,"test $(id -u) = 0 && cloud-init status --wait >/dev/null",timeout=20)
+                              break
+                          except (p.ProbeError,subprocess.TimeoutExpired):
+                              if attempt==49:raise
+                              time.sleep(5)
+                      print("APK_BUILD_VM_SSH_READY="+str(sid),flush=True)
+                      setup="import json,os,pathlib,subprocess\nos.umask(0o077)\np=pathlib.Path('/root/analyst-apk-build');p.mkdir(exist_ok=True,mode=0o700)\nscript='#!/bin/bash\\nset -euo pipefail\\nexport DEBIAN_FRONTEND=noninteractive\\napt-get update\\napt-get install -y --no-install-recommends openjdk-17-jdk-headless python3 git ca-certificates unzip curl nodejs\\n'\n(p/'setup.sh').write_text(script)\nsubprocess.run(['systemd-run','--unit=analyst-apk-setup','--property=Type=oneshot','--property=StandardOutput=append:/root/analyst-apk-build/setup.log','--property=StandardError=append:/root/analyst-apk-build/setup.log','/bin/bash',str(p/'setup.sh')],check=True,capture_output=True)\nprint('APK_BUILD_SETUP_STARTED=true')\n"
+                      print(p.remote(bc,"python3 -c "+shlex.quote(setup),timeout=30).decode(),flush=True)
+                      args=["tar","--exclude=analyst-ai-android-690811a5/app/build","--exclude=analyst-ai-android-690811a5/ci-ui-driver/build","--exclude=analyst-ai-android-690811a5/.gradle","-czf","-","-C","/root","analyst-ai-android-690811a5",".android/debug.keystore","analyst-ai-artifacts/previous-0.10.0.apk","-C","/opt","analyst-android-sdk"]
+                      source_proc=subprocess.Popen(command+[shlex.join(args)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                      unpack="umask 077; mkdir -p /root/analyst-transfer; tar -xzf - -C /root/analyst-transfer"
+                      target_proc=subprocess.run(bc+[unpack],stdin=source_proc.stdout,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=600)
+                      source_proc.stdout.close();source_proc.wait(timeout=30)
+                      assert source_proc.returncode==0 and target_proc.returncode==0,"timeweb_to_timeweb_archive_transfer_failed"
+                      finish="import hashlib,json,pathlib,subprocess\np=pathlib.Path('/root/analyst-transfer')\nfor a,b in [(p/'analyst-ai-android-690811a5',pathlib.Path('/root/analyst-ai-android-690811a5')),(p/'analyst-android-sdk',pathlib.Path('/opt/analyst-android-sdk')),(p/'.android',pathlib.Path('/root/.android')),(p/'analyst-ai-artifacts',pathlib.Path('/root/analyst-ai-artifacts'))]:\n assert a.exists() and not b.exists();a.rename(b)\nr=pathlib.Path('/root/analyst-ai-android-690811a5')\nassert 'analyst-ai-2941515.twc1.net' in (r/'app/src/main/java/ru/omnicio/app/data/backend/BackendConfig.kt').read_text()\nprint('APK_BUILD_SOURCES_STAGED='+json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],cwd=r,text=True).strip(),'changes':subprocess.check_output(['git','status','--short'],cwd=r,text=True),'host_configured':True}))\n"
+                      print(p.remote(bc,"python3 -c "+shlex.quote(finish),timeout=30).decode(),flush=True)
+
                   finally:
                       if attached:access.request(token,"DELETE","/servers/"+str(server_id)+"/ssh-keys/"+str(key_id))
                       access.request(token,"DELETE","/ssh-keys/"+str(key_id))
