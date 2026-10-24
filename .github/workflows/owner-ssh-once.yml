@@ -6,12 +6,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: analyst-timeweb-moscow-direct-migration
+  group: analyst-timeweb-moscow-readonly-progress
   cancel-in-progress: false
 jobs:
   access:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -20,75 +20,40 @@ jobs:
         run: |
           git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
           git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Transfer verified application files directly between Timeweb servers and compare routes
+      - name: Read the provisioning phase and saved network comparison
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: |
           python3 - <<'PY'
-          import concurrent.futures,json,os,pathlib,shlex,shutil,subprocess,sys,tempfile,time
+          import json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request
           sys.path[:0]=["deploy","tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
-          import adopt_replacement_vm as adopt
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          adopt.select_target(True);p.CONFIGURATION["ram"]=3072;adopt.verified_target(token)
           access.SERVER_ID=9413105
-          new=access.request(token,"GET","/servers/9413105")["server"]
-          assert new["id"]==9413105 and new["name"]=="analyst-ai-msk-app-20261024-b" and new["location"]=="ru-3" and new["preset_id"]==6867 and p.cloud.public_ipv4(new)=="201.24.52.66"
-          targets={9408159:("201.34.146.244","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDpyNJRmtgaymzM1TT1t1DudEnPQ6eaoYLw7C5kPaJ9H"),9413105:("201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdYBqa8Tvw/Bfy8VPCfwaGIsLhWbB9ak603JEmDwuHE")}
-          attached=[];key_id=None;transfer_key_id=None;transfer_path=None;commands={}
-          with tempfile.TemporaryDirectory(prefix="analyst-private-migration-",dir=os.environ["RUNNER_TEMP"]) as directory:
-              folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client")
-              public=(folder/"client.pub").read_text().strip()
-              created=access.request(token,"POST","/ssh-keys",{"name":"analyst-private-migrate-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+          server=access.request(token,"GET","/servers/9413105")["server"]
+          assert server["id"]==9413105 and server["name"]=="analyst-ai-msk-app-20261024-b" and server["location"]=="ru-3" and server["preset_id"]==6867 and p.cloud.public_ipv4(server)=="201.24.52.66"
+          with tempfile.TemporaryDirectory(prefix="analyst-msk-network-",dir=os.environ["RUNNER_TEMP"]) as directory:
+              folder=pathlib.Path(directory)
+              p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+              created=access.request(token,"POST","/ssh-keys",{"name":"analyst-network-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
               key=created.get("ssh_key",created.get("ssh-key",{}))
               assert type(key.get("id")) is int and key.get("body","").split()[:2]==public.split()[:2]
-              key_id=key["id"]
+              key_id=key["id"];attached=False
               try:
-                  for sid,(address,pin) in targets.items():
-                      access.SERVER_ID=sid
-                      access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[key_id]});attached.append(sid)
-                      current=folder/str(sid);current.mkdir();shutil.copyfile(folder/"client",current/"client");(current/"client").chmod(0o600)
-                      commands[sid]=p.ssh_command(current,address,pin)
-                      for attempt in range(12):
-                          try:p.remote(commands[sid],"test $(id -u) = 0",timeout=12);break
-                          except (p.ProbeError,subprocess.TimeoutExpired):
-                              if attempt==11:raise
-                              time.sleep(5)
-                  network="import datetime,hashlib,json,pathlib,subprocess,tempfile,time\nserver_id=int(__import__(\"sys\").argv[1])\nreport={\"server_id\":server_id,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"checks\":[]}\nif server_id==9413105:\n    gai=pathlib.Path(\"/etc/gai.conf\");backup=pathlib.Path(\"/root/analyst-gai.conf.before\")\n    assert gai.is_file() and not gai.is_symlink() and backup.is_file() and not backup.is_symlink()\n    if hashlib.sha256(gai.read_bytes()).hexdigest()==\"d9bf4cbc889782dc068f367f4c24ac72dfd175bcb3358e58451e50dbbf0cb901\":\n        gai.write_bytes(backup.read_bytes());report[\"ineffective_gai_change_reverted\"]=True\n    else:\n        assert gai.read_bytes()==backup.read_bytes(),\"gai_configuration_changed\"\n        report[\"ineffective_gai_change_reverted\"]=True\nwith tempfile.TemporaryDirectory(prefix=\"analyst-jwks-\",dir=\"/root\") as directory:\n    body=pathlib.Path(directory)/\"public.json\"\n    for index in range(6):\n        result=subprocess.run([\"curl\",\"-4\",\"--noproxy\",\"*\",\"--proto\",\"=https\",\"--compressed\",\"--connect-timeout\",\"5\",\"--max-time\",\"10\",\"--silent\",\"--show-error\",\"--output\",str(body),\"--write-out\",\"%{http_code} %{remote_ip} %{time_total} %{ssl_verify_result}\",\"https://oauth.telegram.org/.well-known/jwks.json\"],capture_output=True,text=True,timeout=15)\n        row={\"attempt\":index+1,\"exit\":result.returncode,\"metrics\":result.stdout.strip(),\"error\":result.stderr[:300],\"verified_jwks\":False}\n        if result.returncode==0 and result.stdout.startswith(\"200 \") and body.is_file():\n            try:\n                data=body.read_bytes();assert len(data)<=131072\n                count=len(json.loads(data).get(\"keys\",[]))\n                row.update({\"key_count\":count,\"verified_jwks\":count>0})\n            except Exception as error:row[\"parse_error\"]=type(error).__name__\n        if body.exists():body.unlink()\n        report[\"checks\"].append(row);time.sleep(1)\nreport[\"all_passed\"]=all(x[\"verified_jwks\"] for x in report[\"checks\"])\npath=pathlib.Path(\"/root/analyst-jwks-ipv4-comparison.json\")\npath.write_text(json.dumps(report,indent=2));path.chmod(0o600)\nprint(\"DIRECT_IPV4_NETWORK=\"+json.dumps(report),flush=True)\n"
-                  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                      futures={pool.submit(p.remote,commands[sid],"python3 -u -c "+shlex.quote(network)+" "+str(sid),timeout=150):sid for sid in targets}
-                      for future in concurrent.futures.as_completed(futures):
-                          print(future.result().decode(),end="",flush=True)
-                  p.remote(commands[9413105],"export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3-venv ca-certificates curl",timeout=600)
-                  print("MOSCOW_MINIMAL_DEPENDENCIES=installed",flush=True)
-                  info=json.loads(p.remote(commands[9408159],"python3 -c "+shlex.quote("import json,os,pathlib,subprocess,tempfile\nfolder=pathlib.Path(tempfile.mkdtemp(prefix=\"analyst-moscow-transfer-key-\",dir=\"/root\"));folder.chmod(0o700)\nsubprocess.run([\"ssh-keygen\",\"-q\",\"-t\",\"ed25519\",\"-N\",\"\",\"-C\",\"analyst-private-timeweb-transfer\",\"-f\",str(folder/\"client\")],check=True,capture_output=True)\nprint(json.dumps({\"path\":str(folder),\"public_key\":(folder/\"client.pub\").read_text().strip()}))\n"),timeout=20))
-                  transfer_path=info["path"]
-                  assert transfer_path.startswith("/root/analyst-moscow-transfer-key-") and "/" not in transfer_path[len("/root/"):]
-                  transfer_public=info["public_key"]
-                  assert transfer_public.startswith("ssh-ed25519 ")
-                  access.SERVER_ID=9413105
-                  registered=access.request(token,"POST","/ssh-keys",{"name":"analyst-direct-transfer-"+os.environ["GITHUB_RUN_ID"],"body":transfer_public,"is_default":False})
-                  transfer_key=registered.get("ssh_key",registered.get("ssh-key",{}))
-                  assert type(transfer_key.get("id")) is int and transfer_key.get("body","").split()[:2]==transfer_public.split()[:2]
-                  transfer_key_id=transfer_key["id"]
-                  access.request(token,"POST","/servers/9413105/ssh-keys",{"ssh_key_ids":[transfer_key_id]})
-                  script="import hashlib,json,os,pathlib,shlex,stat,subprocess,sys,tarfile,time\nroot=pathlib.Path(\"/root\");folder=pathlib.Path(sys.argv[1])\nassert folder.parent==root and folder.name.startswith(\"analyst-moscow-transfer-key-\") and folder.is_dir() and not folder.is_symlink()\nknown=folder/\"known_hosts\";known.write_text(\"201.24.52.66 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdYBqa8Tvw/Bfy8VPCfwaGIsLhWbB9ak603JEmDwuHE\"+chr(10));known.chmod(0o600)\nconfig=folder/\"ssh_config\";config.write_text(\"\");config.chmod(0o600)\nssh=[\"ssh\",\"-F\",str(config),\"-i\",str(folder/\"client\"),\"-o\",\"BatchMode=yes\",\"-o\",\"IdentitiesOnly=yes\",\"-o\",\"ConnectTimeout=8\",\"-o\",\"StrictHostKeyChecking=yes\",\"-o\",\"HostKeyAlgorithms=ssh-ed25519\",\"-o\",\"UserKnownHostsFile=\"+str(known),\"root@201.24.52.66\"]\nfor attempt in range(12):\n    probe=subprocess.run(ssh+[\"test $(id -u) = 0\"],capture_output=True,timeout=12)\n    if probe.returncode==0:break\n    if attempt==11:raise RuntimeError(\"direct_timeweb_ssh_failed\")\n    time.sleep(5)\noriginal=root/\"analyst-moscow-app-transfer-9413003.json\"\nassert hashlib.sha256(original.read_bytes()).hexdigest()==\"4f0131fe55e01cb0d4839e1b3900ab5add510a2176db563be8108b5b004bda16\"\ndoc=json.loads(original.read_text())\nassert doc[\"destination_server_id\"]==9413003 and doc[\"source_server_id\"]==9408159\ndoc[\"destination_server_id\"]=9413105\nmanifest=root/\"analyst-moscow-app-transfer-9413105.json\"\nassert not manifest.exists() and not manifest.is_symlink()\nmanifest.write_text(json.dumps(doc,sort_keys=True,indent=2)+chr(10));manifest.chmod(0o600)\nnames=[]\nfor row in doc[\"files\"]:\n    rel=pathlib.PurePosixPath(row[\"path\"])\n    assert not rel.is_absolute() and \"..\" not in rel.parts and str(rel)==row[\"path\"]\n    path=root/rel\n    assert path.is_file() and not path.is_symlink() and path.stat().st_uid==0\n    assert all(not parent.is_symlink() for parent in path.parents)\n    assert path.stat().st_size==row[\"bytes\"] and hashlib.sha256(path.read_bytes()).hexdigest()==row[\"sha256\"],\"source_changed_before_transfer\"\n    names.append(row[\"path\"])\nassert len(names)==1984 and len(names)==len(set(names))\nnames.append(manifest.name)\ntarget=\"/root/analyst-transfer-9408159\"\nprepare=\"umask 077; test ! -e \"+target+\" && mkdir \"+target+\" && command -v git >/dev/null\"\ncheck=subprocess.run(ssh+[prepare],capture_output=True,timeout=20)\nassert check.returncode==0,\"destination_preparation_failed\"\nprocess=subprocess.Popen(ssh+[\"tar -xzf - --no-same-owner --no-same-permissions -C \"+target],stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)\ntry:\n    with tarfile.open(fileobj=process.stdin,mode=\"w|gz\") as archive:\n        for name in names:archive.add(root/name,arcname=name,recursive=False)\n    process.stdin.close();process.stdin=None\n    _,stderr=process.communicate(timeout=120)\nexcept Exception:\n    process.kill();process.wait();raise\nassert process.returncode==0,\"direct_archive_transfer_failed\"\ndigest=hashlib.sha256(manifest.read_bytes()).hexdigest()\nverified=subprocess.run(ssh+[\"python3 -u -c \"+shlex.quote(sys.argv[2])+\" \"+shlex.quote(digest)],capture_output=True,text=True,timeout=90)\nassert verified.returncode==0,\"destination_integrity_verification_failed\"\nprint(verified.stdout,end=\"\",flush=True)\n"
-                  verify="import datetime,hashlib,json,os,pathlib,stat,subprocess,sys\nstage=pathlib.Path(\"/root/analyst-transfer-9408159\")\nmanifest=stage/\"analyst-moscow-app-transfer-9413105.json\"\nassert manifest.is_file() and not manifest.is_symlink()\nassert hashlib.sha256(manifest.read_bytes()).hexdigest()==sys.argv[1],\"manifest_changed\"\ndoc=json.loads(manifest.read_text())\nassert doc[\"source_server_id\"]==9408159 and doc[\"destination_server_id\"]==9413105\nexpected={x[\"path\"] for x in doc[\"files\"]}|{manifest.name}\nactual={str(x.relative_to(stage)) for x in stage.rglob(\"*\") if x.is_file()}\nassert actual==expected,\"transfer_file_set_differs\"\nfor item in doc[\"files\"]:\n    path=stage/item[\"path\"]\n    assert path.is_file() and not path.is_symlink() and path.stat().st_uid==0\n    assert path.stat().st_size==item[\"bytes\"] and hashlib.sha256(path.read_bytes()).hexdigest()==item[\"sha256\"],\"transferred_bytes_changed\"\n    path.chmod(item[\"mode\"])\ntops=sorted({pathlib.PurePosixPath(name).parts[0] for name in expected})\nroot=pathlib.Path(\"/root\")\nfor name in tops:assert not (root/name).exists() and not (root/name).is_symlink(),\"target_path_already_exists\"\nfor name in tops:\n    src=stage/name\n    if src.is_dir():src.chmod(0o700)\n    src.rename(root/name)\nstage.rmdir()\nfor name,sha in doc[\"verified_source_repositories\"].items():\n    assert subprocess.check_output([\"git\",\"rev-parse\",\"HEAD\"],cwd=root/name,text=True).strip()==sha\n    subprocess.run([\"git\",\"diff\",\"--check\"],cwd=root/name,check=True,capture_output=True)\nprivate=root/\".android/debug.keystore\"\nassert stat.S_IMODE(private.stat().st_mode)==0o600\napk=root/\"analyst-ai-artifacts/690811a5a376181990a64f37d914c87eb6c919b7/Analyst-AI-0.11.0-preview-690811a5.apk\"\nassert hashlib.sha256(apk.read_bytes()).hexdigest()==\"71feb07dd0379a56ec25513194535a145bd5663dadc77611c50cdc442fccd27d\"\nenrollment=root/\"analyst-ai-enrollment.json\"\nvalues=json.loads(enrollment.read_text())\nassert values[\"EXPECTED_PUBLIC_IPV4\"]==\"201.34.146.244\"\nassert values[\"BACKEND_PUBLIC_URL\"]==\"https://analyst-ai-2941515.twc1.net\"\nvalues[\"EXPECTED_PUBLIC_IPV4\"]=\"201.24.52.66\"\nfd=os.open(enrollment,os.O_WRONLY|os.O_TRUNC|os.O_NOFOLLOW,0o600)\nwith os.fdopen(fd,\"w\") as stream:stream.write(json.dumps(values,indent=2)+chr(10))\nreport={\"source_server_id\":9408159,\"destination_server_id\":9413105,\"checked_at_utc\":datetime.datetime.now(datetime.timezone.utc).isoformat(),\"file_count\":len(doc[\"files\"]),\"total_bytes\":sum(x[\"bytes\"] for x in doc[\"files\"]),\"manifest_sha256\":sys.argv[1],\"all_file_hashes_verified\":True,\"original_signing_key_preserved\":True,\"apk_sha256\":hashlib.sha256(apk.read_bytes()).hexdigest(),\"old_server_preserved\":True,\"application_started\":False,\"enrollment_expected_ip_updated\":True}\nout=root/\"analyst-moscow-migration.json\";out.write_text(json.dumps(report,indent=2));out.chmod(0o600)\nreadiness=root/\"analyst-moscow-readiness.json\";ready=json.loads(readiness.read_text());ready[\"migration_verified\"]=True\nreadiness.write_text(json.dumps(ready,indent=2));readiness.chmod(0o600)\nprint(\"MOSCOW_MIGRATION_VERIFIED=\"+json.dumps(report),flush=True)\n"
-                  print(p.remote(commands[9408159],"python3 -u -c "+shlex.quote(script)+" "+shlex.quote(transfer_path)+" "+shlex.quote(verify),timeout=300).decode(),end="",flush=True)
+                  access.request(token,"POST","/servers/9413105/ssh-keys",{"ssh_key_ids":[key_id]});attached=True
+                  command=p.ssh_command(folder,"201.24.52.66","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdYBqa8Tvw/Bfy8VPCfwaGIsLhWbB9ak603JEmDwuHE")
+                  for attempt in range(12):
+                      try:p.remote(command,"test $(id -u) = 0",timeout=12);break
+                      except (p.ProbeError,subprocess.TimeoutExpired):
+                          if attempt==11:raise
+                          time.sleep(5)
+                  script="import json,pathlib,subprocess\nroot=pathlib.Path(\"/root\")\nfor name in (\"analyst-jwks-ipv4-comparison.json\",\"analyst-moscow-migration.json\",\"analyst-moscow-validation.json\"):\n    path=root/name\n    print(\"MOSCOW_CURRENT_PROOF=\"+json.dumps({\"name\":name,\"exists\":path.exists(),\"report\":json.loads(path.read_text()) if path.is_file() else None}),flush=True)\nprint(\"MOSCOW_CURRENT_PATHS=\"+json.dumps({name:(root/name).exists() for name in (\"analyst-transfer-9408159\",\"analyst-ai-development-79be1821\",\"analyst-ai-artifacts\")}),flush=True)\nresult=subprocess.run([\"ps\",\"-eo\",\"pid,etimes,comm\"],capture_output=True,text=True,timeout=10)\nprint(\"MOSCOW_PROVISION_PROCESSES=\"+json.dumps([line for line in result.stdout.splitlines() if any(word in line.split()[-1:] for word in (\"apt-get\",\"dpkg\",\"tar\",\"sshd\",\"python3\"))]),flush=True)\nprint(\"MOSCOW_DEPENDENCY_STATE=\"+json.dumps(subprocess.run([\"dpkg-query\",\"-W\",\"-f=\"+chr(36)+\"{Package} \"+chr(36)+\"{db:Status-Status}\"+chr(10),\"git\",\"python3-venv\"],capture_output=True,text=True,timeout=10).stdout),flush=True)\n"
+                  print(p.remote(command,"python3 -u -c "+shlex.quote(script),timeout=40).decode(),end="",flush=True)
               finally:
-                  if transfer_key_id is not None:
-                      access.SERVER_ID=9413105
-                      access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(transfer_key_id))
-                      access.request(token,"DELETE","/ssh-keys/"+str(transfer_key_id))
-                  if transfer_path is not None:
-                      cleanup="import pathlib,shutil; p=pathlib.Path("+repr(transfer_path)+"); assert p.parent==pathlib.Path('/root') and p.name.startswith('analyst-moscow-transfer-key-') and not p.is_symlink(); shutil.rmtree(p)"
-                      p.remote(commands[9408159],"python3 -c "+shlex.quote(cleanup),timeout=20)
-                  for sid in attached:
-                      access.SERVER_ID=sid
-                      access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(key_id))
-                  if key_id is not None:access.request(token,"DELETE","/ssh-keys/"+str(key_id))
-                  print("MOSCOW_MIGRATION_TEMPORARY_KEYS=removed",flush=True)
+                  if attached:access.request(token,"DELETE","/servers/9413105/ssh-keys/"+str(key_id))
+                  access.request(token,"DELETE","/ssh-keys/"+str(key_id))
+                  print("MOSCOW_NETWORK_KEY=removed",flush=True)
           
           PY
