@@ -60,7 +60,7 @@ jobs:
                           except (p.ProbeError,subprocess.TimeoutExpired):
                               if attempt==11:raise
                               time.sleep(5)
-                      remote_script="import pathlib,json,hashlib\nroot=pathlib.Path(\"/srv/analyst-ai/workspace\")\nfor name in (\"AGENTS.md\",\"README.md\",\"docs/WORKSPACE_UI.md\",\"docs/TIMEWEB_WORKSPACE.md\",\"docs/LIVE_UPDATES_0.12.md\"):\n    p=root/name;assert p.is_file() and not p.is_symlink()\n    print(\"BACKUP_DOC=\"+json.dumps({\"path\":name,\"content\":p.read_text(),\"sha256\":hashlib.sha256(p.read_bytes()).hexdigest(),\"mode\":\"100644\"},ensure_ascii=False),flush=True)\nprint(\"BACKUP_DOC_END=true\",flush=True)\n"
+                      remote_script="import pathlib,json,hashlib\nroot=pathlib.Path(\"/srv/analyst-ai/workspace\")\nfor name in (\"docs/MASTER_PLAN.md\",\"docs/PLAN_STATUS.md\"):\n    p=root/name;assert p.is_file() and not p.is_symlink()\n    print(\"BACKUP_DOC=\"+json.dumps({\"path\":name,\"content\":p.read_text(),\"sha256\":hashlib.sha256(p.read_bytes()).hexdigest(),\"mode\":\"100644\"},ensure_ascii=False),flush=True)\nprint(\"BACKUP_DOC_END=true\",flush=True)\n"
                       result=subprocess.run([*command,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=300)
                       print(result.stdout.decode(errors="replace"),flush=True)
                       if result.returncode:
