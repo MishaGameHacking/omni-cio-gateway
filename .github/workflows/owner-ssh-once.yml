@@ -73,14 +73,14 @@ jobs:
                       pub=(bf/"client.pub").read_text().strip();host=(bf/"host.pub").read_text().strip()
                       cloud={"users":[{"name":"root","lock_passwd":True,"ssh_authorized_keys":[pub]}],"ssh_pwauth":False,"disable_root":False,"ssh_deletekeys":True,"ssh_keys":{"ed25519_private":(bf/"host").read_text(),"ed25519_public":host},"ssh":{"emit_keys_to_console":False},"no_ssh_fingerprints":True,"runcmd":[["systemctl","restart","ssh"]]}
                       created=None
-                      for preset_id in (4801,6849,6873):
+                      for preset_id in (6873,):
                           try:
                               created=api("POST","/servers",{"name":build_name,"hostname":build_name,"comment":"Temporary APK build requested by OWNER 2026-10-24; delete after delivery","preset_id":preset_id,"os_id":99,"project_id":2941515,"cloud_init":"#cloud-config\n"+json.dumps(cloud)+"\n"})["server"]
                               break
                           except urllib.error.HTTPError as e:
                               details=p.cloud.error_details(e.read(4194305))
                               print("APK_BUILD_OFFER_UNAVAILABLE="+json.dumps({"preset":preset_id,"http":e.code,**details}),flush=True)
-                              if e.code!=409 or details.get("error_code")!="no_free_node":raise
+                              if e.code!=409 or details.get("error_code") not in {"no_free_node","location_not_available"}:raise
                       assert created is not None,"no_minimum_moscow_build_offer_available"
                       sid=created["id"]
                       assert created["name"]==build_name and created["project_id"]==2941515 and created["location"]=="ru-3" and created["ram"]==4096
