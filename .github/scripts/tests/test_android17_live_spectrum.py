@@ -17,8 +17,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 35", gradle)
-        self.assertIn('versionName = "0.11.0"', gradle)
+        self.assertIn("versionCode = 36", gradle)
+        self.assertIn('versionName = "0.12.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -64,21 +64,22 @@ class Android17LiveSpectrumTests(unittest.TestCase):
 
     def test_shared_scene_respects_lifecycle_system_motion_and_visible_slots(self):
         host = self.source("ui/spatial/SpatialScene.kt")
-        renderer = self.source("ui/spatial/SpatialRenderer.kt")
         self.assertIn("Lifecycle.State.STARTED", host)
-        self.assertIn("onDispose { active?.close() }", host)
-        self.assertIn("!ValueAnimator.areAnimatorsEnabled()", renderer)
-        self.assertIn("SpatialMotion.Off", renderer)
-        self.assertIn("SpatialMotion.Subdued", renderer)
-        self.assertIn("choreographer.removeFrameCallback(this)", renderer)
-        self.assertIn("windows.forEach { it.withdrawFrameRate() }", renderer)
-        self.assertIn("clipping.width<=0f||clipping.height<=0f", "".join(renderer.split()))
-        self.assertEqual(renderer.count("Engine.create("), 1)
-        self.assertNotIn("Engine.create(", self.source("ui/spatial/SpatialComponents.kt"))
+        self.assertIn("ValueAnimator.areAnimatorsEnabled()", host)
+        self.assertIn("ANIMATOR_DURATION_SCALE", host)
+        self.assertIn("bounds.width > 0f && bounds.height > 0f", host)
+        self.assertIn("flatMotionPolicy(motion, foreground, systemMotion, constrained, severeThermal)", host)
+        for release in ("lifecycle.removeObserver(observer)", "unregisterContentObserver(settings)",
+                        "unregisterReceiver(receiver)", "removeThermalStatusListener(thermal)"):
+            self.assertIn(release, host)
+        for unused in ("SpatialOwner(context)", "TextureView(", "AndroidView(", "Engine.create("):
+            self.assertNotIn(unused, host)
+        self.assertIn("drawFlatPrimitive(it, if (it.motionAllowed) progress else 0f)", host)
         back = self.source("ui/spatial/SpatialInteraction.kt")
         self.assertIn("PredictiveBackHandler(enabled)", back)
         self.assertIn("finally {", back)
-        self.assertIn("window?.updateLocalBackProgress(0f)", back)
+        self.assertIn("back?.value = 0f", back)
+        self.assertIn("LocalFlatTactile.current", back)
 
     def test_home_uses_real_state_for_avatar_and_live_shortcuts(self):
         home = self.source("ui/home/HomeScreen.kt")

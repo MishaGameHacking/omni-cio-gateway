@@ -1,4 +1,26 @@
+## Проверено 24.10.2026, 21:27 МСК
+Live backend развёрнут после всех серверных проверок; исходники d5dd9ca2fce18cd5e38fb5e8f13c8248baf859a90512bff70e39caa84f770de9. APK-канал не изменялся. Сборка 0.12/36 использует ограниченный swap; прежняя запись о полном запрете сборки по RAM историческая. Runtime требует фактической памяти и полных проверок, пока не подтверждён. Детали: docs/LIVE_UPDATES_0.12.md.
+
+## Owner instruction — 2026-10-24: live server updates
+Server-side data, rules and completed AI results must reach the open app without an APK reinstall. Add authenticated, user-scoped live invalidation with reconnect/backoff and foreground lifecycle handling; unchanged data must not trigger paid work, broker calls or APK updates. Preserve editors, scroll, privacy, auth, idempotency and budget checks. Native UI/client changes still require a signed APK update. All development and tests stay on this one Timeweb server.
+
 # Analyst AI — текущие правила работы
+
+## OWNER 24.10.2026 — современный 2D-интерфейс и анимированная графика
+Последний запрос заменяет прежнее требование «только 3D»: приложение полностью
+перерабатывается в едином современном 2D-стиле; цветные иконки и иллюстрации
+анимируются в 2D или 3D по смыслу. Движение может быть непрерывным или временным;
+учитывать системное отключение анимации, lifecycle и читаемость финансовых данных.
+Сохранять строгую вертикальную ориентацию, реальные данные, доступные нативные
+поля ввода, авторизацию, ключ подписи и установленные пользовательские настройки.
+План новой версии: 0.12.0 / 36. Требуется исправить подтвержденные дефекты ИИ,
+проверить актуальные модели, бюджет и реальные ответы, не имитировать ИИ.
+Все изменения и проверки выполняются в /srv/analyst-ai/workspace на основном
+Timeweb 9413105. GitHub — резервная копия и ранее разрешенный транспорт.
+Не создавать временные/дублирующие серверы. Прежнее ограничение «без новых
+визуальных изменений» не запрещает этот прямо заказанный полный редизайн.
+Результаты сборки, runtime, публикации и телефона указывать раздельно.
+
 
 ## OWNER 24.10.2026 — единое основное рабочее место Timeweb
 

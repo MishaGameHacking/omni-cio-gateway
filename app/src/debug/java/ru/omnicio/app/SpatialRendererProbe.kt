@@ -28,24 +28,27 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun spatialProbeMarker(): String {
     val stats = spatialDiagnostics()
-    val owner = LocalSpatialOwner.current
-    // Debug-only sampling reads the actual counter. The production diagnostic
-    // snapshot is intentionally less frequent and cannot prove idle by itself.
-    val submitted by produceState(owner?.submittedFrameCount ?: 0L, owner) {
-        while (true) { value = owner?.submittedFrameCount ?: 0L; delay(200) }
+    val counters = LocalFlatDrawStats.current
+    val motion = LocalFlatMotion.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val power = remember(context) { context.getSystemService(android.os.PowerManager::class.java) }
+    val draws by produceState(counters?.operations ?: 0L, counters) {
+        while (true) { value = counters?.operations ?: 0L; delay(200) }
     }
-    return "probe-spatial-engines:${stats.engineCount};probe-spatial-windows:${stats.windowCount};" +
-        "probe-spatial-frames:$submitted;probe-spatial-meshes:${stats.visibleMeshes};" +
-        "probe-spatial-pending:${stats.pendingAssets};probe-spatial-pool:${stats.pooledInstances};" +
-        "probe-spatial-error:${if (stats.error == null) "none" else "present"};" +
-        "probe-spatial-motion:${owner?.effectiveMotion?.name ?: "Unavailable"};" +
-        "probe-spatial-cpu-p95:${stats.cpuSubmitP95Ms};probe-spatial-interval-p95:${stats.frameIntervalP95Ms};" +
-        "probe-spatial-quality:${stats.quality};probe-spatial-density:${LocalDensity.current.density};" +
-        "probe-spatial-font-scale:${LocalDensity.current.fontScale};" +
-        "probe-spatial-orientation:${LocalConfiguration.current.orientation};" +
-        "probe-spatial-thermal:${owner?.thermalStatus ?: 0};probe-spatial-system-motion:${owner?.systemMotionEnabled == true};" +
-        "probe-spatial-power-save:${owner?.powerSaveMode == true};" +
-        "probe-spatial-back-progress:${LocalSpatialWindow.current?.localBackProgress ?: 0f}"
+    return "probe-renderer:native-2d;probe-flat-draws:$draws;" +
+        "probe-spatial-engines:0;probe-spatial-windows:0;" +
+        "probe-spatial-frames:0;probe-spatial-meshes:0;" +
+        "probe-spatial-pending:0;probe-spatial-pool:0;" +
+        "probe-spatial-error:none;probe-spatial-motion:" + motion.name + ";" +
+        "probe-spatial-cpu-p95:0.0;probe-spatial-interval-p95:0.0;" +
+        "probe-spatial-quality:native-2d;probe-spatial-density:" + LocalDensity.current.density + ";" +
+        "probe-spatial-font-scale:" + LocalDensity.current.fontScale + ";" +
+        "probe-spatial-orientation:" + LocalConfiguration.current.orientation + ";" +
+        "probe-spatial-thermal:" + power.currentThermalStatus + ";" +
+        "probe-spatial-system-motion:" + android.animation.ValueAnimator.areAnimatorsEnabled() + ";" +
+        "probe-spatial-power-save:" + power.isPowerSaveMode + ";" +
+        "probe-spatial-back-progress:" + (LocalFlatBack.current?.value ?: 0f)
+
 }
 
 /** Synthetic geometry/input fixture only. No account, broker, credentials or network. */
@@ -59,9 +62,7 @@ internal fun SpatialRendererProbe() {
     var clicks by rememberSaveable { mutableIntStateOf(0) }
     var input by rememberSaveable { mutableStateOf("native") }
     var shadows by rememberSaveable { mutableStateOf(true) }
-    val renderWindow = LocalSpatialWindow.current
-    LaunchedEffect(renderWindow, shadows) { renderWindow?.setShadowReference(shadows) }
-    DisposableEffect(renderWindow) { onDispose { renderWindow?.setShadowReference(true) } }
+    LaunchedEffect(shadows) { preferences.preview(preferences.value.copy(depth = shadows)) }
     var dialog by remember { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var backScreen by rememberSaveable { mutableStateOf(false) }
@@ -88,7 +89,7 @@ internal fun SpatialRendererProbe() {
     Column(Modifier.fillMaxSize().safeDrawingPadding().semantics { testTagsAsResourceId = true }) {
         Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", Modifier.padding(12.dp),
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground)
-        SpectrumTabs(listOf("Форма 3D", "Графики 3D", "Отсечение 3D", "Нагрузка", "Правила 3D"), section, { section = it })
+        SpectrumTabs(listOf("Форма 2D", "Графики 2D", "Отсечение 2D", "Нагрузка", "Правила 2D"), section, { section = it })
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("workspace-content"), state = list,
             contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when (section) {
@@ -96,7 +97,7 @@ internal fun SpatialRendererProbe() {
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             Box(Modifier.size(112.dp).testTag("spatial-mesh-swatch")
-                                .semantics { contentDescription = "Изолированная объёмная модель" }) {
+                                .semantics { contentDescription = "Изолированная цветная иллюстрация" }) {
                                 SpatialIcon("brand", Modifier.align(Alignment.Center).size(88.dp), tint = palette.cyan)
                             }
                             SpectrumAssetMark("stock", "Тест", Modifier.size(72.dp))
@@ -108,7 +109,7 @@ internal fun SpatialRendererProbe() {
                     }
                     item { WorkspaceToggle("Тестовый переключатель", if (checked) "Включён" else "Выключен", checked) { checked = it } }
                     item { SpectrumTextField(input, { input = it }, Modifier.fillMaxWidth().testTag("spatial-input"),
-                        label = { Text("Нативное поле 3D") }, singleLine = true) }
+                        label = { Text("Нативное поле 2D") }, singleLine = true) }
                     item { SpectrumTextButton(if (shadows) "Тени: включены" else "Тени: выключены",
                         { shadows = !shadows }) }
                     item {
@@ -125,7 +126,7 @@ internal fun SpatialRendererProbe() {
                         }
                         Text("Режим: ${preferences.value.motion.name}")
                     }
-                    item { SpectrumTextButton("Открыть окно 3D", { dialog = true }, Modifier.fillMaxWidth().testTag("spatial-open-dialog")) }
+                    item { SpectrumTextButton("Открыть окно 2D", { dialog = true }, Modifier.fillMaxWidth().testTag("spatial-open-dialog")) }
                     item {
                         SpectrumSymbol.entries.take(15).chunked(5).forEach { symbols ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -197,11 +198,11 @@ internal fun SpatialRendererProbe() {
             }
         }
     }
-    if (dialog) WorkspaceDialog("Отдельное окно 3D", { dialog = false }) {
+    if (dialog) WorkspaceDialog("Отдельное окно 2D", { dialog = false }) {
         val marker = spatialProbeMarker()
-        Text("То же графическое ядро, отдельная поверхность", Modifier.semantics { contentDescription = marker })
-        SpatialIcon("avatar", Modifier.align(Alignment.CenterHorizontally).size(96.dp), description = "Объёмный аватар в диалоге")
+        Text("Нативное окно с доступным полем ввода", Modifier.semantics { contentDescription = marker })
+        SpatialIcon("avatar", Modifier.align(Alignment.CenterHorizontally).size(96.dp), description = "Цветной аватар в диалоге")
         SpectrumTextField(input, { input = it }, label = { Text("Поле в диалоге") }, singleLine = true)
-        SpectrumTextButton("Закрыть окно 3D", { dialog = false }, Modifier.fillMaxWidth())
+        SpectrumTextButton("Закрыть окно 2D", { dialog = false }, Modifier.fillMaxWidth())
     }
 }

@@ -45,7 +45,7 @@ def _reset(case):
 
 def _preview(case):
     p = case.probe
-    p.reveal("Предпросмотр объёма, контраста и движения", AREA, direction="start")
+    p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
     p.tap("Сдержанное", AREA)
     p.tap(BRIGHT_LIGHTING, AREA)
     _expect_preferences(case, PREVIEW)

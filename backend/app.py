@@ -706,6 +706,7 @@ app.include_router(portfolio_research_router)
 # These routes expose real source-backed state and acknowledged jobs. The 3D
 # renderer has no separate API, no frame polling and no trading write access.
 try:
+    from .volume_live import router as volume_live_router
     from .volume_workspace import router as volume_workspace_router
     from .volume_state import router as volume_state_router
     from .volume_market import router as volume_market_router
@@ -719,6 +720,7 @@ try:
     from .volume_catalogue import router as volume_catalogue_router
     from .volume_purchases import router as volume_purchases_router
 except ImportError:
+    from volume_live import router as volume_live_router
     from volume_workspace import router as volume_workspace_router
     from volume_state import router as volume_state_router
     from volume_market import router as volume_market_router
@@ -732,7 +734,7 @@ except ImportError:
     from volume_catalogue import router as volume_catalogue_router
     from volume_purchases import router as volume_purchases_router
 
-for volume_router in (volume_workspace_router, volume_state_router, volume_market_router,
+for volume_router in (volume_live_router, volume_workspace_router, volume_state_router, volume_market_router,
                       volume_jobs_router, volume_chat_router, volume_notifications_router,
                       volume_devices_router, volume_plans_router, volume_analysis_router, volume_monitor_router,
                       volume_catalogue_router, volume_purchases_router):

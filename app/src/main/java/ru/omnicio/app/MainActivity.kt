@@ -501,6 +501,12 @@ private fun SignedInAppContent(
         json.optString("event_id").takeIf { it.isNotBlank() && it != "null" })
     val reauthenticate = LocalReauthenticate.current
     val workspace = rememberWorkspaceRuntime(WorkspaceSession(session.accessToken, session.user.telegramId), tApiConfigured, portfolioCurrency, reauthenticate)
+    val liveSync = rememberWorkspaceLiveSync(
+        WorkspaceSession(session.accessToken, session.user.telegramId),
+        onChanged = workspace.invalidate,
+        onBrokerChanged = { configured -> onTApiConfiguredChange(configured); onPortfolioRefresh() },
+        onExpired = reauthenticate,
+    )
     val refresh: () -> Unit = { onPortfolioRefresh(); workspace.refresh() }
     val navigateToTab: (AnalystTab) -> Unit = { onScreenChange(it.toAppScreen()) }
     val goBack = LocalWorkspaceBack.current
@@ -567,7 +573,8 @@ private fun SignedInAppContent(
         LocalCurrencyChoice provides onCurrencyChange, LocalPortfolioDestination provides toPortfolio,
         LocalPortfolioRefresh provides refresh, LocalWorkspaceRefresh provides workspace.refresh,
         LocalWorkspaceInvalidate provides workspace.invalidate,
-        LocalWorkspaceRefreshKey provides workspace.revision, LocalWorkspaceSnapshot provides workspace.data,
+        LocalWorkspaceRefreshKey provides (workspace.revision + liveSync.revision), LocalWorkspaceSnapshot provides workspace.data,
+        LocalWorkspaceLiveSync provides liveSync,
         LocalChatContext provides chatContext, LocalAskAnalyst provides { target ->
             chatJson = target.json().toString(); chatTitle = target.title; onScreenChange(AppScreen.Assistant)
         }, LocalEvidenceNavigator provides evidenceNavigator,

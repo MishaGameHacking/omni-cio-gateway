@@ -55,7 +55,7 @@ fun AppearanceScreen(onBack: () -> Unit) {
             item {
                 SpectrumCard(emphasized = true) {
                     Text("Analyst AI", style = MaterialTheme.typography.headlineMedium)
-                    Text("Предпросмотр объёма, контраста и движения", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Предпросмотр цвета, контраста и движения", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                         SpectrumBrandOrb(Modifier.size(76.dp))
                         SpectrumAssetMark("share", "А", Modifier.size(64.dp))
@@ -85,10 +85,10 @@ fun AppearanceScreen(onBack: () -> Unit) {
                 Text(when (draft.motion) {
                     MotionLevel.LIVE -> "Объекты реагируют на касание и изменение состояния."
                     MotionLevel.SUBDUED -> "Короткие спокойные переходы; меньше фонового движения."
-                    MotionLevel.OFF -> "Объём сохраняется. Объекты сразу принимают конечное состояние без движения."
+                    MotionLevel.OFF -> "Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения."
                 }, style = MaterialTheme.typography.bodySmall)
                 if (!android.animation.ValueAnimator.areAnimatorsEnabled()) Text("Системные анимации отключены. Это ограничение имеет приоритет над выбранным режимом.")
-                WorkspaceToggle("Выраженная глубина", "Пространственные акценты и разделение поверхностей", draft.depth) {
+                WorkspaceToggle("Акцентные карточки", "Мягкие тени и цветные границы карточек", draft.depth) {
                     preview(draft.copy(depth = it))
                 }
                 WorkspaceToggle("Яркое освещение", "Плотные поверхности и более отчётливые границы", draft.brightLight) { preview(draft.copy(brightLight = it)) }

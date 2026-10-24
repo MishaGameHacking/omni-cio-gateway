@@ -165,9 +165,9 @@ fun NewFeaturesWorkspaceScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { SpectrumCard(emphasized = true) {
                 Text("Ваше новое пространство", style = MaterialTheme.typography.headlineMedium)
-                Text("Объёмные материалы, предметные реакции на касание и три уровня движения. Читаемые данные остаются в центре.")
+                Text("Единый 2D-интерфейс, цветные иллюстрации и мягкие реакции на действия. Движение можно уменьшить или отключить в настройках.")
             } }
-            item { WorkspaceLink("Подберите оформление", "Светлая тема, яркое освещение и предпросмотр", SpectrumSymbol.Allocation) { navigate(WorkspaceRoute.Appearance) } }
+            item { WorkspaceLink("Подберите оформление", "Светлая и тёмная темы, движение и предпросмотр", SpectrumSymbol.Allocation) { navigate(WorkspaceRoute.Appearance) } }
             item { WorkspaceLink("Найдите и сравните", "Общий поиск, наблюдение, фильтры и сравнение", SpectrumSymbol.Portfolio) { navigate(WorkspaceRoute.Discovery) } }
             item { WorkspaceLink("Сохраните исследование", "Источники, дата и ваши заметки", SpectrumSymbol.Sources) { navigate(WorkspaceRoute.Library) } }
             item { WorkspaceLink("Обсудите портфель", "Контекстный чат, основания и контроль расхода", SpectrumSymbol.Analyst) { navigate(WorkspaceRoute.Assistant) } }

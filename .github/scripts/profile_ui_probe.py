@@ -24,8 +24,8 @@ EDUCATION_LABEL = "Обучение"
 BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
-LIGHT_BACKGROUND = "fff5f8ff"
-DARK_BACKGROUND = "ff090e18"
+LIGHT_BACKGROUND = "fff7f8fc"
+DARK_BACKGROUND = "ff10131d"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -524,7 +524,7 @@ class ProfileProbe:
             elif screen == "appearance":
                 self.reveal("Без движения", "workspace-content")
                 self.tap("Без движения", "workspace-content")
-                self.find("Объём сохраняется. Объекты сразу принимают конечное состояние без движения.")
+                self.find("Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения.")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
             self.tap_visible(WORKSPACE_BACK)
@@ -699,7 +699,7 @@ def exercise_checks(device, read_tree) -> dict:
         original_scale = "1.0"
     try:
         stages = (
-            ("spatial-renderer", probe.spatial),
+            ("native-2d-renderer", probe.spatial),
             ("session-context", probe.session_context),
             ("balance-privacy", probe.balance_privacy),
             ("goal-workflow", probe.goal_workflow),
@@ -724,7 +724,7 @@ def exercise_checks(device, read_tree) -> dict:
             "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
-        return {"ui_suite": "spectrum-3d-100-v2", "business_case_count": len(probe.business_cases),
+        return {"ui_suite": "analyst-2d-live-v3", "business_case_count": len(probe.business_cases),
                 "business_cases": probe.business_cases, "portfolio_case_count": len(probe.portfolio_cases),
                 "portfolio_cases": probe.portfolio_cases}
     finally:

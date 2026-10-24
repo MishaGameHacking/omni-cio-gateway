@@ -158,7 +158,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
             }
         }
     }
-    // Preserve room for the native editor in landscape with large system text.
+    // Preserve room for the native editor in portrait with large system text.
     val subtitle = if (WindowInsets.isImeVisible) "" else "Объяснения с проверяемыми основаниями"
     WorkspaceDetailPage("Ассистент", subtitle, onBack, SpectrumSymbol.Analyst, adaptToIme = true) { padding ->
         AssistantConversationLayout(padding, history = { historyModifier ->

@@ -12,7 +12,7 @@ try:
 except ImportError:
     from android_runtime_contract import RUNTIME_PROFILES, runtime_profile
 
-CURRENT_UI_SUITE = 'spectrum-3d-100-v2'
+CURRENT_UI_SUITE = 'analyst-2d-live-v3'
 BUSINESS_CASE_IDS = frozenset(
     f'{route}/{scenario}@{font}'
     for route in ('risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis', 'catalogue')

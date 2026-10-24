@@ -9,11 +9,11 @@ from pathlib import Path
 import time
 
 from spatial_frame_evidence import (clipping_witness, mesh_witness, read_screenshot,
-                                    ready_spatial_metrics, white_label_contrast)
+                                    ready_spatial_metrics, white_label_contrast, draw_count, artwork_witness)
 from spatial_runtime_evidence import observe_runtime
 
 CANDIDATE_PACKAGE = 'ru.omnicio.app.debug'
-CLOSE_SPATIAL_WINDOW = 'Закрыть окно 3D'
+CLOSE_SPATIAL_WINDOW = 'Закрыть окно 2D'
 TOGGLE_LABEL = 'Тестовый переключатель'
 CLICK_RESULT = 'Нажатий: 1'
 
@@ -77,15 +77,15 @@ class _SpatialSession:
         self.large_font()
         self.policies()
         self.assert_same_process()
-        report = {"fixture": "debug_only", "screenshots": "actual_emulator_console",
+        report = {"fixture": "debug_only", "renderer": "native-2d", "draw_counter_is_not_gpu_frames": True, "screenshots": "actual_emulator_console",
                   "gpu_frame_time_measured": False, "platform": platform, "checks": self.records}
         folder = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/preview/ui-screens"
         if folder.is_symlink() or not folder.resolve().is_relative_to(Path(__file__).resolve().parents[2]):
             raise AssertionError("Spatial evidence directory escapes checkout")
         debug_apk = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/debug/app-debug.apk"
         report["debug_apk_sha256"] = hashlib.sha256(debug_apk.read_bytes()).hexdigest()
-        (folder / "spatial-verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        print("SPATIAL_UI_VERIFICATION=" + json.dumps(report, sort_keys=True), flush=True)
+        (folder / "native-2d-verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print("NATIVE_2D_UI_VERIFICATION=" + json.dumps(report, sort_keys=True), flush=True)
 
     def launch(self):
         from profile_launch import launch_profile
@@ -105,7 +105,7 @@ class _SpatialSession:
             actual = ready_spatial_metrics(self.probe.tree(), windows)
             self.assert_same_process()
             return actual
-        return self.probe.wait_for(observed, "Actual Filament scene did not become ready")
+        return self.probe.wait_for(observed, "Actual native artwork did not become ready")
 
     def current_process(self):
         try:
@@ -128,13 +128,13 @@ class _SpatialSession:
         since = time.monotonic()
         while time.monotonic() < deadline:
             actual = self.metrics()
-            if actual["frames"] != previous:
-                previous = actual["frames"]
+            if draw_count(actual) != previous:
+                previous = draw_count(actual)
                 since = time.monotonic()
             elif time.monotonic() - since >= 1.2:
                 return actual
             time.sleep(.25)
-        raise AssertionError("Idle mesh scene continues submitting frames")
+        raise AssertionError("Idle native scene continues drawing")
 
     def capture_form(self, name, background):
         self.assert_same_process()
@@ -153,7 +153,7 @@ class _SpatialSession:
             raise AssertionError("Spatial evidence layout changed during capture")
         image = read_screenshot(path)
         result = {"scenario": name, "runtime": observed,
-                  "mesh": mesh_witness(image, mesh, background),
+                  "artwork": (artwork_witness if observed.get("renderer") == "native-2d" else mesh_witness)(image, mesh, background),
                   "primary_button": white_label_contrast(image, button)}
         self.records.append(result)
 
@@ -163,10 +163,12 @@ class _SpatialSession:
 
         self.probe.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
         self.probe.palette(DARK_BACKGROUND)
-        self.capture_form("spatial-dark", (9, 14, 24))
+        self.probe.tap("OFF", "workspace-content")
+        self.probe.marker("probe-spatial-motion:Off")
+        self.capture_form("spatial-dark", (16, 19, 29))
         self.probe.tap("Тени: включены", "workspace-content")
         self.probe.find("Тени: выключены")
-        self.capture_form("spatial-shadow-reference", (9, 14, 24))
+        self.capture_form("spatial-shadow-reference", (16, 19, 29))
         self.probe.tap("Тени: выключены", "workspace-content")
         self.probe.find("Тени: включены")
         action = self.probe.resource_tap_target("spatial-action", "workspace-content")
@@ -206,25 +208,25 @@ class _SpatialSession:
         self.probe.palette(LIGHT_BACKGROUND)
         self.probe.wait_for(lambda: not keyboard_visible(self.probe.tree()),
                             "Theme selection reopened the explicitly dismissed keyboard")
-        self.capture_form("spatial-light", (245, 248, 255))
+        self.capture_form("spatial-light", (247, 248, 252))
         for choice, motion in (("SUBDUED", "Subdued"), ("OFF", "Off")):
             self.probe.tap(choice, "workspace-content")
             self.probe.marker("probe-spatial-motion:" + motion)
             stopped = self.settled()
-            before = stopped["frames"]
+            before = draw_count(stopped)
             time.sleep(1)
-            after = self.metrics()["frames"]
+            after = draw_count(self.metrics())
             if before != after:
                 raise AssertionError("Settled native scene unexpectedly resumed frame submissions")
-            self.records.append({"scenario": "motion-" + motion.lower(), "frames_before": before, "frames_after": after,
+            self.records.append({"scenario": "motion-" + motion.lower(), "draw_operations_before": before, "draw_operations_after": after,
                             "runtime": stopped})
-        self.probe.tap("Открыть окно 3D", "workspace-content")
-        self.probe.find("Отдельное окно 3D")
+        self.probe.tap("Открыть окно 2D", "workspace-content")
+        self.probe.find("Отдельное окно 2D")
         window_metrics = self.metrics(windows=2)
         self.probe.capture("spatial-dialog")
         self.probe.tap_visible(CLOSE_SPATIAL_WINDOW)
         closed = self.metrics(windows=1)
-        self.records.append({"scenario": "shared-engine-dialog", "open": window_metrics, "closed": closed})
+        self.records.append({"scenario": "native-dialog", "open": window_metrics, "closed": closed})
 
     def select_second_chart_element(self):
         # The result follows the button in the lazy item and can be outside the
@@ -236,7 +238,7 @@ class _SpatialSession:
     def charts_and_clipping(self):
         from profile_ui_probe import node_bounds
 
-        self.probe.tap("Графики 3D", "profile-tabs")
+        self.probe.tap("Графики 2D", "profile-tabs")
         for target, screenshot in (("spatial-bars", "spatial-bars"), ("spatial-candles", "spatial-candles"), ("spatial-ring", "spatial-ring")):
             self.probe.reveal_resource(target, "workspace-content")
             self.settled()
@@ -245,14 +247,14 @@ class _SpatialSession:
         self.probe.reveal_resource("spatial-candles", "workspace-content", direction="start")
         self.settled()
         self.probe.capture("spatial-selected")
-        self.records.append({"scenario": "numeric-meshes", "selected_index": 1, "runtime": self.metrics(),
+        self.records.append({"scenario": "numeric-vector-geometry", "selected_index": 1, "runtime": self.metrics(),
                         "data": "explicit_debug_fixture_only"})
-        self.probe.tap("Отсечение 3D", "profile-tabs")
+        self.probe.tap("Отсечение 2D", "profile-tabs")
         self.settled()
         outer = node_bounds(self.probe.reveal_resource("spatial-clip-region", "workspace-content"))
         inner = node_bounds(self.probe.reveal_resource("spatial-clip-window", "workspace-content"))
         path = self.probe.capture("spatial-clipping")
-        self.records.append({"scenario": "material-scissor", **clipping_witness(read_screenshot(path), outer, inner, (245, 248, 255))})
+        self.records.append({"scenario": "material-scissor", **clipping_witness(read_screenshot(path), outer, inner, (247, 248, 252))})
 
     def long_scroll(self):
         from persistent_ui import FrameReader
@@ -283,10 +285,10 @@ class _SpatialSession:
         after_scroll = self.settled()
         final_pss = memory_pss_kb(self.probe.command("shell", "dumpsys", "meminfo", CANDIDATE_PACKAGE))
         frame_data = frame_timings(self.probe.command("shell", "dumpsys", "gfxinfo", CANDIDATE_PACKAGE, "framestats"))
-        if len(rows) < 30 or after_scroll["frames"] <= before_scroll["frames"]:
-            raise AssertionError("Long scroll did not traverse real rows and submit new mesh frames")
+        if len(rows) < 30 or draw_count(after_scroll) <= draw_count(before_scroll):
+            raise AssertionError("Long scroll did not traverse real rows and submit new native draw operations")
         if final_pss - initial_pss > 64 * 1024 or after_scroll["pool"] > before_scroll["pool"] + 48:
-            raise AssertionError("Warmed mesh scroll retained excessive memory or pooled instances")
+            raise AssertionError("Warmed native scroll retained excessive memory or unexpected 3D instances")
         if frame_data["p95_ms"] > 250:
             raise AssertionError("The warmed emulator UI exceeds the 250ms stall guard")
         self.probe.capture("spatial-long-scroll")
@@ -300,7 +302,7 @@ class _SpatialSession:
         from emulator_rotation import portrait_turn, portrait_frame
 
         # Request a landscape posture; the phone app must keep portrait and
-        # the same native tab, toggle, editor and rendered 3D state.
+        # the same native tab, toggle, editor and rendered 2D state.
         self.probe.tap_resource("profile-tabs-item-0", "profile-tabs", direction="start")
         self.probe.find(CLICK_RESULT)
         self.probe.capture("spatial-rotation-before")
@@ -327,10 +329,10 @@ class _SpatialSession:
             raise AssertionError("Spatial 200% scenario did not apply the actual font scale")
         self.probe.reveal("Проверить нажатие", "workspace-content")
         self.probe.capture("spatial-large-font")
-        self.probe.tap("Открыть окно 3D", "workspace-content")
+        self.probe.tap("Открыть окно 2D", "workspace-content")
         # Opening a modal replaces the active accessibility root asynchronously.
         # Do not send a workspace scroll using a frame from before that switch.
-        self.probe.find_all(("Отдельное окно 3D", CLOSE_SPATIAL_WINDOW))
+        self.probe.find_all(("Отдельное окно 2D", CLOSE_SPATIAL_WINDOW))
         opened = self.metrics(windows=2)
         self.probe.capture("spatial-dialog-large-font")
         self.probe.tap_visible(CLOSE_SPATIAL_WINDOW)

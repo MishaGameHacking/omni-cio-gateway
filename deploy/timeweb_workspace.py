@@ -30,8 +30,13 @@ def source_hash():
 def memory_kib():
     return int(next(x.split()[1] for x in pathlib.Path("/proc/meminfo").read_text().splitlines() if x.startswith("MemTotal:")))
 def require_capacity(command):
-    minimum={"check":0,"build":3500*1024,"runtime":5500*1024}[command]
-    free={"check":512*1024**2,"build":7*1024**3,"runtime":10*1024**3}[command]
+    bounded = command == "build" and os.environ.get("ANALYST_BUILD_PROFILE") == "bounded-swap"
+    minimum = 768*1024 if bounded else {"check":0,"build":3500*1024,"runtime":5500*1024}[command]
+    free = 3*1024**3 if bounded else {"check":512*1024**2,"build":7*1024**3,"runtime":10*1024**3}[command]
+    if bounded:
+        mem = dict((line.split()[0].rstrip(":"), int(line.split()[1])) for line in pathlib.Path("/proc/meminfo").read_text().splitlines())
+        if mem.get("SwapFree", 0) < 2300*1024:raise RuntimeError("insufficient_free_swap_for_bounded_build")
+        if os.environ.get("ANALYST_BUILD_CGROUP_BOUNDED") != "true":raise RuntimeError("bounded_build_requires_service_limits")
     if memory_kib()<minimum:raise RuntimeError("insufficient_physical_memory_for_"+command)
     if shutil.disk_usage(ROOT).free<free:raise RuntimeError("insufficient_free_disk_for_"+command)
 def previous(stage,digest):
@@ -66,7 +71,7 @@ def main():
             if code:raise RuntimeError(label+"_failed")
         try:
             require_capacity(command)
-            report["source_sha256"]=source_hash();write(result,report)
+            report["source_sha256"]=source_hash();report["resource_profile"]=os.environ.get("ANALYST_BUILD_PROFILE","physical-memory");write(result,report)
             run("diff-check",["git","diff","--check"])
             if command=="check":
                 run("dependencies",[PY,"-m","pip","check"])
@@ -83,14 +88,14 @@ def main():
                 cert=subprocess.check_output(["keytool","-exportcert","-alias","androiddebugkey","-keystore",str(STATE/".android/debug.keystore"),"-storepass","android"],stderr=subprocess.DEVNULL)
                 assert hashlib.sha256(cert).hexdigest()==CERT,"signing_identity_changed"
                 run("assets",[PY,"tools/prepare_spectrum_checkout.py"])
-                extra=[]
+                extra=["-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=384m -Dfile.encoding=UTF-8"] if os.environ.get("ANALYST_BUILD_PROFILE") == "bounded-swap" else []
                 try:
                     with urllib.request.urlopen("https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.pom",timeout=10) as response:assert b"<artifactId>junit</artifactId>" in response.read(100000)
                 except Exception:
                     with urllib.request.urlopen("https://maven-central.storage-download.googleapis.com/maven2/junit/junit/4.13.2/junit-4.13.2.pom",timeout=15) as response:assert b"<artifactId>junit</artifactId>" in response.read(100000)
                     init=folder/"maven-mirror.init.gradle"
                     init.write_text("settingsEvaluated { s -> [s.pluginManagement.repositories,s.dependencyResolutionManagement.repositories].each { rs -> rs.each { r -> if (r instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository && r.url.host == 'repo.maven.apache.org') r.setUrl('https://maven-central.storage-download.googleapis.com/maven2/') } } }\n")
-                    extra=["--init-script",str(init)]
+                    extra+=["--init-script",str(init)]
                 run("gradle",["./gradlew",":app:testDebugUnitTest",":app:lintDebug",":app:lintPreview",":app:assembleDebug",":app:assembleRelease",":app:assemblePreview",":ci-ui-driver:lintDebug",":ci-ui-driver:assembleDebug","--no-daemon","--no-parallel","--max-workers=1",*extra],7200)
                 run("mesh-apk-check",[PY,"tools/generate_spectrum_meshes.py","--check","--check-apk"])
                 out=ROOT/"app/build/outputs/apk/preview";apk=out/"app-preview.apk";bt=SDK/"build-tools/37.0.0"

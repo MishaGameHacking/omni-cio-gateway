@@ -9,8 +9,8 @@ import ru.omnicio.app.ui.spatial.SpatialIcon
 enum class SpectrumLiveFeature(val description: String, internal val asset: String) {
     Charts("Объёмные графики", "charts"),
     Indicators("Объёмные индикаторы", "pulse"),
-    Spatial("Настоящие пространственные элементы", "orbit"),
-    RgbEffects("Материалы объёмных иконок", "brand"),
+    Spatial("Живые 2D-иллюстрации", "orbit"),
+    RgbEffects("Цветные анимированные иконки", "brand"),
     Assistant("Интерактивный ИИ-ассистент", "avatar"),
     Notifications("Умные уведомления", "notifications"),
     Recommendations("Персональные рекомендации", "goal"),

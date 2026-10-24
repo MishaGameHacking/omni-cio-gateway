@@ -13,19 +13,19 @@ import kotlinx.coroutines.flow.collect
 /**
  * Local destinations use their current window's existing scene. A cancelled
  * gesture never commits navigation and both cancellation and commit reset depth.
- * Native text moves with the texture while the actual meshes also recede in Z.
+ * Native content follows the gesture; cancellation restores the original screen.
  */
 @Composable
 fun SpatialBackHandler(enabled: Boolean = true, onBack: () -> Unit) {
-    val window = LocalSpatialWindow.current
+    val back = LocalFlatBack.current
     val action by rememberUpdatedState(onBack)
-    DisposableEffect(window) { onDispose { window?.updateLocalBackProgress(0f) } }
+    DisposableEffect(back) { onDispose { back?.value = 0f } }
     PredictiveBackHandler(enabled) { events ->
         try {
-            events.collect { window?.updateLocalBackProgress(it.progress) }
+            events.collect { back?.value = it.progress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f }
             action()
         } finally {
-            window?.updateLocalBackProgress(0f)
+            back?.value = 0f
         }
     }
 }
@@ -36,10 +36,10 @@ enum class SpatialHaptic { Action, Selection, Confirmed, Rejected }
 @Composable
 fun rememberSpatialHapticFeedback(): (SpatialHaptic) -> Unit {
     val view = LocalView.current
-    val owner = LocalSpatialOwner.current
-    return remember(view, owner) {
+    val tactile = LocalFlatTactile.current
+    return remember(view, tactile) {
         { kind ->
-            if (owner?.tactile == true) view.performHapticFeedback(when (kind) {
+            if (tactile) view.performHapticFeedback(when (kind) {
                 SpatialHaptic.Action -> HapticFeedbackConstants.VIRTUAL_KEY
                 SpatialHaptic.Selection -> HapticFeedbackConstants.SEGMENT_TICK
                 SpatialHaptic.Confirmed -> HapticFeedbackConstants.CONFIRM

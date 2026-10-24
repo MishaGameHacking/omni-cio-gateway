@@ -1,6 +1,13 @@
 package ru.omnicio.app.ui.spatial
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
@@ -30,7 +37,7 @@ enum class SpatialSurfaceKind(val asset: String) {
 internal val LocalSpatialDepth = staticCompositionLocalOf { 0f }
 internal val LocalSpatialObjectKey = staticCompositionLocalOf<String?> { null }
 
-/** Preserve one scene entity as a position opens into its detail header. */
+/** Preserve the semantic identity of a position as its detail opens. */
 @Composable
 fun SpatialObject(key: String, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalSpatialObjectKey provides key, content = content)
@@ -46,17 +53,32 @@ fun SpatialSurface(
     emphasized: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val base = LocalSpatialDepth.current
-    val depth = base + (if (emphasized) SpatialDepth.Emphasized else SpatialDepth.Surface) +
-        (if (state == SpatialState.Selected) 2f else 0f)
-    val unavailable = LocalSpatialOwner.current?.diagnostics?.error != null ||
-        kind.asset !in (LocalSpatialWindow.current?.drawnModels ?: emptySet())
-    Box(if (unavailable) modifier.background(color) else modifier) {
-        SpatialCanvas(listOf(SpatialPrimitive(
-            SpatialAsset.Catalogue(kind.asset), color = color, depth = depth,
-            thickness = if (emphasized) 40f else 26f, state = state, tilt = false,
-        )), Modifier.matchParentSize())
-        CompositionLocalProvider(LocalSpatialDepth provides depth + 4f) { content() }
+    val palette = LocalSpectrumPalette.current
+    val layered = LocalWorkspacePreferences.current.value.depth
+    val highContrast = LocalFlatContrast.current
+    val shape = RoundedCornerShape(when (kind) {
+        SpatialSurfaceKind.Card -> 22.dp
+        SpatialSurfaceKind.Dock -> 26.dp
+        SpatialSurfaceKind.Chip -> 14.dp
+        SpatialSurfaceKind.Heading -> 0.dp
+        else -> 18.dp
+    })
+    val fill = when {
+        kind == SpatialSurfaceKind.Heading -> Color.Transparent
+        state == SpatialState.Disabled -> lerp(palette.card, color, .28f)
+        state == SpatialState.Pressed -> lerp(color, palette.violet, .14f)
+        else -> color
+    }
+    val border = when {
+        kind == SpatialSurfaceKind.Heading -> Color.Transparent
+        state == SpatialState.Selected -> palette.violet.copy(alpha = .65f)
+        state == SpatialState.Attention -> palette.rose
+        emphasized && layered -> palette.violet.copy(alpha = if (highContrast) .65f else .22f)
+        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (highContrast) 1f else .55f)
+    }
+    Box(modifier.shadow(if (kind == SpatialSurfaceKind.Card && layered) 2.dp else 0.dp, shape, clip = false)
+        .clip(shape).background(fill).border(1.dp, border, shape)) {
+        CompositionLocalProvider(LocalSpatialDepth provides 0f) { content() }
     }
 }
 
@@ -80,7 +102,7 @@ fun SpatialField(
     }
 }
 
-/** Catalogue models are first-party GLBs. No network, SVG, bitmap or Canvas icon. */
+/** Original animated 2D vectors; labels and interaction stay native. */
 @Composable
 fun SpatialIcon(
     asset: String,

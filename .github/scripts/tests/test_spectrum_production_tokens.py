@@ -23,8 +23,8 @@ class SpectrumProductionTokens(unittest.TestCase):
         rgb = tuple(int(colors[0][i:i + 2], 16) / 255 for i in (0, 2, 4))
         self.assertGreaterEqual(1.05 / (luminance(rgb) + .05), 4.5)
         surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
-        self.assertIn('if (unavailable) modifier.background(color)', surface)
-        self.assertIn('drawnModels', surface)
+        self.assertIn('.clip(shape).background(fill).border(1.dp, border, shape)', surface)
+        self.assertNotIn('drawnModels', surface)
         # Material input/token contrast is distinct from rendered PBR contrast.
         # Actual light/dark screenshots remain required before publication.
 

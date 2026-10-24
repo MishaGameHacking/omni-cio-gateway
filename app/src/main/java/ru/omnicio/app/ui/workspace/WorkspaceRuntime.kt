@@ -36,10 +36,16 @@ fun rememberWorkspaceRuntime(session: WorkspaceSession, connected: Boolean, curr
     var handled by remember(session.userId) { mutableIntStateOf(0) }
     var readRequested by remember(session.userId) { mutableIntStateOf(0) }
     var busy by remember(session.userId) { mutableStateOf(false) }
+    var pendingRead by remember(session.userId, session.token) { mutableStateOf(false) }
     var error by remember(session.userId) { mutableStateOf<String?>(null) }
     var jobId by rememberSaveable(session.userId) { mutableStateOf<String?>(null) }
     var jobCurrency by rememberSaveable(session.userId) { mutableStateOf<String?>(null) }
     var attemptedCurrency by remember(session.userId) { mutableStateOf<String?>(null) }
+    // A live notification must not cancel a POST whose server outcome is still unknown.
+    // Coalesce reads until the materialization action has reached a known state.
+    LaunchedEffect(busy, pendingRead) {
+        if (!busy && pendingRead) { pendingRead = false; readRequested++ }
+    }
     LaunchedEffect(session.token, foreground, requested, connected, currency, readRequested) {
         if (!foreground || session.token.isBlank()) return@LaunchedEffect
         busy = true
@@ -80,7 +86,7 @@ fun rememberWorkspaceRuntime(session: WorkspaceSession, connected: Boolean, curr
             }
         } finally { busy = false }
     }
-    return WorkspaceRuntime(data, revision, busy, error, jobId, { if (!busy) requested++ }, { readRequested++ })
+    return WorkspaceRuntime(data, revision, busy, error, jobId, { if (!busy) requested++ }, { if (busy) pendingRead = true else readRequested++ })
 }
 
 private suspend fun awaitMaterialization(client: WorkspaceTransport, token: String, identifier: String): VolumeReply {

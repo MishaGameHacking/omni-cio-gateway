@@ -8,6 +8,7 @@ import time
 
 from predictive_back_input import back_gesture
 from emulator_user_setup import completed_emulator_setup
+from spatial_frame_evidence import draw_count
 
 NAVIGATION_OVERLAYS = {
     "com.android.internal.systemui.navbar.gestural",
@@ -42,18 +43,18 @@ def system_policies(probe, metrics, settled):
         def observed():
             actual = metrics()
             return actual if actual.get("motion") == motion and actual.get("thermal") == thermal \
-                and actual.get("quality") == quality and actual.get("system-motion") is enabled else None
+                and actual.get("quality") == ("native-2d" if actual.get("renderer") == "native-2d" else quality) and actual.get("system-motion") is enabled else None
         return probe.wait_for(observed, "Actual Android policy did not reach the renderer: " + motion)
 
     try:
         probe.command("shell", "settings", "put", "global", "animator_duration_scale", "1")
         probe.command("shell", "cmd", "thermalservice", "override-status", "0")
-        probe.tap("Правила 3D", "profile-tabs")
+        probe.tap("Правила 2D", "profile-tabs")
         probe.find("Синтетическая непрерывная модель")
         live = expected("Live", 0, "standard", True)
         time.sleep(.8)
-        if metrics()["frames"] <= live["frames"]:
-            raise AssertionError("The visible live loading mesh never submitted animation frames")
+        if draw_count(metrics()) <= draw_count(live):
+            raise AssertionError("The visible live loading artwork never submitted new draw operations")
 
         probe.command("shell", "settings", "put", "global", "animator_duration_scale", "0")
         expected("Off", 0, "standard", False)
@@ -65,7 +66,7 @@ def system_policies(probe, metrics, settled):
         expected("Live", 0, "standard", True)
         probe.command("shell", "cmd", "thermalservice", "override-status", "2")
         moderate = expected("Subdued", 2, "economy", True)
-        records.append({"scenario": "android-thermal-moderate-real-listener-and-low-meshes", "runtime": moderate})
+        records.append({"scenario": "android-thermal-moderate-real-listener-and-reduced-motion", "runtime": moderate})
         probe.capture("spatial-thermal-moderate")
 
         probe.command("shell", "cmd", "thermalservice", "override-status", "3")

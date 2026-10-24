@@ -5,7 +5,7 @@ import androidx.compose.ui.Modifier
 import ru.omnicio.app.ui.spatial.SpatialIcon
 import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
-/** Decorative 3D orbital mesh; its radius never encodes a financial value. */
+/** Decorative 2D capital illustration; its radius never encodes a financial value. */
 @Composable
 fun SpectrumCapitalOrbit(modifier: Modifier = Modifier) {
     SpatialIcon("orbit", modifier, tint = LocalSpectrumPalette.current.cyan,

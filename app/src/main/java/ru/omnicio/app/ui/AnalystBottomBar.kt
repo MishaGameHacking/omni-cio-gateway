@@ -26,7 +26,7 @@ val LocalWideNavigation = staticCompositionLocalOf { false }
 val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
 private val primaryTabs = listOf(AnalystTab.Home, AnalystTab.Portfolio, AnalystTab.Actions, AnalystTab.Risk, AnalystTab.Profile)
 
-/** One floating mesh dock. Text and tab semantics remain native and always visible. */
+/** One native rounded navigation bar. Text and tab semantics remain native and always visible. */
 @Composable
 fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -69,7 +69,7 @@ private fun DockDestination(tab: AnalystTab, active: Boolean, modifier: Modifier
         Column(Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             SpatialIcon(tab.symbol().asset, Modifier.size(28.dp),
-                tint = if (active) palette.cyan else palette.blue, state = state)
+                tint = if (active) palette.violet else palette.blue, state = state)
             Text(tab.label(), Modifier.fillMaxWidth(), fontSize = 13.sp, lineHeight = 17.sp,
                 textAlign = TextAlign.Center, softWrap = true,
                 fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
@@ -95,7 +95,7 @@ private fun AnalystTab.symbol() = when (this) {
     AnalystTab.Profile -> SpectrumSymbol.Profile
 }
 
-/** Same five mesh controls on a scrollable rail for tablets and short split screens. */
+/** Same five native controls on a scrollable rail for tablets and short split screens. */
 @Composable
 fun AnalystSideRail(selected: AnalystTab, navigate: (AnalystTab) -> Unit) {
     SpatialSurface(Modifier.fillMaxHeight().width(112.dp), SpatialSurfaceKind.Dock,

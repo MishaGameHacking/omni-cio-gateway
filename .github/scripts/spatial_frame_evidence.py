@@ -15,7 +15,7 @@ import zlib
 
 PACKAGE = "ru.omnicio.app.debug"
 REQUIRED_METRICS = {"engines", "windows", "frames", "meshes", "pending", "error", "motion", "density"}
-COUNTERS = ("engines", "windows", "frames", "meshes", "pending", "pool", "thermal")
+COUNTERS = ("draw-operations", "engines", "windows", "frames", "meshes", "pending", "pool", "thermal")
 MEASUREMENTS = ("density", "font-scale", "cpu-p95", "interval-p95", "back-progress")
 
 
@@ -52,6 +52,12 @@ def _validated_spatial_record(record):
 def _spatial_record(node):
     record = {}
     for part in node.get("content-desc", "").split(";"):
+        if part.startswith(("probe-renderer:", "probe-flat-draws:")):
+            key, _, value = part.partition(":")
+            name = "renderer" if key == "probe-renderer" else "draw-operations"
+            if name in record:
+                raise AssertionError("Duplicate native renderer observation")
+            record[name] = value
         if part.startswith("probe-spatial-"):
             key, _, value = part.partition(":")
             name = key.removeprefix("probe-spatial-")
@@ -78,6 +84,17 @@ def ready_spatial_metrics(tree, windows=1):
     result = spatial_metrics(tree)
     if result is None:
         return None
+    if result.get("renderer") == "native-2d":
+        # Draw operations are real Canvas callbacks, never GPU frame/FPS evidence.
+        if any(result.get(key, 0) != 0 for key in ("engines", "windows", "frames", "meshes", "pending", "pool")):
+            raise AssertionError("Native 2D unexpectedly retained a 3D renderer")
+        if result.get("draw-operations", 0) <= 0:
+            return None
+        modal = any(node.get("package") == PACKAGE and node.get("visible-to-user") != "false"
+                    and node.get("text") == "Отдельное окно 2D" for node in tree.iter("node"))
+        if windows == 2 and not modal:
+            return None
+        return result
     if result["engines"] > 1:
         raise AssertionError("More than one actual Filament Engine remains alive")
     return result if result["engines"] == 1 and result["windows"] == windows \
@@ -254,3 +271,18 @@ def _png_chunk_data(kind, payload, end, size, compressed, length):
             raise AssertionError("Unexpected data after PNG end")
         return size, True
     return size, False
+
+
+def draw_count(record):
+    """Keep draw calls distinct from historical Filament submission counters."""
+    return record["draw-operations"] if record.get("renderer") == "native-2d" else record["frames"]
+
+
+def artwork_witness(image: Screenshot, rectangle, background):
+    colors = list(image.colors(rectangle))
+    changed = [color for color in colors if differs(color, background)]
+    fraction = len(changed) / len(colors)
+    chromatic = {tuple(channel // 32 for channel in color) for color in changed if max(color) - min(color) > 24}
+    if not .015 <= fraction <= .95 or len(chromatic) < 3:
+        raise AssertionError("Captured colorful 2D artwork is absent, covered or monochrome")
+    return {"artwork_pixel_fraction": fraction, "chromatic_groups": len(chromatic), "bounds": list(rectangle)}

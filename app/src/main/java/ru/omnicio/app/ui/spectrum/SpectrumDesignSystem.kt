@@ -45,44 +45,43 @@ data class SpectrumPalette(
 )
 
 val DarkSpectrumPalette = SpectrumPalette(
-    backgroundTop = Color(0xFF090E18),
-    backgroundBottom = Color(0xFF111827),
-    card = Color(0xFF121D2B),
-    cardStrong = Color(0xFF192A3B),
-    cyan = Color(0xFF70E0D2),
-    blue = Color(0xFF4C8DFF),
-    violet = Color(0xFF8A5CFF),
-    rose = Color(0xFFFF4FA3),
-    emerald = Color(0xFF19E6A2),
-    amber = Color(0xFFFFC857),
+    backgroundTop = Color(0xFF10131D),
+    backgroundBottom = Color(0xFF171C29),
+    card = Color(0xFF1A2030),
+    cardStrong = Color(0xFF252C40),
+    cyan = Color(0xFF68D8C5),
+    blue = Color(0xFFA6ABFF),
+    violet = Color(0xFFB6A2FF),
+    rose = Color(0xFFF68FAB),
+    emerald = Color(0xFF68D8AE),
+    amber = Color(0xFFF5C771),
 )
 
 val LightSpectrumPalette = SpectrumPalette(
-    backgroundTop = Color(0xFFF5F8FF),
-    backgroundBottom = Color(0xFFEAF2FF),
+    backgroundTop = Color(0xFFF7F8FC),
+    backgroundBottom = Color(0xFFEEF0F8),
     card = Color.White,
-    cardStrong = Color(0xFFE7F1FF),
-    cyan = Color(0xFF007C91),
-    blue = Color(0xFF205FCF),
-    violet = Color(0xFF6E43C8),
-    rose = Color(0xFFA92A70),
-    emerald = Color(0xFF007D63),
-    amber = Color(0xFF8A5A00),
+    cardStrong = Color(0xFFEEEBFA),
+    cyan = Color(0xFF087C74),
+    blue = Color(0xFF5844BE),
+    violet = Color(0xFF7051C5),
+    rose = Color(0xFFAB3962),
+    emerald = Color(0xFF08765E),
+    amber = Color(0xFF875900),
 )
 
 val LocalSpectrumPalette = staticCompositionLocalOf { DarkSpectrumPalette }
 
 // White labels retain >=4.5:1 contrast over every interpolated stop. Bright
-// cyan is reserved for the surrounding glow, never a white-text background.
+// accent color is reserved for decoration, never a white-text background.
 internal val SpectrumPrimaryStops = listOf(
-    Color(0xFF3158D5), Color(0xFF5036DA), Color(0xFF7136BF),
+    Color(0xFF5844BE), Color(0xFF6549C4), Color(0xFF714BC2),
 )
 
 
 @Composable
 fun SpectrumBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    // The shared scene supplies the solid background and every dimensional surface.
-    // Painting an opaque Compose background here would cover its meshes.
+    // Shared spacing and native surfaces unify every destination.
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
             Box(Modifier.widthIn(max = 840.dp).fillMaxSize(), content = content)
@@ -108,7 +107,7 @@ fun SpectrumCard(
     SpatialSurface(modifier.then(clickable), color = if (emphasized) palette.cardStrong else palette.card,
         state = when { pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }, emphasized = emphasized) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-            Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 18.dp),
+            Column(Modifier.fillMaxWidth().padding(if (compact) 14.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp), content = content)
         }
     }
@@ -129,13 +128,16 @@ fun SpectrumPageHeader(
     subtitle: String,
     symbol: SpectrumSymbol,
     modifier: Modifier = Modifier,
-    @Suppress("UNUSED_PARAMETER") eyebrow: String = "Analyst AI",
+    eyebrow: String = "Analyst AI",
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (eyebrow.isNotBlank()) Text(eyebrow.uppercase(),
+                color = LocalSpectrumPalette.current.violet, style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold)
             SpatialSurface(kind = SpatialSurfaceKind.Heading, color = LocalSpectrumPalette.current.cardStrong) {
-                Text(title, Modifier.padding(horizontal = 10.dp, vertical = 6.dp).semantics { heading() },
+                Text(title, Modifier.padding(vertical = 2.dp).semantics { heading() },
                     style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface)
             }
@@ -239,7 +241,7 @@ fun SpectrumProgressBar(fraction: Float, modifier: Modifier = Modifier, accent: 
     }
 }
 
-/** Original first-party sphere and orbital mesh; lighting comes from the shared scene. */
+/** Original vector illustration; motion is decorative and never represents account values. */
 @Composable
 fun SpectrumBrandOrb(modifier: Modifier = Modifier, compact: Boolean = false) {
     SpatialIcon(if (compact) "analyst" else "brand", modifier.aspectRatio(1f),

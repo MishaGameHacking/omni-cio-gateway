@@ -59,7 +59,7 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
     private fun failure(status: Int, json: JSONObject?): VolumeReply {
         val detail = json?.opt("detail")
         val code = when (detail) { is JSONObject -> detail.optString("code", "request_failed"); is String -> detail; else -> "invalid_response" }
-        val policyMessage = if (status == 422 || status == 409) chatPolicyMessage(code) else null
+        val policyMessage = if (status in setOf(422, 409, 503)) chatPolicyMessage(code) else null
         val message = policyMessage ?: when (status) {
             401, 403 -> "Войдите через Telegram заново. Рабочий контекст сохранён для вашего аккаунта."
             404 -> "Данные пока недоступны. Проверьте выбранный объект или обновите сведения."
@@ -77,6 +77,14 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
         private const val REQUEST_LIMIT = 100_000
         private const val RESPONSE_LIMIT = 2_000_000
         fun chatPolicyMessage(code: String?): String? = when (code) {
+            "timeweb_ai_key_missing", "ai_model_identifier_missing_or_invalid",
+            "ai_no_approved_route_for_task" ->
+                "ИИ ещё не подключён на сервере. Вопрос не отправлен модели; текст можно сохранить и повторить после настройки."
+            "ai_prices_missing_stale_or_invalid", "ai_model_price_binding_required" ->
+                "Стоимость ответа сейчас не подтверждена. Запрос не отправлен модели; повторите после обновления тарифов сервиса."
+            "ai_processing_approval_required", "ai_processing_region_not_approved" ->
+                "Обработка данных для этого маршрута ещё не настроена. Вопрос не отправлен модели."
+
             "chat_outside_investment_scope" -> "Analyst AI отвечает только об инвестициях, активах и мировой финансовой политике. Этот вопрос не отправлен модели."
             "chat_investment_scope_unclear", "chat_text_invalid" -> "Уточните инвестиционный вопрос: укажите актив, портфель или влияние события на финансовые рынки."
             "chat_tier_insufficient", "chat_tier_invalid" -> "Для этого вопроса нужен более глубокий анализ. Выберите «Авто» или подходящую глубину."

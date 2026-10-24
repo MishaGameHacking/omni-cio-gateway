@@ -1,7 +1,8 @@
-"""Composition root for the durable, read-only 3D workspace API."""
+"""Composition root for the durable, live workspace API."""
 try:
-    from . import volume_state, volume_notifications, volume_jobs, volume_chat, volume_plans, volume_analysis
+    from . import volume_live, volume_state, volume_notifications, volume_jobs, volume_chat, volume_plans, volume_analysis
 except ImportError:
+    import volume_live
     import volume_state
     import volume_notifications
     import volume_jobs
@@ -17,3 +18,4 @@ def initialize() -> None:
     volume_chat.initialize()
     volume_plans.initialize()
     volume_analysis.initialize()
+    volume_live.initialize()

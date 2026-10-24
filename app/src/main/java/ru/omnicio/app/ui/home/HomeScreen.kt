@@ -116,8 +116,8 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                 item(key = "capabilities") { HomeQuickActions(onOpenPortfolio, onOpenPayments) }
                 if (personal.loaded && !personal.releaseDismissed(ru.omnicio.app.BuildConfig.VERSION_NAME)) item(key = "release-introduction") {
                     SpectrumCard {
-                        Text("Что нового в 0.11", style = MaterialTheme.typography.titleMedium)
-                        Text("Объёмный интерфейс, сохранённые исследования, сравнение инструментов и контекстный аналитик.", style = MaterialTheme.typography.bodyMedium)
+                        Text("Что нового в 0.12", style = MaterialTheme.typography.titleMedium)
+                        Text("Новый 2D-дизайн, цветные живые иконки и быстрый доступ к ассистенту. Все привычные данные и настройки сохранены.", style = MaterialTheme.typography.bodyMedium)
                         TextButton(onClick = { navigate(WorkspaceRoute.NewFeatures) }) { Text("Посмотреть возможности") }
                         TextButton(onClick = { personal.dismissRelease(ru.omnicio.app.BuildConfig.VERSION_NAME) }, enabled = !personal.busy) { Text("Больше не показывать") }
                     }
@@ -153,6 +153,7 @@ private fun HomeHeader(user: AnalystUser, onMessagesClick: () -> Unit) {
             Text("Analyst AI", modifier = Modifier.semantics { contentDescription = user.name?.let { "Analyst AI · $it" } ?: "Analyst AI" },
                 style = MaterialTheme.typography.labelLarge, color = LocalSpectrumPalette.current.cyan)
             Text("Ваш капитал", style = MaterialTheme.typography.headlineMedium)
+            LiveSyncLabel()
         }
         BadgedBox(badge = { AttentionBadge() }) {
         SpectrumIconButton(SpectrumSymbol.Notifications, "Уведомления", onMessagesClick, Modifier.size(48.dp))

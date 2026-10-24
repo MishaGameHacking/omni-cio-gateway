@@ -51,6 +51,17 @@ with TestClient(app) as client:
         assert response.status_code == 200, response.status_code
         user = browser.legacy.session_user("Bearer " + response.json()["access_token"])
         assert user["telegram_sub"] == "confirmed-owner"
+        auth = {"Authorization": "Bearer " + response.json()["access_token"]}
+        before = client.get("/workspace/live?wait=0", headers=auth)
+        assert before.status_code == 200
+        with closing(browser.legacy.connect()) as db:
+            db.execute("INSERT INTO market_facts VALUES (?, 'fixture',NULL,'synthetic','{}','2026-01-01',NULL,1)", (device,))
+            db.execute("INSERT INTO workspace_records VALUES (?,'note',?,'{}',1,1,1)", (user["id"], device))
+            db.commit()
+        after = client.get("/workspace/live?wait=0", headers=auth)
+        assert after.status_code == 200
+        assert before.json()["revision"] != after.json()["revision"]
+
         assert client.post("/auth/session", json={"code": code}).status_code == 401
     denied = login(client, "another-person")
     assert denied.status_code == 403, denied.status_code
