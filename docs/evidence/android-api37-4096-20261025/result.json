@@ -1,0 +1,32 @@
+{
+  "purpose": "api37_4096_full_leaf_diagnostic",
+  "status": "leaf_failed",
+  "started_at": "2026-10-25T07:53:14.747115+00:00",
+  "expected": {
+    "source_sha256": "aef6bb6dc89131b3c1412cc2b5454fc0aa6df68c6cae7e6abf82b379feb118a7",
+    "apk_sha256": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "previous_sha256": "c62c7bb9b2c0fd454ec00985f869f3f9fa3023ed555ced9b5e0ae2a107e7f8d2"
+  },
+  "cgroup": "/sys/fs/cgroup/system.slice/analyst-emulator-leaf37-4096.service",
+  "log": "/var/lib/analyst-ai-build/diagnostics/leaf37-4096-20261025T075314Z-8865/leaf.log",
+  "samples": "/var/lib/analyst-ai-build/diagnostics/leaf37-4096-20261025T075314Z-8865/samples.jsonl",
+  "work_dir": "/var/lib/analyst-ai-build/diagnostics/leaf37-4096-20261025T075314Z-8865/leaf",
+  "shared_ui_directory": "/srv/analyst-ai/workspace/app/build/outputs/apk/preview/ui-screens",
+  "full_matrix_completed": false,
+  "runtime_result_written": false,
+  "before": {
+    "source_sha256": "aef6bb6dc89131b3c1412cc2b5454fc0aa6df68c6cae7e6abf82b379feb118a7",
+    "apk_sha256": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "previous_sha256": "c62c7bb9b2c0fd454ec00985f869f3f9fa3023ed555ced9b5e0ae2a107e7f8d2"
+  },
+  "remaining_owned_group_members": 0,
+  "leaf_returncode": 1,
+  "after": {
+    "source_sha256": "aef6bb6dc89131b3c1412cc2b5454fc0aa6df68c6cae7e6abf82b379feb118a7",
+    "apk_sha256": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "previous_sha256": "c62c7bb9b2c0fd454ec00985f869f3f9fa3023ed555ced9b5e0ae2a107e7f8d2"
+  },
+  "identities_unchanged": true,
+  "finished_at": "2026-10-25T08:03:45.373538+00:00",
+  "elapsed_seconds": 630.627
+}

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Sequential checks/build/runtime gates on the permanent Timeweb server."""
 from __future__ import annotations
-import datetime,fcntl,hashlib,json,os,pathlib,re,shutil,subprocess,sys,traceback,urllib.request
+import datetime,fcntl,hashlib,json,os,pathlib,re,shutil,stat,subprocess,sys,traceback,urllib.request
 ROOT=pathlib.Path("/srv/analyst-ai/workspace")
 STATE=pathlib.Path("/var/lib/analyst-ai-build")
 SDK=pathlib.Path("/opt/analyst-android-sdk")
 PY=STATE/"venv/bin/python"
 CERT="bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
 HOST="https://analyst-ai-2941515.twc1.net"
+PUBLIC_RELEASES=pathlib.Path("/srv/analyst-ai-ota/releases")
+PREVIEW_PACKAGE="ru.omnicio.app.debug"
 def stamp():return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def sha(path):
     h=hashlib.sha256()
@@ -44,6 +46,85 @@ def previous(stage,digest):
     d=json.loads(p.read_text()) if p.exists() else {}
     if d.get("status")!="passed" or d.get("source_sha256")!=digest:raise RuntimeError(stage+"_must_pass_for_current_sources")
     return d
+
+def require_public_path(path, *, directory=False):
+    info = path.lstat()
+    predicate = stat.S_ISDIR if directory else stat.S_ISREG
+    if (not predicate(info.st_mode) or info.st_uid != 0
+            or info.st_mode & 0o022):
+        raise RuntimeError("untrusted_public_release_path")
+    if not directory and info.st_nlink != 1:
+        raise RuntimeError("untrusted_public_release_path")
+    required_access = 0o001 if directory else 0o004
+    if not info.st_mode & required_access:
+        raise RuntimeError("public_release_not_readable")
+
+
+def public_release_directory():
+    directory = PUBLIC_RELEASES / PREVIEW_PACKAGE
+    for path in (
+        PUBLIC_RELEASES.parent.parent,
+        PUBLIC_RELEASES.parent,
+        PUBLIC_RELEASES,
+        directory,
+    ):
+        require_public_path(path, directory=True)
+    require_public_path(directory / "current.json")
+    return directory
+
+
+def public_release_identity(release):
+    return {
+        "package_name": release.package_name,
+        "version_code": release.version_code,
+        "apk_sha256": release.apk_sha256,
+        "certificate_sha256": release.certificate_sha256,
+    }
+
+
+def resolve_upgrade_baseline(candidate, candidate_digest):
+    if (not isinstance(candidate, dict)
+            or candidate.get("package") != PREVIEW_PACKAGE
+            or candidate.get("sha256") != candidate_digest
+            or candidate.get("certificate_sha256") != CERT
+            or type(candidate.get("version_code")) is not int):
+        raise RuntimeError("invalid_candidate_upgrade_identity")
+    public_release_directory()
+    # Lazy import keeps build-writable backend code out of the root publisher.
+    checkout = str(pathlib.Path(__file__).resolve().parents[1])
+    if checkout not in sys.path:
+        sys.path.insert(0, checkout)
+    from backend.client_updates import ReleaseChannel
+    channel = ReleaseChannel(PUBLIC_RELEASES)
+    release = channel.current(PREVIEW_PACKAGE)
+    old = channel.verified_file(release)
+    require_public_path(old)
+    if release.certificate_sha256 != CERT:
+        raise RuntimeError("previous_signing_identity_changed")
+    if (candidate["version_code"] <= release.version_code
+            or candidate_digest == release.apk_sha256):
+        raise RuntimeError("upgrade_requires_newer_distinct_candidate")
+    return old, public_release_identity(release)
+
+
+def require_upgrade_baseline_transcript(path, baseline):
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(rows, list):
+        raise RuntimeError("upgrade_baseline_transcript_mismatch")
+    previous_rows = [
+        row for row in rows
+        if isinstance(row, dict) and row.get("test") == "previous_clean_install"
+    ]
+    if (len(previous_rows) != 1
+            or previous_rows[0].get("success") is not True
+            or previous_rows[0].get("apk_sha256") != baseline["apk_sha256"]):
+        raise RuntimeError("upgrade_baseline_transcript_mismatch")
+
+
+def require_runtime_baseline(runtime_receipt, current):
+    if runtime_receipt.get("upgrade_baseline") != public_release_identity(current):
+        raise RuntimeError("public_upgrade_baseline_changed_since_runtime")
+
 def main():
     command=sys.argv[1] if len(sys.argv)==2 else "status"
     if command=="status":
@@ -122,15 +203,29 @@ def main():
                 build=previous("build",report["source_sha256"])
                 apk=ROOT/"app/build/outputs/apk/preview/app-preview.apk"
                 assert sha(apk)==build["apk_sha256"],"apk_changed_since_build"
+                candidate=json.loads(apk.with_name("apk-verification.json").read_text())
+                old,baseline=resolve_upgrade_baseline(candidate,build["apk_sha256"])
+                report["previous_apk"]=str(old)
+                report["upgrade_baseline"]=baseline
+                write(result,report)
                 run("runtime-sdk",[PY,".github/scripts/prepare_android_sdk.py","--sdk",SDK,"--runtime"],1800)
                 lavapipe=list(pathlib.Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
                 assert len(lavapipe)==1,"lavapipe_not_installed"
                 env.update({"RUN_PROFILE_UI_TESTS":"1","VK_ICD_FILENAMES":str(lavapipe[0])})
-                old=STATE/"previous-0.10.0.apk"
-                assert sha(old)=="3a31c602ec885a0d8cac8d76f43369cfb6ed3bdaa928f1cd7429582b0d5a40a3"
                 for page in (16384,4096):
-                    run("runtime-"+str(page),["xvfb-run","-a",PY,".github/scripts/test_apk_installation.py","--sdk",SDK,"--apk",apk,"--previous",old,"--api","37","--page-bytes",str(page),"--work-dir",ROOT/("app/build/outputs/apk/preview/install-api37-"+str(page))],7200)
+                    require_public_path(old)
+                    if sha(old)!=baseline["apk_sha256"]:
+                        raise RuntimeError("public_upgrade_apk_changed")
+                    install_dir=ROOT/("app/build/outputs/apk/preview/install-api37-"+str(page))
+                    run("runtime-"+str(page),["xvfb-run","-a",PY,".github/scripts/test_apk_installation.py",
+                        "--sdk",SDK,"--apk",apk,"--previous",old,"--api","37",
+                        "--page-bytes",str(page),"--work-dir",install_dir],7200)
+                    require_upgrade_baseline_transcript(
+                        install_dir/"install-results.json",baseline)
                 run("distribution",[PY,".github/scripts/validate_distribution.py"])
+                _,current_baseline=resolve_upgrade_baseline(candidate,build["apk_sha256"])
+                if current_baseline!=baseline:
+                    raise RuntimeError("public_upgrade_baseline_changed_during_runtime")
                 report["apk_sha256"]=sha(apk)
             assert source_hash()==report["source_sha256"],"sources_changed_during_checks"
             report["status"]="passed"
