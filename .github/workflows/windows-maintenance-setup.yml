@@ -1,0 +1,41 @@
+name: Validate and stage laptop restart setup
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/windows-maintenance-setup.yml]
+permissions:
+  contents: read
+  checks: write
+concurrency:
+  group: analyst-windows-maintenance-setup
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - name: Stage pinned script and run non-destructive Windows checks
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
+            if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('Unexpected host');
+            const expected='671ec051d573f4705aa6919bbf9ec24441f1308237970db0ac33a08aaa9a17d3';
+            const {data}=await github.rest.repos.getContent({...context.repo,path:'tools/AnalystAI-Maintenance.ps1',ref:'032760d8abab0cf481d3a544970d966e6714f5ea'});
+            const bytes=Buffer.from(data.content,'base64');
+            if(crypto.createHash('sha256').update(bytes).digest('hex')!==expected)throw new Error('Source digest mismatch');
+            const directory='C:\\actions-runner-2\\_work\\_tool\\AnalystMaintenanceSetup';
+            fs.mkdirSync(directory,{recursive:true});
+            for(let p=directory;path.dirname(p)!==p;p=path.dirname(p)){if(fs.lstatSync(p).isSymbolicLink())throw new Error('Reparse path refused');}
+            const target=path.join(directory,'AnalystAI-Maintenance.ps1');
+            if(fs.existsSync(target)&&fs.lstatSync(target).isSymbolicLink())throw new Error('Linked destination refused');
+            fs.writeFileSync(target,bytes);
+            if(crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')!==expected)throw new Error('Staging digest mismatch');
+            const powershell=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+            const result=cp.spawnSync(powershell,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',target,'-Mode','Test'],{encoding:'utf8',timeout:120000,maxBuffer:64000});
+            let tests;
+            if(result.status===0){try{tests=JSON.parse(result.stdout.trim());}catch(e){tests={status:'invalid_test_report',stdout:result.stdout.slice(-4000)};}}
+            else tests={status:'failed',exit:result.status,stdout:result.stdout?.slice(-3000),stderr:result.stderr?.slice(-5000),spawn_error:result.error?.message};
+            const report={script:target,sha256:expected,tests,task_installed:false,restart_requested:false,requires_one_administrator_install:true};
+            await github.rest.checks.create({...context.repo,name:'Laptop restart setup verification',head_sha:context.sha,status:'completed',conclusion:tests.status==='passed'?'success':'failure',output:{title:'Windows-native validation; activation is separate',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
+            if(tests.status!=='passed')core.setFailed('Maintenance script verification failed');
