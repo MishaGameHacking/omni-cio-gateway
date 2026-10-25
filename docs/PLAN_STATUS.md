@@ -1,4 +1,4 @@
-> **Актуальная точка продолжения — 25.10.2026, 18:58 МСК:** Windows build/JVM/lint/signature PASS; source`a31fe062` сохранён точным Git-деревом. Linux-only collection errors3 и skips2 не считаются успехом. Новый runtime9417611: health200, workspace401, SQLite OK; cutover ещё не выполнен. [Результаты, ссылки и следующий шаг](CONTINUATION_2026-10-25.md).
+> **25.10.2026, 19:26 МСК — тестовый APK38 выдан по прямому запросу владельца.** [Скачать 0.13.0-preview / 38](https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-38-058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef.apk). Полные байты по HTTPS, SHA-256, policy38 и health200 проверены; прежняя подпись и данные сохранены. Полная Android runtime-матрица, три Linux-модуля и телефон ещё не проверены. [Точные результаты и следующее действие](CONTINUATION_2026-10-25.md). Более ранние записи ниже исторические.
 
 ## Проверка 25.10.2026 — клиент 37 подключился, Android runtime заблокирован
 
