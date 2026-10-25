@@ -84,18 +84,18 @@ class WorkspaceNotificationService : JobService() {
             return context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
                 manager.areNotificationsEnabled() && manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
         }
-        fun schedule(context: Context): Boolean {
+        fun schedule(context: Context): Boolean = NotificationScheduling.attempt {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "События портфеля", NotificationManager.IMPORTANCE_DEFAULT)
                 .apply { description = "События по подтверждённым правилам и тихим часам"; lockscreenVisibility = Notification.VISIBILITY_PRIVATE })
-            if (!canNotify(context)) return false
+            if (!canNotify(context)) return@attempt false
             val scheduler = context.getSystemService(JobScheduler::class.java)
-            if (scheduler.getPendingJob(JOB_ID) != null) return true
+            if (scheduler.getPendingJob(JOB_ID) != null) return@attempt true
             val job = JobInfo.Builder(JOB_ID, ComponentName(context, WorkspaceNotificationService::class.java))
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true)
                 .setPeriodic(15 * 60 * 1000L, 5 * 60 * 1000L).setBackoffCriteria(60_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).build()
-            return scheduler.schedule(job) == JobScheduler.RESULT_SUCCESS
+            scheduler.schedule(job) == JobScheduler.RESULT_SUCCESS
         }
-        fun cancel(context: Context) { context.getSystemService(JobScheduler::class.java).cancel(JOB_ID) }
+        fun cancel(context: Context) { NotificationScheduling.attempt { context.getSystemService(JobScheduler::class.java).cancel(JOB_ID); true } }
     }
 }

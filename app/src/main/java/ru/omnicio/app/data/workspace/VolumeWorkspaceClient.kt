@@ -10,11 +10,10 @@ import ru.omnicio.app.data.updates.ClientVersion
 /** Authenticated, bounded transport. Only user actions/data effects call this; never the renderer. */
 class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL) : WorkspaceTransport {
     override fun request(token: String, path: String, method: String, body: JSONObject?): VolumeReply {
-        require(path == "/workspace" || path.startsWith("/workspace/") || path.startsWith("/workspace?"))
+        require(WorkspaceEndpointPolicy.permits(path))
         require(method in setOf("GET", "POST", "PUT", "PATCH", "DELETE"))
         // Search punctuation is query data; traversal checks belong to the
         // decoded path so escaped dot segments cannot evade the same guard.
-        require(!URI(path).path.contains("..") && !path.contains('#'))
         val encoded = body?.toString()?.toByteArray(Charsets.UTF_8)
         require(encoded == null || encoded.size <= REQUEST_LIMIT)
         var connection: HttpsURLConnection? = null

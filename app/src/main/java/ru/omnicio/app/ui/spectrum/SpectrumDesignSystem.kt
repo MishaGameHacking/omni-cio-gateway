@@ -45,39 +45,20 @@ data class SpectrumPalette(
 )
 
 val DarkSpectrumPalette = SpectrumPalette(
-    backgroundTop = Color(0xFF10131D),
-    backgroundBottom = Color(0xFF171C29),
-    card = Color(0xFF1A2030),
-    cardStrong = Color(0xFF252C40),
-    cyan = Color(0xFF68D8C5),
-    blue = Color(0xFFA6ABFF),
-    violet = Color(0xFFB6A2FF),
-    rose = Color(0xFFF68FAB),
-    emerald = Color(0xFF68D8AE),
-    amber = Color(0xFFF5C771),
+    backgroundTop = Color(0xFF0F172A), backgroundBottom = Color(0xFF0F172A),
+    card = Color(0xFF1E293B), cardStrong = Color(0xFF334155),
+    cyan = Color(0xFF5EEAD4), blue = Color(0xFF5EEAD4), violet = Color(0xFF5EEAD4),
+    rose = Color(0xFFFDA4AF), emerald = Color(0xFF6EE7B7), amber = Color(0xFFFCD34D),
 )
 
 val LightSpectrumPalette = SpectrumPalette(
-    backgroundTop = Color(0xFFF7F8FC),
-    backgroundBottom = Color(0xFFEEF0F8),
-    card = Color.White,
-    cardStrong = Color(0xFFEEEBFA),
-    cyan = Color(0xFF087C74),
-    blue = Color(0xFF5844BE),
-    violet = Color(0xFF7051C5),
-    rose = Color(0xFFAB3962),
-    emerald = Color(0xFF08765E),
-    amber = Color(0xFF875900),
+    backgroundTop = Color(0xFFF8FAFC), backgroundBottom = Color(0xFFF8FAFC),
+    card = Color.White, cardStrong = Color(0xFFE2E8F0),
+    cyan = Color(0xFF0F766E), blue = Color(0xFF0F766E), violet = Color(0xFF0F766E),
+    rose = Color(0xFFB91C1C), emerald = Color(0xFF047857), amber = Color(0xFF92400E),
 )
 
 val LocalSpectrumPalette = staticCompositionLocalOf { DarkSpectrumPalette }
-
-// White labels retain >=4.5:1 contrast over every interpolated stop. Bright
-// accent color is reserved for decoration, never a white-text background.
-internal val SpectrumPrimaryStops = listOf(
-    Color(0xFF5844BE), Color(0xFF6549C4), Color(0xFF714BC2),
-)
-
 
 @Composable
 fun SpectrumBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
@@ -107,7 +88,7 @@ fun SpectrumCard(
     SpatialSurface(modifier.then(clickable), color = if (emphasized) palette.cardStrong else palette.card,
         state = when { pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }, emphasized = emphasized) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-            Column(Modifier.fillMaxWidth().padding(if (compact) 14.dp else 20.dp),
+            Column(Modifier.fillMaxWidth().padding(if (compact) 12.dp else 18.dp),
                 verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp), content = content)
         }
     }
@@ -144,7 +125,7 @@ fun SpectrumPageHeader(
             if (subtitle.isNotBlank()) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium)
         }
-        SpectrumIcon(symbol, Modifier.size(48.dp), selected = true, tile = true, motionAllowed = true)
+        SpectrumIcon(symbol, Modifier.size(32.dp), selected = true, tile = false, motionAllowed = false)
     }
 }
 
@@ -163,14 +144,14 @@ fun SpectrumPrimaryButton(
     val state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }
     SpatialSurface(modifier.clickable(interactionSource = interaction, indication = null,
         enabled = enabled, role = Role.Button, onClick = click), SpatialSurfaceKind.Button,
-        color = SpectrumPrimaryStops.first(), state = state, emphasized = true) {
+        color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, state = state) {
         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 18.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             if (symbol != null) {
-                SpatialIcon(symbol.asset, Modifier.size(26.dp), tint = Color.White, state = state)
+                SpatialIcon(symbol.asset, Modifier.size(26.dp), tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, state = state)
                 Spacer(Modifier.width(9.dp))
             }
-            Text(text, color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(text, color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
     }

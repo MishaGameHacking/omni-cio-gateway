@@ -3,7 +3,7 @@ from copy import deepcopy
 import unittest
 from backend.android_runtime_contract import RUNTIME_PROFILES, runtime_profile
 from backend.installation_evidence import (
-    BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, InstallationEvidenceError, from_ci_reports,
+    BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, AUTOMATION_CASE_IDS, InstallationEvidenceError, from_ci_reports,
 )
 from backend.tests.android_runtime_fixtures import CANDIDATE, PREVIOUS, runtime_reports
 
@@ -37,12 +37,15 @@ class EvidenceTests(unittest.TestCase):
     def test_case_sets_and_both_font_sizes_are_not_reduced(self):
         self.assertEqual(len(BUSINESS_CASE_IDS), 60)
         self.assertEqual(len(PORTFOLIO_CASE_IDS), 14)
-        for values in (BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS):
+        self.assertEqual(len(AUTOMATION_CASE_IDS), 26)
+        for values in (BUSINESS_CASE_IDS, PORTFOLIO_CASE_IDS, AUTOMATION_CASE_IDS):
             self.assertEqual({case.rsplit('@', 1)[1] for case in values}, {'1', '2'})
         checked = from_ci_reports(reports(), CANDIDATE)
         for profile in checked['runtimes'].values():
             self.assertEqual(profile['business_case_count'], 60)
             self.assertEqual(profile['portfolio_case_count'], 14)
+            self.assertEqual(profile['automation_case_count'], 26)
+            self.assertEqual(profile['ui_stage_count'], 15)
 
     def test_unsupported_os_is_rejected_even_with_complete_receipts(self):
         for api in (35, 36, 38, '37', 37.0, True, None):
@@ -172,20 +175,20 @@ class EvidenceTests(unittest.TestCase):
         self.reject(data)
 
     def test_current_suite_is_required(self):
-        for value in (None, 'spectrum-3d-100-v1', '', True):
+        for value in (None, 'spectrum-3d-100-v1', 'analyst-2d-live-v3', '', True):
             data = reports()
             record(data[0], 'profile_ui')['ui_suite'] = value
             self.reject(data)
 
     def test_each_case_count_is_exact_integer(self):
-        for group, count in (('business', 60), ('portfolio', 14)):
+        for group, count in (('business', 60), ('portfolio', 14), ('automation', 26)):
             for value in (count - 1, float(count), True, str(count), None):
                 data = reports()
                 record(data[0], 'profile_ui')[group + '_case_count'] = value
                 self.reject(data)
 
     def test_case_arrays_cannot_drop_duplicate_or_substitute(self):
-        for group in ('business', 'portfolio'):
+        for group in ('business', 'portfolio', 'automation'):
             for mode in ('missing', 'duplicate', 'unhashable', 'substitute', 'wrong_type'):
                 data = reports()
                 target = record(data[0], 'profile_ui')
@@ -204,7 +207,8 @@ class EvidenceTests(unittest.TestCase):
 
     def test_missing_any_ui_receipt_field_is_failure(self):
         for field in ('ui_suite', 'business_case_count', 'business_cases',
-                      'portfolio_case_count', 'portfolio_cases', 'fixture_apk_sha256'):
+                      'portfolio_case_count', 'portfolio_cases', 'fixture_apk_sha256', 'ui_stages',
+                      'automation_case_count', 'automation_cases', 'automation_report', 'automation_artifact_directory'):
             data = reports()
             del record(data[0], 'profile_ui')[field]
             self.reject(data)
@@ -224,6 +228,91 @@ class EvidenceTests(unittest.TestCase):
         for api, page in ((True, 4096), (37.0, 4096), (37, True), (38, 4096), (36, 16384)):
             with self.subTest(api=api, page=page), self.assertRaises(ValueError):
                 runtime_profile(api, page)
+
+    def test_v3_is_only_valid_for_an_explicit_historical_version(self):
+        legacy = runtime_reports(legacy=True)
+        checked = from_ci_reports(legacy, CANDIDATE, version_code=37)
+        self.assertNotIn("automation_case_count", checked["runtimes"]["api37-4096"])
+        for version in (None, 38, 39, True, "37", 37.0, 0, -1, 2_100_000_001):
+            with self.subTest(version=version), self.assertRaises(InstallationEvidenceError):
+                from_ci_reports(legacy, CANDIDATE, version_code=version)
+
+    def test_v4_can_certify_a_historical_artifact_without_inventing_legacy_proof(self):
+        self.assertEqual(from_ci_reports(reports(), CANDIDATE, version_code=37),
+                         from_ci_reports(reports(), CANDIDATE, version_code=38))
+
+    def test_stage_matrix_and_attempt_archive_are_required(self):
+        for field, value in (("ui_stages", []), ("ui_stages", ["settings-group-scroll"] * 15),
+                             ("automation_artifact_directory", "../automation-ui"),
+                             ("automation_artifact_directory", "attempt-3/automation-ui"),
+                             ("automation_artifact_directory", None)):
+            data = reports()
+            record(data[0], "profile_ui")[field] = value
+            self.reject(data)
+
+    def test_complete_counts_do_not_replace_native_automation_observations(self):
+        for field in ("automation_report",):
+            for value in (None, {}, {"cases": []}):
+                data = reports()
+                record(data[0], "profile_ui")[field] = value
+                self.reject(data)
+
+    def test_automation_fixture_identity_and_image_digest_are_bound(self):
+        changes = (("fixture_apk_sha256", "f" * 64), ("schema_version", True),
+                   ("actual_device_observations", False), ("external_broker_model_calls", True),
+                   ("real_order_execution", True))
+        for field, value in changes:
+            data = reports()
+            record(data[0], "profile_ui")["automation_report"][field] = value
+            self.reject(data)
+        for value in (None, "invalid", "A" * 64):
+            data = reports()
+            record(data[0], "profile_ui")["automation_report"]["cases"][0]["screenshot_sha256"] = value
+            self.reject(data)
+
+    def test_automation_rows_cannot_drop_duplicate_or_relabel_cases(self):
+        for mode in ("missing", "duplicate", "unhashable", "font", "name"):
+            data = reports()
+            rows = record(data[0], "profile_ui")["automation_report"]["cases"]
+            if mode == "missing":
+                rows.pop()
+            elif mode == "duplicate":
+                rows[-1] = deepcopy(rows[0])
+            elif mode == "unhashable":
+                rows[0] = []
+            elif mode == "font":
+                rows[0]["font_scale"] = True
+            else:
+                rows[0]["case"] = "home/conflict"
+            self.reject(data)
+
+    def test_automation_observation_failures_are_not_valid_receipts(self):
+        mutations = [
+            lambda row: row["after"].update(writes=2),
+            lambda row: row["after"].update(**{"contract-errors": 1}),
+            lambda row: row["renderer"].update(**{"draw-operations": 0}),
+            lambda row: row["renderer"].update(**{"font-scale": 3.0}),
+            lambda row: row["renderer"].update(orientation="2"),
+            lambda row: row["renderer"].update(engines=1),
+            lambda row: row.update(process_id_after="9999"),
+            lambda row: row.update(width=800, height=480),
+            lambda row: row.update(screenshot="../capture.png"),
+            lambda row: row["foreground_after"].update(after=[]),
+            lambda row: row["foreground_after"].update(after=["topResumedActivity=ActivityRecord{a u0 another.app/.Main t1}"]),
+        ]
+        for mutate in mutations:
+            data = reports()
+            mutate(record(data[0], "profile_ui")["automation_report"]["cases"][0])
+            self.reject(data)
+
+    def test_rejected_and_applied_settings_require_actual_switch_and_trace(self):
+        for scenario in ("conflict", "ready", "paused", "not_connected", "error"):
+            for field in ("checked", "enabled", "checkable"):
+                data = reports()
+                rows = record(data[0], "profile_ui")["automation_report"]["cases"]
+                row = next(item for item in rows if item["case"] == "settings/" + scenario)
+                row["native_switch"][field] = not row["native_switch"][field]
+                self.reject(data)
 
 
 if __name__ == '__main__':

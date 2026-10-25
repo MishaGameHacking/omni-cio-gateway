@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.CancellationException
@@ -43,8 +44,17 @@ val LocalAskAnalyst = staticCompositionLocalOf<(ChatContext) -> Unit> { {} }
 
 data class WorkspaceResource(val data: JSONObject?, val busy: Boolean, val error: String?, val refresh: () -> Unit)
 
+/** Only consumed by Layoutlib inspections; a real app always uses the authenticated transport. */
+val LocalWorkspacePreviewResources = staticCompositionLocalOf<Map<String, WorkspaceResource>> { emptyMap() }
+
 @Composable
 fun rememberWorkspaceResource(path: String, enabled: Boolean = true): WorkspaceResource {
+    if (LocalInspectionMode.current) {
+        if (!enabled) return WorkspaceResource(null, false, null) {}
+        return requireNotNull(LocalWorkspacePreviewResources.current[path]) {
+            "A Layoutlib resource fixture must be supplied explicitly."
+        }
+    }
     val session = LocalWorkspaceSession.current
     val reauthenticate = LocalReauthenticate.current
     val client = LocalWorkspaceTransport.current
@@ -69,6 +79,8 @@ fun rememberWorkspaceResource(path: String, enabled: Boolean = true): WorkspaceR
 
 @Composable
 fun workspaceForeground(): Boolean {
+    // Static screenshots neither poll the network nor impersonate a foreground Activity.
+    if (LocalInspectionMode.current) return false
     val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true) }
     DisposableEffect(lifecycle) {
@@ -133,6 +145,11 @@ fun rememberJobCheckpoints(): WorkspaceCheckpoints {
 @Composable
 fun rememberWorkspaceAction(onPrepared: (String) -> Unit = {},
     onFailure: (WorkspaceRequestFailure) -> Unit = {}, onSuccess: (JSONObject) -> Unit): WorkspaceAction {
+    if (LocalInspectionMode.current) return remember {
+        WorkspaceAction({ false }, null, false, execute = { _, _, _, _, _ ->
+            error("Static Layoutlib previews cannot submit workspace actions.")
+        })
+    }
     val session = LocalWorkspaceSession.current
     val context = LocalContext.current
     val client = LocalWorkspaceTransport.current

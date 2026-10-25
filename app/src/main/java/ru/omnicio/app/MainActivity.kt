@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.omnicio.app.data.diagnostics.ClientDiagnostics
+import ru.omnicio.app.data.diagnostics.DiagnosticStage
 import ru.omnicio.app.data.backend.AnalystBackendClient
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
@@ -305,6 +307,16 @@ private fun AnalystAiApp(
     }
 
     val signedIn = authState as? AuthUiState.SignedIn
+    val appForeground = workspaceForeground()
+    LaunchedEffect(signedIn?.accessToken, appForeground) {
+        if (!appForeground) return@LaunchedEffect
+        val token = signedIn?.accessToken
+        if (token == null) ClientDiagnostics.stage(DiagnosticStage.LOGIN)
+        else {
+            ClientDiagnostics.stage(DiagnosticStage.WORKSPACE)
+            withContext(Dispatchers.IO) { ClientDiagnostics.uploadPending(context.applicationContext, token) }
+        }
+    }
     val workspaceStore = remember(context) { EncryptedWorkspaceStore(context) }
     var knownUser by rememberSaveable { mutableStateOf<String?>(null) }
     var navigationRestored by remember(signedIn?.user?.telegramId) { mutableStateOf(false) }
@@ -319,9 +331,14 @@ private fun AnalystAiApp(
     }
     LaunchedEffect(signedIn?.user?.telegramId) {
         val id = signedIn?.user?.telegramId ?: return@LaunchedEffect
-        if (knownUser != id) {
-            val saved = withContext(Dispatchers.IO) { workspaceStore.readJson(id, "navigation") }
-            screenName = saved?.optString("screen")?.takeIf { name -> AppScreen.entries.any { it.name == name } } ?: AppScreen.Home.name
+        val saved = withContext(Dispatchers.IO) { workspaceStore.readJson(id, "navigation") }
+        if (saved?.optInt("schema_version", 0) != 2) {
+            // Start the redesigned flow once; account data and editor drafts stay in their own records.
+            screenName = AppScreen.Home.name
+            backStack = arrayListOf()
+            recentNames = arrayListOf()
+        } else if (knownUser != id) {
+            screenName = saved.optString("screen").takeIf { name -> AppScreen.entries.any { it.name == name } } ?: AppScreen.Home.name
             backStack = ArrayList(saved?.optJSONArray("back")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { name -> AppScreen.entries.any { it.name == name } } }.orEmpty())
             recentNames = ArrayList(saved?.optJSONArray("recent")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { name -> AppScreen.entries.any { it.name == name } } }.orEmpty())
         }
@@ -330,7 +347,7 @@ private fun AnalystAiApp(
     LaunchedEffect(signedIn?.user?.telegramId, screenName, backStack, recentNames, navigationRestored) {
         val id = signedIn?.user?.telegramId ?: return@LaunchedEffect
         if (navigationRestored) withContext(Dispatchers.IO) {
-            workspaceStore.saveJson(id, "navigation", JSONObject().put("screen", screenName).put("back", JSONArray(backStack)).put("recent", JSONArray(recentNames)))
+            workspaceStore.saveJson(id, "navigation", JSONObject().put("schema_version", 2).put("screen", screenName).put("back", JSONArray(backStack)).put("recent", JSONArray(recentNames)))
         }
     }
     LaunchedEffect(signedIn?.accessToken) {
@@ -344,6 +361,7 @@ private fun AnalystAiApp(
     val livePortfolio = rememberLivePortfolio(
         signedIn?.accessToken, tApiConfigured, portfolioCurrency, userId = signedIn?.user?.telegramId,
         allowCachedOffline = brokerConnection == BrokerConnectionState.Unknown || brokerConnection == BrokerConnectionState.Checking,
+        enabled = screen !in setOf(AppScreen.Home, AppScreen.Recommendations, AppScreen.Profile),
         onSessionExpired = reauthenticate,
     )
     val visiblePortfolio = if (livePortfolio.state is PortfolioUiState.Ready) livePortfolio.state else when (brokerConnection) {
@@ -605,7 +623,7 @@ private fun SignedInAppContent(
                                         selectedCurrency = portfolioCurrency, onProfileClick = openProfile, onConnect = { onScreenChange(AppScreen.TApi) },
                                         destination = portfolioDestination, initialHistoryDate = historyDate, initialHistoryStart = historyStart,
                                         initialHistoryEnd = historyEnd, initialHistoryResolution = historyResolution, onDestinationConsumed = { portfolioDestination = null })
-                                    AppScreen.Recommendations -> PrimaryWorkspaceShell(AnalystTab.Actions, openPortfolio, openProfile) { PlansWorkspaceScreen(goBack) }
+                                    AppScreen.Recommendations -> PrimaryWorkspaceShell(AnalystTab.Actions, openPortfolio, openProfile) { AutonomousDecisionsScreen(goBack) }
                                     AppScreen.Risk -> PrimaryWorkspaceShell(AnalystTab.Risk, openPortfolio, openProfile) { RiskWorkspaceScreen(goBack) }
                                     AppScreen.Messages -> NotificationEventsScreen(goBack)
                                     AppScreen.Reports -> InsightFeedScreen(session.accessToken, openPortfolio, openProfile, initialCardId = reportId)
@@ -648,7 +666,7 @@ private fun PrimaryWorkspaceShell(selected: AnalystTab, portfolio: () -> Unit, p
 }
 
 private fun screenTitle(name: String): String = when (name) {
-    "Home" -> "Капитал"; "Portfolio" -> "Портфель"; "Recommendations" -> "Действия"; "Risk" -> "Риски"; "Profile" -> "Профиль"
+    "Home" -> "Система"; "Portfolio" -> "Данные источника"; "Recommendations" -> "Решения"; "Risk" -> "Проверки риска"; "Profile" -> "Настройки"
     "Messages" -> "События"; "Reports" -> "Выводы аналитика"; "Assistant" -> "Ассистент"; "Strategies" -> "Стратегия"; "Market" -> "Рынок"
     "Appearance" -> "Оформление"; "NotificationSettings" -> "Уведомления"; "Discovery" -> "Поиск"; "Library" -> "Исследования"
     "Devices" -> "Устройства"; "ActivityHistory" -> "Недавно открыто"; "Goals" -> "Цели"; "NewFeatures" -> "Что нового"

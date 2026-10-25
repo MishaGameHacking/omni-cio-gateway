@@ -62,3 +62,26 @@ def require_catalogue_packages(output: str) -> None:
     missing = sorted(set(required_sdk_packages()) - paths)
     if missing:
         raise ValueError("android_sdk_packages_unavailable: " + ", ".join(missing))
+
+# Runtime UI receipts are versioned separately from the Android/page-size matrix.
+CURRENT_UI_SUITE = "analyst-2d-live-v4"
+LEGACY_UI_SUITE = "analyst-2d-live-v3"
+UI_V4_MIN_VERSION_CODE = 38
+UI_STAGE_IDS = (
+    "native-2d-renderer", "session-context", "balance-privacy", "goal-workflow",
+    "business-30-cases", "portfolio-7-cases", "spectrum-dashboards",
+    "workspace-interactions", "automation-13-cases", "profile-preflight",
+    "themes", "dialogs", "settings-group-scroll", "education", "large-font-200",
+)
+AUTOMATION_CASE_IDS = frozenset(
+    f"{route}/{scenario}@{font}"
+    for route in ("home", "settings", "decisions")
+    for scenario in ("ready", "not_connected", "paused", "error", "conflict")
+    if scenario != "conflict" or route == "settings"
+    for font in (1, 2)
+)
+UI_RECEIPT_FIELDS = frozenset({
+    "ui_suite", "ui_stages", "business_case_count", "business_cases",
+    "portfolio_case_count", "portfolio_cases", "automation_case_count",
+    "automation_cases", "automation_report", "automation_artifact_directory",
+})

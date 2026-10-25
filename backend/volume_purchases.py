@@ -129,7 +129,9 @@ def liquidity_reasons(book: dict, trading: dict, price: str, lots: int, now: dat
         reasons.append("limit_trading_unavailable")
     if not policy.fresh(book.get("orderbookTs"), now, 60):
         reasons.append("order_book_stale_or_undated")
-    if book.get("isConsistent") is not True:
+    # This is unary GetOrderBookResponse; isConsistent belongs to the stream.
+    # Missing is expected, while an explicitly adverse/malformed flag still blocks.
+    if "isConsistent" in book and book["isConsistent"] is not True:
         reasons.append("order_book_not_consistent")
     rows, available = book.get("asks"), 0
     if not isinstance(rows, list):
@@ -149,9 +151,10 @@ def liquidity_reasons(book: dict, trading: dict, price: str, lots: int, now: dat
     return reasons
 
 
-def archive_check(user, result: dict, inputs: dict) -> str:
-    """Encrypt immutable calculation evidence; commit only against current inputs."""
-    user_id, identifier = int(user["id"]), uuid.uuid4().hex
+def archive_check(user, result: dict, inputs: dict, *, persist: bool = True) -> str | None:
+    """Validate current inputs; archive immutable evidence for interactive checks."""
+    user_id = int(user["id"])
+    identifier = uuid.uuid4().hex if persist else None
     with transaction(backend.connect) as db:
         if result["constraints_passed"] and timestamp(result["expires_at"]) <= datetime.now(timezone.utc):
             raise HTTPException(409, "purchase_observations_expired")
@@ -166,8 +169,9 @@ def archive_check(user, result: dict, inputs: dict) -> str:
                 or asdict(research_store.read_revision(db)) != result["evidence_revision"]):
             raise HTTPException(409, "purchase_inputs_changed")
         result["check_id"] = identifier
-        encrypted = backend.FERNET.encrypt(state.encode({"result": result, "inputs": inputs}).encode()).decode()
-        state.record(db, user_id, "purchase_check", identifier, {"encrypted": encrypted})
+        if persist:
+            encrypted = backend.FERNET.encrypt(state.encode({"result": result, "inputs": inputs}).encode()).decode()
+            state.record(db, user_id, "purchase_check", identifier, {"encrypted": encrypted})
     return identifier
 
 
@@ -204,7 +208,7 @@ def check_purchase(payload: PurchaseCheck, user: Annotated[Any, Depends(backend.
 
 
 @financial_context
-def _check_purchase(payload: PurchaseCheck, user: Any) -> dict:
+def _check_purchase(payload: PurchaseCheck, user: Any, *, archive: bool = True) -> dict:
     price = price_quotation(payload.limit_price)
     active = state.active_strategy(int(user["id"]))
     if not active or active["version"] != payload.strategy_version:
@@ -245,5 +249,11 @@ def _check_purchase(payload: PurchaseCheck, user: Any) -> dict:
         "trading": trading, "request": payload.model_dump(), "observed_at": now.isoformat(),
         "broker_read_started_at": started.isoformat(), "policy": policy.POLICY_VERSION}
     result["input_digest"] = digest(inputs)
-    archive_check(user, result, inputs)
+    if archive:
+        archive_check(user, result, inputs)
+    else:
+        # Automatic catalogue research persists a bounded compact summary, not
+        # hundreds of duplicated full account archives every day. The same
+        # transactional input/expiry checks still run before returning.
+        archive_check(user, result, inputs, persist=False)
     return result

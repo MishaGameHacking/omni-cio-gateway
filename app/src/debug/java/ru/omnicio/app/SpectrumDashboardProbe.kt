@@ -25,6 +25,7 @@ import ru.omnicio.app.ui.portfolio.PortfolioScreen
 internal fun SpectrumDashboardProbe(screen: String) {
     require(screen in setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100"))
     var destination by rememberSaveable(screen) { mutableStateOf(screen) }
+    val automationTransport = remember { AutomationProbeTransport("ready") }
     val state = remember {
         val amount = MoneyAmount(ApiDecimal(4000, 0), "RUB")
         val allocation = listOf(PortfolioAllocation("Денежные средства", ApiDecimal(100, 0)))
@@ -62,7 +63,7 @@ internal fun SpectrumDashboardProbe(screen: String) {
             "assistant" -> AssistantWorkspaceScreen({ destination = "home" }, { destination = "portfolio" },
                 { destination = "home" }, { destination = "strategy" })
             "market" -> MarketWorkspaceScreen(state, { destination = "home" }, { destination = "portfolio" })
-            "home" -> {
+            "home" -> AutomationProbeProvider(automationTransport) {
                 HomeScreen(
                     user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
                     state = state, selectedCurrency = PortfolioCurrency.RUB,

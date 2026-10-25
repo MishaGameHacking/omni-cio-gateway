@@ -1,4 +1,4 @@
-"""Compile every tracked Python source, without executing it or contacting services."""
+"""Compile tracked and nonignored workspace Python sources without executing them."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +12,7 @@ WORKERS = 4
 
 
 def tracked_sources(root: Path) -> list[str]:
+    """Keep the public name while covering the same Git workspace as the source hash."""
     unresolved = subprocess.run(
         ['git', 'ls-files', '--unmerged', '-z'], cwd=root,
         capture_output=True, check=True, timeout=30,
@@ -19,12 +20,12 @@ def tracked_sources(root: Path) -> list[str]:
     if unresolved.stdout:
         raise ValueError('The Git index contains unresolved conflicts')
     result = subprocess.run(
-        ['git', 'ls-files', '-z', '--', '*.py'], cwd=root,
+        ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.py'], cwd=root,
         capture_output=True, check=True, timeout=30,
     )
     names = sorted(set(result.stdout.decode('utf-8').rstrip('\0').split('\0')))
     if not names or names == ['']:
-        raise ValueError('No tracked Python sources were found')
+        raise ValueError('No Python workspace sources were found')
     return names
 
 

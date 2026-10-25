@@ -22,7 +22,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -56,47 +58,33 @@ val LocalSpectrumMotionPreference = staticCompositionLocalOf {
 }
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF5844BE),
-    onPrimary = Color.White,
-    secondary = Color(0xFF7051C5),
-    onSecondary = Color.White,
-    tertiary = Color(0xFF08765E),
-    onTertiary = Color.White,
-    background = Color(0xFFF7F8FC),
-    onBackground = Color(0xFF101722),
-    surface = Color.White,
-    onSurface = Color(0xFF101722),
-    surfaceVariant = Color(0xFFEBEDF5),
-    onSurfaceVariant = Color(0xFF555F73),
-    surfaceContainer = Color(0xFFF0F4FB),
-    surfaceContainerHigh = Color(0xFFE7EDF7),
-    outline = Color(0xFF69758A),
-    outlineVariant = Color(0xFFD5DEED),
-    secondaryContainer = Color(0xFFE9E4FF),
-    onSecondaryContainer = Color(0xFF2F1D60),
-    error = Color(0xFFB42330),
+    primary = Color(0xFF0F766E), onPrimary = Color.White,
+    primaryContainer = Color(0xFFCCFBF1), onPrimaryContainer = Color(0xFF134E4A),
+    secondary = Color(0xFF0F766E), onSecondary = Color.White,
+    secondaryContainer = Color(0xFFCCFBF1), onSecondaryContainer = Color(0xFF134E4A),
+    tertiary = Color(0xFF047857), onTertiary = Color.White,
+    background = Color(0xFFF8FAFC), onBackground = Color(0xFF0F172A),
+    surface = Color.White, onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFE2E8F0), onSurfaceVariant = Color(0xFF475569),
+    surfaceContainer = Color(0xFFF1F5F9), surfaceContainerHigh = Color(0xFFE2E8F0),
+    outline = Color(0xFF475569), outlineVariant = Color(0xFF94A3B8),
+    error = Color(0xFFB91C1C), onError = Color.White,
+    errorContainer = Color(0xFFFEE2E2), onErrorContainer = Color(0xFF7F1D1D),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF68D8C5),
-    onPrimary = Color(0xFF001E29),
-    secondary = Color(0xFFAF99FF),
-    onSecondary = Color(0xFF1F0D50),
-    tertiary = Color(0xFF68D8AE),
-    onTertiary = Color(0xFF002B21),
-    background = Color(0xFF10131D),
-    onBackground = Color(0xFFF4F7FF),
-    surface = Color(0xFF1A2030),
-    onSurface = Color(0xFFF4F7FF),
-    surfaceVariant = Color(0xFF252C40),
-    onSurfaceVariant = Color(0xFFB8C2D2),
-    surfaceContainer = Color(0xFF1A2030),
-    surfaceContainerHigh = Color(0xFF252C40),
-    outline = Color(0xFF8FA1B8),
-    outlineVariant = Color(0xFF3D455C),
-    secondaryContainer = Color(0xFF201949),
-    onSecondaryContainer = Color(0xFFECE8FF),
-    error = Color(0xFFFF7D8D),
+    primary = Color(0xFF5EEAD4), onPrimary = Color(0xFF0F172A),
+    primaryContainer = Color(0xFF134E4A), onPrimaryContainer = Color(0xFFF0FDFA),
+    secondary = Color(0xFF5EEAD4), onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Color(0xFF134E4A), onSecondaryContainer = Color(0xFFF0FDFA),
+    tertiary = Color(0xFF6EE7B7), onTertiary = Color(0xFF0F172A),
+    background = Color(0xFF0F172A), onBackground = Color(0xFFF8FAFC),
+    surface = Color(0xFF1E293B), onSurface = Color(0xFFF8FAFC),
+    surfaceVariant = Color(0xFF334155), onSurfaceVariant = Color(0xFFCBD5E1),
+    surfaceContainer = Color(0xFF1E293B), surfaceContainerHigh = Color(0xFF334155),
+    outline = Color(0xFF94A3B8), outlineVariant = Color(0xFF64748B),
+    error = Color(0xFFFDA4AF), onError = Color(0xFF450A0A),
+    errorContainer = Color(0xFF7F1D1D), onErrorContainer = Color(0xFFFEE2E2),
 )
 
 private val AnalystTypography = Typography(
@@ -172,21 +160,25 @@ private val AnalystTypography = Typography(
 
 @Composable
 fun AnalystTheme(content: @Composable () -> Unit) {
-    WorkspacePreferencesProvider { AnalystThemeContent(content) }
+    if (LocalInspectionMode.current) {
+        // The caller supplies in-memory appearance values for an explicit host preview.
+        AnalystThemeContent(content)
+    } else WorkspacePreferencesProvider { AnalystThemeContent(content) }
 }
 
 @Composable
 private fun AnalystThemeContent(content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val activity = LocalActivity.current
+    val inspection = LocalInspectionMode.current
+    val activity = if (inspection) null else LocalActivity.current
     val editorRestorationOwner = remember { UUID.randomUUID().toString() }
-    val preferences = remember(context) {
-        context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
+    val preferences = remember(context, inspection) {
+        if (inspection) null else context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
+    val defaultMode = if (inspection) ThemeMode.SYSTEM else ThemeMode.DARK
     var modeName by rememberSaveable {
         mutableStateOf(
-            preferences.getString("theme_mode", ThemeMode.DARK.name)
-                ?: ThemeMode.DARK.name,
+            preferences?.getString("theme_mode", defaultMode.name) ?: defaultMode.name,
         )
     }
     var previewMode by remember { mutableStateOf<ThemeMode?>(null) }
@@ -214,23 +206,33 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
     val saveTheme: (ThemeMode) -> Unit = { selected ->
         modeName = selected.name
         previewMode = null
-        preferences.edit().putString("theme_mode", selected.name).apply()
+        preferences?.edit()?.putString("theme_mode", selected.name)?.apply()
     }
     val themePreference = ThemePreference(mode, preview = { previewMode = it }, cancelPreview = { previewMode = null },
         applyPreview = { previewMode?.let(saveTheme) }, select = saveTheme)
     val motionPreference = SpectrumMotionPreference(workspace.value.motion != MotionLevel.OFF) { enabled ->
         workspace.update(workspace.value.copy(motion = if (enabled) MotionLevel.LIVE else MotionLevel.OFF))
-        preferences.edit().putBoolean("spectrum_motion", enabled).apply()
+        preferences?.edit()?.putBoolean("spectrum_motion", enabled)?.apply()
     }
+    val palette = workspacePalette(if (dark) DarkSpectrumPalette else LightSpectrumPalette,
+        workspace.value.accent, dark)
+    val baseColors = if (dark) DarkColors else LightColors
+    val accentContainer = lerp(palette.card, palette.cyan, .14f)
+    val colors = baseColors.copy(
+        primary = palette.cyan, onPrimary = if (dark) Color(0xFF0F172A) else Color.White,
+        primaryContainer = accentContainer, onPrimaryContainer = baseColors.onSurface,
+        secondary = palette.cyan, onSecondary = if (dark) Color(0xFF0F172A) else Color.White,
+        secondaryContainer = accentContainer, onSecondaryContainer = baseColors.onSurface,
+        tertiary = palette.emerald, surfaceTint = palette.cyan,
+    )
     CompositionLocalProvider(
         LocalEditorRestorationOwner provides editorRestorationOwner,
         LocalThemePreference provides themePreference,
         LocalSpectrumMotionPreference provides motionPreference,
-        LocalSpectrumPalette provides workspacePalette(if (dark) DarkSpectrumPalette else LightSpectrumPalette,
-            LocalWorkspacePreferences.current.value.accent, dark),
+        LocalSpectrumPalette provides palette,
     ) {
         MaterialTheme(
-            colorScheme = if (dark) DarkColors else LightColors,
+            colorScheme = colors,
             typography = AnalystTypography,
         ) {
             // Transparent scaffolds and text outside cards must not inherit the
@@ -246,10 +248,11 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
 }
 
 
-private fun workspacePalette(base: ru.omnicio.app.ui.spectrum.SpectrumPalette, accent: AccentStyle, dark: Boolean) = when (accent) {
-    AccentStyle.AURORA -> base
-    AccentStyle.OCEAN -> base.copy(cyan = if (dark) Color(0xFF69D8FF) else Color(0xFF006D8F),
-        violet = if (dark) Color(0xFF68A6FF) else Color(0xFF345CB4))
-    AccentStyle.IRIS -> base.copy(cyan = if (dark) Color(0xFFC4AEFF) else Color(0xFF6B43AD),
-        violet = if (dark) Color(0xFFEF9CC6) else Color(0xFF9E3970))
+private fun workspacePalette(base: ru.omnicio.app.ui.spectrum.SpectrumPalette, accent: AccentStyle, dark: Boolean): ru.omnicio.app.ui.spectrum.SpectrumPalette {
+    val color = when (accent) {
+        AccentStyle.AURORA -> base.cyan
+        AccentStyle.OCEAN -> if (dark) Color(0xFF93C5FD) else Color(0xFF1D4ED8)
+        AccentStyle.IRIS -> if (dark) Color(0xFFC4B5FD) else Color(0xFF6D28D9)
+    }
+    return base.copy(cyan = color, blue = color, violet = color)
 }

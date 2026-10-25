@@ -96,13 +96,10 @@ fun AppearanceScreen(onBack: () -> Unit) {
                     preview(draft.copy(haptics = it))
                 }
             } }
-            item { WorkspaceSection("Главный экран") }
+            item { WorkspaceSection("Приватность") }
             item { SpectrumCard {
                 WorkspaceToggle("Скрывать сумму", "Во всех финансовых разделах, графиках и подробностях", draft.hideHomeBalance) {
                     preview(draft.copy(hideHomeBalance = it))
-                }
-                WorkspaceToggle("Структура капитала", "Краткое распределение на главном экране", draft.homeStructure) {
-                    preview(draft.copy(homeStructure = it))
                 }
             } }
             item { SpectrumSecondaryButton("Вернуть оформление по умолчанию", {

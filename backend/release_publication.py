@@ -66,7 +66,8 @@ def _require_transcript_match(report: dict, tested: dict, *, sha256: str) -> Non
     if 'installation_tests' not in report:
         raise ReleaseUnavailable('runtime_installation_transcript_required')
     try:
-        derived = from_ci_reports(report['installation_tests'], sha256)
+        derived = from_ci_reports(report['installation_tests'], sha256,
+                                  version_code=report.get('version_code'))
     except InstallationEvidenceError as error:
         raise ReleaseUnavailable('installation_transcript_invalid') from error
     if tested != derived:

@@ -182,6 +182,35 @@ def white_label_contrast(image: Screenshot, bounds):
     return {"rendered_white_contrast": contrast, "bounds": list(bounds)}
 
 
+def native_label_contrast(image: Screenshot, bounds, foreground):
+    """Check actual button pixels against its runtime Material onPrimary color."""
+    if len(foreground) != 3 or any(type(channel) is not int or not 0 <= channel <= 255 for channel in foreground):
+        raise AssertionError("Invalid observed primary foreground")
+    left, top, right, bottom = bounds
+    width, height = right - left, bottom - top
+    sample = (left + width // 10, top + height // 3, left + width // 5, top + height * 2 // 3)
+    colors = list(image.colors(sample))
+    background = tuple(statistics.median(color[channel] for color in colors) for channel in range(3))
+
+    def luminance(rgb):
+        values = [channel / 255 for channel in rgb]
+        linear = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in values]
+        return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
+
+    first, second = luminance(background), luminance(foreground)
+    contrast = (max(first, second) + .05) / (min(first, second) + .05)
+    if contrast < 4.5:
+        raise AssertionError(f"Rendered primary button label has only {contrast:.2f}:1 contrast")
+    # Exclude the rounded corners: their page background can match dark text.
+    label_area = (left + width // 5, top + height // 6, right - width // 5, bottom - height // 6)
+    matching = sum(max(abs(a - b) for a, b in zip(color, foreground)) <= 12
+                   for color in image.colors(label_area))
+    if matching < 3:
+        raise AssertionError("Native primary button label is missing from captured central pixels")
+    return {"rendered_label_contrast": contrast, "foreground_rgb": list(foreground),
+            "observed_background_rgb": list(background), "label_pixels": matching, "bounds": list(bounds)}
+
+
 def _png_chunks(data):
     offset = 8
     while offset + 12 <= len(data):

@@ -9,13 +9,33 @@ from pathlib import Path
 import time
 
 from spatial_frame_evidence import (clipping_witness, mesh_witness, read_screenshot,
-                                    ready_spatial_metrics, white_label_contrast, draw_count, artwork_witness)
+                                    ready_spatial_metrics, native_label_contrast, draw_count, artwork_witness)
 from spatial_runtime_evidence import observe_runtime
 
 CANDIDATE_PACKAGE = 'ru.omnicio.app.debug'
 CLOSE_SPATIAL_WINDOW = 'Закрыть окно 2D'
 TOGGLE_LABEL = 'Тестовый переключатель'
 CLICK_RESULT = 'Нажатий: 1'
+
+
+def primary_foreground(tree):
+    """Read one unambiguous opaque color from the current actual Compose theme."""
+    observed = set()
+    for node in tree.iter("node"):
+        if node.get("package") != CANDIDATE_PACKAGE or node.get("visible-to-user") == "false":
+            continue
+        parts = [part.removeprefix("probe-primary-foreground:") for part in node.get("content-desc", "").split(";")
+                 if part.startswith("probe-primary-foreground:")]
+        if len(parts) > 1:
+            raise AssertionError("Duplicate primary foreground observation in one marker")
+        for value in parts:
+            if re.fullmatch(r"ff[0-9a-f]{6}", value) is None:
+                raise AssertionError("Invalid runtime primary foreground")
+            observed.add(value)
+    if len(observed) != 1:
+        raise AssertionError("Missing or conflicting runtime primary foreground")
+    value = observed.pop()
+    return tuple(int(value[index:index + 2], 16) for index in (2, 4, 6))
 
 
 def capture_layout(tree, identifier, density):
@@ -154,7 +174,7 @@ class _SpatialSession:
         image = read_screenshot(path)
         result = {"scenario": name, "runtime": observed,
                   "artwork": (artwork_witness if observed.get("renderer") == "native-2d" else mesh_witness)(image, mesh, background),
-                  "primary_button": white_label_contrast(image, button)}
+                  "primary_button": native_label_contrast(image, button, primary_foreground(before))}
         self.records.append(result)
 
     def native_controls(self):
@@ -165,10 +185,10 @@ class _SpatialSession:
         self.probe.palette(DARK_BACKGROUND)
         self.probe.tap("OFF", "workspace-content")
         self.probe.marker("probe-spatial-motion:Off")
-        self.capture_form("spatial-dark", (16, 19, 29))
+        self.capture_form("spatial-dark", (15, 23, 42))
         self.probe.tap("Тени: включены", "workspace-content")
         self.probe.find("Тени: выключены")
-        self.capture_form("spatial-shadow-reference", (16, 19, 29))
+        self.capture_form("spatial-shadow-reference", (15, 23, 42))
         self.probe.tap("Тени: выключены", "workspace-content")
         self.probe.find("Тени: включены")
         action = self.probe.resource_tap_target("spatial-action", "workspace-content")
@@ -208,7 +228,7 @@ class _SpatialSession:
         self.probe.palette(LIGHT_BACKGROUND)
         self.probe.wait_for(lambda: not keyboard_visible(self.probe.tree()),
                             "Theme selection reopened the explicitly dismissed keyboard")
-        self.capture_form("spatial-light", (247, 248, 252))
+        self.capture_form("spatial-light", (248, 250, 252))
         for choice, motion in (("SUBDUED", "Subdued"), ("OFF", "Off")):
             self.probe.tap(choice, "workspace-content")
             self.probe.marker("probe-spatial-motion:" + motion)
@@ -254,7 +274,7 @@ class _SpatialSession:
         outer = node_bounds(self.probe.reveal_resource("spatial-clip-region", "workspace-content"))
         inner = node_bounds(self.probe.reveal_resource("spatial-clip-window", "workspace-content"))
         path = self.probe.capture("spatial-clipping")
-        self.records.append({"scenario": "material-scissor", **clipping_witness(read_screenshot(path), outer, inner, (247, 248, 252))})
+        self.records.append({"scenario": "material-scissor", **clipping_witness(read_screenshot(path), outer, inner, (248, 250, 252))})
 
     def long_scroll(self):
         from persistent_ui import FrameReader

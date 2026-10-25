@@ -4,7 +4,7 @@ import struct
 import sys
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 import xml.etree.ElementTree as ET
 import zlib
 
@@ -99,7 +99,7 @@ class CaptureTransportTests(unittest.TestCase):
         probe = ui.ProfileProbe(Mock())
         version_tree = ET.fromstring('<hierarchy><node text="Версия 0.7.0" /></hierarchy>')
         with patch.object(probe, 'tap_resource'), patch.object(probe, 'find'), \
-                patch.object(probe, 'tap_visible'), patch.object(probe, 'horizontal_info'), \
+                patch.object(probe, 'tap_visible'), patch.object(probe, 'reveal') as reveal, \
                 patch.object(probe, 'tap_profile_content'), patch.object(probe, 'tree', return_value=version_tree), \
                 patch.object(probe, 'capture') as capture:
             probe.dialogs(capture_evidence=False)
@@ -107,6 +107,7 @@ class CaptureTransportTests(unittest.TestCase):
             probe.dialogs()
             self.assertEqual([item.args[0] for item in capture.call_args_list],
                              ['security', 'info', 'about'])
+            self.assertEqual(reveal.call_args_list, [call(ui.INFO_LABEL), call(ui.INFO_LABEL)])
 
     def test_dialog_wait_does_not_scroll_underlying_profile(self):
         probe = ui.ProfileProbe(Mock())

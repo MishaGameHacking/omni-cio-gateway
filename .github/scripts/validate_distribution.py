@@ -13,11 +13,12 @@ from verify_apk import fixed_file, output_directory, require
 
 CHECKOUT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(CHECKOUT))
-from backend.android_runtime_contract import RUNTIME_PROFILES, runtime_profile
+from backend.android_runtime_contract import RUNTIME_PROFILES, runtime_profile, CURRENT_UI_SUITE
 from backend.installation_evidence import from_ci_reports
+from automation_artifacts import verify_automation_artifacts
 
 
-def checked_installation(api: int, page_size_bytes: int = 4096) -> dict:
+def checked_installation(api: int, page_size_bytes: int = 4096, *, version_code: int | None = None) -> dict:
     profile = runtime_profile(api, page_size_bytes)
     directory = output_directory()
     folder = fixed_file(directory, profile.directory)
@@ -25,7 +26,15 @@ def checked_installation(api: int, page_size_bytes: int = 4096) -> dict:
     results = json.loads(results_path.read_text(encoding='utf-8'))
     require(os.getenv('RUN_PROFILE_UI_TESTS') == '1', 'Full UI verification is mandatory')
     validate_results(results, upgrade_required=True, profile_required=True,
-                     android_api=profile.api, page_size_bytes=profile.page_size_bytes)
+                     android_api=profile.api, page_size_bytes=profile.page_size_bytes,
+                     candidate_version_code=version_code)
+    ui = next(row for row in results if row['test'] == 'profile_ui')
+    if ui['ui_suite'] == CURRENT_UI_SUITE:
+        relative = ui['automation_artifact_directory']
+        archive = folder / relative
+        if archive.is_symlink() or not archive.resolve(strict=True).is_relative_to(folder.resolve(strict=True)):
+            raise ValueError('Automation artifact archive escapes the runtime directory')
+        verify_automation_artifacts(ui['automation_report'], archive)
     return {'android_api': profile.api, 'page_size_bytes': profile.page_size_bytes,
             'abi': 'x86_64', 'profile_ui_required': True, 'results': results}
 
@@ -61,8 +70,11 @@ def main() -> None:
             'Only the current Android minimum can be certified')
     require(type(report.get('target_sdk')) is int and report['target_sdk'] == 37,
             'The current Android target is required')
-    report['installation_tests'] = [checked_installation(p.api, p.page_size_bytes) for p in RUNTIME_PROFILES]
-    report['installation_evidence'] = from_ci_reports(report['installation_tests'], report['sha256'])
+    version = report.get('version_code')
+    require(type(version) is int and 1 <= version <= 2_100_000_000, 'Candidate version is not verified')
+    report['installation_tests'] = [checked_installation(p.api, p.page_size_bytes, version_code=version)
+                                    for p in RUNTIME_PROFILES]
+    report['installation_evidence'] = from_ci_reports(report['installation_tests'], report['sha256'], version_code=version)
     report['installation_method'] = 'adb_emulator_not_in_app_self_update'
     report['device_install_test'] = 'passed_on_emulators_not_a_physical_phone'
     save_report(report)

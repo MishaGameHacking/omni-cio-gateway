@@ -1,0 +1,47 @@
+{
+  "observed_at": "2026-10-25T11:08:09.429066+00:00",
+  "probe": "readonly_metadata_aggregate",
+  "network_access_blocked": true,
+  "process_exit_code": 0,
+  "data": {
+    "capital_amount_valid": true,
+    "collection_summary_present": true,
+    "completed_full_refresh_jobs": 11,
+    "counts": {
+      "cash_rows": 1,
+      "duplicate_position_key": 0,
+      "eligible_valued_rows": 2,
+      "generic_metadata_sector_missing": 0,
+      "no_source_currency_unknown": 1,
+      "non_cash_currency_unknown": 1,
+      "non_cash_group_missing": 1,
+      "non_cash_identity_missing": 1,
+      "non_cash_issuer_missing": 1,
+      "non_cash_rows": 1,
+      "non_cash_sector_missing": 1,
+      "positions": 2,
+      "value_currency_mismatch": 0,
+      "value_missing_or_invalid": 0,
+      "value_negative": 0
+    },
+    "discovery_matches_current_snapshot": false,
+    "metadata_methods": {
+      "missing": 2
+    },
+    "policy_sum_reconciled_within_cent": false,
+    "position_coverage_complete": true,
+    "position_types": {
+      "cash": 1,
+      "missing_or_other": 1
+    },
+    "research_record_counts": {
+      "issuer_identity": 0,
+      "news_event": 0,
+      "rating": 0,
+      "statement": 0,
+      "total_returns": 0
+    },
+    "snapshot_payload_id_matches_row": true,
+    "snapshot_present": true
+  }
+}

@@ -30,6 +30,8 @@ ADB_TRANSIENT_MARKERS = (
 UIAUTOMATOR_MIN_INTERVAL_SECONDS = 0.75
 UIAUTOMATOR_RECOVERY_SECONDS = 45
 EMULATOR_ATTEMPTS = 2
+DEFAULT_BOOT_TIMEOUT_SECONDS = 600
+BOOT_TIMEOUT_CHOICES = (600, 1200)
 
 
 class EmulatorTransportLost(OSError):
@@ -49,6 +51,71 @@ def run(args: list[str], *, timeout: int = 120, stdin: str | None = None) -> sub
         timeout=timeout,
         check=False,
     )
+
+
+def _checked_boot_timeout(seconds: int) -> int:
+    if type(seconds) is not int or seconds not in BOOT_TIMEOUT_CHOICES:
+        raise ValueError("Invalid emulator boot timeout")
+    return seconds
+
+
+def wait_for_boot(adb: str, serial: str, process, *,
+                  timeout_seconds: int = DEFAULT_BOOT_TIMEOUT_SECONDS,
+                  observation_path: Path | None = None) -> None:
+    """A bounded cold boot must actually finish; its timing is not an APK receipt."""
+    budget = _checked_boot_timeout(timeout_seconds)
+    started = time.monotonic()
+    deadline = started + budget
+    outcome = "failed"
+    failure = None
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                outcome = "timeout"
+                raise TimeoutError("Emulator boot deadline exceeded")
+            if process.poll() is not None:
+                outcome = "emulator_exited"
+                raise EmulatorTransportLost("Emulator exited before boot")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                continue
+            try:
+                boot = run(
+                    [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
+                    timeout=min(15.0, remaining),
+                )
+            except subprocess.TimeoutExpired:
+                boot = None
+            observed_at = time.monotonic()
+            if (observed_at < deadline and boot is not None
+                    and boot.returncode == 0 and boot.stdout.strip() == "1"):
+                outcome = "boot_completed"
+                return
+            remaining = deadline - observed_at
+            if remaining > 0:
+                time.sleep(min(5.0, remaining))
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        observation = {
+            "requested_seconds": budget,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "outcome": outcome,
+            "boot_completed": outcome == "boot_completed",
+            "error_type": type(failure).__name__ if failure is not None else None,
+        }
+        try:
+            if observation_path is not None:
+                temporary = observation_path.with_suffix(".next.json")
+                temporary.write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
+                os.replace(temporary, observation_path)
+            print("EMULATOR_BOOT=" + json.dumps(observation, sort_keys=True), flush=True)
+        except Exception as diagnostic_error:
+            if failure is None:
+                raise
+            failure.add_note("Boot observation unavailable: " + type(diagnostic_error).__name__)
 
 
 def is_uiautomator_dump(command: tuple[str, ...]) -> bool:
@@ -138,15 +205,27 @@ def free_emulator_port() -> int:
     raise RuntimeError("No unused emulator port")
 
 
+def _recorded_profile_exercise(device, exercise, work: Path, attempt: int) -> dict:
+    """Keep current-run PNG bytes before the next runtime overwrites shared captures."""
+    from automation_artifacts import archive_automation_artifacts
+    if type(attempt) is not int or attempt not in (1, 2) or work.name != f"attempt-{attempt}":
+        raise ValueError("Invalid owned UI evidence attempt")
+    receipt = exercise(device)
+    if not isinstance(receipt, dict):
+        raise ValueError("Profile UI did not return its completed runtime matrix")
+    source = Path(__file__).resolve().parents[2] / "app/build/outputs/apk/preview/ui-screens"
+    archive_automation_artifacts(receipt.get("automation_report"), source, work / "automation-ui")
+    return {**receipt, "automation_artifact_directory": f"attempt-{attempt}/automation-ui"}
+
+
 def record_profile_check(device, results, exercise) -> None:
     """A timeout/exception must leave an explicit failed result, not disappear."""
     result = {"test": "profile_ui", "success": False}
     results.append(result)
     try:
         receipt = exercise(device)
-        if not isinstance(receipt, dict) or set(receipt) != {
-            "ui_suite", "business_case_count", "business_cases", "portfolio_case_count", "portfolio_cases",
-        }:
+        from backend.android_runtime_contract import UI_RECEIPT_FIELDS
+        if not isinstance(receipt, dict) or set(receipt) != UI_RECEIPT_FIELDS:
             raise ValueError("Profile UI did not return its completed runtime matrix")
         fixtures = [row for row in results if row.get("test") == "debug_ui_fixture_install" and row.get("success") is True]
         if len(fixtures) != 1:
@@ -290,8 +369,10 @@ def run_attempt(
     work: Path,
     attempt: int,
     page_size_bytes: int = 4096,
+    boot_timeout_seconds: int = DEFAULT_BOOT_TIMEOUT_SECONDS,
 ) -> list[dict[str, object]]:
     """Execute the complete publication-grade contract in one fresh AVD."""
+    _checked_boot_timeout(boot_timeout_seconds)
     from artifact_test_identity import apk_digest, record_install
     from emulator_graphics import (
         EMULATOR_FEATURES, EMULATOR_GPU_MODE, snapshot_system_graphics,
@@ -496,6 +577,9 @@ def run_attempt(
             result["success"] = True
             print(label.upper() + "=success", flush=True)
 
+    emulator_environment = dict(os.environ)
+    # Keep kernel stdio independent of an inherited emulator logcat request.
+    emulator_environment.pop("ANDROID_LOG_TAGS", None)
     with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
             [
@@ -508,6 +592,7 @@ def run_attempt(
                 "-no-audio",
                 "-no-snapshot",
                 "-no-boot-anim",
+                "-show-kernel",
                 # Fix the disposable device's local zone for the actual calendar
                 # UTC/Moscow date-boundary checks; never inherit the runner host.
                 # developer.android.com/studio/run/emulator-commandline#common
@@ -529,39 +614,17 @@ def run_attempt(
                 "-accel",
                 "on" if acceleration.returncode == 0 else "off",
             ],
+            stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
             text=True,
+            env=emulator_environment,
         )
         try:
-            deadline = time.monotonic() + 600
-            while time.monotonic() < deadline:
-                if process.poll() is not None:
-                    transport_lost = True
-                    raise EmulatorTransportLost("Emulator exited before boot")
-                try:
-                    boot = run(
-                        [
-                            adb,
-                            "-s",
-                            serial,
-                            "shell",
-                            "getprop",
-                            "sys.boot_completed",
-                        ],
-                        timeout=15,
-                    )
-                except subprocess.TimeoutExpired:
-                    boot = None
-                if (
-                    boot is not None
-                    and boot.returncode == 0
-                    and boot.stdout.strip() == "1"
-                ):
-                    break
-                time.sleep(5)
-            else:
-                raise TimeoutError("Emulator boot deadline exceeded")
+            wait_for_boot(
+                adb, serial, process, timeout_seconds=boot_timeout_seconds,
+                observation_path=work / "boot-observation.json",
+            )
 
             print(
                 "ANDROID_API="
@@ -611,9 +674,13 @@ def run_attempt(
                         / "app/build/outputs/apk/debug/app-debug.apk"
                     )
                     install("debug_ui_fixture_install", debug_apk, update=True)
-                    record_profile_check(device, results, exercise)
+                    record_profile_check(device, results,
+                                         lambda actual: _recorded_profile_exercise(actual, exercise, work, attempt))
             failed = False
             return results
+        except EmulatorTransportLost:
+            transport_lost = True
+            raise
         except Exception as original:
             classified = classify_frame_failure(original, adb, serial, process)
             if classified is not original:
@@ -682,6 +749,11 @@ def main() -> None:
     parser.add_argument("--api", type=int, choices=(37,), default=37)
     parser.add_argument("--page-bytes", type=int, choices=(4096, 16384), default=4096)
     parser.add_argument("--work-dir", required=True, type=Path)
+    parser.add_argument("--boot-timeout-seconds", type=int, choices=BOOT_TIMEOUT_CHOICES,
+                        default=DEFAULT_BOOT_TIMEOUT_SECONDS,
+                        help="Cold-boot budget; 1200 explicitly selects the slow-host diagnostic.")
+    parser.add_argument("--attempts", type=int, choices=(1, 2), default=EMULATOR_ATTEMPTS,
+                        help="Fresh AVD attempts; only proven transport loss permits a retry.")
     args = parser.parse_args()
 
     apk = args.apk.resolve(strict=True)
@@ -704,6 +776,7 @@ def main() -> None:
                 work=attempt_work,
                 attempt=attempt,
                 page_size_bytes=args.page_bytes,
+                boot_timeout_seconds=args.boot_timeout_seconds,
             )
         except Exception:
             report = attempt_work / "install-results.json"
@@ -717,7 +790,7 @@ def main() -> None:
 
     adb = sdk / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
     with isolated_adb_server(adb, work):
-        run_with_transport_retry(execute)
+        run_with_transport_retry(execute, attempts=args.attempts)
 
 
 if __name__ == "__main__":

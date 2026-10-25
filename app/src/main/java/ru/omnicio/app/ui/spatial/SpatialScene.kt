@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -47,6 +48,15 @@ fun SpatialSceneRoot(
     navigationProgress: Float = 0f,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    if (LocalInspectionMode.current) {
+        // The same Compose drawing path, with no device power/thermal observers.
+        CompositionLocalProvider(
+            LocalFlatContrast provides opaque,
+            LocalFlatMotion provides SpatialMotion.Off,
+            LocalFlatTactile provides false,
+        ) { SpatialWindow(modifier, content) }
+        return
+    }
     val counters = remember { FlatDrawStats() }
     val context = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle

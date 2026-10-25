@@ -2,7 +2,7 @@ package ru.omnicio.app.ui.workspace
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
-enum class WorkspaceRoute { Appearance, Assistant, Strategies, Market, Messages, Education, NotificationSettings,
+enum class WorkspaceRoute { AnalysisSettings, Appearance, Assistant, Strategies, Market, Messages, Education, NotificationSettings,
     Discovery, Library, Devices, ActivityHistory, Goals, NewFeatures, AnalysisTimeline, Reports }
 val LocalWorkspaceNavigator = staticCompositionLocalOf<(WorkspaceRoute) -> Unit> { {} }
 

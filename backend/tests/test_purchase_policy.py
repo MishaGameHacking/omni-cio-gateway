@@ -164,7 +164,7 @@ def test_exact_price_and_liquidity_do_not_use_margin_or_invent_quotes():
     with pytest.raises(HTTPException):
         purchases.price_quotation("12.1234567891")
     now = datetime.now(timezone.utc)
-    book = {"orderbookTs": now.isoformat(), "isConsistent": True, "asks": [{"price": quotation("10"), "quantity": "1"},
+    book = {"orderbookTs": now.isoformat(), "asks": [{"price": quotation("10"), "quantity": "1"},
                                                         {"price": quotation("11"), "quantity": "100"}]}
     trading = {"limitOrderAvailableFlag": True, "apiTradeAvailableFlag": True}
     assert purchases.liquidity_reasons(book, trading, "10", 2, now) == ["insufficient_visible_liquidity_at_limit"]
@@ -228,8 +228,9 @@ def prepare_endpoint(fixture):
         return {'share_by': {'instrument': {**data['meta'], 'minPriceIncrement': quotation('0.01')}},
                 'user_info': data['info'], 'max_lots': data['capacity'], 'order_price': data['quote'],
                 'trading_status': {'instrumentUid': 'new', 'limitOrderAvailableFlag': True, 'apiTradeAvailableFlag': True},
-                'order_book': {'instrumentUid': 'new', 'orderbookTs': datetime.now(timezone.utc).isoformat(),
-                               'isConsistent': True, 'asks': [{'price': quotation('100'), 'quantity': '8'}]}}[method]
+                'order_book': {'instrumentUid': 'new', 'depth': 50,
+                               'orderbookTs': datetime.now(timezone.utc).isoformat(),
+                               'asks': [{'price': quotation('100'), 'quantity': '8'}]}}[method]
     fixture['patch'].setattr(purchases.market, 'broker_read', read)
     return {'account_id': 'owned-a', 'instrument_uid': 'new', 'lots': 1, 'limit_price': '100', 'strategy_version': 1}, data, calls
 
@@ -247,6 +248,9 @@ def test_purchase_endpoint_archives_encrypted_reproducible_evidence_and_isolates
     path = '/workspace/purchases/checks/' + result['check_id']
     archived = fixture['client'].get(path).json()
     assert archived['result'] == result
+    # The end-to-end check must accept the official unary response without
+    # silently adding the streaming-only consistency flag to its evidence.
+    assert 'isConsistent' not in archived['inputs']['book']
     assert purchases.digest(archived['inputs']) == result['input_digest']
     assert archived['historical_only']
     assert archived['requires_new_check']

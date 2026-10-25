@@ -80,22 +80,15 @@ fun WorkspaceEmpty(title: String, detail: String, action: String? = null, onActi
 
 @Composable
 fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol: SpectrumSymbol? = null) {
-    val navigate = LocalWorkspaceNavigator.current
     Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-        .padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
             Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-            SpectrumIconButton(SpectrumSymbol.Search, "Поиск по инструментам", { navigate(WorkspaceRoute.Discovery) })
-            SpectrumIconButton(SpectrumSymbol.Calendar, "История действий", { navigate(WorkspaceRoute.ActivityHistory) })
         }
-        if (subtitle.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (symbol != null) SpectrumIcon(symbol, Modifier.size(24.dp), tile = false)
-            Text(subtitle, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(start = 56.dp, end = 8.dp),
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

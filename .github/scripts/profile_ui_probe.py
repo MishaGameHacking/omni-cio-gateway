@@ -24,8 +24,8 @@ EDUCATION_LABEL = "Обучение"
 BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
-LIGHT_BACKGROUND = "fff7f8fc"
-DARK_BACKGROUND = "ff10131d"
+LIGHT_BACKGROUND = "fff8fafc"
+DARK_BACKGROUND = "ff0f172a"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -399,7 +399,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        foreground = "fff4f7ff" if expected == DARK_BACKGROUND else "ff101722"
+        foreground = "fff8fafc" if expected == DARK_BACKGROUND else "ff0f172a"
         self.marker("probe-foreground:" + foreground)
 
     def open(self):
@@ -431,7 +431,7 @@ class ProfileProbe:
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
-            self.find_all(("Капитал", "Портфель", "Действия", "Риски", "Профиль"))
+            self.find_all(("Система", "Решения", "Настройки"))
             self.find("Analyst AI" if screen == "home" else "Портфель")
             self.capture("spectrum-" + screen)
             if screen == "portfolio":
@@ -528,14 +528,14 @@ class ProfileProbe:
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
             self.tap_visible(WORKSPACE_BACK)
-            self.find("Ваш капитал")
+            self.find("Система")
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def profile_preflight(self):
-        # Exercise the previously failing production rail before system-mode
-        # changes, then repeat the same checks after those changes below.
+        # Exercise actual settings and dialogs before system-mode changes,
+        # then repeat after applying those changes below.
         self.open()
-        # This preflight validates real dialog actions and tab geometry. The
+        # This preflight validates real dialog actions and settings scroll reachability. The
         # full dialog stage below captures all three required screenshots;
         # avoid re-capturing those frames before the primary UI assertions.
         self.dialogs(capture_evidence=False)
@@ -590,7 +590,7 @@ class ProfileProbe:
         if capture_evidence:
             self.capture("security")
         self.tap_visible(CONFIRM_LABEL)
-        self.horizontal_info()
+        self.reveal(INFO_LABEL)
         if capture_evidence:
             self.capture("info")
         self.tap_profile_content(INFO_LABEL)
@@ -605,18 +605,28 @@ class ProfileProbe:
         self.tap_visible(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
-        self.tab(SETTINGS_LABEL)
+        # The redesigned settings are one scroll hierarchy. Start from a real visible top control.
+        self.reveal("Автоматический анализ", direction="start", max_swipes=20)
+        for group in ("Анализ и стратегия", "Подключения", "Интерфейс",
+                      "Приватность", "Дополнительно", "Аккаунт"):
+            node_bounds(self.reveal(group, direction="end", max_swipes=20))
+        self.reveal("Автоматический анализ", direction="start", max_swipes=20)
+        self.wait_for(lambda: checkable_label(self.tree(), "Автоматический анализ"),
+                      "Automatic analysis lost its native switch")
         self.tap_resource("profile-security-action")
         self.find(CONFIRM_LABEL)
         self.tap_visible(CONFIRM_LABEL)
-        self.tab(INFO_LABEL)
-        self.find(EDUCATION_LABEL)
-        self.tab(SETTINGS_LABEL)
-        self.find(THEME_LABEL)
+        self.reveal(THEME_LABEL, direction="start", max_swipes=20)
+
+    def automation(self):
+        from automation_ui_probe import exercise_automation
+        report = exercise_automation(self)
+        self.automation_report = report
+        self.automation_cases = [row["case"] + "@" + format(row["font_scale"], "g")
+                                 for row in report["cases"]]
 
     def education(self, screenshot="education"):
         area = "education-content"
-        self.tab(INFO_LABEL)
         self.tap(EDUCATION_LABEL)
         self.find(EDUCATION_LABEL)
         self.reveal(FIRST_LESSON, area)
@@ -629,13 +639,13 @@ class ProfileProbe:
         self.tap("Все уроки", area)
         self.find(EDUCATION_LABEL)
         self.tap(BACK_FROM_EDUCATION, area)
-        self.find("Профиль")
+        self.find("Настройки")
 
     def large_font(self):
         self.command("shell", "settings", "put", "system", "font_scale", "2.0")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
-        self.horizontal_info()
+        self.section_scroll_reset()
         self.capture("large-font")
         self.education("education-large-font")
 
@@ -682,7 +692,11 @@ def run_stage(probe, test):
 
 
 def exercise_checks(device, read_tree) -> dict:
-    """Run the unchanged screen assertions with an explicitly scoped frame source."""
+    """Run production screen assertions with an explicitly scoped frame source."""
+    checkout = str(Path(__file__).resolve().parents[2])
+    if checkout not in sys.path:
+        sys.path.insert(0, checkout)
+    from backend.android_runtime_contract import CURRENT_UI_SUITE, UI_STAGE_IDS
     probe = ProfileProbe(device)
     probe.read_tree = read_tree
     original_night = night_setting(
@@ -707,26 +721,34 @@ def exercise_checks(device, read_tree) -> dict:
             ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),
             ("workspace-interactions", probe.workspace),
+            ("automation-13-cases", probe.automation),
             ("profile-preflight", probe.profile_preflight),
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
-            ("section-scroll-reset", probe.section_scroll_reset),
+            ("settings-group-scroll", probe.section_scroll_reset),
             ("education", probe.education),
             ("large-font-200", probe.large_font),
         )
+        if tuple(name for name, _ in stages) != UI_STAGE_IDS:
+            raise AssertionError("UI stages differ from the current release contract")
+        completed_stages = []
         for name, test in stages:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             run_stage(probe, test)
+            completed_stages.append(name)
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
             "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,"
-            "persistence,about,security,section-scroll-reset,education,font-200,"
+            "persistence,about,security,settings-group-scroll,automation,education,font-200,"
             "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
-        return {"ui_suite": "analyst-2d-live-v3", "business_case_count": len(probe.business_cases),
+        return {"ui_suite": CURRENT_UI_SUITE, "ui_stages": completed_stages,
+                "business_case_count": len(probe.business_cases),
                 "business_cases": probe.business_cases, "portfolio_case_count": len(probe.portfolio_cases),
-                "portfolio_cases": probe.portfolio_cases}
+                "portfolio_cases": probe.portfolio_cases,
+                "automation_case_count": len(probe.automation_cases), "automation_cases": probe.automation_cases,
+                "automation_report": probe.automation_report}
     finally:
         from profile_snapshot import restore_device_settings
 

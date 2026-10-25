@@ -25,7 +25,8 @@ data class LivePortfolio(
 
 @Composable
 fun rememberLivePortfolio(token: String?, connected: Boolean, currency: PortfolioCurrency,
-    userId: String? = null, allowCachedOffline: Boolean = false, onSessionExpired: () -> Unit = {}): LivePortfolio {
+    userId: String? = null, allowCachedOffline: Boolean = false, enabled: Boolean = true,
+    onSessionExpired: () -> Unit = {}): LivePortfolio {
     val context = LocalContext.current
     val offline = remember(context) { OfflinePortfolioStore(context) }
     val expired by rememberUpdatedState(onSessionExpired)
@@ -47,16 +48,16 @@ fun rememberLivePortfolio(token: String?, connected: Boolean, currency: Portfoli
         mutableStateOf(RefreshSnapshot<PortfolioCurrency, PortfolioSnapshot>())
     }
     val client = remember { PortfolioDataClient() }
-    LaunchedEffect(token, userId, currency, connected, allowCachedOffline) {
-        if (token.isNullOrBlank() || userId.isNullOrBlank() || (!connected && !allowCachedOffline)) return@LaunchedEffect
+    LaunchedEffect(token, userId, currency, connected, allowCachedOffline, enabled) {
+        if (!enabled || token.isNullOrBlank() || userId.isNullOrBlank() || (!connected && !allowCachedOffline)) return@LaunchedEffect
         val restored = withContext(Dispatchers.IO) { offline.read(userId, currency) }
         if (restored != null && request.value == null) {
             request = request.copy(value = restored.snapshot, displayedQuery = restored.currency, receivedAtMillis = restored.receivedAtMillis)
             fromDisk = true
         }
     }
-    LaunchedEffect(token, connected, currency, foreground, refreshRevision) {
-        if (token.isNullOrBlank() || !connected || !foreground) return@LaunchedEffect
+    LaunchedEffect(token, connected, currency, foreground, refreshRevision, enabled) {
+        if (!enabled || token.isNullOrBlank() || !connected || !foreground) return@LaunchedEffect
         val backoff = RefreshBackoff(15_000)
         while (isActive) {
             request = request.start(currency)
@@ -99,6 +100,6 @@ fun rememberLivePortfolio(token: String?, connected: Boolean, currency: Portfoli
         failure != null -> PortfolioUiState.Error(failure)
         else -> PortfolioUiState.Loading
     }
-    return LivePortfolio(state, request.loading && foreground, failure, request.receivedAtMillis,
-        refresh = { refreshRevision++ }, cachedFromDisk = fromDisk)
+    return LivePortfolio(state, request.loading && foreground && enabled, failure, request.receivedAtMillis,
+        refresh = { if (enabled) refreshRevision++ }, cachedFromDisk = fromDisk)
 }

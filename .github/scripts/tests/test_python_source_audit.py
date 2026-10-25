@@ -1,4 +1,4 @@
-"""The audit compiles tracked files, but never runs their imports or bodies."""
+"""The audit covers workspace sources without running their imports or bodies."""
 from pathlib import Path
 import subprocess
 import sys
@@ -57,6 +57,29 @@ class PythonSourceAuditTests(unittest.TestCase):
         with patch('audit_python_sources.subprocess.run', side_effect=responses):
             names = tracked_sources(self.root)
         self.assertEqual(names, ['a b.py', 'z.py'])
+
+    def test_real_git_workspace_includes_new_source_and_excludes_ignored_outputs(self):
+        subprocess.run(['git', 'init', '--quiet'], cwd=self.root,
+                       capture_output=True, check=True, timeout=30)
+        self.write('.gitignore', b'build/\n__pycache__/\n')
+        self.write('tracked.py', b'raise RuntimeError("must not execute")\n')
+        subprocess.run(['git', 'add', '--', '.gitignore', 'tracked.py'], cwd=self.root,
+                       capture_output=True, check=True, timeout=30)
+        (self.root / 'backend').mkdir()
+        (self.root / 'build').mkdir()
+        (self.root / 'backend' / '__pycache__').mkdir()
+        self.write('backend/new_module.py', b'return 1\n')
+        self.write('build/generated.py', b'return 2\n')
+        self.write('backend/__pycache__/cached.py', b'return 3\n')
+
+        names = tracked_sources(self.root)
+        self.assertEqual(names, ['backend/new_module.py', 'tracked.py'])
+        report = audit(self.root, names)
+        self.assertEqual(report['files_checked'], 2)
+        self.assertEqual(
+            [(item['path'], item['error'], item['line']) for item in report['failures']],
+            [('backend/new_module.py', 'SyntaxError', 1)],
+        )
 
 
 if __name__ == '__main__':

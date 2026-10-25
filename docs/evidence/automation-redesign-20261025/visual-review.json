@@ -1,0 +1,136 @@
+{
+  "kind": "host-layoutlib-visual-review",
+  "android_runtime_pass": false,
+  "live_broker_data": false,
+  "source_sha256": "b9f15914a8d8230dbe08da56a14c7a91e9db7ba3f97da7b04222bef6916324b3",
+  "render_started_at": "2026-10-25T09:59:09.669884+00:00",
+  "render_finished_at": "2026-10-25T10:01:10.544095+00:00",
+  "reviewed_images": [
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/DecisionsAppearance_decisions-dark_f9d75d14_0.png",
+      "bytes": 134847,
+      "sha256": "5e77ff8890d54c3fc273abb9de2f28a9a11ad4d47e004986993ddeaffe3c2a0b",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/DecisionsAppearance_decisions-light_6dcd4ca9_0.png",
+      "bytes": 138592,
+      "sha256": "70f94fa1893a6e5ae0ae20bb21b2a6b146d018d5d6a19e8d77234d638ae359fc",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/DecisionsAppearance_decisions-narrow-large-text_629b5bf4_0.png",
+      "bytes": 122625,
+      "sha256": "f3fa10d4615d80883c9574a9725ba3ab1ac0842c4166e77cfaa8d669b09715c9",
+      "width": 840,
+      "height": 1995
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/HomeDisconnectedAppearance_home-disconnected-dark_3a5c318e_0.png",
+      "bytes": 164789,
+      "sha256": "8e05fc2a1abe2b8f1ff8278f4f06bf945d6638598b1593675b942c5be5938b4b",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/HomeDisconnectedAppearance_home-disconnected-light_ac84e17a_0.png",
+      "bytes": 167733,
+      "sha256": "7fc9c46b1e7acb9131f3504167fc1c7211c734afbb991b22fcb181fe6fa2aa82",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/HomeErrorAppearance_home-connection-error-light_cb5dd156_0.png",
+      "bytes": 177740,
+      "sha256": "d98844c45e498799b6e5eff54f7db1f6f0ab414968519b9062c4aa2241db7883",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/HomeReadyAppearance_home-narrow-large-text_b16512f4_0.png",
+      "bytes": 126413,
+      "sha256": "df70979fb3c959301dd3ec2bab372d63d828758cd944e590daf4008e60398d28",
+      "width": 840,
+      "height": 1995
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/HomeReadyAppearance_home-results-dark_4c42e84d_0.png",
+      "bytes": 168879,
+      "sha256": "ffb4c2318b502734311d1a8739158086e07e15da9c2180285760b852c1662bf1",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginAppearance_login-dark_c1812139_0.png",
+      "bytes": 70862,
+      "sha256": "fe45576678945f3f177eda3c4d841e77dcc7610eb6310423f44870fbe9f4862a",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginAppearance_login-narrow-large-text_cca7be20_0.png",
+      "bytes": 87422,
+      "sha256": "7168c08cfc436fd1aa73fc8fb351f68e4dc547b0516cdf2e893caee59f8e19d3",
+      "width": 840,
+      "height": 2363
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginErrorAppearance_login-error-dark_6f275fa5_0.png",
+      "bytes": 84615,
+      "sha256": "36378465b39606bcb94fcfcc6d5692c3a0fc3149a3c1c617f2131c659658ac09",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginLoadingAppearance_login-loading-light_15d89c22_0.png",
+      "bytes": 70631,
+      "sha256": "9db83558ee3de5799e876e911011d43f80096b56678d2b0595ad89efe08c2c53",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-dark_8ec99a9b_0.png",
+      "bytes": 167176,
+      "sha256": "098dd0a4ad9aa1320f6c63a35f61e82f54cb8241564634115c0974cdab27bd00",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-light_bc220470_0.png",
+      "bytes": 169712,
+      "sha256": "5c1535c03de1fc35c576d2ba95246d0748d33f2d340410633b2dcd42bbbb5de9",
+      "width": 1024,
+      "height": 2216
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-narrow-large-text_9824ea38_0.png",
+      "bytes": 124919,
+      "sha256": "c566d08e00ea3c76f3eae24beb87b09a965802519267a729496d7a2faf196aa2",
+      "width": 840,
+      "height": 1995
+    },
+    {
+      "path": "app/src/screenshotTestDebug/reference/ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-tall-content-sheet_7f129cf0_0.png",
+      "bytes": 468199,
+      "sha256": "4af320e9882e3185e8f689e4b8a44c27c5807a1be0d2b1b3fb9c1884afdf87e6",
+      "width": 1024,
+      "height": 6825
+    }
+  ],
+  "reviewed_count": 16,
+  "result": "reviewed",
+  "findings": [
+    "Narrow 320dp fontScale1.5 navigation no longer splits words; compact selected label and icon tabs fit.",
+    "Disconnected home no longer repeats the connection blocker as another warning or an empty results card.",
+    "Light and dark surfaces, text, borders and controls remain distinguishable in these sixteen renders.",
+    "Login initial/loading/error states and full settings content have visible readable text."
+  ],
+  "limits": [
+    "Synthetic Layoutlib renders, not installed Android or phone evidence.",
+    "No gesture, auth, live-network, native package startup or device update verified by these images."
+  ],
+  "pixel_equivalence_to_reviewed_render": true,
+  "recorded_at": "2026-10-25T10:02:10.894983+00:00"
+}

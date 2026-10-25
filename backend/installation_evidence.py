@@ -8,11 +8,14 @@ from __future__ import annotations
 import re
 
 try:
-    from .android_runtime_contract import RUNTIME_PROFILES, runtime_profile
+    from .android_runtime_contract import (RUNTIME_PROFILES, runtime_profile, CURRENT_UI_SUITE,
+        LEGACY_UI_SUITE, UI_V4_MIN_VERSION_CODE, UI_STAGE_IDS, AUTOMATION_CASE_IDS)
+    from .automation_ui_evidence import validate_automation_report
 except ImportError:
-    from android_runtime_contract import RUNTIME_PROFILES, runtime_profile
+    from android_runtime_contract import (RUNTIME_PROFILES, runtime_profile, CURRENT_UI_SUITE,
+        LEGACY_UI_SUITE, UI_V4_MIN_VERSION_CODE, UI_STAGE_IDS, AUTOMATION_CASE_IDS)
+    from automation_ui_evidence import validate_automation_report
 
-CURRENT_UI_SUITE = 'analyst-2d-live-v3'
 BUSINESS_CASE_IDS = frozenset(
     f'{route}/{scenario}@{font}'
     for route in ('risk', 'assistant', 'plans', 'strategy', 'notifications', 'analysis', 'catalogue')
@@ -70,8 +73,21 @@ def _case_receipt(record: dict, group: str, expected: frozenset[str]) -> int:
     return len(cases)
 
 
-def validate_ui_receipt(record: object, fixture_digest: str) -> dict[str, int]:
-    if not isinstance(record, dict) or record.get('ui_suite') != CURRENT_UI_SUITE:
+def _legacy_ui_allowed(version_code: int | None) -> bool:
+    # Missing version information may never enable legacy certification.
+    if version_code is None:
+        return False
+    if type(version_code) is not int or not 1 <= version_code <= 2_100_000_000:
+        raise InstallationEvidenceError("invalid_candidate_version_code")
+    return version_code < UI_V4_MIN_VERSION_CODE
+
+
+def validate_ui_receipt(record: object, fixture_digest: str, *, version_code: int | None = None) -> dict[str, int]:
+    historical = _legacy_ui_allowed(version_code)
+    if not isinstance(record, dict):
+        raise InstallationEvidenceError('current_ui_suite_evidence_required')
+    suite = record.get('ui_suite')
+    if suite != CURRENT_UI_SUITE and not (historical and suite == LEGACY_UI_SUITE):
         raise InstallationEvidenceError('current_ui_suite_evidence_required')
     counts = {
         'business_case_count': _case_receipt(record, 'business', BUSINESS_CASE_IDS),
@@ -79,7 +95,20 @@ def validate_ui_receipt(record: object, fixture_digest: str) -> dict[str, int]:
     }
     if _digest(record.get('fixture_apk_sha256')) != _digest(fixture_digest):
         raise InstallationEvidenceError('ui_artifact_mismatch')
-    return counts
+    if suite == LEGACY_UI_SUITE:
+        return counts  # Preserve the exact historical summary; no v4 proof is invented.
+    stages = record.get("ui_stages")
+    if not isinstance(stages, list) or tuple(stages) != UI_STAGE_IDS:
+        raise InstallationEvidenceError("ui_stage_matrix_incomplete")
+    counts["automation_case_count"] = _case_receipt(record, "automation", AUTOMATION_CASE_IDS)
+    archive = record.get("automation_artifact_directory")
+    if not isinstance(archive, str) or re.fullmatch(r"attempt-[12]/automation-ui", archive) is None:
+        raise InstallationEvidenceError("automation_artifact_directory_invalid")
+    try:
+        validate_automation_report(record.get("automation_report"), fixture_digest)
+    except ValueError as error:
+        raise InstallationEvidenceError(str(error)) from error
+    return {**counts, "ui_stage_count": len(stages)}
 
 
 def _runtime(run: dict):
@@ -102,7 +131,7 @@ def _kernel_evidence(record: dict, profile, digest: str) -> None:
         raise InstallationEvidenceError('installation_artifact_mismatch')
 
 
-def _one_emulator(run: dict, digest: str) -> tuple[str, dict]:
+def _one_emulator(run: dict, digest: str, version_code: int | None = None) -> tuple[str, dict]:
     profile = _runtime(run)
     records = _results(run.get('results'))
     bound = REQUIRED_TESTS - {'previous_clean_install', 'debug_ui_fixture_install', 'profile_ui'}
@@ -112,7 +141,7 @@ def _one_emulator(run: dict, digest: str) -> tuple[str, dict]:
     if _digest(records['previous_clean_install'].get('apk_sha256')) == digest:
         raise InstallationEvidenceError('upgrade_reinstalled_same_artifact')
     fixture = _digest(records['debug_ui_fixture_install'].get('apk_sha256'))
-    counts = validate_ui_receipt(records['profile_ui'], fixture)
+    counts = validate_ui_receipt(records['profile_ui'], fixture, version_code=version_code)
     _kernel_evidence(records['kernel_page_size'], profile, digest)
     return profile.key, {
         'clean_install': True, 'upgrade': True, 'upgrade_launch': True, 'launch': True,
@@ -121,9 +150,11 @@ def _one_emulator(run: dict, digest: str) -> tuple[str, dict]:
     }
 
 
-def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_16kb: bool = True) -> dict:
+def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_16kb: bool = True,
+                    version_code: int | None = None) -> dict:
     """Both current-OS page-size profiles are mandatory; no reduced publication path."""
     digest = _digest(apk_sha256)
+    _legacy_ui_allowed(version_code)
     if require_runtime_16kb is not True:
         raise InstallationEvidenceError('full_runtime_matrix_required')
     if not isinstance(installations, list) or len(installations) != len(RUNTIME_PROFILES):
@@ -132,7 +163,7 @@ def from_ci_reports(installations: object, apk_sha256: str, *, require_runtime_1
     for run in installations:
         if not isinstance(run, dict):
             raise InstallationEvidenceError('invalid_emulator_report')
-        key, checked = _one_emulator(run, digest)
+        key, checked = _one_emulator(run, digest, version_code)
         if key in runtimes:
             raise InstallationEvidenceError('duplicate_runtime_profile')
         runtimes[key] = checked

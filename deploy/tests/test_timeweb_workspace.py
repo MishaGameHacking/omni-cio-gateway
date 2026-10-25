@@ -164,7 +164,9 @@ class PublicUpgradePipelineTests(unittest.TestCase):
 
     def test_resolver_rejects_nonupgrade_and_changed_identity(self):
         for version in (36, 37, True, "38"):
-            candidate = self.candidate_report(version)
+            # Build valid evidence first, then corrupt only the version under test.
+            candidate = self.candidate_report()
+            candidate["version_code"] = version
             with self.subTest(version=version), self.assertRaises(RuntimeError):
                 workspace.resolve_upgrade_baseline(candidate, candidate["sha256"])
         for field, value in (
@@ -242,7 +244,7 @@ class PublicUpgradePipelineTests(unittest.TestCase):
                 if row["test"] == "previous_clean_install":
                     row["apk_sha256"] = baseline["apk_sha256"]
         report["installation_evidence"] = from_ci_reports(
-            report["installation_tests"], report["sha256"])
+            report["installation_tests"], report["sha256"], version_code=report["version_code"])
         (out / "apk-verification.json").write_text(json.dumps(report))
         state = self.base / "state"
         state.mkdir(exist_ok=True)

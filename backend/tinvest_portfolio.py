@@ -228,15 +228,25 @@ def _portfolio_positions(
     portfolio: dict[str, Any],
     positions: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    cash_observations = positions.get("money")
+    if cash_observations is not None and not isinstance(cash_observations, list):
+        raise HTTPException(502, "tinvest_invalid_money")
+    # Keep this adapter's conservative missing/null portfolio fallback.
+    # An explicit list selects GetPositions.money as the cash source, as in
+    # the full dashboard, even when empty; do not infer identity from amounts.
+    cash_supplied = isinstance(cash_observations, list)
     result = [item for raw in portfolio.get("positions") or []
+              if not (cash_supplied and isinstance(raw, dict) and raw.get("instrumentType") == "currency")
               if (item := _portfolio_position(raw)) is not None]
     seen = {item["id"] for item in result}
 
-    for raw_money in positions.get("money") or []:
+    for raw_money in cash_observations or []:
         if not isinstance(raw_money, dict):
-            continue
+            raise HTTPException(502, "tinvest_invalid_money")
         amount, currency = _money_decimal(raw_money)
-        if not currency or amount == 0:
+        if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
+            raise HTTPException(502, "tinvest_invalid_money")
+        if amount == 0:
             continue
         identifier = f"cash:{currency}"
         if identifier in seen:

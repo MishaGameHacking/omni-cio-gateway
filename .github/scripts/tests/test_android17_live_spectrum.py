@@ -17,8 +17,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 37", gradle)
-        self.assertIn('versionName = "0.12.1"', gradle)
+        self.assertIn("versionCode = 38", gradle)
+        self.assertIn('versionName = "0.13.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -81,22 +81,41 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         self.assertIn("back?.value = 0f", back)
         self.assertIn("LocalFlatTactile.current", back)
 
-    def test_home_uses_real_state_for_avatar_and_live_shortcuts(self):
+    def test_system_home_uses_confirmed_analysis_and_three_native_destinations(self):
         home = self.source("ui/home/HomeScreen.kt")
-        shortcuts = self.source("ui/home/HomeQuickActions.kt")
+        body = home.split("private fun automationStateTitle", 1)[0]
         for token in (
-            "SpectrumAnalystAvatar(",
-            "AnalystAvatarMood.Attention",
-            "AnalystAvatarMood.Waiting",
-            "AnalystAvatarMood.Ready",
-            "snapshot?.warnings?.isNotEmpty()",
+            'rememberWorkspaceResource("/automation/status")',
+            'status?.records("blockers")',
+            'resource.error',
+            'workspaceForeground()',
+            'onOpenRecommendations',
+            'onOpenProfile',
+            'onConnect',
+            '"Система"',
+            '"Результаты"',
+            '"Что мешает работе"',
+            '"Режим наблюдения"',
         ):
-            self.assertIn(token, home)
+            self.assertIn(token, body)
+        for duplicate_portfolio_view in ("PortfolioUiState.Ready", "InteractiveBalance(", "snapshot.totalValue"):
+            self.assertNotIn(duplicate_portfolio_view, body)
+        for invented in ("model is running", "AI score", "guaranteed return"):
+            self.assertNotIn(invented, home.lower())
+        bar = self.source("ui/AnalystBottomBar.kt")
+        primary = re.search(r"primaryTabs\s*=\s*listOf\(([^)]+)\)", bar)
+        self.assertIsNotNone(primary)
+        self.assertEqual(re.findall(r"AnalystTab\.(\w+)", primary.group(1)), ["Home", "Actions", "Profile"])
+        for destination, label in (("Home", "Система"), ("Actions", "Решения"), ("Profile", "Настройки")):
+            self.assertIn(f'AnalystTab.{destination} -> "{label}"', bar)
+        self.assertIn("role = Role.Tab", bar)
+        self.assertIn(".selectableGroup()", bar)
+
+    def test_secondary_portfolio_tools_preserve_their_existing_callbacks(self):
+        shortcuts = self.source("ui/home/HomeQuickActions.kt")
         for token in ("onAssets", "onPayments", "Мои активы", "Выплаты"):
             self.assertIn(token, shortcuts)
         self.assertNotIn("SpectrumLiveFeatureIcon(", shortcuts)
-        for invented in ("model is running", "AI score", "guaranteed return"):
-            self.assertNotIn(invented, home.lower())
 
     def test_required_update_has_its_own_live_background_and_alert(self):
         screen = self.source("ui/spectrum/RequiredUpdateScreen.kt")

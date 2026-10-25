@@ -370,16 +370,25 @@ def trading_section(user: Any, uid: str, meta: dict) -> dict:
 def liquidity_section(user: Any, uid: str, meta: dict) -> dict:
     with details.BrokerReader(user) as reader:
         raw = broker_read(reader, 'order_book', {'instrumentId': uid, 'depth': 1})
-    if raw.get('instrumentUid') not in {None, uid}:
+    if raw.get('instrumentUid') != uid:
         raise HTTPException(502, 'order_book_identity_mismatch')
     observed = now_iso()
     ref = source('GetOrderBook', uid, observed, ttl=30)
+    try:
+        age = (timestamp(observed) - timestamp(raw.get('orderbookTs'))).total_seconds()
+        current = 0 <= age < 60
+    except ValueError:
+        current = False
     def side(name):
         rows = raw.get(name, [])
-        if not isinstance(rows, list) or not rows:
+        if not isinstance(rows, list):
+            raise HTTPException(502, 'order_book_value_invalid')
+        if not rows:
             return None
+        if not isinstance(rows[0], dict):
+            raise HTTPException(502, 'order_book_value_invalid')
         price, quantity = decimal(rows[0].get('price')), decimal(rows[0].get('quantity'))
-        if price is None or quantity is None or quantity < 0 or quantity != quantity.to_integral_value():
+        if price is None or price <= 0 or quantity is None or quantity <= 0 or quantity != quantity.to_integral_value():
             raise HTTPException(502, 'order_book_value_invalid')
         return {'price': text_number(price), 'quantity_lots': text_number(quantity)}
     bid, ask = side('bids'), side('asks')
@@ -387,11 +396,20 @@ def liquidity_section(user: Any, uid: str, meta: dict) -> dict:
     spread = decimal(ask['price']) - decimal(bid['price']) if bid and ask else None
     if spread is not None and spread < 0:
         raise HTTPException(502, 'order_book_crossed_observation')
+    # Unary GetOrderBookResponse has orderbookTs, not the stream's isConsistent.
+    # Absence is not a consistency assertion; reject an explicit adverse flag.
+    consistency = raw.get('isConsistent')
+    flag_acceptable = 'isConsistent' not in raw or consistency is True
+    reason = None
+    if not current:
+        reason = 'order_book_stale_or_undated'
+    elif not bid or not ask or not flag_acceptable:
+        reason = 'order_book_empty_or_not_consistent'
     return section({'best_bid': bid, 'best_ask': ask, 'spread': text_number(spread), 'unit': unit, 'unit_label': label,
-                    'currency': currency, 'depth_consistent': raw.get('isConsistent'),
+                    'currency': currency, 'depth_consistent': consistency if type(consistency) is bool else None,
                     'basis': 'observed_top_of_book_not_guarantee_of_liquidation_or_execution'},
-                   state='available' if bid and ask and raw.get('isConsistent') is True else 'partial',
-                   reason=None if bid and ask and raw.get('isConsistent') is True else 'order_book_empty_or_not_consistent', as_of=observed, sources=[ref])
+                   state='available' if reason is None else 'partial',
+                   reason=reason, as_of=observed, sources=[ref])
 
 
 def load_dossier(user: Any, uid: str) -> dict:

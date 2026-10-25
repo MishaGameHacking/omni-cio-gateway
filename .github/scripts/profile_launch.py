@@ -30,7 +30,9 @@ PORTFOLIO_CASES = (
     ("quotes", "ready"), ("markets", "ready"), ("appearance", "ready"),
 )
 PORTFOLIO_SCREENS = {"portfolio-" + route for route, _ in PORTFOLIO_CASES}
-FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor"} | BUSINESS_SCREENS | PORTFOLIO_SCREENS
+AUTOMATION_SCREENS = {"automation-" + route for route in ("home", "settings", "decisions")}
+AUTOMATION_SCENARIOS = {"ready", "not_connected", "paused", "error", "conflict"}
+FIXTURE_SCREENS = {"profile", "home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor"} | BUSINESS_SCREENS | PORTFOLIO_SCREENS | AUTOMATION_SCREENS
 
 
 def validate_fixture(expected_screen: str | None, scenario: str | None = None) -> None:
@@ -41,6 +43,10 @@ def validate_fixture(expected_screen: str | None, scenario: str | None = None) -
     if expected_screen not in FIXTURE_SCREENS:
         raise ValueError("Unknown fixture screen")
     if scenario is None:
+        return
+    if expected_screen in AUTOMATION_SCREENS:
+        if scenario not in AUTOMATION_SCENARIOS or scenario == "conflict" and expected_screen != "automation-settings":
+            raise ValueError("Unknown automation fixture scenario")
         return
     if expected_screen in PORTFOLIO_SCREENS:
         if (expected_screen.removeprefix("portfolio-"), scenario) not in PORTFOLIO_CASES:

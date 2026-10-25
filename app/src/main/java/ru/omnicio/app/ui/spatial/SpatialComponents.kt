@@ -57,8 +57,8 @@ fun SpatialSurface(
     val layered = LocalWorkspacePreferences.current.value.depth
     val highContrast = LocalFlatContrast.current
     val shape = RoundedCornerShape(when (kind) {
-        SpatialSurfaceKind.Card -> 22.dp
-        SpatialSurfaceKind.Dock -> 26.dp
+        SpatialSurfaceKind.Card -> 18.dp
+        SpatialSurfaceKind.Dock -> 20.dp
         SpatialSurfaceKind.Chip -> 14.dp
         SpatialSurfaceKind.Heading -> 0.dp
         else -> 18.dp
@@ -71,10 +71,10 @@ fun SpatialSurface(
     }
     val border = when {
         kind == SpatialSurfaceKind.Heading -> Color.Transparent
-        state == SpatialState.Selected -> palette.violet.copy(alpha = .65f)
+        state == SpatialState.Selected -> MaterialTheme.colorScheme.primary
         state == SpatialState.Attention -> palette.rose
-        emphasized && layered -> palette.violet.copy(alpha = if (highContrast) .65f else .22f)
-        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (highContrast) 1f else .55f)
+        emphasized && layered -> if (highContrast) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+        else -> if (highContrast) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant
     }
     Box(modifier.shadow(if (kind == SpatialSurfaceKind.Card && layered) 2.dp else 0.dp, shape, clip = false)
         .clip(shape).background(fill).border(1.dp, border, shape)) {

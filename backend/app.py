@@ -26,10 +26,11 @@ from jwt import PyJWKClient
 from pydantic import BaseModel
 
 try:
-    from . import client_updates, broker_connections
+    from . import client_updates, broker_connections, client_diagnostics
 except ImportError:
     import client_updates
     import broker_connections
+    import client_diagnostics
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/var/lib/analyst-ai/backend.db"))
 TELEGRAM_CLIENT_ID = os.environ["TELEGRAM_CLIENT_ID"]
@@ -165,6 +166,7 @@ def init_db() -> None:
 
     client_updates.initialize(connect)
     broker_connections.initialize(connect)
+    client_diagnostics.initialize(connect)
 
 
 def hash_token(value: str) -> str:
@@ -687,6 +689,12 @@ except ImportError:
 
 app.include_router(autonomous_ai_router)
 
+try:
+    from .autonomous_controller import router as autonomous_controller_router
+except ImportError:
+    from autonomous_controller import router as autonomous_controller_router
+app.include_router(autonomous_controller_router)
+
 
 try:
     from .portfolio_details import router as portfolio_details_router
@@ -696,6 +704,7 @@ app.include_router(portfolio_details_router)
 
 
 client_updates.install_routes(app, connect, session_user)
+client_diagnostics.install_routes(app, session_user, connect)
 
 try:
     from .portfolio_research import router as portfolio_research_router

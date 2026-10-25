@@ -1,0 +1,37 @@
+{
+  "observed_at": "2026-10-25T11:41:10.960390+00:00",
+  "source_sha256": "955661284edcb9cf5baa27d3bb1984275dd361857a58fb27b4905dffd87c6d1e",
+  "probe_exit_code": 0,
+  "result": {
+    "capital_amount_valid": true,
+    "collection_summary_present": true,
+    "completed_full_refresh_jobs": 13,
+    "counts": {
+      "cash_rows": 1,
+      "duplicate_position_key": 0,
+      "eligible_valued_rows": 1,
+      "positions": 1,
+      "value_currency_mismatch": 0,
+      "value_missing_or_invalid": 0,
+      "value_negative": 0
+    },
+    "discovery_matches_current_snapshot": false,
+    "metadata_methods": {
+      "missing": 1
+    },
+    "policy_sum_reconciled_within_cent": true,
+    "position_coverage_complete": true,
+    "position_types": {
+      "cash": 1
+    },
+    "research_record_counts": {
+      "issuer_identity": 0,
+      "news_event": 0,
+      "rating": 0,
+      "statement": 0,
+      "total_returns": 0
+    },
+    "snapshot_payload_id_matches_row": true,
+    "snapshot_present": true
+  }
+}

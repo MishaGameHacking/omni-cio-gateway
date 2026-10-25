@@ -88,6 +88,15 @@ STANDARD_DAILY_LIMIT = max(0, int(os.getenv("ANALYSIS_STANDARD_DAILY_LIMIT", "3"
 PREMIUM_DAILY_LIMIT = max(0, int(os.getenv("ANALYSIS_PREMIUM_DAILY_LIMIT", "1")))
 MAX_FEED_LIMIT = 100
 
+
+def _automation():
+    # Import after the FastAPI composition root exists; no work at import time.
+    try:
+        from . import autonomous_controller
+    except ImportError:
+        import autonomous_controller
+    return autonomous_controller
+
 _scheduler_task: asyncio.Task[None] | None = None
 _scheduler_owner = f"pid-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
@@ -233,6 +242,8 @@ def init_autonomous_db() -> None:
         from .volume import initialize as initialize_workspace
     except ImportError:
         from volume import initialize as initialize_workspace
+    # Controller tables must exist before workspace installs live triggers.
+    _automation().initialize()
     initialize_workspace()
 
 
@@ -785,6 +796,8 @@ def run_user_analysis(
         user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if user is None:
         raise HTTPException(status_code=404, detail="analysis_user_not_found")
+    if not _automation().preferences(user_id)["enabled"]:
+        return {"state": "paused", "reason": "automation_paused", "tier": "none", "card_id": None}
     if user["tinvest_token_encrypted"] is None:
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
 
@@ -821,6 +834,9 @@ def _run_connected_analysis(
     except ImportError:
         from volume_monitor import ingest, record_check, trigger_evidence
     workspace_observation = ingest(user, snapshot, current_time)
+    # A first observation is recorded as such, without inventing a transaction
+    # or requiring a paid model. Discovery is separate from trade execution.
+    _automation().observe_and_discover(user, workspace_observation["snapshot"], current_time)
     snapshot = {**snapshot, "_volume_risk_fingerprint": workspace_observation["risk_fingerprint"],
                 "_volume_news_fingerprint": workspace_observation["news_fingerprint"],
                 "_volume_critical_risk": workspace_observation["critical_risk"],
@@ -867,7 +883,11 @@ def _run_connected_analysis(
         # Missing credentials are free; uncertain network failures are not retried
         # for free. Reservation is never rolled back after a model attempt.
         assert_monitoring_access(backend.connect)
-        guarded_client = GuardedAIClient(user_id, backend.connect)
+        guarded_client = GuardedAIClient(
+            user_id, backend.connect,
+            budget_guard=lambda db: _automation().assert_enabled_in(db, user_id),
+            before_send=lambda: _automation().assert_enabled(user_id),
+        )
         guarded_client.check_ready(decision.tier)
         if not _reserve_budget(user_id, current_time, decision.tier):
             raise TimewebAIConfigurationError("analysis_budget_exhausted")
@@ -893,6 +913,7 @@ def _run_connected_analysis(
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
     assert_monitoring_access(backend.connect)
+    _automation().assert_enabled(user_id)
     run_id = _record_run(
         user_id=user_id,
         decision=decision,
@@ -951,9 +972,18 @@ def run_scheduler_cycle() -> dict[str, int]:
     init_autonomous_db()
     queue = AnalysisQueue(backend.connect)
     with closing(backend.connect()) as db:
-        users = db.execute("SELECT id FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
+        users = db.execute("SELECT * FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
     for user in users:
-        queue.enqueue(int(user['id']))
+        user_id = int(user["id"])
+        if not _automation().preferences(user_id)["enabled"]:
+            continue
+        try:
+            _automation().enqueue_collection(user)
+        except HTTPException:
+            # A concurrent pause/reconnect or a full interactive queue must not
+            # prevent deterministic monitoring of the other eligible users.
+            logger.warning("Automatic workspace collection was not queued")
+        queue.enqueue(user_id)
     try:
         from .volume_jobs import drain as drain_workspace
     except ImportError:
