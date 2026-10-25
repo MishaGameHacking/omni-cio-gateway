@@ -1,0 +1,73 @@
+name: Inspect laptop readiness for unattended development
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/windows-unattended-readiness.yml]
+permissions:
+  contents: read
+  checks: write
+concurrency:
+  group: analyst-windows-unattended-readiness
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - name: Inspect existing tools and restart prerequisites without changing settings
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'Unexpected host' }
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+          $os = Get-CimInstance Win32_OperatingSystem
+          $services = @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions.runner.%'" | ForEach-Object {
+            @{name=$_.Name; state=$_.State; start_mode=$_.StartMode; account=$_.StartName}
+          })
+          $tools = @{}
+          foreach ($name in @('git','py','node','java','powershell','wsl')) {
+            $found = Get-Command $name -ErrorAction SilentlyContinue
+            $tools[$name] = [bool]$found
+          }
+          $sdk = 'C:\actions-runner-2\_work\_tool\AndroidSdk\sdk'
+          $report = [ordered]@{
+            checked_at_utc=[DateTime]::UtcNow.ToString('o')
+            elevated=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+            service_account=$identity.Name
+            os_version=$os.Version
+            uptime_hours=[Math]::Round(((Get-Date)-$os.LastBootUpTime).TotalHours,2)
+            free_ram_gb=[Math]::Round($os.FreePhysicalMemory/1MB,2)
+            free_disk_gb=[Math]::Round((Get-PSDrive C).Free/1GB,2)
+            tools=$tools
+            sdk=@{exists=(Test-Path $sdk);adb=(Test-Path "$sdk\platform-tools\adb.exe");emulator=(Test-Path "$sdk\emulator\emulator.exe");platform37=(Test-Path "$sdk\platforms\android-37.0");build_tools37=(Test-Path "$sdk\build-tools\37.0.0")}
+            runner_services=$services
+            worker_count=@(Get-Process 'Runner.Worker' -ErrorAction SilentlyContinue).Count
+            existing_restart_task=@(Get-ScheduledTask -TaskName 'AnalystAI*' -ErrorAction SilentlyContinue | ForEach-Object { @{name=$_.TaskName;state=[string]$_.State} })
+          }
+          $wsl = (& wsl.exe --list --quiet 2>&1 | Out-String) -replace "\x00",''
+          $report.wsl_ubuntu24 = ($wsl -match 'Ubuntu-24.04')
+          $report.wsl_list_exit = $LASTEXITCODE
+          $power = @{}
+          foreach ($item in @(@('sleep','SUB_SLEEP','STANDBYIDLE'),@('hibernate','SUB_SLEEP','HIBERNATEIDLE'),@('lid','SUB_BUTTONS','LIDACTION'))) {
+            $raw = (& powercfg.exe /query SCHEME_CURRENT $item[1] $item[2] 2>&1 | Out-String)
+            $matches = [regex]::Matches($raw,'0x[0-9a-fA-F]{8}')
+            $power[$item[0]] = @($matches | Select-Object -Last 2 | ForEach-Object {$_.Value})
+          }
+          $report.power_ac_dc = $power
+          $json = $report | ConvertTo-Json -Depth 8
+          $json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'analyst-readiness.json') -Encoding UTF8
+          Write-Output $json
+      - name: Record only the bounded setup report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const raw=fs.readFileSync(path.join(process.env.RUNNER_TEMP,'analyst-readiness.json'),'utf8').replace(/^\uFEFF/,'');
+            const report=JSON.parse(raw);
+            if(raw.length>16000) throw new Error('Unexpected report size');
+            await github.rest.checks.create({
+              ...context.repo, name:'Laptop unattended readiness report',
+              head_sha:context.sha, status:'completed', conclusion:'success',
+              output:{title:'Read-only laptop prerequisites',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}
+            });
