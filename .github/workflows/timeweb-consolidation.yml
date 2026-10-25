@@ -1,4 +1,4 @@
-name: Remove verified redundant Timeweb server and temporary IP
+name: Verify completed Timeweb retirement and remove detached IP
 'on':
   push:
     branches:
@@ -20,7 +20,7 @@ jobs:
         ref: cd1866ee944ccea2259669f4293379241fd4ee02
         path: .transport-admin
         persist-credentials: false
-    - name: Recheck preserved data and live replacement, then delete only the retired server and IP
+    - name: Verify old server is gone and remove only its detached temporary IP
       env:
         TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
         PYTHONUNBUFFERED: '1'
@@ -138,55 +138,60 @@ jobs:
                 raise RuntimeError('retirement_'+role+'_check_failed')
             assert len(result.stdout)<16384
             return json.loads(result.stdout)
-        old_meta=server(9415007,'Analyst AI PRO','31.130.128.55',4,6144)
-        new_meta=server(9417611,'Analyst AI runtime 20261025','83.217.195.29',2,4096)
-        rows=ips();exact_ip(rows,MAIN_FLOAT,'83.217.195.29',9417611);exact_ip(rows,TEMP_FLOAT,'31.130.128.55',9415007)
-        print('RETIREMENT_API_IDENTITIES='+json.dumps({'old':old_meta,'replacement':new_meta}),flush=True)
+        def inventory():
+            found=[]
+            for offset in range(0,2000,100):
+                status,data=api('GET','/servers?limit=100&offset='+str(offset));assert status==200
+                page=data['servers'];found.extend({'id':s['id'],'name':s['name'],'project_id':s['project_id']} for s in page)
+                if len(page)<100:return found
+            raise RuntimeError('final_inventory_pagination_limit')
+
+        # Prior run40215155470 returned204 for DELETE /servers/9415007 after all gates.
+        # Do not issue that DELETE again or restore any previous runtime snapshot.
+        status,_=api('GET','/servers/9415007')
+        print('RETIRED_SERVER_GET_HTTP='+str(status),flush=True)
+        for attempt in range(24):
+            servers=inventory()
+            if all(row['id']!=9415007 for row in servers):break
+            time.sleep(5)
+        else:raise RuntimeError('retired_server_still_listed')
+        assert len(servers)==1 and servers[0]['id']==9417611,'unexpected_final_server_inventory'
+        final_server=server(9417611,'Analyst AI runtime 20261025','83.217.195.29',2,4096)
+        rows=ips();exact_ip(rows,MAIN_FLOAT,'83.217.195.29',9417611)
+        print('RETIREMENT_CURRENT_INVENTORY='+json.dumps({'servers':servers,'ips':[{k:row.get(k) for k in ('id','ip','project_id','availability_zone','resource_id','resource_type')} for row in rows]}),flush=True)
         with owned_remote(9417611,'Analyst AI runtime 20261025','83.217.195.29','ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU runner@runnervmtai0g') as new:
-            new_check=host_check(new,'new')
-            with owned_remote(9415007,'Analyst AI PRO','31.130.128.55','ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIItaYR3yYmfPA7lJwNgOBGMr0Tu/ioG+Zarm+Utc33z0') as old:
-                old_check=host_check(old,'old')
-            before=public_probe()
-            print('RETIREMENT_PREDELETE_VERIFIED='+json.dumps({'replacement':new_check,'retired':old_check,'https':before}),flush=True)
-            server(9415007,'Analyst AI PRO','31.130.128.55',4,6144)
-            server(9417611,'Analyst AI runtime 20261025','83.217.195.29',2,4096)
-            exact_ip(ips(),MAIN_FLOAT,'83.217.195.29',9417611)
-            status,data=api('DELETE','/servers/9415007')
-            print('RETIREMENT_DELETE_SERVER_HTTP='+str(status),flush=True)
-            assert status==204,'server_deletion_not_completed_or_confirmation_required'
-            for _ in range(60):
-                status,_=api('GET','/servers/9415007')
-                if status==404:break
-                assert status==200;time.sleep(5)
-            else:raise RuntimeError('server_deletion_not_visible')
-            for _ in range(36):
+            new_check=host_check(new,'new');before=public_probe()
+            print('RETIREMENT_REPLACEMENT_REVERIFIED='+json.dumps({'runtime':new_check,'https':before}),flush=True)
+            for attempt in range(36):
                 rows=ips();exact_ip(rows,MAIN_FLOAT,'83.217.195.29',9417611)
                 matches=[row for row in rows if row['id']==TEMP_FLOAT]
                 if not matches:break
-                assert len(matches)==1 and matches[0]['ip']=='31.130.128.55' and matches[0]['resource_id'] in (None,9415007)
-                if matches[0]['resource_id'] is None:
-                    exact_ip(rows,TEMP_FLOAT,'31.130.128.55',None)
-                    status,_=api('DELETE','/floating-ips/'+TEMP_FLOAT);assert status==204
-                    print('RETIREMENT_DELETE_TEMP_IP_HTTP='+str(status),flush=True);break
+                assert len(matches)==1
+                row=matches[0]
+                assert row['ip']=='31.130.128.55' and row['project_id']==2941515 and row['availability_zone']=='ams-1'
+                assert row['resource_id'] in (None,9415007) and row['resource_type'] in (None,'server')
+                if row['resource_id'] is None:
+                    status,_=api('DELETE','/floating-ips/'+TEMP_FLOAT)
+                    print('RETIREMENT_DELETE_TEMP_IP_HTTP='+str(status),flush=True)
+                    assert status in (204,404),'temporary_ip_deletion_not_confirmed'
+                    break
                 time.sleep(5)
             else:raise RuntimeError('retired_ip_still_attached')
-            rows=ips();exact_ip(rows,MAIN_FLOAT,'83.217.195.29',9417611);assert all(row['id']!=TEMP_FLOAT for row in rows)
-            servers=[]
-            for offset in range(0,2000,100):
-                status,data=api('GET','/servers?limit=100&offset='+str(offset));assert status==200
-                page=data['servers'];servers.extend({'id':s['id'],'name':s['name'],'project_id':s['project_id']} for s in page)
-                if len(page)<100:break
-            else:raise RuntimeError('final_inventory_pagination_limit')
-            assert len(servers)==1 and servers[0]['id']==9417611,'unexpected_final_server_inventory'
+            for attempt in range(24):
+                rows=ips();exact_ip(rows,MAIN_FLOAT,'83.217.195.29',9417611)
+                if all(row['id']!=TEMP_FLOAT for row in rows):break
+                time.sleep(5)
+            else:raise RuntimeError('retired_ip_still_listed')
+            servers=inventory();assert len(servers)==1 and servers[0]['id']==9417611
             assert len(rows)==1,'unexpected_final_ip_inventory'
             final_server=server(9417611,'Analyst AI runtime 20261025','83.217.195.29',2,4096)
             status,resources=api('GET','/projects/2941515/resources');assert status==200
             counts={key:len(value) for key,value in resources.items() if isinstance(value,list)}
+            print('RETIREMENT_FINAL_RESOURCE_COUNTS='+json.dumps(counts),flush=True)
             assert counts.get('servers')==1 and counts.get('floating_ips')==1 and counts.get('dedicated_servers')==0
             after=public_probe();after_host=host_check(new,'new')
-            receipt={'kind':'timeweb_cleanup_complete','finished_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'deleted_server_id':9415007,'deleted_server_name':'Analyst AI PRO','deleted_public_ip':'31.130.128.55','deleted_floating_ip_id':TEMP_FLOAT,'remaining_server':final_server,'remaining_servers':servers,'remaining_public_ips':1,'project_resource_counts':counts,'replacement':after_host,'public':after,'domain_unchanged':DOMAIN,'preservation_archive':'/var/backups/analyst-ai-retired-9415007-20261025/preservation.tar.gz','preservation_sha256':'8b29d3c1e790281f99f9ed824c7d8d6b1c183df43c0e4e6af0ec810f8f518ec9','no_builds_or_application_tests_on_timeweb':True,'phone_installation_not_claimed':True}
+            receipt={'kind':'timeweb_cleanup_complete','finished_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'deleted_server_id':9415007,'deleted_server_name':'Analyst AI PRO','server_delete_http':204,'server_delete_run_id':40215155470,'deleted_public_ip':'31.130.128.55','deleted_floating_ip_id':TEMP_FLOAT,'remaining_server':final_server,'remaining_servers':servers,'remaining_public_ips':1,'project_resource_counts':counts,'replacement':after_host,'public':after,'domain_unchanged':DOMAIN,'preservation_archive':'/var/backups/analyst-ai-retired-9415007-20261025/preservation.tar.gz','preservation_sha256':'8b29d3c1e790281f99f9ed824c7d8d6b1c183df43c0e4e6af0ec810f8f518ec9','no_builds_or_application_tests_on_timeweb':True,'phone_installation_not_claimed':True,'final_verification_run_id':int(os.environ['GITHUB_RUN_ID'])}
             code="import pathlib,os;path=pathlib.Path('/var/backups/analyst-ai-retired-9415007-20261025/deletion-receipt.json');data="+repr(json.dumps(receipt,sort_keys=True).encode())+";fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);f=os.fdopen(fd,'wb');f.write(data);f.flush();os.fsync(f.fileno());f.close()"
             p.remote(new,'python3 -',code.encode(),timeout=30)
             print('TIMEWEB_CLEANUP_COMPLETE='+json.dumps(receipt),flush=True)
-
         PY
