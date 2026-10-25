@@ -72,7 +72,7 @@ jobs:
         \ 'server_id': 9417611,\\n          'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),\\n   \
         \       'dns_changed': False, 'old_server_modified': False, 'public_cutover': False,\\n          'broker_operations':\
         \ False, 'ai_calls': False, 'scheduler_enabled': False,\\n          'database_before': database(), 'checks': {}}\\\
-        nlog = stage / 'runtime-health-command.log'\\nneed(not log.exists(), 'health_probe_already_run')\\nstarted = False\\\
+        nlog = stage / 'runtime-health-command-v2.log'\\nneed(not log.exists(), 'health_probe_already_run')\\nstarted = False\\\
         nerror = None\\ntry:\\n    with log.open('xb') as output:\\n        for name, command in (\\n            ('backend_dependencies',\
         \ ['/opt/analyst-ai/venv/bin/python', '-m', 'pip', 'check']),\\n            ('updates_dependencies', ['/opt/analyst-ai-updates/venv/bin/python',\
         \ '-m', 'pip', 'check']),\\n            ('caddy_configuration', ['/usr/bin/caddy', 'validate', '--config', '/etc/caddy/Caddyfile']),\\\
@@ -87,9 +87,9 @@ jobs:
         \ > 0, 'backend_not_running')\\n    process_environment = pathlib.Path('/proc/' + running['MainPID'] + '/environ').read_bytes().split(b'\\\
         \\0')\\n    values = dict(entry.split(b'=', 1) for entry in process_environment if b'=' in entry)\\n    need(values.get(b'ANALYSIS_SCHEDULER_ENABLED')\
         \ == b'false' and values.get(b'SANDBOX_WORKER_ENABLED') == b'false', 'scheduler_not_disabled_in_process')\\n    private,\
-        \ _ = response('/workspace/me')\\n    need(private == 401, 'private_route_not_protected')\\n    report['checks']['http']\
-        \ = {'health': health, 'workspace_without_session': private}\\n    report['checks']['effective_scheduler_override']\
-        \ = True\\n    report['database_after'] = database()\\n    report['memory_bytes'] = int(next(line.split()[1] for line\
+        \ _ = response('/workspace')\\n    report['checks']['http'] = {'health': health, 'workspace_without_session': private}\\\
+        n    need(private == 401, 'private_route_not_protected')\\n    report['checks']['effective_scheduler_override'] =\
+        \ True\\n    report['database_after'] = database()\\n    report['memory_bytes'] = int(next(line.split()[1] for line\
         \ in pathlib.Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemTotal:'))) * 1024\\n    report['disk_free_bytes']\
         \ = shutil.disk_usage('/').free\\n    report['status'] = 'passed_local_backend_health'\\nexcept BaseException as failure:\\\
         n    error = failure\\n    report['status'] = 'failed'\\n    report['error_type'] = type(failure).__name__\\n    report['error_code']\
@@ -97,7 +97,7 @@ jobs:
         \ = subprocess.run(['systemctl', 'stop', 'analyst-ai-owner.service'], capture_output=True, timeout=60)\\n        report['stop_exit_code']\
         \ = stopped.returncode\\n    report['services_after'] = {unit: state(unit) for unit in units}\\n    report['all_services_stopped']\
         \ = all(s['ActiveState'] == 'inactive' and s['MainPID'] == '0' for s in report['services_after'].values())\\n    report['finished_at']\
-        \ = datetime.datetime.now(datetime.timezone.utc).isoformat()\\n    (stage / 'local-health-receipt.json').write_text(json.dumps(report,\
+        \ = datetime.datetime.now(datetime.timezone.utc).isoformat()\\n    (stage / 'local-health-receipt-v2.json').write_text(json.dumps(report,\
         \ sort_keys=True))\\n    print('RUNTIME_LOCAL_HEALTH=' + json.dumps(report, sort_keys=True), flush=True)\\nneed(report['all_services_stopped'],\
         \ 'new_services_remain_active')\\nif error is not None:\\n    raise SystemExit(1)\\n\"\nwith owned_remote(9417611,\"\
         Analyst AI runtime 20261025\",\"31.130.128.55\",\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU\
