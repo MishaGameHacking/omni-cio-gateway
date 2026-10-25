@@ -22,7 +22,7 @@ jobs:
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const source=p.join(root,'ui-screens-api37-16384');
-            const allowed=['spatial-dark.png','spatial-light.png','spatial-dialog-large-font.png','spatial-large-font.png','session-context-restored.png','session-context-restored-font-200.png','native-2d-verification.json'];
+            const allowed=['failure.png','spatial-dark.png','spatial-light.png','spatial-dialog-large-font.png','spatial-large-font.png','session-context-restored.png','session-context-restored-font-200.png','native-2d-verification.json'];
             const identities={};
             function copy(from,name){
               const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000)throw new Error('unexpected_file');
@@ -34,6 +34,8 @@ jobs:
             copy(log,'runtime-16384.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
             const report={source_run:40233680433,source_root:source,debug_apk_sha256:'42b90f2ab4b5ba2fbb0aeb612b0e3380aae632567bf75e0ba473c8ec2c763c7d',identities,
+              readiness_call_sites:fs.readdirSync(p.resolve(root,'../../../../../.github/scripts')).filter(n=>n.endsWith('.py')).flatMap(name=>{const lines=fs.readFileSync(p.join(p.resolve(root,'../../../../../.github/scripts'),name),'utf8').split(/\r?\n/);return lines.flatMap((line,i)=>line.includes('ready_spatial_metrics')?[name+':'+(i+1)+':'+line]:[])}),
+              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure/.test(l)).map(l=>l.slice(0,16000)).slice(-8),
               available_files:fs.readdirSync(source).filter(n=>/\.(png|json)$/.test(n)),
               log_tail:lines.slice(-105).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
