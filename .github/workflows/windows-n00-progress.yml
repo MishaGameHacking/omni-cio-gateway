@@ -12,16 +12,27 @@ concurrency:
 jobs:
   inspect:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
+    timeout-minutes: 25
     steps:
       - name: Read current synthetic check reports
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const cp=require('node:child_process');
-            const r=cp.spawnSync('py',['-3','-c',"import pathlib,os,sys,json,re\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\nroot=pathlib.Path('C:/actions-runner-2/_work/_temp/analyst-development-40232092366-1')\nout={}\np=root/'10-host-tests.log'\nif p.is_file():\n text=p.read_text(encoding='utf-8',errors='replace')\n out['failures']=[block[:3500] for block in re.split(r'\\n={20,}\\r?\\n',text)[1:] if 'FAIL:' in block or 'ERROR:' in block]\n out['summary']=text[-180:]\nout['tests']={}\nsource=pathlib.Path('C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40232092366-1')\nfor p in (source/'.github/scripts/tests').glob('test_*.py'):\n s=p.read_text(encoding='utf-8')\n if 'registerContentObserver' in s or 'ANIMATOR_DURATION_SCALE' in s:\n  out['tests'][p.name]=s\nprint(json.dumps(out,ensure_ascii=False))\n"],{encoding:'utf8',timeout:45000,maxBuffer:60000});
-            let report;
-            try{if(r.status!==0)throw new Error('read failed');report=JSON.parse(r.stdout.trim());}catch(e){report={error:String(e),stderr:r.stderr?.slice(-3000)};}
-            await github.rest.checks.create({...context.repo,name:'N00 concrete host test failures',head_sha:context.sha,status:'completed',conclusion:report.error?'failure':'success',output:{title:'Current laptop check and build state',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
-            if(report.error)core.setFailed(report.error);
+            const created=await github.rest.checks.create({...context.repo,name:'N00 build progress and source provenance',head_sha:context.sha,status:'in_progress',output:{title:'Waiting for laptop checks',summary:'Waiting for run40232404397.'}});
+            let terminal=false;
+            for(let poll=0;poll<45;poll++){
+              const cp=require('node:child_process');
+              const r=cp.spawnSync('py',['-3','-c',"import pathlib,json,os,sys,hashlib\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\nout={'host':os.environ['COMPUTERNAME'],'files':{}}\nfor suffix in ('','-2','-3','-4'):\n root=pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/analyst-development-40232404397-1')\n if not root.is_dir():continue\n for name in ('windows-development.json','applied-patches.json','source-after-patches.json','linux-linux-test-report.json','export-receipt.json'):\n  p=root/name\n  if p.is_file():\n   d=json.loads(p.read_text(encoding='utf-8'))\n   if name=='source-after-patches.json':d={k:v for k,v in d.items() if k!='files'}\n   if name=='windows-development.json':\n    d={k:v for k,v in d.items() if k in ('status','started_at','finished_at','source_sha256','source_sha256_after','check','build','apks','error','error_type','failed_stage','patch_files','root','state','certificate_sha256')}\n    report=json.loads(p.read_text(encoding='utf-8'))\n    d['steps']=[{k:v for k,v in row.items() if k in ('label','exit_code','duration_seconds','error_type')} for row in report.get('steps',[])]\n    last=report.get('steps',[])[-1:] \n    if last:\n     log=pathlib.Path(last[0]['log'])\n     if log.is_file():\n      with log.open('rb') as f:f.seek(max(0,log.stat().st_size-4500));d['last_log_tail']=f.read().decode('utf-8',errors='replace')\n   out['files'][name]=d\nprint(json.dumps(out,ensure_ascii=False))\n"],{encoding:'utf8',timeout:45000,maxBuffer:60000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});
+              let report;
+              try{if(r.status!==0)throw new Error('read failed');report=JSON.parse(r.stdout.trim());}catch(e){report={error:String(e),stderr:r.stderr?.slice(-3000)};}
+              
+              const state=report.files?.['windows-development.json']?.status;
+              terminal=state && !['preparing','running'].includes(state);
+              let summary='\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`';
+              if(summary.length>60000)throw new Error('Progress report exceeded safe bound');
+              await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:terminal?'completed':'in_progress',...(terminal?{conclusion:state==='passed_check_and_build_only'?'success':'failure'}:{}),output:{title:'Laptop N00 checks: '+(state||'waiting'),summary}});
+              if(terminal)break;
+              await new Promise(resolve=>setTimeout(resolve,30000));
+            }
+            if(!terminal){await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:'completed',conclusion:'neutral',output:{title:'Observation window ended',summary:'Build completion was not observed; inspect run40232404397 directly.'}});}
             
