@@ -17,7 +17,9 @@ def exercise_catalogue(case):
     probe.tap_resource("catalogue-query", area)
     append_native_text(probe, "", "new1")
     probe.dismiss_keyboard()
-    probe.tap("Найти", area)
+    # Closing the IME can widen and reflow the form above the current viewport.
+    # Return toward the edited form; retain the ordinary settled native tap.
+    probe.tap("Найти", area, direction="start")
     probe.reveal("СИНТЕТИЧЕСКИЙ НОВЫЙ АКТИВ", area)
     original_window = active_window_id(probe.tree())
     probe.tap(PURCHASE_DIALOG, area)

@@ -23,10 +23,11 @@ RESERVE = "Покупка затрагивает защищённый резер
 
 class CatalogueViewportProbe:
     def __init__(self, scale=1.0, scenario="ready", *, qualified=False, defect=None,
-                 delayed_layout=False):
+                 delayed_layout=False, catalogue_resize=False):
         self.scale, self.scenario = scale, scenario
         self.qualified, self.defect = qualified, defect
         self.delayed_layout = delayed_layout
+        self.catalogue_resize = catalogue_resize
         self.height, self.offset, self.window = 453, 0, 144
         self.page, self.pending, self.dialog_reads = "catalogue", None, 0
         self.editor, self.values = None, {"catalogue-query": "", "purchase-price": ""}
@@ -66,7 +67,9 @@ class CatalogueViewportProbe:
         })
         if self.page == "catalogue":
             self.row(viewport, 20, 50, resource="catalogue-query")
-            self.row(viewport, 100, 50, text="Найти", button=True)
+            if self.defect != "missing-search":
+                self.row(viewport, 100, 50, text="Найти", button=True,
+                         enabled=self.defect != "disabled-search")
             self.row(viewport, 300, 70, text=ASSET)
             self.row(viewport, 450, 60, text=catalogue.PURCHASE_DIALOG, button=True)
             return tree
@@ -174,6 +177,9 @@ class CatalogueViewportProbe:
             self.offset = min(self.offset, max(0, self.extent - self.height))
 
     def dismiss_keyboard(self):
+        if self.editor == "catalogue-query" and self.catalogue_resize:
+            # Reflow leaves the catalogue anchored below its already edited form.
+            self.offset = self.extent - self.height
         self.editor = None
 
     @staticmethod
@@ -214,6 +220,43 @@ class CatalogueDialogTransitionTests(unittest.TestCase):
                         if scale == 2.0:
                             self.assertIn(("dialog", "end"), probe.scrolls)
                             self.assertIn(("dialog", "start"), probe.scrolls)
+
+    def test_search_survives_keyboard_reflow_above_the_visible_catalogue(self):
+        for scale in (1.0, 2.0):
+            for scenario in ("ready", "partial"):
+                for qualified in (False, True):
+                    with self.subTest(scale=scale, scenario=scenario, qualified=qualified):
+                        probe = CatalogueViewportProbe(scale, scenario, qualified=qualified,
+                                                       catalogue_resize=True)
+                        case = self.exercise(probe)
+                        self.assertEqual(probe.values["catalogue-query"], "new1")
+                        self.assertEqual(probe.check_requests, ["95"])
+                        self.assertEqual(probe.values["purchase-price"], "950")
+                        self.assertEqual(probe.actions, ["Найти", catalogue.PURCHASE_DIALOG,
+                                                       catalogue.PURCHASE_ACTION, "Закрыть"])
+                        self.assertFalse(probe.result)
+                        self.assertIn("edited-input-invalidates-result", case.checks)
+
+    def test_forward_only_search_cannot_find_the_form_after_keyboard_reflow(self):
+        probe = CatalogueViewportProbe(catalogue_resize=True)
+        probe.tap_resource("catalogue-query", AREA)
+        probe.type_text(probe, "", "new1")
+        probe.dismiss_keyboard()
+        with self.assertRaisesRegex(AssertionError, "List target not reachable: Найти"):
+            probe.tap("Найти", AREA, direction="end")
+        self.assertEqual(probe.actions, [])
+        self.assertEqual(probe.check_requests, [])
+        self.assertEqual(probe.values["catalogue-query"], "new1")
+
+    def test_reflow_does_not_bypass_missing_or_disabled_search(self):
+        for defect in ("missing-search", "disabled-search"):
+            with self.subTest(defect=defect):
+                probe = CatalogueViewportProbe(catalogue_resize=True, defect=defect)
+                with self.assertRaisesRegex(AssertionError,
+                        "List target not reachable: Найти|Required native action unavailable: Найти"):
+                    self.exercise(probe)
+                self.assertEqual(probe.actions, [])
+                self.assertEqual(probe.check_requests, [])
 
     def test_removing_barrier_reproduces_old_frame_new_dialog_scroll_failure(self):
         probe = CatalogueViewportProbe()

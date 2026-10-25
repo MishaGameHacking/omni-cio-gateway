@@ -1,74 +1,117 @@
-# N00 — catalogue editor remains visible above the keyboard
+# N00 — catalogue input and search after keyboard reflow
 
-N00 remains open. N01–N11 are not implemented by this repair. The active
-publication is still APK38; candidate39 was not published. The next candidate
-is 0.13.2-preview/40 and must pass its own complete checks.
+N00 remains open. N01–N11 are not implemented by these repairs. The published
+APK is still38. Candidate40 /0.13.2-preview has passed the full laptop build;
+its complete Android acceptance and physical-phone check remain unverified.
 
-## Observed defect
+## Product defect and fix
 
-[Run40237838049](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40237838049) used the exact candidate39 and the separately rebuilt native
-test driver. On Android37 with measured16384-byte and4096-byte pages it passed native2D,
-session context, privacy, goals, all30 ordinary-font business cases and the
-large-font assistant navigation that had previously failed.
+[Run40237838049](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40237838049)
+used candidate39 on measured4096-byte and16384-byte Android37 pages. Both profiles
+passed native2D, session context, privacy, goals and the repaired assistant
+navigation. Both failed catalogue/ready at font2: the keyboard opened, but the
+header occupied the remaining viewport and no native editor remained visible.
 
-Both profiles failed the catalogue/ready case at font scale2:
-`Native editor or keyboard is not ready for input`.
-The keyboard really opened, but the catalogue header and subtitle filled the
-remaining application viewport. The native editor was absent from the visible
-accessibility tree. This is a product layout defect, not an absent keyboard.
+The public-window evidence showed a320×640 display, IME bounds[0,357,320,640]
+and a focused application window. The downloaded failure screenshot and archive
+hashes were verified. Evidence run40239405104 archive SHA-256:
+`7729734a2494f4929572516bb2d53a42c817811a1f41297e48ff22ce26c4261d`.
 
-The actual public-window evidence reported a320×640 display, IME bounds
-[0,357,320,640], a focused application window and no visible editor. The actual
-failure screenshot was downloaded, its archive and file hashes verified, and
-visually inspected. Evidence run40239405104 completed successfully; its archive
-SHA-256 is7729734a2494f4929572516bb2d53a42c817811a1f41297e48ff22ce26c4261d.
-No synthetic success frame or weakened native-input assertion was used.
+MarketCatalogueScreen now uses the existing WorkspaceDetailPage IME adaptation.
+The heading yields vertical space in a short viewport; the back button stays
+available at the side and content keeps its composition location. Compact
+catalogue content removes vertical outer padding. The two version guards were
+updated with version40 /0.13.2. No native-input assertion was weakened.
 
-## Product change
+The exact four files were applied on LAPTOP-NPSGA016 and backed up in
+`7df6603279f392d75214316d1a0d8ae3db162fbe`.
+Base commit:`d42f70ddf1b46b9c72a7906fb33d5b3047e830ef`.
+Build source inventory:`55714d036df727441f2c23a45fdcf8896711c048b6595bea9825fb09ff9533a1`.
+Product patch payload:`e303e73aaf2b3092651b660da04ca800554b40f8d084fccebed48d889fd63556`.
 
-MarketCatalogueScreen now opts into the existing WorkspaceDetailPage IME
-adaptation already used by LiveStrategyScreen. When the safe viewport becomes
-too short for the selected font size, the heading yields its vertical space
-and the back button remains available at the side. The content keeps its
-composition location. Compact catalogue content also removes vertical outer
-padding, while the scrollable controls and native text field remain intact.
+## Actual complete laptop build
 
-The version advances39→40 /0.13.1→0.13.2, with the two existing version guards
-updated consistently. Native editor, keyboard,48px tap geometry, stable-frame,
-navigation, purchase invalidation and full-suite assertions are unchanged.
+[Run40239983022](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40239983022)
+completed SUCCESS. All work ran on LAPTOP-NPSGA016; WSL provided Linux on that
+same laptop. Timeweb stored the archive and did not execute application code.
 
-## Required verification
+- Host:1057 tests in43.372s, no failures, the same3 platform skips.
+- Tools52 and Node checks passed, as did source/diff/dependency/workspace guards.
+- Backend:1684 tests and1515 subtests passed in143.08s; health/OpenAPI passed.
+- Android:174 JVM tests across30 suites, no failures/errors/skips; app and test
+  driver lint/build passed. Gradle completed successfully in10m24s.
+- Signature, manifest, APK/native alignment and unchanged source/key checks passed.
+  Certificate SHA-256 remains
+  `bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1`.
 
-The exact four files are applied only on LAPTOP-NPSGA016 from base
-d42f70ddf1b46b9c72a7906fb33d5b3047e830ef and expected source inventory
-4c1d90f9c7afd2b00f5734c525480f049cb2e30c68ccc942394bf552518d7663.
-[Build run40239983022](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40239983022) uses patch payload
-e303e73aaf2b3092651b660da04ca800554b40f8d084fccebed48d889fd63556.
+| Output | Bytes | SHA-256 |
+|---|---:|---|
+| Preview40 |29754870|a3b7d0ec4e0ac568ed15a0853635e2056898618a911c4114f7576b4c5c315aa0|
+| Debug fixture40 |63276145|3e29f33beb3a6ad4dade2f56b8340d8419aeff415ffe78ed35714291ae889acf|
+| Separate UI driver |2683172|ded99158cff1dd8bd7dd355d577336e0c1f742933594081af299ac2ec7e62cea|
 
-Before any new publication, record actual full host/backend/health/OpenAPI,
-JVM/lint/build/signature/alignment results, then the complete15-stage Android
-matrix on measured4096 and16384-byte pages. The upgrade baseline remains the
-published APK38, not unpublished39. A focused catalogue diagnostic is separate
-from full acceptance. Preserve all failed attempts and the existing signature,
-owner/session/broker bindings and read-only runtime.
+The build finished at2026-10-25T22:47:15Z and its worker had zero remaining
+owned processes. The1031-file archive is68,755,175 bytes, SHA-256
+`685ed5adf8bcba7f215fe20f735df4e80e007c5cb778b9501d101a6cd359df75`.
+Timeweb9417611 confirmed receipt at22:48:13Z under
+`/var/lib/analyst-ai-build/incoming/windows-development-40239983022-1/`.
 
-Build results, exact APK/source hashes, source backup commit, Android results
-and archive receipts must be appended from observed reports before claiming
-their respective checks passed. The physical-phone check remains separate.
+## Actual keyboard input and subsequent search failure
 
-## Actual Windows source application
+[Focused run40241897573](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40241897573)
+installed the exact candidate40. At font2, the native editor accepted
+`new1`, retained focus and exposed the real caret at4/4 while the IME was
+visible. The actual screenshot was downloaded and visually inspected.
 
-Run40239983022 applied and read back all four exact files on the laptop.
-The resulting source inventory is
-`55714d036df727441f2c23a45fdcf8896711c048b6595bea9825fb09ff9533a1`.
-The host suite ran1057 tests in43.372s with no failures and the same three
-platform skips; tools52 and Node checks passed. The complete backend suite then passed1684 tests and1515 subtests in143.08s,
-with health/OpenAPI verified and no changed Linux source files. All host/backend
-checks finished at2026-10-25T22:36:37Z. Android JVM/lint/build and emulator results
-are still pending and are not inferred from these checks.
+The case then FAILED with `List target not reachable: Найти`.
+It did not complete the purchase flow or replace the full15-stage acceptance.
+The17-file private diagnostic archive is316,156 bytes, SHA-256
+`e7c5641c3ed62f99711941519bebd0474c8ced9f3b0519b5912ea2d9f4d4d927`.
+The separate reviewable screenshot artifact from run40242307120 has SHA-256
+`00d86fadab85dbd5facbdd20a263ee586123df74337225412d719d594d383f15`.
 
-The preceding complete candidate39 attempt40237838049 failed the same catalogue
-case on both page sizes; its244-file private archive is10,273,516 bytes,
-SHA-256`7e7119c0a9abdf7b07f9600afacad76895f644e4c6a5e3b36a7893292333730a`.
-Timeweb9417611 confirmed receipt at2026-10-25T22:33:10Z; it stored the evidence
-and did not execute application code.
+[Geometry run40242538843](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40242538843)
+preserved that failure and observed the public native tree. Immediately before
+the forward search, neither the query field nor Find was visible. Forward
+scrolling could not reach either. Two reverse scrolls found the enabled,
+clickable Find owner and its query field in the same viewport:
+
+| Element | Actual bounds |
+|---|---|
+| List viewport |[56,141][320,616]|
+| Query field |[76,327][300,440]|
+| Find owner and valid tap rectangle |[76,440][300,507]|
+
+After the keyboard closes and the layout widens, the edited form can be above
+the current scroll position. The test now returns toward that form before its
+ordinary native tap. The48px margin, three settled fresh frames, actual tap,
+window identity, price guard and result invalidation remain unchanged.
+
+## Windows test repair and continuation
+
+[Run40243041873](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40243041873)
+applied only catalogue_ui_probe.py and test_catalogue_dialog_transition.py on
+the laptop. Its base is7df6603279f392d75214316d1a0d8ae3db162fbe.
+New test-source inventory:
+`d79d8cfc31d74560eda38b8aeae8cf58aa5e389de8366d54b66886b47ad54cbc`.
+Two-file payload:
+`818a7469edbc7ba23069e64296dde11368827bbe16deef0537bc9653d8373013`.
+
+All1060 host tests passed in44.044s with the same3 skips and git diff --check.
+The new regression executes the complete existing catalogue traversal after
+a simulated IME reflow. It proves the former forward-only search fails, and
+that missing/disabled Find still prevents the purchase flow. Simulated frames
+are not Android runtime evidence.
+
+The exact same candidate40 application and driver APK bytes are now being
+tested in the focused ready/partial catalogue cases at fonts2 and1.
+This diagnostic remains separate from complete Android acceptance. Its
+inherited step label says full UI, but the external hook explicitly runs only
+the focused cases, labels the report diagnostic_only and cannot yield a
+release PASS. Use actual report scope, never the inherited step label.
+
+After successful focused observations, run every required UI stage on both
+4096-byte and16384-byte profiles. The upgrade baseline remains published APK38,
+not unpublished39. Preserve the signature, owner/session/broker bindings,
+database and read-only runtime. Do not enable paid AI or real-money execution.
+Continue N01–N11 in order only after N00 acceptance.
