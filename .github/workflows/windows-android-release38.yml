@@ -1,0 +1,335 @@
+name: Verify Timeweb APK38 on the Windows laptop
+'on':
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/windows-android-release38.yml]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-frozen38-windows-runtime
+  cancel-in-progress: false
+jobs:
+  inputs:
+    name: Transfer the frozen Timeweb APK inputs privately
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      archive_sha256: ${{ steps.upload.outputs.archive_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+          persist-credentials: false
+      - name: Confirm private transfer before loading APK bytes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+      - name: Read exact Timeweb APK bytes over the verified temporary SSH connection
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+          sys.path[:0]=["deploy","tools"]
+          import prepare_owner_vm as p
+          import access_owner_vm as access
+          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          def api(method,path,body=None):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+              try:
+                  with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                      raw=r.read(4194305);assert len(raw)<=4194304
+                      return r.status,json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+          
+          def with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):
+              sid=9415007;ip="83.217.195.29";host="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIItaYR3yYmfPA7lJwNgOBGMr0Tu/ioG+Zarm+Utc33z0"
+              status,data=api("GET","/servers/"+str(sid));assert status==200
+              server=data["server"]
+              assert server["name"]=="Analyst AI PRO" and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
+              access.SERVER_ID=sid
+              with tempfile.TemporaryDirectory(prefix="analyst-ams-admin-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                  folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-ams-admin-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                  key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
+                  assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
+                  attached=False
+                  try:
+                      access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
+                      cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                      for attempt in range(12):
+                          try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
+                          except (p.ProbeError,subprocess.TimeoutExpired):
+                              if attempt==11:raise
+                              time.sleep(5)
+                      payload=remote_script.encode() if binary_input is None else binary_input
+                      remote_command="python3 -" if binary_input is None else "python3 -c "+shlex.quote(remote_script)
+                      result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                      if not capture:print(result.stdout.decode(errors="replace"),flush=True)
+                      if result.returncode:
+                          print("AMS_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-4000:],flush=True)
+                          raise RuntimeError("remote_task_failed")
+                      return result.stdout
+                  finally:
+                      if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                      access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                      print("AMS_TEMP_KEY_REMOVED=true",flush=True)
+          
+          
+          remote_script="import pathlib,hashlib,sys,stat\np=pathlib.Path(\"/var/lib/analyst-ai-build/exports/android38-source955-windows/ci-handoff.zip\")\ns=p.lstat()\nassert stat.S_ISREG(s.st_mode) and not p.is_symlink() and s.st_nlink==1 and s.st_size==125533350\nb=p.read_bytes()\nassert len(b)==125533350 and hashlib.sha256(b).hexdigest()==\"f6af467ac6129da1ab5c422e49349b0cfdd7f9520fc55ecdf7c724e967bab15b\"\nsys.stdout.buffer.write(b)\n"
+          blob=with_ams(remote_script,timeout=180,capture=True)
+          assert len(blob)==125533350 and hashlib.sha256(blob).hexdigest()=="f6af467ac6129da1ab5c422e49349b0cfdd7f9520fc55ecdf7c724e967bab15b"
+          archive=pathlib.Path(os.environ['RUNNER_TEMP'])/'ci-handoff.zip'
+          assert not archive.exists()
+          archive.write_bytes(blob)
+          print('TIMEWEB_FROZEN_INPUT_RECEIVED='+json.dumps({'bytes':len(blob),'sha256':hashlib.sha256(blob).hexdigest(),'source_commit':"f4e3368fff1209c02b1cd088a5dc6a5380e7e433",'source_sha256':"955661284edcb9cf5baa27d3bb1984275dd361857a58fb27b4905dffd87c6d1e"}),flush=True)
+          PY
+      - name: Upload the immutable private inputs
+        id: upload
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'upload'});
+  verify:
+    name: Windows Android 38 verification
+    needs: inputs
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      archive_sha256: ${{ steps.evidence_upload.outputs.archive_sha256 }}
+    env:
+      SOURCE_ROOT: ${{ github.workspace }}/windows-verification-${{ github.run_id }}-${{ github.run_attempt }}
+      ANDROID_SDK_ROOT: 'C:\actions-runner-2\_work\_tool\AndroidSdk\sdk'
+      ANDROID_HOME: 'C:\actions-runner-2\_work\_tool\AndroidSdk\sdk'
+      RUN_PROFILE_UI_TESTS: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONIOENCODING: utf-8
+      ANALYST_JOB_NAME: Windows Android 38 verification
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - name: Checkout the exact frozen sources in an isolated directory
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+          path: windows-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          clean: false
+      - name: Receive the exact private APK archive
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          TRANSFER_SHA256: ${{ needs.inputs.outputs.archive_sha256 }}
+        with:
+          script: await require(require('node:path').join(process.env.SOURCE_ROOT,'.github/scripts/ci_private_transfer.cjs'))({github, context, core, command:'download'});
+      - name: Prepare the reviewed Windows verification wrapper
+        shell: cmd
+        run: |
+          py -3 -c "import base64,zlib,pathlib,os,hashlib; b=zlib.decompress(base64.b64decode('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')); assert hashlib.sha256(b).hexdigest()=='d7982f637b0abe6512bb138a49024512b952e5072b7d758740e3cff9c5d115b7'; p=pathlib.Path(os.environ['RUNNER_TEMP'])/'windows-runtime38.py'; p.write_bytes(b)"
+          if errorlevel 1 exit /b 1
+      - name: Verify source bytes and frozen APK inputs
+        id: verify_inputs
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" inputs
+          if errorlevel 1 exit /b 1
+      - name: Remove the input transfer after verified local receipt
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require(require('node:path').join(process.env.SOURCE_ROOT,'.github/scripts/ci_private_transfer.cjs'))({github, context, core, command:'cleanup'});
+      - name: Verify the existing completed Java 17 cache
+        shell: cmd
+        run: |
+          py -3 "%SOURCE_ROOT%\.github\scripts\verify_cached_jdk.py"
+          if errorlevel 1 exit /b 1
+      - name: Prepare the shared SDK and require usable hardware acceleration
+        id: prepare_sdk
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" sdk
+          if errorlevel 1 exit /b 1
+      - name: Verify the exact candidate signature and APK metadata
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" static
+          if errorlevel 1 exit /b 1
+      - name: Verify API 37 with 16 KB pages
+        id: runtime16
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" 16384
+          if errorlevel 1 exit /b 1
+      - name: Verify API 37 with 4 KB pages
+        id: runtime4
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" 4096
+          if errorlevel 1 exit /b 1
+      - name: Validate the complete APK distribution evidence
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" distribution
+          if errorlevel 1 exit /b 1
+      - name: Export Windows runtime evidence
+        id: export
+        if: always() && steps.verify_inputs.outcome == 'success'
+        shell: cmd
+        run: |
+          py -3 "%RUNNER_TEMP%\windows-runtime38.py" export
+          if errorlevel 1 exit /b 1
+      - name: Prepare the private evidence return
+        id: evidence_prepare
+        if: always() && steps.export.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require(require('node:path').join(process.env.SOURCE_ROOT,'.github/scripts/ci_private_transfer.cjs'))({github, context, core, command:'prepare'});
+      - name: Upload the private raw Windows evidence
+        id: evidence_upload
+        if: always() && steps.evidence_prepare.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require(require('node:path').join(process.env.SOURCE_ROOT,'.github/scripts/ci_private_transfer.cjs'))({github, context, core, command:'upload'});
+  collect:
+    name: Return the raw Windows evidence to Timeweb
+    needs: [inputs, verify]
+    if: always() && needs.verify.outputs.archive_sha256 != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+          persist-credentials: false
+      - name: Download and verify the exact private evidence archive
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          TRANSFER_SHA256: ${{ needs.verify.outputs.archive_sha256 }}
+        with:
+          script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'download'});
+      - name: Save verified evidence on Timeweb without publishing
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          TRANSFER_SHA256: ${{ needs.verify.outputs.archive_sha256 }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+          sys.path[:0]=["deploy","tools"]
+          import prepare_owner_vm as p
+          import access_owner_vm as access
+          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          def api(method,path,body=None):
+              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+              try:
+                  with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                      raw=r.read(4194305);assert len(raw)<=4194304
+                      return r.status,json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+          
+          def with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):
+              sid=9415007;ip="83.217.195.29";host="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIItaYR3yYmfPA7lJwNgOBGMr0Tu/ioG+Zarm+Utc33z0"
+              status,data=api("GET","/servers/"+str(sid));assert status==200
+              server=data["server"]
+              assert server["name"]=="Analyst AI PRO" and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
+              access.SERVER_ID=sid
+              with tempfile.TemporaryDirectory(prefix="analyst-ams-admin-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                  folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-ams-admin-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                  key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
+                  assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
+                  attached=False
+                  try:
+                      access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
+                      cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                      for attempt in range(12):
+                          try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
+                          except (p.ProbeError,subprocess.TimeoutExpired):
+                              if attempt==11:raise
+                              time.sleep(5)
+                      payload=remote_script.encode() if binary_input is None else binary_input
+                      remote_command="python3 -" if binary_input is None else "python3 -c "+shlex.quote(remote_script)
+                      result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                      if not capture:print(result.stdout.decode(errors="replace"),flush=True)
+                      if result.returncode:
+                          print("AMS_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-4000:],flush=True)
+                          raise RuntimeError("remote_task_failed")
+                      return result.stdout
+                  finally:
+                      if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                      access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                      print("AMS_TEMP_KEY_REMOVED=true",flush=True)
+          
+          
+          import re
+          run=os.environ["GITHUB_RUN_ID"];attempt=os.environ["GITHUB_RUN_ATTEMPT"]
+          expected=os.environ["TRANSFER_SHA256"]
+          assert re.fullmatch(r"[1-9]\d{0,19}",run) and re.fullmatch(r"[1-9]\d{0,4}",attempt)
+          assert re.fullmatch(r"[a-f0-9]{64}",expected)
+          blob=(pathlib.Path(os.environ["RUNNER_TEMP"])/"ci-handoff.zip").read_bytes()
+          assert 0<len(blob)<=512*1024**2 and hashlib.sha256(blob).hexdigest()==expected
+          remote_script=r"""import pathlib,sys,hashlib,json,os,pwd,stat
+          data=sys.stdin.buffer.read(512*1024**2+1)
+          assert len(data)==EXPECTED_BYTES and hashlib.sha256(data).hexdigest()==EXPECTED_HASH
+          parent=pathlib.Path('/var/lib/analyst-ai-build/incoming')
+          account=pwd.getpwnam('analyst-build')
+          if not parent.exists():parent.mkdir(mode=0o750);os.chown(parent,0,account.pw_gid)
+          assert parent.resolve()==parent and stat.S_ISDIR(parent.lstat().st_mode)
+          folder=parent/FOLDER
+          folder.mkdir(mode=0o750);os.chown(folder,0,account.pw_gid)
+          destination=folder/'windows-runtime-evidence.zip'
+          with destination.open('xb') as out:out.write(data);out.flush();os.fsync(out.fileno())
+          os.chown(destination,0,account.pw_gid);destination.chmod(0o640)
+          assert hashlib.sha256(destination.read_bytes()).hexdigest()==EXPECTED_HASH
+          receipt={'path':str(destination),'sha256':EXPECTED_HASH,'bytes':len(data),'run_id':RUN_ID,'run_attempt':RUN_ATTEMPT,'publication_authorized':False}
+          metadata=folder/'transfer-receipt.json';metadata.write_text(json.dumps(receipt,indent=2)+'\n');os.chown(metadata,0,account.pw_gid);metadata.chmod(0o640)
+          print('REDESIGN_WINDOWS_RETURNED_ARCHIVE='+json.dumps(receipt),flush=True)
+          """
+          remote_script=remote_script.replace("EXPECTED_BYTES",str(len(blob))).replace("EXPECTED_HASH",repr(expected)).replace("FOLDER",repr("windows38-"+run+"-"+attempt)).replace("RUN_ID",run).replace("RUN_ATTEMPT",attempt)
+          with_ams(remote_script,timeout=180,binary_input=blob)
+          PY
+  cleanup:
+    name: Remove only this run's private transfer
+    needs: [inputs, verify, collect]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+          persist-credentials: false
+      - name: Verify private transfer removal
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+  result:
+    name: Require every frozen APK verification stage
+    needs: [inputs, verify, collect, cleanup]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - env:
+          INPUTS: ${{ needs.inputs.result }}
+          VERIFY: ${{ needs.verify.result }}
+          COLLECT: ${{ needs.collect.result }}
+          CLEANUP: ${{ needs.cleanup.result }}
+        run: |
+          for result in "$INPUTS" "$VERIFY" "$COLLECT" "$CLEANUP"; do
+            if [ "$result" != success ]; then
+              echo "A required frozen APK verification stage failed."
+              exit 1
+            fi
+          done
