@@ -8,7 +8,7 @@ permissions:
   checks: write
   actions: read
 concurrency:
-  group: analyst-n00-current-observer
+  group: analyst-n00-native-observer
   cancel-in-progress: false
 jobs:
   inspect:
@@ -20,14 +20,14 @@ jobs:
         with:
           script: |
             const cp=require('node:child_process');
-            const created=await github.rest.checks.create({...context.repo,name:'N00 candidate39 runtime observations',head_sha:context.sha,status:'in_progress',output:{title:'Waiting for Android runtime',summary:'Run40233680433, exact candidate39.'}});
+            const created=await github.rest.checks.create({...context.repo,name:'N00 native-readiness candidate39 observations',head_sha:context.sha,status:'in_progress',output:{title:'Waiting for Android runtime',summary:'Run40234849690, exact candidate39.'}});
             let terminal=false;
             for(let poll=0;poll<190;poll++){
-              const r=cp.spawnSync('py',['-3','-c',"import pathlib,sys,os,json,re\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\nroot=pathlib.Path(\"C:\\\\actions-runner\\\\_work\\\\omni-cio-gateway\\\\omni-cio-gateway\\\\windows-development-40232404397-1\")\nout={'source_root':str(root),'profiles':{},'controllers':{}}\nbase=root/'app/build/outputs/apk/preview'\nfor page in (16384,4096):\n profile={}\n work=base/('install-api37-'+str(page))\n p=work/'runtime-console.log'\n if p.is_file():\n  with p.open('rb') as f:\n   f.seek(max(0,p.stat().st_size-4*1024**2));s=f.read().decode('utf-8',errors='replace')\n  profile['console_bytes']=p.stat().st_size\n  profile['stages']=[line[:1000] for line in s.splitlines() if line.startswith(('PROFILE_UI_STAGE=','PROFILE_UI_STAGE_PASSED=','PROFILE_UI_TESTS=','ANDROID_POLICY_LAST_OBSERVED=','SESSION_CONTEXT','INSTALL_RESULT='))][-45:]\n  profile['failures']=[line[:1000] for line in s.splitlines() if line.startswith(('AssertionError:','RuntimeError:','ValueError:','TimeoutError:','subprocess.TimeoutExpired:'))][-5:]\n p=work/'install-results.json'\n if p.is_file():profile['installation']=json.loads(p.read_text(encoding='utf-8'))\n out['profiles'][str(page)]=profile\nfor suffix in ('','-2','-3','-4'):\n state=pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/n00-runtime-40233680433-1')\n for p in state.glob('runtime-*.json'):\n  out['controllers'][p.stem]=json.loads(p.read_text(encoding='utf-8'))\nprint(json.dumps(out,ensure_ascii=True))\n"],{encoding:'utf8',timeout:45000,maxBuffer:100000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});
+              const r=cp.spawnSync('py',['-3','-c',"import pathlib,sys,os,json,re\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\nroot=pathlib.Path(\"C:\\\\actions-runner-2\\\\_work\\\\omni-cio-gateway\\\\omni-cio-gateway\\\\windows-development-40234849690-1\")\nout={'source_root':str(root),'profiles':{},'controllers':{}}\nbase=root/'app/build/outputs/apk/preview'\nfor page in (16384,4096):\n profile={}\n work=base/('install-api37-'+str(page))\n p=work/'runtime-console.log'\n if p.is_file():\n  with p.open('rb') as f:\n   f.seek(max(0,p.stat().st_size-4*1024**2));s=f.read().decode('utf-8',errors='replace')\n  profile['console_bytes']=p.stat().st_size\n  profile['stages']=[line[:1000] for line in s.splitlines() if line.startswith(('PROFILE_UI_STAGE=','PROFILE_UI_STAGE_PASSED=','PROFILE_UI_TESTS=','ANDROID_POLICY_LAST_OBSERVED=','SESSION_CONTEXT','INSTALL_RESULT='))][-45:]\n  profile['failures']=[line[:1000] for line in s.splitlines() if line.startswith(('AssertionError:','RuntimeError:','ValueError:','TimeoutError:','subprocess.TimeoutExpired:'))][-5:]\n p=work/'install-results.json'\n if p.is_file():profile['installation']=json.loads(p.read_text(encoding='utf-8'))\n out['profiles'][str(page)]=profile\nfor suffix in ('','-2','-3','-4'):\n state=pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/n00-native-runtime-40234849690-1')\n for p in state.glob('runtime-*.json'):\n  out['controllers'][p.stem]=json.loads(p.read_text(encoding='utf-8'))\nprint(json.dumps(out,ensure_ascii=True))\n"],{encoding:'utf8',timeout:45000,maxBuffer:100000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});
               let report;try{if(r.status!==0)throw new Error('read failed');report=JSON.parse(r.stdout.trim());}catch(e){report={error:String(e),stderr:r.stderr?.slice(-2000)};}
               const records=report.controllers||{};
               terminal=Boolean(records['runtime-16384']&&records['runtime-4096']);
-              const run=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40233680433});
+              const run=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40234849690});
               report.workflow_status=run.data.status;report.workflow_conclusion=run.data.conclusion;
               if(run.data.status==='completed')terminal=true;
               const passed=records['runtime-16384']?.exit_code===0&&records['runtime-4096']?.exit_code===0&&!records['runtime-16384']?.error&&!records['runtime-4096']?.error;
@@ -37,5 +37,5 @@ jobs:
               if(terminal)break;
               await new Promise(resolve=>setTimeout(resolve,30000));
             }
-            if(!terminal)await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:'completed',conclusion:'neutral',output:{title:'Observation window ended',summary:'Runtime completion was not observed. Inspect run40233680433.'}});
+            if(!terminal)await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:'completed',conclusion:'neutral',output:{title:'Observation window ended',summary:'Runtime completion was not observed. Inspect run40234849690.'}});
             
