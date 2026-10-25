@@ -59,7 +59,7 @@ jobs:
       archive_sha256: ${{ steps.evidence_upload.outputs.archive_sha256 }}
     env:
       SOURCE_ROOT: ${{ github.workspace }}/windows-development-${{ github.run_id }}-${{ github.run_attempt }}
-      PATCH_DIR: ${{ runner.temp }}/analyst-development-patches-${{ github.run_id }}-${{ github.run_attempt }}
+      PATCH_DIR: ${{ github.workspace }}/windows-development-patches-${{ github.run_id }}-${{ github.run_attempt }}
       ANDROID_SDK_ROOT: C:\actions-runner-2\_work\_tool\AndroidSdk\sdk
       ANDROID_HOME: C:\actions-runner-2\_work\_tool\AndroidSdk\sdk
       PYTHONUNBUFFERED: '1'
