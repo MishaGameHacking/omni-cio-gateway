@@ -43,6 +43,7 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int REQUEST_SEQUENCE_MASK = 0x00ffffff;
     private static final int ALLOWED_REQUEST_BITS = ACTION_FLAG
             | BackGestureInput.REQUEST_FLAG
+            | NodeRevealAction.REQUEST_FLAG
             | ACTION_START_FLAG
             | (ACTION_LIST_MASK << ACTION_LIST_SHIFT)
             | REQUEST_SEQUENCE_MASK;
@@ -160,13 +161,27 @@ public final class FrameInstrumentation extends Instrumentation {
             AccessibilityNodeInfo root = automation.getRootInActiveWindow();
             boolean actionRequest = (rawRequest & ACTION_FLAG) != 0;
             boolean backRequest = (rawRequest & BackGestureInput.REQUEST_FLAG) != 0;
+            boolean revealRequest = (rawRequest & NodeRevealAction.REQUEST_FLAG) != 0;
             if (backRequest) {
-                if (actionRequest || (rawRequest & ACTION_START_FLAG) != 0) {
+                if (actionRequest || revealRequest || (rawRequest & ACTION_START_FLAG) != 0) {
                     throw new IOException("Back request contains unrelated action flags");
                 }
                 gesture.perform((rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK, root);
                 output.writeInt(request);
                 output.writeInt(4);
+                output.writeInt(0);
+                output.flush();
+            } else if (revealRequest) {
+                if (actionRequest || (rawRequest & ACTION_START_FLAG) != 0 || gesture.isHeld()) {
+                    throw new IOException("Native reveal contains unrelated flags or held touch");
+                }
+                client.setSoTimeout(12_000);
+                String targetId = NodeRevealAction.readTarget(input);
+                int listCode = (rawRequest >>> ACTION_LIST_SHIFT) & ACTION_LIST_MASK;
+                boolean performed = NodeRevealAction.perform(root, listResourceId(listCode),
+                        targetId, windows.getMaximumWindowMetrics().getBounds());
+                output.writeInt(request);
+                output.writeInt(performed ? 5 : 6);
                 output.writeInt(0);
                 output.flush();
             } else if (actionRequest) {

@@ -167,6 +167,7 @@ def _reveal_target(
     max_swipes: int,
     direction: str,
     layout_timeout: float,
+    reveal_partial: Callable[[ET.Element], bool] | None = None,
 ) -> ET.Element | None:
     _validate_request(resource_id, direction, max_swipes, layout_timeout)
     deadline = time.monotonic() + layout_timeout
@@ -185,7 +186,10 @@ def _reveal_target(
         if attempt == max_swipes or expired:
             _layout_diagnostic(tree, resource_id, attempt)
             raise AssertionError("List target not reachable: " + target_description)
-        swipe(*gesture)
+        # A full-page action can split a small button across both page edges.
+        # Align that observed target before another page can skip past it.
+        if reveal_partial is None or not reveal_partial(tree):
+            swipe(*gesture)
         if layout_timeout > 0:
             time.sleep(min(0.2, max(0, deadline - time.monotonic())))
     raise AssertionError("List scroll did not finish")
@@ -286,6 +290,7 @@ def reveal_resource_in_list(
     for_tap: bool = False,
     for_capture: bool = False,
     minimum_size: tuple[float, float] = (0, 0),
+    show_on_screen: Callable[[str, str], bool] | None = None,
 ) -> ET.Element | None:
     """Reveal an exact Compose testTag without depending on merged label text."""
     def find(tree):
@@ -294,6 +299,19 @@ def reveal_resource_in_list(
         if for_tap:
             return tappable_resource(tree, target_resource_id, resource_id)
         return visible_resource(tree, target_resource_id)
+    def align_partial(tree):
+        target = visible_resource(tree, target_resource_id)
+        viewport = _scroll_area(tree, resource_id)
+        if target is None or viewport is None or target.get("enabled") == "false":
+            return False
+        left, top, right, bottom = _bounds(target)
+        x1, y1, x2, y2 = viewport
+        if min(right, x2) <= max(left, x1) or min(bottom, y2) <= max(top, y1):
+            return False
+        if not show_on_screen(resource_id, target_resource_id):
+            raise AssertionError("Native target could not be brought into view: " + target_resource_id)
+        return True
+
     return _reveal_target(
         read_tree,
         swipe,
@@ -303,6 +321,7 @@ def reveal_resource_in_list(
         max_swipes=max_swipes,
         direction=direction,
         layout_timeout=layout_timeout,
+        reveal_partial=align_partial if for_tap and show_on_screen is not None else None,
     )
 
 

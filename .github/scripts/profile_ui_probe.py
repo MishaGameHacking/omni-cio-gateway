@@ -329,6 +329,14 @@ class ProfileProbe:
 
         self.tap_node(settled_label(self.tree, text))
 
+    def _show_resource_on_screen(self, area, resource_id):
+        from persistent_ui import FrameReader
+
+        reader = getattr(self.read_tree, "__self__", None)
+        if not isinstance(reader, FrameReader):
+            raise ValueError("Native target reveal needs the owned frame session")
+        return reader.show_on_screen(area, resource_id)
+
     def resource_tap_target(
         self,
         resource_id,
@@ -345,6 +353,7 @@ class ProfileProbe:
             direction=direction,
             layout_timeout=12,
             for_tap=True,
+            show_on_screen=self._show_resource_on_screen,
         )
         if target is None:
             raise AssertionError("Button list is not visible: " + area)

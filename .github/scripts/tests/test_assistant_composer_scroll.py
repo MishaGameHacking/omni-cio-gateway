@@ -91,9 +91,19 @@ class AssistantComposerScrollTests(unittest.TestCase):
         with patch("time.sleep"):
             probe = ComposerViewport(2)
             probe.offset = 390  # Only ten pixels of the question remain visible.
-            probe.tap_resource(QUESTION, COMPOSER, direction="start")
+            history = ET.tostring(probe.tree()[0])
+
+            def native_reveal(area, target):
+                self.assertEqual((area, target), (COMPOSER, QUESTION))
+                probe.offset = 180  # Next observed frame exposes the same real editor.
+                return True
+
+            with patch.object(probe, "_show_resource_on_screen", side_effect=native_reveal) as reveal:
+                probe.tap_resource(QUESTION, COMPOSER, direction="start")
+            reveal.assert_called_once_with(COMPOSER, QUESTION)
             self.assertEqual(probe.taps, [QUESTION])
-            self.assertTrue(probe.scrolls)
+            self.assertEqual(probe.scrolls, [])
+            self.assertEqual(ET.tostring(probe.tree()[0]), history)
 
     def test_recovery_reveals_a_clipped_field_before_waiting_for_enabled_state(self):
         with patch("time.sleep"):

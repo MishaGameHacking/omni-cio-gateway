@@ -1,6 +1,6 @@
 # N00 — native text screens and candidate39 runtime
 
-Status at 2026-10-25 21:23 UTC: N00 remains in progress; N01–N11 are not implemented.
+Updated at 2026-10-25 21:59 UTC: N00 remains in progress; N01–N11 are not implemented.
 Published APK38 and production remain unchanged. Candidate39 is built, not released.
 
 ## Completed build and system-policy verification
@@ -76,10 +76,16 @@ bytes were copied with exact size/hash checks and were not rebuilt or relabelled
 
 ## Next gate
 
-Run40235053258 is executing the entire Android37 installation/upgrade/UI matrix,
-16KB followed by4KB, including all15 stages. Inspect actual receipts before
-marking N00 complete or publishing39. Do not skip later stages after a failure.
+Run40235053258 completed with both profiles FAILED at the assistant position
+target. The native-screen correction itself passed balance-privacy and goal-workflow
+at both page sizes, including the actual gestures, editing and recovery.
+Its113-file private archive has SHA-256
+`7d4991c8bc0abc25be92585751dadd70b717d8c6b6518c99df0f265d3d6fb386`
+and was received on Timeweb9417611.
+
+The next confirmed defect and Windows-applied repair are documented in
+[the native target report](N00_NATIVE_TARGET_REVEAL_2026-10-25.md).
+Run40237838049 passed1057 host tests and the rebuilt test driver's compilation/lint;
+the entire Android matrix is running. Candidate application APK bytes are unchanged.
 Physical-phone installation remains a separate unverified owner-side check.
 Continue N01 only after the N00 implementation/check gate is closed.
-The remainder of N01–N11, including the required shadow observation interval,
-cannot be marked implemented by this repair.
