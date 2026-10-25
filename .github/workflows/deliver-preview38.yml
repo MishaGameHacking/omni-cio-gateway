@@ -1,0 +1,106 @@
+name: Deliver exact APK 38 for the owner requested phone test
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/deliver-preview38.yml
+permissions:
+  contents: read
+concurrency:
+  group: owner-manual-preview38-delivery
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+    - name: Checkout pinned administrative transport only
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Honor owner manual test exception and verify the exact download
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        PYTHONUNBUFFERED: '1'
+      run: |
+        python3 - <<'PY'
+        import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+        sys.path[:0]=[".transport-admin/deploy",".transport-admin/tools"]
+        import prepare_owner_vm as p
+        import access_owner_vm as access
+        token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+        def api(method,path,body=None):
+            req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+            try:
+                with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                    raw=r.read(4194305);assert len(raw)<=4194304
+                    return r.status,json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+
+        def with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):
+            sid=9415007;ip="83.217.195.29";host="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIItaYR3yYmfPA7lJwNgOBGMr0Tu/ioG+Zarm+Utc33z0"
+            status,data=api("GET","/servers/"+str(sid));assert status==200
+            server=data["server"]
+            assert server["name"]=="Analyst AI PRO" and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
+            access.SERVER_ID=sid
+            with tempfile.TemporaryDirectory(prefix="analyst-ams-admin-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                created=access.request(token,"POST","/ssh-keys",{"name":"analyst-ams-admin-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
+                assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
+                attached=False
+                try:
+                    access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
+                    cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                    for attempt in range(12):
+                        try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
+                        except (p.ProbeError,subprocess.TimeoutExpired):
+                            if attempt==11:raise
+                            time.sleep(5)
+                    payload=remote_script.encode() if binary_input is None else binary_input
+                    remote_command="python3 -" if binary_input is None else "python3 -c "+shlex.quote(remote_script)
+                    result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                    if not capture:print(result.stdout.decode(errors="replace"),flush=True)
+                    if result.returncode:
+                        print("AMS_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-4000:],flush=True)
+                        raise RuntimeError("remote_task_failed")
+                    return result.stdout
+                finally:
+                    try:
+                        if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                    finally:
+                        access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                    print("AMS_TEMP_KEY_REMOVED=true",flush=True)
+
+        remote = 'import subprocess,sys\nresult=subprocess.run([\'/opt/analyst-ai/venv/bin/python\',\'-c\',\'"""One-time owner-requested APK 38 handoff; no fabricated runtime evidence."""\\nimport hashlib, json, os, pathlib, stat, sys, tempfile, time, zipfile\\n\\nAPK_SHA = \\\'058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef\\\'\\nAPK_BYTES = 29754870\\nCERT = \\\'bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\\\'\\nARCHIVE_SHA = \\\'e4dde847b35e6f97fc6c398355b71c8c0da0a146474128dd525c901c159cd477\\\'\\nSOURCE_SHA = \\\'a31fe06270f7d878422725a1f654824cc911c1ae55ad1925e45bfd07b4dbe89c\\\'\\nFOLDER = pathlib.Path(\\\'/var/lib/analyst-ai-build/incoming/windows-development-40207960042-1\\\')\\nROOT = pathlib.Path(\\\'/srv/analyst-ai-ota/releases\\\')\\nPACKAGE = \\\'ru.omnicio.app.debug\\\'\\n\\ndef need(value, message):\\n    if not value:\\n        raise RuntimeError(message)\\n\\ndef sha(data):\\n    return hashlib.sha256(data).hexdigest()\\n\\ndef trusted(path, directory=False, public=False):\\n    s = path.lstat()\\n    need((stat.S_ISDIR if directory else stat.S_ISREG)(s.st_mode), \\\'unexpected_path_type\\\')\\n    need(s.st_uid == 0 and not s.st_mode & 0o022 and path.resolve(strict=True) == path, \\\'untrusted_path\\\')\\n    if not directory:\\n        need(s.st_nlink == 1, \\\'hardlinked_file\\\')\\n    if public:\\n        need(s.st_mode & (0o001 if directory else 0o004), \\\'not_publicly_readable\\\')\\n    return s\\n\\ndef save_new(path, data, mode=0o600):\\n    if path.exists() or path.is_symlink():\\n        trusted(path)\\n        need(path.read_bytes() == data, \\\'existing_receipt_conflict\\\')\\n        return\\n    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)\\n    with os.fdopen(fd, \\\'wb\\\') as stream:\\n        stream.write(data)\\n        stream.flush()\\n        os.fsync(stream.fileno())\\n\\nneed(os.geteuid() == 0, \\\'root_required\\\')\\ntrusted(FOLDER, directory=True)\\narchive = FOLDER / \\\'windows-development-evidence.zip\\\'\\nneed(trusted(archive).st_size == 68595628, \\\'wrong_evidence_size\\\')\\nneed(sha(archive.read_bytes()) == ARCHIVE_SHA, \\\'wrong_evidence_archive\\\')\\napk_member = \\\'outputs/app/build/outputs/apk/preview/app-preview.apk\\\'\\nreport_member = \\\'outputs/app/build/outputs/apk/preview/apk-verification.json\\\'\\nwith zipfile.ZipFile(archive) as bundle:\\n    need(len(bundle.namelist()) == len(set(bundle.namelist())), \\\'duplicate_archive_member\\\')\\n    need(bundle.getinfo(\\\'windows-development-envelope.json\\\').file_size < 4 * 1024**2, \\\'envelope_too_large\\\')\\n    envelope = json.loads(bundle.read(\\\'windows-development-envelope.json\\\'))\\n    need(envelope[\\\'source_sha256\\\'] == SOURCE_SHA, \\\'wrong_source_identity\\\')\\n    need(envelope[\\\'report\\\'][\\\'build\\\'][\\\'status\\\'] == \\\'passed\\\', \\\'build_not_passed\\\')\\n    need(envelope[\\\'runtime_pass\\\'] is False and envelope[\\\'phone_verified\\\'] is False, \\\'unexpected_runtime_claim\\\')\\n    need(bundle.getinfo(apk_member).file_size == APK_BYTES, \\\'wrong_apk_size\\\')\\n    need(bundle.getinfo(report_member).file_size < 4 * 1024**2, \\\'apk_report_too_large\\\')\\n    apk_data = bundle.read(apk_member)\\n    report_data = bundle.read(report_member)\\n    for name, data in ((apk_member, apk_data), (report_member, report_data)):\\n        expected = envelope[\\\'files\\\'][name]\\n        need(expected[\\\'bytes\\\'] == len(data) and expected[\\\'sha256\\\'] == sha(data), \\\'export_member_changed\\\')\\nneed(sha(apk_data) == APK_SHA, \\\'wrong_apk_digest\\\')\\nreport = json.loads(report_data)\\nneed(report.get(\\\'package\\\') == PACKAGE and report.get(\\\'version_code\\\') == 38\\n     and report.get(\\\'version_name\\\') == \\\'0.13.0-preview\\\', \\\'wrong_apk_version\\\')\\nneed(report.get(\\\'target_sdk\\\') == 37 and report.get(\\\'min_sdk\\\') == 37, \\\'wrong_android_floor\\\')\\n\\nfor path in (pathlib.Path(\\\'/opt\\\'), pathlib.Path(\\\'/opt/analyst-ai\\\'), pathlib.Path(\\\'/opt/analyst-ai/backend\\\')):\\n    trusted(path, directory=True)\\nfor name in (\\\'client_updates.py\\\', \\\'release_publication.py\\\', \\\'release_lock.py\\\'):\\n    trusted(pathlib.Path(\\\'/opt/analyst-ai/backend\\\') / name)\\nsys.path.insert(0, \\\'/opt/analyst-ai\\\')\\nfrom backend.client_updates import AndroidRelease, ReleaseChannel\\nfrom backend.release_lock import publication_lock\\nfrom backend.release_publication import _require_apk_evidence, _require_android_floor, _existing_current, _resume_prepared, _stage_candidate\\n_require_apk_evidence(report, sha256=APK_SHA, size=APK_BYTES, certificate=CERT)\\n_require_android_floor(report)\\n\\ndirectory = ROOT / PACKAGE\\nfor path in (pathlib.Path(\\\'/srv\\\'), ROOT.parent, ROOT, directory):\\n    trusted(path, directory=True, public=True)\\ntrusted(directory / \\\'current.json\\\', public=True)\\nnotes = (\\\'Тестовая сборка 0.13.0-preview / 38 выдана по прямому запросу владельца \\\'\\n         \\\'25.10.2026 для проверки на его телефоне. Windows-сборка, JVM/lint, подпись \\\'\\n         \\\'и 16KB alignment проверены. Полная Android runtime-матрица и три Linux-модуля \\\'\\n         \\\'backend ещё не завершены; проверка телефона ожидается. Это разовое исключение \\\'\\n         \\\'для SHA-256 \\\' + APK_SHA + \\\', а не подтверждение полного выпуска.\\\')\\ncandidate = AndroidRelease.parse({\\n    \\\'schema_version\\\': 1, \\\'package_name\\\': PACKAGE, \\\'version_code\\\': 38,\\n    \\\'version_name\\\': \\\'0.13.0-preview\\\', \\\'apk_sha256\\\': APK_SHA, \\\'apk_bytes\\\': APK_BYTES,\\n    \\\'certificate_sha256\\\': CERT, \\\'min_sdk\\\': 37, \\\'published_at\\\': int(time.time()), \\\'notes\\\': notes,\\n})\\nchannel = ReleaseChannel(ROOT)\\nwith publication_lock(directory):\\n    old = channel.current(PACKAGE)\\n    need(old.certificate_sha256 == CERT, \\\'previous_certificate_changed\\\')\\n    need(old.version_code == 37 or (old.version_code == 38 and old.apk_sha256 == APK_SHA), \\\'unexpected_current_release\\\')\\n    previous_raw = (directory / \\\'current.json\\\').read_bytes()\\n    if old.version_code == 37:\\n        save_new(FOLDER / \\\'before-owner-manual38-current.json\\\', previous_raw)\\n    authorization = {\\n        \\\'kind\\\': \\\'owner_requested_manual_phone_test_exception\\\',\\n        \\\'owner_request\\\': \\\'Да мне этот апк я его проверю!\\\',\\n        \\\'date\\\': \\\'2026-10-25\\\', \\\'apk_sha256\\\': APK_SHA, \\\'apk_bytes\\\': APK_BYTES,\\n        \\\'source_archive_sha256\\\': ARCHIVE_SHA, \\\'source_sha256\\\': SOURCE_SHA,\\n        \\\'windows_run_id\\\': 40207960042, \\\'version_code\\\': 38,\\n        \\\'runtime_pass\\\': False, \\\'phone_verified\\\': False, \\\'complete_release_gate_passed\\\': False,\\n        \\\'backend_collection_errors\\\': 3,\\n        \\\'reason_for_current_manifest_change\\\': \\\'Existing server accepts only the exact current client version; APK 38 must be accepted for the requested phone test.\\\',\\n    }\\n    save_new(FOLDER / \\\'owner-manual38-authorization.json\\\', (json.dumps(authorization, ensure_ascii=False, indent=2) + \\\'\\\\n\\\').encode())\\n    existing = _existing_current(channel, directory, candidate)\\n    if existing is not None:\\n        candidate = existing\\n    else:\\n        candidate = _resume_prepared(channel, directory, candidate)\\n        with tempfile.TemporaryDirectory(prefix=\\\'manual38-\\\', dir=FOLDER) as scratch:\\n            apk = pathlib.Path(scratch) / \\\'candidate.apk\\\'\\n            save_new(apk, apk_data)\\n            _stage_candidate(channel, directory, candidate, apk)\\n    trusted(directory / candidate.filename, public=True)\\n    trusted(directory / \\\'current.json\\\', public=True)\\n    current = channel.current(PACKAGE)\\n    need(current.version_code == 38 and current.apk_sha256 == APK_SHA, \\\'channel_activation_failed\\\')\\n    need(sha(channel.verified_file(current).read_bytes()) == APK_SHA, \\\'published_bytes_changed\\\')\\n    receipt = {**authorization, \\\'version_name\\\': current.version_name,\\n               \\\'url\\\': \\\'https://analyst-ai-2941515.twc1.net/client/apk/\\\' + current.filename,\\n               \\\'certificate_sha256\\\': CERT, \\\'channel_version\\\': 38,\\n               \\\'previous_version\\\': 37, \\\'data_and_signing_key_unchanged\\\': True}\\n    save_new(FOLDER / \\\'owner-manual38-delivery.json\\\', (json.dumps(receipt, ensure_ascii=False, indent=2) + \\\'\\\\n\\\').encode())\\nprint(\\\'OWNER_MANUAL38_DELIVERY=\\\' + json.dumps(receipt, ensure_ascii=True), flush=True)\\n\'],stdin=subprocess.DEVNULL,timeout=180)\nraise SystemExit(result.returncode)\n'
+        output = with_ams(remote, timeout=240, capture=True).decode('utf-8')
+        lines = [line.split('=',1)[1] for line in output.splitlines() if line.startswith('OWNER_MANUAL38_DELIVERY=')]
+        assert len(lines)==1
+        receipt = json.loads(lines[0])
+        assert receipt['version_code']==38 and receipt['apk_sha256']=='058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef'
+        opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+        policy_url='https://analyst-ai-2941515.twc1.net/client/update-policy?package_name=ru.omnicio.app.debug'
+        with opener.open(urllib.request.Request(policy_url,headers={'Cache-Control':'no-cache'}),timeout=45) as response:
+            assert response.status==200
+            policy=json.loads(response.read(16385))
+        assert policy['version_code']==38 and policy['apk_sha256']==receipt['apk_sha256']
+        assert policy['certificate_sha256']==receipt['certificate_sha256']
+        assert 'https://analyst-ai-2941515.twc1.net'+policy['apk_path']==receipt['url']
+        hash_value=hashlib.sha256(); size=0
+        with opener.open(receipt['url'],timeout=120) as response:
+            assert response.status==200
+            assert response.headers.get_content_type()=='application/vnd.android.package-archive'
+            for block in iter(lambda:response.read(1024**2),b''):
+                size+=len(block)
+                assert size<=receipt['apk_bytes']
+                hash_value.update(block)
+        assert size==receipt['apk_bytes'] and hash_value.hexdigest()==receipt['apk_sha256']
+        with opener.open('https://analyst-ai-2941515.twc1.net/health',timeout=30) as response:
+            assert response.status==200
+        receipt.update(https_download_verified=True,https_policy_verified=True,backend_health_http=200)
+        print('OWNER_MANUAL38_PUBLIC_VERIFIED='+json.dumps(receipt,ensure_ascii=True),flush=True)
+
+        PY
