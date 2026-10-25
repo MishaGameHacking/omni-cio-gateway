@@ -72,20 +72,5 @@ jobs:
                           access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
-          status,data=api("GET","/account/services/cost")
-          assert status==200
-          matches=[]
-          def walk(obj):
-              if isinstance(obj,dict):
-                  if any(str(obj.get(k,""))=="9415007" for k in ("id","service_id","server_id")):matches.append(obj)
-                  for v in obj.values():walk(v)
-              elif isinstance(obj,list):
-                  for v in obj:walk(v)
-          walk(data)
-          allowed={"id","service_id","server_id","type","service_type","name","cost","total_cost","currency","price","is_paid","start_date","services","service"}
-          def sanitize(obj):
-              if isinstance(obj,dict):return {k:sanitize(v) for k,v in obj.items() if k in allowed}
-              if isinstance(obj,list):return [sanitize(v) for v in obj]
-              return obj
-          print("REDESIGN_TIMEWEB_ACTUAL_SERVICE_COST="+json.dumps({"top_keys":list(data),"matches":[sanitize(v) for v in matches]}),flush=True)
+          with_ams("import hashlib,json,pathlib,zipfile\np=pathlib.Path('/var/lib/analyst-ai-build/incoming/windows38-40201425770-1/windows-runtime-evidence.zip')\nraw=p.read_bytes()\nassert len(raw)==207550 and hashlib.sha256(raw).hexdigest()=='8a653aaef6f33b9d3dc4606fdf9e910c78a5d73621dfb5276cbc48e2f4469327'\nout={'archive_sha256':hashlib.sha256(raw).hexdigest(),'entries':[],'markers':{},'diagnostic_files':{},'activity_events':{}}\nwith zipfile.ZipFile(p) as z:\n    for i in z.infolist():\n        out['entries'].append({'name':i.filename,'bytes':i.file_size})\n        assert i.file_size<=64*1024*1024\n        if i.filename.endswith('runtime-console.log'):\n            lines=z.read(i).decode('utf-8','replace').splitlines()\n            markers=[l for l in lines if any(k in l for k in ('PROFILE_READINESS_DIAGNOSTIC=','PALETTE_FOREGROUND_DIAGNOSTIC=','PROFILE_LAUNCH','PROFILE_STAGE','Traceback','AssertionError'))]\n            out['markers'][i.filename]=markers\n            events=[l for l in lines if any(k in l for k in ('START u0','am_proc_start','am_proc_died','wm_on_','wm_restart_activity','wm_finish_activity','wm_resume_activity','ProfileUiProbeActivity','ForegroundUpdater','MainActivity'))]\n            out['activity_events'][i.filename]=events[-140:]\n        elif '/foreground-diagnostic/' in i.filename and i.filename.endswith('.json'):\n            assert i.file_size<100000\n            out['diagnostic_files'][i.filename]=json.loads(z.read(i))\nprint('REDESIGN_WINDOWS38_DIAGNOSTIC_DETAILS='+json.dumps(out),flush=True)\n", timeout=150)
           PY
