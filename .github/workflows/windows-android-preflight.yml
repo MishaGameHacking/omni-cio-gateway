@@ -55,7 +55,7 @@ jobs:
           result={"schema_version":1,"kind":"existing_windows_android_preflight","observed_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"runner_name":os.environ.get("RUNNER_NAME"),"runner_os":os.environ.get("RUNNER_OS"),"run_id":os.environ.get("GITHUB_RUN_ID"),"python":sys.version.split()[0],"platform":platform.platform(),"memory_total_bytes":m.total_physical,"memory_available_bytes":m.available_physical,"sdk_candidates":sdks,"system":system,"cpu":cpu,"gpu":gpu,"app_executed":False,"adb_server_touched":False,"avd_started":False}
           print("WINDOWS_ANDROID_PREFLIGHT="+json.dumps(result,ensure_ascii=True),flush=True)
           out=pathlib.Path(os.environ["RUNNER_TEMP"])/("analyst-windows-preflight-"+os.environ["GITHUB_RUN_ID"]+".json");out.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
-                    '@
+          '@
           $probe = Join-Path $env:RUNNER_TEMP ("analyst-windows-preflight-" + $env:GITHUB_RUN_ID + ".py")
           [System.IO.File]::WriteAllText($probe, $script, (New-Object System.Text.UTF8Encoding($false)))
           & py -3 $probe
