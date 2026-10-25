@@ -45,6 +45,12 @@ function Assert-Administrator {
     }
 }
 
+function Test-SystemPrincipal([string]$Account) {
+    if ($Account -match '^S-1-') { return $Account -eq 'S-1-5-18' }
+    $sid = [Security.Principal.NTAccount]::new($Account).Translate([Security.Principal.SecurityIdentifier])
+    return $sid.Value -eq 'S-1-5-18'
+}
+
 function Assert-LocalHost {
     if ($env:COMPUTERNAME -ne $script:ExpectedHost) { throw 'This setup belongs to the designated Analyst AI laptop.' }
 }
@@ -189,7 +195,7 @@ function Install-Maintenance {
         if (Test-Path -LiteralPath $pauseFile) { Remove-Item -LiteralPath $pauseFile }
         $actual = Get-ExistingTask
         if ($null -eq $actual -or $actual.State -eq 'Disabled') { throw 'Task registration could not be verified.' }
-        if ($actual.Actions[0].Execute -ne $script:PowerShellExe -or $actual.Principal.UserId -notin @('SYSTEM','S-1-5-18')) { throw 'Unexpected registered task identity.' }
+        if ($actual.Actions[0].Execute -ne $script:PowerShellExe -or -not (Test-SystemPrincipal $actual.Principal.UserId)) { throw 'Unexpected registered task identity.' }
         Write-Output 'INSTALLED: AnalystAI-RestartAfter12Hours. No immediate restart was requested.'
         Write-Output ('Status file: '+(Join-Path $script:InstallRoot 'status.json'))
     } catch {
@@ -274,7 +280,7 @@ function Test-Maintenance {
     Start-Sleep -Milliseconds 50
     if ((Get-AwakeSeconds) -lt $first) { throw 'Native awake clock regressed.' }
     $definition = New-RestartTaskDefinition
-    if ($definition.Principal.UserId -notin @('SYSTEM','S-1-5-18')) { throw 'Task must use SYSTEM.' }
+    if (-not (Test-SystemPrincipal $definition.Principal.UserId)) { throw 'Task must use SYSTEM.' }
     if ($definition.Actions[0].Arguments -notmatch '-Mode Run$') { throw 'Incorrect task action.' }
     if ($definition.Triggers.Count -ne 2) { throw 'Missing boot or periodic trigger.' }
     $power = Get-PowerSnapshot
