@@ -1,6 +1,7 @@
 """Exercise production listeners and Android's real cancelled Back event stream."""
 from __future__ import annotations
 
+import json
 import math
 import re
 import sys
@@ -40,11 +41,18 @@ def system_policies(probe, metrics, settled):
     records = []
 
     def expected(motion, thermal, quality, enabled):
+        last = {}
         def observed():
+            nonlocal last
             actual = metrics()
+            last = actual
             return actual if actual.get("motion") == motion and actual.get("thermal") == thermal \
                 and actual.get("quality") == ("native-2d" if actual.get("renderer") == "native-2d" else quality) and actual.get("system-motion") is enabled else None
-        return probe.wait_for(observed, "Actual Android policy did not reach the renderer: " + motion)
+        try:
+            return probe.wait_for(observed, "Actual Android policy did not reach the renderer: " + motion)
+        except AssertionError:
+            print("ANDROID_POLICY_LAST_OBSERVED=" + json.dumps(last, sort_keys=True), flush=True)
+            raise
 
     try:
         probe.command("shell", "settings", "put", "global", "animator_duration_scale", "1")
@@ -63,7 +71,11 @@ def system_policies(probe, metrics, settled):
         probe.capture("spatial-system-motion-off")
 
         probe.command("shell", "settings", "put", "global", "animator_duration_scale", "1")
-        expected("Live", 0, "standard", True)
+        resumed = expected("Live", 0, "standard", True)
+        time.sleep(.8)
+        if draw_count(metrics()) <= draw_count(resumed):
+            raise AssertionError("Live artwork did not resume drawing after Android enabled motion")
+        records.append({"scenario": "android-system-motion-resumes-live-drawing", "runtime": resumed})
         probe.command("shell", "cmd", "thermalservice", "override-status", "2")
         moderate = expected("Subdued", 2, "economy", True)
         records.append({"scenario": "android-thermal-moderate-real-listener-and-reduced-motion", "runtime": moderate})

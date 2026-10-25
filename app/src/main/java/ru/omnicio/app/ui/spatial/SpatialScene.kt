@@ -5,11 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.database.ContentObserver
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
-import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -75,23 +71,24 @@ fun SpatialSceneRoot(
                 power.currentThermalStatus >= PowerManager.THERMAL_STATUS_MODERATE
         }
         val observer = LifecycleEventObserver { _, _ -> refresh() }
-        val settings = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) { refresh() }
+        // Settings notifications can arrive before ValueAnimator updates its cached
+        // scale. Listen to the animation policy itself, including re-enabling it.
+        val durationScaleListener = ValueAnimator.DurationScaleChangeListener { scale ->
+            systemMotion = scale > 0f
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) { refresh() }
         }
         val thermal = PowerManager.OnThermalStatusChangedListener { refresh() }
         lifecycle.addObserver(observer)
-        context.contentResolver.registerContentObserver(
-            Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, settings)
+        ValueAnimator.registerDurationScaleChangeListener(durationScaleListener)
         context.registerReceiver(receiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
             Context.RECEIVER_NOT_EXPORTED)
         power.addThermalStatusListener(context.mainExecutor, thermal)
         refresh()
         onDispose {
             lifecycle.removeObserver(observer)
-            context.contentResolver.unregisterContentObserver(settings)
+            ValueAnimator.unregisterDurationScaleChangeListener(durationScaleListener)
             context.unregisterReceiver(receiver)
             power.removeThermalStatusListener(thermal)
         }

@@ -17,8 +17,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 38", gradle)
-        self.assertIn('versionName = "0.13.0"', gradle)
+        self.assertIn("versionCode = 39", gradle)
+        self.assertIn('versionName = "0.13.1"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -66,10 +66,11 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         host = self.source("ui/spatial/SpatialScene.kt")
         self.assertIn("Lifecycle.State.STARTED", host)
         self.assertIn("ValueAnimator.areAnimatorsEnabled()", host)
-        self.assertIn("ANIMATOR_DURATION_SCALE", host)
+        self.assertIn("ValueAnimator.registerDurationScaleChangeListener(durationScaleListener)", host)
+        self.assertIn("systemMotion = scale > 0f", host)
         self.assertIn("bounds.width > 0f && bounds.height > 0f", host)
         self.assertIn("flatMotionPolicy(motion, foreground, systemMotion, constrained, severeThermal)", host)
-        for release in ("lifecycle.removeObserver(observer)", "unregisterContentObserver(settings)",
+        for release in ("lifecycle.removeObserver(observer)", "ValueAnimator.unregisterDurationScaleChangeListener(durationScaleListener)",
                         "unregisterReceiver(receiver)", "removeThermalStatusListener(thermal)"):
             self.assertIn(release, host)
         for unused in ("SpatialOwner(context)", "TextureView(", "AndroidView(", "Engine.create("):

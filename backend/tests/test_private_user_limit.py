@@ -174,9 +174,15 @@ class PrivateInstallationContractTests(unittest.TestCase):
 
     def test_owner_rules_record_closed_free_installation(self) -> None:
         rules = (self.root / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("максимум для пяти приглашённых уникальных Telegram-аккаунтов", rules)
-        self.assertIn("не будет оплат, подписок, покупок", rules)
-        self.assertIn("один общий процесс обслуживает от одного до пяти аккаунтов", rules)
+        # Historical entries may describe the retired five-user installation.
+        # Validate the current owner contract without changing admission tests.
+        current = rules.split("## Закрытая личная установка\n", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("одного ранее подтверждённого владельца", current)
+        self.assertIn("по точной подтверждённой идентичности", current)
+        self.assertIn("не по принципу «первый зарегистрировавшийся»", current)
+        self.assertIn("Сохранить owner binding", current)
+        self.assertIn("Один владелец не означает один брокерский счёт или одну сессию", current)
+        self.assertIn("не будет оплат, подписок, покупок", current)
 
 
 if __name__ == "__main__":
