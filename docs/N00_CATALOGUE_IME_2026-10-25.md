@@ -133,7 +133,7 @@ and font1 price95. The value and caret remain above the keyboard. The synthetic
 debug disclosure rail makes these diagnostic windows narrower than production;
 do not describe its45% side rail as normal production geometry.
 
-## Complete matrix in progress
+## Complete matrix: actual 16KB failure, 4KB still running
 
 [Full run40243609014](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40243609014)
 checks the exact backed-up source
@@ -147,9 +147,42 @@ do not claim a second complete application build after that harness-only repair.
 
 This run has no diagnostic hook. All15 UI stages, upgrade from the actual
 published APK38 and clean installation are required on16384-byte and4096-byte
-profiles. At this checkpoint the16KB profile passed native2D, session context,
-balance privacy and goals, and was running business scenarios;4KB had not started.
+profiles. The16KB profile finished FAILED at2026-10-25T23:28:34Z.
+Measured page size, published38 clean installation,38→40 upgrade, launch,
+candidate40 clean installation and debug fixture installation passed. Native2D,
+session context, privacy and goals passed. All30 normal-font business cases
+passed; at font2, catalogue ready and empty passed, then partial failed:
+`List target not reachable: Покупка не прошла проверку`.
+
+The actual failure image shows the lower part of the purchase-check dialog,
+including the saved synthetic-purchase-check record and Close. This proves
+a response rendered; it does not establish the expected heading's geometry.
+Image SHA-256:
+`1e99c8506ad63cddaed2d62f17ddd55157049de5800a82a868ac1e0cfe4e5bf8`.
+[Evidence run40245031227](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40245031227)
+artifact12618042978 is426,069 bytes, archive SHA-256
+`4414f31e484867d25e9ea30b9125df975b9df587a0d8031cdc60d53d5e0135b9`.
+The downloaded archive and12 manifest file hashes were verified and the failure
+PNG was visually inspected. The runtime log SHA-256 is
+`f2c09b9fb68bf3f2a086dea4f974b91dbf2c05d0a5e8ecde1138e3ecda097227`.
+
+The4KB profile continues independently. At this checkpoint it passed native2D,
+session context, privacy and goals and reached catalogue at the normal font.
+
+[Diagnostic run40245350516](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40245350516)
+is queued behind the same canonical emulator lease. It uses the exact unchanged
+source and APKs. An external diagnostic hook observes the original result
+traversal; only after a real assertion failure does it inspect reverse scrolling
+and rethrow the original failure. It cannot claim a complete UI PASS. The
+response-insertion/scroll timing explanation is a hypothesis until these actual
+frames establish it. No new repair has been applied at this checkpoint.
+
 No complete Android PASS, physical-phone result or publication40 is claimed.
+The full build also explicitly records external_quality_gate as not_run_by_this_bootstrap;
+the tested source2347eb5 has no automatic check runs. Before a release/merge,
+retain the exact-head external quality gate and adapt the existing PR workflows
+to the owner's Windows/WSL execution rule and published38 upgrade baseline;
+do not launch their legacy cloud test/runtime paths or remove any quality gate.
 
 Preserve the signature, owner/session/broker bindings, database and read-only
 runtime. Do not enable paid AI or real-money execution. Continue N01–N11 in

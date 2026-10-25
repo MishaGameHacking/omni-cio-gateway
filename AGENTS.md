@@ -1,35 +1,37 @@
-## N00 25–26.10.2026 — APK40, полная Android-матрица выполняется
+## N00 25–26.10.2026 — полный APK40/16KB отказал на заголовке результата
 
-Run40239983022 полностью прошёл Windows/WSL check/build: host1057 (3 прежних
-skips), tools52/Node, backend1684 /1515 subtests, health/OpenAPI,174 JVM tests,
-lint, подпись и выравнивание. Прежний сертификат сохранён.
+Build40239983022 прошёл Windows/WSL: host1057 (прежние3 skips), tools52/Node,
+backend1684 /1515 subtests, health/OpenAPI,174 JVM tests, lint/подпись/alignment.
 APK40 /0.13.2-preview SHA256
 a3b7d0ec4e0ac568ed15a0853635e2056898618a911c4114f7576b4c5c315aa0.
-Архив1031 файлов68,755,175 bytes SHA256
-685ed5adf8bcba7f215fe20f735df4e80e007c5cb778b9501d101a6cd359df75
-подтверждён на Timeweb9417611; там код приложения не исполнялся.
+Два harness-файла затем прошли1060 host-тестов (3 skips) в40243041873.
+Четыре focused catalogue ready/partial при font2/font1 прошли на16KB,
+12 записей/снимков подтвердили вводnew1/95/950. Diagnostic workflow намеренно
+FAILED после focused случаев; release_gate_pass=false, не полная матрица.
 
-После доказанной обратной геометрии формы два harness-файла исправлены на
-ноутбуке в40243041873. Все1060 host-тестов прошли (прежние3 skips).
-Четыре focused случая каталога ready/partial при font2/font1 прошли на16KB;
-12 записей/снимков подтверждают вводnew1/95/950, focus/caret и сброс расчёта.
-Этот diagnostic workflow намеренно FAILED после четырёх случаев, его
-release_gate_pass=false. Не выдавать focused результат за полную матрицу.
-Архив49 файлов1,883,136 bytes SHA256
-b894f93af42b81898f2a266fd6d5f7d309ac434d037445d66f5633f91ba248dd
-принят Timeweb9417611. Снимки загружены, хеши сверены, четыре просмотрены.
-
-Полный run40243609014 использует2347eb54b7270d947587adb0f3cc09a5e0de1572,
+Полный40243609014 использует2347eb54b7270d947587adb0f3cc09a5e0de1572,
 source inventory d79d8cfc31d74560eda38b8aeae8cf58aa5e389de8366d54b66886b47ad54cbc,
-те же APK40/debug/driver из полного build40239983022; diagnostic hook отсутствует.
-Все15 стадий на API37/16384 и4096 обязательны, baseline upgrade — опубликованный38.
-При этой записи16KB прошёл native2D/session/privacy/goals и выполняет business;
-4KB ещё не начался. Нельзя объявлять PASS до полного результата и receipts.
+те же APK40/debug/driver из build40239983022, без diagnostic hook.
+16KB FAILED в23:28:34Z на catalogue/partial/font2:
+List target not reachable: Покупка не прошла проверку.
+Установка38→40/clean/launch, native2D/session/privacy/goals и30 обычных
+business случаев прошли; при font2 catalogue ready/empty тоже прошли.
+Failure PNG показывает сохранённый расчёт внизу диалога. Это не доказательство
+геометрии ожидаемого заголовка. Снимок просмотрен, архив/12 файлов сверены.
+Evidence40245031227, archive SHA256
+4414f31e484867d25e9ea30b9125df975b9df587a0d8031cdc60d53d5e0135b9.
+
+4KB ещё выполняется. Диагностика40245350516 ожидает общую lease:
+наблюдает прежний поиск и при фактическом отказе обратную прокрутку,
+после чего сохраняет исходный отказ. Нового исправления пока нет.
 [Доказательства и точка продолжения](docs/N00_CATALOGUE_IME_2026-10-25.md).
 
-N00 открыт; публикации40 и подтверждения телефона нет. Сохранять подпись,
-owner/session/broker binding, БД и read-only runtime; платный ИИ и реальные
-торговые поручения не включать. Затем N01–N11 по порядку.
+N00 открыт; публикации40, полного runtime PASS и проверки телефона нет.
+External quality gate полным bootstrap не запускался. Перед PR/merge сохранять
+его требования и перевести устаревшие cloud test/runtime пути на Windows/WSL
+с baseline38; не запускать проверки вопреки указанию владельца.
+Подпись, owner/session/broker binding, БД и read-only runtime сохранять.
+Платный ИИ и реальные поручения не включать. Затем N01–N11 по порядку.
 
 ## OWNER 25.10.2026 — ноутбук без физического доступа владельца
 
