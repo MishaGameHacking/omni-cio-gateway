@@ -86,9 +86,49 @@ def _font_scale_scope(command):
             failure.add_note("Failed to restore font scale: " + str(error))
 
 
+
+def _native_context_frame(tree, scale):
+    """Observe this plain Compose screen without demanding decorative Canvas work."""
+    from profile_launch import ready_marker
+    from spatial_frame_evidence import spatial_metrics
+
+    geometry = _portrait_geometry(tree)
+    marker = ready_marker(tree, expected_screen="session-context")
+    if geometry is None or marker is None or marker.get("visible-to-user") != "true":
+        return None
+    metrics = spatial_metrics(tree)
+    if metrics is None:
+        return None
+    if metrics.get("renderer") != "native-2d":
+        raise AssertionError("Session context is not using the native 2D renderer")
+    if any(metrics.get(key) != 0 for key in ("engines", "windows", "frames", "meshes", "pending", "pool")):
+        raise AssertionError("Session context unexpectedly retained a 3D renderer")
+    if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0.0, abs_tol=1e-6):
+        return None
+    return {"geometry": list(geometry), "font_scale": metrics["font-scale"],
+            "decorative_draw_operations": metrics.get("draw-operations", 0)}
+
+
+def _capture_native_context(probe, scale, name):
+    from spatial_frame_evidence import read_screenshot
+
+    def observe():
+        before = _native_context_frame(probe.tree(), scale)
+        if before is None:
+            return None
+        image = read_screenshot(probe.capture(name))
+        after = _native_context_frame(probe.tree(), scale)
+        if after is None or before["geometry"] != after["geometry"]:
+            return None
+        if [image.width, image.height] != after["geometry"]:
+            return None
+        return after
+
+    return probe.wait_for(observe, "Session context native frame, font scale and PNG did not agree")
+
+
 def _case(probe, scale):
     from profile_launch import launch_profile
-    from spatial_frame_evidence import ready_spatial_metrics
 
     probe.command("shell", "settings", "put", "system", "font_scale", str(scale))
     launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="session-context")
@@ -101,10 +141,7 @@ def _case(probe, scale):
     probe.tap_resource(LOGIN_A, AREA)
     _context(probe, "A", "account-2", "month")
     name = "session-context-restored" + suffix
-    probe.capture(name)
-    metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Session context did not render")
-    if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0.0, abs_tol=1e-6):
-        raise AssertionError("Session context did not use the requested font scale")
+    frame = _capture_native_context(probe, scale, name)
     probe.tap_resource(EXPIRE, AREA)
     probe.tap_resource(LOGIN_B, AREA)
     _context(probe, "B")
@@ -118,7 +155,7 @@ def _case(probe, scale):
     _context(probe, "A")
     return {"font_scale": scale, "same_user_restored_after_rotation": True, "orientation_policy": "portrait",
             "different_user_isolated": True, "previous_user_evicted": True,
-            "explicit_logout_cleared": True, "screenshot": name + ".png"}
+            "explicit_logout_cleared": True, "screenshot": name + ".png", "native_frame": frame}
 
 
 def exercise_session_context(probe):
