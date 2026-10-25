@@ -34,11 +34,21 @@ jobs:
         token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
         def api(method,path,body=None):
             req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
-            try:
-                with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
-                    raw=r.read(4194305);assert len(raw)<=4194304
-                    return r.status,json.loads(raw) if raw else {}
-            except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+            attempts=5 if method=='GET' else 1
+            for attempt in range(attempts):
+                try:
+                    with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                        raw=r.read(4194305);assert len(raw)<=4194304
+                        return r.status,json.loads(raw) if raw else {}
+                except urllib.error.HTTPError as e:
+                    result=(e.code,p.cloud.error_details(e.read(65536)))
+                    if method!='GET' or e.code not in (429,500,502,503,504) or attempt==attempts-1:return result
+                    failure='http_'+str(e.code)
+                except (TimeoutError,urllib.error.URLError) as e:
+                    if method!='GET' or attempt==attempts-1:raise
+                    failure=type(e).__name__
+                print('TIMEWEB_READ_RETRY='+json.dumps({'path':path,'attempt':attempt+1,'reason':failure}),flush=True)
+                time.sleep(min(2**(attempt+1),15))
 
         from contextlib import contextmanager
         import importlib.util,stat
@@ -77,7 +87,6 @@ jobs:
                     finally:
                         access.request(token,"DELETE","/ssh-keys/"+str(kid))
                     print("RUNTIME_STAGE_TEMP_KEY_REMOVED="+str(sid),flush=True)
-
 
         CHECK='import hashlib,json,os,pathlib,sqlite3,stat,subprocess,sys\n\ndef need(value,code):\n    if not value:raise RuntimeError(code)\ndef sha(path):\n    with path.open(\'rb\') as stream:return hashlib.file_digest(stream,\'sha256\').hexdigest()\ndef trusted(path):\n    s=path.lstat();need(stat.S_ISREG(s.st_mode) and s.st_uid==0 and not s.st_mode&0o022 and path.resolve()==path,\'untrusted_receipt\')\n\nneed(os.geteuid()==0,\'root_required\')\nrole,stage=sys.argv[1:3]\nneed(stage==\'runtime-final-20261025-40213299556\',\'unexpected_cutover_stage\')\nbase=pathlib.Path(\'/root/.analyst-runtime-stage-\'+stage)\nunits={}\nfor unit in (\'analyst-ai-owner.service\',\'analyst-ai-updates.service\',\'caddy.service\'):\n    text=subprocess.check_output([\'systemctl\',\'show\',unit,\'--no-pager\',\'-p\',\'ActiveState\',\'-p\',\'MainPID\',\'-p\',\'ControlPID\',\'-p\',\'UnitFileState\'],timeout=15,text=True)\n    units[unit]=dict(line.split(\'=\',1) for line in text.splitlines() if \'=\' in line)\nif role==\'old\':\n    need(os.uname().nodename==\'analyst-ai-ams-main\',\'unexpected_old_host\')\n    path=base/\'retired-old-receipt.json\';trusted(path);receipt=json.loads(path.read_bytes())\n    need(receipt[\'retired\'] is True and receipt[\'replacement_id\']==9417611,\'retirement_not_recorded\')\n    need(all(row[\'ActiveState\']==\'inactive\' and row[\'MainPID\']==\'0\' and row[\'ControlPID\']==\'0\' and row[\'UnitFileState\']==\'disabled\' for row in units.values()),\'old_runtime_still_active\')\n    result={\'server_id\':9415007,\'retired\':True,\'units\':units,\'safe_to_delete_after_replacement_verification\':True}\nelse:\n    need(role==\'new\' and os.uname().nodename==\'analyst-ai-runtime-20261025\',\'unexpected_replacement_host\')\n    path=base/\'cutover-complete.json\';trusted(path);receipt=json.loads(path.read_bytes())\n    need(receipt[\'old_server_id\']==9415007 and receipt[\'new_server_id\']==9417611 and receipt[\'active_ip\']==\'83.217.195.29\',\'wrong_cutover_identity\')\n    need(all(row[\'ActiveState\']==\'active\' and int(row[\'MainPID\'])>0 and row[\'UnitFileState\']==\'enabled\' for row in units.values()),\'replacement_runtime_not_running\')\n    need(sha(base/\'runtime.tar\')==receipt[\'runtime_archive_sha256\'],\'final_runtime_backup_changed\')\n    archive=pathlib.Path(\'/var/backups/analyst-ai-retired-9415007-20261025/preservation.tar.gz\');trusted(archive)\n    need(archive.stat().st_size==706187073 and sha(archive)==\'8b29d3c1e790281f99f9ed824c7d8d6b1c183df43c0e4e6af0ec810f8f518ec9\',\'preservation_archive_changed\')\n    need(sha(pathlib.Path(\'/etc/analyst-ai/backend.env\'))==\'4fd25800431cc948a45b5bf067102b6fb26f443361628000e1194b6818bb79e6\',\'runtime_credentials_changed\')\n    current=json.loads(pathlib.Path(\'/srv/analyst-ai-ota/releases/ru.omnicio.app.debug/current.json\').read_bytes())\n    need(current[\'version_code\']==38 and current[\'apk_sha256\']==\'058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef\',\'replacement_apk_changed\')\n    code="import sqlite3,json; c=sqlite3.connect(\'file:/var/lib/analyst-ai/backend.db?mode=ro\',uri=True,timeout=15);c.execute(\'PRAGMA query_only=ON\');assert c.execute(\'PRAGMA quick_check\').fetchall()==[(\'ok\',)];assert c.execute(\'PRAGMA foreign_key_check\').fetchone() is None;print(json.dumps({\'quick_check\':\'ok\',\'foreign_key_check\':\'ok\'}));c.close()"\n    probe=subprocess.run([\'runuser\',\'-u\',\'analyst-ai\',\'--\',\'/opt/analyst-ai/venv/bin/python\',\'-c\',code],stdin=subprocess.DEVNULL,capture_output=True,timeout=45)\n    need(probe.returncode==0,\'replacement_database_integrity_failed\')\n    root=pathlib.Path(\'/var/lib/analyst-ai-build\')\n    if not root.exists():root.mkdir(mode=0o750);os.chown(root,995,986)\n    s=root.lstat();need(stat.S_ISDIR(s.st_mode) and not root.is_symlink() and s.st_uid==995 and s.st_gid==986 and stat.S_IMODE(s.st_mode)==0o750,\'future_archive_home_invalid\')\n    result={\'server_id\':9417611,\'active\':True,\'units\':units,\'database\':json.loads(probe.stdout),\'preservation_sha256\':receipt[\'preservation\'][\'sha256\'],\'runtime_archive_sha256\':receipt[\'runtime_archive_sha256\'],\'apk_version\':38,\'future_windows_archive_home_ready\':True}\nprint(json.dumps(result,sort_keys=True),flush=True)\n'
         def public_probe(*,resolve_ip=None):
