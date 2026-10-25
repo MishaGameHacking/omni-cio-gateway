@@ -94,7 +94,7 @@ jobs:
         else:raise RuntimeError('pagination_exhausted')
         print('CLEANUP_SERVERS='+json.dumps(servers),flush=True)
         status,payload=api('GET','/floating-ips');assert status==200
-        rows=payload.get('floating_ips',payload.get('floating-ips'));assert isinstance(rows,list)
+        rows=payload['ips'];assert isinstance(rows,list)
         print('CLEANUP_IPS='+json.dumps([scalar(row,('id','ip','availability_zone','project_id','resource_type','resource_id','is_ddos_guard')) for row in rows]),flush=True)
         status,payload=api('GET','/projects/2941515/resources');assert status==200
         print('CLEANUP_PROJECT_RESOURCES='+json.dumps({k:([scalar(x,('id','name','status','location')) for x in v] if k=='dedicated_servers' else len(v)) for k,v in payload.items() if isinstance(v,list)}),flush=True)
