@@ -72,21 +72,20 @@ jobs:
                           access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
-          status,data=api("GET","/servers/9415007")
+          status,data=api("GET","/account/services/cost")
           assert status==200
-          server=data["server"]
-          public={k:v for k,v in server.items() if any(p in k.lower() for p in ("price","cost","configuration","preset","configurator")) and (v is None or isinstance(v,(str,int,float,bool)))}
-          print("REDESIGN_CURRENT_TIMEWEB_PRICE_FIELDS="+json.dumps({"keys":sorted(server),"pricing":public}),flush=True)
-          status,data=api("GET","/presets/servers")
-          assert status==200
-          ids={2579,6749,6759,6807,6809,6811}
-          print("REDESIGN_SELECTED_TIMEWEB_PRESETS="+json.dumps([p for p in data["server_presets"] if p["id"] in ids]),flush=True)
-          status,data=api("GET","/configurator/servers")
-          assert status==200
-          out={"keys":list(data),"items":[]}
-          for values in data.values():
-              if not isinstance(values,list):continue
-              for p in values:
-                  if isinstance(p,dict) and (p.get("id")==153 or p.get("location") in ("nl-1","ru-4","ru-5")):out["items"].append(p)
-          print("REDESIGN_CURRENT_TIMEWEB_CONFIGURATORS="+json.dumps(out),flush=True)
+          matches=[]
+          def walk(obj):
+              if isinstance(obj,dict):
+                  if any(str(obj.get(k,""))=="9415007" for k in ("id","service_id","server_id")):matches.append(obj)
+                  for v in obj.values():walk(v)
+              elif isinstance(obj,list):
+                  for v in obj:walk(v)
+          walk(data)
+          allowed={"id","service_id","server_id","type","service_type","name","cost","total_cost","currency","price","is_paid","start_date","services","service"}
+          def sanitize(obj):
+              if isinstance(obj,dict):return {k:sanitize(v) for k,v in obj.items() if k in allowed}
+              if isinstance(obj,list):return [sanitize(v) for v in obj]
+              return obj
+          print("REDESIGN_TIMEWEB_ACTUAL_SERVICE_COST="+json.dumps({"top_keys":list(data),"matches":[sanitize(v) for v in matches]}),flush=True)
           PY
