@@ -1,3 +1,5 @@
+> **Актуальная точка продолжения — 25.10.2026, 18:58 МСК:** Windows build/JVM/lint/signature PASS; source`a31fe062` сохранён точным Git-деревом. Linux-only collection errors3 и skips2 не считаются успехом. Новый runtime9417611: health200, workspace401, SQLite OK; cutover ещё не выполнен. [Результаты, ссылки и следующий шаг](CONTINUATION_2026-10-25.md).
+
 ## Проверка 25.10.2026 — клиент 37 подключился, Android runtime заблокирован
 
 Сервер подтвердил действующую owner session и принятый запрос клиента 37
