@@ -21,8 +21,8 @@ jobs:
             const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40235053258-1/app/build/outputs/apk/preview';
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
-            const source=p.join(root,'ui-screens');
-            const allowed=['balance-private-first.png','balance-private-second.png','balance-private-first-font-200.png','balance-private-second-font-200.png','balance-privacy-verification.json'];
+            const source=p.join(root,'ui-screens-api37-16384');
+            const allowed=['failure.png','balance-private-first-font-200.png','balance-privacy-verification.json','goal-workflow-verification.json'];
             const identities={};
             const cp=require('node:child_process');
             const sourceRoot=p.resolve(root,'../../../../..');
@@ -40,16 +40,16 @@ jobs:
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
             const report={source_run:40235053258,source_root:source,debug_apk_sha256:'42b90f2ab4b5ba2fbb0aeb612b0e3380aae632567bf75e0ba473c8ec2c763c7d',identities,
               readiness_call_sites:fs.readdirSync(p.resolve(root,'../../../../../.github/scripts')).filter(n=>n.endsWith('.py')).flatMap(name=>{const lines=fs.readFileSync(p.join(p.resolve(root,'../../../../../.github/scripts'),name),'utf8').split(/\r?\n/);return lines.flatMap((line,i)=>line.includes('ready_spatial_metrics')?[name+':'+(i+1)+':'+line]:[])}),
-              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure/.test(l)).map(l=>l.slice(0,16000)).slice(-8),
+              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure|BUSINESS_UI_CASE|SCROLL_LAYOUT/.test(l)).map(l=>l.slice(0,16000)).slice(-18),
               available_files:fs.readdirSync(source).filter(n=>/\.(png|json)$/.test(n)),
               log_tail:lines.slice(-105).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 privacy fixture evidence and source audit',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Privacy stage passed; complete runtime is still in progress',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
+            await github.rest.checks.create({...context.repo,name:'N00 assistant impact failure evidence and source audit',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Privacy and goal passed; assistant impact stage failed',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
             core.setOutput('folder',out);
       - name: Preserve reviewable synthetic UI screenshots and failure log
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate39-privacy-ui-16384
+          name: n00-candidate39-assistant-failure-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
