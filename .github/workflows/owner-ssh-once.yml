@@ -1,8 +1,4 @@
-name: Stage the verified Timeweb application runtime
-on:
-  push:
-    branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [deploy/access_owner_vm.py, deploy/replace_unreachable_vm.py, deploy/adopt_replacement_vm.py, .github/workflows/owner-ssh-once.yml]
+name: Verify the staged Timeweb runtime before cutover
 permissions:
   contents: read
 concurrency:
@@ -13,88 +9,107 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Fetch the exact checked server sources
-        run: |
-          git fetch --depth=1 origin fd01d2ac090103cf64557c97aeaf36bc290e2cec
-          git fetch --depth=1 origin 79be182168e21ae8248e0e0dfa6deb0abfbacbcf
-      - name: Decode the reviewed runtime-only migration stage
-        run: |
-          python3 - <<'PY'
-          import base64,hashlib,os,pathlib,zlib
-          encoded="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"
-          assert hashlib.sha256(encoded.encode()).hexdigest()=="d912753bcdbdcab047922ea095edf036bb5adf398e843b5841522b2b33933136"
-          raw=zlib.decompress(base64.b64decode(encoded,validate=True))
-          assert len(raw)==27744 and hashlib.sha256(raw).hexdigest()=="824401b8417fc9011b1c3dea7e424685127240187e5a5ee39bda6fca412fd404"
-          path=pathlib.Path(os.environ["RUNNER_TEMP"])/"reviewed-runtime-migration-stage.py"
-          with path.open("xb") as stream:stream.write(raw)
-          path.chmod(0o600)
-          print("RUNTIME_STAGE_REVIEWED_TRANSPORT=true")
-          PY
-      - name: Copy runtime state to the new VM with all new services stopped
-        env:
-          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-          PYTHONUNBUFFERED: '1'
-        run: |
-          python3 - <<'PY'
-          import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
-          sys.path[:0]=["deploy","tools"]
-          import prepare_owner_vm as p
-          import access_owner_vm as access
-          token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
-          def api(method,path,body=None):
-              req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
-              try:
-                  with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
-                      raw=r.read(4194305);assert len(raw)<=4194304
-                      return r.status,json.loads(raw) if raw else {}
-              except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
-          
-          from contextlib import contextmanager
-          import importlib.util,stat
-          @contextmanager
-          def owned_remote(sid,name,ip,host):
-              status,data=api("GET","/servers/"+str(sid));assert status==200
-              server=data["server"]
-              assert server["id"]==sid and server["name"]==name and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
-              assert server.get("is_qemu_agent") is True and server.get("status")=="on"
-              with tempfile.TemporaryDirectory(prefix="analyst-runtime-stage-access-",dir=os.environ["RUNNER_TEMP"]) as directory:
-                  folder=pathlib.Path(directory);folder.chmod(0o700)
-                  p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
-                  access.SERVER_ID=sid
-                  created=access.request(token,"POST","/ssh-keys",{"name":"analyst-runtime-stage-"+os.environ["GITHUB_RUN_ID"]+"-"+str(sid),"body":public,"is_default":False})
-                  key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
-                  assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
-                  attached=False
-                  try:
-                      access.SERVER_ID=sid
-                      access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
-                      command=p.ssh_command(folder,ip,host);command[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
-                      for attempt in range(24):
-                          try:
-                              check=subprocess.run([*command,"test $(id -u) = 0"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=12)
-                              if check.returncode==0:break
-                              if attempt in (0,11,23):print("RUNTIME_STAGE_SSH_WAIT="+json.dumps({"server_id":sid,"attempt":attempt+1,"exit_code":check.returncode,"stderr":check.stderr.decode(errors="replace")[-1500:]}),flush=True)
-                              if attempt==23:raise RuntimeError("runtime_stage_ssh_not_ready")
-                          except subprocess.TimeoutExpired:
-                              if attempt==23:raise
-                          time.sleep(5)
-                      yield command
-                  finally:
-                      try:
-                          access.SERVER_ID=sid
-                          if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
-                      finally:
-                          access.request(token,"DELETE","/ssh-keys/"+str(kid))
-                      print("RUNTIME_STAGE_TEMP_KEY_REMOVED="+str(sid),flush=True)
-          path=pathlib.Path(os.environ["RUNNER_TEMP"])/"reviewed-runtime-migration-stage.py"
-          assert path.is_file() and not path.is_symlink() and hashlib.sha256(path.read_bytes()).hexdigest()=="824401b8417fc9011b1c3dea7e424685127240187e5a5ee39bda6fca412fd404"
-          spec=importlib.util.spec_from_file_location("reviewed_runtime_stage",path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-          with owned_remote(9415007,"Analyst AI PRO","83.217.195.29","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIItaYR3yYmfPA7lJwNgOBGMr0Tu/ioG+Zarm+Utc33z0") as old_command:
-              with owned_remote(9417611,"Analyst AI runtime 20261025","31.130.128.55","ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU runner@runnervmtai0g") as new_command:
-                  inspection="import json,pathlib,stat\nrows=[]\nfor name in ('/srv/analyst-ai','/srv/analyst-ai/workspace','/var/lib/analyst-ai-build','/var/lib/analyst-ai-build/runs','/var/lib/analyst-ai-build/staging'):\n p=pathlib.Path(name)\n if p.exists():\n  s=p.lstat();rows.append({'path':name,'uid':s.st_uid,'gid':s.st_gid,'mode':oct(stat.S_IMODE(s.st_mode)),'symlink':p.is_symlink()})\n else:rows.append({'path':name,'exists':False})\nprint(json.dumps(rows))\n"
-                  print("RUNTIME_MIGRATION_OLD_PARENT_METADATA="+p.remote(old_command,"python3 -",inspection.encode(),timeout=30).decode().strip(),flush=True)
-                  module.stage(old_command,new_command,"runtime-20261025-"+os.environ["GITHUB_RUN_ID"])
-          PY
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Verify installed runtime with schedulers disabled and stop it afterward
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        PYTHONUNBUFFERED: '1'
+      run: "python3 - <<'PY'\nimport hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error\n\
+        \nsys.path[:0]=[\"deploy\",\"tools\"]\nimport prepare_owner_vm as p\nimport access_owner_vm as access\ntoken=p.validated_token(os.environ[\"\
+        TIMEWEB_CLOUD_TOKEN\"])\ndef api(method,path,body=None):\n    req=urllib.request.Request(\"https://api.timeweb.cloud/api/v1\"\
+        +path,method=method,data=None if body is None else json.dumps(body).encode(),headers={\"Authorization\":\"Bearer \"\
+        +token,\"Accept\":\"application/json\",\"Content-Type\":\"application/json\"})\n    try:\n        with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45)\
+        \ as r:\n            raw=r.read(4194305);assert len(raw)<=4194304\n            return r.status,json.loads(raw) if\
+        \ raw else {}\n    except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))\n\nfrom contextlib\
+        \ import contextmanager\nimport importlib.util,stat\n@contextmanager\ndef owned_remote(sid,name,ip,host):\n    status,data=api(\"\
+        GET\",\"/servers/\"+str(sid));assert status==200\n    server=data[\"server\"]\n    assert server[\"id\"]==sid and\
+        \ server[\"name\"]==name and server[\"project_id\"]==2941515 and server[\"availability_zone\"]==\"ams-1\" and p.cloud.public_ipv4(server)==ip\n\
+        \    assert server.get(\"is_qemu_agent\") is True and server.get(\"status\")==\"on\"\n    with tempfile.TemporaryDirectory(prefix=\"\
+        analyst-runtime-stage-access-\",dir=os.environ[\"RUNNER_TEMP\"]) as directory:\n        folder=pathlib.Path(directory);folder.chmod(0o700)\n\
+        \        p.cloud.generate_key(folder/\"client\");public=(folder/\"client.pub\").read_text().strip()\n        access.SERVER_ID=sid\n\
+        \        created=access.request(token,\"POST\",\"/ssh-keys\",{\"name\":\"analyst-runtime-stage-\"+os.environ[\"GITHUB_RUN_ID\"\
+        ]+\"-\"+str(sid),\"body\":public,\"is_default\":False})\n        key=created.get(\"ssh_key\",created.get(\"ssh-key\"\
+        ,{}));kid=key[\"id\"]\n        assert type(kid) is int and key[\"body\"].split()[:2]==public.split()[:2]\n       \
+        \ attached=False\n        try:\n            access.SERVER_ID=sid\n            access.request(token,\"POST\",\"/servers/\"\
+        +str(sid)+\"/ssh-keys\",{\"ssh_key_ids\":[kid]});attached=True\n            command=p.ssh_command(folder,ip,host);command[1:1]=[\"\
+        -o\",\"ServerAliveInterval=20\",\"-o\",\"ServerAliveCountMax=3\"]\n            for attempt in range(24):\n       \
+        \         try:\n                    check=subprocess.run([*command,\"test $(id -u) = 0\"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=12)\n\
+        \                    if check.returncode==0:break\n                    if attempt in (0,11,23):print(\"RUNTIME_STAGE_SSH_WAIT=\"\
+        +json.dumps({\"server_id\":sid,\"attempt\":attempt+1,\"exit_code\":check.returncode,\"stderr\":check.stderr.decode(errors=\"\
+        replace\")[-1500:]}),flush=True)\n                    if attempt==23:raise RuntimeError(\"runtime_stage_ssh_not_ready\"\
+        )\n                except subprocess.TimeoutExpired:\n                    if attempt==23:raise\n                time.sleep(5)\n\
+        \            yield command\n        finally:\n            try:\n                access.SERVER_ID=sid\n           \
+        \     if attached:access.request(token,\"DELETE\",\"/servers/\"+str(sid)+\"/ssh-keys/\"+str(kid))\n            finally:\n\
+        \                access.request(token,\"DELETE\",\"/ssh-keys/\"+str(kid))\n            print(\"RUNTIME_STAGE_TEMP_KEY_REMOVED=\"\
+        +str(sid),flush=True)\n\nREMOTE = \"import datetime, hashlib, json, os, pathlib, shutil, sqlite3, stat, subprocess,\
+        \ time\\nimport urllib.error, urllib.request\\n\\ndef need(value, code):\\n    if not value:\\n        raise RuntimeError(code)\\\
+        n\\ndef digest(path):\\n    with pathlib.Path(path).open('rb') as stream:\\n        return hashlib.file_digest(stream,\
+        \ 'sha256').hexdigest()\\n\\ndef state(unit):\\n    result = subprocess.run(['systemctl', 'show', unit, '--no-pager',\
+        \ '-p', 'LoadState', '-p', 'ActiveState', '-p', 'MainPID', '-p', 'ControlPID'], capture_output=True, timeout=15, check=True)\\\
+        n    return dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)\\n\\ndef database():\\\
+        n    with sqlite3.connect('file:/var/lib/analyst-ai/backend.db?mode=ro', uri=True, timeout=10) as connection:\\n \
+        \       connection.execute('PRAGMA query_only=ON')\\n        need(connection.execute('PRAGMA quick_check').fetchall()\
+        \ == [('ok',)], 'database_quick_check')\\n        need(connection.execute('PRAGMA foreign_key_check').fetchone() is\
+        \ None, 'database_foreign_keys')\\n    return {'quick_check': 'ok', 'foreign_key_check': 'ok'}\\n\\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\\\
+        n    def redirect_request(self, *args, **kwargs):\\n        return None\\n\\ndef response(path):\\n    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),\
+        \ NoRedirect())\\n    request = urllib.request.Request('http://127.0.0.1:8080' + path, headers={'Accept': 'application/json'})\\\
+        n    try:\\n        with opener.open(request, timeout=5) as result:\\n            body = result.read(4097)\\n    \
+        \        need(len(body) <= 4096, 'health_body_too_large')\\n            return result.status, body\\n    except urllib.error.HTTPError\
+        \ as error:\\n        return error.code, b''\\n\\nos.umask(0o077)\\nneed(os.geteuid() == 0, 'root_required')\\nstage\
+        \ = pathlib.Path('/root/.analyst-runtime-stage-runtime-20261025-40206620200')\\nneed(stage.is_dir() and not stage.is_symlink(),\
+        \ 'migration_stage_missing')\\nreceipt = json.loads((stage / 'installed-receipt.json').read_text())\\nneed(receipt['stage_id']\
+        \ == 'runtime-20261025-40206620200' and receipt['archive_sha256'] == '8bfe20efa3e9917186a897ba484edf0523cc720f75b031e8c9705f1e27cbbcd6',\
+        \ 'migration_receipt_changed')\\nneed(digest('/etc/analyst-ai/backend.env') == receipt['original_environment_sha256'],\
+        \ 'original_environment_changed')\\noverride = pathlib.Path('/etc/analyst-ai/migration-stage.env')\\nneed(not override.is_symlink()\
+        \ and stat.S_IMODE(override.stat().st_mode) == 0o600 and override.stat().st_uid == 0, 'scheduler_override_permissions')\\\
+        nneed(override.read_bytes() == b'ANALYSIS_SCHEDULER_ENABLED=false\\\\nSANDBOX_WORKER_ENABLED=false\\\\n', 'scheduler_override_changed')\\\
+        nneed(pathlib.Path('/etc/systemd/system/analyst-ai-owner.service.d/90-migration-stage.conf').read_bytes() == b'[Service]\\\
+        \\nEnvironmentFile=/etc/analyst-ai/migration-stage.env\\\\n', 'service_override_changed')\\nunits = ('analyst-ai-owner.service',\
+        \ 'analyst-ai-updates.service', 'caddy.service')\\nfor unit in units:\\n    current = state(unit)\\n    need(current['ActiveState']\
+        \ == 'inactive' and current['MainPID'] == '0', 'new_unit_already_active')\\nreport = {'schema': 1, 'kind': 'new_runtime_local_health',\
+        \ 'server_id': 9417611,\\n          'started_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),\\n   \
+        \       'dns_changed': False, 'old_server_modified': False, 'public_cutover': False,\\n          'broker_operations':\
+        \ False, 'ai_calls': False, 'scheduler_enabled': False,\\n          'database_before': database(), 'checks': {}}\\\
+        nlog = stage / 'runtime-health-command.log'\\nneed(not log.exists(), 'health_probe_already_run')\\nstarted = False\\\
+        nerror = None\\ntry:\\n    with log.open('xb') as output:\\n        for name, command in (\\n            ('backend_dependencies',\
+        \ ['/opt/analyst-ai/venv/bin/python', '-m', 'pip', 'check']),\\n            ('updates_dependencies', ['/opt/analyst-ai-updates/venv/bin/python',\
+        \ '-m', 'pip', 'check']),\\n            ('caddy_configuration', ['/usr/bin/caddy', 'validate', '--config', '/etc/caddy/Caddyfile']),\\\
+        n        ):\\n            result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,\
+        \ timeout=60)\\n            report['checks'][name] = {'exit_code': result.returncode}\\n            need(result.returncode\
+        \ == 0, name + '_failed')\\n        started = True\\n        subprocess.run(['systemctl', 'start', 'analyst-ai-owner.service'],\
+        \ stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=60)\\n    deadline = time.monotonic()\
+        \ + 60\\n    while True:\\n        try:\\n            health, body = response('/health')\\n            if health ==\
+        \ 200 and json.loads(body) == {'status': 'ok'}:\\n                break\\n        except (OSError, ValueError):\\\
+        n            pass\\n        need(time.monotonic() < deadline, 'backend_health_deadline')\\n        time.sleep(1)\\\
+        n    running = state('analyst-ai-owner.service')\\n    need(running['ActiveState'] == 'active' and int(running['MainPID'])\
+        \ > 0, 'backend_not_running')\\n    process_environment = pathlib.Path('/proc/' + running['MainPID'] + '/environ').read_bytes().split(b'\\\
+        \\0')\\n    values = dict(entry.split(b'=', 1) for entry in process_environment if b'=' in entry)\\n    need(values.get(b'ANALYSIS_SCHEDULER_ENABLED')\
+        \ == b'false' and values.get(b'SANDBOX_WORKER_ENABLED') == b'false', 'scheduler_not_disabled_in_process')\\n    private,\
+        \ _ = response('/workspace/me')\\n    need(private == 401, 'private_route_not_protected')\\n    report['checks']['http']\
+        \ = {'health': health, 'workspace_without_session': private}\\n    report['checks']['effective_scheduler_override']\
+        \ = True\\n    report['database_after'] = database()\\n    report['memory_bytes'] = int(next(line.split()[1] for line\
+        \ in pathlib.Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemTotal:'))) * 1024\\n    report['disk_free_bytes']\
+        \ = shutil.disk_usage('/').free\\n    report['status'] = 'passed_local_backend_health'\\nexcept BaseException as failure:\\\
+        n    error = failure\\n    report['status'] = 'failed'\\n    report['error_type'] = type(failure).__name__\\n    report['error_code']\
+        \ = str(failure) if type(failure) is RuntimeError else 'operation_failed'\\nfinally:\\n    if started:\\n        stopped\
+        \ = subprocess.run(['systemctl', 'stop', 'analyst-ai-owner.service'], capture_output=True, timeout=60)\\n        report['stop_exit_code']\
+        \ = stopped.returncode\\n    report['services_after'] = {unit: state(unit) for unit in units}\\n    report['all_services_stopped']\
+        \ = all(s['ActiveState'] == 'inactive' and s['MainPID'] == '0' for s in report['services_after'].values())\\n    report['finished_at']\
+        \ = datetime.datetime.now(datetime.timezone.utc).isoformat()\\n    (stage / 'local-health-receipt.json').write_text(json.dumps(report,\
+        \ sort_keys=True))\\n    print('RUNTIME_LOCAL_HEALTH=' + json.dumps(report, sort_keys=True), flush=True)\\nneed(report['all_services_stopped'],\
+        \ 'new_services_remain_active')\\nif error is not None:\\n    raise SystemExit(1)\\n\"\nwith owned_remote(9417611,\"\
+        Analyst AI runtime 20261025\",\"31.130.128.55\",\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU\
+        \ runner@runnervmtai0g\") as command:\n    result = subprocess.run([*command,\"python3 -\"],input=REMOTE.encode(),capture_output=True,timeout=300)\n\
+        \    print(result.stdout.decode(),end=\"\",flush=True)\n    if result.returncode:\n        raise RuntimeError(\"new_runtime_local_health_failed\"\
+        )\nPY\n"
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - deploy/access_owner_vm.py
+    - deploy/replace_unreachable_vm.py
+    - deploy/adopt_replacement_vm.py
+    - .github/workflows/owner-ssh-once.yml
