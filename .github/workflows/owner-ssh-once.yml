@@ -55,11 +55,16 @@ jobs:
                   try:
                       access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
                       cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
-                      for attempt in range(12):
-                          try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
-                          except (p.ProbeError,subprocess.TimeoutExpired):
-                              if attempt==11:raise
-                              time.sleep(5)
+                      for attempt in range(24):
+                          try:
+                              ready=subprocess.run([*cmd,"test $(id -u) = 0"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=12)
+                              if ready.returncode==0:break
+                              if attempt in (0,11,23):print("AMS_SSH_DIAGNOSTIC="+json.dumps({"attempt":attempt+1,"exit_code":ready.returncode,"stderr":ready.stderr.decode(errors="replace")[-3000:]}),flush=True)
+                              if attempt==23:raise RuntimeError("ams_ssh_not_ready_observed_"+str(ready.returncode))
+                          except subprocess.TimeoutExpired:
+                              if attempt in (0,11,23):print("AMS_SSH_DIAGNOSTIC="+json.dumps({"attempt":attempt+1,"timeout":True}),flush=True)
+                              if attempt==23:raise
+                          time.sleep(5)
                       result=subprocess.run([*cmd,"python3 -"],input=remote_script.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
                       print(result.stdout.decode(errors="replace"),flush=True)
                       if result.returncode:
