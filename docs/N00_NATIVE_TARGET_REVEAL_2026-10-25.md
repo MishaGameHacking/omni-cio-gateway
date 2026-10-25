@@ -103,15 +103,19 @@ editor is actually tapped inside its own viewport and that chat history is uncha
 The first repair run40237347692 remains FAILED because that model lacked the new
 primitive. No Android acceptance was claimed from that attempt.
 
-## Continuation
+## Actual completion and continuation
 
-At 2026-10-25 21:59 UTC, run40237838049 is executing the full16KB profile,
-then the full4KB profile. Do not infer a runtime PASS from the host result.
-The new private archive includes the rebuilt test driver and exact source files.
-Its receipt is not yet confirmed; retain the Windows checkout.
+Run40237838049 completed with FAILURE. Both measured page sizes passed the
+four preceding stages and the previously failing assistant navigation, including
+font200. Both then failed catalogue/ready at font2 because the native editor
+disappeared above the visible keyboard. This is an independently observed product
+layout defect. The original native-input assertion remains unchanged.
 
-The full15-stage matrix must pass on both measured page sizes before this repair
-can close the corresponding N00 gate. The physical-phone check is separately
-unverified. Keep the current published APK, signature, owner data, server bindings
-and read-only runtime. Do not enable paid AI or real-money execution.
-Only after N00 is closed, continue N01 and the remaining plan in order.
+The244-file private archive is10,273,516 bytes, SHA-256
+`7e7119c0a9abdf7b07f9600afacad76895f644e4c6a5e3b36a7893292333730a`.
+Timeweb9417611 confirmed receipt at2026-10-25T22:33:10Z.
+The rebuilt test driver and all failed evidence are retained.
+
+[Candidate40 catalogue repair and subsequent checks](N00_CATALOGUE_IME_2026-10-25.md)
+continue N00. The full15-stage matrix remains required on both page sizes.
+Do not claim release acceptance or physical-phone verification from this repair.

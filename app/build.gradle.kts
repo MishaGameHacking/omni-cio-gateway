@@ -16,8 +16,8 @@ android {
         minSdk = 37
         targetSdk = 37
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 39
-        versionName = "0.13.1"
+        versionCode = 40
+        versionName = "0.13.2"
     }
 
     buildTypes {

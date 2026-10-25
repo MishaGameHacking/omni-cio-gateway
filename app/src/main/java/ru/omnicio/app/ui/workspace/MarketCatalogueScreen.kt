@@ -33,10 +33,13 @@ internal fun MarketCatalogueScreen(onBack: () -> Unit) {
     val path = "/workspace/catalogue?kind=${types[kind]}&query=${VolumeWorkspaceClient.encode(query)}&offset=$offset" +
         (revision?.let { "&revision=${VolumeWorkspaceClient.encode(it)}" } ?: "")
     val resource = rememberWorkspaceResource(path)
-    WorkspaceDetailPage("Каталог брокера", "Реальные инструменты за пределами вашего портфеля", onBack, SpectrumSymbol.Search) { padding ->
+    WorkspaceDetailPage("Каталог брокера", "Реальные инструменты за пределами вашего портфеля", onBack, SpectrumSymbol.Search,
+        adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
             .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
-            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 WorkspaceChoices("Тип", listOf("Облигации", "Акции", "Фонды"), kind) {
                     kind = it; offset = 0; revision = null
