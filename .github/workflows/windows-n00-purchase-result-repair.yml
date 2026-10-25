@@ -1,0 +1,344 @@
+name: N00 purchase result recovery red green and actual Android checks
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-purchase-result-repair.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-n00-purchase-result-repair
+  cancel-in-progress: false
+jobs:
+  preflight:
+    name: Verify the existing private return transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.prepare.outputs.release_id }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+        persist-credentials: false
+    - name: Create and verify one private run-owned transfer
+      id: prepare
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const helper=require(''./.github/scripts/ci_private_transfer.cjs'');
+
+          await helper({github,context,core,command:''prepare''});
+
+          const identity=helper.identity(context,process.env);
+
+          const releases=await github.paginate(github.rest.repos.listReleases,{...context.repo,per_page:100});
+
+          const matches=releases.filter(value=>value.tag_name===identity.tag);
+
+          if(matches.length!==1) throw new Error(''Exactly one preflight-owned private draft is required'');
+
+          const release=helper.owned(matches[0],identity);
+
+          if(release.assets.length!==0) throw new Error(''Preflight draft must be empty'');
+
+          await helper.inaccessibleWithoutAuth(context.repo,''releases/''+release.id,fetch);
+
+          core.setOutput(''release_id'',String(release.id));'
+  develop:
+    name: Apply bounded purchase result recovery on Windows and verify unchanged APK40
+    needs: preflight
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 70
+    permissions:
+      contents: write
+      checks: write
+    outputs:
+      archive_sha256: ${{ steps.evidence_upload.outputs.archive_sha256 }}
+    env:
+      SOURCE_ROOT: ${{ github.workspace }}\windows-development-${{ github.run_id }}-${{ github.run_attempt }}
+      ANDROID_SDK_ROOT: C:\actions-runner-2\_work\_tool\AndroidSdk\sdk
+      ANDROID_HOME: C:\actions-runner-2\_work\_tool\AndroidSdk\sdk
+      PYTHONUNBUFFERED: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: 740a50defc93262b30b800cf15f15086f83231ef
+        path: windows-development-${{ github.run_id }}-${{ github.run_attempt }}
+        persist-credentials: false
+    - name: Stage verified Windows transport n00-runtime.py
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-runtime.py.b64''; p.open(''w'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-runtime.py.b64''; p.open(''a'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''RUNNER_TEMP'']); b=zlib.decompress(base64.b64decode((p/''n00-runtime.py.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''fa39367c001fe09323984e4ffb9cf8e051a10d47bfc3d043885c96a6a232193d''; (p/''n00-runtime.py'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Stage verified Windows transport n00-purchase-result-repair.json
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-purchase-result-repair.json.b64''; p.open(''w'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-purchase-result-repair.json.b64''; p.open(''a'',encoding=''ascii'').write(''/a+4k38SipnO9bVezlgHZjq+QX2gIWcy08y8DPudgEWW+urAQ5XHK81rVvDcvc12VNPieLaxczbTVr8zJKhb+JmmxjolS6MkxhBqVFvim6FWQSrC+BQM6bwgNyuYVsN4AqcZSK8lyKCboGC3jSNY4Zh0A43J4c6rhGNq86MCnLWJ7TZwlbdWJ14m8AnvuCyGoIsmfJsR265xt70dtaK1jsFopuYlYlN5umEj3lrTFW5vrnQhTmmv9OOGVdLX0RbuowC815PoN9zIc9oRmIKD59InPtiaKoWN6I4zfjmhPQNLG20diwJ0+P2HHOmmVdW9fz6GiSOGsLTey6wJTBKHt53Q/ammg6jnQvXENhuoYLodEhWj/rJS+V4Nxmp6LcPcCityNdfDlxjsVFhM/OiObMmg41iLVO9AgbMh4YEIILOhH3HHEGOt0FOMqPJgKhnpwdHBkGyipF8Lt/PoLFb5So5u0FW5ZnR48+TbteiAmdeg5SQ3ZUBx9OxY0OnBFZ6fIX52x2rqAaMqUMSH9gTyY5WPOIknQ5Tw35YQlfrZaI9vdolOU7FPPX6MgjtWjP8k80yRsUJ6FM5SBVFjx7g91hK48sHYf9DjVpIE+B3cQVEdGrSxoi72IgYmJd/9aA/J3sYv4LjuJ8+LbX9BZGYAeOdU5H6XOsh38kmAGT/Zv+cy2yBL0XEXeVoJexya5MKo4GduhG4MySMmE2AOSxXAK5PJeH4CYR9lloJO6FBcvHzfumXSHUWWscI/rPVgYQsIFPlqr9IkERkzKmHtSiXL4lkhcSBIyjym5ZHGSnbAYGjRkNMCzk5bblIzp+4tZwJ00WNhCnwXZIgM6sBTX2QvcW/BDANIDirw0de2cFB9A6EBe5t8C+KmVEDlErWM29iA5IOTtRtSqA4vyUMBGfXZhTiJEGUgI+IEF4idSIyShIWAqnwkkySUFrkaFTtEEMF9++r6xzdv3D//eP23y+vvyCbFw2MURDWFqTTOONQ4dGhLVW0YDgmuJW3gtL7z2pRTzZrjkqGWAim2o8592Hr0vDWgacx01YhYl7At+bWzyYHZJkzlCO1OfWUW2WcSF3MT3Mw/47JUC2qK3Ly1kbUixi9AiSahinCVyxKszUbKb0ZEUjQEotFiCzt06lrl+pWGUaX7eTlwSeYQYpdaYry8vdpeJN3+k7hzfBewhX1DPMnjQqdNt7LBTFzQxJPm6Yt1++mLU5guLYKIJJJdQh9oFGu5mwbf9U16ZciMIthzzF1br7vhZpvDXG1aTwzMfYCcsDht5OrZAqqvx8KVx42SAq31vI5Oe9S2iWBWqQ3yPD+6lZFVVoA6d1S3SkYaiO04wyoPQipRlUYvtKnEdc/RKDMrrlO1OtDjwc9JZup0PXue/oikmbrJKpGnoT6y7LosUGP9fivPHUgHTOSQq5R9YH8Q8DRRA4/KQ7t5KW1l4F1IOzcaWvM8dVtRPW3Mr/lBgjgFvIAp6AKhycHAf+WpgiCjYdGEP1LrtD68J1UXgF9qZE2kozi2bksyOqR6RopRWaCJAlT+zNFlelDfUzSOfnRlwegjaGxFV7DUzENr4LhrcYaUHwTI6+4EUPHv04yjMSzDD9TFcluxOjXa6ggodnQOuy0KcmhWmgi8dS/nC/I9+ip8IFRA1C3I1wgPzyqgeKHe4gKFAs5oxgeHMQmTXJ5y7wHvIRCnJ/BUxRbTLCWURbko7mlhwFfBsIO8OSoZXWoukq7E2z8Cni8if8OK+zSo5Kg8wYnTBULI8hw6rwsSvCQu7uhmeKqnb88HZlQL1YsbFRqY3hzMmHitOap8hmpPubK0+WsCa/GyGgJrMxKq47qOqJ02UzUk2X/13ZRzd4x+F9tcrfnH33Fn9qY8iHCDwKlfpvbjz1faTQb6ZQf6YqXPMT8NsS5T8Mfun+Q3JKTOR4nUUgOUiMM2iqfVb5EjqejzSzb4OYNx6v0dlvp+SYSH3Js3ZQBpDNe6LOQp0fKkm1p0TaUSZ9jKixyaDggWqC3feI4FrY+Lb1zU65wfEJdxGxe0zq1CNTL6kjeUA9VdhkUT0ufJ3pOxZXZPlJJihwW1PHBtI86spqpWqWxYV/Ou2yqU7BbCvvNQHvoiGd1I615X01alopffuojjR6CYdUdOfN9op518N3UpjdKCS8kVMttdSfgA3MxdYSPycGZbbAxQ9PmEzKzmd+KgqemKnECp260Rp1et1pTIY+OUHgQ4CadV5mLUV2flcL09v9EyC/zdKelz3YloZ3gR9c+BBJnz/LMTp/F10j9w6lU7SXsGuRPOtZ5GmB9B59s1azRCB9S32Y2+noCuPMXKmnO1OdD0UYIqPNokadhkkRrp5rvsAe+yKhG7jBe6/CCtCyDRlTFn7f6e/zfO/PMCxvkFNFKdRmpJLq2XfzlbXxrWhuf2vnFF0Blkf+eW//+cEX7uyvU8a2tiRnFfnpsm8V4ZK/BdwS8D6AiYES0Tuu8uPyRumq+GiTqiq8e06dSrtPD0Q7NaGcI6dJdWVb7r/gz8VEZN8Poavc78mt2xj/267zk8chHBEQk2Dd95t2UhH9piombg/ICSvT9euGEwTqhzqu0yxFGuingDm4sy6O0xiOJKiOKmmKElMoaksLYukjJPRix+5mmKYevJBWMamouaPMsq/mlbrp4j+uURWUm2SfUMQew2Gp8hof990o7NmUJek52jq+RZIvwcUTZkEK87kGFDN0Ivegd2UJg/aQ25xcQwn5t/iLa5i862vBmlA7SdDcfOhmJtMOxzkNcRcZ7o58DbMZd5YvsAcjobNXVMb30vHrzH86qfiYxeHBX9HhHRr46GnoOETBR04KKl477mS0OqUgj5PSh7+IIRwmoRk2c6eEhOhHNkqLorHPcs49G6BupXS5lHS4aNYxTPNjNH10r8nGdgaiTPMS0vh+Rwb1VquDrEc8ht/Wxj9ttYo1OM0Q+p0IzzMu1rxqupJrskY/xmIaUw/B6s3KUZ49BP3obl0lzGOUuNalUTeYsWiHtjA/mH8l5x3IWTFw/IG795DKeZEyiriPw0fkcSP16Nm9CYFHcULfLerNEjkTeWjV03AVqu+wzoiEGeZiV1yeuQ0KLA7PPcuCusfhmF+mjZXCdnKukfLWXEUIYDuqB6WB6AaEnjMj9io49zr72Q3ApRfGgfThekrm3elP6iYIy5WSOeHo9/NQ2MJgBD7fq6zzcbDWVXHOZmgk/g56Dibkvza1uFjG3SB1wlPbyTECB3xqBGsPPBIcRr2LhG8muPZSqttA14p94ua8ZMj6jW6Xt6XdfY85MIKIgut7T8sqNu+9AUEcP2YFOnJSR3HXPrlJ2zdpTsZ4YFjOlEZknSG7p3t6CVDBQLHSYcBsdA/ATLM4PdB4PPzzC1Mphs3EzVAS/OVlWuLp33hgxL6y1P759IrO3A/pm0nrfDeL41MaQDFVo2JGOO+W67jfeulibPe99+DZFoWuJrmC2RDe7y9vvGBULNxsU4QaEVLi8NSrplRn+6O9KA2sZBPf1aWTXNp9yNMGw5UfgCQarjfCsjUQa7yribOFDHNZefeeOKnD+fYcYRwKF5Zm/Yfrjun8oMJTL1/+UTcU0OcAQXI+AIoEXWTM07YoFkr5sXIj07Ol1ds++BOJHa1UlE9bnJ0GctJqesCdyDVdomxQZW+Zj6YiNUXcJb3Wss0MKzOWleW/FsTh45MvDP4mEZLX9k9AOoJjJRSSh39ty7XVuS6Kn8O3ZtxnlMPON/hOE34OZB9RfZZU0DchrjGjH98/j0A3vkcE8qahAFPCLhgROsnfV6CRYdX/HP4+1tEuHtocLfFWmJLsC/KHHdMm+6urkXniMMN++SXsxmbOYvVsvFbOX5wWo6n9qT0PNnjhPS2YpNFnNraq9WEy9YQQ3qL2YLe7F0oJBtOyvfvEt6tmALm9nLebCgtrNwgsBzrOXEXvr+lLLlhDGPrVYhW839wKGe7UzD2WI6g2rhfMWCSe/p/dP/AIjQ/qI='')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''RUNNER_TEMP'']); b=zlib.decompress(base64.b64decode((p/''n00-purchase-result-repair.json.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''1f0a3b432e9e620bc08e92edd1c7e8cf4399b3edc77658a2be42e5b088176463''; (p/''n00-purchase-result-repair.json'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Stage verified Windows transport n00-focused-hook.py
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-focused-hook.py.b64''; p.open(''w'',encoding=''ascii'').write(''eJyNVl1P4zgUfc+vsPriZKdNGZ5WSH1g+BghraZoBrQPCFluctN6cW3LdgoI8d/n2k5CQ9kRlaom9v04997j404mk0tdtQ5qorgXOyAV91zqdRueHDjCGw+WcPKvULV+dLMdWNEItN9wq8A5YsFwYcvJZJKJrdHWk/+cVlNiuN9IseoXjdWNkMBawfBxBdO3TMNa1li9JQasE86D8rhBOvfG8i0wBOSEVslu1ToREAzuvS371u2cYQVdzC67q6yWsjfcCSdWuCr5CmSW/Vwub8iiB15e42/+HnbJWHxnRWnBabmDvCgNt4jW3R3fZ8vbECJGmhPKjZmvWiHruW69ab2bc/MwNxZ2Ah7nrZghHgDlaPArtw+1sHkXbHFjW2wSPGErmH6Ir0WGzQ7AF+SF1oKvlXZeVEwr+UxPSPKgFiRg4WzNPTDDncOtSy5d2Iszxfe7+2joWulZjyGsvmbairVQXGKOwwGVDKEDl8y0ttqEJClGltXQkC4eFleDqiDv5gxPBioP9ZRgZbw4yQh+ki0m6fP9j3U0VroGNB2NK9mXHrHnxZtbchBN8hGO/NAKUsqYlgsH5NQ5sB6JdGGttjn9CZVGXiOpO1i1wPOgPb5uuVB9YtqhQSYiGtr3YJacZpR8IWk+d5RX4TCx0G56H70S3Iob31rIQ4wB6qfq+nwtsQJEptZYUN1aodakm/EGa+ogdMX0gN9x4b5E6oKq85dIGeTGh5UhiSJo3B/mNuD744eudKvqQLowqHINPu+XsGr6hjdYhIZ/IbQ0ak1fe9xYhCI9/T5PVZzcO54m8r4dp7zGnQo6oiZlWcTexwVvn99m8Cj8ZqxNvTfhQRp5zcIkT0ZN6UMeaMt1WrgOL32cQ89yCBtr6Z5HdmEVVXtBsK/ce5sPZthbhlBlwxidxqLGGRpt8as8Qdrnx+XRlHwtj4qTg6EGO1eB4lboaEtDimeMSVHAvOCSfuC1z7gRkRBqQ0Pe2YtQPg9Pf309OipeZy99llf6x3BJ2Qbeju6AXltSW6IMdnRBvH38aawbZb1VeVFkH+Vo0lUZMTtW6a2RgJSP8IP4jp0+PJ7nA81IUO0T0rR4H91eEdcKD+QRWVMD3j5gUb3lc1ShSnKxxTQJFDxVYDz5hhgu4iMGD2SDkGBPHUYHO0J8of7ZhLMcfvJoX+B9Fo4XY9iVLbaLr4OBQ8qk/dex3MS3Jui13DsFqGHdBewi4LFOhU84NO8k8EA/0x+JmeTO03H/u5KHcjEUXmuDSR4u3fneVGfdoGZ6hd3f8eDjyvC3hBblo8VGMw9PPg8rZd1ujctTu6ZIZdQEvzgO0qsqXaN4Lmjrm9nfe5iMDSSlZ6c3p/8sv99esMvl2e2vi3N2fnX6/cfy183V2SLcBgfxMWojW7fpbvPsQAHgCWwVeLPYE6TsNyykKMo='')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''RUNNER_TEMP'']); b=zlib.decompress(base64.b64decode((p/''n00-focused-hook.py.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''b2d45704e47bb73103d72587ccea23d1dba669b7e5a24f5a84fc2c0869781be6''; (p/''n00-focused-hook.py'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Apply two reviewed result traversal test repairs in isolated Windows checkout
+      id: prepare
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" prepare
+
+        if errorlevel 1 exit /b 1'
+    - name: Prove original traversal fails then run all host tests with the repair
+      id: host
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" check
+
+        if errorlevel 1 exit /b 1'
+    - name: Publish exact Windows patch and host test observations
+      if: always() && steps.prepare.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const fs=require(''node:fs''),p=require(''node:path'');
+
+          const state=p.join(process.env.RUNNER_TEMP,''n00-purchase-result-repair-''+process.env.GITHUB_RUN_ID+''-''+process.env.GITHUB_RUN_ATTEMPT);
+
+          const source=JSON.parse(fs.readFileSync(p.join(state,''source-after-patches.json''),''utf8''));
+
+          const host=JSON.parse(fs.readFileSync(p.join(state,''host-check.json''),''utf8''));
+
+          const log=p.join(state,''host-tests.log'');
+
+          const report={source,host,test_summary:fs.existsSync(log)?fs.readFileSync(log,''utf8'').slice(-22000):null};
+
+          const fence=String.fromCharCode(96).repeat(3);
+
+          await github.rest.checks.create({...context.repo,name:''N00 purchase result recovery patch and host checks'',head_sha:context.sha,status:''completed'',conclusion:host.status===''passed''?''success'':''failure'',output:{title:''Actual
+          laptop test results'',summary:fence+''json\n''+JSON.stringify(report,null,2)+''\n''+fence}});'
+    - name: Actual focused catalogue result checks at fonts200 and100 (not full UI)
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" 16384
+
+        if errorlevel 1 exit /b 1'
+      id: runtime16
+      if: steps.host.outcome == 'success'
+    - name: Report real catalogue cases separately from full acceptance
+      if: always() && steps.host.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const fs=require(''node:fs''),p=require(''node:path'');
+
+          const path=p.join(process.env.SOURCE_ROOT,''app/build/outputs/apk/preview/ui-screens/catalogue-focused-observations.json'');
+
+          if(!fs.existsSync(path))throw new Error(''Focused diagnostic observations were not produced'');
+
+          const report=JSON.parse(fs.readFileSync(path,''utf8''));
+
+          report.source_root=process.env.SOURCE_ROOT;
+
+          const fence=String.fromCharCode(96).repeat(3);
+
+          await github.rest.checks.create({...context.repo,name:''N00 candidate40 focused catalogue observations (diagnostic only)'',head_sha:context.sha,status:''completed'',conclusion:''neutral'',output:{title:''Real
+          catalogue observations, no full runtime PASS'',summary:fence+''json\n''+JSON.stringify(report,null,2)+''\n''+fence}});'
+    - name: Preserve genuine UI and install evidence after either outcome
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" export
+
+        if errorlevel 1 exit /b 1'
+      if: always() && steps.prepare.outcome == 'success'
+      id: export
+    - name: Require the same empty private return draft
+      id: evidence_prepare
+      if: always() && steps.export.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        RETAINED_RELEASE_ID: ${{ needs.preflight.outputs.release_id }}
+      with:
+        script: 'const fs=require(''node:fs''),path=require(''node:path''),crypto=require(''node:crypto'');
+
+          const target=path.join(process.env.SOURCE_ROOT,''.github/scripts/ci_private_transfer.cjs'');
+
+          const bytes=fs.readFileSync(target);
+
+          const blob=crypto.createHash(''sha1'').update(Buffer.from(''blob ''+bytes.length+''\0'')).update(bytes).digest(''hex'');
+
+          if(blob!==''de4d2913298b94dfd8ce2755ca0776b2080415d7'') throw new Error(''Private transfer helper changed'');
+
+          const helper=require(target);
+
+          const identity=helper.identity(context,process.env);
+
+          const releases=await github.paginate(github.rest.repos.listReleases,{...context.repo,per_page:100});
+
+          const matches=releases.filter(value=>value.tag_name===identity.tag);
+
+          if(matches.length!==1) throw new Error(''Exactly one owned return draft is required'');
+
+          const release=helper.owned(matches[0],identity);
+
+          if(String(release.id)!==process.env.RETAINED_RELEASE_ID || release.assets.length!==0) throw new Error(''Preflight return ownership changed'');
+
+          await helper.inaccessibleWithoutAuth(context.repo,''releases/''+release.id,fetch);
+
+          core.info(''WINDOWS_DEVELOPMENT_PRIVATE_RETURN_READY=true'');'
+    - name: Upload the private Windows result archive
+      id: evidence_upload
+      if: always() && steps.evidence_prepare.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const fs=require(''node:fs''),path=require(''node:path''),crypto=require(''node:crypto'');
+
+          const target=path.join(process.env.SOURCE_ROOT,''.github/scripts/ci_private_transfer.cjs'');
+
+          const bytes=fs.readFileSync(target);
+
+          const blob=crypto.createHash(''sha1'').update(Buffer.from(''blob ''+bytes.length+''\0'')).update(bytes).digest(''hex'');
+
+          if(blob!==''de4d2913298b94dfd8ce2755ca0776b2080415d7'') throw new Error(''Private transfer helper changed'');
+
+          const helper=require(target);
+
+          await helper({github,context,core,command:''upload''});'
+  collect:
+    name: Return exact Windows source/build evidence to Timeweb storage
+    needs:
+    - preflight
+    - develop
+    if: always() && needs.develop.outputs.archive_sha256 != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+        persist-credentials: false
+    - name: Checkout the pinned Timeweb transport helpers
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Download and verify the exact private evidence archive
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        TRANSFER_SHA256: ${{ needs.develop.outputs.archive_sha256 }}
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'download'});
+    - name: Save verified evidence on Timeweb without publishing
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        TRANSFER_SHA256: ${{ needs.develop.outputs.archive_sha256 }}
+        PYTHONUNBUFFERED: '1'
+      run: "python3 - <<'PY'\nimport hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error\nsys.path[:0]=[\".transport-admin/deploy\"\
+        ,\".transport-admin/tools\"]\nimport prepare_owner_vm as p\nimport access_owner_vm as access\ntoken=p.validated_token(os.environ[\"TIMEWEB_CLOUD_TOKEN\"\
+        ])\ndef api(method,path,body=None):\n    req=urllib.request.Request(\"https://api.timeweb.cloud/api/v1\"+path,method=method,data=None if body is\
+        \ None else json.dumps(body).encode(),headers={\"Authorization\":\"Bearer \"+token,\"Accept\":\"application/json\",\"Content-Type\":\"application/json\"\
+        })\n    try:\n        with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45)\
+        \ as r:\n            raw=r.read(4194305);assert len(raw)<=4194304\n            return r.status,json.loads(raw) if raw else {}\n    except urllib.error.HTTPError\
+        \ as e:return e.code,p.cloud.error_details(e.read(65536))\n\ndef with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):\n  \
+        \  sid=9417611;ip=\"83.217.195.29\";host=\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU runner@runnervmtai0g\"\
+        \n    status,data=api(\"GET\",\"/servers/\"+str(sid));assert status==200\n    server=data[\"server\"]\n    assert server[\"name\"]==\"Analyst AI\
+        \ runtime 20261025\" and server[\"project_id\"]==2941515 and server[\"availability_zone\"]==\"ams-1\" and p.cloud.public_ipv4(server)==ip\n    access.SERVER_ID=sid\n\
+        \    with tempfile.TemporaryDirectory(prefix=\"analyst-ams-admin-\",dir=os.environ[\"RUNNER_TEMP\"]) as directory:\n        folder=pathlib.Path(directory);p.cloud.generate_key(folder/\"\
+        client\");public=(folder/\"client.pub\").read_text().strip()\n        created=access.request(token,\"POST\",\"/ssh-keys\",{\"name\":\"analyst-ams-admin-\"\
+        +os.environ[\"GITHUB_RUN_ID\"],\"body\":public,\"is_default\":False})\n        key=created.get(\"ssh_key\",created.get(\"ssh-key\",{}));kid=key[\"\
+        id\"]\n        assert type(kid) is int and key[\"body\"].split()[:2]==public.split()[:2]\n        attached=False\n        try:\n            access.request(token,\"\
+        POST\",\"/servers/\"+str(sid)+\"/ssh-keys\",{\"ssh_key_ids\":[kid]});attached=True\n            cmd=p.ssh_command(folder,ip,host);cmd[1:1]=[\"-o\"\
+        ,\"ServerAliveInterval=20\",\"-o\",\"ServerAliveCountMax=3\"]\n            for attempt in range(12):\n                try:p.remote(cmd,\"test $(id\
+        \ -u) = 0\",timeout=12);break\n                except (p.ProbeError,subprocess.TimeoutExpired):\n                    if attempt==11:raise\n    \
+        \                time.sleep(5)\n            payload=remote_script.encode() if binary_input is None else binary_input\n            remote_command=\"\
+        python3 -\" if binary_input is None else \"python3 -c \"+shlex.quote(remote_script)\n            result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)\n\
+        \            if not capture:print(result.stdout.decode(errors=\"replace\"),flush=True)\n            if result.returncode:\n                print(\"\
+        AMS_REMOTE_ERROR=\"+result.stderr.decode(errors=\"replace\")[-4000:],flush=True)\n                raise RuntimeError(\"remote_task_failed\")\n \
+        \           return result.stdout\n        finally:\n            try:\n                if attached:access.request(token,\"DELETE\",\"/servers/\"\
+        +str(sid)+\"/ssh-keys/\"+str(kid))\n            finally:\n                access.request(token,\"DELETE\",\"/ssh-keys/\"+str(kid))\n           \
+        \ print(\"AMS_TEMP_KEY_REMOVED=true\",flush=True)\n\n\nimport re\nrun=os.environ[\"GITHUB_RUN_ID\"];attempt=os.environ[\"GITHUB_RUN_ATTEMPT\"]\n\
+        expected=os.environ[\"TRANSFER_SHA256\"]\nassert re.fullmatch(r\"[1-9]\\d{0,19}\",run) and re.fullmatch(r\"[1-9]\\d{0,4}\",attempt)\nassert re.fullmatch(r\"\
+        [a-f0-9]{64}\",expected)\nblob=(pathlib.Path(os.environ[\"RUNNER_TEMP\"])/\"ci-handoff.zip\").read_bytes()\nassert 0<len(blob)<=512*1024**2 and\
+        \ hashlib.sha256(blob).hexdigest()==expected\nremote_script=r\"\"\"import pathlib,sys,hashlib,json,os,pwd,stat\ndata=sys.stdin.buffer.read(512*1024**2+1)\n\
+        assert len(data)==EXPECTED_BYTES and hashlib.sha256(data).hexdigest()==EXPECTED_HASH\nparent=pathlib.Path('/var/lib/analyst-ai-build/incoming')\n\
+        account=pwd.getpwnam('analyst-build')\nif not parent.exists():parent.mkdir(mode=0o750);os.chown(parent,0,account.pw_gid)\nassert parent.resolve()==parent\
+        \ and stat.S_ISDIR(parent.lstat().st_mode)\nfolder=parent/FOLDER\nfolder.mkdir(mode=0o750);os.chown(folder,0,account.pw_gid)\ndestination=folder/'windows-development-evidence.zip'\n\
+        with destination.open('xb') as out:out.write(data);out.flush();os.fsync(out.fileno())\nos.chown(destination,0,account.pw_gid);destination.chmod(0o640)\n\
+        assert hashlib.sha256(destination.read_bytes()).hexdigest()==EXPECTED_HASH\nreceipt={'path':str(destination),'sha256':EXPECTED_HASH,'bytes':len(data),'run_id':RUN_ID,'run_attempt':RUN_ATTEMPT,'publication_authorized':False,'origin':'Windows\
+        \ laptop','runtime_pass':False,'source_code_executed_on_timeweb':False}\nmetadata=folder/'transfer-receipt.json';metadata.write_text(json.dumps(receipt,indent=2)+'\\\
+        n');os.chown(metadata,0,account.pw_gid);metadata.chmod(0o640)\nprint('WINDOWS_DEVELOPMENT_RETURNED_ARCHIVE='+json.dumps(receipt),flush=True)\n\"\
+        \"\"\nremote_script=remote_script.replace(\"EXPECTED_BYTES\",str(len(blob))).replace(\"EXPECTED_HASH\",repr(expected)).replace(\"FOLDER\",repr(\"\
+        windows-development-\"+run+\"-\"+attempt)).replace(\"RUN_ID\",run).replace(\"RUN_ATTEMPT\",attempt)\nwith_ams(remote_script,timeout=180,binary_input=blob)\n\
+        PY\n"
+  cleanup:
+    name: Remove only this run's private transfer
+    needs:
+    - preflight
+    - develop
+    - collect
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+        persist-credentials: false
+    - name: Verify private transfer removal
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+  result:
+    name: Preserve focused evidence without claiming complete runtime acceptance
+    needs:
+    - preflight
+    - develop
+    - collect
+    - cleanup
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+    - env:
+        PREFLIGHT: ${{ needs.preflight.result }}
+        DEVELOP: ${{ needs.develop.result }}
+        COLLECT: ${{ needs.collect.result }}
+        CLEANUP: ${{ needs.cleanup.result }}
+      run: "for result in \"$PREFLIGHT\" \"$DEVELOP\" \"$COLLECT\" \"$CLEANUP\"; do\n  if [ \"$result\" != success ]; then\n    echo \"A required runtime\
+        \ or evidence transport stage failed.\"\n    exit 1\n  fi\ndone\necho \"Both exact APK38 emulator profiles passed; Linux and phone checks remain\
+        \ separate.\"\n"
