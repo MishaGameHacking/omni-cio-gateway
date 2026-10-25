@@ -1,4 +1,4 @@
-name: Inspect candidate39 native privacy evidence
+name: Inspect candidate39 large-font catalogue input
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,24 +11,19 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Copy actual successful privacy fixtures and audit Python source
+      - name: Copy actual large-font failure and preserved input observations
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
             if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
-            const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40235053258-1/app/build/outputs/apk/preview';
+            const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40237838049-1/app/build/outputs/apk/preview';
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const source=p.join(root,'ui-screens-api37-16384');
-            const allowed=['failure.png','balance-private-first-font-200.png','balance-privacy-verification.json','goal-workflow-verification.json'];
+            const allowed=['failure.png','business-assistant-ready-font-200.png','business-catalogue-ready.png'];
             const identities={};
-            const cp=require('node:child_process');
-            const sourceRoot=p.resolve(root,'../../../../..');
-            const audit=cp.spawnSync('py',['-3','.github/scripts/audit_python_sources.py'],{cwd:sourceRoot,encoding:'utf8',timeout:60000,maxBuffer:1000000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});
-            if(audit.status!==0)throw new Error('Python source audit failed: '+audit.stderr?.slice(-3000));
-            fs.writeFileSync(p.join(out,'python-source-audit.log'),audit.stdout+audit.stderr);
             function copy(from,name){
               const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000)throw new Error('unexpected_file');
               const data=fs.readFileSync(from);fs.writeFileSync(p.join(out,name),data,{flag:'wx'});
@@ -38,18 +33,17 @@ jobs:
             const log=p.join(root,'install-api37-16384/runtime-console.log');
             copy(log,'runtime-16384.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
-            const report={source_run:40235053258,source_root:source,debug_apk_sha256:'42b90f2ab4b5ba2fbb0aeb612b0e3380aae632567bf75e0ba473c8ec2c763c7d',identities,
-              readiness_call_sites:fs.readdirSync(p.resolve(root,'../../../../../.github/scripts')).filter(n=>n.endsWith('.py')).flatMap(name=>{const lines=fs.readFileSync(p.join(p.resolve(root,'../../../../../.github/scripts'),name),'utf8').split(/\r?\n/);return lines.flatMap((line,i)=>line.includes('ready_spatial_metrics')?[name+':'+(i+1)+':'+line]:[])}),
-              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure|BUSINESS_UI_CASE|SCROLL_LAYOUT/.test(l)).map(l=>l.slice(0,16000)).slice(-18),
+            const report={source_run:40237838049,source_root:source,debug_apk_sha256:'42b90f2ab4b5ba2fbb0aeb612b0e3380aae632567bf75e0ba473c8ec2c763c7d',identities,
+              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure|BUSINESS_UI_CASE|SCROLL_LAYOUT|NATIVE_EDITOR_FAILURE|UI_ACCESSIBILITY_ACTION/.test(l)).map(l=>l.slice(0,16000)).slice(-18),
               available_files:fs.readdirSync(source).filter(n=>/\.(png|json)$/.test(n)),
               log_tail:lines.slice(-105).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 assistant impact failure evidence and source audit',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Privacy and goal passed; assistant impact stage failed',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
+            await github.rest.checks.create({...context.repo,name:'N00 actual large-font catalogue input failure evidence',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Assistant passed both font sizes; catalogue input failed at font200',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
             core.setOutput('folder',out);
       - name: Preserve reviewable synthetic UI screenshots and failure log
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate39-assistant-failure-16384
+          name: n00-candidate39-catalogue-input-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
