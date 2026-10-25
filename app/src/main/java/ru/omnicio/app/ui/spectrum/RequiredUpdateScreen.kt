@@ -131,7 +131,7 @@ fun RequiredUpdateScreen(
             if (details) item(key = "update-process") { UpdateProcessSummary() }
             if (details) item(key = "update-source") {
                 Text(
-                    "APK загружается с московского сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
+                    "APK загружается с сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

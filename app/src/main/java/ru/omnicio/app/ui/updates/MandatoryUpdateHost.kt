@@ -57,6 +57,7 @@ fun MandatoryUpdateHost(
     val context = LocalContext.current
     val activity = LocalActivity.current as? ComponentActivity
     val active = rememberForeground(activity?.lifecycle)
+    val foregroundNow by rememberUpdatedState(active)
     val client = remember { UpdateClient() }
     val contentState = rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
@@ -74,32 +75,24 @@ fun MandatoryUpdateHost(
     val installationStatus by UpdateInstaller.statusText.collectAsState()
     val installationPending by UpdateInstaller.pending.collectAsState()
 
-    LaunchedEffect(active) {
-        if (active) withContext(Dispatchers.IO) { UpdateInstaller.refreshPending(context) }
-    }
+    fun startUpdate(chosen: ReleaseDescriptor, automatic: Boolean = false) {
+        val decision = chosen.decision(
+            BuildConfig.APPLICATION_ID,
+            BuildConfig.VERSION_CODE.toLong(),
+            Build.VERSION.SDK_INT,
+        )
+        if (!processUpdateAttempts.claim(
+                release = chosen,
+                decision = decision,
+                automatic = automatic,
+                foreground = foregroundNow && activity?.lifecycle?.currentState
+                    ?.isAtLeast(Lifecycle.State.STARTED) == true,
+                permissionGranted = context.packageManager.canRequestPackageInstalls(),
+                busy = busy,
+                installationPending = UpdateInstaller.pending.value,
+            )
+        ) return
 
-    LaunchedEffect(active, retry, serverBlocked) {
-        if (!active) return@LaunchedEffect
-        while (isActive) {
-            checking = true
-            try {
-                val verified = verifyPolicy(context, client)
-                release = verified.release
-                current = verified.current
-                feedback = feedback.policyChecked()
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) {
-                current = false
-                feedback = feedback.policyChecked(if (BackendConfig.isConfigured)
-                    "Не удалось проверить актуальность версии. Проверьте интернет и повторите попытку."
-                else BackendConfig.UNAVAILABLE_MESSAGE)
-            } finally { checking = false }
-            delay(60_000)
-        }
-    }
-
-    fun startUpdate(chosen: ReleaseDescriptor) {
-        if (busy || installationPending) return
         busy = true
         progressFlow.value = 0
         feedback = feedback.operationStarted()
@@ -109,9 +102,50 @@ fun MandatoryUpdateHost(
                 val apk = client.download(context, chosen) { progressFlow.value = it }
                 check(client.current() == chosen) { "Вышла более новая сборка. Повторите проверку." }
                 UpdateInstaller.install(context, apk, chosen)
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { feedback = feedback.operationFailed(failure.message ?: "Не удалось установить обновление. Повторите попытку.") }
-            finally { busy = false }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                feedback = feedback.operationFailed(
+                    failure.message ?: "Не удалось установить обновление. Повторите попытку.",
+                )
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(active, retry, serverBlocked) {
+        if (!active) return@LaunchedEffect
+        var pendingRecovered = false
+        while (isActive) {
+            checking = true
+            try {
+                // Recover existing sessions before any new automatic operation.
+                if (!pendingRecovered) {
+                    withContext(Dispatchers.IO) { UpdateInstaller.refreshPending(context) }
+                    pendingRecovered = true
+                }
+                val verified = verifyPolicy(context, client)
+                release = verified.release
+                current = verified.current
+                feedback = feedback.policyChecked()
+                // Failed policy reads never reach this call; current lifecycle is checked inside.
+                startUpdate(verified.release, automatic = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                current = false
+                feedback = feedback.policyChecked(
+                    if (BackendConfig.isConfigured) {
+                        "Не удалось проверить версию на сервере. Повторим проверку автоматически."
+                    } else {
+                        BackendConfig.UNAVAILABLE_MESSAGE
+                    },
+                )
+            } finally {
+                checking = false
+            }
+            delay(60_000)
         }
     }
 
