@@ -13,50 +13,8 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 6
     steps:
-      - name: Read host capacity, Android tools and acceleration without starting an emulator
-        shell: powershell
+      - name: Read host capacity and Android acceleration using the existing Python launcher
+        shell: cmd
         run: |
-          $ErrorActionPreference = 'Stop'
-          $script = @'
-          import ctypes,json,os,pathlib,platform,shutil,subprocess,sys,datetime,xml.etree.ElementTree as ET
-          assert sys.platform=="win32","This preflight must run on the existing Windows runner"
-          def run(args,timeout=20):
-              try:
-                  p=subprocess.run([str(a) for a in args],capture_output=True,text=True,errors="replace",timeout=timeout)
-                  return {"exit_code":p.returncode,"stdout":p.stdout[-6000:],"stderr":p.stderr[-2000:]}
-              except (OSError,subprocess.TimeoutExpired) as e:
-                  return {"error_type":type(e).__name__,"error":str(e)[:1200]}
-          class MemoryStatus(ctypes.Structure):
-              _fields_=[("length",ctypes.c_ulong),("load",ctypes.c_ulong),("total_physical",ctypes.c_ulonglong),("available_physical",ctypes.c_ulonglong),("total_pagefile",ctypes.c_ulonglong),("available_pagefile",ctypes.c_ulonglong),("total_virtual",ctypes.c_ulonglong),("available_virtual",ctypes.c_ulonglong),("available_extended_virtual",ctypes.c_ulonglong)]
-          m=MemoryStatus();m.length=ctypes.sizeof(m);assert ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-          candidates=[]
-          for raw in [os.environ.get("ANDROID_SDK_ROOT"),os.environ.get("ANDROID_HOME"),str(pathlib.Path(os.environ.get("LOCALAPPDATA",""))/"Android"/"Sdk"),str(pathlib.Path(os.environ.get("RUNNER_TOOL_CACHE",""))/"AndroidSdk"/"sdk")]:
-              if raw and raw not in candidates:candidates.append(raw)
-          sdks=[]
-          for raw in candidates:
-              p=pathlib.Path(raw)
-              if not p.is_dir():continue
-              d=shutil.disk_usage(p)
-              item={"path":str(p),"disk_free_bytes":d.free,"disk_total_bytes":d.total,"adb_exists":(p/"platform-tools/adb.exe").is_file(),"emulator_exists":(p/"emulator/emulator.exe").is_file(),"packages":[]}
-              for q in sorted(p.glob("system-images/*/*/*/package.xml")):
-                  try:
-                      root=ET.parse(q).getroot();package=next(x for x in root.iter() if x.tag.rsplit("}",1)[-1]=="localPackage")
-                      item["packages"].append({"path":package.attrib.get("path"),"xml_bytes":q.stat().st_size})
-                  except (ET.ParseError,StopIteration,OSError):item["packages"].append({"path":str(q.relative_to(p)),"invalid":True})
-              if item["emulator_exists"]:
-                  item["emulator_version"]=run([p/"emulator/emulator.exe","-version"])
-                  item["acceleration"]=run([p/"emulator/emulator.exe","-accel-check"])
-                  item["configured_avds"]=run([p/"emulator/emulator.exe","-list-avds"])
-              if item["adb_exists"]:item["adb_version"]=run([p/"platform-tools/adb.exe","version"])
-              sdks.append(item)
-          system=run(["powershell.exe","-NoProfile","-NonInteractive","-Command","Get-CimInstance Win32_ComputerSystem | Select-Object HypervisorPresent,NumberOfLogicalProcessors | ConvertTo-Json -Compress"])
-          cpu=run(["powershell.exe","-NoProfile","-NonInteractive","-Command","Get-CimInstance Win32_Processor | Select-Object Name,VirtualizationFirmwareEnabled,VMMonitorModeExtensions,SecondLevelAddressTranslationExtensions | ConvertTo-Json -Compress"])
-          gpu=run(["powershell.exe","-NoProfile","-NonInteractive","-Command","Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,Status | ConvertTo-Json -Compress"])
-          result={"schema_version":1,"kind":"existing_windows_android_preflight","observed_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"runner_name":os.environ.get("RUNNER_NAME"),"runner_os":os.environ.get("RUNNER_OS"),"run_id":os.environ.get("GITHUB_RUN_ID"),"python":sys.version.split()[0],"platform":platform.platform(),"memory_total_bytes":m.total_physical,"memory_available_bytes":m.available_physical,"sdk_candidates":sdks,"system":system,"cpu":cpu,"gpu":gpu,"app_executed":False,"adb_server_touched":False,"avd_started":False}
-          print("WINDOWS_ANDROID_PREFLIGHT="+json.dumps(result,ensure_ascii=True),flush=True)
-          out=pathlib.Path(os.environ["RUNNER_TEMP"])/("analyst-windows-preflight-"+os.environ["GITHUB_RUN_ID"]+".json");out.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
-          '@
-          $probe = Join-Path $env:RUNNER_TEMP ("analyst-windows-preflight-" + $env:GITHUB_RUN_ID + ".py")
-          [System.IO.File]::WriteAllText($probe, $script, (New-Object System.Text.UTF8Encoding($false)))
-          & py -3 $probe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          py -3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqNV1tv4jgUfudXRH5Ktsa9rLRaZZQHdspMq+2UqjCaBxZZJjHgrROntkNhRv3ve04uQOl0pyARx+f4+Fy+c0HlpbE+SP22lI7+60xBjaOl8Cut5rTUwi+MzalbVV5p6qp5aU0qnaNu62gmvPQql3STaya9lZINtcxl4SewDoQLhpOecE7CDcDPOnFJQp5U8fsFoWSyUi4orVxotVz5IK+cD2xVBKYI/EoGcqOcV8Uy+KaKzDw5pBXSkl4mF7gOhV06ijqYyicXZ1HcC+Dj7bZZ4KdM9mozPDN13oYiCkCVQASqCFDIjKai9JWVHCSVIGxiK0m93LQraa2xLiFWghWpJLtL22e0u89KEFMEPwgo73lqMknikjW7+EaJ8xmcwN1mNe3/cXZ2Fs9qClzUUmA17V/UlOdautyksvRBOBoPUZuDcLBJo8VwUyorswh9L+OfqITnOAabxPgbyohxXohcck4bKonRPTKaxudwN9ycaghh8EXmxm7HXvjKhQ1c2NjbKkWftW7nCyV15ngyDYmWxdKvCG1ZU15pUywjChQjsp/te+OF5uVq61Qq9DFHxyXWQmkx1/KXnK08sZQLpeU75P2Cs5G3VtZX71Hv3YwAMVlkMvvfE7NenrwIQfQhZ42Pk5bdqe/SLMI8+tCmXLsPqZZpzR6kLaT+/YJ91mYu9KGw4aaL6HwLqQgiol4qikxhgrtkOuthqljxhMkyNY7JAnQ1BVtKH5LB7eX96PqSjy//5vej0YRE9C2Wq9GXIZARYG2JYXfwDI/5b0YfBzeDu7vLwWQARYJE0SkZFJk1KiOnZJw9vEfI/dfb2+E9n4xGN/zj4OPV8EgSijklDoXNGvyqRW0kWF4/C+PR4L0n4v2SibKEqIXAF/VAxrGXDg71miL0Qtf6WHslXlMy5XimbBjFqSmg4lWyJmdJU3lZptwDrxxANCzbk17myQ+CYpuULSNKarYFFF8+38LdJM4YvrWEBsE7Sv1KicjmvK6zsBmWp6Sr0n1vjHanQGZyI0mEKmJ+hHCPzCvgglJyeLDbPO0Wr8+VIn0AG+DAtK1p6LNH9JiDPiSzsGQA+HlIoF+AgX2VI/vpb/W3Pc2g3UAg9+XtRbmv650xPhlOWCmsk+FjhIDAPciaVkZSQNqFm/r6DV6PZAY+hRBgUDbMiyWzrtQKoPRM6Hk07Z/PoHNpAzXnrpFCohfXYkimextnHUi6KHX6C+8tIKFGaU0Bz4BNXWQeofgL0BUeHJP6eX9L1wHAtju0rekDY2/Ka1BdeAX9u+0OUfwrdRA0j9CYIFZqLQEdACHQRBVroSHRYux7zzuYNtKOAz/bO/6IYS2tA3XILKl77pv4oKS/Y42OhIk0lbq16z2Cav5+upLpw2thkFgLtYRulXGxztx75Gmwsd8wH/nhIGlm8X7rtdFvZBMlR0ZjDekChPKgqtQZACmuzRL7HG97PYwhJIZil5YVTBdVAUiBJl1WwClsuoLDdU8GuLVXs1zAdiGRb1nz1R6SEOJPQjv53LPSVdoDwQElFzsz4nNKHqB9kJh0kxh/aiYxLpoqynfDG9hk5tB41uhgmG666ZDtFoV5Cncv+PPdFJJVPsUaYVBVhD0lzZBXjyW1pT8r67eDupV0vMa9yTkat3wcQX3M9Pl6cvX1Lw68/PoSGcutX6HpOLC2fmBNGYimZzCidV498G+3QN3zuq++LLU5eznb7Lj2Q8CO8/V8Q7FH8X1DAdUAK7StkLWi8KQEIEBi+KFkiaslrgBQAFOZVn4X7abg13GCSdBUEPED0jrjUHysPwBHaRVgjHy7vr0cfRvzrpff3Q8/3Vx/vpok5AT/N7CsyksXNlCisnA4SwuXKlUP0BFd6MqtmnUPB+c3mvd017iHX+4gO05hViqEBiP7LfT6O8j1ycnhwZexnJ0QhoqR6ANcx54sZAbHgT58rS4Ihn8tyUV0Qv4pCGgPgzqAPSGVX/T/hDL/H7QZjVs=')),'windows-android-preflight','exec'))"
+          if errorlevel 1 exit /b 1
