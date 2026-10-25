@@ -43,8 +43,27 @@ class WorkspaceEvidenceTests(unittest.TestCase):
         prefix = "Environment=ANDROID_RELEASE_DIR="
         paths = [line[len(prefix):] for line in service.splitlines()
                  if line.startswith(prefix)]
-        self.assertEqual(paths, [str(workspace.PUBLIC_RELEASES)])
+        self.assertEqual(paths, [workspace.PUBLIC_RELEASES.as_posix()])
 
+
+
+    def test_linux_stage_rejects_other_hosts_before_io(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "not-created"
+            for stage in ("status", "check", "build", "runtime"):
+                with self.subTest(stage=stage), ExitStack() as stack:
+                    stack.enter_context(patch.object(workspace, "STATE", state))
+                    stack.enter_context(patch.object(workspace.sys, "platform", "win32"))
+                    stack.enter_context(patch.object(workspace.sys, "argv", ["workspace", stage]))
+                    memory = stack.enter_context(patch.object(
+                        workspace, "memory_kib", side_effect=AssertionError("unexpected memory read")))
+                    capacity = stack.enter_context(patch.object(
+                        workspace, "require_capacity", side_effect=AssertionError("unexpected capacity read")))
+                    with self.assertRaisesRegex(RuntimeError, "timeweb_workspace_requires_linux"):
+                        workspace.main()
+                    memory.assert_not_called()
+                    capacity.assert_not_called()
+                    self.assertFalse(state.exists())
 
     def test_code_change_invalidates_passed_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -96,23 +115,49 @@ class PublicUpgradePipelineTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
-        self.base.chmod(0o755)
         self.channel = self.base / "ota" / "releases"
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(
             patch.object(workspace, "PUBLIC_RELEASES", self.channel))
-        original_lstat = Path.lstat
+        original_lstat, original_chmod, original_open = Path.lstat, Path.chmod, os.open
+        self.mode_requests = {}
+        self.lock_open_modes = {}
+
+        def fixture_path(path):
+            return path == self.base or self.base in path.parents
+
+        def observed_chmod(path, mode, *args, **kwargs):
+            result = original_chmod(path, mode, *args, **kwargs)
+            if fixture_path(path):
+                self.mode_requests[path] = stat.S_IMODE(mode)
+            return result
+
+        def observed_open(path, flags, mode=0o777, **kwargs):
+            descriptor = original_open(path, flags, mode, **kwargs)
+            if isinstance(path, (str, os.PathLike)):
+                target = Path(path)
+                if fixture_path(target) and target.name == ".publishing" and flags & os.O_CREAT:
+                    self.lock_open_modes.setdefault(target, []).append(mode)
+            return descriptor
 
         def root_metadata(path, *args, **kwargs):
             info = original_lstat(path, *args, **kwargs)
-            if path == self.base or self.base in path.parents:
+            if fixture_path(path):
                 fields = list(info)
                 fields[4] = 0
+                # NTFS does not implement POSIX mode bits. Model this Linux
+                # guard from chmod calls that really succeeded on fixture files.
+                # Missing/wrong calls remain untrusted; Linux uses actual modes.
+                if os.name == "nt" and path in self.mode_requests:
+                    fields[0] = stat.S_IFMT(info.st_mode) | self.mode_requests[path]
                 return os.stat_result(fields)
             return info
 
+        self.stack.enter_context(patch.object(Path, "chmod", observed_chmod))
+        self.stack.enter_context(patch.object(os, "open", observed_open))
         self.stack.enter_context(patch.object(Path, "lstat", root_metadata))
+        self.base.chmod(0o755)
         self.first = self.publish_current(37, b"synthetic public previous 37")
 
     def report(self, apk, version):
@@ -205,6 +250,16 @@ class PublicUpgradePipelineTests(unittest.TestCase):
                 with patch.object(Path, "lstat", return_value=info):
                     with self.assertRaises(RuntimeError):
                         workspace.require_public_path(path)
+
+    def test_public_path_guard_rejects_actual_untrusted_chmod_requests(self):
+        path = self.channel / workspace.PREVIEW_PACKAGE / self.first.filename
+        for mode in (0o666, 0o600):
+            with self.subTest(mode=mode):
+                path.chmod(mode)
+                with self.assertRaises(RuntimeError):
+                    workspace.require_public_path(path)
+        path.chmod(0o644)
+        workspace.require_public_path(path)
 
     def test_actual_previous_receipt_must_match_frozen_baseline(self):
         baseline = workspace.public_release_identity(self.first)
@@ -299,7 +354,7 @@ class PublicUpgradePipelineTests(unittest.TestCase):
                     patch.object(workspace, "STATE", state),
                     patch.object(workspace, "source_hash",
                                  return_value=source_digest),
-                    patch.object(publisher.os, "geteuid", return_value=0),
+                    patch.object(publisher.os, "geteuid", return_value=0, create=True),
                     patch.object(publisher.importlib.util,
                                  "spec_from_file_location", return_value=spec),
                     patch.object(publisher.importlib.util,
@@ -337,10 +392,18 @@ class PublicUpgradePipelineTests(unittest.TestCase):
             current.filename,
             current.filename[:-4] + ".json",
         ):
-            self.assertEqual(stat.S_IMODE((directory / name).stat().st_mode),
-                             0o644)
-        self.assertEqual(
-            stat.S_IMODE((directory / ".publishing").stat().st_mode), 0o600)
+            path = directory / name
+            self.assertEqual(self.mode_requests.get(path), 0o644)
+            self.assertTrue(path.is_file())
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+        lock = directory / ".publishing"
+        self.assertTrue(lock.is_file())
+        self.assertTrue(self.lock_open_modes.get(lock))
+        self.assertEqual(set(self.lock_open_modes[lock]), {0o600})
+        self.assertNotIn(lock, self.mode_requests, "publisher must not chmod its private lock")
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(lock.stat().st_mode), 0o600)
 
     def test_publisher_rejects_changed_channel_before_publication(self):
         baseline = workspace.public_release_identity(self.first)

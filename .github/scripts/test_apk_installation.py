@@ -205,6 +205,69 @@ def free_emulator_port() -> int:
     raise RuntimeError("No unused emulator port")
 
 
+def install_debug_ui_fixture(device, install, debug_apk: Path, *, timeout_seconds: int = 30):
+    """Stop the verified emulator target before replacing preview with a UI fixture.
+
+    Android 17's package-update UI relaunched BootstrapActivity after the debug
+    replacement in Windows run 40202738077, clearing the already-running fixture.
+    The real previous-to-candidate upgrade/launch checks finish before this step.
+    Never stop System UI or relax the fixture's normal foreground/marker checks.
+    """
+    if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 30:
+        raise ValueError("Invalid debug fixture stop timeout")
+    package = "ru.omnicio.app.debug"
+    started = time.monotonic()
+    deadline = started + timeout_seconds
+    observations = 0
+
+    def query(*command, limit=5.0):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Debug fixture target stop deadline exceeded")
+        response = device(*command, timeout=min(limit, remaining))
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Debug fixture target stop deadline exceeded")
+        return response
+
+    def process_absent():
+        response = query("shell", "pidof", package)
+        output = response.stdout.strip()
+        if response.returncode == 1 and not output and not response.stderr.strip():
+            return True
+        if (response.returncode == 0 and not response.stderr.strip()
+                and re.fullmatch(r"[1-9]\d*(?:\s+[1-9]\d*)*", output)):
+            return False
+        raise RuntimeError("Debug fixture process absence was not established")
+
+    stopped = query("shell", "am", "force-stop", package)
+    if stopped.returncode or stopped.stdout.strip() or stopped.stderr.strip():
+        raise RuntimeError("Could not stop preview before debug fixture replacement")
+    resumed_pattern = (
+        r"^\s*(?:topResumedActivity|mResumedActivity)\s*[=:]\s*"
+        r"ActivityRecord\{[^\s{}]+\s+u[0-9]+\s+([^\s{}]+)(?=[\s}])"
+    )
+    while True:
+        observations += 1
+        if process_absent():
+            foreground = query("shell", "dumpsys", "-t", "2", "activity", "activities", limit=4.0)
+            if foreground.returncode or foreground.stderr.strip() or "DUMP TIMEOUT" in foreground.stdout:
+                raise RuntimeError("Debug fixture foreground observation failed")
+            resumed = re.findall(resumed_pattern, foreground.stdout, flags=re.MULTILINE)
+            if (resumed and all("/" in component and component.split("/", 1)[0] != package for component in resumed)
+                    and process_absent()):
+                print("DEBUG_FIXTURE_REPLACEMENT_READY=" + json.dumps({
+                    "package": package, "process_absent": True, "foreground_absent": True,
+                    "requested_seconds": timeout_seconds,
+                    "elapsed_seconds": round(time.monotonic() - started, 3),
+                    "observations": observations,
+                }, sort_keys=True), flush=True)
+                return install("debug_ui_fixture_install", debug_apk, update=True)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Debug fixture target stop deadline exceeded")
+        time.sleep(min(0.25, remaining))
+
+
 def _recorded_profile_exercise(device, exercise, work: Path, attempt: int) -> dict:
     """Keep current-run PNG bytes before the next runtime overwrites shared captures."""
     from automation_artifacts import archive_automation_artifacts
@@ -673,7 +736,7 @@ def run_attempt(
                         Path(__file__).resolve().parents[2]
                         / "app/build/outputs/apk/debug/app-debug.apk"
                     )
-                    install("debug_ui_fixture_install", debug_apk, update=True)
+                    install_debug_ui_fixture(device, install, debug_apk)
                     record_profile_check(device, results,
                                          lambda actual: _recorded_profile_exercise(actual, exercise, work, attempt))
             failed = False

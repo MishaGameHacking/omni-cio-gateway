@@ -34,7 +34,8 @@ class AutomationArchiveTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Resolve Windows 8.3 aliases before matching mocked filesystem paths.
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.source = self.root / "synthetic-screens"
         self.source.mkdir()
         self.attempt = self.root / "attempt-1"

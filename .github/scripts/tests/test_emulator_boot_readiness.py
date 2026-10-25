@@ -194,7 +194,37 @@ class BootReadinessTests(unittest.TestCase):
                             for item in node.items)]
         self.assertEqual(len(prepared), 1)
         calls = [node for node in ast.walk(prepared[0]) if isinstance(node, ast.Call)]
-        self.assertEqual(sum(getattr(call.func, "id", "") == "install" for call in calls), 4)
+        direct = [call for call in calls if getattr(call.func, "id", "") == "install"]
+        self.assertEqual(len(direct), 3)
+        self.assertEqual({ast.literal_eval(call.args[0]) for call in direct},
+                         {"previous_clean_install", "upgrade_to_candidate", "candidate_clean_install"})
+        # The debug replacement is still inside the same prepared session; its
+        # helper must receive this session's original installation callback.
+        fixtures = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                    and getattr(node.func, "id", "") == "install_debug_ui_fixture"]
+        self.assertEqual(len(fixtures), 1)
+        self.assertIn(fixtures[0], calls)
+        self.assertEqual([ast.dump(arg) for arg in fixtures[0].args],
+                         [ast.dump(ast.Name(id=name, ctx=ast.Load()))
+                          for name in ("device", "install", "debug_apk")])
+        self.assertEqual(fixtures[0].keywords, [])
+        helpers = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "install_debug_ui_fixture"]
+        self.assertEqual(len(helpers), 1)
+        self.assertEqual([arg.arg for arg in helpers[0].args.args],
+                         ["device", "install", "debug_apk"])
+        forwarded = [node for node in ast.walk(helpers[0]) if isinstance(node, ast.Call)
+                     and getattr(node.func, "id", "") == "install"]
+        self.assertEqual(len(forwarded), 1)
+        self.assertEqual(len(forwarded[0].args), 2)
+        self.assertEqual(ast.literal_eval(forwarded[0].args[0]), "debug_ui_fixture_install")
+        self.assertEqual(ast.dump(forwarded[0].args[1]),
+                         ast.dump(ast.Name(id="debug_apk", ctx=ast.Load())))
+        self.assertEqual([(keyword.arg, ast.literal_eval(keyword.value))
+                          for keyword in forwarded[0].keywords], [("update", True)])
+        all_installs = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                        and getattr(node.func, "id", "") == "install"]
+        self.assertEqual(set(all_installs), set(direct + forwarded))
         self.assertEqual(sum(getattr(call.func, "id", "") == "launch_candidate" for call in calls), 2)
         self.assertEqual(sum(getattr(call.func, "id", "") == "record_profile_check" for call in calls), 1)
         self.assertFalse(any(isinstance(node, ast.Return) for node in ast.walk(prepared[0])))

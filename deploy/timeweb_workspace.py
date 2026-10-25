@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sequential checks/build/runtime gates on the permanent Timeweb server."""
 from __future__ import annotations
-import datetime,fcntl,hashlib,json,os,pathlib,re,shutil,stat,subprocess,sys,traceback,urllib.request
+import datetime,hashlib,json,os,pathlib,re,shutil,stat,subprocess,sys,traceback,urllib.request
 ROOT=pathlib.Path("/srv/analyst-ai/workspace")
 STATE=pathlib.Path("/var/lib/analyst-ai-build")
 SDK=pathlib.Path("/opt/analyst-android-sdk")
@@ -126,11 +126,14 @@ def require_runtime_baseline(runtime_receipt, current):
         raise RuntimeError("public_upgrade_baseline_changed_since_runtime")
 
 def main():
+    if sys.platform != "linux":
+        raise RuntimeError("timeweb_workspace_requires_linux")
     command=sys.argv[1] if len(sys.argv)==2 else "status"
     if command=="status":
         print(json.dumps({"workspace":str(ROOT),"memory_kib":memory_kib(),"disk_free_bytes":shutil.disk_usage(ROOT).free,
            "results":{c:json.loads((STATE/(c+"-result.json")).read_text()) for c in ("check","build","runtime") if (STATE/(c+"-result.json")).exists()}},indent=2));return
     if command not in ("check","build","runtime"):raise RuntimeError("unknown_workspace_stage")
+    import fcntl
     STATE.mkdir(exist_ok=True)
     with (STATE/"workspace.lock").open("a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
