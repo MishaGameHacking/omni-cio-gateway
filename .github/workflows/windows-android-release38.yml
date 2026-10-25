@@ -22,6 +22,12 @@ jobs:
         with:
           ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
           persist-credentials: false
+      - name: Checkout the pinned Timeweb transport helpers
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
       - name: Confirm private transfer before loading APK bytes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -33,7 +39,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
-          sys.path[:0]=["deploy","tools"]
+          sys.path[:0]=[".transport-admin/deploy",".transport-admin/tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
@@ -74,8 +80,10 @@ jobs:
                           raise RuntimeError("remote_task_failed")
                       return result.stdout
                   finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
-                      access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                      try:
+                          if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                      finally:
+                          access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
           
@@ -209,6 +217,12 @@ jobs:
         with:
           ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
           persist-credentials: false
+      - name: Checkout the pinned Timeweb transport helpers
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
       - name: Download and verify the exact private evidence archive
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
@@ -223,7 +237,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
-          sys.path[:0]=["deploy","tools"]
+          sys.path[:0]=[".transport-admin/deploy",".transport-admin/tools"]
           import prepare_owner_vm as p
           import access_owner_vm as access
           token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
@@ -264,8 +278,10 @@ jobs:
                           raise RuntimeError("remote_task_failed")
                       return result.stdout
                   finally:
-                      if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
-                      access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                      try:
+                          if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                      finally:
+                          access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
           
