@@ -103,15 +103,54 @@ a simulated IME reflow. It proves the former forward-only search fails, and
 that missing/disabled Find still prevents the purchase flow. Simulated frames
 are not Android runtime evidence.
 
-The exact same candidate40 application and driver APK bytes are now being
-tested in the focused ready/partial catalogue cases at fonts2 and1.
-This diagnostic remains separate from complete Android acceptance. Its
-inherited step label says full UI, but the external hook explicitly runs only
-the focused cases, labels the report diagnostic_only and cannot yield a
-release PASS. Use actual report scope, never the inherited step label.
+## Actual focused results and visual evidence
 
-After successful focused observations, run every required UI stage on both
-4096-byte and16384-byte profiles. The upgrade baseline remains published APK38,
-not unpublished39. Preserve the signature, owner/session/broker bindings,
-database and read-only runtime. Do not enable paid AI or real-money execution.
-Continue N01–N11 in order only after N00 acceptance.
+Run40243041873 completed all four focused catalogue cases: ready and partial
+at fonts2 and1 on measured16384-byte Android37. Each checked search outside
+current holdings, rejection of a missing price, the typed purchase-check
+request, displayed constraints, invalidation after an edited input and absence
+of a broker order. These are actual Android observations, separate from host
+fixtures. Twelve native-input records and screenshots show query new1,
+price95 and edited price950, with the native editor focused and caret preserved.
+
+The workflow deliberately finished FAILURE after those four cases with
+`Diagnostic only: full UI suite was deliberately not claimed`.
+Its inherited runtime step label says full UI, but the external hook ran only
+the focused cases. The report has diagnostic_only=true and release_gate_pass=false.
+Neither the four case passes nor the inherited step label is full acceptance.
+
+The49-file private archive is1,883,136 bytes, SHA-256
+`b894f93af42b81898f2a266fd6d5f7d309ac434d037445d66f5633f91ba248dd`.
+Timeweb9417611 confirmed receipt at2026-10-25T23:11:12Z under
+`/var/lib/analyst-ai-build/incoming/windows-development-40243041873-1/`.
+
+[Evidence run40243798073](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40243798073)
+provided artifact12617821664,906,266 bytes, SHA-256
+`17370b74d46c2424c8d522916ff665a604f9421ad55086b6f10b896664f32a88`.
+The downloaded archive and19 manifest file hashes were verified.
+Four actual input images were visually inspected: font2 query/price95/price950
+and font1 price95. The value and caret remain above the keyboard. The synthetic
+debug disclosure rail makes these diagnostic windows narrower than production;
+do not describe its45% side rail as normal production geometry.
+
+## Complete matrix in progress
+
+[Full run40243609014](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40243609014)
+checks the exact backed-up source
+`2347eb54b7270d947587adb0f3cc09a5e0de1572`
+with inventory
+`d79d8cfc31d74560eda38b8aeae8cf58aa5e389de8366d54b66886b47ad54cbc`.
+It uses the unchanged candidate40/debug/driver bytes listed above from
+run40239983022. The compiled application source inventory55714d… differs
+from this runtime checkout only by the two tested harness files and documents;
+do not claim a second complete application build after that harness-only repair.
+
+This run has no diagnostic hook. All15 UI stages, upgrade from the actual
+published APK38 and clean installation are required on16384-byte and4096-byte
+profiles. At this checkpoint the16KB profile passed native2D, session context,
+balance privacy and goals, and was running business scenarios;4KB had not started.
+No complete Android PASS, physical-phone result or publication40 is claimed.
+
+Preserve the signature, owner/session/broker bindings, database and read-only
+runtime. Do not enable paid AI or real-money execution. Continue N01–N11 in
+order after N00 acceptance; the plan remains incomplete.
