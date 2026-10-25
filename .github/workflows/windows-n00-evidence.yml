@@ -1,4 +1,4 @@
-name: Inspect candidate39 large-font catalogue input
+name: Observe actual candidate40 Android build evidence
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,41 +9,9 @@ permissions:
 jobs:
   inspect:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
-      - name: Copy actual large-font failure and preserved input observations
-        id: evidence
+      - name: Read exact current Gradle log and generated JVM reports
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          script: |
-            const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
-            if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
-            const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40237838049-1/app/build/outputs/apk/preview';
-            const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
-            fs.mkdirSync(out,{recursive:false});
-            const source=p.join(root,'ui-screens-api37-16384');
-            const allowed=['failure.png','business-assistant-ready-font-200.png','business-catalogue-ready.png'];
-            const identities={};
-            function copy(from,name){
-              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000)throw new Error('unexpected_file');
-              const data=fs.readFileSync(from);fs.writeFileSync(p.join(out,name),data,{flag:'wx'});
-              identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
-            }
-            for(const name of allowed)copy(p.join(source,name),name);
-            const log=p.join(root,'install-api37-16384/runtime-console.log');
-            copy(log,'runtime-16384.log');
-            const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
-            const report={source_run:40237838049,source_root:source,debug_apk_sha256:'42b90f2ab4b5ba2fbb0aeb612b0e3380aae632567bf75e0ba473c8ec2c763c7d',identities,
-              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure|BUSINESS_UI_CASE|SCROLL_LAYOUT|NATIVE_EDITOR_FAILURE|UI_ACCESSIBILITY_ACTION/.test(l)).map(l=>l.slice(0,16000)).slice(-18),
-              available_files:fs.readdirSync(source).filter(n=>/\.(png|json)$/.test(n)),
-              log_tail:lines.slice(-105).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
-            fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 actual large-font catalogue input failure evidence',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Assistant passed both font sizes; catalogue input failed at font200',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
-            core.setOutput('folder',out);
-      - name: Preserve reviewable synthetic UI screenshots and failure log
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: n00-candidate39-catalogue-input-16384
-          path: ${{ steps.evidence.outputs.folder }}
-          if-no-files-found: error
-          retention-days: 3
+          script: "const cp=require('node:child_process');const r=cp.spawnSync('py',['-3','-c',\"import pathlib,json,sys,os,xml.etree.ElementTree as ET\\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\\nroot=pathlib.Path(r'C:\\\\actions-runner-3\\\\_work\\\\omni-cio-gateway\\\\omni-cio-gateway\\\\windows-development-40239983022-1')\\nstate=pathlib.Path(r'C:\\\\actions-runner-3\\\\_work\\\\_temp\\\\analyst-development-40239983022-1')\\nout={'partial_observation_only':True,'source_root':str(root),'run_id':40239983022}\\nlog=state/'18-gradle.log'\\nif log.is_file():\\n with log.open('rb') as f:\\n  f.seek(max(0,log.stat().st_size-512*1024));lines=f.read().decode('utf-8',errors='replace').splitlines()\\n out['gradle_log_bytes']=log.stat().st_size\\n out['gradle_observed_lines']=[x[:700] for x in lines if x.startswith(('> Task ', 'BUILD ','FAILURE:','e: ','w: '))][-35:]\\nout['jvm_reports']={'suites':0,'tests':0,'failures':0,'errors':0,'skipped':0}\\nfor p in (root/'app/build/test-results/testDebugUnitTest').glob('TEST-*.xml'):\\n try:v=ET.parse(p).getroot()\\n except ET.ParseError:continue\\n out['jvm_reports']['suites']+=1\\n for key in ('tests','failures','errors','skipped'):out['jvm_reports'][key]+=int(v.get(key,'0'))\\nprint(json.dumps(out,ensure_ascii=True))\\n\"],{encoding:'utf8',timeout:45000,maxBuffer:50000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});if(r.status!==0)throw Error('Could not read owned build evidence: '+r.stderr?.slice(-1500));const report=JSON.parse(r.stdout);const fence=String.fromCharCode(96).repeat(3);await github.rest.checks.create({...context.repo,name:'N00 candidate40 actual Android build progress',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Partial Android build observation, not release acceptance',summary:fence+'json\\n'+JSON.stringify(report,null,2)+'\\n'+fence}});"
