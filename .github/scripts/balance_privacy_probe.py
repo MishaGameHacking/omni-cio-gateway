@@ -49,12 +49,13 @@ def _hold(probe, resource, expected, other, ending, picture):
 
 def exercise_balance_privacy(probe):
     from profile_launch import launch_profile
-    from spatial_frame_evidence import ready_spatial_metrics
+    from spatial_frame_evidence import ready_native_screen_metrics
     records = []
     for scale in (1.0, 2.0):
         probe.command("shell", "settings", "put", "system", "font_scale", str(scale))
         launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="balance-privacy")
-        metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Privacy fixture did not render")
+        metrics = probe.wait_for(lambda: ready_native_screen_metrics(probe.tree(), "balance-privacy", scale),
+                                 "Privacy native screen did not become ready")
         if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0.0, abs_tol=1e-6):
             raise AssertionError("Privacy fixture has a different actual font scale")
         _both(probe, MASKED_AMOUNT, MASKED_AMOUNT)

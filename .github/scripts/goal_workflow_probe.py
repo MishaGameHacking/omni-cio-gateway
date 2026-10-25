@@ -61,10 +61,11 @@ def _rotate_pending(probe, suffix):
 
 def _case(probe, scale):
     from profile_launch import launch_profile
-    from spatial_frame_evidence import ready_spatial_metrics
+    from spatial_frame_evidence import ready_native_screen_metrics
     probe.command("shell", "settings", "put", "system", "font_scale", str(scale))
     launch_profile(probe.command, probe.tree, probe.wait_for, expected_screen="goal-editor")
-    metrics = probe.wait_for(lambda: ready_spatial_metrics(probe.tree()), "Goal scene did not render")
+    metrics = probe.wait_for(lambda: ready_native_screen_metrics(probe.tree(), "goal-editor", scale),
+                             "Goal native screen did not become ready")
     if not math.isclose(metrics.get("font-scale", 0), scale, rel_tol=0, abs_tol=1e-6):
         raise AssertionError("Goal scene has a different actual font scale")
     original_window = active_window_id(probe.tree())

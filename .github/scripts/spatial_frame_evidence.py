@@ -101,6 +101,37 @@ def ready_spatial_metrics(tree, windows=1):
         and result["frames"] > 0 and result["meshes"] > 0 and result["pending"] == 0 else None
 
 
+def ready_native_screen_metrics(tree, expected_screen, font_scale):
+    """Observe a plain Compose screen without requiring decorative Canvas work.
+
+    Artwork witnesses retain ready_spatial_metrics and its positive draw count.
+    This path requires the actual fixture, visible app content, portrait geometry,
+    native renderer, font scale and absence of any retained 3D resources.
+    """
+    from native_input_evidence import display_geometry
+    from profile_launch import ready_marker
+    from profile_scroll import visible_resource
+
+    if not math.isfinite(font_scale) or font_scale <= 0:
+        raise ValueError("Invalid expected native font scale")
+    width, height = display_geometry(tree)
+    marker = ready_marker(tree, expected_screen=expected_screen)
+    if width >= height or marker is None or marker.get("visible-to-user") != "true" \
+            or visible_resource(tree, "workspace-content") is None:
+        return None
+    result = spatial_metrics(tree)
+    if result is None:
+        return None
+    if result.get("renderer") != "native-2d":
+        raise AssertionError("Plain screen is not using the native 2D renderer")
+    if any(result.get(key) != 0 for key in ("engines", "windows", "frames", "meshes", "pending", "pool")):
+        raise AssertionError("Plain native screen unexpectedly retained a 3D renderer")
+    if result.get("orientation") != "1" or not math.isclose(
+            result.get("font-scale", 0), font_scale, rel_tol=0.0, abs_tol=1e-6):
+        return None
+    return result
+
+
 @dataclass(frozen=True)
 class Screenshot:
     width: int

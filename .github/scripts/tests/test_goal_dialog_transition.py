@@ -73,7 +73,7 @@ class GoalTransitionProbe(ProfileProbe):
 class GoalDialogTransitionTests(unittest.TestCase):
     def exercise(self, probe, scale):
         with patch("profile_launch.launch_profile"), \
-                patch("spatial_frame_evidence.ready_spatial_metrics", return_value={"font-scale": scale}), \
+                patch("spatial_frame_evidence.ready_native_screen_metrics", return_value={"font-scale": scale}), \
                 patch.object(goal, "append_native_text", side_effect=FirstEditorReached), \
                 patch("time.sleep"):
             goal._case(probe, scale)

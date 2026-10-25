@@ -1,7 +1,7 @@
 # N00: recovery of system animation and full Linux checks
 
 Status: N00 is in progress. N01–N11 are not implemented by this checkpoint.
-Candidate 0.13.1-preview / 39 is being built; published APK38 remains unchanged.
+Candidate 0.13.1-preview / 39 was built and statically verified; published APK38 remains unchanged.
 
 ## Observed failures
 
@@ -60,9 +60,8 @@ An earlier attempt, run40232092366, failed three stale source guards after
 the version/listener change. Those guards were corrected and the full host
 suite rerun; that failed attempt is not a release receipt.
 
-At this checkpoint Gradle/JVM/lint/APK verification are running. Android
-runtime acceptance of candidate39, both measured page sizes, genuine
-APK38→39 upgrade, clean install, UI and physical-phone checks remain open.
-The candidate must pass before publication; no new APK or backend deployment
-is claimed. The production runtime is still read-only and paid AI remains
-unchanged. Continue N00, then N01 in the autonomous portfolio plan.
+Gradle/JVM/lint/APK verification subsequently passed in the same Windows run.
+Both Android page-size profiles then passed animation recovery and session context,
+but stopped at a false Canvas-readiness requirement on the plain privacy screen.
+See [the current native-screen repair and complete rerun](N00_NATIVE_SCREEN_READINESS_2026-10-25.md).
+This is not a full runtime pass or a new publication; N00 remains in progress.

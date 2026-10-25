@@ -149,5 +149,98 @@ class SpatialFrameEvidenceTests(unittest.TestCase):
                 evidence.white_label_contrast(image, (0, 0, 100, 100))
 
 
+
+class PlainNativeScreenTests(unittest.TestCase):
+    def frame(self, screen="balance-privacy", scale=1.0, draws=0, **changes):
+        values = dict(engines=0, windows=0, frames=0, meshes=0, pending=0, pool=0,
+                      orientation=1, **{"font-scale": scale})
+        values.update(changes)
+        tree = marker(**values)
+        tree.set("display-width", "320")
+        tree.set("display-height", "640")
+        node = next(tree.iter("node"))
+        node.set("visible-to-user", "true")
+        node.set("bounds", "[0,0][320,640]")
+        node.set("resource-id", "workspace-content")
+        node.set("content-desc", node.get("content-desc") + ";probe-renderer:native-2d;probe-flat-draws:" +
+                 str(draws) + ";probe-refresh-tests:15;probe-screen:" + screen)
+        return tree
+
+    def test_plain_screens_render_without_decorative_canvas(self):
+        for screen in ("balance-privacy", "goal-editor"):
+            for scale in (1.0, 2.0):
+                with self.subTest(screen=screen, scale=scale):
+                    tree = self.frame(screen, scale)
+                    actual = evidence.ready_native_screen_metrics(tree, screen, scale)
+                    self.assertEqual(actual["draw-operations"], 0)
+                    self.assertEqual(actual["font-scale"], scale)
+                    # A plain frame still does NOT prove that artwork was drawn.
+                    self.assertIsNone(evidence.ready_spatial_metrics(tree))
+
+    def test_draws_cannot_replace_actual_screen_identity(self):
+        for screen in ("profile", "goal-editor"):
+            tree = self.frame(screen, draws=100)
+            self.assertIsNone(evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0))
+
+    def test_hidden_and_foreign_nodes_cannot_prove_native_readiness(self):
+        for key, value in (("package", "foreign.app"), ("visible-to-user", "false"),
+                           ("bounds", "[0,0][0,0]"), ("resource-id", "different-content")):
+            with self.subTest(key=key):
+                tree = self.frame()
+                next(tree.iter("node")).set(key, value)
+                self.assertIsNone(evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0))
+
+    def test_font_and_portrait_must_be_observed(self):
+        for changes in ({"font-scale": 2.0}, {"font-scale": 0}, {"orientation": 2}):
+            with self.subTest(changes=changes):
+                self.assertIsNone(evidence.ready_native_screen_metrics(
+                    self.frame(**changes), "balance-privacy", 1.0))
+        tree = self.frame()
+        tree.set("display-width", "640")
+        tree.set("display-height", "320")
+        self.assertIsNone(evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0))
+
+    def test_missing_or_invalid_geometry_is_rejected(self):
+        for value in ("", "0", "-1", "NaN"):
+            tree = self.frame()
+            tree.set("display-width", value)
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0)
+
+    def test_real_errors_and_retained_3d_resources_remain_failures(self):
+        for key in ("engines", "windows", "frames", "meshes", "pending", "pool"):
+            with self.subTest(key=key), self.assertRaises(AssertionError):
+                evidence.ready_native_screen_metrics(self.frame(**{key: 1}), "balance-privacy", 1.0)
+        with self.assertRaises(AssertionError):
+            evidence.ready_native_screen_metrics(self.frame(error="failed"), "balance-privacy", 1.0)
+        with self.assertRaises(AssertionError):
+            evidence.ready_native_screen_metrics(self.frame(draws=-1), "balance-privacy", 1.0)
+
+    def test_other_or_absent_renderer_cannot_pass(self):
+        for value in ("filament", ""):
+            tree = self.frame()
+            node = next(tree.iter("node"))
+            node.set("content-desc", node.get("content-desc").replace(
+                "probe-renderer:native-2d", "probe-renderer:" + value))
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0)
+
+    def test_conflicting_frames_cannot_be_merged_into_a_pass(self):
+        tree = self.frame()
+        tree.extend(self.frame(draws=5))
+        self.assertIsNone(evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0))
+
+    def test_unobserved_refresh_completion_cannot_pass(self):
+        tree = self.frame()
+        node = next(tree.iter("node"))
+        node.set("content-desc", node.get("content-desc").replace("probe-refresh-tests:15", "probe-refresh-tests:0"))
+        self.assertIsNone(evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0))
+
+    def test_invalid_expected_scale_is_not_silently_accepted(self):
+        for scale in (0, -1, float("inf"), float("nan")):
+            with self.subTest(scale=scale), self.assertRaises(ValueError):
+                evidence.ready_native_screen_metrics(self.frame(), "balance-privacy", scale)
+
+
 if __name__ == "__main__":
     unittest.main()
