@@ -1,4 +1,4 @@
-name: Observe current owned N00 checks
+name: Observe candidate40 focused catalogue runtime
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -8,35 +8,14 @@ permissions:
   checks: write
   actions: read
 concurrency:
-  group: analyst-n00-native-reveal-observer-3
+  group: analyst-n00-catalogue40-observer
   cancel-in-progress: false
 jobs:
   inspect:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 150
+    timeout-minutes: 60
     steps:
-      - name: Observe exact candidate39 runtime without changing test results
+      - name: Observe actual focused input without changing its assertions
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          script: |
-            const cp=require('node:child_process');
-            const created=await github.rest.checks.create({...context.repo,name:'N00 native-target candidate39 verified host observations',head_sha:context.sha,status:'in_progress',output:{title:'Waiting for Android runtime',summary:'Run40237838049, exact candidate39.'}});
-            let terminal=false; const observedControllers={};
-            for(let poll=0;poll<290;poll++){
-              const r=cp.spawnSync('py',['-3','-c',"import pathlib,sys,os,json,re\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\nroot=pathlib.Path(\"C:\\\\actions-runner-2\\\\_work\\\\omni-cio-gateway\\\\omni-cio-gateway\\\\windows-development-40237838049-1\")\nout={'source_root':str(root),'profiles':{},'controllers':{}}\nbase=root/'app/build/outputs/apk/preview'\nfor page in (16384,4096):\n profile={}\n work=base/('install-api37-'+str(page))\n p=work/'runtime-console.log'\n if p.is_file():\n  with p.open('rb') as f:\n   f.seek(max(0,p.stat().st_size-4*1024**2));s=f.read().decode('utf-8',errors='replace')\n  profile['console_bytes']=p.stat().st_size\n  profile['stages']=[line[:1000] for line in s.splitlines() if line.startswith(('PROFILE_UI_STAGE=','PROFILE_UI_STAGE_PASSED=','PROFILE_UI_TESTS=','ANDROID_POLICY_LAST_OBSERVED=','SESSION_CONTEXT','INSTALL_RESULT='))][-45:]\n  profile['cases']=[line[:400] for line in s.splitlines() if line.startswith(('BUSINESS_UI_CASE=','PORTFOLIO_UI_CASE=','AUTOMATION_UI_CASE='))][-12:]\n  profile['failures']=[line[:1000] for line in s.splitlines() if line.startswith(('AssertionError:','RuntimeError:','ValueError:','TimeoutError:','subprocess.TimeoutExpired:'))][-5:]\n p=work/'install-results.json'\n if p.is_file():profile['installation']=json.loads(p.read_text(encoding='utf-8'))\n out['profiles'][str(page)]=profile\nfor suffix in ('','-2','-3','-4'):\n state=pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/n00-native-reveal-40237838049-1')\n for p in state.glob('runtime-*.json'):\n  out['controllers'][p.stem]=json.loads(p.read_text(encoding='utf-8'))\nprint(json.dumps(out,ensure_ascii=True))\n"],{encoding:'utf8',timeout:45000,maxBuffer:100000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});
-              let report;try{if(r.status!==0)throw new Error('read failed');report=JSON.parse(r.stdout.trim());}catch(e){report={error:String(e),stderr:r.stderr?.slice(-2000)};}
-              Object.assign(observedControllers,report.controllers||{});report.controllers=observedControllers;
-              const records=observedControllers;
-              terminal=Boolean(records['runtime-16384']&&records['runtime-4096']);
-              const run=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40237838049});
-              report.workflow_status=run.data.status;report.workflow_conclusion=run.data.conclusion;
-              if(run.data.status==='completed')terminal=true;
-              const passed=records['runtime-16384']?.exit_code===0&&records['runtime-4096']?.exit_code===0&&!records['runtime-16384']?.error&&!records['runtime-4096']?.error;
-              const summary='\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`';
-              if(summary.length>63000)throw new Error('Runtime report exceeded safe bound');
-              await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:terminal?'completed':'in_progress',...(terminal?{conclusion:passed?'success':'failure'}:{}),output:{title:'Actual Android37 runtime observations',summary}});
-              if(terminal)break;
-              await new Promise(resolve=>setTimeout(resolve,30000));
-            }
-            if(!terminal)await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:'completed',conclusion:'neutral',output:{title:'Observation window ended',summary:'Runtime completion was not observed. Inspect run40237838049.'}});
-            
+          script: "const cp=require('node:child_process');const created=await github.rest.checks.create({...context.repo,name:'N00 candidate40 focused catalogue progress',head_sha:context.sha,status:'in_progress',output:{title:'Waiting for real catalogue observations',summary:'Diagnostic run40241897573; this does not replace full Android acceptance.'}});let terminal=false;const seen={controllers:{}};\nfor(let poll=0;poll<90;poll++){\n const r=cp.spawnSync('py',['-3','-c',\"import pathlib,sys,os,json\\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\\nout={'diagnostic_only':True,'run_id':40241897573,'profiles':{},'controllers':{}}\\nroots=[pathlib.Path('C:/actions-runner'+s+'/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40241897573-1') for s in ('','-2','-3','-4')]\\nroots=[p for p in roots if p.is_dir()]\\nassert len(roots)<=1\\nif roots:\\n root=roots[0];out['source_root']=str(root);base=root/'app/build/outputs/apk/preview'\\n log=base/'install-api37-16384/runtime-console.log'\\n if log.is_file():\\n  with log.open('rb') as f:\\n   f.seek(max(0,log.stat().st_size-4*1024**2));lines=f.read().decode('utf-8',errors='replace').splitlines()\\n  out['profiles']['16384']={'bytes':log.stat().st_size,'cases':[s[:500] for s in lines if s.startswith(('BUSINESS_UI_CASE=','BUSINESS_UI_CASE_PASSED='))][-16:],'failures':[s[:1200] for s in lines if s.startswith(('AssertionError:','RuntimeError:','ValueError:','TimeoutError:'))][-5:]}\\n p=base/'ui-screens/catalogue-focused-observations.json'\\n if p.is_file():out['focused']=json.loads(p.read_text(encoding='utf-8'))\\nfor suffix in ('','-2','-3','-4'):\\n state=pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/n00-catalogue40-diagnostic-40241897573-1')\\n for p in state.glob('runtime-*.json'):out['controllers'][p.stem]=json.loads(p.read_text(encoding='utf-8'))\\nprint(json.dumps(out,ensure_ascii=True))\\n\"],{encoding:'utf8',timeout:45000,maxBuffer:100000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});\n let report;try{if(r.status!==0)throw Error('Read failed');report=JSON.parse(r.stdout);}catch(e){report={error:String(e),stderr:r.stderr?.slice(-1500)};}\n Object.assign(seen.controllers,report.controllers||{});report.controllers=seen.controllers;if(report.focused)seen.focused=report.focused;else if(seen.focused)report.focused=seen.focused;\n const run=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40241897573});report.workflow_status=run.data.status;report.workflow_conclusion=run.data.conclusion;\n terminal=run.data.status==='completed'||Boolean(report.focused&&report.controllers['runtime-16384']);\n const fence=String.fromCharCode(96).repeat(3);const summary=fence+'json\\n'+JSON.stringify(report,null,2)+'\\n'+fence;if(summary.length>63000)throw Error('Report exceeded bound');\n await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:terminal?'completed':'in_progress',...(terminal?{conclusion:'neutral'}:{}),output:{title:report.focused?.focused_cases_completed?'Focused catalogue cases completed; full acceptance still required':'Actual focused catalogue observations',summary}});\n if(terminal)break;await new Promise(resolve=>setTimeout(resolve,30000));\n}\nif(!terminal)await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:'completed',conclusion:'neutral',output:{title:'Observation window ended',summary:'Inspect diagnostic run40241897573.'}});"
