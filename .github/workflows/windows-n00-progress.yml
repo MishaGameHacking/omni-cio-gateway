@@ -1,10 +1,11 @@
 name: Observe current owned N00 checks
-'on':
+on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [.github/workflows/windows-n00-progress.yml]
 permissions:
   contents: read
+  checks: write
 concurrency:
   group: analyst-n00-current-observer
   cancel-in-progress: false
@@ -13,8 +14,17 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read bounded current logs without changing the active tests
-        shell: cmd
-        run: |
-          py -3 -c "exec(compile(bytes.fromhex('696d706f727420706174686c69622c6f732c7379732c6a736f6e2c6461746574696d650a617373657274207379732e706c6174666f726d3d3d2277696e33322220616e64206f732e656e7669726f6e2e6765742822434f4d50555445524e414d4522293d3d224c4150544f502d4e50534741303136220a6f62736572766174696f6e733d7b226174223a6461746574696d652e6461746574696d652e6e6f77286461746574696d652e74696d657a6f6e652e757463292e69736f666f726d617428292c2266696c6573223a7b7d7d0a666f722073756666697820696e202822222c222d32222c222d33222c222d3422293a0a20626173653d706174686c69622e506174682822433a2f616374696f6e732d72756e6e6572222b7375666669782b222f5f776f726b22290a20726f6f74733d5b626173652f225f74656d702f6e30302d72756e74696d652d34303232373133323435312d31222c626173652f225f74656d702f77736c2d73657475702d3430323237313332353239222c626173652f226f6d6e692d63696f2d676174657761792f6f6d6e692d63696f2d676174657761792f77696e646f77732d6e30302d34303232373133323435312d312f6170702f6275696c642f6f7574707574732f61706b2f70726576696577225d0a207061747465726e733d5b226170706c6965642d73657373696f6e2d70617463682e6a736f6e222c222a2d74657374732e6c6f67222c222a2d726571756972656d656e74732e6c6f67222c2277736c2d73657475702e6a736f6e222c2272756e74696d652d2a2e6a736f6e222c22696e7374616c6c2d61706933372d2a2f72756e74696d652d636f6e736f6c652e6c6f67225d0a20666f7220726f6f7420696e20726f6f74733a0a20206966206e6f7420726f6f742e69735f64697228293a636f6e74696e75650a2020666f72207061747465726e20696e207061747465726e733a0a202020666f72206620696e20726f6f742e676c6f62287061747465726e293a0a20202020696620662e69735f66696c65282920616e64206e6f7420662e69735f73796d6c696e6b28293a0a20202020207769746820662e6f70656e2822726222292061732073747265616d3a0a20202020202073747265616d2e7365656b286d617828302c662e7374617428292e73745f73697a652d313230303029290a2020202020206f62736572766174696f6e735b2266696c6573225d5b7374722866295d3d73747265616d2e7265616428292e6465636f646528227574662d38222c6572726f72733d227265706c61636522290a7072696e7428224e30305f43555252454e543d222b6a736f6e2e64756d7073286f62736572766174696f6e73292c666c7573683d54727565290a'),'n00-current-observer','exec'))"
-          if errorlevel 1 exit /b 1
+      - name: Read preserved synthetic test evidence
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const cp=require('node:child_process');
+            const result=cp.spawnSync('py',['-3','-c',"import pathlib,os,sys,json,subprocess\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\nreport={'host':os.environ['COMPUTERNAME'],'linux':{},'android':{}}\nr=subprocess.run(['wsl.exe','-d','Ubuntu-24.04','-u','analyst-ci','--exec','python3','-c',\"import pathlib,json\\nroot=pathlib.Path('/opt/analyst-ci/runs/40227746918-1')\\nout={'exists':root.is_dir(),'files':[]}\\nif root.is_dir():\\n out['files']=[{'name':str(p.relative_to(root)),'bytes':p.stat().st_size} for p in root.rglob('*') if p.is_file() and p.suffix in {'.json','.log'} and '/source/' not in str(p) and '/.venv/' not in str(p)][:100]\\n for p in root.glob('*report*.json'):\\n  out[p.name]=p.read_text()[-21000:]\\nprint(json.dumps(out))\\n\"],capture_output=True,text=True,encoding='utf-8',timeout=90)\nreport['linux']={'exit':r.returncode,'stdout':r.stdout[-26000:],'stderr':r.stderr[-1000:]}\nroot=pathlib.Path('C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-n00-40227132451-1')\nreport['android']['source_exists']=root.is_dir()\nout=root/'app/build/outputs/apk/preview'\nreport['android']['files']=[{'path':str(p.relative_to(root)),'bytes':p.stat().st_size} for p in out.rglob('*') if p.is_file() and p.suffix in {'.json','.log'}][:100] if out.is_dir() else []\nfor p in out.glob('runtime-*.json'):\n report['android'][p.name]=p.read_text(encoding='utf-8')[-12000:]\nfor p in out.glob('install-api37-*/runtime-console.log'):\n report['android'][str(p.relative_to(out))]=p.read_text(encoding='utf-8',errors='replace')[-4500:]\nprint(json.dumps(report))\n"],{encoding:'utf8',timeout:150000,maxBuffer:100000});
+            let report;
+            if(result.status===0){try{report=JSON.parse(result.stdout.trim());}catch(e){report={error:'invalid_json',stdout:result.stdout.slice(-10000),stderr:result.stderr.slice(-2000)};}}
+            else report={error:'inspection_failed',exit:result.status,stdout:result.stdout?.slice(-4000),stderr:result.stderr?.slice(-4000)};
+            let summary='\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`';
+            if(summary.length>62000)summary=summary.slice(0,62000);
+            await github.rest.checks.create({...context.repo,name:'N00 persistent failure evidence',head_sha:context.sha,status:'completed',conclusion:report.error?'failure':'success',output:{title:'Read retained Linux and Android test failures',summary}});
+            if(report.error)core.setFailed(report.error);
+            
