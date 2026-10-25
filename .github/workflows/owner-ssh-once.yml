@@ -74,21 +74,19 @@ jobs:
           
           status,data=api("GET","/servers/9415007")
           assert status==200
-          current=data["server"]
-          safe={k:current.get(k) for k in ("id","name","status","project_id","availability_zone","cpu","ram","preset_id","configurator_id","bandwidth","is_ddos_guard")}
-          safe["disks"]=[{k:v.get(k) for k in ("id","size","type","is_mounted","used")} for v in current.get("disks",[])]
-          safe["os"]={k:current.get("os",{}).get(k) for k in ("id","name","version")}
-          print("REDESIGN_CURRENT_TIMEWEB_CONFIGURATION="+json.dumps(safe),flush=True)
-          status,pricing=api("GET","/presets/servers")
+          server=data["server"]
+          public={k:v for k,v in server.items() if any(p in k.lower() for p in ("price","cost","configuration","preset","configurator")) and (v is None or isinstance(v,(str,int,float,bool)))}
+          print("REDESIGN_CURRENT_TIMEWEB_PRICE_FIELDS="+json.dumps({"keys":sorted(server),"pricing":public}),flush=True)
+          status,data=api("GET","/presets/servers")
           assert status==200
-          pools=[v for v in pricing.values() if isinstance(v,list)]
-          candidates=[]
-          for pool in pools:
-              for v in pool:
-                  if not isinstance(v,dict):continue
-                  cpu=v.get("cpu");ram=v.get("ram")
-                  if isinstance(cpu,(int,float)) and isinstance(ram,(int,float)) and 1<=cpu<=4 and 1024<=ram<=8192:
-                      candidates.append({k:v.get(k) for k in ("id","name","description","cpu","cpu_frequency","ram","disk","disk_type","price","price_hour","currency","location","availability_zone","type","is_visible","is_available")})
-          print("REDESIGN_TIMEWEB_CURRENT_PRESETS="+json.dumps({"top_keys":list(pricing),"candidates":candidates}),flush=True)
-          with_ams("import datetime,json,os,pathlib,shutil,subprocess,time\ndef run(args,timeout=20):\n    r=subprocess.run(args,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=timeout)\n    return {'exit_code':r.returncode,'stdout':r.stdout[:24000],'stderr':r.stderr[:500]}\ndef memory():\n    return {k:int(v.split()[0])*1024 for k,v in (line.split(':',1) for line in pathlib.Path('/proc/meminfo').read_text().splitlines()) if k in ('MemTotal','MemAvailable','SwapTotal','SwapFree')}\ndef service():\n    fields=('ActiveState','SubState','MainPID','MemoryCurrent','MemoryPeak','CPUUsageNSec','TasksCurrent','NRestarts','ControlGroup','ActiveEnterTimestamp')\n    r=run(['systemctl','show','analyst-ai-owner.service',*['--property='+k for k in fields]])\n    assert r['exit_code']==0\n    return dict(l.split('=',1) for l in r['stdout'].splitlines() if '=' in l)\nstart=time.monotonic();first=service()\nout={'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'kind':'runtime_capacity_readonly','cpu_count':os.cpu_count(),'load_average':os.getloadavg(),'memory':memory(),'disk':dict(zip(('total_bytes','used_bytes','free_bytes'),shutil.disk_usage('/'))),'service_before':first,'directories':{}}\nfor name in ('/opt/analyst-ai/backend','/opt/analyst-ai/venv','/var/lib/analyst-ai','/srv/analyst-ai-ota','/srv/analyst-ai/workspace','/var/lib/analyst-ai-build'):\n    p=pathlib.Path(name)\n    if p.exists():\n        r=run(['du','-s','-x','-B1',name],timeout=30)\n        out['directories'][name]={'exit_code':r['exit_code'],'allocated_bytes':int(r['stdout'].split()[0]) if r['exit_code']==0 else None}\nout['analyst_units']=run(['systemctl','list-units','--all','--no-pager','--plain','analyst-ai-*'])['stdout']\np=pathlib.Path('/var/lib/analyst-ai/backend.db')\nout['database_bytes']=p.stat().st_size\nwhile time.monotonic()-start<30:time.sleep(min(1,30-(time.monotonic()-start)))\nlast=service();elapsed=time.monotonic()-start\nout['service_after']=last;out['sample_seconds']=round(elapsed,3)\nif first['MainPID']==last['MainPID'] and first['CPUUsageNSec'].isdigit() and last['CPUUsageNSec'].isdigit():\n    out['service_cpu_percent_of_one_core']=round((int(last['CPUUsageNSec'])-int(first['CPUUsageNSec']))/(elapsed*1e9)*100,3)\nout['resource_changes_performed']=False;out['trading_actions_performed']=False\nprint('REDESIGN_TIMEWEB_RUNTIME_CAPACITY='+json.dumps(out),flush=True)\n",timeout=180)
+          ids={2579,6749,6759,6807,6809,6811}
+          print("REDESIGN_SELECTED_TIMEWEB_PRESETS="+json.dumps([p for p in data["server_presets"] if p["id"] in ids]),flush=True)
+          status,data=api("GET","/configurator/servers")
+          assert status==200
+          out={"keys":list(data),"items":[]}
+          for values in data.values():
+              if not isinstance(values,list):continue
+              for p in values:
+                  if isinstance(p,dict) and (p.get("id")==153 or p.get("location") in ("nl-1","ru-4","ru-5")):out["items"].append(p)
+          print("REDESIGN_CURRENT_TIMEWEB_CONFIGURATORS="+json.dumps(out),flush=True)
           PY
