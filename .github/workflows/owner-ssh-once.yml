@@ -72,5 +72,88 @@ jobs:
                           access.request(token,"DELETE","/ssh-keys/"+str(kid))
                       print("AMS_TEMP_KEY_REMOVED=true",flush=True)
           
-          with_ams("import hashlib,json,pathlib,time,zipfile\np=pathlib.Path('/var/lib/analyst-ai-build/incoming/windows38-40202738077-1/windows-runtime-evidence.zip')\nend=time.monotonic()+15\nwhile not p.exists() and time.monotonic()<end:time.sleep(.5)\nraw=p.read_bytes()\nassert len(raw)==489156 and hashlib.sha256(raw).hexdigest()=='c9b7771050d7a4b29e4ce3276fb0096ea24a372b1861428f1791be77049eff18'\nout={'archive_sha256':hashlib.sha256(raw).hexdigest(),'entries':[],'markers':{},'diagnostic_files':{},'activity_events':{}}\nwith zipfile.ZipFile(p) as z:\n    for i in z.infolist():\n        out['entries'].append({'name':i.filename,'bytes':i.file_size})\n        assert i.file_size<=64*1024*1024\n        if i.filename.endswith('runtime-console.log'):\n            lines=z.read(i).decode('utf-8','replace').splitlines()\n            out['markers'][i.filename]=[l for l in lines if any(k in l for k in ('PROFILE_READINESS_DIAGNOSTIC=','LAUNCH_FOREGROUND_DIAGNOSTIC=','PALETTE_FOREGROUND_DIAGNOSTIC=','PROFILE_LAUNCH','PROFILE_UI_STAGE','Traceback','AssertionError'))]\n        elif '/foreground-diagnostic/' in i.filename:\n            if i.filename.endswith('.json'):\n                assert i.file_size<100000\n                out['diagnostic_files'][i.filename]=json.loads(z.read(i))\n            elif i.filename.endswith('.stdout.log'):\n                lines=z.read(i).decode('utf-8','replace').splitlines()\n                wanted=set()\n                for j,line in enumerate(lines):\n                    if any(k in line for k in ('ru.omnicio','ProfileUiProbe','BootstrapActivity','MainActivity')):\n                        wanted.update(range(max(0,j-1),min(len(lines),j+3)))\n                selected=[lines[j] for j in sorted(wanted)]\n                out['activity_events'][i.filename]=selected[-240:]\nprint('REDESIGN_WINDOWS38_DIAGNOSTIC_V2_DETAILS='+json.dumps(out),flush=True)\n", timeout=150)
+          import ipaddress,uuid
+          NAME='Analyst AI runtime 20261025'
+          HOSTNAME='analyst-ai-runtime-20261025'
+          MARKER='Owner requested production runtime migration 20261025 from server 9415007'
+          CONFIG={'configurator_id':153,'cpu':2,'ram':4096,'disk':30720}
+          inventory=p.read_resource(token,'servers')
+          assert p.summarize('servers',inventory)['complete']
+          assert not any(s.get('name')==NAME or s.get('comment')==MARKER for s in inventory['servers']),'new_runtime_already_exists_reconcile_no_duplicate'
+          old=[s for s in inventory['servers'] if s.get('id')==9415007]
+          assert len(old)==1 and old[0].get('name')=='Analyst AI PRO' and old[0].get('project_id')==2941515 and old[0].get('availability_zone')=='ams-1' and p.cloud.public_ipv4(old[0])=='83.217.195.29'
+          status,data=api('GET','/projects/2941515/resources')
+          assert status==200 and any(s.get('id')==9415007 for s in data.get('servers',[]))
+          status,data=api('GET','/floating-ips')
+          assert status==200 and data.get('meta',{}).get('total')==len(data.get('ips',[]))
+          ips_before=data['ips']
+          bound=[r for r in ips_before if r.get('id')=='b77b2b7c-cd0e-4434-b096-27ef94ddcc86']
+          assert len(bound)==1 and bound[0].get('ip')=='83.217.195.29' and bound[0].get('resource_id')==9415007 and bound[0].get('resource_type')=='server' and bound[0].get('availability_zone')=='ams-1' and bound[0].get('project_id')==2941515 and not bound[0].get('is_blocked')
+          status,dns_before=api('GET','/domains/analyst-ai-2941515.twc1.net/dns-records')
+          assert status==200 and any(r.get('id')==95092009 and r.get('type')=='A' and r.get('data',{}).get('value')=='83.217.195.29' for r in dns_before.get('dns_records',[]))
+          status,data=api('GET','/configurator/servers')
+          assert status==200
+          offers=[r for r in data['server_configurators'] if r.get('id')==153]
+          assert len(offers)==1
+          offer=offers[0];requirements=offer['requirements'];prices=offer['prices']
+          assert offer['location']=='nl-1' and offer['disk_type']=='nvme'
+          for key in ('cpu','ram','disk'):
+              size=CONFIG[key]
+              assert requirements[key+'_min']<=size<=requirements[key+'_max'] and (size-requirements[key+'_min'])%requirements[key+'_step']==0
+          price=prices['cpu']*2+prices['ram']*4+prices['disk']*30
+          assert price==4360,'review_changed_configuration_price'
+          assert any(x['id']==99 and x['version']=='24.04' for x in p.ubuntu_images(p.read_catalog(token,'os')))
+          print('RUNTIME_MIGRATION_CREATION_PREFLIGHT='+json.dumps({'configuration':CONFIG,'availability_zone':'ams-1','monthly_base_rub':price,'monthly_with_existing_ip_rub':price+200,'production_server_preserved':9415007}),flush=True)
+          def owned(document):
+              s=document.get('server',{})
+              assert type(s.get('id')) is int and s['name']==NAME and s.get('comment')==MARKER and s.get('project_id')==2941515
+              assert s.get('configurator_id')==153 and s.get('cpu')==2 and s.get('ram')==4096 and s.get('location')=='nl-1' and s.get('availability_zone')=='ams-1'
+              return s
+          with tempfile.TemporaryDirectory(prefix='analyst-runtime-migration-',dir=os.environ['RUNNER_TEMP']) as directory:
+              folder=pathlib.Path(directory)
+              p.cloud.generate_key(folder/'client');p.cloud.generate_key(folder/'host')
+              client=(folder/'client.pub').read_text().strip()
+              host=(folder/'host.pub').read_text().strip()
+              config={'users':[{'name':'root','lock_passwd':True,'ssh_authorized_keys':[client]}],'ssh_pwauth':False,'disable_root':False,'ssh_deletekeys':True,'ssh_keys':{'ed25519_private':(folder/'host').read_text(),'ed25519_public':host},'ssh':{'emit_keys_to_console':False},'no_ssh_fingerprints':True,'runcmd':[['systemctl','restart','ssh']]}
+              status,data=api('POST','/servers',{'name':NAME,'hostname':HOSTNAME,'comment':MARKER,'configuration':CONFIG,'os_id':99,'project_id':2941515,'availability_zone':'ams-1','cloud_init':'#cloud-config\n'+json.dumps(config)+'\n'})
+              assert status in (200,201,202),'create_rejected_status_'+str(status)+'_reconcile_before_retry'
+              s=owned(data);sid=s['id'];command=None;address=None;temporary_ip=None
+              print('RUNTIME_MIGRATION_NEW_VM='+json.dumps({'id':sid,'name':NAME,'host_key':host,'availability_zone':s['availability_zone'],'configuration':CONFIG,'empty_runtime_only':True}),flush=True)
+              try:
+                  address=p.cloud.public_ipv4(s)
+                  if not address:
+                      status,data=api('POST','/floating-ips',{'is_ddos_guard':False,'availability_zone':'ams-1'})
+                      assert status in (200,201,202),'temporary_ip_create_reconcile'
+                      temporary_ip=data['ip'];uuid.UUID(temporary_ip['id'])
+                      assert temporary_ip.get('availability_zone')=='ams-1' and temporary_ip.get('is_ddos_guard') is False and ipaddress.IPv4Address(temporary_ip['ip']).is_global and temporary_ip['ip']!='83.217.195.29'
+                      print('RUNTIME_MIGRATION_TEMPORARY_IP='+json.dumps({'id':temporary_ip['id'],'ip':temporary_ip['ip'],'availability_zone':'ams-1'}),flush=True)
+                      status,data=api('POST','/floating-ips/'+temporary_ip['id']+'/bind',{'resource_type':'server','resource_id':sid})
+                      assert status in (200,201,202,204),'temporary_ip_bind_reconcile'
+                  ready=False
+                  for attempt in range(36):
+                      status,data=api('GET','/servers/'+str(sid));assert status==200
+                      current=owned(data);address=p.cloud.public_ipv4(current)
+                      if address:
+                          command=p.ssh_command(folder,address,host)
+                          try:
+                              p.remote(command,'cloud-init status --wait >/dev/null && test $(id -u) = 0',timeout=18)
+                              ready=True;break
+                          except (p.ProbeError,subprocess.TimeoutExpired):pass
+                      if attempt==35:break
+                      time.sleep(5)
+                  assert ready,'new_runtime_ssh_not_ready'
+                  evidence=json.loads(p.remote(command,'python3 -',"import datetime,json,os,pathlib,platform,shutil,socket,ssl,urllib.request\nreport={'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'python':platform.python_version(),'architecture':platform.machine(),'cpu_count':os.cpu_count(),'memory_total_kib':int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemTotal:'))),'disk_free_bytes':shutil.disk_usage('/').free,'tls':{},'application_started':False}\nrelease=dict(line.split('=',1) for line in pathlib.Path('/etc/os-release').read_text().splitlines() if '=' in line)\nassert release['ID'].strip('\"')=='ubuntu' and release['VERSION_ID'].strip('\"')=='24.04'\nassert report['architecture']=='x86_64' and report['cpu_count']==2 and 3800000<=report['memory_total_kib']<=4400000 and report['disk_free_bytes']>10*1024**3\nfor host in ('oauth.telegram.org','invest-public-api.tbank.ru','sandbox-invest-public-api.tbank.ru'):\n    with socket.create_connection((host,443),timeout=15) as raw:\n        with ssl.create_default_context().wrap_socket(raw,server_hostname=host) as conn:\n            report['tls'][host]={'verified':True,'version':conn.version()}\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self,*args,**kwargs):return None\nopener=urllib.request.build_opener(NoRedirect(),urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context()))\nwith opener.open(urllib.request.Request('https://oauth.telegram.org/.well-known/jwks.json',headers={'Accept-Encoding':'identity','Accept':'application/json'}),timeout=20) as response:\n    raw=response.read(131073);assert len(raw)<=131072\n    data=json.loads(raw);assert response.status==200 and isinstance(data.get('keys'),list) and data['keys']\n    report['telegram_jwks_https']={'status':response.status,'key_count':len(data['keys'])}\nprint(json.dumps(report))\n".encode(),timeout=90))
+                  status,data=api('GET','/floating-ips');assert status==200
+                  owned_ips=[r for r in data['ips'] if r.get('resource_type')=='server' and r.get('resource_id')==sid]
+                  assert any(r.get('ip')==address and r.get('availability_zone')=='ams-1' for r in owned_ips)
+                  status,data=api('GET','/servers/9415007');assert status==200
+                  assert data['server']['name']=='Analyst AI PRO' and p.cloud.public_ipv4(data['server'])=='83.217.195.29'
+                  status,dns_after=api('GET','/domains/analyst-ai-2941515.twc1.net/dns-records');assert status==200
+                  assert dns_before['dns_records']==dns_after['dns_records'],'production_dns_changed_during_preparation'
+                  print('RUNTIME_MIGRATION_NEW_VM_READY='+json.dumps({'id':sid,'ip':address,'ips':[{'id':r['id'],'ip':r['ip']} for r in owned_ips],'host_key':host,'observations':evidence,'old_vm_and_domain_unchanged':True,'application_deployed':False}),flush=True)
+              finally:
+                  if command is not None:
+                      cleanup="import pathlib,json\np=pathlib.Path('/root/.ssh/authorized_keys')\nkey="+repr(client.split()[:2])+"\nlines=p.read_text().splitlines()\nkept=[line for line in lines if line.split()[:2]!=key]\nassert len(kept)<len(lines)\np.write_text('\\n'.join(kept)+'\\n');p.chmod(0o600)\nassert all(line.split()[:2]!=key for line in p.read_text().splitlines())\nprint('RUNTIME_MIGRATION_INITIAL_SSH_KEY_REMOVED=true')\n"
+                      print(p.remote(command,'python3 -',cleanup.encode(),timeout=30).decode(),flush=True)
+          
           PY
