@@ -14,60 +14,15 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Inspect existing tools and restart prerequisites without changing settings
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'Unexpected host' }
-          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-          $principal = New-Object Security.Principal.WindowsPrincipal($identity)
-          $os = Get-CimInstance Win32_OperatingSystem
-          $services = @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions.runner.%'" | ForEach-Object {
-            @{name=$_.Name; state=$_.State; start_mode=$_.StartMode; account=$_.StartName}
-          })
-          $tools = @{}
-          foreach ($name in @('git','py','node','java','powershell','wsl')) {
-            $found = Get-Command $name -ErrorAction SilentlyContinue
-            $tools[$name] = [bool]$found
-          }
-          $sdk = 'C:\actions-runner-2\_work\_tool\AndroidSdk\sdk'
-          $report = [ordered]@{
-            checked_at_utc=[DateTime]::UtcNow.ToString('o')
-            elevated=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-            service_account=$identity.Name
-            os_version=$os.Version
-            uptime_hours=[Math]::Round(((Get-Date)-$os.LastBootUpTime).TotalHours,2)
-            free_ram_gb=[Math]::Round($os.FreePhysicalMemory/1MB,2)
-            free_disk_gb=[Math]::Round((Get-PSDrive C).Free/1GB,2)
-            tools=$tools
-            sdk=@{exists=(Test-Path $sdk);adb=(Test-Path "$sdk\platform-tools\adb.exe");emulator=(Test-Path "$sdk\emulator\emulator.exe");platform37=(Test-Path "$sdk\platforms\android-37.0");build_tools37=(Test-Path "$sdk\build-tools\37.0.0")}
-            runner_services=$services
-            worker_count=@(Get-Process 'Runner.Worker' -ErrorAction SilentlyContinue).Count
-            existing_restart_task=@(Get-ScheduledTask -TaskName 'AnalystAI*' -ErrorAction SilentlyContinue | ForEach-Object { @{name=$_.TaskName;state=[string]$_.State} })
-          }
-          $wsl = (& wsl.exe --list --quiet 2>&1 | Out-String) -replace "\x00",''
-          $report.wsl_ubuntu24 = ($wsl -match 'Ubuntu-24.04')
-          $report.wsl_list_exit = $LASTEXITCODE
-          $power = @{}
-          foreach ($item in @(@('sleep','SUB_SLEEP','STANDBYIDLE'),@('hibernate','SUB_SLEEP','HIBERNATEIDLE'),@('lid','SUB_BUTTONS','LIDACTION'))) {
-            $raw = (& powercfg.exe /query SCHEME_CURRENT $item[1] $item[2] 2>&1 | Out-String)
-            $matches = [regex]::Matches($raw,'0x[0-9a-fA-F]{8}')
-            $power[$item[0]] = @($matches | Select-Object -Last 2 | ForEach-Object {$_.Value})
-          }
-          $report.power_ac_dc = $power
-          $json = $report | ConvertTo-Json -Depth 8
-          $json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'analyst-readiness.json') -Encoding UTF8
-          Write-Output $json
-      - name: Record only the bounded setup report
+      - name: Read and record bounded laptop prerequisites
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const fs=require('node:fs'),path=require('node:path');
-            const raw=fs.readFileSync(path.join(process.env.RUNNER_TEMP,'analyst-readiness.json'),'utf8').replace(/^\uFEFF/,'');
-            const report=JSON.parse(raw);
-            if(raw.length>16000) throw new Error('Unexpected report size');
-            await github.rest.checks.create({
-              ...context.repo, name:'Laptop unattended readiness report',
-              head_sha:context.sha, status:'completed', conclusion:'success',
-              output:{title:'Read-only laptop prerequisites',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}
-            });
+            const cp=require('node:child_process'),path=require('node:path');
+            const command="$ErrorActionPreference = 'Stop'\nif ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'Unexpected host' }\n$identity = [Security.Principal.WindowsIdentity]::GetCurrent()\n$principal = New-Object Security.Principal.WindowsPrincipal($identity)\n$os = Get-CimInstance Win32_OperatingSystem\n$services = @(Get-CimInstance Win32_Service -Filter \"Name LIKE 'actions.runner.%'\" | ForEach-Object {\n  @{name=$_.Name; state=$_.State; start_mode=$_.StartMode; account=$_.StartName}\n})\n$tools = @{}\nforeach ($name in @('git','py','node','java','powershell','wsl')) {\n  $found = Get-Command $name -ErrorAction SilentlyContinue\n  $tools[$name] = [bool]$found\n}\n$sdk = 'C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk'\n$report = [ordered]@{\n  checked_at_utc=[DateTime]::UtcNow.ToString('o')\n  elevated=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)\n  service_account=$identity.Name\n  os_version=$os.Version\n  uptime_hours=[Math]::Round(((Get-Date)-$os.LastBootUpTime).TotalHours,2)\n  free_ram_gb=[Math]::Round($os.FreePhysicalMemory/1MB,2)\n  free_disk_gb=[Math]::Round((Get-PSDrive C).Free/1GB,2)\n  tools=$tools\n  sdk=@{exists=(Test-Path $sdk);adb=(Test-Path \"$sdk\\platform-tools\\adb.exe\");emulator=(Test-Path \"$sdk\\emulator\\emulator.exe\");platform37=(Test-Path \"$sdk\\platforms\\android-37.0\");build_tools37=(Test-Path \"$sdk\\build-tools\\37.0.0\")}\n  runner_services=$services\n  worker_count=@(Get-Process 'Runner.Worker' -ErrorAction SilentlyContinue).Count\n  existing_restart_task=@(Get-ScheduledTask -TaskName 'AnalystAI*' -ErrorAction SilentlyContinue | ForEach-Object { @{name=$_.TaskName;state=[string]$_.State} })\n}\n$wsl = (& wsl.exe --list --quiet 2>&1 | Out-String) -replace \"\\x00\",''\n$report.wsl_ubuntu24 = ($wsl -match 'Ubuntu-24.04')\n$report.wsl_list_exit = $LASTEXITCODE\n$power = @{}\nforeach ($item in @(@('sleep','SUB_SLEEP','STANDBYIDLE'),@('hibernate','SUB_SLEEP','HIBERNATEIDLE'),@('lid','SUB_BUTTONS','LIDACTION'))) {\n  $raw = (& powercfg.exe /query SCHEME_CURRENT $item[1] $item[2] 2>&1 | Out-String)\n  $matches = [regex]::Matches($raw,'0x[0-9a-fA-F]{8}')\n  $power[$item[0]] = @($matches | Select-Object -Last 2 | ForEach-Object {$_.Value})\n}\n$report.power_ac_dc = $power\n$json = $report | ConvertTo-Json -Depth 8\n$json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'analyst-readiness.json') -Encoding UTF8\nWrite-Output $json\n";
+            const result=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',Buffer.from(command,'utf16le').toString('base64')],{encoding:'utf8',timeout:120000,maxBuffer:64000});
+            let report;
+            if(result.status===0){try{report=JSON.parse(result.stdout.trim());}catch(e){report={error:'invalid_report',stdout:result.stdout.slice(-4000),stderr:result.stderr.slice(-2000)};}}
+            else report={error:'readiness_command_failed',exit:result.status,spawn_error:result.error?.message,stdout:result.stdout?.slice(-4000),stderr:result.stderr?.slice(-4000)};
+            await github.rest.checks.create({...context.repo,name:'Laptop unattended readiness report',head_sha:context.sha,status:'completed',conclusion:report.error?'failure':'success',output:{title:'Laptop setup inspection',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
+            if(report.error)core.setFailed(report.error);
