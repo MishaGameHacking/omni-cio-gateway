@@ -1,4 +1,4 @@
-name: Inspect candidate40 actual catalogue search input and Find target
+name: Inspect candidate40 four actual catalogue scenarios
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,18 +11,18 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Copy actual candidate40 input and failed Find target observations
+      - name: Copy actual native input screenshots and four completed catalogue cases
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
             if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
-            const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40241897573-1/app/build/outputs/apk/preview';
+            const root='C:/actions-runner-4/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40243041873-1/app/build/outputs/apk/preview';
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const source=p.join(root,'ui-screens-api37-16384');
-            const allowed=['catalogue-font-200-ready-input-1.png','diagnostic-catalogue-last.png','catalogue-focused-observations.json'];
+            const allowed=["catalogue-font-200-ready-input-1.png","catalogue-font-200-ready-input-2.png","catalogue-font-200-ready-input-3.png","catalogue-font-200-partial-input-4.png","catalogue-font-200-partial-input-5.png","catalogue-font-200-partial-input-6.png","catalogue-font-100-ready-input-7.png","catalogue-font-100-ready-input-8.png","catalogue-font-100-ready-input-9.png","catalogue-font-100-partial-input-10.png","catalogue-font-100-partial-input-11.png","catalogue-font-100-partial-input-12.png","business-catalogue-ready-font-200.png","business-catalogue-partial-font-200.png","business-catalogue-ready.png","business-catalogue-partial.png","catalogue-focused-observations.json","diagnostic-catalogue-last.png"];
             const identities={};
             function copy(from,name){
               const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000)throw new Error('unexpected_file');
@@ -33,18 +33,19 @@ jobs:
             const log=p.join(root,'install-api37-16384/runtime-console.log');
             copy(log,'runtime-16384.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
-            const report={source_run:40241897573,source_root:source,debug_apk_sha256:'3e29f33beb3a6ad4dade2f56b8340d8419aeff415ffe78ed35714291ae889acf',identities,
+            const report={source_run:40243041873,source_root:source,debug_apk_sha256:'3e29f33beb3a6ad4dade2f56b8340d8419aeff415ffe78ed35714291ae889acf',identities,
               focused:JSON.parse(fs.readFileSync(p.join(source,'catalogue-focused-observations.json'),'utf8')),
-              failure_observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure|BUSINESS_UI_CASE|SCROLL_LAYOUT|NATIVE_EDITOR_FAILURE|UI_ACCESSIBILITY_ACTION/.test(l)).map(l=>l.slice(0,16000)).slice(-18),
+              observations:lines.filter(l=>/PROFILE_FAILURE|PROFILE_LAUNCH|UI_FRAME|FAILURE_FRAME|PROFILE_SCREENSHOT=failure|BUSINESS_UI_CASE|SCROLL_LAYOUT|NATIVE_EDITOR_FAILURE|UI_ACCESSIBILITY_ACTION/.test(l)).map(l=>l.slice(0,16000)).slice(-18),
               available_files:fs.readdirSync(source).filter(n=>/\.(png|json)$/.test(n)),
               log_tail:lines.slice(-105).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
+            if(report.focused.focused_cases_completed!==true||report.focused.cases.length!==4||report.focused.native_input_screens.length!==12)throw new Error('focused_cases_not_complete');
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 actual candidate40 catalogue Find target evidence',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Actual search input succeeded; Find target did not become reachable',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
+            await github.rest.checks.create({...context.repo,name:'N00 candidate40 actual successful catalogue evidence',head_sha:context.sha,status:'completed',conclusion:'success',output:{title:'Four actual catalogue cases passed; full matrix remains pending',summary:'\`\`\`json\n'+JSON.stringify(report,null,2)+'\n\`\`\`'}});
             core.setOutput('folder',out);
       - name: Preserve reviewable synthetic UI screenshots and failure log
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate40-catalogue-focused-16384
+          name: n00-candidate40-catalogue-recovery-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
