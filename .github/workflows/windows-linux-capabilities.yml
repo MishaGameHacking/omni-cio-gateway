@@ -1,0 +1,17 @@
+name: Inspect Linux test capability on the authorized Windows laptop
+'on':
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/windows-linux-capabilities.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 3
+    steps:
+      - name: Read existing WSL and Docker availability without installing or changing anything
+        shell: cmd
+        run: |
+          py -3 -c "import os,sys,shutil,subprocess,json; assert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; results={}; commands=[('wsl_list',['wsl.exe','--list','--quiet']),('wsl_status',['wsl.exe','--status']),('docker_linux',['docker.exe','info','--format','{{.OSType}}'])]; exec('for name,cmd in commands:\n if not shutil.which(cmd[0]):\n  results[name]={\'available\':False};continue\n try:\n  p=subprocess.run(cmd,stdin=subprocess.DEVNULL,capture_output=True,timeout=20); data=(p.stdout+p.stderr)[:8192]; text=data.decode(\'utf-16-le\' if b\'\\x00\' in data else \'utf-8\',errors=\'replace\'); results[name]={\'available\':True,\'exit_code\':p.returncode,\'output\':text}\n except subprocess.TimeoutExpired:results[name]={\'available\':True,\'timeout\':True}'); print('WINDOWS_LINUX_CAPABILITY='+json.dumps(results,ensure_ascii=True))"
+          if errorlevel 1 exit /b 1
