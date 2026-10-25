@@ -133,7 +133,7 @@ and font1 price95. The value and caret remain above the keyboard. The synthetic
 debug disclosure rail makes these diagnostic windows narrower than production;
 do not describe its45% side rail as normal production geometry.
 
-## Complete matrix: actual 16KB failure, 4KB still running
+## Complete matrix: both page sizes failed on result traversal
 
 [Full run40243609014](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40243609014)
 checks the exact backed-up source
@@ -166,16 +166,86 @@ The downloaded archive and12 manifest file hashes were verified and the failure
 PNG was visually inspected. The runtime log SHA-256 is
 `f2c09b9fb68bf3f2a086dea4f974b91dbf2c05d0a5e8ecde1138e3ecda097227`.
 
-The4KB profile continues independently. At this checkpoint it passed native2D,
-session context, privacy and goals and reached catalogue at the normal font.
+The4KB profile also FAILED, at2026-10-25T23:45:31Z, on catalogue/ready
+at font2: `List target not reachable: Проверенные ограничения соблюдены`.
+Its measured4096-byte page size, published38 installation/upgrade, candidate40
+clean installation/launch, native2D, session context, privacy, goals and all30
+normal-font business cases passed. The rest of the15-stage suite was not run.
+
+Run40243609014 finished FAILURE; its original results are retained.
+The232-file private archive is9,528,132 bytes, SHA-256
+`b9059812e104215ebc3b7695f3b21b3f4e4aaa70e066e342aa69151c61c294c5`.
+Timeweb9417611 confirmed receipt at2026-10-25T23:46:11Z under
+`/var/lib/analyst-ai-build/incoming/windows-development-40243609014-1/`.
+No application source was executed on Timeweb.
+
+Separate4KB evidence run40246323925, artifact12618862540:
+108,118 bytes, SHA-256
+`ab402c54b8909115d30d812c82819f207e80930823b9d7a029b08847ee11b770`.
+Its archive and two manifest files were verified; the failure PNG was viewed.
+It likewise shows the saved result and Close below the missing heading.
+
+## Confirmed asynchronous response and page-scroll race
 
 [Diagnostic run40245350516](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40245350516)
-is queued behind the same canonical emulator lease. It uses the exact unchanged
-source and APKs. An external diagnostic hook observes the original result
-traversal; only after a real assertion failure does it inspect reverse scrolling
-and rethrow the original failure. It cannot claim a complete UI PASS. The
-response-insertion/scroll timing explanation is a hypothesis until these actual
-frames establish it. No new repair has been applied at this checkpoint.
+used unchanged source2347eb5, inventoryd79d8c… and the exact same APKs.
+It reproduced the original assertion in its first ready/font2 case. The
+observing hook did not change the forward search. Only after the failure did
+it inspect reverse scrolling, then rethrow the original assertion.
+
+| Actual native frame | Observation |
+|---|---|
+|0.522s after result search began|Waiting-for-confirmation label; result absent|
+|1.364s after the first forward page|Response rendered; cash-after and saved-result text visible, heading already above|
+|3.818s|Original bounded forward search failed at the bottom of the dialog|
+|4.257s, after one reverse page|Exact expected heading visible at[18,125][302,239], inside[0,24][320,616]|
+
+The diagnostic archive has17 files,415,549 bytes, SHA-256
+`cad9ddd44ba1b818841107dc505bef3504e75b196df6308fe05a28e1fdbfed7c`;
+Timeweb9417611 receipt2026-10-25T23:49:09Z.
+[Visual evidence run40246934764](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40246934764)
+artifact12619096438 is183,027 bytes, SHA-256
+`6b491c0b140b08c22cf200ba70da64c57ba8476fb41685821ec6e1cfc8e6809a`.
+The archive and five manifest file hashes were verified. The reverse-scroll
+PNG was visually inspected: the expected heading is fully readable.
+This is a confirmed traversal assumption failure, not evidence of a missing
+application result or an expired observation.
+
+## Windows repair, original failure and full host verification
+
+[Run40246855859](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40246855859)
+applied only catalogue_ui_probe.py and test_catalogue_dialog_transition.py
+on LAPTOP-NPSGA016 at2026-10-25T23:55:22Z. Base:
+`740a50defc93262b30b800cf15f15086f83231ef`.
+Patch payload:
+`1f0a3b432e9e620bc08e92edd1c7e8cf4399b3edc77658a2be42e5b088176463`.
+New code inventory:
+`770337e637aadcccec66047048aa7e696a58524d2536f2f66d4d20a16b633bac`.
+
+After the exact expected-label forward-search exhaustion, the catalogue probe
+now performs one bounded reverse search for that same native label. Other
+assertions and transport errors are rethrown unchanged. Missing, expired and
+wrong verdicts still fail. Native tap, input, price guards, result invalidation
+and no-order checks remain required.
+
+The new response-arrival regression was first executed against the original
+probe: one test with four variants failed as expected, exit1. The repaired
+source was then restored and the complete1063 host tests passed in45.054s,
+with the same3 platform skips; git diff --check passed. The host stage completed
+at23:56:14Z. The isolated checkout is:
+`C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40246855859-1`.
+
+| Windows-applied file | SHA-256 |
+|---|---|
+|catalogue_ui_probe.py|16cdc217183c5c22f52565cbd3de080eac6fac290377ec4caa808d5c800a6dbb|
+|test_catalogue_dialog_transition.py|57e71e186d7a1474ddb408218cc3ae82eebe99fe96cd4ab143f573557ef69ed2|
+
+Four actual ready/partial cases at fonts2 and1 are now running with the repair.
+Screenshots are captured only after the original repaired traversal returns;
+they cannot make its search succeed. This focused workflow remains diagnostic
+and deliberately cannot claim complete Android acceptance.
+After it finishes, run all15 stages on both page sizes again without any
+diagnostic hook. Application/debug/driver APK bytes remain exactly those of40.
 
 No complete Android PASS, physical-phone result or publication40 is claimed.
 The full build also explicitly records external_quality_gate as not_run_by_this_bootstrap;

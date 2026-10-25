@@ -33,7 +33,7 @@ def exercise_catalogue(case):
     probe.dismiss_keyboard()
     probe.tap(PURCHASE_ACTION, area)
     expected = "Проверенные ограничения соблюдены" if scenario == "ready" else "Покупка не прошла проверку"
-    probe.reveal(expected, area)
+    _reveal_purchase_result(probe, expected, area)
     probe.reveal("Расчёт сохранён: synthetic-purchase-check", area)
     if scenario == "partial":
         probe.reveal("Покупка затрагивает защищённый резерв.", area, direction="start")
@@ -46,3 +46,17 @@ def exercise_catalogue(case):
     probe.tap("Закрыть", area)
     case.checks.extend(("search-outside-current-holdings", "missing-price-blocked", "typed-purchase-request",
                         "constraint-result-shown", "edited-input-invalidates-result", "no-broker-order"))
+
+
+def _reveal_purchase_result(probe, expected, area):
+    """A response can arrive after a page scroll and leave its heading above."""
+    try:
+        return probe.reveal(expected, area)
+    except AssertionError as error:
+        if str(error) != "List target not reachable: " + expected:
+            raise
+    # Keep the same required native label and bounded traversal. A missing,
+    # expired or different result must still fail; no other error is retried.
+    result = probe.reveal(expected, area, direction="start")
+    print("CATALOGUE_RESULT_REVEALED=reverse-after-response-scroll", flush=True)
+    return result

@@ -23,11 +23,12 @@ RESERVE = "Покупка затрагивает защищённый резер
 
 class CatalogueViewportProbe:
     def __init__(self, scale=1.0, scenario="ready", *, qualified=False, defect=None,
-                 delayed_layout=False, catalogue_resize=False):
+                 delayed_layout=False, catalogue_resize=False, delayed_result=False):
         self.scale, self.scenario = scale, scenario
         self.qualified, self.defect = qualified, defect
         self.delayed_layout = delayed_layout
         self.catalogue_resize = catalogue_resize
+        self.delayed_result, self.awaiting_result, self.result_reflows = delayed_result, False, 0
         self.height, self.offset, self.window = 453, 0, 144
         self.page, self.pending, self.dialog_reads = "catalogue", None, 0
         self.editor, self.values = None, {"catalogue-query": "", "purchase-price": ""}
@@ -90,7 +91,13 @@ class CatalogueViewportProbe:
             self.row(viewport, 300, 48, text=catalogue.PURCHASE_ACTION, button=True,
                      enabled=bool(self.values["purchase-price"]) or self.defect == "enabled-empty-price")
         if self.result:
-            self.row(viewport, 360, 60, text=self.verdict())
+            if self.defect != "missing-result":
+                verdict = self.verdict()
+                if self.defect == "expired-result":
+                    verdict = "Срок проверки истёк — повторите расчёт"
+                elif self.defect == "wrong-result":
+                    verdict = "Покупка не прошла проверку" if self.scenario == "ready" else "Проверенные ограничения соблюдены"
+                self.row(viewport, 360, 60, text=verdict)
             if self.scenario == "partial":
                 self.row(viewport, 425, 45, text=RESERVE)
             self.row(viewport, 480, 45, text=SAVED)
@@ -139,6 +146,13 @@ class CatalogueViewportProbe:
         if self.page == "dialog" and self.delayed_layout and self.dialog_reads <= 4:
             raise AssertionError("Scrolled before dialog content became ready")
         self.scrolls.append((self.page, "end" if y1 > y2 else "start"))
+        if self.awaiting_result and y1 > y2:
+            # Actual native trace: the first frame is still waiting; the response
+            # is inserted before ACTION_SCROLL_FORWARD moves a whole viewport.
+            self.awaiting_result, self.result = False, True
+            self.result_reflows += 1
+            self.offset = min(self.extent - self.height, self.offset + self.height)
+            return
         self.offset = max(0, min(max(0, self.extent - self.height), self.offset + y1 - y2))
 
     def reveal(self, text, area, direction="end"):
@@ -157,7 +171,8 @@ class CatalogueViewportProbe:
             self.pending = 2
         elif text == catalogue.PURCHASE_ACTION:
             self.check_requests.append(self.values["purchase-price"])
-            self.result = True
+            self.awaiting_result = self.delayed_result
+            self.result = not self.delayed_result
         elif text == "Закрыть":
             self.page, self.window, self.offset = "catalogue", 144, 0
 
@@ -180,6 +195,10 @@ class CatalogueViewportProbe:
         if self.editor == "catalogue-query" and self.catalogue_resize:
             # Reflow leaves the catalogue anchored below its already edited form.
             self.offset = self.extent - self.height
+        elif self.editor == "purchase-price" and self.delayed_result:
+            # Match the actual post-IME viewport: the action is near its top,
+            # so one full page can pass the result that is inserted below it.
+            self.offset = max(0, self.extent - self.height)
         self.editor = None
 
     @staticmethod
@@ -257,6 +276,49 @@ class CatalogueDialogTransitionTests(unittest.TestCase):
                     self.exercise(probe)
                 self.assertEqual(probe.actions, [])
                 self.assertEqual(probe.check_requests, [])
+
+    def test_late_result_is_found_after_the_forward_page_skips_its_heading(self):
+        for scenario in ("ready", "partial"):
+            for qualified in (False, True):
+                with self.subTest(scenario=scenario, qualified=qualified):
+                    probe = CatalogueViewportProbe(2.0, scenario, qualified=qualified, delayed_result=True)
+                    case = self.exercise(probe)
+                    self.assertEqual(probe.result_reflows, 1)
+                    self.assertEqual(probe.check_requests, ["95"])
+                    self.assertEqual(probe.values["purchase-price"], "950")
+                    self.assertEqual(probe.actions, ["Найти", catalogue.PURCHASE_DIALOG,
+                                                   catalogue.PURCHASE_ACTION, "Закрыть"])
+                    self.assertFalse(probe.result)
+                    self.assertIn("constraint-result-shown", case.checks)
+                    self.assertIn("edited-input-invalidates-result", case.checks)
+
+    def test_result_recovery_rejects_missing_expired_and_wrong_verdicts(self):
+        for scenario in ("ready", "partial"):
+            for defect in ("missing-result", "expired-result", "wrong-result"):
+                with self.subTest(scenario=scenario, defect=defect):
+                    probe = CatalogueViewportProbe(2.0, scenario, defect=defect, delayed_result=True)
+                    with self.assertRaisesRegex(AssertionError, "List target not reachable: " + probe.verdict()):
+                        self.exercise(probe)
+                    self.assertEqual(probe.check_requests, ["95"])
+                    self.assertEqual(probe.values["purchase-price"], "95")
+                    self.assertNotIn("Закрыть", probe.actions)
+
+    def test_unrelated_result_errors_are_not_retried_as_scroll_recovery(self):
+        for error in (AssertionError("Native result window changed"), ConnectionError("Native frame transport lost")):
+            with self.subTest(error=type(error).__name__):
+                probe = CatalogueViewportProbe(2.0)
+                original, attempts = probe.reveal, []
+                def reveal(text, area, direction="end"):
+                    if text == probe.verdict():
+                        attempts.append(direction)
+                        raise error
+                    return original(text, area, direction)
+                with patch.object(probe, "reveal", side_effect=reveal):
+                    with self.assertRaisesRegex(type(error), str(error)):
+                        self.exercise(probe)
+                self.assertEqual(attempts, ["end"])
+                self.assertEqual(probe.check_requests, ["95"])
+                self.assertNotIn("Закрыть", probe.actions)
 
     def test_removing_barrier_reproduces_old_frame_new_dialog_scroll_failure(self):
         probe = CatalogueViewportProbe()

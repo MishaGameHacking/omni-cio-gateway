@@ -1,37 +1,39 @@
-## N00 25–26.10.2026 — полный APK40/16KB отказал на заголовке результата
+## N00 25–26.10.2026 — исправлен доказанный пропуск заголовка результата
 
-Build40239983022 прошёл Windows/WSL: host1057 (прежние3 skips), tools52/Node,
-backend1684 /1515 subtests, health/OpenAPI,174 JVM tests, lint/подпись/alignment.
-APK40 /0.13.2-preview SHA256
-a3b7d0ec4e0ac568ed15a0853635e2056898618a911c4114f7576b4c5c315aa0.
-Два harness-файла затем прошли1060 host-тестов (3 skips) в40243041873.
-Четыре focused catalogue ready/partial при font2/font1 прошли на16KB,
-12 записей/снимков подтвердили вводnew1/95/950. Diagnostic workflow намеренно
-FAILED после focused случаев; release_gate_pass=false, не полная матрица.
+APK40 /0.13.2-preview, SHA256
+a3b7d0ec4e0ac568ed15a0853635e2056898618a911c4114f7576b4c5c315aa0,
+прошёл полный build40239983022 на ноутбуке/WSL: backend1684 /1515 subtests,
+host1057 (прежние3 skips), tools52/Node,174 JVM tests, lint/подпись/alignment.
+Полный runtime40243609014 FAILED на16KB catalogue/partial/font2 и4KB
+catalogue/ready/font2: forward search пропускал заголовок результата.
+Установка/upgrade38→40/clean/launch и первые4 UI-stage прошли на обоих.
+Архив232 файлов9,528,132 bytes SHA256
+b9059812e104215ebc3b7695f3b21b3f4e4aaa70e066e342aa69151c61c294c5
+принят Timeweb9417611 в23:46:11Z. Исходный отказ не переименован в PASS.
 
-Полный40243609014 использует2347eb54b7270d947587adb0f3cc09a5e0de1572,
-source inventory d79d8cfc31d74560eda38b8aeae8cf58aa5e389de8366d54b66886b47ad54cbc,
-те же APK40/debug/driver из build40239983022, без diagnostic hook.
-16KB FAILED в23:28:34Z на catalogue/partial/font2:
-List target not reachable: Покупка не прошла проверку.
-Установка38→40/clean/launch, native2D/session/privacy/goals и30 обычных
-business случаев прошли; при font2 catalogue ready/empty тоже прошли.
-Failure PNG показывает сохранённый расчёт внизу диалога. Это не доказательство
-геометрии ожидаемого заголовка. Снимок просмотрен, архив/12 файлов сверены.
-Evidence40245031227, archive SHA256
-4414f31e484867d25e9ea30b9125df975b9df587a0d8031cdc60d53d5e0135b9.
+Диагностика40245350516 доказала гонку ответа с page-scroll: первый кадр
+ещё ожидает подтверждение, следующий уже ниже заголовка. После настоящего
+отказа одна reverse-прокрутка показала точный заголовок[18,125][302,239].
+PNG просмотрен; исходная ошибка повторно выброшена. Это не полный runtime.
 
-4KB ещё выполняется. Диагностика40245350516 ожидает общую lease:
-наблюдает прежний поиск и при фактическом отказе обратную прокрутку,
-после чего сохраняет исходный отказ. Нового исправления пока нет.
-[Доказательства и точка продолжения](docs/N00_CATALOGUE_IME_2026-10-25.md).
+Run40246855859 применил два harness-файла на LAPTOP-NPSGA016, base740a50d,
+source inventory770337e637aadcccec66047048aa7e696a58524d2536f2f66d4d20a16b633bac.
+Регрессия сначала дала4 ожидаемых отказа на прежнем probe, затем все1063
+host-теста прошли за45.054s (прежние3 skips), git diff --check прошёл.
+Исправление допускает только ограниченный reverse-поиск того же обязательного
+заголовка после точного forward-exhaustion. Отсутствующий/просроченный/иной
+результат и прочие ошибки всё ещё отвергаются. APK/driver не пересобирались.
+
+Сейчас40246855859 выполняет4 focused ready/partial случая при font2/font1.
+После них обязательна полная15-stage матрица4096/16384 без diagnostic hook,
+с baseline опубликованного38. Focused workflow намеренно не даёт полного PASS.
+[Доказательства и продолжение](docs/N00_CATALOGUE_IME_2026-10-25.md).
 
 N00 открыт; публикации40, полного runtime PASS и проверки телефона нет.
-External quality gate полным bootstrap не запускался. Перед PR/merge сохранять
-его требования и перевести устаревшие cloud test/runtime пути на Windows/WSL
-с baseline38; не запускать проверки вопреки указанию владельца.
-Подпись, owner/session/broker binding, БД и read-only runtime сохранять.
-Платный ИИ и реальные поручения не включать. Затем N01–N11 по порядку.
+External quality gate bootstrap не запускал. Перед PR/merge сохранить его
+требования и заменить устаревшие cloud test/runtime пути на Windows/WSL
+с baseline38. Подпись, owner/session/broker binding, БД и read-only runtime
+сохранять; платный ИИ и реальные поручения не включать. Затем N01–N11 по порядку.
 
 ## OWNER 25.10.2026 — ноутбук без физического доступа владельца
 
