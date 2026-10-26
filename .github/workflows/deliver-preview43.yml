@@ -1,0 +1,275 @@
+name: Deliver exact preview43 at the owner request
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/deliver-preview43.yml
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+    - name: Checkout pinned administrative transport only
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Publish authorized preview43 and verify policy entire APK and health
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        PYTHONUNBUFFERED: '1'
+      run: "python3 - <<'PY'\nimport hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error\n\
+        sys.path[:0]=[\".transport-admin/deploy\",\".transport-admin/tools\"]\nimport prepare_owner_vm as p\nimport access_owner_vm\
+        \ as access\ntoken=p.validated_token(os.environ[\"TIMEWEB_CLOUD_TOKEN\"])\ndef api(method,path,body=None):\n    req=urllib.request.Request(\"\
+        https://api.timeweb.cloud/api/v1\"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={\"\
+        Authorization\":\"Bearer \"+token,\"Accept\":\"application/json\",\"Content-Type\":\"application/json\"})\n    try:\n\
+        \        with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45)\
+        \ as r:\n            raw=r.read(4194305);assert len(raw)<=4194304\n            return r.status,json.loads(raw) if\
+        \ raw else {}\n    except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))\n\ndef with_ams(remote_script,\
+        \ *, timeout=300, capture=False, binary_input=None):\n    sid=9417611;ip=\"83.217.195.29\";host=\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU\
+        \ runner@runnervmtai0g\"\n    status,data=api(\"GET\",\"/servers/\"+str(sid));assert status==200\n    server=data[\"\
+        server\"]\n    assert server[\"name\"]==\"Analyst AI runtime 20261025\" and server[\"project_id\"]==2941515 and server[\"\
+        availability_zone\"]==\"ams-1\" and p.cloud.public_ipv4(server)==ip\n    access.SERVER_ID=sid\n    with tempfile.TemporaryDirectory(prefix=\"\
+        analyst-ams-admin-\",dir=os.environ[\"RUNNER_TEMP\"]) as directory:\n        folder=pathlib.Path(directory);p.cloud.generate_key(folder/\"\
+        client\");public=(folder/\"client.pub\").read_text().strip()\n        created=access.request(token,\"POST\",\"/ssh-keys\"\
+        ,{\"name\":\"analyst-ams-admin-\"+os.environ[\"GITHUB_RUN_ID\"],\"body\":public,\"is_default\":False})\n        key=created.get(\"\
+        ssh_key\",created.get(\"ssh-key\",{}));kid=key[\"id\"]\n        assert type(kid) is int and key[\"body\"].split()[:2]==public.split()[:2]\n\
+        \        attached=False\n        try:\n            access.request(token,\"POST\",\"/servers/\"+str(sid)+\"/ssh-keys\"\
+        ,{\"ssh_key_ids\":[kid]});attached=True\n            cmd=p.ssh_command(folder,ip,host);cmd[1:1]=[\"-o\",\"ServerAliveInterval=20\"\
+        ,\"-o\",\"ServerAliveCountMax=3\"]\n            for attempt in range(12):\n                try:p.remote(cmd,\"test\
+        \ $(id -u) = 0\",timeout=12);break\n                except (p.ProbeError,subprocess.TimeoutExpired):\n           \
+        \         if attempt==11:raise\n                    time.sleep(5)\n            payload=remote_script.encode() if binary_input\
+        \ is None else binary_input\n            remote_command=\"python3 -\" if binary_input is None else \"python3 -c \"\
+        +shlex.quote(remote_script)\n            result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)\n\
+        \            if not capture:print(result.stdout.decode(errors=\"replace\"),flush=True)\n            if result.returncode:\n\
+        \                print(\"AMS_REMOTE_ERROR=\"+result.stderr.decode(errors=\"replace\")[-4000:],flush=True)\n      \
+        \          raise RuntimeError(\"remote_task_failed\")\n            return result.stdout\n        finally:\n      \
+        \      try:\n                if attached:access.request(token,\"DELETE\",\"/servers/\"+str(sid)+\"/ssh-keys/\"+str(kid))\n\
+        \            finally:\n                access.request(token,\"DELETE\",\"/ssh-keys/\"+str(kid))\n            print(\"\
+        AMS_TEMP_KEY_REMOVED=true\",flush=True)\n\n\nremote = 'import subprocess\\nresult=subprocess.run([\\'/opt/analyst-ai/venv/bin/python\\\
+        ',\\'-c\\',\\'\"\"\"Publish only the exact owner-authorized preview43; never attest a phone.\"\"\"\\\\nfrom __future__\
+        \ import annotations\\\\n\\\\nfrom contextlib import closing\\\\nimport hashlib\\\\nimport json\\\\nimport os\\\\\
+        nimport pathlib\\\\nimport pwd\\\\nimport sqlite3\\\\nimport stat\\\\nimport sys\\\\nimport tempfile\\\\nimport time\\\
+        \\nimport zipfile\\\\n\\\\nAPK_SHA = \\\\\\'4e9bf0a2fd54d8ab4b9d49ef9ddf96bc14a274ac4c145585fcfdb88d6ae774b6\\\\\\\
+        '\\\\nAPK_BYTES = 29771254\\\\nCERT = \\\\\\'bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1\\\\\\\
+        '\\\\nOLD_SHA = \\\\\\'058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef\\\\\\'\\\\nOLD_BYTES = 29754870\\\
+        \\nARCHIVE_SHA = \\\\\\'052ce18b76f27f6c9822347bbe34323ceb6445d1ae1d2c58e253816158ae3b20\\\\\\'\\\\nARCHIVE_BYTES\
+        \ = 68895589\\\\nSOURCE_SHA = \\\\\\'269b6755933d6504082a9ee4bc86dbbf458beb22abcb51918c852cccddefd11b\\\\\\'\\\\nSOURCE_BACKUP\
+        \ = \\\\\\'859c067198e52927df1b66983d02841e3fa6ff6a\\\\\\'\\\\nBUILD_REPORT_SHA = \\\\\\'c3e9281b4dfe9128a87b4cb7679675ecb2926774672ecb59f5825be46c214225\\\
+        \\\\'\\\\nFOLDER = pathlib.Path(\\\\\\'/var/lib/analyst-ai-build/incoming/windows-development-40277268871-1\\\\\\\
+        ')\\\\nROOT = pathlib.Path(\\\\\\'/srv/analyst-ai-ota/releases\\\\\\')\\\\nPACKAGE = \\\\\\'ru.omnicio.app.debug\\\
+        \\\\'\\\\nPUBLIC_ORIGIN = \\\\\\'https://analyst-ai-2941515.twc1.net\\\\\\'\\\\n\\\\n\\\\ndef need(value, message):\\\
+        \\n    if not value:\\\\n        raise RuntimeError(message)\\\\n\\\\n\\\\ndef sha(data):\\\\n    return hashlib.sha256(data).hexdigest()\\\
+        \\n\\\\n\\\\ndef encoded(value):\\\\n    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) +\
+        \ \\\\\\'\\\\\\\\n\\\\\\').encode()\\\\n\\\\n\\\\ndef trusted(path, *, directory=False, public=False):\\\\n    info\
+        \ = path.lstat()\\\\n    need((stat.S_ISDIR if directory else stat.S_ISREG)(info.st_mode), \\\\\\'unexpected_path_type\\\
+        \\\\')\\\\n    need(info.st_uid == 0 and not info.st_mode & 0o022 and path.resolve(strict=True) == path,\\\\n    \
+        \     \\\\\\'untrusted_path\\\\\\')\\\\n    if not directory:\\\\n        need(info.st_nlink == 1, \\\\\\'hardlinked_file\\\
+        \\\\')\\\\n    if public:\\\\n        need(info.st_mode & (0o001 if directory else 0o004), \\\\\\'not_publicly_readable\\\
+        \\\\')\\\\n    return info\\\\n\\\\n\\\\ndef bounded_file(path, limit):\\\\n    need(trusted(path).st_size <= limit,\
+        \ \\\\\\'file_size_limit\\\\\\')\\\\n    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)\\\\n    with os.fdopen(descriptor,\
+        \ \\\\\\'rb\\\\\\') as stream:\\\\n        raw = stream.read(limit + 1)\\\\n    need(len(raw) <= limit, \\\\\\'file_size_changed\\\
+        \\\\')\\\\n    return raw\\\\n\\\\n\\\\ndef file_sha(path, expected_size):\\\\n    need(trusted(path).st_size == expected_size,\
+        \ \\\\\\'file_size_mismatch\\\\\\')\\\\n    digest = hashlib.sha256()\\\\n    total = 0\\\\n    descriptor = os.open(path,\
+        \ os.O_RDONLY | os.O_NOFOLLOW)\\\\n    with os.fdopen(descriptor, \\\\\\'rb\\\\\\') as stream:\\\\n        for block\
+        \ in iter(lambda: stream.read(min(1024**2, expected_size - total + 1)), b\\\\\\'\\\\\\'):\\\\n            total +=\
+        \ len(block)\\\\n            need(total <= expected_size, \\\\\\'file_grew_during_read\\\\\\')\\\\n            digest.update(block)\\\
+        \\n    need(total == expected_size, \\\\\\'file_truncated_during_read\\\\\\')\\\\n    return digest.hexdigest()\\\\\
+        n\\\\n\\\\ndef save_new(path, data):\\\\n    if path.exists() or path.is_symlink():\\\\n        need(bounded_file(path,\
+        \ len(data)) == data, \\\\\\'existing_receipt_conflict\\\\\\')\\\\n        return\\\\n    descriptor = os.open(path,\
+        \ os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)\\\\n    with os.fdopen(descriptor, \\\\\\'wb\\\\\\\
+        ') as stream:\\\\n        stream.write(data)\\\\n        stream.flush()\\\\n        os.fsync(stream.fileno())\\\\\
+        n    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)\\\\n    try:\\\\n        os.fsync(descriptor)\\\
+        \\n    finally:\\\\n        os.close(descriptor)\\\\n\\\\n\\\\ndef observed_clients():\\\\n    \"\"\"Read session\
+        \ aggregates only; never fabricate readiness or modify SQLite.\"\"\"\\\\n    result = {\\\\n        \\\\\\'scope\\\
+        \\\\': \\\\\\'active_authenticated_preview_sessions\\\\\\',\\\\n        \\\\\\'client_headers_are_not_device_attestation\\\
+        \\\\': True,\\\\n        \\\\\\'physical_phone_verified\\\\\\': False,\\\\n        \\\\\\'database_open_mode\\\\\\\
+        ': \\\\\\'ro\\\\\\',\\\\n        \\\\\\'query_only\\\\\\': True,\\\\n        \\\\\\'observed_at\\\\\\': int(time.time()),\\\
+        \\n    }\\\\n    path = pathlib.Path(\\\\\\'/var/lib/analyst-ai/backend.db\\\\\\')\\\\n    try:\\\\n        owner\
+        \ = pwd.getpwnam(\\\\\\'analyst-ai\\\\\\').pw_uid\\\\n        folder_info = path.parent.lstat()\\\\n        info =\
+        \ path.lstat()\\\\n        need(path.resolve(strict=True) == path and path.parent.resolve(strict=True) == path.parent,\\\
+        \\n             \\\\\\'observation_path_alias\\\\\\')\\\\n        need(stat.S_ISDIR(folder_info.st_mode) and folder_info.st_uid\
+        \ in (0, owner)\\\\n             and not folder_info.st_mode & 0o022, \\\\\\'observation_directory_untrusted\\\\\\\
+        ')\\\\n        need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid in (0, owner)\\\\n         \
+        \    and not info.st_mode & 0o022, \\\\\\'observation_database_untrusted\\\\\\')\\\\n        # mode=ro sees the live\
+        \ WAL. immutable=1 would risk a stale observation.\\\\n        with closing(sqlite3.connect(path.as_uri() + \\\\\\\
+        '?mode=ro&cache=private\\\\\\', uri=True, timeout=1)) as db:\\\\n            db.execute(\\\\\\'PRAGMA query_only=ON\\\
+        \\\\')\\\\n            need(db.execute(\\\\\\'PRAGMA query_only\\\\\\').fetchone() == (1,), \\\\\\'observation_query_only_missing\\\
+        \\\\')\\\\n            deadline = time.monotonic() + 2\\\\n            db.set_progress_handler(lambda: int(time.monotonic()\
+        \ > deadline), 1000)\\\\n            rows = db.execute(\\\\\\'\\\\\\'\\\\\\'SELECT c.version_code, COUNT(*), MAX(c.observed_at),\\\
+        \\n                SUM(CASE WHEN c.version_code=? AND c.release_sha256=? THEN 1 ELSE 0 END)\\\\n                FROM\
+        \ client_versions c JOIN sessions s\\\\n                ON s.token_hash=c.session_hash AND s.user_id=c.user_id\\\\\
+        n                WHERE c.package_name=? AND s.expires_at>?\\\\n                GROUP BY c.version_code ORDER BY c.version_code\
+        \ DESC LIMIT 33\\\\\\'\\\\\\'\\\\\\',\\\\n                (43, APK_SHA, PACKAGE, result[\\\\\\'observed_at\\\\\\'])).fetchall()\\\
+        \\n        need(len(rows) <= 32, \\\\\\'observation_too_many_versions\\\\\\')\\\\n        values = []\\\\n       \
+        \ for code, count, last_seen, exact_current in rows:\\\\n            need(all(type(value) is int for value in (code,\
+        \ count, last_seen, exact_current)),\\\\n                 \\\\\\'observation_noninteger_aggregate\\\\\\')\\\\n   \
+        \         need(0 <= code <= 2100000000 and 0 < count <= 1000000\\\\n                 and 0 <= last_seen <= result[\\\
+        \\\\'observed_at\\\\\\'] and 0 <= exact_current <= count,\\\\n                 \\\\\\'observation_invalid_aggregate\\\
+        \\\\')\\\\n            values.append({\\\\\\'version_code\\\\\\': code, \\\\\\'active_session_count\\\\\\': count,\\\
+        \\n                           \\\\\\'last_seen_at\\\\\\': last_seen, \\\\\\'sessions_reporting_exact43\\\\\\': exact_current})\\\
+        \\n        result.update(status=\\\\\\'read\\\\\\', versions=values,\\\\n                      exact43_reported_by_active_session=any(row[\\\
+        \\\\'sessions_reporting_exact43\\\\\\'] > 0 for row in values))\\\\n    except (OSError, KeyError, sqlite3.Error,\
+        \ RuntimeError):\\\\n        # Phone observation is optional; never print SQL, session hashes, users, or exception\
+        \ text.\\\\n        result.update(status=\\\\\\'unavailable\\\\\\', reason=\\\\\\'readonly_observation_unavailable\\\
+        \\\\', versions=[])\\\\n    return result\\\\n\\\\n\\\\nneed(os.geteuid() == 0, \\\\\\'root_required\\\\\\')\\\\nfor\
+        \ path in (pathlib.Path(\\\\\\'/var\\\\\\'), pathlib.Path(\\\\\\'/var/lib\\\\\\'), FOLDER.parent, FOLDER):\\\\n  \
+        \  trusted(path, directory=True)\\\\n# The established build workspace belongs to analyst-build; its incoming\\\\\
+        n# subdirectory and exact archive folder were created root-owned by collect.\\\\nbuild_root = FOLDER.parent.parent\\\
+        \\nbuild_info = build_root.lstat()\\\\nneed(stat.S_ISDIR(build_info.st_mode) and build_root.resolve(strict=True) ==\
+        \ build_root\\\\n     and build_info.st_uid in (0, pwd.getpwnam(\\\\\\'analyst-build\\\\\\').pw_uid)\\\\n     and\
+        \ not build_info.st_mode & 0o022, \\\\\\'untrusted_build_workspace\\\\\\')\\\\narchive = FOLDER / \\\\\\'windows-development-evidence.zip\\\
+        \\\\'\\\\nneed(file_sha(archive, ARCHIVE_BYTES) == ARCHIVE_SHA, \\\\\\'wrong_evidence_archive\\\\\\')\\\\napk_member\
+        \ = \\\\\\'outputs/app/build/outputs/apk/preview/app-preview.apk\\\\\\'\\\\nreport_member = \\\\\\'outputs/app/build/outputs/apk/preview/apk-verification.json\\\
+        \\\\'\\\\nbuild_member = \\\\\\'evidence/windows-development.json\\\\\\'\\\\nwith zipfile.ZipFile(archive) as bundle:\\\
+        \\n    names = bundle.namelist()\\\\n    need(len(names) == len(set(names)), \\\\\\'duplicate_archive_member\\\\\\\
+        ')\\\\n    need(bundle.getinfo(\\\\\\'windows-development-envelope.json\\\\\\').file_size < 4 * 1024**2, \\\\\\'envelope_too_large\\\
+        \\\\')\\\\n    envelope = json.loads(bundle.read(\\\\\\'windows-development-envelope.json\\\\\\'))\\\\n    need(envelope[\\\
+        \\\\'schema\\\\\\'] == 1 and envelope[\\\\\\'kind\\\\\\'] == \\\\\\'windows_check_build_source_archive\\\\\\', \\\\\
+        \\'wrong_archive_kind\\\\\\')\\\\n    need(envelope[\\\\\\'source_sha256\\\\\\'] == SOURCE_SHA, \\\\\\'wrong_source_identity\\\
+        \\\\')\\\\n    need(envelope[\\\\\\'runtime_pass\\\\\\'] is False and envelope[\\\\\\'phone_verified\\\\\\'] is False\\\
+        \\n         and envelope[\\\\\\'publication_authorized\\\\\\'] is False, \\\\\\'unexpected_archive_claim\\\\\\')\\\
+        \\n    controller = envelope[\\\\\\'controller\\\\\\']\\\\n    need(controller.get(\\\\\\'worker_started\\\\\\') is\
+        \ True and controller.get(\\\\\\'worker_exit_code\\\\\\') == 0\\\\n         and controller.get(\\\\\\'owned_processes_after\\\
+        \\\\') == 0 and not controller.get(\\\\\\'error\\\\\\')\\\\n         and not controller.get(\\\\\\'cleanup_error\\\
+        \\\\'), \\\\\\'build_worker_cleanup_not_passed\\\\\\')\\\\n    members = {}\\\\n    for name, limit in ((apk_member,\
+        \ APK_BYTES), (report_member, 4 * 1024**2), (build_member, 4 * 1024**2)):\\\\n        need(bundle.getinfo(name).file_size\
+        \ <= limit, \\\\\\'archive_member_too_large\\\\\\')\\\\n        raw = bundle.read(name)\\\\n        expected = envelope[\\\
+        \\\\'files\\\\\\'][name]\\\\n        need(expected[\\\\\\'bytes\\\\\\'] == len(raw) and expected[\\\\\\'sha256\\\\\
+        \\'] == sha(raw), \\\\\\'export_member_changed\\\\\\')\\\\n        members[name] = raw\\\\napk_data = members[apk_member]\\\
+        \\nneed(len(apk_data) == APK_BYTES and sha(apk_data) == APK_SHA, \\\\\\'wrong_apk_bytes\\\\\\')\\\\nneed(sha(members[build_member])\
+        \ == BUILD_REPORT_SHA, \\\\\\'wrong_verified_build_report\\\\\\')\\\\nbuild = json.loads(members[build_member])\\\\\
+        nneed(build == envelope[\\\\\\'report\\\\\\'], \\\\\\'envelope_report_conflict\\\\\\')\\\\nneed(build[\\\\\\'github\\\
+        \\\\'][\\\\\\'run_id\\\\\\'] == 40277268871 and build[\\\\\\'github\\\\\\'][\\\\\\'run_attempt\\\\\\'] == 1, \\\\\\\
+        'wrong_build_run\\\\\\')\\\\nneed(build[\\\\\\'status\\\\\\'] == \\\\\\'passed_check_and_build_only\\\\\\' and build[\\\
+        \\\\'check\\\\\\'][\\\\\\'status\\\\\\'] == \\\\\\'passed\\\\\\'\\\\n     and build[\\\\\\'build\\\\\\'][\\\\\\'status\\\
+        \\\\'] == \\\\\\'passed\\\\\\', \\\\\\'full_build_not_passed\\\\\\')\\\\nneed(all(build[key] == SOURCE_SHA for key\
+        \ in (\\\\\\'source_sha256\\\\\\', \\\\\\'source_sha256_after\\\\\\'))\\\\n     and build[\\\\\\'check\\\\\\'][\\\\\
+        \\'source_sha256\\\\\\'] == SOURCE_SHA and build[\\\\\\'build\\\\\\'][\\\\\\'source_sha256\\\\\\'] == SOURCE_SHA,\\\
+        \\n     \\\\\\'build_source_identity_changed\\\\\\')\\\\nneed(build[\\\\\\'build\\\\\\'][\\\\\\'apk_sha256\\\\\\']\
+        \ == APK_SHA and build[\\\\\\'certificate_sha256\\\\\\'] == CERT\\\\n     and build[\\\\\\'apks\\\\\\'][\\\\\\'app/build/outputs/apk/preview/app-preview.apk\\\
+        \\\\'] == {\\\\\\'sha256\\\\\\': APK_SHA, \\\\\\'bytes\\\\\\': APK_BYTES},\\\\n     \\\\\\'build_apk_identity_conflict\\\
+        \\\\')\\\\nreport = json.loads(members[report_member])\\\\nneed(report.get(\\\\\\'package\\\\\\') == PACKAGE and type(report.get(\\\
+        \\\\'version_code\\\\\\')) is int\\\\n     and report[\\\\\\'version_code\\\\\\'] == 43 and report.get(\\\\\\'version_name\\\
+        \\\\') == \\\\\\'0.13.5-preview\\\\\\', \\\\\\'wrong_apk_version\\\\\\')\\\\n\\\\nfor path in (pathlib.Path(\\\\\\\
+        '/opt\\\\\\'), pathlib.Path(\\\\\\'/opt/analyst-ai\\\\\\'), pathlib.Path(\\\\\\'/opt/analyst-ai/backend\\\\\\')):\\\
+        \\n    trusted(path, directory=True)\\\\nfor name in (\\\\\\'client_updates.py\\\\\\', \\\\\\'client_compatibility.py\\\
+        \\\\', \\\\\\'release_publication.py\\\\\\', \\\\\\'release_lock.py\\\\\\',\\\\n             \\\\\\'release_json.py\\\
+        \\\\', \\\\\\'release_bytes.py\\\\\\', \\\\\\'installation_evidence.py\\\\\\'):\\\\n    trusted(pathlib.Path(\\\\\\\
+        '/opt/analyst-ai/backend\\\\\\') / name)\\\\nsys.path.insert(0, \\\\\\'/opt/analyst-ai\\\\\\')\\\\nfrom backend.client_updates\
+        \ import AndroidRelease, ReleaseChannel\\\\nfrom backend.release_lock import publication_lock\\\\nfrom backend.release_publication\
+        \ import _require_apk_evidence, _require_android_floor, _existing_current, _resume_prepared, _stage_candidate\\\\\
+        n\\\\n_require_apk_evidence(report, sha256=APK_SHA, size=APK_BYTES, certificate=CERT)\\\\n_require_android_floor(report)\\\
+        \\ndirectory = ROOT / PACKAGE\\\\nfor path in (pathlib.Path(\\\\\\'/srv\\\\\\'), ROOT.parent, ROOT, directory):\\\\\
+        n    trusted(path, directory=True, public=True)\\\\ntrusted(directory / \\\\\\'current.json\\\\\\', public=True)\\\
+        \\nnotes = (\\\\n    \\\\\\'Тестовая версия 0.13.5-preview. На компактных экранах добавлен заголовок «Ассистент».\
+        \ \\\\\\'\\\\n    \\\\\\'Известное ограничение: при увеличении шрифта до 200% после возврата из сохранённого \\\\\\\
+        '\\\\n    \\\\\\'материала список может открываться с прежней прокруткой. Полная проверка интерфейса продолжается.\\\
+        \\\\'\\\\n)\\\\nauthorization = {\\\\n    \\\\\\'kind\\\\\\': \\\\\\'owner_requested_latest_built_preview_delivery\\\
+        \\\\',\\\\n    \\\\\\'owner_request\\\\\\': \\\\\\'Не забывай обновлять приложение! Постоянно если есть актуальная\
+        \ сборка апк то обнови ту что на телефоне!\\\\\\',\\\\n    \\\\\\'date\\\\\\': \\\\\\'2026-10-26\\\\\\', \\\\\\'package_name\\\
+        \\\\': PACKAGE, \\\\\\'version_code\\\\\\': 43,\\\\n    \\\\\\'apk_sha256\\\\\\': APK_SHA, \\\\\\'apk_bytes\\\\\\\
+        ': APK_BYTES, \\\\\\'certificate_sha256\\\\\\': CERT,\\\\n    \\\\\\'source_archive_sha256\\\\\\': ARCHIVE_SHA, \\\
+        \\\\'source_archive_bytes\\\\\\': ARCHIVE_BYTES,\\\\n    \\\\\\'source_sha256\\\\\\': SOURCE_SHA, \\\\\\'source_backup_commit\\\
+        \\\\': SOURCE_BACKUP,\\\\n    \\\\\\'build_report_sha256\\\\\\': BUILD_REPORT_SHA, \\\\\\'windows_run_id\\\\\\': 40277268871,\
+        \ \\\\\\'windows_run_attempt\\\\\\': 1,\\\\n    \\\\\\'full_check_and_build_passed\\\\\\': True,\\\\n    \\\\\\'preview_install_smoke\\\
+        \\\\': {\\\\n        \\\\\\'run_id\\\\\\': 40278915893, \\\\\\'run_attempt\\\\\\': 1, \\\\\\'artifact_id\\\\\\': 12631996563,\\\
+        \\n        \\\\\\'artifact_sha256\\\\\\': \\\\\\'f2aa376fe5e48e05539b0b72adf29dce1de887c2185abd1218b6e1fd220691c7\\\
+        \\\\',\\\\n        \\\\\\'installation_json_sha256\\\\\\': \\\\\\'c4f7655fdc99d24752845ba44509dbcd574954113b2457dce508a462022604ff\\\
+        \\\\',\\\\n        \\\\\\'evidence_verified_at_workflow_preparation\\\\\\': True,\\\\n        \\\\\\'android_api\\\
+        \\\\': 37, \\\\\\'abi\\\\\\': \\\\\\'x86_64\\\\\\', \\\\\\'page_size_bytes\\\\\\': 16384,\\\\n        \\\\\\'previous38_clean_install\\\
+        \\\\': True, \\\\\\'upgrade38_to43\\\\\\': True,\\\\n        \\\\\\'upgrade43_bootstrap_launch\\\\\\': True, \\\\\\\
+        'candidate43_clean_install\\\\\\': True,\\\\n        \\\\\\'candidate43_bootstrap_launch\\\\\\': True,\\\\n      \
+        \  \\\\\\'physical_phone_verified\\\\\\': False, \\\\\\'full_runtime_matrix_passed\\\\\\': False,\\\\n    },\\\\n\
+        \    \\\\\\'original14_run_id\\\\\\': 40278915893, \\\\\\'original14_status\\\\\\': \\\\\\'failed_incomplete\\\\\\\
+        ',\\\\n    \\\\\\'original14_reported_error\\\\\\': \\\\\\'List target not reachable: Название, заметка или источник\\\
+        \\\\',\\\\n    \\\\\\'full15_runtime_matrix_passed\\\\\\': False, \\\\\\'complete_release_gate_passed\\\\\\': False,\\\
+        \\n    \\\\\\'runtime_pass\\\\\\': False, \\\\\\'phone_verified\\\\\\': False,\\\\n    \\\\\\'reason_for_current_manifest_change\\\
+        \\\\': \\\\\\'Publish the exact latest built preview under the existing mandatory client update channel, as directly\
+        \ requested by the owner.\\\\\\',\\\\n    \\\\\\'database_mutations_performed\\\\\\': False, \\\\\\'session_or_owner_binding_mutations_performed\\\
+        \\\\': False,\\\\n    \\\\\\'backend_deployment_performed\\\\\\': False, \\\\\\'service_restart_performed\\\\\\':\
+        \ False,\\\\n    \\\\\\'signing_key_mutations_performed\\\\\\': False, \\\\\\'trading_orders_submitted\\\\\\': False,\
+        \ \\\\\\'paid_ai_calls_performed\\\\\\': False,\\\\n}\\\\ncandidate = AndroidRelease.parse({\\\\n    \\\\\\'schema_version\\\
+        \\\\': 1, \\\\\\'package_name\\\\\\': PACKAGE, \\\\\\'version_code\\\\\\': 43, \\\\\\'version_name\\\\\\': \\\\\\\
+        '0.13.5-preview\\\\\\',\\\\n    \\\\\\'apk_sha256\\\\\\': APK_SHA, \\\\\\'apk_bytes\\\\\\': APK_BYTES, \\\\\\'certificate_sha256\\\
+        \\\\': CERT, \\\\\\'min_sdk\\\\\\': 37,\\\\n    \\\\\\'published_at\\\\\\': int(time.time()), \\\\\\'notes\\\\\\':\
+        \ notes,\\\\n})\\\\nchannel = ReleaseChannel(ROOT)\\\\nwith publication_lock(directory):\\\\n    old = channel.current(PACKAGE)\\\
+        \\n    need(old.certificate_sha256 == CERT, \\\\\\'previous_certificate_changed\\\\\\')\\\\n    previous_is_exact38\
+        \ = (old.version_code == 38 and old.version_name == \\\\\\'0.13.0-preview\\\\\\'\\\\n                           and\
+        \ old.apk_sha256 == OLD_SHA and old.apk_bytes == OLD_BYTES)\\\\n    current_is_exact43 = (old.version_code == 43 and\
+        \ old.version_name == \\\\\\'0.13.5-preview\\\\\\'\\\\n                          and old.apk_sha256 == APK_SHA and\
+        \ old.apk_bytes == APK_BYTES)\\\\n    need(previous_is_exact38 or current_is_exact43, \\\\\\'unexpected_current_release\\\
+        \\\\')\\\\n    previous_path = FOLDER / \\\\\\'before-owner-preview43-current.json\\\\\\'\\\\n    if previous_is_exact38:\\\
+        \\n        save_new(previous_path, bounded_file(directory / \\\\\\'current.json\\\\\\', 16384))\\\\n    else:\\\\\
+        n        previous = AndroidRelease.parse(json.loads(bounded_file(previous_path, 16384)))\\\\n        need(previous.version_code\
+        \ == 38 and previous.apk_sha256 == OLD_SHA\\\\n             and previous.apk_bytes == OLD_BYTES and previous.certificate_sha256\
+        \ == CERT,\\\\n             \\\\\\'retry_previous_release_receipt_conflict\\\\\\')\\\\n    save_new(FOLDER / \\\\\\\
+        'owner-preview43-authorization.json\\\\\\', encoded(authorization))\\\\n    existing = _existing_current(channel,\
+        \ directory, candidate)\\\\n    if existing is not None:\\\\n        candidate = existing\\\\n    else:\\\\n     \
+        \   candidate = _resume_prepared(channel, directory, candidate)\\\\n        with tempfile.TemporaryDirectory(prefix=\\\
+        \\\\'owner-preview43-\\\\\\', dir=FOLDER) as scratch:\\\\n            apk = pathlib.Path(scratch) / \\\\\\'candidate.apk\\\
+        \\\\'\\\\n            save_new(apk, apk_data)\\\\n            _stage_candidate(channel, directory, candidate, apk)\\\
+        \\n    trusted(directory / \\\\\\'current.json\\\\\\', public=True)\\\\n    trusted(directory / candidate.filename,\
+        \ public=True)\\\\n    current = channel.current(PACKAGE)\\\\n    need(current == candidate and current.version_code\
+        \ == 43 and current.apk_sha256 == APK_SHA,\\\\n         \\\\\\'channel_activation_failed\\\\\\')\\\\n    need(file_sha(channel.verified_file(current),\
+        \ APK_BYTES) == APK_SHA, \\\\\\'published_bytes_changed\\\\\\')\\\\n    receipt = {**authorization, \\\\\\'version_name\\\
+        \\\\': current.version_name, \\\\\\'published_at\\\\\\': current.published_at,\\\\n               \\\\\\'url\\\\\\\
+        ': PUBLIC_ORIGIN + \\\\\\'/client/apk/\\\\\\' + current.filename,\\\\n               \\\\\\'channel_version\\\\\\\
+        ': 43, \\\\\\'previous_version\\\\\\': 38, \\\\\\'previous_apk_sha256\\\\\\': OLD_SHA,\\\\n               \\\\\\'publication_method\\\
+        \\\\': \\\\\\'existing_locked_atomic_immutable_release_api\\\\\\'}\\\\n    save_new(FOLDER / \\\\\\'owner-preview43-delivery.json\\\
+        \\\\', encoded(receipt))\\\\nprint(\\\\\\'OWNER_PREVIEW43_DELIVERY=\\\\\\' + json.dumps(receipt, ensure_ascii=True),\
+        \ flush=True)\\\\nprint(\\\\\\'OWNER_PREVIEW43_CLIENT_OBSERVATIONS=\\\\\\' + json.dumps(observed_clients(), ensure_ascii=True),\
+        \ flush=True)\\\\n\\'],stdin=subprocess.DEVNULL,timeout=180)\\nraise SystemExit(result.returncode)\\n'\n\"\"\"Hosted\
+        \ verification after the exact remote publication payload returns.\"\"\"\n# api/with_ams/p and remote are provided\
+        \ by the reviewed generated workflow.\noutput = with_ams(remote, timeout=240, capture=True).decode('utf-8')\nassert\
+        \ len(output.encode()) <= 65536\nreceipt_lines = [line.split('=', 1)[1] for line in output.splitlines() if line.startswith('OWNER_PREVIEW43_DELIVERY=')]\n\
+        client_lines = [line.split('=', 1)[1] for line in output.splitlines() if line.startswith('OWNER_PREVIEW43_CLIENT_OBSERVATIONS=')]\n\
+        assert len(receipt_lines) == len(client_lines) == 1\nreceipt = json.loads(receipt_lines[0])\nobservations = json.loads(client_lines[0])\n\
+        assert receipt['version_code'] == 43 and receipt['version_name'] == '0.13.5-preview'\nassert receipt['apk_sha256']\
+        \ == '4e9bf0a2fd54d8ab4b9d49ef9ddf96bc14a274ac4c145585fcfdb88d6ae774b6'\nassert receipt['apk_bytes'] == 29771254\n\
+        assert receipt['certificate_sha256'] == 'bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1'\nassert\
+        \ receipt['source_sha256'] == '269b6755933d6504082a9ee4bc86dbbf458beb22abcb51918c852cccddefd11b'\nassert receipt['source_backup_commit']\
+        \ == '859c067198e52927df1b66983d02841e3fa6ff6a'\nassert receipt['full_check_and_build_passed'] is True\nassert receipt['runtime_pass']\
+        \ is receipt['phone_verified'] is receipt['complete_release_gate_passed'] is False\nassert observations['physical_phone_verified']\
+        \ is False and observations['client_headers_are_not_device_attestation'] is True\norigin = 'https://analyst-ai-2941515.twc1.net'\n\
+        expected_path = '/client/apk/Analyst-AI-43-' + receipt['apk_sha256'] + '.apk'\nassert receipt['url'] == origin + expected_path\n\
+        opener = urllib.request.build_opener(p.NoRedirect(), urllib.request.HTTPSHandler(context=p.verified_ssl_context()))\n\
+        policy_url = origin + '/client/update-policy?package_name=ru.omnicio.app.debug'\n\ndef public_json(url, limit):\n\
+        \    with opener.open(urllib.request.Request(url, headers={'Cache-Control': 'no-cache'}), timeout=45) as response:\n\
+        \        assert response.status == 200 and response.headers.get_content_type() == 'application/json'\n        raw\
+        \ = response.read(limit + 1)\n        assert len(raw) <= limit\n        return json.loads(raw)\n\ndef checked_policy():\n\
+        \    policy = public_json(policy_url, 16384)\n    for key in ('version_code', 'version_name', 'apk_sha256', 'apk_bytes',\
+        \ 'certificate_sha256', 'published_at'):\n        assert type(policy[key]) is type(receipt[key]) and policy[key] ==\
+        \ receipt[key]\n    assert policy['package_name'] == 'ru.omnicio.app.debug' and policy['min_sdk'] == 37\n    assert\
+        \ policy['minimum_version_code'] == 43 and policy['version_is_not_attestation'] is True\n    assert policy['apk_path']\
+        \ == expected_path\n    return policy\n\npolicy = checked_policy()\ndigest = hashlib.sha256()\nsize = 0\nwith opener.open(urllib.request.Request(receipt['url'],\
+        \ headers={'Cache-Control': 'no-cache'}), timeout=120) as response:\n    assert response.status == 200\n    assert\
+        \ response.headers.get_content_type() == 'application/vnd.android.package-archive'\n    declared = response.headers.get('Content-Length')\n\
+        \    if declared is not None:\n        assert declared == str(receipt['apk_bytes'])\n    for block in iter(lambda:\
+        \ response.read(1024**2), b''):\n        size += len(block)\n        assert size <= receipt['apk_bytes']\n       \
+        \ digest.update(block)\nassert size == receipt['apk_bytes'] and digest.hexdigest() == receipt['apk_sha256']\nassert\
+        \ checked_policy() == policy\nassert public_json(origin + '/health', 1024) == {'status': 'ok'}\nverification = {\n\
+        \    'schema': 1, 'kind': 'owner_preview43_public_delivery',\n    'publication': receipt, 'client_observations_at_publication':\
+        \ observations,\n    'https_policy_verified': True, 'https_entire_apk_download_verified': True,\n    'https_apk_bytes':\
+        \ size, 'https_apk_sha256': digest.hexdigest(),\n    'backend_health_http': 200, 'backend_health_body': {'status':\
+        \ 'ok'},\n    'physical_phone_verified': False, 'complete_release_gate_passed': False,\n}\nout = pathlib.Path(os.environ['RUNNER_TEMP'])\
+        \ / 'owner-preview43-public-verification.json'\nwith out.open('x', encoding='utf-8') as target:\n    json.dump(verification,\
+        \ target, ensure_ascii=False, sort_keys=True, indent=2)\n    target.write('\\n')\nprint('OWNER_PREVIEW43_PUBLIC_VERIFIED='\
+        \ + json.dumps(verification, ensure_ascii=True), flush=True)\n\nPY\n"
+    - name: Preserve non-secret delivery receipt
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: owner-preview43-public-verification-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/owner-preview43-public-verification.json
+        if-no-files-found: warn
+        retention-days: 3
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/codex/timeweb-owner-prepare-2026-10-23'
+      && github.event_name == 'push'
