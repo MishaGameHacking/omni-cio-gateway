@@ -199,6 +199,21 @@ class BackProbeTests(unittest.TestCase):
 
 
 class JavaBackSequenceTests(unittest.TestCase):
+    def test_ready_navigation_admission_requires_matching_synthetic_markers_and_open_menu(self):
+        javac, java = shutil.which("javac"), shutil.which("java")
+        if javac is None or java is None:
+            self.skipTest("JDK required for the host navigation admission regression")
+        source = ROOT / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/NavigationBackFixture.java"
+        harness = Path(__file__).parent / "fixtures/NavigationBackFixtureTest.java"
+        with tempfile.TemporaryDirectory() as output:
+            built = subprocess.run([javac, "--release", "17", "-d", output, str(source), str(harness)],
+                                   capture_output=True, text=True, timeout=30, check=False)
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            result = subprocess.run([java, "-cp", output, "ru.omnicio.ciframe.NavigationBackFixtureTest"],
+                                    capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("NAVIGATION_BACK_FIXTURE_CASES=33", result.stdout)
+
     def test_real_java_sequence_time_identity_errors_and_cleanup(self):
         # Compile the actual pure-Java sequence, not a translated Python copy.
         # CI already installs JDK before this suite. Other local environments

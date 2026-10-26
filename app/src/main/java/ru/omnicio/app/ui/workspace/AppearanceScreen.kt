@@ -3,6 +3,8 @@ package ru.omnicio.app.ui.workspace
 import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.mapSaver
@@ -16,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.theme.*
+import ru.omnicio.app.ui.AnalystMenuButton
+import ru.omnicio.app.ui.LocalDetailNavigationMenu
+import ru.omnicio.app.ui.RegisterPanelExit
 
 private val appearancePreferencesSaver = mapSaver(
     save = { value: WorkspacePreferences -> mapOf("accent" to value.accent.name, "density" to value.density.name,
@@ -43,7 +48,9 @@ fun AppearanceScreen(onBack: () -> Unit) {
     val dirty = draft != savedPrefs || draftTheme != savedTheme
     val preview: (WorkspacePreferences) -> Unit = { next -> draft = next; controller.preview(next); applied = false }
     val cancel = { controller.cancelPreview(); theme.cancelPreview(); draft = savedPrefs; draftTheme = savedTheme; applied = false }
-    val leave = { cancel(); onBack() }
+    val requestExit: (() -> Unit) -> Unit = { proceed -> cancel(); proceed() }
+    val leave = { requestExit(onBack) }
+    RegisterPanelExit(WorkspaceRoute.Appearance, requestExit)
     BackHandler(onBack = leave)
     LaunchedEffect(draft, draftTheme) {
         if (dirty) { controller.preview(draft); theme.preview(draftTheme) }
@@ -123,6 +130,7 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
     symbol: SpectrumSymbol = SpectrumSymbol.Allocation,
     adaptToIme: Boolean = false,
     content: @Composable (PaddingValues) -> Unit) {
+    val menu = LocalDetailNavigationMenu.current
     SpectrumBackground(Modifier.fillMaxSize()) {
         // Measure the actual safe viewport, including any insets already consumed
         // by a parent. Reading the screen height and subtracting IME again would
@@ -134,9 +142,12 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
             val compact = adaptToIme && maxHeight < 240.dp * LocalDensity.current.fontScale
             CompositionLocalProvider(LocalCompactWorkspaceInput provides compact) {
                 Row(Modifier.fillMaxSize()) {
-                    if (compact) Box(Modifier.width(56.dp).fillMaxHeight().padding(top = 4.dp),
-                        contentAlignment = Alignment.TopCenter) {
+                    if (compact) Column(Modifier.width(56.dp).fillMaxHeight()
+                        .verticalScroll(rememberScrollState()).padding(top = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
+                        menu?.let { AnalystMenuButton(it.open) }
                     }
                     // Keep the content at one composition location while the
                     // header gives its height to the focused native editor.
@@ -144,7 +155,7 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
                         containerColor = androidx.compose.ui.graphics.Color.Transparent,
                         contentWindowInsets = WindowInsets.safeDrawing,
                         topBar = {
-                            if (!compact) WorkspaceHeader(title, subtitle, onBack, symbol)
+                            if (!compact) WorkspaceHeader(title, subtitle, onBack, symbol, onOpenMenu = menu?.open)
                         }, content = content)
                 }
             }

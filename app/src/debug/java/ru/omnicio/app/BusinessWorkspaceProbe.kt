@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +32,8 @@ import ru.omnicio.app.data.workspace.JobCheckpointStore
 import ru.omnicio.app.data.workspace.VolumeReply
 import ru.omnicio.app.data.workspace.WorkspaceTransport
 import ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator
+import ru.omnicio.app.ui.AnalystNavigationPanels
+import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.workspace.*
 
 private const val SYNTHETIC_CASH = "synthetic-cash"
@@ -59,6 +62,8 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
     val trace by transport.trace.collectAsState()
     var initialized by remember(userId) { mutableStateOf(false) }
     var page by rememberSaveable(initialRoute) { mutableStateOf(initialRoute) }
+    val navigationFixture = initialRoute == "strategy" && scenario == "ready"
+    val savedPages = rememberSaveableStateHolder()
     var revision by remember { mutableIntStateOf(0) }
     var navigation by rememberSaveable { mutableStateOf("none") }
     var chatContextJson by rememberSaveable { mutableStateOf(ChatContext("portfolio", title = "Синтетический тестовый портфель",
@@ -113,7 +118,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                 }
             },
         ) {
-            Box(Modifier.fillMaxSize()) {
+            val workspace: @Composable () -> Unit = {
                 when (page) {
                     "assistant" -> AssistantWorkspaceScreen(onBack, { navigation = "portfolio" }, { page = "plans" }, { page = "strategy" })
                     "risk" -> RiskWorkspaceScreen(onBack)
@@ -122,8 +127,48 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                     "notifications" -> NotificationEventsScreen(onBack)
                     "analysis" -> AnalysisTimelineScreen(onBack)
                     "catalogue" -> MarketCatalogueScreen(onBack)
+                    "markets" -> MarketWorkspaceScreen(PortfolioUiState.Ready(probePortfolio()), onBack) { navigation = "portfolio" }
+                    "appearance" -> AppearanceScreen(onBack)
+                    "library" -> ResearchLibraryScreen(PortfolioUiState.Ready(probePortfolio()), onBack)
                 }
             }
+            if (navigationFixture) {
+                val preferences = LocalWorkspacePreferences.current.value
+                val preferenceIdentity = listOf(preferences.accent.name, preferences.density.name, preferences.motion.name,
+                    preferences.depth, preferences.hideHomeBalance, preferences.homeStructure,
+                    preferences.haptics, preferences.brightLight).joinToString(",")
+                val detailMarker = "navigation-detail:business-strategy/ready;transport:synthetic;page:$page;" +
+                    "requests:${trace.requests};writes:${trace.mutations};contract-errors:${trace.errors.size};" +
+                    "prefs:$preferenceIdentity;user:$userId"
+                val selected = when (page) {
+                    "strategy" -> WorkspaceRoute.Strategies; "markets" -> WorkspaceRoute.Market
+                    "notifications" -> WorkspaceRoute.Messages; "assistant" -> WorkspaceRoute.Assistant
+                    "appearance" -> WorkspaceRoute.Appearance; "library" -> WorkspaceRoute.Library
+                    else -> null
+                }
+                BoxWithConstraints(Modifier.fillMaxSize().testTag("navigation-detail-page")
+                    .semantics { contentDescription = detailMarker }) {
+                    AnalystNavigationPanels(
+                        selected = if (selected == WorkspaceRoute.Market) AnalystTab.Portfolio else AnalystTab.Profile,
+                        selectedWorkspace = selected, wide = maxWidth >= 840.dp,
+                        navigateTab = { navigation = "primary:${it.name}"; onBack() },
+                        navigateWorkspace = { target ->
+                            val next = when (target) {
+                                WorkspaceRoute.Strategies -> "strategy"; WorkspaceRoute.Market -> "markets"
+                                WorkspaceRoute.Messages -> "notifications"; WorkspaceRoute.Assistant -> "assistant"
+                                WorkspaceRoute.Appearance -> "appearance"; WorkspaceRoute.Library -> "library"
+                                else -> error("Unsupported synthetic detail destination")
+                            }
+                            navigation = "panel:${target.name}"
+                            page = next
+                        },
+                    ) {
+                        // Match the production per-destination state holder. A
+                        // menu cancellation must keep the real editor instance.
+                        savedPages.SaveableStateProvider(page) { workspace() }
+                    }
+                }
+            } else Box(Modifier.fillMaxSize()) { workspace() }
         }
     }
 }
@@ -216,6 +261,7 @@ private fun probePortfolio(): PortfolioSnapshot {
 
 private data class ProbeTrace(
     val requests: Int = 0,
+    val mutations: Int = 0,
     val errors: List<String> = emptyList(),
     val messagePosts: Int = 0,
     val messageRequestId: String? = null,
@@ -271,7 +317,8 @@ private class BusinessProbeTransport(private val scenario: String) : WorkspaceTr
 
     @Synchronized
     override fun request(token: String, path: String, method: String, body: JSONObject?): VolumeReply {
-        trace.value = trace.value.copy(requests = trace.value.requests + 1)
+        trace.value = trace.value.copy(requests = trace.value.requests + 1,
+            mutations = trace.value.mutations + if (method == "GET") 0 else 1)
         if (token != "debug-fixture-only") return invalid("Unexpected fixture session")
         if (scenario == "error") return VolumeReply(error = "Синтетический отказ источника. Настоящая сеть не вызывалась.",
             code = "synthetic_source_failure", status = 503, retryable = true)

@@ -21,6 +21,7 @@ import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.workspace.VolumeReply
 import ru.omnicio.app.data.workspace.WorkspaceTransport
 import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.AnalystNavigationPanels
 import ru.omnicio.app.ui.LocalAnalystTabNavigator
 import ru.omnicio.app.ui.home.HomeScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
@@ -140,28 +141,37 @@ internal fun AutomationWorkspaceProbe(route: String, scenario: String) {
         }
         Box(Modifier.weight(1f).semantics { contentDescription = marker }) {
             AutomationProbeProvider(transport) {
+                val navigateTab: (AnalystTab) -> Unit = { page = when (it) {
+                    AnalystTab.Home -> "home"; AnalystTab.Actions -> "decisions"; else -> "settings"
+                } }
+                val navigateWorkspace: (WorkspaceRoute) -> Unit = { navigation = it.name }
                 CompositionLocalProvider(
-                    LocalAnalystTabNavigator provides { page = when (it) {
-                        AnalystTab.Home -> "home"; AnalystTab.Actions -> "decisions"; else -> "settings"
-                    } },
-                    LocalWorkspaceNavigator provides { navigation = it.name },
+                    LocalAnalystTabNavigator provides navigateTab,
+                    LocalWorkspaceNavigator provides navigateWorkspace,
                 ) {
-                    when (page) {
-                        "home" -> HomeScreen(AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
-                            PortfolioUiState.NotConnected, PortfolioCurrency.RUB, false, null, null,
-                            onCurrencyClick = {}, onOpenPortfolio = { navigation = "portfolio" },
-                            onOpenRecommendations = { page = "decisions" }, onOpenRisk = { navigation = "risk" },
-                            onOpenMessages = { navigation = "messages" }, onOpenProfile = { page = "settings" },
-                            onConnect = { navigation = "connection" })
-                        "decisions" -> Column(Modifier.fillMaxSize()) {
-                            Box(Modifier.weight(1f)) { AutonomousDecisionsScreen { page = "home" } }
-                            ru.omnicio.app.ui.AnalystBottomBar(AnalystTab.Actions, {}, { page = "settings" })
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        AnalystNavigationPanels(
+                            selected = when (page) { "home" -> AnalystTab.Home; "decisions" -> AnalystTab.Actions; else -> AnalystTab.Profile },
+                            wide = maxWidth >= 840.dp, navigateTab = navigateTab, navigateWorkspace = navigateWorkspace,
+                        ) {
+                            when (page) {
+                                "home" -> HomeScreen(AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
+                                    PortfolioUiState.NotConnected, PortfolioCurrency.RUB, false, null, null,
+                                    onCurrencyClick = {}, onOpenPortfolio = { navigation = "portfolio" },
+                                    onOpenRecommendations = { page = "decisions" }, onOpenRisk = { navigation = "risk" },
+                                    onOpenMessages = { navigation = "messages" }, onOpenProfile = { page = "settings" },
+                                    onConnect = { navigation = "connection" })
+                                "decisions" -> Column(Modifier.fillMaxSize()) {
+                                    Box(Modifier.weight(1f)) { AutonomousDecisionsScreen { page = "home" } }
+                                    ru.omnicio.app.ui.AnalystBottomBar(AnalystTab.Actions, {}, { page = "settings" })
+                                }
+                                else -> ProfileScreen(AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
+                                    tApiConfigured = transport.brokerConnected(), screenshotsBlocked = screenshotsBlocked,
+                                    onScreenshotsBlockedChange = { screenshotsBlocked = it },
+                                    onPortfolioClick = { navigation = "portfolio" }, onOpenTApi = { navigation = "connection" },
+                                    onOpenEducation = { navigation = "education" }, onLogout = { navigation = "logout" })
+                            }
                         }
-                        else -> ProfileScreen(AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
-                            tApiConfigured = transport.brokerConnected(), screenshotsBlocked = screenshotsBlocked,
-                            onScreenshotsBlockedChange = { screenshotsBlocked = it },
-                            onPortfolioClick = { navigation = "portfolio" }, onOpenTApi = { navigation = "connection" },
-                            onOpenEducation = { navigation = "education" }, onLogout = { navigation = "logout" })
                     }
                 }
             }

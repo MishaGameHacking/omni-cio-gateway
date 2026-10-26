@@ -52,8 +52,7 @@ import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
-import ru.omnicio.app.ui.LocalWideNavigation
-import ru.omnicio.app.ui.AnalystSideRail
+import ru.omnicio.app.ui.AnalystNavigationPanels
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.AnalystTab
@@ -601,53 +600,52 @@ private fun SignedInAppContent(
         NotificationDeliveryRuntime()
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 840.dp
-            CompositionLocalProvider(LocalWideNavigation provides wide) {
-                Row(Modifier.fillMaxSize()) {
-                    if (wide) AnalystSideRail(when (screen) {
-                        AppScreen.Home -> AnalystTab.Home; AppScreen.Portfolio, AppScreen.Market, AppScreen.Discovery -> AnalystTab.Portfolio
-                        AppScreen.Recommendations -> AnalystTab.Actions; AppScreen.Risk -> AnalystTab.Risk
-                        else -> AnalystTab.Profile
-                    }, navigateToTab)
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
-                        AnimatedContent(screen, transitionSpec = { workspaceTransition(initialState, targetState, motion) }, label = "workspace-navigation") { destination ->
-                            holder.SaveableStateProvider(destination.name) {
-                                when (destination) {
-                                    AppScreen.Home -> HomeScreen(user = session.user, state = portfolioState, refreshing = portfolioRefreshing || workspace.busy,
-                                        refreshError = portfolioError ?: workspace.error, lastUpdatedMillis = portfolioLastSuccessMillis, selectedCurrency = portfolioCurrency,
-                                        onCurrencyClick = { onCurrencyChange(portfolioCurrency.next()) }, onOpenPortfolio = openPortfolio,
-                                        onOpenRecommendations = { onScreenChange(AppScreen.Recommendations) }, onOpenRisk = { onScreenChange(AppScreen.Risk) },
-                                        onOpenMessages = { onScreenChange(AppScreen.Messages) }, onOpenProfile = openProfile,
-                                        onConnect = { onScreenChange(AppScreen.TApi) }, onOpenPayments = { toPortfolio(PortfolioDestination(section = 4)) })
-                                    AppScreen.Portfolio -> PortfolioScreen(state = portfolioState, accessToken = session.accessToken,
-                                        refreshing = portfolioRefreshing, refreshError = portfolioError, lastUpdatedMillis = portfolioLastSuccessMillis,
-                                        selectedCurrency = portfolioCurrency, onProfileClick = openProfile, onConnect = { onScreenChange(AppScreen.TApi) },
-                                        destination = portfolioDestination, initialHistoryDate = historyDate, initialHistoryStart = historyStart,
-                                        initialHistoryEnd = historyEnd, initialHistoryResolution = historyResolution, onDestinationConsumed = { portfolioDestination = null })
-                                    AppScreen.Recommendations -> PrimaryWorkspaceShell(AnalystTab.Actions, openPortfolio, openProfile) { AutonomousDecisionsScreen(goBack) }
-                                    AppScreen.Risk -> PrimaryWorkspaceShell(AnalystTab.Risk, openPortfolio, openProfile) { RiskWorkspaceScreen(goBack) }
-                                    AppScreen.Messages -> NotificationEventsScreen(goBack)
-                                    AppScreen.Reports -> InsightFeedScreen(session.accessToken, openPortfolio, openProfile, initialCardId = reportId)
-                                    AppScreen.Profile -> ProfileScreen(user = session.user, tApiConfigured = tApiConfigured, screenshotsBlocked = screenshotsBlocked,
-                                        onScreenshotsBlockedChange = onScreenshotsBlockedChange, onPortfolioClick = openPortfolio,
-                                        onOpenTApi = { onScreenChange(AppScreen.TApi) }, onOpenEducation = { onScreenChange(AppScreen.Education) }, onLogout = onLogout)
-                                    AppScreen.Education -> EducationScreen(goBack, openPortfolio, openProfile)
-                                    AppScreen.AnalysisSettings -> AnalysisProfileSettingsScreen(session.accessToken, goBack, openPortfolio, openProfile)
-                                    AppScreen.NotificationSettings -> NotificationSettingsScreen(goBack)
-                                    AppScreen.Appearance -> AppearanceScreen(goBack)
-                                    AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio, { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.Strategies) })
-                                    AppScreen.Strategies -> LiveStrategyScreen(session.user.telegramId, goBack)
-                                    AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
-                                    AppScreen.Discovery -> DiscoveryWorkspaceScreen(portfolioState, goBack)
-                                    AppScreen.Library -> ResearchLibraryScreen(portfolioState, goBack, libraryId)
-                                    AppScreen.Devices -> DevicesWorkspaceScreen(goBack)
-                                    AppScreen.ActivityHistory -> RecentWorkspaceScreen(goBack)
-                                    AppScreen.Goals -> GoalsWorkspaceScreen(goBack)
-                                    AppScreen.NewFeatures -> NewFeaturesWorkspaceScreen(goBack)
-                                    AppScreen.AnalysisTimeline -> AnalysisTimelineScreen(goBack)
-                                    AppScreen.TApi -> TApiScreen(accessToken = session.accessToken, tApiConfigured = tApiConfigured,
-                                        onBack = goBack, onConnectionChanged = onTApiConfiguredChange, onOpenPortfolio = openPortfolio)
-                                }
-                            }
+            AnalystNavigationPanels(
+                selected = when (screen) {
+                    AppScreen.Home -> AnalystTab.Home; AppScreen.Portfolio, AppScreen.Market, AppScreen.Discovery -> AnalystTab.Portfolio
+                    AppScreen.Recommendations -> AnalystTab.Actions; AppScreen.Risk -> AnalystTab.Risk
+                    else -> AnalystTab.Profile
+                },
+                selectedWorkspace = WorkspaceRoute.entries.firstOrNull { it.name == screen.name },
+                wide = wide, navigateTab = navigateToTab, navigateWorkspace = navigateWorkspace,
+            ) {
+                AnimatedContent(screen, transitionSpec = { workspaceTransition(initialState, targetState, motion) }, label = "workspace-navigation") { destination ->
+                    holder.SaveableStateProvider(destination.name) {
+                        when (destination) {
+                            AppScreen.Home -> HomeScreen(user = session.user, state = portfolioState, refreshing = portfolioRefreshing || workspace.busy,
+                                refreshError = portfolioError ?: workspace.error, lastUpdatedMillis = portfolioLastSuccessMillis, selectedCurrency = portfolioCurrency,
+                                onCurrencyClick = { onCurrencyChange(portfolioCurrency.next()) }, onOpenPortfolio = openPortfolio,
+                                onOpenRecommendations = { onScreenChange(AppScreen.Recommendations) }, onOpenRisk = { onScreenChange(AppScreen.Risk) },
+                                onOpenMessages = { onScreenChange(AppScreen.Messages) }, onOpenProfile = openProfile,
+                                onConnect = { onScreenChange(AppScreen.TApi) }, onOpenPayments = { toPortfolio(PortfolioDestination(section = 4)) })
+                            AppScreen.Portfolio -> PortfolioScreen(state = portfolioState, accessToken = session.accessToken,
+                                refreshing = portfolioRefreshing, refreshError = portfolioError, lastUpdatedMillis = portfolioLastSuccessMillis,
+                                selectedCurrency = portfolioCurrency, onProfileClick = openProfile, onConnect = { onScreenChange(AppScreen.TApi) },
+                                destination = portfolioDestination, initialHistoryDate = historyDate, initialHistoryStart = historyStart,
+                                initialHistoryEnd = historyEnd, initialHistoryResolution = historyResolution, onDestinationConsumed = { portfolioDestination = null })
+                            AppScreen.Recommendations -> PrimaryWorkspaceShell(AnalystTab.Actions, openPortfolio, openProfile) { AutonomousDecisionsScreen(goBack) }
+                            AppScreen.Risk -> PrimaryWorkspaceShell(AnalystTab.Risk, openPortfolio, openProfile) { RiskWorkspaceScreen(goBack) }
+                            AppScreen.Messages -> NotificationEventsScreen(goBack)
+                            AppScreen.Reports -> InsightFeedScreen(session.accessToken, openPortfolio, openProfile, initialCardId = reportId)
+                            AppScreen.Profile -> ProfileScreen(user = session.user, tApiConfigured = tApiConfigured, screenshotsBlocked = screenshotsBlocked,
+                                onScreenshotsBlockedChange = onScreenshotsBlockedChange, onPortfolioClick = openPortfolio,
+                                onOpenTApi = { onScreenChange(AppScreen.TApi) }, onOpenEducation = { onScreenChange(AppScreen.Education) }, onLogout = onLogout)
+                            AppScreen.Education -> EducationScreen(goBack, openPortfolio, openProfile)
+                            AppScreen.AnalysisSettings -> AnalysisProfileSettingsScreen(session.accessToken, goBack, openPortfolio, openProfile)
+                            AppScreen.NotificationSettings -> NotificationSettingsScreen(goBack)
+                            AppScreen.Appearance -> AppearanceScreen(goBack)
+                            AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio, { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.Strategies) })
+                            AppScreen.Strategies -> LiveStrategyScreen(session.user.telegramId, goBack)
+                            AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
+                            AppScreen.Discovery -> DiscoveryWorkspaceScreen(portfolioState, goBack)
+                            AppScreen.Library -> ResearchLibraryScreen(portfolioState, goBack, libraryId)
+                            AppScreen.Devices -> DevicesWorkspaceScreen(goBack)
+                            AppScreen.ActivityHistory -> RecentWorkspaceScreen(goBack)
+                            AppScreen.Goals -> GoalsWorkspaceScreen(goBack)
+                            AppScreen.NewFeatures -> NewFeaturesWorkspaceScreen(goBack)
+                            AppScreen.AnalysisTimeline -> AnalysisTimelineScreen(goBack)
+                            AppScreen.TApi -> TApiScreen(accessToken = session.accessToken, tApiConfigured = tApiConfigured,
+                                onBack = goBack, onConnectionChanged = onTApiConfiguredChange, onOpenPortfolio = openPortfolio)
                         }
                     }
                 }

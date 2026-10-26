@@ -252,7 +252,11 @@ class SemanticActionTests(unittest.TestCase):
     def test_profile_driver_has_no_coordinate_scroll_command(self):
         source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
         self.assertNotIn('"input", "swipe"', source)
-        callers = source + (SCRIPTS / "business_ui_probe.py").read_text(encoding="utf-8")
+        callers = source + "".join(
+            (SCRIPTS / name).read_text(encoding="utf-8")
+            for name in ("business_ui_probe.py", "automation_ui_probe.py", "navigation_detail_probe.py")
+        )
+        self.assertNotIn('"input", "swipe"', callers)
         for area in frames.SCROLL_LIST_CODES:
             self.assertIn(area, callers)
         self.assertIn("reader.scroll_list(area, direction)", source)

@@ -55,6 +55,7 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int LIST_DOSSIER_TABS = 6;
     private static final int LIST_QUOTES_INTERVALS = 7;
     private static final int LIST_ASSISTANT_COMPOSER = 8;
+    private static final int LIST_NAVIGATION_PANEL = 9;
     private static final String PROFILE_LIST = "profile-content";
     private static final String EDUCATION_LIST = "education-content";
     private static final String PORTFOLIO_LIST = "portfolio-content";
@@ -63,6 +64,7 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final String DOSSIER_TABS = "dossier-tabs";
     private static final String QUOTES_INTERVALS = "quotes-intervals";
     private static final String ASSISTANT_COMPOSER = "assistant-composer";
+    private static final String NAVIGATION_PANEL = "navigation-panel-content";
 
     private String socketName;
     private byte[] token;
@@ -258,6 +260,7 @@ public final class FrameInstrumentation extends Instrumentation {
             case LIST_DOSSIER_TABS -> DOSSIER_TABS;
             case LIST_QUOTES_INTERVALS -> QUOTES_INTERVALS;
             case LIST_ASSISTANT_COMPOSER -> ASSISTANT_COMPOSER;
+            case LIST_NAVIGATION_PANEL -> NAVIGATION_PANEL;
             default -> null;
         };
     }

@@ -36,6 +36,7 @@ SCROLL_LIST_CODES = {
     "dossier-tabs": 6,
     "quotes-intervals": 7,
     "assistant-composer": 8,
+    "navigation-panel-content": 9,
 }
 
 

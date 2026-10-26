@@ -10,7 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import java.io.IOException;
 
-/** Test-only bounded edge gesture through public Android input, on the spatial fixture only. */
+/** Test-only bounded edge gesture on the spatial or exact ready navigation fixtures. */
 final class BackGestureInput implements AutoCloseable {
     static final int REQUEST_FLAG = 0x40000000;
     private static final String APP_PACKAGE = "ru.omnicio.app.debug";
@@ -67,8 +67,8 @@ final class BackGestureInput implements AutoCloseable {
                 || window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) {
             throw new IOException("Back gesture requires the focused app window");
         }
-        if (!hasSpatialMarker(root, 0, new int[] {0})) {
-            throw new IOException("Back gestures are restricted to the synthetic spatial fixture");
+        if (!hasSpatialMarker(root, 0, new int[] {0}) && !hasAutomationNavigationMenu(root)) {
+            throw new IOException("Back gestures are restricted to the reviewed synthetic fixtures");
         }
     }
 
@@ -95,6 +95,35 @@ final class BackGestureInput implements AutoCloseable {
             }
         }
         return false;
+    }
+
+    private boolean hasAutomationNavigationMenu(AccessibilityNodeInfo root) throws IOException {
+        NavigationBackFixture gate = new NavigationBackFixture();
+        observeNavigationFixture(root, gate, windows.getMaximumWindowMetrics().getBounds(), 0, new int[] {0});
+        return gate.allowed();
+    }
+
+    private static void observeNavigationFixture(AccessibilityNodeInfo node, NavigationBackFixture gate,
+            Rect display, int depth, int[] count) throws IOException {
+        if (depth > 100 || ++count[0] > 5000) {
+            throw new IOException("Navigation Back fixture search exceeds node budget");
+        }
+        if (!node.isVisibleToUser() || !APP_PACKAGE.contentEquals(node.getPackageName())) return;
+        gate.observeDescription(node.getContentDescription());
+        if (node.isEnabled()) {
+            Rect bounds = new Rect();
+            node.getBoundsInScreen(bounds);
+            if (bounds.intersect(display) && !bounds.isEmpty()) {
+                String resource = node.getViewIdResourceName();
+                String prefix = APP_PACKAGE + ":id/";
+                if (resource != null && resource.startsWith(prefix)) resource = resource.substring(prefix.length());
+                gate.observeVisibleResource(resource);
+            }
+        }
+        for (int index = 0; index < node.getChildCount(); index++) {
+            AccessibilityNodeInfo child = node.getChild(index);
+            if (child != null) observeNavigationFixture(child, gate, display, depth + 1, count);
+        }
     }
 
     private boolean inject(long downTime, long eventTime, int action, float x, float y) {

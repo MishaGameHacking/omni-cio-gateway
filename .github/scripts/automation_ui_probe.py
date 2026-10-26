@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
 
 PACKAGE = "ru.omnicio.app.debug"
 BANNER = "ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ"
@@ -14,6 +15,91 @@ CONFLICT = "Синтетический конфликт версии. Настр
 CASES = tuple((route, scenario) for route in ("home", "settings", "decisions")
               for scenario in ("ready", "not_connected", "paused", "error", "conflict")
               if scenario != "conflict" or route == "settings")
+
+
+def navigation_window(tree):
+    """A fresh focused app window is required even when observing a closed menu."""
+    if tree is None or tree.get("root-window-present") != "true" or tree.get("root-window-focused") != "true":
+        return None
+    values = [tree.get(key, "") for key in ("display-width", "display-height", "active-window-id")]
+    if any(re.fullmatch(r"[0-9]{1,6}", value) is None for value in values):
+        return None
+    width, height, window = map(int, values)
+    roots = [node for node in tree if node.tag == "node"]
+    if width <= 0 or height <= 0 or len(roots) != 1 or roots[0].get("package") != PACKAGE \
+            or roots[0].get("visible-to-user") == "false" or roots[0].get("enabled") == "false":
+        return None
+    return width, height, window
+
+
+def navigation_target(tree, resource, *, minimum=0, selected=None, touch=False, label=None):
+    """Exact owned native target; no borrowed label, clipped control, or checked-only state."""
+    from profile_scroll import _bounds
+    window = navigation_window(tree)
+    if window is None:
+        return None
+    parents = {child: parent for parent in tree.iter() for child in parent}
+    names = {resource, PACKAGE + ":id/" + resource}
+    matches = [node for node in tree.iter("node") if node.get("resource-id") in names
+               and node.get("visible-to-user") != "false" and _bounds(node) is not None]
+    if len(matches) > 1:
+        raise AssertionError("Ambiguous native navigation target: " + resource)
+    if not matches:
+        return None
+    node = matches[0]
+    bounds = _bounds(node)
+    if node.get("package") != PACKAGE or node.get("enabled") != "true":
+        return None
+    if selected is not None and node.get("selected") != str(selected).lower():
+        return None
+    if touch and (node.get("clickable") != "true" or node.get("focusable") != "true"):
+        return None
+    if bounds[0] < 0 or bounds[1] < 0 or bounds[2] > window[0] or bounds[3] > window[1] \
+            or bounds[2] - bounds[0] < minimum or bounds[3] - bounds[1] < minimum:
+        return None
+    current = parents.get(node)
+    while current is not None and current.tag == "node":
+        if current.get("package") != PACKAGE or current.get("visible-to-user") == "false" or current.get("enabled") == "false":
+            return None
+        parent_bounds = _bounds(current)
+        if current.get("scrollable") == "true":
+            if parent_bounds is None or not (parent_bounds[0] <= bounds[0] < bounds[2] <= parent_bounds[2]
+                                             and parent_bounds[1] <= bounds[1] < bounds[3] <= parent_bounds[3]):
+                return None
+        current = parents.get(current)
+    if label is not None:
+        labels = []
+        for child in node.iter("node"):
+            child_bounds = _bounds(child)
+            if child_bounds is None or not (bounds[0] <= child_bounds[0] < child_bounds[2] <= bounds[2]
+                                            and bounds[1] <= child_bounds[1] < child_bounds[3] <= bounds[3]):
+                continue
+            current = child
+            visible = True
+            while current is not None and current.tag == "node":
+                if current.get("package") != PACKAGE or current.get("visible-to-user") != "true" \
+                        or current.get("enabled") != "true":
+                    visible = False
+                    break
+                if current is node:
+                    break
+                current = parents.get(current)
+            if visible:
+                labels.extend(part.strip() for key in ("text", "content-desc")
+                              for part in child.get(key, "").splitlines())
+        if label not in labels:
+            return None
+    return node
+
+
+def navigation_menu_absent(tree):
+    """An unusable or partially hidden control is never proof of a closed drawer."""
+    if navigation_window(tree) is None:
+        return False
+    resources = {name for resource in ("navigation-panel", "navigation-menu-close", "navigation-panel-content")
+                 for name in (resource, PACKAGE + ":id/" + resource)}
+    return not any(node.get("resource-id") in resources and node.get("visible-to-user") != "false"
+                   for node in tree.iter("node"))
 
 
 def automation_marker(tree, route, scenario):
@@ -47,9 +133,13 @@ def exercise_automation(probe):
     if not isinstance(getattr(probe.read_tree, "__self__", None), FrameReader):
         raise AssertionError("Automation checks require the owned frame session")
     records = []
+    navigation_records = []
     for scale in (1.0, 2.0):
         for route, scenario in CASES:
-            records.append(_AutomationCase(probe, route, scenario, scale).run())
+            case = _AutomationCase(probe, route, scenario, scale)
+            records.append(case.run())
+            if case.navigation_receipt is not None:
+                navigation_records.append(case.navigation_receipt)
     root = Path(__file__).resolve().parents[2]
     debug_apk = root / "app/build/outputs/apk/debug/app-debug.apk"
     if debug_apk.is_symlink() or not debug_apk.resolve(strict=True).is_relative_to(root):
@@ -62,6 +152,18 @@ def exercise_automation(probe):
     if folder.is_symlink() or not folder.resolve().is_relative_to(root):
         raise AssertionError("Automation evidence escapes checkout")
     (folder / "automation-verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    expected_navigation = {(route, scale) for route in ("home", "settings") for scale in (1.0, 2.0)}
+    if len(navigation_records) != 4 or {(row["route"], row["font_scale"]) for row in navigation_records} != expected_navigation:
+        raise AssertionError("Navigation panel native cases are incomplete")
+    navigation_report = {"schema_version": 1, "fixture_apk_sha256": report["fixture_apk_sha256"],
+                         "fixture": "debug-only-synthetic-transport", "actual_device_observations": True,
+                         "real_order_execution": False, "external_broker_model_calls": False,
+                         "cases": navigation_records}
+    (folder / "navigation-panels-verification.json").write_text(
+        json.dumps(navigation_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("NAVIGATION_PANELS_VERIFICATION=" + json.dumps(navigation_report, ensure_ascii=True), flush=True)
+    from navigation_detail_probe import exercise_navigation_details
+    exercise_navigation_details(probe)
     print("AUTOMATION_UI_VERIFICATION=" + json.dumps(report, ensure_ascii=True), flush=True)
     return report
 
@@ -70,6 +172,7 @@ class _AutomationCase:
     def __init__(self, probe, route, scenario, scale):
         self.probe, self.route, self.scenario, self.scale = probe, route, scenario, scale
         self.native_switch = None
+        self.navigation_receipt = None
 
     def observed(self):
         return self.probe.wait_for(lambda: automation_marker(self.probe.tree(), self.route, self.scenario),
@@ -127,6 +230,8 @@ class _AutomationCase:
         original_pid = self.pid()
         self.probe.find(BANNER)
         before = self.observed()
+        if self.scenario == "ready" and self.route in ("home", "settings"):
+            self.navigation_receipt = self.navigation_panels()
         if self.route == "settings":
             self.settings()
         elif self.scenario == "error":
@@ -176,6 +281,166 @@ class _AutomationCase:
                   "width": image.width, "height": image.height}
         print("AUTOMATION_UI_CASE_PASSED=" + record["case"] + ";font=" + str(self.scale), flush=True)
         return record
+
+    def navigation_panels(self):
+        from emulator_user_setup import completed_emulator_setup
+        from predictive_back_input import back_gesture
+        from profile_ui_probe import node_bounds
+        from spatial_frame_evidence import ready_spatial_metrics
+        from spatial_policy_probe import active_navigation_overlay, _cleanup_back
+
+        renderer = self.probe.wait_for(lambda: ready_spatial_metrics(self.probe.tree()),
+                                       "Navigation needs actual native density evidence")
+        density = renderer.get("density", 0)
+        if type(density) not in (int, float) or not math.isfinite(density) or not 0 < density <= 10:
+            raise AssertionError("Navigation density is missing")
+        minimum = math.floor(48 * density + 1e-6)
+        initial = self.observed()
+        first = self.probe.wait_for(lambda: navigation_window(self.probe.tree()),
+                                    "Navigation did not own the focused app window")
+        native_window = first[2]
+        targets = []
+
+        def frame():
+            def read():
+                tree = self.probe.tree()
+                identity = navigation_window(tree)
+                return tree if identity is not None and identity[2] == native_window else None
+            return self.probe.wait_for(read, "Navigation lost its focused native app window")
+
+        def target(resource, *, selected=None, touch=True, label=None):
+            previous, stable = None, 0
+            def read():
+                nonlocal previous, stable
+                tree = frame()
+                node = navigation_target(tree, resource, minimum=minimum,
+                                         selected=selected, touch=touch, label=label)
+                signature = None if node is None else (node.get("bounds"), node.get("selected"), node.get("clickable"))
+                stable = stable + 1 if signature is not None and signature == previous else int(signature is not None)
+                previous = signature
+                return node if stable >= 3 else None
+            node = self.probe.wait_for(read, "Native navigation target did not settle: " + resource)
+            targets.append({"resource": resource, "bounds": list(node_bounds(node)),
+                            "selected": node.get("selected") == "true", "window_id": native_window})
+            return node
+
+        def tap(resource, **kwargs):
+            self.probe.tap_node(target(resource, **kwargs))
+
+        def closed():
+            def read():
+                tree = frame()
+                return tree if navigation_menu_absent(tree) else None
+            return self.probe.wait_for(read, "Navigation menu remained visible")
+
+        def open_menu():
+            tap("navigation-menu-open", label="Открыть меню")
+            target("navigation-menu-close", label="Закрыть меню")
+
+        def tabs(page):
+            names = {"home": ("home", "Система"), "actions": ("decisions", "Решения"),
+                     "profile": ("settings", "Настройки")}
+            for key, (destination, label) in names.items():
+                # Compose may expose the selected tab as nonclickable. Observe
+                # native selected=true; retain the action gate for other tabs.
+                target("bottom-destination-" + key, selected=destination == page,
+                       touch=destination != page, label=label)
+
+        tabs(self.route)
+        open_menu()
+        for key, page, label in (("home", "home", "Система"), ("actions", "decisions", "Решения"),
+                                 ("profile", "settings", "Настройки")):
+            target("navigation-primary-" + key, selected=page == self.route,
+                   touch=page != self.route, label=label)
+        # The last real route must be reachable inside the exact menu scroll owner at both scales.
+        self.probe.reveal_resource("navigation-workspace-library", "navigation-panel-content",
+                                   for_capture=True, minimum_size=(minimum, minimum))
+        target("navigation-workspace-library", label="Исследования")
+        menu_capture = self.probe.capture("automation-navigation-" + self.route + ("-font-200" if self.scale == 2 else ""))
+        self.probe.reveal_resource("navigation-primary-home", "navigation-panel-content", direction="start",
+                                   for_capture=True, minimum_size=(minimum, minimum))
+        tap("navigation-menu-close", label="Закрыть меню")
+        closed()
+        if self.observed()["page"] != self.route:
+            raise AssertionError("Closing navigation changed the underlying page")
+
+        if self.route == "settings":
+            tap("bottom-destination-home", selected=False, label="Система")
+            self.wait_trace(lambda value: value["page"] == "home", "Menu settings check did not start on another page")
+        open_menu()
+        self.probe.reveal_resource("navigation-primary-profile", "navigation-panel-content",
+                                   for_capture=True, minimum_size=(minimum, minimum))
+        tap("navigation-primary-profile", label="Настройки")
+        closed()
+        self.wait_trace(lambda value: value["page"] == "settings", "Side navigation did not open the real settings screen")
+        self.switch()
+        self.wait_switch(enabled=True, checked=initial["enabled"])
+        tabs("settings")
+        tap("bottom-destination-home", selected=False, label="Система")
+        self.wait_trace(lambda value: value["page"] == "home", "Bottom navigation did not open System")
+        tabs("home")
+        tap("bottom-destination-actions", selected=False, label="Решения")
+        self.wait_trace(lambda value: value["page"] == "decisions", "Bottom navigation did not open Decisions")
+        self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
+        tabs("decisions")
+        destination = "home" if self.route == "home" else "profile"
+        tap("bottom-destination-" + destination, selected=False,
+            label="Система" if self.route == "home" else "Настройки")
+        self.wait_trace(lambda value: value["page"] == self.route, "Navigation did not restore the original root screen")
+        tabs(self.route)
+
+        # Use the existing public continuous touchscreen transport, never KEYCODE_BACK.
+        open_menu()
+        overlay = active_navigation_overlay(self.probe.command("shell", "cmd", "overlay", "list"))
+        scale = self.probe.command("shell", "settings", "get", "global", "animator_duration_scale").strip()
+        held = False
+        with completed_emulator_setup(self.probe) as setup:
+            try:
+                self.probe.command("shell", "settings", "put", "global", "animator_duration_scale", "1")
+                self.probe.command("shell", "cmd", "overlay", "enable-exclusive", "--category",
+                                   "com.android.internal.systemui.navbar.gestural")
+                self.probe.wait_for(lambda: self.probe.command("shell", "settings", "get", "secure", "navigation_mode").strip() == "2",
+                                   "Navigation panel Back did not use Android gestures")
+                baseline = target("navigation-menu-close", label="Закрыть меню").get("bounds")
+                held = True
+                back_gesture(self.probe, "hold")
+                advances = 0
+                def progress():
+                    nonlocal advances
+                    node = navigation_target(frame(), "navigation-menu-close")
+                    if node is not None and node.get("bounds") != baseline:
+                        return node.get("bounds")
+                    if advances < 16:
+                        back_gesture(self.probe, "advance")
+                        advances += 1
+                    return None
+                progressed_bounds = self.probe.wait_for(progress, "Predictive Back did not move the native drawer content")
+                back_gesture(self.probe, "cancel")
+                held = False
+                cancelled = target("navigation-menu-close", label="Закрыть меню").get("bounds")
+                if cancelled != baseline or self.observed()["page"] != self.route:
+                    raise AssertionError("Cancelled Back changed drawer geometry or the underlying page")
+                held = True
+                back_gesture(self.probe, "hold")
+                back_gesture(self.probe, "commit")
+                held = False
+                closed()
+                if self.observed()["page"] != self.route:
+                    raise AssertionError("Committed drawer Back navigated the underlying page")
+            finally:
+                _cleanup_back(self.probe, held, overlay, scale, sys.exc_info()[1])
+        tabs(self.route)
+        after = self.observed()
+        for key in ("writes", "applied", "rejected", "contract-errors", "version", "enabled"):
+            if after[key] != initial[key]:
+                raise AssertionError("Opening navigation mutated settings: " + key)
+        return {"route": self.route, "scenario": "ready", "font_scale": self.scale,
+                "window_id": native_window, "minimum_touch_dp": 48, "density": density,
+                "native_targets": targets, "before": initial, "after": after,
+                "drawer_back": {"initial_close_bounds": baseline, "progress_close_bounds": progressed_bounds,
+                                "cancelled_close_bounds": cancelled, "commit_closed_menu": True,
+                                "underlying_page_unchanged": True, "emulator_setup": setup},
+                "screenshot": menu_capture.name, "screenshot_sha256": hashlib.sha256(menu_capture.read_bytes()).hexdigest()}
 
     def settings(self):
         control = self.switch()

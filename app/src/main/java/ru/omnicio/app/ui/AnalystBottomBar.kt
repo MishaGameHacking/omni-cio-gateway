@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -42,12 +43,14 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
     if (LocalWideNavigation.current) return
     val navigate = LocalAnalystTabNavigator.current
+    val openMenu = LocalOpenNavigationMenu.current
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val labelStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-    Surface(modifier.fillMaxWidth().zIndex(1f).clipToBounds(), color = MaterialTheme.colorScheme.surface) {
+    Surface(modifier.fillMaxWidth().zIndex(1f).clipToBounds().testTag("analyst-bottom-bar"), color = MaterialTheme.colorScheme.surface) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val available = with(density) { ((maxWidth - 32.dp) / 3 - 12.dp).toPx() }
+            val menuWidth = if (openMenu == null) 0.dp else 56.dp
+            val available = with(density) { ((maxWidth - 32.dp - menuWidth) / 3 - 12.dp).toPx() }
             val compact = primaryTabs.any { tab ->
                 measurer.measure(AnnotatedString(tab.label()), style = labelStyle,
                     softWrap = false, maxLines = 1).size.width > available
@@ -60,9 +63,12 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
                     textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface)
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp)
-                    .selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    .selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    if (openMenu != null) AnalystMenuButton(openMenu)
                     primaryTabs.forEach { tab ->
-                        DockDestination(tab, tab == selected.primaryDestination(), Modifier.weight(1f),
+                        DockDestination(tab, tab == selected.primaryDestination(), Modifier.weight(1f)
+                            .testTag("bottom-destination-" + tab.name.lowercase()),
                             showLabel = !compact) {
                             if (tab == AnalystTab.Profile) onProfileClick()
                             navigate(tab)
@@ -74,7 +80,7 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     }
 }
 
-private fun AnalystTab.primaryDestination(): AnalystTab = when (this) {
+internal fun AnalystTab.primaryDestination(): AnalystTab = when (this) {
     AnalystTab.Home -> AnalystTab.Home
     AnalystTab.Portfolio, AnalystTab.Actions, AnalystTab.Risk -> AnalystTab.Actions
     AnalystTab.Education, AnalystTab.Profile -> AnalystTab.Profile
@@ -128,14 +134,15 @@ private fun AnalystTab.symbol() = when (this) {
 @Composable
 fun AnalystSideRail(selected: AnalystTab, navigate: (AnalystTab) -> Unit) {
     val width = (128f * maxOf(1f, LocalDensity.current.fontScale)).dp
-    Surface(Modifier.fillMaxHeight().width(width).zIndex(1f).clipToBounds(), color = MaterialTheme.colorScheme.surface) {
+    Surface(Modifier.fillMaxHeight().width(width).zIndex(1f).clipToBounds().testTag("analyst-side-rail"), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
             .verticalScroll(rememberScrollState()).padding(10.dp).selectableGroup(),
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Analyst AI", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 16.dp))
             primaryTabs.forEach { tab ->
-                DockDestination(tab, tab == selected.primaryDestination(), Modifier.fillMaxWidth()) { navigate(tab) }
+                DockDestination(tab, tab == selected.primaryDestination(), Modifier.fillMaxWidth()
+                    .testTag("rail-destination-" + tab.name.lowercase())) { navigate(tab) }
             }
         }
     }

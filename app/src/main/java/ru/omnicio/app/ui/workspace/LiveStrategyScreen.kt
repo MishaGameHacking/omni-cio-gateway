@@ -21,6 +21,7 @@ import org.json.JSONObject
 import java.util.UUID
 import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.RegisterPanelExit
 
 private const val UNSPECIFIED_VALUE = "Не задано"
 
@@ -41,7 +42,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     var loaded by remember(userId) { mutableStateOf(false) }
     var tab by rememberSaveable(userId) { mutableIntStateOf(0) }
     var preview by remember { mutableStateOf<JSONObject?>(null) }
-    var leaving by remember { mutableStateOf(false) }
+    var pendingExit by remember { mutableStateOf<(() -> Unit)?>(null) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var draftSaved by remember(userId) { mutableStateOf(false) }
     var draftRevision by remember(userId) { mutableIntStateOf(0) }
@@ -77,7 +78,20 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
             draftSaved = false; configText = next.toString(); preview = null; savedMessage = null
         }
     }
-    val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
+    val requestExit: (() -> Unit) -> Unit = { proceed ->
+        if (dirty) {
+            if (pendingExit == null) pendingExit = proceed
+        } else proceed()
+    }
+    val leave: () -> Unit = { requestExit(onBack) }
+    val finishExit: (Boolean) -> Unit = { discard ->
+        pendingExit?.let { proceed ->
+            pendingExit = null
+            if (discard) configText = baseline
+            proceed()
+        }
+    }
+    RegisterPanelExit(WorkspaceRoute.Strategies, requestExit)
     SpatialBackHandler(onBack = leave)
     WorkspaceDetailPage("Моя стратегия", "Версии правил и влияние на текущий портфель", leave, SpectrumSymbol.Goal,
         adaptToIme = true) { padding ->
@@ -115,12 +129,12 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
             }
         }
     }
-    if (leaving) WorkspaceDialog("Изменения стратегии", { leaving = false }) {
+    if (pendingExit != null) WorkspaceDialog("Изменения стратегии", { pendingExit = null }) {
         Text(if (draftSaved) "Черновик сохранён на этом устройстве. Действующие правила изменятся только после подтверждения сервера."
             else "Сохранение черновика не подтверждено. При выходе изменения могут потеряться; действующие правила не изменятся.")
-        SpectrumPrimaryButton("Продолжить редактирование", { leaving = false }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton(if (draftSaved) "Вернуться позже" else "Уйти без сохранённого черновика", { leaving = false; onBack() }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton("Отменить изменения", { configText = baseline; leaving = false; onBack() }, Modifier.fillMaxWidth())
+        SpectrumPrimaryButton("Продолжить редактирование", { pendingExit = null }, Modifier.fillMaxWidth())
+        SpectrumSecondaryButton(if (draftSaved) "Вернуться позже" else "Уйти без сохранённого черновика", { finishExit(false) }, Modifier.fillMaxWidth())
+        SpectrumSecondaryButton("Отменить изменения", { finishExit(true) }, Modifier.fillMaxWidth())
     }
 }
 
