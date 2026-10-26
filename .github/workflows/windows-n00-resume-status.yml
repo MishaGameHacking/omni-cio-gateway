@@ -1,4 +1,4 @@
-name: Observe candidate47 v20 original build evidence
+name: Observe candidate47 v20 build for intermediate Timeweb delivery
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
