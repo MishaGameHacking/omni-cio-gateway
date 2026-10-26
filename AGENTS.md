@@ -1,6 +1,6 @@
-## N00 26.10.2026 — навигация42 проверена, обнаружен quote selected-state отказ
+## N00 26.10.2026 — quote-state ремонт прошёл1083 tests, original14 продолжается
 
-> **26.10.2026, N00 — ремонт навигации42 прошёл1081 host tests.** Неизменный APK42 имеет успешную Windows/WSL/Android сборку. Его исходная диагностика40268185222 завершила14 случаев:6 PASS/8 FAIL. После измерений экранов и четырёх доказанных регрессий семифайловый Python-ремонт проверен на ноутбуке в40271124381; исходный run остановился на selected-state котировок после4 PASS/font100. All14 diagnostic40271927516 и новый quote-state patch продолжаются. Полная15-stage матрица4096/16384 и external exact-head Sonar ещё не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
+> **26.10.2026, N00 — quote selected-state ремонт прошёл 1083 host tests.** Сборка APK42 успешна. После ремонта навигации диагностический прогон 40271927516 завершил 14 случаев: 8 PASS / 6 FAIL. Двухфайловое исправление проверки выбранного периода проверено на ноутбуке в 40272254653; его исходные Android-сценарии ещё выполняются. Полная матрица 4096/16384 и external exact-head Sonar не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
 
 Current exact build40266100999 on LAPTOP-NPSGA016 /omni-cio-ci-3:
 source inventorycd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e.
@@ -29,13 +29,18 @@ Original14 run40271124381 FAILED after4 PASS/font100 (discovery,dossier,
 history-ready,history-partial): quote selected-state detector rejects the
 already selected nonclickable Week tab. Evidence40271951745 verified22 identities;
 native selected=true, clickable=false, enabled=true, item-2 bounds137,319,210,371.
-All14 diagnostic40271927516 runs on backed14153157 /inventory5d2cd2b6….
-Prepared2-file quote patch02737e718f6d48d0487a94267ebd232e1af739afc481ac3eee104be1495f85a9
-was sent by trigger5579a4b6ef7b1c15138a5e7de74ed66980264378; NOT yet tested/backed.
-It separates action targeting from selected observation, preserving48px/exact rail.
-Read both actual outcomes before another full15-stage4096/16384 run.
-Regenerate the full wrapper with this tested harness/source; oldc2 wrapper
-does not contain the navigation repair. Keep exactAPK42 and baseline38.
+All14 diagnostic40271927516 completed8 PASS/6 FAIL; full original checks retained.
+Archive133files4311600bytes SHA95408649a47210900aab4b7ed6fb4a1a1fa327f7ea01d8a0d3732de9bd44a7ba
+received9417611 at05:12:09Z. Evidence40272942788 verified22 identities.
+Two-file quote repair40272254653 reproduced original failure in2 variants and
+passed1083 host tests50.554s, same3skips; diff PASS, finished05:11:56Z.
+Source inventoryeea2c47dfc8707312eb7efba66d087d831907da8b087bf9421bec597ffe74e5b.
+Patch02737e718f6d48d0487a94267ebd232e1af739afc481ac3eee104be1495f85a9.
+Original14 Android is still running; do not claim completion.
+Action requires clickable; selected observation requires selected, with original
+package/enabled/48px/exact rail checks. Checked-only is rejected, no second tap.
+Read actual outcome and remainingfont200 evidence before another full15-stage run.
+Regenerate full wrapper with latest tested source; preserve exact APK42/baseline38.
 Original focused40267647899 failed comparison; all14 diagnostic40268185222
 observed6 PASS/8 FAIL. All8 native failure PNG and23 identities were inspected.
 History-only40270073435 proved clipped tooltip8px and value above the chart;

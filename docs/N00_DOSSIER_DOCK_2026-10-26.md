@@ -1,4 +1,4 @@
-> **Latest:** candidate42 navigation harness passed all1081 host tests on Windows. Original14 stopped at quote selected-state after4 PASS/font100; all-case diagnosis and its repair continue; the full4096/16384 matrix and exact-head Sonar remain open. See [the current layout checkpoint](N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md). Published38 remains unchanged.
+> **Latest:** quote selected-state repair passed all 1083 host tests on Windows. Navigation diagnostic40271927516 observed 8 PASS / 6 FAIL. Original portfolio acceptance40272254653 is still running; full4096/16384 and exact-head Sonar remain open. See [the current layout checkpoint](N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md). Published38 remains unchanged.
 
 # N00 — the dossier action dock is outside the scrolling body
 

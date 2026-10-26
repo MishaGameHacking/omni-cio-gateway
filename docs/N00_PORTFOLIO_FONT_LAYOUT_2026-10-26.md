@@ -4,6 +4,51 @@ N00 открыт. N01–N11 не реализованы. Опубликован�
 Кандидат42 /0.13.4-preview пока не опубликован; физический телефон не проверен.
 Этот checkpoint продолжает [проверки досье и истории](N00_RATING_FOLDS_2026-10-26.md).
 
+
+## Проверка selected-state котировок и повторная диагностика
+
+Диагностика [40271927516](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40271927516)
+на backed14153157 / inventory5d2cd2b6f8c8d7fbec7276835634ed4cb701d2e80809cc67a59c066a692cc76b
+завершила все14 исходных случаев:8 PASS /6 FAIL. Это диагностический режим с
+сохранёнными исходными обработчиками и проверками, а не успешный release gate.
+На font100 прошли discovery/dossier/history-ready/history-partial/markets/appearance;
+котировки остановились на selected-state. На font200 прошли history-partial/markets,
+остались discovery(native input), dossier(Календарь отчётности),
+history(Ассистент), quotes(selected-state), appearance(DIRTY).
+Runtime05:00:47.571017Z–05:11:00.781884Z. Архив133files /4311600bytes
+SHA25695408649a47210900aab4b7ed6fb4a1a1fa327f7ea01d8a0d3732de9bd44a7ba
+принят9417611 в05:12:09.6793749Z.
+Evidence40272942788 /artifact12629325481 /686563bytes
+SHA256cd29a101d06f79b30ea55b368bd37ed0c003ddf1672c1468260d593affb239f4:
+22 индивидуальные идентичности проверены. PNG discovery/dossier/history/appearance
+font200 просмотрены; выводы о причинах отделять от непроверенных гипотез.
+
+Ремонт [40272254653](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40272254653)
+применил два Python source/test файла только на LAPTOP-NPSGA016 /omni-cio-ci.
+При нажатии на Week фактический native узел становится selected=true,
+clickable=false, enabled=true. Старый селектор требовал clickable и при чтении
+выбранного состояния. Теперь action и selected observation используют разные
+атрибуты при сохранении точного rail, package, enabled и48px clipping.
+Восстановленный исходный код воспроизвёл отказ в двух геометриях; исправленный
+код проверяет положительные случаи и отказы для missing-selected/checked-only/
+disabled/invisible/wrong-package без повторного нажатия.
+Все1083 host tests /50.554s PASS, прежние3 skips; diff-check PASS.
+Host finished05:11:56.348468Z. Android original14 ещё выполняется.
+Source inventoryeea2c47dfc8707312eb7efba66d087d831907da8b087bf9421bec597ffe74e5b.
+Patch02737e718f6d48d0487a94267ebd232e1af739afc481ac3eee104be1495f85a9.
+Wrapperfb2bdfa9b75cf97739f6e35113283187117d3f61c73b5761cf9427387b1cdacd.
+Exact tested SHA256:
+- .github/scripts/portfolio_chart_probe.py: d9acfa0428eecbae9488b6f29b34ac83cd9cf867f118e7d85be64e85cfd61f94.
+- .github/scripts/tests/test_portfolio_controls_evidence.py: 0c4288cae82f3a0d59bc7e09065e9631147d67a8d6dc18bb8ae91ed8a653650a.
+
+Дальше: получить original14 outcome, исправить измеренные отказы font200,
+повторить исходные14 без ослаблений, затем полную15-stage матрицу4096/16384.
+Пересоздать full wrapper с последним проверенным harness inventory.
+Нормальный CI ещё требует переноса на ноутбук и baseline38; exact-head Sonar
+сохранить. Без PR/main merge/публикации42 до выполнения соответствующих проверок.
+N00 открыт; N01–N11 не реализованы, N10 требует реальных торговых сессий.
+
+
 ## Исходные проверки кандидата42 и измеренная навигация
 
 На исходниках c2d572e992516ed3080a22582e926754fb61262d, inventory

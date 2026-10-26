@@ -489,5 +489,84 @@ class HistoryTooltipTraversalTests(unittest.TestCase):
                     chart._select_history_bar(case, 10, "901,75 ₽")
 
 
+
+class SelectedQuoteIntervalProbe:
+    """A native selected tab has no click action after the one actual tap."""
+
+    def __init__(self, height, *, wrong_state=None):
+        self.height, self.wrong_state = height, wrong_state
+        self.taps = []
+        self.read_tree = self.tree
+        self.selected = False
+
+    def tree(self):
+        root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640"})
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        rail = ET.SubElement(root, "node", {**common, "resource-id": "quotes-intervals",
+            "bounds": f"[38,319][282,{319 + self.height}]"})
+        attrs = {**common, "resource-id": "quotes-intervals-item-2",
+            "bounds": f"[137,319][210,{319 + self.height}]",
+            "clickable": str(not self.selected).lower(), "selected": str(self.selected).lower()}
+        if self.selected and self.wrong_state:
+            attrs.update(self.wrong_state)
+        tab = ET.SubElement(rail, "node", attrs)
+        ET.SubElement(tab, "node", {**common, "text": "Неделя",
+            "bounds": f"[145,336][202,{min(355, 319 + self.height)}]"})
+        return root
+
+    @staticmethod
+    def resource_tap_target(resource, area, direction="end"):
+        if (resource, area, direction) != ("quotes-intervals", "workspace-content", "start"):
+            raise AssertionError("Wrong candle rail")
+        return ET.Element("node")
+
+    def tap_node(self, node):
+        if node.get("clickable") != "true" or node.get("selected") == "true":
+            raise AssertionError("A state observation must not be tapped")
+        self.taps.append(dict(node.attrib))
+        self.selected = True
+
+    @staticmethod
+    def wait_for(read, message):
+        for _ in range(4):
+            value = read()
+            if value is not None and value is not False:
+                return value
+        raise AssertionError(message)
+
+    @staticmethod
+    def scroll_list(*_args):
+        raise AssertionError("This exact native candle action is already visible")
+
+
+class QuoteIntervalStateTests(unittest.TestCase):
+    def test_selected_nonclickable_interval_is_observed_after_exactly_one_tap(self):
+        import portfolio_chart_probe as chart
+        for height in (52, 57):
+            with self.subTest(rail_height=height):
+                probe = SelectedQuoteIntervalProbe(height)
+                chart._tap_interval(SimpleNamespace(probe=probe), "Неделя")
+                self.assertEqual(len(probe.taps), 1)
+                self.assertEqual(probe.taps[0]["resource-id"], "quotes-intervals-item-2")
+                self.assertIsNone(chart.quote_interval_target(probe.tree(), "Неделя"))
+                selected = chart.quote_interval_target(probe.tree(), "Неделя", selected=True)
+                self.assertEqual(selected.get("selected"), "true")
+                self.assertEqual(selected.get("clickable"), "false")
+
+    def test_missing_wrong_or_disabled_selection_never_causes_another_tap(self):
+        import portfolio_chart_probe as chart
+        variants = ({"selected": "false"},
+                    {"selected": "false", "checkable": "true", "checked": "true"},
+                    {"selected": "true", "enabled": "false"},
+                    {"selected": "true", "visible-to-user": "false"},
+                    {"selected": "true", "package": "another.app"})
+        for attrs in variants:
+            with self.subTest(native_state=attrs):
+                probe = SelectedQuoteIntervalProbe(52, wrong_state=attrs)
+                with self.assertRaisesRegex(AssertionError, "Candle interval did not acquire its actual native selected state"):
+                    chart._tap_interval(SimpleNamespace(probe=probe), "Неделя")
+                self.assertEqual(len(probe.taps), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

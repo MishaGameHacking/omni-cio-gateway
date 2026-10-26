@@ -19,8 +19,8 @@ BOND = "synthetic-bond"
 EXACT_MISSING = "Наблюдение с этим точным моментом не найдено в полученной выборке. Другая запись этого дня не подставляется. Возможно, детальная история уже вышла из срока хранения; проверьте источник и диапазон."
 
 
-def quote_interval_target(tree, text):
-    """Scope duplicate 'Месяц' labels to the actual candle interval rail."""
+def quote_interval_target(tree, text, *, selected=False):
+    """Scope an action or selected-state observation to the exact candle rail."""
     if text not in {"Час", "День", "Неделя", "Месяц"}:
         raise ValueError("Unsupported quote interval label")
     rows = [node for node in tree.iter("node") if node.get("package") == PACKAGE
@@ -31,7 +31,9 @@ def quote_interval_target(tree, text):
     row = rows[0]
     x1, y1, x2, y2 = node_bounds(row)
     for node in row.iter("node"):
-        if node.get("package") != PACKAGE or node.get("visible-to-user") != "true" or node.get("clickable") != "true":
+        required_state = "selected" if selected else "clickable"
+        if node.get("package") != PACKAGE or node.get("visible-to-user") != "true" \
+                or node.get(required_state) != "true" or node.get("enabled") == "false":
             continue
         if not any(text in labels(child) for child in node.iter("node") if child.get("visible-to-user") == "true"):
             continue
@@ -52,7 +54,7 @@ def _tap_interval(case, text, direction="end"):
         target = quote_interval_target(p.tree(), text)
         if target is not None:
             p.tap_node(target)
-            p.wait_for(lambda: (node if (node := quote_interval_target(p.tree(), text)) is not None and node.get("selected") == "true" else None),
+            p.wait_for(lambda: quote_interval_target(p.tree(), text, selected=True),
                        "Candle interval did not acquire its actual native selected state")
             return
         if not reader.scroll_list("quotes-intervals", direction):
