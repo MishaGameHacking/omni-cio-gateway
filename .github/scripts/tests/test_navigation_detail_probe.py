@@ -161,6 +161,85 @@ class DetailMarkerTests(unittest.TestCase):
             details.detail_marker(tree)
 
 
+class DetailCounterSettlementTests(unittest.TestCase):
+    def counters(self, detail, business, *, fields=None, business_errors=0):
+        tree = frame(fields={"requests": str(detail), **(fields or {})}, menu=False)
+        node(tree[0], bounds="[0,0][320,80]", **{
+            "resource-id": "business-probe-marker",
+            "content-desc": "business-probe:strategy/ready;transport:synthetic;requests:"
+                + str(business) + ";contract-errors:" + str(business_errors)
+                + ";scenario-compares:0;navigation:none;message-posts:0;"
+                  "message-request-id:none;by-request-gets:0;recovered-request-id:none"})
+        return tree
+
+    def probe(self, frames):
+        probe = NativeFrames(lambda reads: frames[min(reads - 1, len(frames) - 1)])
+        probe.wait_for = lambda predicate, message: ProfileProbe.wait_for(probe, predicate, message)
+        return probe
+
+    def clock(self):
+        now = [0.0]
+        def sleep(seconds):
+            now[0] += seconds
+        return now, sleep
+
+    def test_async_counter_views_must_converge_before_acceptance(self):
+        for early in ((6, 7), (7, 6)):
+            probe = self.probe([self.counters(*early), self.counters(7, 7)])
+            now, sleep = self.clock()
+            with self.subTest(early=early), patch("profile_ui_probe.time.monotonic", lambda: now[0]), \
+                    patch("profile_ui_probe.time.sleep", sleep):
+                result = case(probe).observed("strategy")
+            self.assertEqual(result["requests"], 7)
+            self.assertEqual(probe.reads, 2)
+            self.assertEqual(probe.taps, [])
+
+    def test_persistent_counter_disagreement_fails_at_the_original_deadline(self):
+        probe = self.probe([self.counters(6, 7)])
+        now, sleep = self.clock()
+        with patch("profile_ui_probe.time.monotonic", lambda: now[0]), \
+                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):
+            case(probe).observed("strategy")
+        self.assertGreaterEqual(now[0], 12)
+        self.assertLessEqual(now[0], 12.21)
+        self.assertGreater(probe.reads, 1)
+        self.assertEqual(probe.taps, [])
+
+    def test_stale_agreement_cannot_override_a_newer_observed_request_count(self):
+        probe = self.probe([self.counters(6, 7), self.counters(6, 6), self.counters(7, 7)])
+        now, sleep = self.clock()
+        with patch("profile_ui_probe.time.monotonic", lambda: now[0]), patch("profile_ui_probe.time.sleep", sleep):
+            result = case(probe).observed("strategy")
+        self.assertEqual(result["requests"], 7)
+        self.assertEqual(probe.reads, 3)
+        self.assertEqual(probe.taps, [])
+
+    def test_a_forever_stale_equal_pair_remains_a_failure(self):
+        probe = self.probe([self.counters(6, 7), self.counters(6, 6)])
+        now, sleep = self.clock()
+        with patch("profile_ui_probe.time.monotonic", lambda: now[0]), \
+                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):
+            case(probe).observed("strategy")
+        self.assertGreaterEqual(now[0], 12)
+        self.assertLessEqual(now[0], 12.21)
+
+    def test_mutation_contract_failure_and_changed_user_still_fail_immediately(self):
+        invalid = [self.counters(6, 7, fields={"writes": "1"}),
+                   self.counters(6, 7, fields={"contract-errors": "1"}),
+                   self.counters(6, 7, business_errors=1),
+                   self.counters(6, 7, fields={"user": USER[:-1] + "2"})]
+        for first in invalid:
+            probe = self.probe([first, self.counters(7, 7)])
+            now, sleep = self.clock()
+            with self.subTest(marker=first[0][0].get("content-desc")), \
+                    patch("profile_ui_probe.time.monotonic", lambda: now[0]), \
+                    patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):
+                case(probe).observed("strategy")
+            self.assertEqual(probe.reads, 1)
+            self.assertEqual(now[0], 0)
+            self.assertEqual(probe.taps, [])
+
+
 class DetailMenuActionTests(unittest.TestCase):
     def test_old_detail_frame_without_menu_fails_the_actual_open_path(self):
         probe = NativeFrames(frame(menu=False))

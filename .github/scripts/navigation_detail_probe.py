@@ -275,7 +275,12 @@ class _DetailNavigationCase:
 
     def observed(self, page):
         from business_ui_probe import business_marker
+        highest_requests = 0
+        pending_frames = 0
+        last_counts = None
+        settled = False
         def read():
+            nonlocal highest_requests, pending_frames, last_counts
             tree = self.owned_frame()
             value = detail_marker(tree)
             business = business_marker(tree, "strategy", "ready")
@@ -283,10 +288,26 @@ class _DetailNavigationCase:
                 return None
             if self.user is not None and value["user"] != self.user:
                 raise AssertionError("Detail navigation changed the isolated user")
-            if value["requests"] != business["requests"]:
-                raise AssertionError("Detail navigation lost its actual business transport counters")
+            last_counts = (value["requests"], business["requests"])
+            highest_requests = max(highest_requests, *last_counts)
+            # Accessibility reads can straddle two asynchronous compositions.
+            # Require agreement at the newest observed count within the SAME
+            # existing wait deadline; stale agreement cannot complete the case.
+            if last_counts[0] != last_counts[1] or last_counts[0] < highest_requests:
+                pending_frames += 1
+                return None
             return value
-        return self.probe.wait_for(read, "The real detail screen did not reach " + page)
+        try:
+            value = self.probe.wait_for(read, "The real detail screen did not reach " + page)
+            settled = True
+            return value
+        finally:
+            if pending_frames:
+                print("DETAIL_COUNTER_SETTLEMENT=" + json.dumps({
+                    "page": page, "pending_frames": pending_frames,
+                    "maximum_requests": highest_requests, "last_counts": last_counts,
+                    "settled": settled,
+                }, sort_keys=True), flush=True)
 
     def closed(self):
         return self.probe.wait_for(lambda: navigation_menu_absent(self.owned_frame()),
