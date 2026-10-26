@@ -1,4 +1,4 @@
-name: Inspect first full portfolio native reveal failure
+name: Inspect matching 4KB portfolio native reveal failure
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,7 +11,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Preserve actual completed 16KB portfolio failure
+      - name: Preserve actual completed 4KB portfolio failure
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -19,33 +19,33 @@ jobs:
             const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
             if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
             const root='C:/actions-runner-4/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40247318025-1/app/build/outputs/apk/preview';
-            const source=p.join(root,'ui-screens-api37-16384');
+            const source=p.join(root,'ui-screens');
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const identities={};let total=0;
             function copy(from,name){
-              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T00:01:43Z'))throw new Error('unexpected_file');
+              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T00:18:42Z'))throw new Error('unexpected_file');
               const data=fs.readFileSync(from);total+=data.length;if(total>25000000)throw new Error('evidence_too_large');
               fs.writeFileSync(p.join(out,name),data,{flag:'wx'});
               identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
             }
             const available=fs.readdirSync(source);
             for(const name of available.filter(n=>['failure.png','business-verification.json','portfolio-verification.json','failure.xml'].includes(n)))copy(p.join(source,name),name);
-            const log=p.join(root,'install-api37-16384/runtime-console.log');
-            copy(log,'runtime-16384.log');
+            const log=p.join(root,'install-api37-4096/runtime-console.log');
+            copy(log,'runtime-4096.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
             if(!lines.some(l=>l.includes('Unknown list or invalid native reveal target')))throw new Error('expected_completed_failure_not_observed');
-            const report={source_run:40247318025,source_root:source,diagnostic_only:false,release_gate_pass:false,page_bytes:16384,
+            const report={source_run:40247318025,source_root:source,diagnostic_only:false,release_gate_pass:false,page_bytes:4096,
               base_commit:'46158e9a5b8da09f0188fc882154a455d119f127',verified_backup_commit:'46158e9a5b8da09f0188fc882154a455d119f127',source_inventory:'770337e637aadcccec66047048aa7e696a58524d2536f2f66d4d20a16b633bac',
               debug_apk_sha256:'3e29f33beb3a6ad4dade2f56b8340d8419aeff415ffe78ed35714291ae889acf',
               identities,available_files:available,log_tail:lines.slice(-100).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 full portfolio native reveal failure',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'First five full stages passed; portfolio assertion preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
+            await github.rest.checks.create({...context.repo,name:'N00 full 4KB portfolio native reveal failure',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'First five full stages passed; portfolio assertion preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
             core.setOutput('folder',out);
       - name: Retain private synthetic failure evidence for inspection
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-portfolio-native-reveal-16384
+          name: n00-portfolio-native-reveal-4096
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
