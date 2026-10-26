@@ -1,0 +1,39 @@
+{
+  "apk_published_or_installed": false,
+  "application_or_test_execution_performed": false,
+  "changed_runtime_files": [
+    "/opt/analyst-ai/backend/portfolio_mandate.py",
+    "/opt/analyst-ai/backend/volume_state.py",
+    "/opt/analyst-ai/backend/purchase_policy.py",
+    "/opt/analyst-ai/backend/autonomous_controller.py"
+  ],
+  "files": {
+    "deploy-runtime.py": {
+      "bytes": 57606,
+      "sha256": "cbfad6e9cfdbfd137893e1cb73ab9f8dc30209992b7abaace03a32c26edc5f3a"
+    },
+    "expected-identities.json": {
+      "bytes": 17132,
+      "sha256": "e2a4cde135e45fb949a9a0d483e29e2c6fb7709351fbb5ca7671642bdbbae8aa"
+    },
+    "hosted-deployment.py": {
+      "bytes": 223815,
+      "sha256": "f1fac74df163572b75d39b8cdf2bd1d417ad07ff7254282fece467c7b7578e0e"
+    },
+    "workflow.yml": {
+      "bytes": 246758,
+      "sha256": "c8d6c8b9ee17da9b36f75fba29621701a1302059e30a43819c564a59e83bdb8a"
+    }
+  },
+  "help_deployed": false,
+  "pinned_transport_prefix_sha256": "5569d1c96c52b11766e5f9a2610a442827693491360cd5c051f1b86dc0531800",
+  "request_sha256": "bc4d9bf9933b3bcc0e3d94af074aa9549e6f5300f8e2d545ffac1e1a3c95574f",
+  "reviewed_manifest_sha256": "a6ea5c5a389db5b32bf256015eaed833391119b094902a2fbd96ab3a125a60e3",
+  "runtime_observation_sha256": "73129b215e9040289cba70a8427e815635c307f247a194221c9fb3bf80b2b43f",
+  "schema": 1,
+  "server_mutation_performed": false,
+  "source_backup_commit": "fd2a307220158b0fc2055cfb0eb4fd9fc51d8d4b",
+  "source_sha256": "26d1ccf6b9685925291edb968f17ef091b145831d7c6ca791e5e942246af49fa",
+  "state": "prepared_only_not_dispatched",
+  "target_workflow": ".github/workflows/portfolio-mandate48-runtime-deployment.yml"
+}

@@ -1,0 +1,440 @@
+{
+  "active_caddy": {
+    "bytes": 933,
+    "sha256": "57192fc11c94c8691c036d6208ce20ab429a5af7047ea17f3432498212db3041"
+  },
+  "archive": {
+    "bytes": 69697259,
+    "sha256": "2c6ef4e2f6f176d237f97871ced48d9ab7b22a20486f2c852c5e25d7abfcfa62"
+  },
+  "archive_files": 1124,
+  "archive_path": "/var/lib/analyst-ai-build/incoming/windows-development-40400521138-1/windows-development-evidence.zip",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "build_controller": {
+    "bytes": 443,
+    "sha256": "85018e082ebaaf261de73445a71f5de8a877fa5491c4c61a622871caf3ee3479"
+  },
+  "build_report": {
+    "bytes": 60205,
+    "sha256": "3d0d4f59f709054469cefa274f3bb92d7ba840d10a5f9a2e68bcdc77d535c72f"
+  },
+  "caddy_file": {
+    "bytes": 501,
+    "sha256": "01f467fb00ccb6034bb98e82bb59e405ac9e33b241ecaf472e4d844fcfbf262e"
+  },
+  "callback_style_sha256": "d20328944ed84302094181fdffee0b5d79522034eb8af980f487382ddebef40a",
+  "complete_source_sha256": "5b450a541765db6a90ad700f14e46a1c6c8a2ece9e7fb5ff57c3ed340c844215",
+  "github": {
+    "run_attempt": 1,
+    "run_id": 40400521138,
+    "runner_name": "omni-cio-ci-2",
+    "workflow_sha": "0acd271d6ddc070f89c4151710723c63643eabe7"
+  },
+  "mandate_test_count": 21,
+  "mandate_test_names": [
+    "test_legacy_edit_cannot_erase_mandate_and_readback_returns_only_owned_accounts",
+    "test_explicit_null_cannot_remove_existing_mandate",
+    "test_rollback_to_legacy_version_preserves_current_mandate",
+    "test_account_revocation_between_preview_and_commit_blocks_same_snapshot_identifier",
+    "test_mandate_exact_percentages_ignore_external_decimal_precision",
+    "test_invalid_mandate_never_becomes_active",
+    "test_unverified_account_is_rejected",
+    "test_owner_floor_class_and_zero_risk_are_independent_constraints"
+  ],
+  "mandate_test_source": {
+    "bytes": 5288,
+    "sha256": "853f29b44abd3161bf9e342a554bf44c3e6e1223a86b177fcf8eeb01595a4b26"
+  },
+  "reviewed_manifest_sha256": "a6ea5c5a389db5b32bf256015eaed833391119b094902a2fbd96ab3a125a60e3",
+  "runtime_observation_sha256": "73129b215e9040289cba70a8427e815635c307f247a194221c9fb3bf80b2b43f",
+  "runtime_sources": {
+    "autonomous_controller.py": {
+      "new": {
+        "bytes": 35571,
+        "sha256": "926d10f0ee53b17a8c77fc90b6e7d07a8cf656f7e0ab9a3bb344fa063e3bbff5"
+      },
+      "old": {
+        "bytes": 35217,
+        "sha256": "1994204de29b2569843d4d47012bbc372716d9d9db6c33daf058d73ae18600eb"
+      }
+    },
+    "portfolio_mandate.py": {
+      "new": {
+        "bytes": 4743,
+        "sha256": "a8647933e107a3e1427438999b266869ae9be456786710cea56f997d57459c78"
+      },
+      "old": null
+    },
+    "purchase_policy.py": {
+      "new": {
+        "bytes": 12689,
+        "sha256": "53a264d7d091125c759b1d0cbf7d49542be3e27ca44c3661ea56b3d03aec0040"
+      },
+      "old": {
+        "bytes": 12443,
+        "sha256": "b4d80849cc55b014dccc76ec463bbf5b1be8cbf18d048a1373f5c16bfcef29fc"
+      }
+    },
+    "volume_state.py": {
+      "new": {
+        "bytes": 41301,
+        "sha256": "0aeea80a5043a936619a302c415455542f0b7c7ddc62a8179c33a753823779bd"
+      },
+      "old": {
+        "bytes": 40205,
+        "sha256": "72db61c3c4ecb2ccb10ed68962758dd3121e9e8e5fcc36bc7a2e9b9d1c746d49"
+      }
+    }
+  },
+  "schema": 1,
+  "services": {
+    "analyst-ai-owner.service": {
+      "active_state": "active",
+      "effective_dropins_present": false,
+      "expected_fragment_path": true,
+      "invocation": {
+        "argument_count": 12,
+        "executable": "/opt/analyst-ai/venv/bin/uvicorn",
+        "module": "owner_app:create_app",
+        "options": {
+          "--factory": true,
+          "--host": "127.0.0.1",
+          "--lifespan": "on",
+          "--no-access-log": true,
+          "--port": "8080",
+          "--workers": "1"
+        },
+        "owner_factory_binding_verified": true,
+        "public_update_factory_binding_verified": false,
+        "source_path": "/opt/analyst-ai/backend/owner_app.py",
+        "status": "allowlisted_invocation_observed"
+      },
+      "load_state": "loaded",
+      "matches_prior_unit_identity": true,
+      "need_daemon_reload": "no",
+      "status": "observed",
+      "unit_file_identity": {
+        "bytes": 923,
+        "sha256": "7df9096fbc578716208077355fa8ac4cbc5c1480844e83910bfa7a0b40c06ed0",
+        "status": "observed"
+      },
+      "working_directory": "/opt/analyst-ai/backend",
+      "working_directory_allowlisted": true
+    },
+    "analyst-ai-updates.service": {
+      "active_state": "active",
+      "effective_dropins_present": false,
+      "expected_fragment_path": true,
+      "invocation": {
+        "argument_count": 13,
+        "executable": "/opt/analyst-ai-updates/venv/bin/python",
+        "module": "backend.public_updates_app:create_app",
+        "options": {
+          "--factory": true,
+          "--host": "127.0.0.1",
+          "--no-access-log": true,
+          "--port": "8081",
+          "--workers": "1"
+        },
+        "owner_factory_binding_verified": false,
+        "public_update_factory_binding_verified": true,
+        "source_path": "/opt/analyst-ai-updates/backend/public_updates_app.py",
+        "status": "allowlisted_invocation_observed"
+      },
+      "load_state": "loaded",
+      "matches_prior_unit_identity": true,
+      "need_daemon_reload": "no",
+      "status": "observed",
+      "unit_file_identity": {
+        "bytes": 893,
+        "sha256": "98a5a053ccdbb37938b7cac9bcba937da09cdcd828f913ec2750e01d0bc95cc9",
+        "status": "observed"
+      },
+      "working_directory": "/opt/analyst-ai-updates",
+      "working_directory_allowlisted": true
+    }
+  },
+  "source_backup_commit": "fd2a307220158b0fc2055cfb0eb4fd9fc51d8d4b",
+  "source_inventory": {
+    "bytes": 167810,
+    "sha256": "17c38232cea887b33a6315f2f4204b4dccbba97b6dbc07a3d12abf632bd16915"
+  },
+  "source_sha256": "26d1ccf6b9685925291edb968f17ef091b145831d7c6ca791e5e942246af49fa",
+  "units": {
+    "/etc/systemd/system/analyst-ai-owner.service": {
+      "bytes": 923,
+      "sha256": "7df9096fbc578716208077355fa8ac4cbc5c1480844e83910bfa7a0b40c06ed0"
+    },
+    "/etc/systemd/system/analyst-ai-updates.service": {
+      "bytes": 893,
+      "sha256": "98a5a053ccdbb37938b7cac9bcba937da09cdcd828f913ec2750e01d0bc95cc9"
+    }
+  },
+  "untouched_sources": {
+    "/opt/analyst-ai-updates/backend/public_updates_app.py": {
+      "bytes": 1219,
+      "sha256": "65223e183ab426c2e9fb7619e97aa321f6a9b9c1e4f72392ee8b4fe056edf0d8"
+    },
+    "/opt/analyst-ai/backend/ai_budget.py": {
+      "bytes": 11358,
+      "sha256": "7fa2a785f26e1227252c8785f1e12029192b093ad2809a020f1cd647f7bcf947"
+    },
+    "/opt/analyst-ai/backend/ai_guarded_client.py": {
+      "bytes": 16889,
+      "sha256": "349f89534b0e562aaf84a6bdbce9db28db5a9719cd3682ba3bf23daaec2d59ae"
+    },
+    "/opt/analyst-ai/backend/ai_jobs.py": {
+      "bytes": 10904,
+      "sha256": "38205417d64d14847620a4f45a2a20ad1f0d7cd5bab512c1feca8bfd53a45194"
+    },
+    "/opt/analyst-ai/backend/ai_policy.py": {
+      "bytes": 5269,
+      "sha256": "44cfdcdf2d862a681287f2a20dc387051fe227dcb2c68d5d18247d349a714fa9"
+    },
+    "/opt/analyst-ai/backend/ai_route_catalog.py": {
+      "bytes": 4865,
+      "sha256": "a88981df52942a4c08fd60018aabf333ceaa85e8c4db8e79930f75b5e9e5a3c9"
+    },
+    "/opt/analyst-ai/backend/allocation_plan.py": {
+      "bytes": 14103,
+      "sha256": "90f3396a685ef9968c30fa5c5c1f7acfb9983825993d4c0b9b68710ce07fd4ad"
+    },
+    "/opt/analyst-ai/backend/analysis_engine.py": {
+      "bytes": 11660,
+      "sha256": "2700fdde343666a6e2441a943fb11dac2a5ea3906c04520b90c2b2721bde22e1"
+    },
+    "/opt/analyst-ai/backend/android_runtime_contract.py": {
+      "bytes": 3142,
+      "sha256": "1ed9a56769d308c9f5457fa383517a80965cd474dff8851e16a85390954335c2"
+    },
+    "/opt/analyst-ai/backend/app.py": {
+      "bytes": 29265,
+      "sha256": "33950c712e6442ce00af8de84f1e2c174c75d140728c1c093f00d717f5948c40"
+    },
+    "/opt/analyst-ai/backend/automation_ui_evidence.py": {
+      "bytes": 8099,
+      "sha256": "4a06b75ba342d80f7bcee6d0fbbb985d6562d390deb147438c04c48be91ae35c"
+    },
+    "/opt/analyst-ai/backend/autonomous_ai.py": {
+      "bytes": 53552,
+      "sha256": "789e338b462021f5d0274ae438638f54257111dbaadbee4dde090e130aa647cf"
+    },
+    "/opt/analyst-ai/backend/bounded_ai_response.py": {
+      "bytes": 4723,
+      "sha256": "95d51fa2f6a2c6190ae572a2c88cf13ca2803af999d9a77ddfd908c6c397db14"
+    },
+    "/opt/analyst-ai/backend/broker_connections.py": {
+      "bytes": 6568,
+      "sha256": "d0e4079f030ccc466da0b5224478a75841c02cfbf17a1151286a5f56845f5651"
+    },
+    "/opt/analyst-ai/backend/client_compatibility.py": {
+      "bytes": 2245,
+      "sha256": "cf585f4a740198325e47166b318f12c41017491e34edb27c5511c53790a7d8e9"
+    },
+    "/opt/analyst-ai/backend/client_diagnostics.py": {
+      "bytes": 8863,
+      "sha256": "6316faa45abc793adb16fb6d8b42993e2c778e9411e31ed525c1742c379e1bc0"
+    },
+    "/opt/analyst-ai/backend/client_updates.py": {
+      "bytes": 13743,
+      "sha256": "79c1f8670cc61f94f917c9ad4b6e394f1430a08b61b8ef87216624fec12b9184"
+    },
+    "/opt/analyst-ai/backend/credit_evidence.py": {
+      "bytes": 15694,
+      "sha256": "96af887aa723e8e74e7d037f4785da532d6aa16ef6916eaf099c0ba847b4fd80"
+    },
+    "/opt/analyst-ai/backend/evidence_history.py": {
+      "bytes": 3273,
+      "sha256": "e9f16324ac661abfcd4c8ee6e6deaa7b7748245891e8c5c5c15d02c63a28ce12"
+    },
+    "/opt/analyst-ai/backend/evidence_order.py": {
+      "bytes": 3041,
+      "sha256": "46368a7a78a2fbfc55198e222795abe977c490c3f07703ddcb8f4afd2f45f2d7"
+    },
+    "/opt/analyst-ai/backend/evidence_revision.py": {
+      "bytes": 3100,
+      "sha256": "7fa8f33904ac8f363f7eaddbba29ff9942ce7e1e4ad958ad23fc1185852876c4"
+    },
+    "/opt/analyst-ai/backend/installation_evidence.py": {
+      "bytes": 8652,
+      "sha256": "04e13002c8b5e5046a86e3a5e8de1edc354888eb581202f010ee992563468c3c"
+    },
+    "/opt/analyst-ai/backend/investment_chat_policy.py": {
+      "bytes": 9474,
+      "sha256": "65130e31014142a968546beeebd58d93422c7f7ff027b34f587a890002f529f2"
+    },
+    "/opt/analyst-ai/backend/investment_links.py": {
+      "bytes": 1418,
+      "sha256": "55d7d36ab4847509fde4e1e46dcc6811b215d2b07ddbb5c5ada22a7ce4dd0688"
+    },
+    "/opt/analyst-ai/backend/model_json_limits.py": {
+      "bytes": 2324,
+      "sha256": "2cd9d1f126965ee947b25ee0a5fb82ec5e43b018c5040cd6871b76ca9af7a1ae"
+    },
+    "/opt/analyst-ai/backend/monitoring_access.py": {
+      "bytes": 1772,
+      "sha256": "9c6156d1452db85c8adad877e8d9ffe336f499cb44752174e9761a01881fa6cc"
+    },
+    "/opt/analyst-ai/backend/owner_access.py": {
+      "bytes": 6178,
+      "sha256": "5bd31e342cea7dbbf1814874a8702140d5669534cd2948c33982b319beee78d3"
+    },
+    "/opt/analyst-ai/backend/owner_app.py": {
+      "bytes": 5798,
+      "sha256": "09dda073a447e12f742e4540945e1695be14ce943cf9471189cf4ca80c3d729b"
+    },
+    "/opt/analyst-ai/backend/portfolio_details.py": {
+      "bytes": 29229,
+      "sha256": "d677d2d74f1761b53c507ae716da29d7312f7c526e99a873686008e6ba986a57"
+    },
+    "/opt/analyst-ai/backend/portfolio_research.py": {
+      "bytes": 20571,
+      "sha256": "6f657312995316d157424319e75ed876c9d567f52e7a0d267fc30266fac87b70"
+    },
+    "/opt/analyst-ai/backend/portfolio_risk.py": {
+      "bytes": 23821,
+      "sha256": "b796b20085311a6318436c263abe66068dfe8e75e844e6329beec20cc670ce43"
+    },
+    "/opt/analyst-ai/backend/portfolio_scenarios.py": {
+      "bytes": 7489,
+      "sha256": "64d2a12e69b5d1dd482d2148d222d1f717b4f04ef6a5218da8357d82faf438ec"
+    },
+    "/opt/analyst-ai/backend/public_updates_app.py": {
+      "bytes": 1219,
+      "sha256": "65223e183ab426c2e9fb7619e97aa321f6a9b9c1e4f72392ee8b4fe056edf0d8"
+    },
+    "/opt/analyst-ai/backend/release_bytes.py": {
+      "bytes": 1807,
+      "sha256": "71de304be624aed78b53966c66c863aef41d6c961c92badea1f399cd07785ac5"
+    },
+    "/opt/analyst-ai/backend/release_contract.py": {
+      "bytes": 5885,
+      "sha256": "dd6bcbf3c3802dd47003657ee13c548270b0e992cb210fdb3bc2727572d4d933"
+    },
+    "/opt/analyst-ai/backend/release_json.py": {
+      "bytes": 4285,
+      "sha256": "04a760b02105322f41d400cbdd6d44a4519c4e8dcd03ffd53fcd6da5fadf6b97"
+    },
+    "/opt/analyst-ai/backend/release_lock.py": {
+      "bytes": 1638,
+      "sha256": "548c06b4d8bcc9323eb5e1d49ef17fe4f8689967c2240fd1710653bcab08ce74"
+    },
+    "/opt/analyst-ai/backend/release_publication.py": {
+      "bytes": 10167,
+      "sha256": "9f083c508dbfc1e34721e6379044d2071c6e0752029f739e7280a9c65cb6a914"
+    },
+    "/opt/analyst-ai/backend/research_clock.py": {
+      "bytes": 3137,
+      "sha256": "267d22a868657d288c89d286ec9007ebf3d01ce25e486f718c5aabbcdf612d70"
+    },
+    "/opt/analyst-ai/backend/research_import.py": {
+      "bytes": 7893,
+      "sha256": "806548c1c80d087c3cefe29f9181678f1257faa29760f02ff60e2f57b8e34e4f"
+    },
+    "/opt/analyst-ai/backend/research_profile_cache.py": {
+      "bytes": 554,
+      "sha256": "20cb8cd5533dd63ae414ea383dfd1221476762e583e21a67b39602cf5bca3d23"
+    },
+    "/opt/analyst-ai/backend/research_snapshot.py": {
+      "bytes": 3527,
+      "sha256": "6971a39d7ba336d3f57b9ec166f61b1687669bc7ec10e982f2473e520da82252"
+    },
+    "/opt/analyst-ai/backend/research_store.py": {
+      "bytes": 9508,
+      "sha256": "703b1a251bf3bbae73b8b82bf7647d19a45f3eb0951887bb9822adcc59d5b874"
+    },
+    "/opt/analyst-ai/backend/risk_math.py": {
+      "bytes": 13842,
+      "sha256": "f2492cbbbb7750099b74c5a0564a497d21fef5ffe413971690fe62fb2d049c5c"
+    },
+    "/opt/analyst-ai/backend/risk_preview.py": {
+      "bytes": 11526,
+      "sha256": "295a41d0495440366c4cef2aa5f89c6bde5a138e63f269ad7b2b1e050927f82c"
+    },
+    "/opt/analyst-ai/backend/telegram_browser_app.py": {
+      "bytes": 16927,
+      "sha256": "5a1ef0f644948cad8d38b4537b9b5c938582fea79955c143453c797b67c46793"
+    },
+    "/opt/analyst-ai/backend/telegram_oidc.py": {
+      "bytes": 5217,
+      "sha256": "3d7e64b50811b4b1ff70ec2512f1895f493de77932814976e87e0e509322b3a8"
+    },
+    "/opt/analyst-ai/backend/timeweb_ai.py": {
+      "bytes": 9066,
+      "sha256": "e473a8cddb469b3f5b0a4290fb003d94e03ebb8e960de914406e84e24f7c59a3"
+    },
+    "/opt/analyst-ai/backend/tinvest_portfolio.py": {
+      "bytes": 16296,
+      "sha256": "6213499c73fb69b76ddd09a50f4f3a3eb4ac95e42965416d907b201b0711f754"
+    },
+    "/opt/analyst-ai/backend/volume.py": {
+      "bytes": 630,
+      "sha256": "2efb14fb95452af54a91899f9b7d3b8dcef694026493eb1061e34e7906e79741"
+    },
+    "/opt/analyst-ai/backend/volume_analysis.py": {
+      "bytes": 7324,
+      "sha256": "398c8955a399b7c55eda1939f6cfc5f2c2a137f2a844351f8a8c0cb1931e63cc"
+    },
+    "/opt/analyst-ai/backend/volume_catalogue.py": {
+      "bytes": 5085,
+      "sha256": "f205f57a01804ef79d67e838db832ec62f5cf0353fafff6ed7fb43c0e1aa6e1b"
+    },
+    "/opt/analyst-ai/backend/volume_chat.py": {
+      "bytes": 44737,
+      "sha256": "0d258ed870086bbf47ac6747c62484b265a6784bf307f740262acf2d30591c66"
+    },
+    "/opt/analyst-ai/backend/volume_contract.py": {
+      "bytes": 8050,
+      "sha256": "e00250093544aec09f78d86afa597db7aaec690921fc6c90dad6ce01f26a2a41"
+    },
+    "/opt/analyst-ai/backend/volume_credit.py": {
+      "bytes": 4722,
+      "sha256": "13a868cf49a848849d68b7f79ee607d7f29318d1fd97ba5c8e35495582cdea41"
+    },
+    "/opt/analyst-ai/backend/volume_devices.py": {
+      "bytes": 3348,
+      "sha256": "68440c1b92d81d72d4e01dc16731fa76f4637647e221cb846e0ba67fe08d10dd"
+    },
+    "/opt/analyst-ai/backend/volume_impact.py": {
+      "bytes": 11925,
+      "sha256": "38d91ef35eb5e1c850fe64d5ea32c4f9cdd7a501137d0cb922af9a51d4a51d82"
+    },
+    "/opt/analyst-ai/backend/volume_jobs.py": {
+      "bytes": 18344,
+      "sha256": "c18cb703f669ebfc431e8d20292f85851347cfd02c7ae451cea2c911a62e89c6"
+    },
+    "/opt/analyst-ai/backend/volume_live.py": {
+      "bytes": 8495,
+      "sha256": "be782c7cb5c078edbd9693a72909c3b0b455fb73ebe066516f21fe352c9b8b2a"
+    },
+    "/opt/analyst-ai/backend/volume_market.py": {
+      "bytes": 32918,
+      "sha256": "6b5883183634b4e23ed15413462bb7fd908c44092ded8bae7ebfc7f00c4b47ce"
+    },
+    "/opt/analyst-ai/backend/volume_monitor.py": {
+      "bytes": 14437,
+      "sha256": "de762346ad2e504c7c9b28f2e97610241c6637b34cdd411ae4df21a5b5cbde6c"
+    },
+    "/opt/analyst-ai/backend/volume_news.py": {
+      "bytes": 6801,
+      "sha256": "355d506a59d43089ba4dc4326a3a3fbd6bb009180afecc4be67318b25e01bc57"
+    },
+    "/opt/analyst-ai/backend/volume_notifications.py": {
+      "bytes": 16328,
+      "sha256": "74752d772493b173cd33c0cdf207f9d52f2d30c55ffdc78bedd3e68994e9885d"
+    },
+    "/opt/analyst-ai/backend/volume_plans.py": {
+      "bytes": 16128,
+      "sha256": "54bd52e549ae5fac4af52a01f0d4515710042383a34207e22f3d591a106ec88e"
+    },
+    "/opt/analyst-ai/backend/volume_purchases.py": {
+      "bytes": 14574,
+      "sha256": "21c5db4e53222f8b813e7da22115338f0c8c00dc4149ec0ac0677037cb2aaabe"
+    },
+    "/opt/analyst-ai/backend/volume_workspace.py": {
+      "bytes": 38845,
+      "sha256": "1b5e898823fa0dcdacf978fdd6023da4c9fb7c5ec5057513c277ef55263826a3"
+    }
+  }
+}
