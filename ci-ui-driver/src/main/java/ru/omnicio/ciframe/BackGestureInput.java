@@ -67,8 +67,48 @@ final class BackGestureInput implements AutoCloseable {
                 || window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) {
             throw new IOException("Back gesture requires the focused app window");
         }
-        if (!hasSpatialMarker(root, 0, new int[] {0}) && !hasAutomationNavigationMenu(root)) {
+        if (!hasSpatialMarker(root, 0, new int[] {0}) && !hasAutomationNavigationMenu(root)
+                && !hasOwnedDock(root)) {
             throw new IOException("Back gestures are restricted to the reviewed synthetic fixtures");
+        }
+    }
+
+    private boolean hasOwnedDock(AccessibilityNodeInfo root) throws IOException {
+        DockBackFixture gate = new DockBackFixture(root.getWindowId());
+        Rect display = windows.getMaximumWindowMetrics().getBounds();
+        java.util.List<AccessibilityWindowInfo> observed = automation.getWindows();
+        if (observed == null || observed.size() > 32) return false;
+        boolean popupPresent = false;
+        for (AccessibilityWindowInfo window : observed) {
+            if (window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION
+                    || window.getDisplayId() != android.view.Display.DEFAULT_DISPLAY) continue;
+            AccessibilityNodeInfo owner = window.getRoot();
+            if (owner == null || !APP_PACKAGE.contentEquals(owner.getPackageName())) continue;
+            if (window.getId() == root.getWindowId()) {
+                if (!window.isActive() || !window.isFocused()) return false;
+                popupPresent = true;
+            } else if (window.isActive() || window.isFocused()) return false;
+            observeDock(owner, gate, window.getId(), display, 0, new int[] {0});
+        }
+        return popupPresent && gate.allowed();
+    }
+
+    private static void observeDock(AccessibilityNodeInfo node, DockBackFixture gate,
+            int window, Rect display, int depth, int[] count) throws IOException {
+        if (depth > 100 || ++count[0] > 5000) throw new IOException("Dock fixture exceeds node budget");
+        if (!APP_PACKAGE.contentEquals(node.getPackageName())) return;
+        gate.observeDescription(window, node.getContentDescription());
+        if (node.isVisibleToUser() && node.isEnabled()) {
+            Rect bounds = new Rect(); node.getBoundsInScreen(bounds);
+            if (bounds.intersect(display) && !bounds.isEmpty()) {
+                String resource = node.getViewIdResourceName(), prefix = APP_PACKAGE + ":id/";
+                if (resource != null && resource.startsWith(prefix)) resource = resource.substring(prefix.length());
+                gate.observeVisibleResource(window, resource);
+            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) observeDock(child, gate, window, display, depth + 1, count);
         }
     }
 

@@ -199,6 +199,21 @@ class BackProbeTests(unittest.TestCase):
 
 
 class JavaBackSequenceTests(unittest.TestCase):
+    def test_popup_admission_binds_current_menu_to_one_matching_synthetic_host(self):
+        javac, java = shutil.which("javac"), shutil.which("java")
+        if javac is None or java is None:
+            self.skipTest("JDK required for the host popup admission regression")
+        source = ROOT / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/DockBackFixture.java"
+        harness = Path(__file__).parent / "fixtures/DockBackFixtureTest.java"
+        with tempfile.TemporaryDirectory() as output:
+            built = subprocess.run([javac, "--release", "17", "-d", output, str(source), str(harness)],
+                                   capture_output=True, text=True, timeout=30, check=False)
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            result = subprocess.run([java, "-cp", output, "ru.omnicio.ciframe.DockBackFixtureTest"],
+                                    capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("DOCK_BACK_FIXTURE_CASES=22", result.stdout)
+
     def test_ready_navigation_admission_requires_matching_synthetic_markers_and_open_menu(self):
         javac, java = shutil.which("javac"), shutil.which("java")
         if javac is None or java is None:

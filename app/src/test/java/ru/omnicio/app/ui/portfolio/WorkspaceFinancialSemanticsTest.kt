@@ -13,6 +13,19 @@ import ru.omnicio.app.data.portfolio.PortfolioPosition
 
 /** Financial contracts: no invented observations, incompatible comparisons or stale cross-account values. */
 class WorkspaceFinancialSemanticsTest {
+    @Test fun refreshedPortfolioKeepsExistingRowsInPlaceAndAppendsNewPositions() {
+        val original = listOf("account-a:bond", "account-b:share", "account-a:expired")
+        val refreshed = listOf("account-b:new", "account-b:share", "account-a:bond", "account-a:new")
+        assertEquals(listOf("account-a:bond", "account-b:share", "account-b:new", "account-a:new"),
+            stablePortfolioRowKeys(original, refreshed))
+        assertEquals(refreshed, stablePortfolioRowKeys(null, refreshed))
+        assertEquals(refreshed, stablePortfolioRowKeys(emptyList(), refreshed))
+        assertEquals(emptyList<String>(), stablePortfolioRowKeys(original, emptyList()))
+        // Equal instrument IDs on different accounts are different positions.
+        assertEquals(listOf("account-b:same", "account-a:same"),
+            stablePortfolioRowKeys(listOf("account-b:same"), listOf("account-a:same", "account-b:same")))
+    }
+
     private fun history(day: String, value: String) = HistoryPoint("${day}T12:00:00Z", BigDecimal(value))
 
     @Test fun derivativeClassesDoNotLeakIntoOtherAssetsOrTheCashFilter() {

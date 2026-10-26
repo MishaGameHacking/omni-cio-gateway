@@ -114,15 +114,19 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
             onlyWatched, personal.watches.map { it.uid }.toSet(), exposureId, exposureAxis)
     }
     var frozenOrder by rememberSaveable(query, kind, sector, order, accountId, onlyWatched, exposureId) { mutableStateOf<List<String>?>(null) }
-    val lookup = candidates.associateBy(::portfolioRowKey)
-    val candidateKeys = candidates.map(::portfolioRowKey)
-    val stableKeys = frozenOrder?.filter { it in lookup }?.let { it + candidateKeys.filterNot(it::contains) } ?: candidateKeys
-    val rows = stableKeys.mapNotNull(lookup::get)
+    val lookup = remember(candidates) { candidates.associateBy(::portfolioRowKey) }
+    val candidateKeys = remember(candidates) { candidates.map(::portfolioRowKey) }
+    val stableKeys = remember(frozenOrder, candidateKeys) { stablePortfolioRowKeys(frozenOrder, candidateKeys) }
+    val rows = remember(stableKeys, lookup) { stableKeys.mapNotNull(lookup::get) }
     LaunchedEffect(candidateKeys) { if (frozenOrder == null) frozenOrder = candidateKeys }
-    val restricted = rows.filter { it.position.blocked }
-    val cash = rows.filter { it.position.instrumentType in setOf("cash", "currency") && !it.position.blocked }
-    val assets = rows.filter { !it.position.blocked && it.position.instrumentType !in setOf("cash", "currency") }
-    val groups = assets.groupBy { portfolioGroupLabel(it, group, exposureAxis) }
+    val restricted = remember(rows) { rows.filter { it.position.blocked } }
+    val cash = remember(rows) { rows.filter {
+        (it.position.instrumentType == "cash" || it.position.instrumentType == "currency") && !it.position.blocked
+    } }
+    val assets = remember(rows) { rows.filter {
+        !it.position.blocked && it.position.instrumentType != "cash" && it.position.instrumentType != "currency"
+    } }
+    val groups = remember(assets, group, exposureAxis) { assets.groupBy { portfolioGroupLabel(it, group, exposureAxis) } }
     val changed = accountId != null || query.isNotBlank() || kind != "all" || sector != null || group != 0 || order != 0 || onlyWatched || exposureId != null
     if (!selectionsRestored) {
         Column(modifier.fillMaxWidth().padding(20.dp)) {
@@ -279,6 +283,15 @@ private fun LazyListScope.virtualPositionRows(snapshot: PortfolioSnapshot) {
             TextButton(onClick = { destination(PortfolioDestination(accountId = account.id, section = 0)) }) { Text("${account.name} · ${account.virtualPositions.size}") }
         }
     } }
+}
+
+/** Keep visible order stable while appending fresh positions in current server order. */
+internal fun stablePortfolioRowKeys(previous: List<String>?, current: List<String>): List<String> {
+    if (previous == null) return current
+    val available = current.toHashSet()
+    val retained = previous.filter(available::contains)
+    val known = retained.toHashSet()
+    return retained + current.filterNot(known::contains)
 }
 
 internal fun portfolioRowKey(row: PortfolioRow): String = "${row.account.id}:${row.position.id}"
