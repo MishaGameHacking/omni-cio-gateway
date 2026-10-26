@@ -257,5 +257,74 @@ class RatingFoldTraversalTests(unittest.TestCase):
             case.record_fold(RATING_RECORDS[0], FOLD_LABEL, expanded="true")
 
 
+class HistorySelectionEvidenceTests(unittest.TestCase):
+    """Exercise the real history assertion; unrelated gestures are scaffolding."""
+
+    CLOSE = "Выбрано · 22.10.2026 21:00:00 · 901.75 ₽"
+
+    def exercise(self, *, selected="false", checkable="true", checked="true",
+                 label=CLOSE, state="Selected", sibling_label=False):
+        from datetime import datetime, timezone
+        from unittest.mock import Mock, patch
+        import portfolio_chart_probe as chart
+
+        row = ET.Element("node", {"package": PACKAGE, "visible-to-user": "true",
+            "enabled": "true", "resource-id": "history-observation-10",
+            "bounds": "[34,457][286,531]", "selected": selected,
+            "checkable": checkable, "checked": checked, "state-description": state})
+        root = ET.Element("hierarchy")
+        root.append(row)
+        ET.SubElement(root if sibling_label else row, "node", {
+            "package": PACKAGE, "visible-to-user": "true", "text": label,
+            "bounds": "[46,469][274,519]"})
+
+        def reveal_resource(resource, area):
+            self.assertEqual((resource, area), ("history-observation-10", chart.AREA))
+            return row
+
+        probe = SimpleNamespace(reveal=Mock(), tap=Mock(), find=Mock(),
+            tap_resource=Mock(), reveal_resource=reveal_resource)
+        case = SimpleNamespace(probe=probe, scenario="ready",
+            history_start=date(2026, 10, 12), history_end=date(2026, 10, 25),
+            history_instant=datetime(2026, 10, 22, 10, tzinfo=timezone.utc),
+            call=Mock(), capture=Mock(), expect=Mock(), extra={})
+        with patch.object(chart, "_select_history_bar"), patch.object(chart, "_drag_range",
+                return_value={"start": "2026-10-14", "end": "2026-10-23"}):
+            checks = chart.exercise_history(case)
+        self.assertIn("bar-selects-exact-closing-native-table-row", checks)
+        return case.extra["bar_table_selection"]
+
+    def test_checked_native_history_row_keeps_exact_closing_identity(self):
+        for state in ("Selected", ""):
+            with self.subTest(state_description=state):
+                evidence = self.exercise(state=state)
+                self.assertEqual(evidence["native_resource"], "history-observation-10")
+                self.assertEqual(evidence["native_selected"], "false")
+                self.assertEqual(evidence["native_checked"], "true")
+                self.assertEqual(evidence["native_checkable"], "true")
+                self.assertEqual(evidence["visible_label"], self.CLOSE)
+                self.assertEqual(evidence["exact_close"], "2026-10-22T18:00:00+00:00")
+
+    def test_selected_native_history_encoding_is_still_supported(self):
+        evidence = self.exercise(selected="true", checkable="false", checked="false")
+        self.assertEqual(evidence["native_selected"], "true")
+        self.assertEqual(evidence["native_checked"], "false")
+
+    def test_label_alone_malformed_state_or_another_observation_cannot_pass(self):
+        variants = (
+            {"checkable": "false", "checked": "false"},
+            {"checkable": "false", "checked": "true"},
+            {"checkable": "true", "checked": "false"},
+            {"selected": "true", "label": "Выбрано · 22.10.2026 13:00:00 · 101.25 ₽"},
+            {"label": "Выбрано · 22.10.2026 21:00:00 · 101.25 ₽"},
+            {"label": "Выбрано · 21.10.2026 21:00:00 · 901.75 ₽"},
+            {"sibling_label": True},
+        )
+        for variant in variants:
+            with self.subTest(variant=variant), self.assertRaisesRegex(
+                    AssertionError, "Selecting the daily bar did not select its exact closing observation"):
+                self.exercise(**variant)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -222,12 +222,67 @@ Patch SHA256c12cc2b08faf2ebd13923f9842a3e58a8b645cef3640b84bdba8b5334349312c;
 Windows wrapper SHA2568a20acd224bc90642d8e98204eba114b1b0ec67de68c00316c8631fa6f518a5c.
 The canonical lease and1200s wait limit remain unchanged.
 
+## Event draft passed; native history selection encoding
+
+Run40260472248 ran02:44:41Z–02:49:27Z on measured16384-byte pages.
+The original discovery and complete dossier cases passed, including the
+exact event/instrument assistant context, the real focused draft and keyboard,
+and the unchanged no-send/GET-only checks. The next history case failed:
+Selecting the daily bar did not select its exact closing observation in the native table.
+
+Its44-file archive1344672 bytes SHA256
+7cd51b18c115508904249ba452da4bdd23b77a9fb63d7e694d887df7dc6c9561
+was received by9417611 at02:50:11Z under
+/var/lib/analyst-ai-build/incoming/windows-development-40260472248-1/.
+Collector and cleanup succeeded; failed runtime status remains recorded.
+
+[Evidence40261139101](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40261139101)
+returned582668 bytes SHA2560e63a2a236d0931fe2b37a9c6a570d3a5aca4db699980e735bb703ccd0d116d6.
+All15 manifest entries were verified; the failure and event-draft PNGs were viewed.
+Failure PNG55954 bytes SHA2562a1b24d4198263976116f447f3da1a22c0a7c84c22dbf6f4f5ebd0d4b2bfe981;
+XML26470 bytes SHA2561b3404f20b7607a8209292bf8645fa5c066ebec8c0eaf491fb66e16cb04a3fe5.
+Event-draft PNG44972 bytes SHA256e8c10e5dd536bd406b2f8ee3efe13edcf6ccffe14914709b236913bfbc400c74.
+
+The actual history-observation-10 owner at[34,457][286,531] is visible, enabled
+and clickable. It exposes selected=false, checked=true, checkable=true,
+state-description=Selected. Its own visible text is exactly
+Выбрано ·22.10.2026 21:00:00 ·901.75 ₽ (normal spaces surround the separators).
+The screenshot confirms the same selected closing observation.
+Production HistoryChart.kt assigns semantics.selected to this non-tab control.
+[AndroidX delegate source](https://android.1.googlesource.com/platform/frameworks/support/+/188996c91a09f55e893248d519594385e17545db/compose/ui/ui/src/androidMain/kotlin/androidx/compose/ui/platform/AndroidComposeViewAccessibilityDelegateCompat.android.kt)
+maps non-tab selection through the checked field; the existing appearance
+reader also supports checked state. The app selected the correct observation.
+
+The probe now requires selected=true OR both checked=true and checkable=true,
+plus the unchanged exact closing label inside the exact returned row.
+Raw native_selected/native_checked/native_checkable values are preserved
+separately in evidence; false is not rewritten as true.
+Tests cover both encodings, no/unchecked/malformed state, a same-day earlier
+observation, wrong amount/date, and the expected label in a sibling node.
+They exercise the real history assertion; unrelated gestures are scaffolding.
+
+[Windows40261499076](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40261499076)
+applied two files from729f59f1f700f64565808b5613bee1bc62ea54a3
+at02:56:09Z on LAPTOP-NPSGA016 /omni-cio-ci.
+The original assertion failed both checked-state variants in0.209s
+(Ran1 test, failures2). All1075 host tests then passed49.031s, same3 skips.
+Diff/source/APK checks passed; host finished02:57:05Z.
+
+| Windows-applied source | SHA256 |
+|---|---|
+|.github/scripts/portfolio_chart_probe.py|b6f1cd9829053b0e42f33c4c683da7c385e66430d65852e06891d33ba2ba7574|
+|.github/scripts/tests/test_portfolio_controls_evidence.py|6fa4742596f27d260d73f237e031865bc301504e3c7e8bc5e343a52027fd48a3|
+
+Code inventorydd762dde5a301bf972cc72794171ea3e3f0e04a3751ddaf833d0a0f003ed2066.
+Patch SHA256d670a1d3c323b3403e759c5585401ddb217657d90900ca35115c5c87020a49b9;
+Windows wrapper SHA25696c8f77ad5eb6b7918010280e1e6cc306f7fd716cd30a8e69e8572451982916a.
+Canonical lease and1200s wait unchanged; no app/driver rebuild.
+
 ## Continue in order
 
-Run40260472248 is repeating all14 original portfolio cases at fonts100/200
-on the measured16KB emulator with the exact preview41/debug41/driver.
-Actual runtime results remain pending; no complete UI acceptance is claimed.
-The older prepared full wrappers have obsolete harness inventories.
+Run40261499076 repeats all14 original portfolio cases on the measured16KB
+emulator with exact APK41/debug41/driver. Runtime results remain pending.
+All older prepared full wrappers, including event-traversal-full, are obsolete.
 
 After all14 focused cases pass, regenerate the full original15-stage wrapper
 from this exact backed source and run both4096/16384 profiles, including

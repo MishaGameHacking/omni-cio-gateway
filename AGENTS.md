@@ -1,20 +1,22 @@
 ## N00 26.10.2026 — кандидат41 после подтверждённого перекрытия вкладок
 
-> **26.10.2026, N00 — проверена прокрутка длинного досье к конкретному событию.** Кандидат41 имеет подтверждённую Windows/WSL сборку. В Android40258706962 прошли рейтинги, отчётность, новости и переход к точной позиции счёта B; последний поиск события остановился ещё в показателях компании после10 прокруток. В40260472248 на ноутбуке воспроизведены2 исходных отказа и прошли1072 host-теста за48.838s (прежние3 skips). Новый маршрут проходит разделы и точную запись события, сохраняя нативные проверки и неотправленный вопрос. Повтор14 portfolio cases выполняется; полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_RATING_FOLDS_2026-10-26.md).
+> **26.10.2026, N00 — досье пройдено, исправлено чтение нативного выбора в истории.** В Android40260472248 прошли discovery и всё досье, включая точное событие и неотправленный вопрос ассистенту. История выбрала верное закрывающее наблюдение, но проверка не учитывала checked/checkable у элемента Compose. В40261499076 на ноутбуке воспроизведены2 исходных отказа, затем прошли1075 host-тестов за49.031s (прежние3 skips), включая отрицательные проверки даты, суммы и состояния. Повтор14 portfolio cases выполняется. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_RATING_FOLDS_2026-10-26.md).
 
 Build41 remains40252011635, compiled inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
-Current event traversal repair40260472248 applied two files on Windows from
-base0e08f16; inventory01b1bd5116e497bb43f35f2568d9c0e9186591e7059a736b224ef64194673085.
-The original traversal failed2 conditional variants in0.039s; all1072 host tests
-passed48.838s (same3 skips). The14 actual portfolio cases are still pending.
-Prior40258706962 passed scheduled/published reports, source links, news identity
-and fact-to-account-B holding. The final direct event search used10 gestures
-but only reached metric conflicts. Verified PNG/XML and unchanged production
-section order support staged section traversal, then the exact event record.
-Archive38 files1061139 bytes SHA2565d86b5252de8635d7ae2182e39340d9e97fac40a74d5f2c9dd6b10091ab25e3e
-was received by9417611 at02:29:11Z. Evidence40259436186/all13 entries verified.
-APK41/debug41/driver unchanged. Older prepared full wrappers have stale
-harness inventories and MUST NOT be dispatched.
+Current history selection repair40261499076 applied two files on Windows from
+base729f59f; inventorydd762dde5a301bf972cc72794171ea3e3f0e04a3751ddaf833d0a0f003ed2066.
+The original assertion failed2 conditional variants in0.209s; all1075 host tests
+passed49.031s (same3 skips). The14 actual portfolio cases are still pending.
+Prior40260472248 passed discovery and the entire dossier, including the exact
+event context and native unsent assistant draft. History then failed because
+its genuinely selected closing row exported selected=false/checked=true/
+checkable=true, with the exact22.10.2026 21:00:00 /901.75 label.
+Verified PNG/XML and the production Compose selection contract support reading
+either native selected or the checked-and-checkable pair. Exact label remains required.
+Its44-file archive1344672 bytes SHA2567cd51b18c115508904249ba452da4bdd23b77a9fb63d7e694d887df7dc6c9561
+was received by9417611 at02:50:11Z. Evidence40261139101/all15 entries verified.
+APK41/debug41/driver unchanged. ALL older prepared full wrappers have stale
+harness inventories and MUST NOT be dispatched (including event-traversal-full).
 After14 focused cases pass, regenerate full original15-stage4096/16384
 matrix from exact backed source, with no diagnostic hook. Retain baseline38,
 canonical lease1200s, signature, private transfer and exact-head Sonar.

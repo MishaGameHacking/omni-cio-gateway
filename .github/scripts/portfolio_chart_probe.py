@@ -156,10 +156,14 @@ def exercise_history(case):
     selected_row = p.reveal_resource("history-observation-10", AREA)
     close = case.history_instant.replace(hour=18, minute=0, second=0, microsecond=0)
     closing_label = "Выбрано · " + (close + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S") + " · 901.75 ₽"
-    if selected_row.get("selected") != "true" or closing_label not in [label for node in selected_row.iter("node") for label in labels(node)]:
+    # Compose exports Selected through checked/checkable for non-tab controls.
+    native_selected = selected_row.get("selected") == "true" or (
+        selected_row.get("checkable") == "true" and selected_row.get("checked") == "true")
+    if not native_selected or closing_label not in [label for node in selected_row.iter("node") for label in labels(node)]:
         raise AssertionError("Selecting the daily bar did not select its exact closing observation in the native table")
     case.extra["bar_table_selection"] = {"native_resource": selected_row.get("resource-id"),
-                                         "native_selected": selected_row.get("selected"), "exact_close": close.isoformat(),
+                                         "native_selected": selected_row.get("selected"), "native_checked": selected_row.get("checked"),
+                                         "native_checkable": selected_row.get("checkable"), "exact_close": close.isoformat(),
                                          "visible_label": closing_label, "earlier_link_replaced_only_by_user_selection": True}
     p.tap("Подробнее о графике", AREA, direction="start")
     _select_history_bar(case, 4, "0,00 ₽", direction="start")
