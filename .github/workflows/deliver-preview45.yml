@@ -90,7 +90,7 @@ jobs:
         \\')\\\\n            need(0 <= code <= 2100000000 and 0 < count <= 1000000 and (0 <= last_seen <= result[\\\\\\'observed_at\\\\\\']) and (0 <= exact_current\
         \ <= count), \\\\\\'observation_invalid_aggregate\\\\\\')\\\\n            values.append({\\\\\\'version_code\\\\\\': code, \\\\\\'active_session_count\\\\\
         \\': count, \\\\\\'last_seen_at\\\\\\': last_seen, \\\\\\'sessions_reporting_exact45\\\\\\': exact_current})\\\\n        result.update(status=\\\\\\'read\\\
-        \\\\', versions=values, exact44_reported_by_active_session=any((row[\\\\\\'sessions_reporting_exact45\\\\\\'] > 0 for row in values)))\\\\n    except (OSError,\
+        \\\\', versions=values, exact45_reported_by_active_session=any((row[\\\\\\'sessions_reporting_exact45\\\\\\'] > 0 for row in values)))\\\\n    except (OSError,\
         \ KeyError, sqlite3.Error, RuntimeError):\\\\n        result.update(status=\\\\\\'unavailable\\\\\\', reason=\\\\\\'readonly_observation_unavailable\\\\\\\
         ', versions=[])\\\\n    return result\\\\nneed(os.geteuid() == 0, \\\\\\'root_required\\\\\\')\\\\nfor path in (pathlib.Path(\\\\\\'/var\\\\\\'), pathlib.Path(\\\
         \\\\'/var/lib\\\\\\'), FOLDER.parent, FOLDER):\\\\n    trusted(path, directory=True)\\\\nbuild_root = FOLDER.parent.parent\\\\nbuild_info = build_root.lstat()\\\
