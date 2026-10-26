@@ -1,0 +1,162 @@
+name: Read native43 original14 progress and exact completed build JUnit
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-native43-progress.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-native43-one-shot-observer
+  cancel-in-progress: false
+jobs:
+  inspect:
+    name: Read only fixed native run40278915893 and build40277268871 reports
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 5
+    steps:
+    - name: Read bounded native diagnostics and aggregate existing JVM XML without running tests
+      shell: py -3 {0}
+      env:
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
+        PYTHONUNBUFFERED: '1'
+      run: "\"\"\"One read-only snapshot of native run43 and its already completed JVM build.\"\"\"\nimport datetime\nimport\
+        \ hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport re\nimport stat\nimport sys\nimport xml.etree.ElementTree\
+        \ as ET\n\nNATIVE_RUN = 40278915893\nNATIVE_ATTEMPT = 1\nSOURCE_COMMIT = '859c067198e52927df1b66983d02841e3fa6ff6a'\n\
+        SOURCE_SHA256 = '269b6755933d6504082a9ee4bc86dbbf458beb22abcb51918c852cccddefd11b'\nBUILD_RUN = 40277268871\nBUILD_ATTEMPT\
+        \ = 1\nBUILD_REPORT_SHA256 = 'c3e9281b4dfe9128a87b4cb7679675ecb2926774672ecb59f5825be46c214225'\nPREVIEW_SHA256 =\
+        \ '4e9bf0a2fd54d8ab4b9d49ef9ddf96bc14a274ac4c145585fcfdb88d6ae774b6'\nRUNNERS = [Path('C:/actions-runner' + suffix)\
+        \ for suffix in ('', '-2', '-3', '-4')]\nBUILD_ROOT = Path('C:/actions-runner-3/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40277268871-1')\n\
+        \n\ndef need(value, message):\n    if not value:\n        raise RuntimeError(message)\n\n\ndef sha(data):\n    return\
+        \ hashlib.sha256(data).hexdigest()\n\n\ndef checked(path, *, directory=False):\n    value = path.lstat()\n    need((stat.S_ISDIR(value.st_mode)\
+        \ if directory else stat.S_ISREG(value.st_mode) and value.st_nlink == 1)\n         and not path.is_symlink() and not\
+        \ getattr(value, 'st_file_attributes', 0) & 0x400\n         and path.resolve(strict=True) == path, 'nonregular_or_redirected_observation_path')\n\
+        \    return value\n\n\ndef read_bounded(path, limit, *, tail=False):\n    before = checked(path)\n    need(before.st_size\
+        \ <= (128 * 1024**2 if tail else limit), 'observation_file_exceeds_bound')\n    with path.open('rb') as stream:\n\
+        \        opened = os.fstat(stream.fileno())\n        need((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino),\
+        \ 'observation_file_replaced_before_read')\n        offset = max(0, opened.st_size - limit) if tail else 0\n     \
+        \   stream.seek(offset)\n        data = stream.read(limit + (0 if tail else 1))\n        after = os.fstat(stream.fileno())\n\
+        \    need(len(data) <= limit, 'observation_file_grew_beyond_bound')\n    stable = (before.st_size, before.st_mtime_ns)\
+        \ == (after.st_size, after.st_mtime_ns)\n    return data, {'bytes': before.st_size, 'read_bytes': len(data), 'offset':\
+        \ offset,\n                  'read_sha256': sha(data), 'stable_during_read': stable}\n\n\ndef bounded_json(path):\n\
+        \    if not path.exists():\n        return {'present': False}, None\n    data, metadata = read_bounded(path, 2 * 1024**2)\n\
+        \    metadata['present'] = True\n    if not metadata['stable_during_read']:\n        metadata['state'] = 'being_written'\n\
+        \        return metadata, None\n    try:\n        return metadata, json.loads(data)\n    except (json.JSONDecodeError,\
+        \ UnicodeDecodeError):\n        metadata['state'] = 'incomplete_json_observed'\n        return metadata, None\n\n\n\
+        def select_fields(row, keys):\n    result = {}\n    if not isinstance(row, dict):\n        return result\n    for\
+        \ key in keys:\n        value = row.get(key)\n        if value is None or type(value) in (bool, int, float):\n   \
+        \         if key in row:\n                result[key] = value\n        elif isinstance(value, str):\n            result[key]\
+        \ = value[:1000]\n        elif key == 'ui_stages' and isinstance(value, list):\n            result[key] = [str(item)[:80]\
+        \ for item in value[:15]]\n    return result\n\n\ndef portfolio_view(value):\n    view = select_fields(value, ('diagnostic_only',\
+        \ 'release_gate_pass', 'portfolio_cases_complete',\n        'error_type', 'error', 'failure_capture_error', 'actual_device_observations',\n\
+        \        'real_broker_or_model_called', 'physical_device_verified'))\n    portfolio = value.get('portfolio', value)\
+        \ if isinstance(value, dict) else {}\n    cases = portfolio.get('cases', []) if isinstance(portfolio, dict) else []\n\
+        \    if isinstance(cases, list):\n        need(len(cases) <= 14, 'unexpected_original_portfolio_case_count')\n   \
+        \     view['case_count'] = len(cases)\n        view['cases'] = [{**select_fields(row, ('case', 'font_scale')),\n \
+        \                         'checks_count': len(row.get('checks', []))} for row in cases if isinstance(row, dict)]\n\
+        \    return view\n\n\ndef native_observation():\n    folder = 'windows-development-' + str(NATIVE_RUN) + '-' + str(NATIVE_ATTEMPT)\n\
+        \    roots = [runner / '_work/omni-cio-gateway/omni-cio-gateway' / folder for runner in RUNNERS]\n    found = [path\
+        \ for path in roots if path.exists()]\n    need(len(found) <= 1, 'fixed_native_run_checkout_is_not_unique')\n    result\
+        \ = {'run_id': NATIVE_RUN, 'run_attempt': NATIVE_ATTEMPT, 'checkout_found': bool(found),\n              'diagnostic_only':\
+        \ True, 'full15_accepted': False, 'profiles': {}, 'state_files': {}}\n    if found:\n        root = found[0]\n   \
+        \     checked(root, directory=True)\n        result['source_root'] = str(root)\n        head = root / '.git/HEAD'\n\
+        \        if head.exists():\n            data, metadata = read_bounded(head, 256)\n            text = data.decode('ascii').strip()\n\
+        \            result['checkout_head'] = text[:128]\n            result['expected_backup_head_observed'] = metadata['stable_during_read']\
+        \ and text == SOURCE_COMMIT\n        base = root / 'app/build/outputs/apk/preview'\n        work = base / 'install-api37-16384'\n\
+        \        profile = {}\n        log = work / 'runtime-console.log'\n        if log.exists():\n            data, metadata\
+        \ = read_bounded(log, 4 * 1024**2, tail=True)\n            lines = data.decode('utf-8', errors='replace').splitlines()\n\
+        \            starts = ('PORTFOLIO_UI_CASE=', 'PORTFOLIO_UI_CASE_PASSED=', 'BUSINESS_UI_CASE=',\n                 \
+        \     'BUSINESS_UI_CASE_PASSED=', 'AUTOMATION_UI_CASE=', 'AUTOMATION_UI_CASE_PASSED=')\n            profile['console']\
+        \ = {**metadata,\n                'stages': [line[:500] for line in lines if line.startswith(('PROFILE_UI_STAGE=',\
+        \ 'PROFILE_UI_STAGE_PASSED=', 'PROFILE_UI_TESTS='))][-32:],\n                'cases': [line[:500] for line in lines\
+        \ if line.startswith(starts)][-40:],\n                'installation_markers': [line[:500] for line in lines if re.match(r'^(?:PREVIOUS_CLEAN_INSTALL|UPGRADE_TO_CANDIDATE|UPGRADE_BOOTSTRAP_LAUNCH|CANDIDATE_CLEAN_INSTALL|BOOTSTRAP_ACTIVITY_LAUNCH|ANDROID_API|KERNEL_PAGE_SIZE)=',\
+        \ line)][-12:],\n                'errors': [line[:1200] for line in lines if line.startswith(('AssertionError:', 'RuntimeError:',\
+        \ 'ValueError:', 'TimeoutError:', 'subprocess.TimeoutExpired:', 'OSError:'))][-8:]}\n        profile['installation_reports']\
+        \ = {}\n        for relative in ('install-results.json', 'attempt-1/install-results.json', 'attempt-2/install-results.json'):\n\
+        \            metadata, value = bounded_json(work / relative)\n            if value is not None:\n                need(isinstance(value,\
+        \ list) and len(value) <= 32, 'unexpected_installation_report_shape')\n                metadata['records'] = [select_fields(row,\
+        \ ('test', 'success', 'page_size_bytes', 'android_api',\n                    'apk_sha256', 'error_type', 'error',\
+        \ 'ui_suite', 'ui_stages', 'business_case_count',\n                    'portfolio_case_count', 'automation_case_count'))\
+        \ for row in value]\n            profile['installation_reports'][relative] = metadata\n        for name in ('portfolio-focused-observations.json',\
+        \ 'portfolio-verification.json'):\n            metadata, value = bounded_json(base / 'ui-screens' / name)\n      \
+        \      if value is not None:\n                metadata['report'] = portfolio_view(value)\n            profile[name]\
+        \ = metadata\n        result['profiles']['16384'] = profile\n    states = [runner / '_work/_temp' / ('n00-native43-focused-'\
+        \ + str(NATIVE_RUN) + '-' + str(NATIVE_ATTEMPT)) for runner in RUNNERS]\n    states = [path for path in states if\
+        \ path.exists()]\n    need(len(states) <= 1, 'fixed_native_run_state_is_not_unique')\n    if states:\n        state\
+        \ = states[0]\n        checked(state, directory=True)\n        result['state_root'] = str(state)\n        for name\
+        \ in ('runtime-16384.json', 'native43-build-provenance.json', 'native43-original14-summary.json'):\n            metadata,\
+        \ value = bounded_json(state / name)\n            if value is not None:\n                if name == 'runtime-16384.json':\n\
+        \                    need(value.get('test_source_sha256') == SOURCE_SHA256 and value.get('apk_sha256') == PREVIEW_SHA256,\
+        \ 'native_controller_source_identity_mismatch')\n                if name == 'native43-build-provenance.json':\n  \
+        \                  need(value.get('source_backup_commit') == SOURCE_COMMIT and value.get('source_sha256') == SOURCE_SHA256\n\
+        \                         and value.get('build_run_id') == BUILD_RUN and value.get('build_run_attempt') == BUILD_ATTEMPT\n\
+        \                         and value.get('build_report_sha256') == BUILD_REPORT_SHA256, 'native_build_provenance_mismatch')\n\
+        \                view = select_fields(value, ('test_source_sha256', 'page_bytes', 'started_at', 'finished_at', 'host',\n\
+        \                    'apk_sha256', 'exit_code', 'error_type', 'error', 'source_backup_commit', 'source_commit',\n\
+        \                    'source_sha256', 'build_run_id', 'build_run_attempt', 'build_status', 'build_report_sha256',\n\
+        \                    'diagnostic_only', 'release_gate_pass', 'full_ui_suite_executed', 'phone_verified'))\n      \
+        \          if name == 'native43-original14-summary.json':\n                    need(value.get('source_commit') ==\
+        \ SOURCE_COMMIT and value.get('source_sha256') == SOURCE_SHA256, 'native_summary_source_identity_mismatch')\n    \
+        \                view['original14'] = select_fields(value.get('original14'), ('complete', 'required_cases', 'observed_cases'))\n\
+        \                    view['full15'] = select_fields(value.get('full15'), ('executed', 'accepted', 'required_stages'))\n\
+        \                metadata['report'] = view\n            result['state_files'][name] = metadata\n    return result\n\
+        \n\ndef junit_observation(output):\n    directory = BUILD_ROOT / 'app/build/test-results/testDebugUnitTest'\n    result\
+        \ = {'build_run_id': BUILD_RUN, 'build_run_attempt': BUILD_ATTEMPT, 'build_root': str(BUILD_ROOT),\n             \
+        \ 'directory': str(directory), 'build_report_sha256': BUILD_REPORT_SHA256,\n              'build_report_source_sha256':\
+        \ SOURCE_SHA256, 'status': 'not_found', 'files': []}\n    if not directory.exists():\n        return result\n    checked(directory,\
+        \ directory=True)\n    paths = sorted(directory.glob('TEST-*.xml'))\n    need(0 < len(paths) <= 256, 'unexpected_junit_file_count')\n\
+        \    destination = output / 'junit-xml'\n    destination.mkdir()\n    totals = {key: 0 for key in ('tests', 'failures',\
+        \ 'errors', 'skipped')}\n    inventory = hashlib.sha256()\n    total_bytes = 0\n    for path in paths:\n        need(re.fullmatch(r'TEST-[A-Za-z0-9_.$-]+\\\
+        .xml', path.name), 'unexpected_junit_filename')\n        data, metadata = read_bounded(path, 2 * 1024**2)\n      \
+        \  need(metadata['stable_during_read'], 'completed_build_junit_is_changing')\n        total_bytes += len(data)\n \
+        \       need(total_bytes <= 16 * 1024**2, 'junit_inventory_exceeds_bound')\n        tree = ET.fromstring(data)\n \
+        \       need(tree.tag in ('testsuite', 'testsuites'), 'unexpected_junit_root')\n        suites = [tree] if tree.tag\
+        \ == 'testsuite' else list(tree.findall('testsuite'))\n        need(suites, 'empty_junit_suite')\n        counts =\
+        \ {key: 0 for key in totals}\n        cases = 0\n        for suite in suites:\n            values = {key: int(suite.attrib.get(key,\
+        \ '0')) for key in counts}\n            need(all(value >= 0 for value in values.values()) and 'tests' in suite.attrib,\
+        \ 'invalid_junit_counters')\n            actual_cases = list(suite.findall('testcase'))\n            need(values['tests']\
+        \ == len(actual_cases), 'junit_testcase_count_mismatch')\n            for key, tag in (('failures', 'failure'), ('errors',\
+        \ 'error'), ('skipped', 'skipped')):\n                need(values[key] == sum(case.find(tag) is not None for case\
+        \ in actual_cases), 'junit_result_count_mismatch')\n            cases += len(actual_cases)\n            for key in\
+        \ counts:\n                counts[key] += values[key]\n        with (destination / path.name).open('xb') as stream:\n\
+        \            stream.write(data)\n        inventory.update(path.name.encode('utf-8') + b'\\0' + sha(data).encode('ascii')\
+        \ + b'\\0')\n        result['files'].append({'name': path.name, 'bytes': len(data), 'sha256': sha(data), 'suites':\
+        \ len(suites), 'testcases': cases, **counts})\n        for key in totals:\n            totals[key] += counts[key]\n\
+        \    result.update(status='observed_exact_xml', file_count=len(paths), total_bytes=total_bytes,\n                \
+        \  inventory_sha256=inventory.hexdigest(), totals=totals,\n                  all_observed_tests_passed=totals['tests']\
+        \ > 0 and totals['failures'] == totals['errors'] == totals['skipped'] == 0)\n    return result\n\n\ndef main():\n\
+        \    need(__debug__ and sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016', 'observer_requires_owner_windows_laptop')\n\
+        \    need(os.environ.get('GITHUB_REPOSITORY') == 'MishaGameHacking/omni-cio-gateway', 'unexpected_observer_repository')\n\
+        \    run, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']\n    need(re.fullmatch(r'[1-9]\\\
+        d{0,19}', run) and re.fullmatch(r'[1-9]\\d{0,4}', attempt), 'invalid_observer_run_identity')\n    temp = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)\n\
+        \    need(temp in {runner / '_work/_temp' for runner in RUNNERS}, 'unexpected_observer_temp_root')\n    checked(temp,\
+        \ directory=True)\n    output = temp / ('n00-native43-progress-' + run + '-' + attempt)\n    need(not output.exists(),\
+        \ 'observer_output_already_exists')\n    output.mkdir()\n    report = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),\n\
+        \              'observer_run_id': int(run), 'observer_run_attempt': int(attempt),\n              'target_native_run_id':\
+        \ NATIVE_RUN, 'target_native_run_attempt': NATIVE_ATTEMPT,\n              'expected_source_commit': SOURCE_COMMIT,\
+        \ 'expected_source_sha256': SOURCE_SHA256,\n              'diagnostic_only': True, 'full15_accepted': False, 'status':\
+        \ 'failed'}\n    try:\n        report['native'] = native_observation()\n        report['junit'] = junit_observation(output)\n\
+        \        report['status'] = 'read_only_observation_complete'\n    except BaseException as error:\n        report.update(error_type=type(error).__name__,\
+        \ error=str(error)[:500])\n        raise\n    finally:\n        raw = json.dumps(report, ensure_ascii=True, indent=2).encode('utf-8')\n\
+        \        need(len(raw) <= 256 * 1024, 'observer_report_exceeds_bound')\n        with (output / 'native43-progress.json').open('xb')\
+        \ as stream:\n            stream.write(raw)\n        console = dict(report)\n        if 'junit' in console:\n    \
+        \        console['junit'] = {key: value for key, value in report['junit'].items() if key != 'files'}\n        compact\
+        \ = json.dumps(console, ensure_ascii=True, separators=(',', ':'))\n        need(len(compact.encode()) <= 96 * 1024,\
+        \ 'observer_console_exceeds_bound')\n        print('N00_NATIVE43_OBSERVATION=' + compact, flush=True)\n\n\nif __name__\
+        \ == '__main__':\n    main()\n"
+    - name: Retain bounded native observation and the exact synthetic JVM result XML
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: n00-native43-progress-${{ github.run_id }}-${{ github.run_attempt }}
+        path: '${{ runner.temp }}/n00-native43-progress-${{ github.run_id }}-${{ github.run_attempt }}/native43-progress.json
+
+          ${{ runner.temp }}/n00-native43-progress-${{ github.run_id }}-${{ github.run_attempt }}/junit-xml/TEST-*.xml'
+        retention-days: 3
+        if-no-files-found: error
