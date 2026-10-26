@@ -1,0 +1,52 @@
+{
+  "source_sha256": "bba525f2b26c5aa261e20f3f52a07025cc6733c12795fce2f76fd8c0237664fb",
+  "platform": "linux",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "uid": 1000,
+  "steps": [
+    {
+      "name": "venv",
+      "exit_code": 0,
+      "seconds": 2.725,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "requirements",
+      "exit_code": 0,
+      "seconds": 8.102,
+      "sha256": "660a04898fb00aa20d871965fd0e4ac3d7221b580c81e8276874b04f0a85ab8c"
+    },
+    {
+      "name": "dependencies",
+      "exit_code": 0,
+      "seconds": 0.416,
+      "sha256": "9261363b733079a641c2e4cc9bc46ffa1d8336945a87f807b6cf68847dbc9b09"
+    },
+    {
+      "name": "dependency-versions",
+      "exit_code": 0,
+      "seconds": 0.366,
+      "sha256": "3d5f971047786d444c80fe7f41d2f0686fd69da01d52fc902788b1c00087b379"
+    },
+    {
+      "name": "compile-backend",
+      "exit_code": 0,
+      "seconds": 0.366,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "backend-full-suite",
+      "exit_code": 0,
+      "seconds": 123.059,
+      "sha256": "6c7522c3df490797c61b3ea88a7a7f4a9f7f39932f0a0060c4a08dbf42985c15"
+    },
+    {
+      "name": "health-openapi",
+      "exit_code": 0,
+      "seconds": 1.119,
+      "sha256": "1d751b58d5ede0c661c60a3cc265ca0b684fa7e3bd930781f158422af6f2d189"
+    }
+  ],
+  "status": "passed",
+  "changed_sources": []
+}

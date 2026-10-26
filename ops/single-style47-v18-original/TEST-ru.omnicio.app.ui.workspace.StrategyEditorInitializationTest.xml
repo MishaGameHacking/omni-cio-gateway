@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.workspace.StrategyEditorInitializationTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.946Z" hostname="LAPTOP-NPSGA016" time="0.005">
+  <properties/>
+  <testcase name="inFlightPreviewOrConfirmationCannotChangeItsDraftThroughAQueuedCallback" classname="ru.omnicio.app.ui.workspace.StrategyEditorInitializationTest" time="0.004"/>
+  <testcase name="delayedFirstLoadDoesNotAcceptTextThatInitializationWouldOverwrite" classname="ru.omnicio.app.ui.workspace.StrategyEditorInitializationTest" time="0.0"/>
+  <testcase name="restoredEditorAcceptsChangesWhileServerStateReloads" classname="ru.omnicio.app.ui.workspace.StrategyEditorInitializationTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -181,9 +181,9 @@
     "requires": "Successful v19 build and full exact-source Git backup; v18 debug navigation fixture did not provide production autosave",
     "automatic_strategy_cases_per_profile": 2
   },
-  "source_backup_head": "04e06ab863db3513ad1c7423c9dd3fa4124f2a88",
+  "source_backup_head": "dc13985c154def997f2896bbf702c96c2055f42f",
   "v18": {
-    "state": "running",
+    "state": "passed_check_and_build_only",
     "files": 116,
     "review_sha256": "48ba8c63aba4710d59f034c8455c8c588193356109aac45dac951313da327939",
     "only_changes_from_v17": [
@@ -195,7 +195,7 @@
     ],
     "reason": "Native authenticated scroll protocol needs explicit codes10–13 for four new icon rows; two new host regressions",
     "app_source_unchanged_from_v17": true,
-    "build_passed": false,
+    "build_passed": true,
     "native_passed": false,
     "published": false,
     "run": 40383742952,
@@ -204,17 +204,28 @@
     "check_passed": true,
     "source_sha256": "bba525f2b26c5aa261e20f3f52a07025cc6733c12795fce2f76fd8c0237664fb",
     "host_tests": 1265,
-    "host_skips": 3
+    "host_skips": 3,
+    "finished_at": "2026-10-26T19:26:51.469767+00:00",
+    "jvm_tests": 228,
+    "jvm_suites": 39,
+    "artifact": 12681881197,
+    "artifact_sha256": "325df4afb24efa515ff05464f091679f3aa8dfa3aa2bfdf2cbb691e5c618e39f",
+    "archive_sha256": "3e5fd4a495c862d9730ad8236525b2e0be890a73ff46dd2726d3d3910b102ea3",
+    "archive_bytes": 69639994
   },
-  "updated_at": "2026-10-26T19:24:07.505948+00:00",
+  "updated_at": "2026-10-26T19:29:48.061324+00:00",
   "v19": {
-    "state": "prepared_for_dispatch",
+    "state": "running",
     "review_sha256": "e8c7813ab20140b6ceca7a2734326929badecd59d9e7d74d35129f2f14e47d1e",
     "only_changed_file_from_v18": "app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt",
     "reason": "Navigation debug fixture must use the same production WorkspaceAutoSaveProvider as actual app and non-navigation fixture",
     "production_application_source_unchanged_from_v18": true,
     "build_passed": false,
     "native_passed": false,
-    "published": false
+    "published": false,
+    "run": 40386457173,
+    "head": "0ebe2a17e02811ffff3cda6c0daa985d14fb6808",
+    "preflight": "success",
+    "develop_job": 121798231828
   }
 }

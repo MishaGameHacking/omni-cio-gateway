@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" tests="18" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.421Z" hostname="LAPTOP-NPSGA016" time="0.046">
+  <properties/>
+  <testcase name="selectedPositionResolvesTheCurrentAccountAndRefusesAmbiguousOrRemovedRows" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.004"/>
+  <testcase name="priceUnitsCurrenciesAndIntervalsMustBeVerifiedAndCompatible" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.006"/>
+  <testcase name="equalValuationsSortByStableIdentityAndForeignCurrencyIsNotRankedAsRubles" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <testcase name="barAndTableSelectionShareTheExactClosingObservationWithoutSubstitutingMissingEvidence" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.008"/>
+  <testcase name="dailyHistoryKeepsAnUnobservedDateSelectableWithoutInventingZero" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.003"/>
+  <testcase name="reportDatesUseMoscowCalendarForInstantsAndPreserveSourceCalendarDates" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.003"/>
+  <testcase name="comparisonUsesOnlySharedCompleteClosings" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.0"/>
+  <testcase name="reportPublicationRequiresASeparateDatedSourceAndHonorsAnExplicitUnconfirmedFlag" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <testcase name="conflictingValuesAtTheSameInstantStopHistoryEvenWithDifferentOffsets" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <testcase name="monthlyBalanceUsesTheLastObservationRatherThanAddingBalances" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.0"/>
+  <testcase name="derivativeClassesDoNotLeakIntoOtherAssetsOrTheCashFilter" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <testcase name="aSelectedCalendarDateRemainsInsideItsDayWeekAndMonthBuckets" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.002"/>
+  <testcase name="aConflictOnlyInAnAdditionalFundamentalFieldRemainsVisibleAlongsideNamedMetrics" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.002"/>
+  <testcase name="restoredRangeDatesStayInsideTheSelectedBucketsAfterGroupingChanges" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.003"/>
+  <testcase name="anEvidenceInstantResolvesTheObservationAndNeverAnotherBalanceOnTheSameDay" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <testcase name="restoredPaymentIdentityCannotMatchAnotherUserAccountOrCalendarEvent" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.005"/>
+  <testcase name="rangeDatesOutsideTheReceivedSeriesClampWithoutInventingObservations" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <testcase name="unavailableOrInsufficientCommonObservationsNeverProduceAComparison" classname="ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

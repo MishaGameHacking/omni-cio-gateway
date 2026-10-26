@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.workspace.WorkspaceEndpointPolicyTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.383Z" hostname="LAPTOP-NPSGA016" time="0.001">
+  <properties/>
+  <testcase name="controllerRoutesAreAcceptedWithoutOpeningArbitraryEndpoints" classname="ru.omnicio.app.data.workspace.WorkspaceEndpointPolicyTest" time="0.0"/>
+  <testcase name="workspaceQueriesStillWorkButDecodedTraversalAndFragmentsDoNot" classname="ru.omnicio.app.data.workspace.WorkspaceEndpointPolicyTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

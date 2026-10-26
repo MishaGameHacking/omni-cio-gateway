@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.WorkspaceRuntimeRegressionTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:22.659Z" hostname="LAPTOP-NPSGA016" time="0.527">
+  <properties/>
+  <testcase name="portfolioGeometryPreservesFinancialValuesAndTime" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.048"/>
+  <testcase name="downloadProgressRequiresVerifiedCompletion" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.05"/>
+  <testcase name="updateProtocolRejectsInvalidMetadataAndDestinations" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.026"/>
+  <testcase name="researchPresentationPreservesCoverageAndUncertainty" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.072"/>
+  <testcase name="instrumentDetailsPreserveIdentifiers" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.002"/>
+  <testcase name="analysisPresentationPreservesLimitsAndFreshness" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.009"/>
+  <testcase name="educationCatalogUsesValidSources" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.004"/>
+  <testcase name="updateGateBlocksConflictingOperations" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.002"/>
+  <testcase name="workspaceContractsPassBeforeTheProbeActivityStarts" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.033"/>
+  <testcase name="updatePolicyRequiresCompatibleVerifiedReleases" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.177"/>
+  <testcase name="refreshStatePreservesDataAndBackoff" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.02"/>
+  <testcase name="instrumentLinksRejectUntrustedDestinations" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.003"/>
+  <testcase name="installStreamRejectsIncompleteOrCorruptBytes" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.039"/>
+  <testcase name="updateFeedbackPreservesUnresolvedFailures" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.005"/>
+  <testcase name="positionSelectionResolvesCurrentAccountIdentity" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.017"/>
+  <testcase name="installSubmissionPreservesSessionOwnership" classname="ru.omnicio.app.WorkspaceRuntimeRegressionTest" time="0.014"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

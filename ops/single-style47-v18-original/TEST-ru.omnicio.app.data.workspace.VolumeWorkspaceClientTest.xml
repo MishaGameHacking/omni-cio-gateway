@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.373Z" hostname="LAPTOP-NPSGA016" time="0.008">
+  <properties/>
+  <testcase name="rootWorkspaceQueriesAlsoPermitLiteralDots" classname="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" time="0.002"/>
+  <testcase name="traversalInThePathRemainsRejected" classname="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" time="0.001"/>
+  <testcase name="catalogueSearchTreatsDotsAndUrlSyntaxAsQueryData" classname="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" time="0.002"/>
+  <testcase name="foreignPathsAndFragmentsRemainRejected" classname="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" time="0.001"/>
+  <testcase name="unsupportedMethodsRemainRejected" classname="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" time="0.001"/>
+  <testcase name="encodedTraversalInThePathIsRejected" classname="ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

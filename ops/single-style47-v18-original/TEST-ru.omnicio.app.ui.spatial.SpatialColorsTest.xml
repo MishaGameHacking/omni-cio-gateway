@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.spatial.SpatialColorsTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.537Z" hostname="LAPTOP-NPSGA016" time="0.105">
+  <properties/>
+  <testcase name="historyColorIsResolvedForEveryObservationWithoutMovingNullOrNegativeSlots" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.068"/>
+  <testcase name="actualBadgeAndMetricContainersResolveReadablePairedForeground" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.003"/>
+  <testcase name="semanticWarningsAndErrorsRemainDistinctWhileExplicitCallerInkWins" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.001"/>
+  <testcase name="neutralPressedCardsStillSupportSecondaryTextAndFocusHasAVisibleEdge" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.029"/>
+  <testcase name="disablingArtworkRemovesEverySaturatedSupportInk" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.003"/>
+  <testcase name="theActualCheckedThumbUsesItsPairedInkInBothModesAndEveryAccent" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.001"/>
+  <testcase name="monochromeArtworkHonorsAnyActualForegroundRatherThanAWhiteSentinel" classname="ru.omnicio.app.ui.spatial.SpatialColorsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

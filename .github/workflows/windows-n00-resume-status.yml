@@ -1,4 +1,4 @@
-name: Observe candidate47 v18 original build and JVM evidence
+name: Observe candidate47 v19 original build evidence
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -10,100 +10,56 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read only task-owned build receipts and package names
+      - name: Read only exact task-owned build reports and original JVM XML
         shell: 'py -3 {0}'
         env:
           PYTHONUTF8: '1'
           PYTHONIOENCODING: utf-8
         run: |
           import datetime, hashlib, json, os, pathlib, re, sys
-          assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
-          report = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    'host': os.environ['COMPUTERNAME'], 'build_run_id': 40383742952,
-                    'build': [], 'theme_packages': []}
-          for suffix in ('', '-2', '-3', '-4'):
-              runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
-              state = runner / '_temp/analyst-development-40383742952-1'
-              if state.is_dir():
-                  item = {'state': str(state), 'files': {}}
-                  for name in ('windows-development.json', 'controller.json', 'export-receipt.json',
-                               'source-after-patches.json', 'source-final.json', 'applied-patches.json'):
-                      p = state / name
-                      if not p.is_file() or p.is_symlink():
-                          continue
-                      raw = p.read_bytes()
-                      assert len(raw) <= 4 * 1024**2
-                      value = json.loads(raw)
-                      if name.startswith('source-'):
-                          value = {k: value[k] for k in ('source_sha256', 'complete_source_sha256')}
-                      if name == 'windows-development.json':
-                          for step in value.get('steps', []):
-                              step.pop('command', None)
-                      item['files'][name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': value}
-                  item['summaries'] = {}
-                  for p in state.glob('*.log'):
-                      if p.is_symlink() or not any(k in p.name for k in ('host-tests','tools-tests','node-tests','gradle','linux','failure')):
-                          continue
-                      with p.open('rb') as f:
-                          f.seek(max(0, p.stat().st_size - 20000))
-                          lines = f.read().decode('utf-8', errors='replace').splitlines()
-                      item['summaries'][p.name] = [x[:800] for x in lines if len(x) < 1000 and
-                          re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|Error:|Exception:|^> Task|^e:|OutOfMemory', x)][-20:]
-                  report['build'].append(item)
-              checkout = runner / 'omni-cio-gateway/omni-cio-gateway'
-              if checkout.is_dir():
-                  for directory in checkout.glob('windows-development-patches-*'):
-                      if directory.is_symlink() or not directory.is_dir():
-                          continue
-                      for p in directory.iterdir():
-                          if p.is_file() and not p.is_symlink() and re.search(r'theme|native46|candidate46|publisher45', p.name, re.I):
-                              report['theme_packages'].append({'path': str(p), 'bytes': p.stat().st_size,
-                                  'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
-
-          report['native_run_id'] = 40346435997
-          report['native'] = []
-          report['jvm'] = []
           import xml.etree.ElementTree as ET
+          assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
+          run = 40386457173
+          result = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'host': os.environ['COMPUTERNAME'], 'run_id': run, 'build': [], 'jvm': []}
           for suffix in ('', '-2', '-3', '-4'):
               runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
-              checkout = runner / 'omni-cio-gateway/omni-cio-gateway'
-              results = checkout / 'windows-development-40383742952-1/app/build/test-results/testDebugUnitTest'
-              if results.is_dir():
-                  suites = []
-                  for p in sorted(results.glob('TEST-*.xml')):
-                      assert p.is_file() and not p.is_symlink() and p.stat().st_size < 4 * 1024**2
-                      raw = p.read_bytes()
-                      node = ET.fromstring(raw)
-                      suites.append({'name': p.name, 'sha256': hashlib.sha256(raw).hexdigest(),
-                          **{k: int(node.get(k, '0')) for k in ('tests', 'failures', 'errors', 'skipped')},
-                          'failure_details': [{'case': case.get('name'), 'type': failure.get('type'),
-                              'message': failure.get('message', '')[:1500], 'trace': (failure.text or '')[:1800]}
-                              for case in node.findall('testcase') for failure in case.findall('failure')][:12]})
-                  report['jvm'].append({'path': str(results), 'suites': suites,
-                      'totals': {k: sum(s[k] for s in suites) for k in ('tests', 'failures', 'errors', 'skipped')}})
-              root = checkout / 'windows-development-40346435997-1/app/build/outputs/apk/preview'
-              if not root.is_dir():
-                  continue
-              item = {'root': str(root), 'files': {}, 'log_tail': []}
-              allowed = [root / 'install-api37-16384/install-results.json',
-                  root / 'ui-screens/navigation-focused-observations.json',
-                  root / 'ui-screens/automation-verification.json',
-                  root / 'ui-screens/navigation-panels-verification.json',
-                  root / 'ui-screens/navigation-detail-verification.json',
-                  root / 'ui-screens/navigation-wide-verification.json',
-                  runner / '_temp/n00-native45-focused-40346435997-1/native45-navigation-summary.json']
-              for p in allowed:
-                  if p.is_file() and not p.is_symlink():
-                      raw = p.read_bytes()
+              state = runner / ('_temp/analyst-development-' + str(run) + '-1')
+              if state.is_dir():
+                  item = {'state': str(state), 'files': {}, 'log_tail': {}}
+                  for name in ('windows-development.json', 'controller.json', 'export-receipt.json'):
+                      path = state / name
+                      if not path.is_file() or path.is_symlink():
+                          continue
+                      raw = path.read_bytes()
                       assert len(raw) < 4 * 1024**2
-                      v = json.loads(raw)
-                      item['files'][p.name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': v}
-              p = root / 'install-api37-16384/runtime-console.log'
-              if p.is_file() and not p.is_symlink():
-                  with p.open('rb') as f:
-                      f.seek(max(0, p.stat().st_size - 16000))
-                      lines = f.read().decode('utf-8', errors='replace').splitlines()
-                  item['log_tail'] = [line[:800] for line in lines[-40:]]
-              report['native'].append(item)
-
-          print('N00_RESUME_OBSERVATION=' + json.dumps(report, ensure_ascii=True))
+                      value = json.loads(raw)
+                      if name == 'windows-development.json':
+                          value = {key: value.get(key) for key in ('status', 'github', 'check', 'build',
+                              'source_sha256', 'source_sha256_after', 'started_at', 'finished_at')}
+                      item['files'][name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': value}
+                  for name in ('10-host-tests.log', '11-tools-tests.log', '18-gradle.log', 'linux-backend-full-suite.log'):
+                      path = state / name
+                      if not path.is_file() or path.is_symlink():
+                          continue
+                      with path.open('rb') as stream:
+                          stream.seek(max(0, path.stat().st_size - 24000))
+                          lines = stream.read().decode('utf-8', errors='replace').splitlines()
+                      item['log_tail'][name] = [line[:700] for line in lines if len(line) < 1000 and
+                          re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|^> Task|^e:', line)][-12:]
+                  result['build'].append(item)
+              folder = runner / ('omni-cio-gateway/omni-cio-gateway/windows-development-' + str(run) + '-1/app/build/test-results/testDebugUnitTest')
+              if folder.is_dir():
+                  suites = []
+                  for path in sorted(folder.glob('TEST-*.xml')):
+                      assert path.is_file() and not path.is_symlink() and path.stat().st_size < 4 * 1024**2
+                      raw = path.read_bytes()
+                      node = ET.fromstring(raw)
+                      suites.append({'name': path.name, 'sha256': hashlib.sha256(raw).hexdigest(),
+                          **{key: int(node.get(key, '0')) for key in ('tests', 'failures', 'errors', 'skipped')},
+                          'failures_details': [{'case': case.get('name'), 'type': failure.get('type'),
+                              'message': failure.get('message', '')[:1200]}
+                              for case in node.findall('testcase') for failure in case.findall('failure')][:8]})
+                  result['jvm'].append({'path': str(folder), 'suites': suites,
+                      'totals': {key: sum(s[key] for s in suites) for key in ('tests', 'failures', 'errors', 'skipped')}})
+          print('N00_RESUME_OBSERVATION=' + json.dumps(result, ensure_ascii=True))

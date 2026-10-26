@@ -216,7 +216,7 @@ def native_receipt(helper, item, expected, build):
                 'invalid_draft_retained': True, 'extra_server_writes_after_navigation': 0}
         for name, raw in evidence.items():
             need(envelope['files'][name] == {'bytes': len(raw), 'sha256': sha(raw)},
-                 'Original evidence differs from the signed-input envelope: ' + name)
+                 'Original evidence differs from the bound input envelope: ' + name)
     helper.verify_archive_file(path, item['sha256'], item['bytes'])
     return {**{key: item[key] for key in ('run_id', 'run_attempt', 'artifact_id')},
         'artifact_sha256': item['sha256'], 'artifact_bytes': item['bytes'],

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.workspace.ChatRouteQuoteTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.356Z" hostname="LAPTOP-NPSGA016" time="0.003">
+  <properties/>
+  <testcase name="ordinaryAutoNeedsNoSecondConfirmation" classname="ru.omnicio.app.data.workspace.ChatRouteQuoteTest" time="0.0"/>
+  <testcase name="incompleteOrUnknownRoutesFailClosed" classname="ru.omnicio.app.data.workspace.ChatRouteQuoteTest" time="0.002"/>
+  <testcase name="missingOrMalformedCeilingsFailClosed" classname="ru.omnicio.app.data.workspace.ChatRouteQuoteTest" time="0.0"/>
+  <testcase name="premiumCannotSilentlyDispatchFromAuto" classname="ru.omnicio.app.data.workspace.ChatRouteQuoteTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

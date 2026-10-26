@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.workspace.AutoSaveModelTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:18:23.895Z" hostname="LAPTOP-NPSGA016" time="0.031">
+  <properties/>
+  <testcase name="twoGoalsHaveIndependentIdentityEvenAtSameRevision" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.008"/>
+  <testcase name="newerLocalEditSurvivesOlderServerAcknowledgement" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.017"/>
+  <testcase name="anotherDocumentCannotSpinAnUncertainFailedRequest" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <testcase name="subsequentEditDoesNotRevertAnUnrelatedServerChange" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <testcase name="sameRevisionRequiresAcknowledgementBeforeSavedState" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <testcase name="recoveryKeepsTheSubmittedCommandWhenNewerInputIsInvalid" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <testcase name="comparisonsIgnoreObjectOrderButPreserveArrayOrderAndNull" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.001"/>
+  <testcase name="malformedNewerDraftNeverBecomesAppliedBecauseOlderRequestSucceeded" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <testcase name="serverAssignedGoalIdSurvivesNewerEditsDuringCreation" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.002"/>
+  <testcase name="concurrentServerFieldsAreRetainedInNestedDocument" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <testcase name="explicitNullAndDeletionRemainDifferentChanges" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.001"/>
+  <testcase name="profilePresentationMetadataIsNeverSentAsConfiguration" classname="ru.omnicio.app.ui.workspace.AutoSaveModelTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
