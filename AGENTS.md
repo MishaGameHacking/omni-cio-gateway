@@ -1,3 +1,22 @@
+## Текущий checkpoint — 26.10.2026, 14:14 UTC
+
+Windows45 build40334863828 завершён14:11:51 UTC:1198 host tests
+(3 прежних skips),52 tools,61 Node,1684 backend tests+1515 subtests,
+185 JVM tests без ошибок/пропусков; все8 Gradle-задач успешны.
+Code inventory c7db1ac1…; новый preview45 5a0bcf77…; debug APK aa7254a2….
+Изменены только capture-helper и5 регрессий для помещающегося содержимого.
+Native новых точных байтов и публикация45 ещё не завершены.
+
+Предыдущий native40332477922 прошёл32/34:26 automation,4 panels,2 detail.
+AVD parser исправен; наблюдались2 пустые строки, identity current-process=true.
+Wide остановился на capture-helper: фактический viewport [128,201][960,1568]
+виден и scrollable=false. Display/font полностью восстановлены. Helper теперь
+проверяет полную видимость без требования scroll range; жесты по-прежнему
+требуют прокручиваемый точный список. Нельзя считать32/34 полным PASS.
+Phone observer40297200288/attempt2 в14:11:55 UTC не обнаружил ADB connections;
+физическая установка не подтверждена. [Все доказательства и границы](docs/N00_RESUME_2026-10-26.md).
+Канал44; N00 и N01–N11 открыты. Постоянные инструкции ниже сохраняют силу.
+
 ## Текущий checkpoint — 26.10.2026, 13:27 UTC
 
 Новый Windows45 build40327866834 завершён13:25:33 UTC:1193 host tests

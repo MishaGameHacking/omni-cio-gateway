@@ -95,7 +95,9 @@ def fully_visible_resource(tree: ET.Element, target_id: str, list_id: str,
     scrolling behind a sticky header. Such bounds cannot identify captured pixels.
     """
     target = visible_resource(tree, target_id)
-    viewport = _scroll_area(tree, list_id)
+    # Content may fit entirely in a wide viewport. Visibility does not
+    # require a scroll range; gesture authorization still does.
+    viewport = _list_area(tree, list_id, require_scrollable=False)
     if target is None or viewport is None:
         return None
     left, top, right, bottom = _bounds(target)
