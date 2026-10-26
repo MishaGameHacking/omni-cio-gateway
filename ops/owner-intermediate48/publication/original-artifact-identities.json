@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "published_version": 48,
+  "version_name": "0.14.1-preview",
+  "publication_run": 40405243832,
+  "publication_head": "fa6689be3054ea176334fd482f20962338d99628",
+  "publication_artifact": {
+    "id": 12691051823,
+    "bytes": 2215,
+    "sha256": "b9c35b7a286c91860f3e6d95470732552632c38f52158e67276abe3e52b28e93"
+  },
+  "device_observer_run": 40297200288,
+  "device_observer_attempt": 3,
+  "device_artifact": {
+    "id": 12691141421,
+    "bytes": 582,
+    "sha256": "f170f11ae5719b797ec5861f7771f23c2c7d7b80757e9f42cf132d3c90e178c6"
+  },
+  "plan_complete": false,
+  "full_native_passed": false,
+  "physical_phone_installation_verified": false,
+  "live_orders_enabled": false
+}

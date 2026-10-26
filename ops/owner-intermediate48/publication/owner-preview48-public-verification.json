@@ -1,0 +1,106 @@
+{
+  "backend_health_body": {
+    "status": "ok"
+  },
+  "backend_health_http": 200,
+  "client_observations_at_publication": {
+    "client_headers_are_not_device_attestation": true,
+    "database_open_mode": "ro",
+    "exact48_reported_by_active_session": false,
+    "observed_at": 1793050389,
+    "physical_phone_verified": false,
+    "query_only": true,
+    "scope": "active_authenticated_preview_sessions",
+    "status": "read",
+    "versions": [
+      {
+        "active_session_count": 1,
+        "last_seen_at": 1793049513,
+        "sessions_reporting_exact48": 0,
+        "version_code": 47
+      }
+    ]
+  },
+  "complete_release_gate_passed": false,
+  "https_apk_bytes": 29937843,
+  "https_apk_sha256": "85fb8b3c3e0020080a421efaae1c101df0e55f97bacb791064e1b1cbaa4a8df1",
+  "https_entire_apk_download_verified": true,
+  "https_policy_verified": true,
+  "kind": "owner_preview48_public_delivery",
+  "physical_phone_verified": false,
+  "publication": {
+    "apk_bytes": 29937843,
+    "apk_sha256": "85fb8b3c3e0020080a421efaae1c101df0e55f97bacb791064e1b1cbaa4a8df1",
+    "backend_deployment_performed": false,
+    "baseline_publication_sha256": "0c535e6f1925649ac219f65fae688526f07c578a406f5850d285db2ab12201d5",
+    "build_export_receipt_sha256": "2a6607737be5cfd5f01e850f431576f6c738103566d857a8e22e0ee8742bd817",
+    "build_report_sha256": "3d0d4f59f709054469cefa274f3bb92d7ba840d10a5f9a2e68bcdc77d535c72f",
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+    "channel_version": 48,
+    "complete_release_gate_passed": false,
+    "database_mutations_performed": false,
+    "date": "2026-10-26",
+    "explicit_intermediate_preview": true,
+    "full15_runtime_matrix_passed": false,
+    "full_check_and_build_passed": true,
+    "kind": "owner_requested_latest_built_preview_delivery",
+    "mandate_runtime_sources": {
+      "autonomous_controller.py": {
+        "bytes": 35571,
+        "sha256": "926d10f0ee53b17a8c77fc90b6e7d07a8cf656f7e0ab9a3bb344fa063e3bbff5"
+      },
+      "portfolio_mandate.py": {
+        "bytes": 4743,
+        "sha256": "a8647933e107a3e1427438999b266869ae9be456786710cea56f997d57459c78"
+      },
+      "purchase_policy.py": {
+        "bytes": 12689,
+        "sha256": "53a264d7d091125c759b1d0cbf7d49542be3e27ca44c3661ea56b3d03aec0040"
+      },
+      "volume_state.py": {
+        "bytes": 41301,
+        "sha256": "0aeea80a5043a936619a302c415455542f0b7c7ddc62a8179c33a753823779bd"
+      }
+    },
+    "mandate_runtime_verification_sha256": "9f5033be41137e42ec8237a2f16504351524c8eb48e2ca5d904f637fded0a530",
+    "native_status": "not_executed_for_published_build",
+    "owner_request": "Вся работа на ноуте; обновить рабочее приложение и APK на Timeweb без повторной полной матрицы",
+    "package_name": "ru.omnicio.app.debug",
+    "paid_ai_calls_performed": false,
+    "phone_verified": false,
+    "preview_install_smoke": {
+      "full_runtime_matrix_passed": false,
+      "physical_phone_verified": false,
+      "run_id": null,
+      "status": "not_executed_for_published_build"
+    },
+    "previous_apk_sha256": "1f699684618f44f1da4c71f3fa19bbf9125e906ab431865747cf44e0b5ea0602",
+    "previous_version": 47,
+    "prior_native_attempt": {
+      "artifact_id": 12685050936,
+      "artifact_sha256": "9f8dc6419f23bcaf4fd964684582dcf7920fae9a0394aba44555cdd7c7869762",
+      "build_run_id": 40386457173,
+      "is_evidence_for_published_build": false,
+      "run_id": 40389869187,
+      "status": "failed"
+    },
+    "publication_method": "existing_locked_atomic_immutable_release_api",
+    "published_at": 1793050389,
+    "reason_for_current_manifest_change": "Owner requests an intermediate working update; exact build, signature, prior channel and deployed mandate are verified. Native/phone acceptance remains open.",
+    "runtime_pass": false,
+    "service_restart_performed": false,
+    "session_or_owner_binding_mutations_performed": false,
+    "signing_key_mutations_performed": false,
+    "source_archive_bytes": 69697259,
+    "source_archive_sha256": "2c6ef4e2f6f176d237f97871ced48d9ab7b22a20486f2c852c5e25d7abfcfa62",
+    "source_backup_commit": "fd2a307220158b0fc2055cfb0eb4fd9fc51d8d4b",
+    "source_sha256": "26d1ccf6b9685925291edb968f17ef091b145831d7c6ca791e5e942246af49fa",
+    "trading_orders_submitted": false,
+    "url": "https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-48-85fb8b3c3e0020080a421efaae1c101df0e55f97bacb791064e1b1cbaa4a8df1.apk",
+    "version_code": 48,
+    "version_name": "0.14.1-preview",
+    "windows_run_attempt": 1,
+    "windows_run_id": 40400521138
+  },
+  "schema": 1
+}
