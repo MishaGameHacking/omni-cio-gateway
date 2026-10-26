@@ -22,7 +22,7 @@ PINS = {
     'native44-bound/n00-runtime.py': 'b5479dcb488eed6e38a1c2dc40d21b43e6ce61aeeaed644037be169e4d0d0cb9',
     'native44-bound/workflow.yml': '9ee2325a8746d5123d0ae07792195639b50f1e738f9f10466fa1c59d04e391d8',
     'single-style47-runtime-deployment/prepare-deployment.py': 'dbafd2466f38cb876e0a09dc059c5ea1c97f00ccefc798772c4127e5460f2f0e',
-    'design47/native47-focus-hook.py': 'bce72f2479c1db06af1c3bcd44fbef43e833f4e288fbc3c7a1505d630cdea9ae',
+    'design47/native47-focus-hook.py': 'a141d3ff9e8995a943cad485ec6634afd52aabfdb8a66d6524b6dcc0ac2d4ad1',
 }
 APKS = ('app/build/outputs/apk/preview/app-preview.apk',
         'app/build/outputs/apk/debug/app-debug.apk',

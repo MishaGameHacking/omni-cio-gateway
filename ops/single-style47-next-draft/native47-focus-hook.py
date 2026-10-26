@@ -279,7 +279,7 @@ class IconDockCase(_DetailNavigationCase):
 
 
 def focused(device, read_tree):
-    from persistent_ui import FrameReader
+    from persistent_ui import FrameReader, SCROLL_LIST_CODES
     if not isinstance(getattr(read_tree, "__self__", None), FrameReader):
         raise AssertionError("A genuine owned frame reader is required")
     probe = module.ProfileProbe(device)
@@ -291,22 +291,20 @@ def focused(device, read_tree):
         raise AssertionError("The installed fixture APK is outside the owned checkout")
     night = module.night_setting(probe.command("shell", "cmd", "uimode", "night"))
     scale = probe.command("shell", "settings", "get", "system", "font_scale").strip()
-    axes, ids = dict(profile_scroll.SCROLL_AXES), profile_scroll.LIST_IDS
-    direction = module.semantic_scroll_direction
     report = {"schema_version": 1, "diagnostic_only": True, "release_gate_pass": False,
               "full15_executed": False, "physical_phone_verified": False,
               "fixture_apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
               "actual_device_observations": True, "external_broker_model_calls": False,
               "real_order_execution": False, "status": "incomplete", "cases": []}
     try:
-        # Add the four exact new horizontal lists to the existing bounded
-        # semantic-scrolling implementation; all ownership/geometry gates stay.
-        for group in ROWS:
-            profile_scroll.SCROLL_AXES["navigation-row-" + group] = "horizontal"
-        profile_scroll.LIST_IDS = frozenset(profile_scroll.SCROLL_AXES)
-        module.semantic_scroll_direction = lambda area, x1, y1, x2, y2: \
-            module._horizontal_scroll_direction(x1, y1, x2, y2) if area in {
-                "navigation-row-" + group for group in ROWS} else direction(area, x1, y1, x2, y2)
+        # The exact built driver and Python client must already support all four
+        # rows. Do not replace the authenticated native protocol with swipes.
+        for number, group in enumerate(ROWS, 10):
+            area = "navigation-row-" + group
+            if SCROLL_LIST_CODES.get(area) != number or profile_scroll.SCROLL_AXES.get(area) != "horizontal" \
+                    or area not in profile_scroll.LIST_IDS \
+                    or module.semantic_scroll_direction(area, 300, 100, 100, 100) != "end":
+                raise AssertionError("The built native row contract is missing: " + area)
         folder.mkdir(parents=True, exist_ok=True)
         for font in (1.0, 2.0):
             case = IconDockCase(probe, font)
@@ -334,9 +332,6 @@ def focused(device, read_tree):
                 report["failure_capture_error"] = type(capture).__name__
         raise
     finally:
-        profile_scroll.SCROLL_AXES.clear(); profile_scroll.SCROLL_AXES.update(axes)
-        profile_scroll.LIST_IDS = ids
-        module.semantic_scroll_direction = direction
         (folder / "design47-focused-observations.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print("DESIGN47_FOCUSED_OBSERVATIONS=" + json.dumps(report, ensure_ascii=True), flush=True)
         restore_device_settings(probe.command, scale, night, sys.exc_info()[1])
