@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "current_server_version": 45,
+  "current_server_name": "0.13.7-preview",
+  "plan_complete": false,
+  "v12": {
+    "run": 40372918873,
+    "head": "52d748714e9ee381afd4266e353692496e2ffe7b",
+    "outcome": "failed",
+    "host_tests": 1263,
+    "host_skips": 3,
+    "tools_tests": 52,
+    "backend_tests": 1690,
+    "backend_subtests": 1557,
+    "jvm_tests": 225,
+    "jvm_failures": 8,
+    "failure": "Eight JSONObject JVM stub errors; original assertions preserved",
+    "source_sha256": "7849776728cc8b2cefbc8eb1e90d354ccd57205deca142deccee0877cf21cc0d",
+    "archive_sha256": "8cd45557dfa07672b9fb5630bc629e36f80d3aa446a938f347d0352af47809bb",
+    "archive_bytes": 8124267,
+    "original_artifact": 12673772429,
+    "original_artifact_sha256": "b2c035b2c324c95bd1b3c8f1c6813b062480d83da399463740528e9a4505d57a"
+  },
+  "v13": {
+    "run": 40375092476,
+    "head": "9c150bf502a1a140e2039a6e482dbc99a843e0c1",
+    "outcome": "in_progress",
+    "only_change_from_v12": "testImplementation org.json:json:20260814",
+    "review_sha256": "b9345428e2f8a40fb1ef4ae0ef351a33e04f84e6d27d2320a6a92b5d066932d2"
+  },
+  "next_draft": {
+    "applied": false,
+    "compiled": false,
+    "includes": [
+      "Popup window predictive back handler",
+      "Use displayed values as next edit baseline",
+      "Bound uncertain-command retries across documents",
+      "Reject partially corrupted journals without overwriting them",
+      "Show actual strategy version and server warnings",
+      "Three new autosave regression cases"
+    ]
+  },
+  "next_steps": [
+    "On successful v13 verify every original report and all five jobs",
+    "Backup exact Windows-applied source tree with inventory hashes",
+    "Prepare and execute exact three-file HTML server deployment; verify health and rollback identities",
+    "Continue next Android candidate; update native acceptance for icon rows, window identity and autosave",
+    "Native API37 both page sizes; exact-head Sonar; sequential N00 then N01-N11; N10 requires actual 30 trading sessions"
+  ],
+  "not_completed": [
+    "native47",
+    "APK47 publication",
+    "phone47",
+    "all screen hierarchy review",
+    "portfolio filters durable persistence",
+    "chat context editor automatic application",
+    "N00-N11"
+  ]
+}

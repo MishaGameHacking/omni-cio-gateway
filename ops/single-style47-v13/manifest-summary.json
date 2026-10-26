@@ -1,0 +1,43 @@
+{
+  "state": "prepared_source_text_only",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "base_build_run": 40342969750,
+  "source_paths": 108,
+  "new_paths": 35,
+  "version_code": 47,
+  "version_name": "0.14.0-preview",
+  "reviewed_files_sha256": "b9345428e2f8a40fb1ef4ae0ef351a33e04f84e6d27d2320a6a92b5d066932d2",
+  "bundle_sha256": "2924c656cc428ff3baa4f695f1a1ff9baddd48862cafdf558f362d4143170052",
+  "transport_sha256": "853375df1ef5c7479283030b0e8a97328a41c029feea719f3c3850e999698f07",
+  "patch_manifest_sha256": "aa2d92dce8ba8e1f635e0bd6404a20b2bf79455b8ae6ce60ab4c55a94e06bf85",
+  "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
+  "workflow_sha256": "43e3e0fb87cc0841b4ba1bd6438a0f7ecbdcfd8111edbe68191603b440961d74",
+  "source_generator_sha256": null,
+  "dock_generator_sha256": null,
+  "controls_generator_sha256": null,
+  "bundle_specs": [
+    {
+      "name": "n00-single-style47",
+      "transport_sha256": "853375df1ef5c7479283030b0e8a97328a41c029feea719f3c3850e999698f07",
+      "decoded_sha256": "447237eeb9e1272f6d6187a6b35a98e729c5b66210919f9ac7260b11a6c270cc"
+    },
+    {
+      "name": "n00-single-style47-part2",
+      "transport_sha256": "f9c8f893ab9dc675c8f3b4a5be244f6f5d148cbb5b5221a0d159ba14d0407b1d",
+      "decoded_sha256": "3749bdde3cec40f940304a68e7d0237419f74634069d0f01314bf9c587e8cde4"
+    }
+  ],
+  "autosave_included": true,
+  "autosave_generator_sha256": null,
+  "automatic_editors_generator_sha256": null,
+  "autosave_recovery_generator_sha256": null,
+  "applied_on_windows": false,
+  "build_passed": false,
+  "native_passed": false,
+  "deployed": false,
+  "plan_complete": false,
+  "supersedes": "Unpublished multi-theme46. Failed builds remain original failed evidence.",
+  "repair_of_reviewed_files_sha256": "ad9eb517c3953d7bc30550d3439bd316e086ba6cc4ac054c30489b2697d92f56",
+  "repair_reason": "Original Windows225 JVM checks:8 failures because Android JSONObject was a JVM stub. Add pinned test-only org.json implementation; preserve all assertions."
+}
