@@ -132,7 +132,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                     "library" -> ResearchLibraryScreen(PortfolioUiState.Ready(probePortfolio()), onBack)
                 }
             }
-            if (navigationFixture) {
+            if (navigationFixture) WorkspaceAutoSaveProvider {
                 val preferences = LocalWorkspacePreferences.current.value
                 val preferenceIdentity = listOf(preferences.accent.name, preferences.density.name, preferences.motion.name,
                     preferences.depth, preferences.hideHomeBalance, preferences.homeStructure,
