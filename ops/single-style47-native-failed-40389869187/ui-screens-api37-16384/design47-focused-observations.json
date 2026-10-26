@@ -1,0 +1,422 @@
+{
+  "schema_version": 1,
+  "diagnostic_only": true,
+  "release_gate_pass": false,
+  "full15_executed": false,
+  "physical_phone_verified": false,
+  "fixture_apk_sha256": "906026b3b26f33ceb8bf2a89f190190d3d372abadfc693074f7078a969f4760c",
+  "actual_device_observations": true,
+  "external_broker_model_calls": false,
+  "real_order_execution": false,
+  "status": "incomplete",
+  "cases": [],
+  "appearance_restart_cases": [],
+  "autosave_cases": [],
+  "failed_case": {
+    "font_scale": 1.0,
+    "phase": "predictive-popup-back",
+    "host_window": 10,
+    "popup_window": 16,
+    "native_targets": [
+      {
+        "resource": "navigation-menu-open",
+        "bounds": [
+          12,
+          68,
+          60,
+          116
+        ],
+        "window_id": 10,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          148,
+          296,
+          196
+        ],
+        "window_id": 11,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-appearance",
+        "bounds": [
+          152,
+          419,
+          208,
+          475
+        ],
+        "window_id": 11,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-open",
+        "bounds": [
+          12,
+          79,
+          60,
+          127
+        ],
+        "window_id": 10,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          159,
+          296,
+          207
+        ],
+        "window_id": 12,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-strategies",
+        "bounds": [
+          88,
+          284,
+          144,
+          340
+        ],
+        "window_id": 12,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-open",
+        "bounds": [
+          12,
+          79,
+          60,
+          127
+        ],
+        "window_id": 10,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          159,
+          296,
+          207
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-primary-home",
+        "bounds": [
+          24,
+          211,
+          80,
+          267
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-primary-portfolio",
+        "bounds": [
+          88,
+          211,
+          144,
+          267
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-primary-actions",
+        "bounds": [
+          152,
+          211,
+          208,
+          267
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-primary-profile",
+        "bounds": [
+          216,
+          211,
+          272,
+          267
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-primary-risk",
+        "bounds": [
+          24,
+          284,
+          80,
+          340
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-strategies",
+        "bounds": [
+          88,
+          284,
+          144,
+          340
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-market",
+        "bounds": [
+          152,
+          284,
+          208,
+          340
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-discovery",
+        "bounds": [
+          216,
+          284,
+          272,
+          340
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-goals",
+        "bounds": [
+          240,
+          284,
+          296,
+          340
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-assistant",
+        "bounds": [
+          24,
+          357,
+          80,
+          413
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-reports",
+        "bounds": [
+          88,
+          357,
+          144,
+          413
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-library",
+        "bounds": [
+          152,
+          357,
+          208,
+          413
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-analysistimeline",
+        "bounds": [
+          216,
+          357,
+          272,
+          413
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-messages",
+        "bounds": [
+          240,
+          357,
+          296,
+          413
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-analysissettings",
+        "bounds": [
+          24,
+          430,
+          80,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-notificationsettings",
+        "bounds": [
+          88,
+          430,
+          144,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-appearance",
+        "bounds": [
+          152,
+          430,
+          208,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-devices",
+        "bounds": [
+          216,
+          430,
+          272,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-activityhistory",
+        "bounds": [
+          112,
+          430,
+          168,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-education",
+        "bounds": [
+          176,
+          430,
+          232,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-workspace-newfeatures",
+        "bounds": [
+          240,
+          430,
+          296,
+          486
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          159,
+          296,
+          207
+        ],
+        "window_id": 13,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-open",
+        "bounds": [
+          12,
+          79,
+          60,
+          127
+        ],
+        "window_id": 10,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          159,
+          296,
+          207
+        ],
+        "window_id": 15,
+        "selected": false
+      },
+      {
+        "resource": "navigation-panel",
+        "bounds": [
+          12,
+          155,
+          308,
+          498
+        ],
+        "window_id": 15,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-open",
+        "bounds": [
+          12,
+          79,
+          60,
+          127
+        ],
+        "window_id": 10,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          159,
+          296,
+          207
+        ],
+        "window_id": 16,
+        "selected": false
+      },
+      {
+        "resource": "navigation-menu-close",
+        "bounds": [
+          248,
+          159,
+          296,
+          207
+        ],
+        "window_id": 16,
+        "selected": false
+      }
+    ]
+  },
+  "error_type": "ConnectionError",
+  "error": "UiAutomation session ended before a complete frame",
+  "failure_capture_error": "ConnectionError"
+}

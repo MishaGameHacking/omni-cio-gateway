@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagnostic_only": true,
+  "release_gate_pass": false,
+  "full15_executed": false,
+  "physical_phone_verified": false,
+  "fixture_apk_sha256": "906026b3b26f33ceb8bf2a89f190190d3d372abadfc693074f7078a969f4760c",
+  "actual_device_observations": true,
+  "external_broker_model_calls": false,
+  "real_order_execution": false,
+  "status": "incomplete",
+  "cases": [],
+  "appearance_restart_cases": [],
+  "autosave_cases": [],
+  "failed_case": {
+    "font_scale": 1.0,
+    "phase": "launch",
+    "host_window": 10,
+    "popup_window": 11,
+    "native_targets": [
+      {
+        "resource": "navigation-menu-open",
+        "bounds": [
+          12,
+          68,
+          60,
+          116
+        ],
+        "window_id": 10,
+        "selected": false
+      }
+    ]
+  },
+  "error_type": "AssertionError",
+  "error": "Detail menu control did not settle: navigation-menu-close"
+}

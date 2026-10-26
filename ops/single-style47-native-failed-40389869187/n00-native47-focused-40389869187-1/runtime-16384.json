@@ -1,0 +1,12 @@
+{
+  "test_patch_sha256": "f6910e05cb1ac3e93d199d84055854db2467e4049c80b719639452899290dc26",
+  "test_source_sha256": "92a9b9867c184388b81db58437761578bc0f1098b902a8827acc87591136545a",
+  "page_bytes": 16384,
+  "started_at": "2026-10-26T19:48:12.852110+00:00",
+  "host": "LAPTOP-NPSGA016",
+  "apk_sha256": "a720e7b5aafb4dd73f6f3d7b74a401d457fa6cdc23dfded3c16f6e84eff21f06",
+  "exit_code": 1,
+  "error_type": "RuntimeError",
+  "error": "runtime_failed_16384",
+  "finished_at": "2026-10-26T19:56:44.738776+00:00"
+}

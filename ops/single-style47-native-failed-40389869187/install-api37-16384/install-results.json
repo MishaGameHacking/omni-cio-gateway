@@ -1,0 +1,190 @@
+[
+  {
+    "test": "kernel_page_size",
+    "success": true,
+    "android_api": 37,
+    "abi": "x86_64",
+    "system_image": "system-images;android-37.0;google_apis_ps16k;x86_64",
+    "page_size_bytes": 16384,
+    "command": "getconf PAGE_SIZE",
+    "apk_sha256": "a720e7b5aafb4dd73f6f3d7b74a401d457fa6cdc23dfded3c16f6e84eff21f06",
+    "emulator_preparation": {
+      "system_server_pid": 661,
+      "setup": {
+        "device_provisioned": "1",
+        "user_setup_complete": "1"
+      },
+      "package_barriers": [
+        "wait-for-handler",
+        "wait-for-background-handler"
+      ],
+      "preparation_seconds": 1.939,
+      "system_server_unchanged": false
+    }
+  },
+  {
+    "test": "previous_clean_install",
+    "success": true,
+    "apk_sha256": "488f95a0c1527ebf5a172c7af675769cb8ed81c116d9ec24175fc89adab1da0d",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner\\_work\\_temp\\n00-native47-focused-40389869187-1\\previous45.apk: 1 file pushed, 0 skipped. 88.4 MB/s (29820407 bytes in 0.322s)"
+  },
+  {
+    "test": "upgrade_to_candidate",
+    "success": true,
+    "apk_sha256": "a720e7b5aafb4dd73f6f3d7b74a401d457fa6cdc23dfded3c16f6e84eff21f06",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40389869187-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk: 1 file pushed, 0 skipped. 127.2 MB/s (29921459 bytes in 0.224s)"
+  },
+  {
+    "test": "upgrade_bootstrap_launch",
+    "success": true,
+    "apk_sha256": "a720e7b5aafb4dd73f6f3d7b74a401d457fa6cdc23dfded3c16f6e84eff21f06",
+    "system_graphics": {
+      "requested_gpu_mode": "host",
+      "requested_features": "Vulkan,GuestAngle",
+      "properties": {
+        "ro.hardware.egl": {
+          "returncode": 0,
+          "value": "angle"
+        },
+        "ro.hardware.vulkan": {
+          "returncode": 0,
+          "value": "ranchu"
+        },
+        "debug.hwui.renderer": {
+          "returncode": 0,
+          "value": "skiavk"
+        },
+        "debug.renderengine.backend": {
+          "returncode": 0,
+          "value": "skiavkthreaded"
+        }
+      },
+      "system_compositor": {
+        "source": "dumpsys SurfaceFlinger",
+        "returncode": 0,
+        "graphics_lines": [
+          "------------RE Vulkan (Ganesh)----------",
+          "Vulkan device initialized: 1",
+          "Vulkan protected device initialized: 0",
+          "RenderEngine supports protected context: 0",
+          "RenderEngine is in protected context: 0",
+          "RenderEngine shaders cached since last dump/primeCache: 215",
+          "Skia's CPU caches:  0 bytes, 0.00 bytes (0.00 bytes is purgeable)",
+          "Skia's GPU caches (context, 2.73 MiB limit):  1349684 bytes, 1.29 MB (1.13 MB is purgeable)",
+          "skia/gpu_resources/resource_3: size[32.00 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[32.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_140: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] purgeable_size[768.00 bytes] category[Scratch]",
+          "skia/gpu_resources/resource_137: size[64.00 bytes] type[Surface] label[ProxyProvider_CreateNonMippedProxyFromBitmap] purgeable_size[64.00 bytes] category[Image]",
+          "skia/gpu_resources/resource_504: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] purgeable_size[512.00 bytes] category[Scratch]",
+          "skia/gpu_resources/resource_4: size[180.00 bytes] type[Buffer Object] label[MakeVkBuffer] purgeable_size[180.00 bytes] category[Other]",
+          "skia/gpu_resources/resource_17: size[64.00 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[64.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_5: size[1.88 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[1.88 KB] category[Other]",
+          "skia/gpu_resources/resource_21: size[256.00 KB] type[Surface] label[ProxyProvider_CreateNonMippedProxyFromBitmap] purgeable_size[256.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_22: size[192.00 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[192.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_41: size[576.00 KB] type[Surface] label[MakeDevice] purgeable_size[576.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_45: size[100.00 KB] type[Surface] label[ResourceAllocatorRegister] category[Scratch]",
+          "skia/gpu_resources/resource_43: size[25.00 KB] type[Surface] label[ResourceAllocatorRegister] category[Scratch]",
+          "skia/gpu_resources/resource_570: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]",
+          "skia/gpu_resources/resource_563: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]",
+          "skia/gpu_resources/resource_556: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]",
+          "skia/gpu_resources/resource_549: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]"
+        ]
+      }
+    },
+    "renderer": {
+      "source": "candidate-hwui-framestats",
+      "evidence_scope": "android-window-rendering",
+      "package": "ru.omnicio.app.debug",
+      "uid": 10231,
+      "pid": 2632,
+      "completed_frames": 118,
+      "first_vsync_ns": 154826816694,
+      "last_frame_completed_ns": 156827696500,
+      "pipeline": "Skia (Vulkan)"
+    }
+  },
+  {
+    "test": "candidate_clean_install",
+    "success": true,
+    "apk_sha256": "a720e7b5aafb4dd73f6f3d7b74a401d457fa6cdc23dfded3c16f6e84eff21f06",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40389869187-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk: 1 file pushed, 0 skipped. 117.5 MB/s (29921459 bytes in 0.243s)"
+  },
+  {
+    "test": "bootstrap_activity_launch",
+    "success": true,
+    "apk_sha256": "a720e7b5aafb4dd73f6f3d7b74a401d457fa6cdc23dfded3c16f6e84eff21f06",
+    "system_graphics": {
+      "requested_gpu_mode": "host",
+      "requested_features": "Vulkan,GuestAngle",
+      "properties": {
+        "ro.hardware.egl": {
+          "returncode": 0,
+          "value": "angle"
+        },
+        "ro.hardware.vulkan": {
+          "returncode": 0,
+          "value": "ranchu"
+        },
+        "debug.hwui.renderer": {
+          "returncode": 0,
+          "value": "skiavk"
+        },
+        "debug.renderengine.backend": {
+          "returncode": 0,
+          "value": "skiavkthreaded"
+        }
+      },
+      "system_compositor": {
+        "source": "dumpsys SurfaceFlinger",
+        "returncode": 0,
+        "graphics_lines": [
+          "------------RE Vulkan (Ganesh)----------",
+          "Vulkan device initialized: 1",
+          "Vulkan protected device initialized: 0",
+          "RenderEngine supports protected context: 0",
+          "RenderEngine is in protected context: 0",
+          "RenderEngine shaders cached since last dump/primeCache: 215",
+          "Skia's CPU caches:  0 bytes, 0.00 bytes (0.00 bytes is purgeable)",
+          "Skia's GPU caches (context, 2.73 MiB limit):  1349684 bytes, 1.29 MB (1.13 MB is purgeable)",
+          "skia/gpu_resources/resource_3: size[32.00 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[32.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_140: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] purgeable_size[768.00 bytes] category[Scratch]",
+          "skia/gpu_resources/resource_137: size[64.00 bytes] type[Surface] label[ProxyProvider_CreateNonMippedProxyFromBitmap] purgeable_size[64.00 bytes] category[Image]",
+          "skia/gpu_resources/resource_504: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] purgeable_size[512.00 bytes] category[Scratch]",
+          "skia/gpu_resources/resource_4: size[180.00 bytes] type[Buffer Object] label[MakeVkBuffer] purgeable_size[180.00 bytes] category[Other]",
+          "skia/gpu_resources/resource_17: size[64.00 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[64.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_5: size[1.88 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[1.88 KB] category[Other]",
+          "skia/gpu_resources/resource_21: size[256.00 KB] type[Surface] label[ProxyProvider_CreateNonMippedProxyFromBitmap] purgeable_size[256.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_22: size[192.00 KB] type[Buffer Object] label[MakeVkBuffer] purgeable_size[192.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_41: size[576.00 KB] type[Surface] label[MakeDevice] purgeable_size[576.00 KB] category[Scratch]",
+          "skia/gpu_resources/resource_45: size[100.00 KB] type[Surface] label[ResourceAllocatorRegister] category[Scratch]",
+          "skia/gpu_resources/resource_43: size[25.00 KB] type[Surface] label[ResourceAllocatorRegister] category[Scratch]",
+          "skia/gpu_resources/resource_570: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]",
+          "skia/gpu_resources/resource_563: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]",
+          "skia/gpu_resources/resource_556: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]",
+          "skia/gpu_resources/resource_549: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]"
+        ]
+      }
+    },
+    "renderer": {
+      "source": "candidate-hwui-framestats",
+      "evidence_scope": "android-window-rendering",
+      "package": "ru.omnicio.app.debug",
+      "uid": 10232,
+      "pid": 3096,
+      "completed_frames": 118,
+      "first_vsync_ns": 174610149236,
+      "last_frame_completed_ns": 176818845000,
+      "pipeline": "Skia (Vulkan)"
+    }
+  },
+  {
+    "test": "debug_ui_fixture_install",
+    "success": true,
+    "apk_sha256": "906026b3b26f33ceb8bf2a89f190190d3d372abadfc693074f7078a969f4760c",
+    "output": "Performing Push Install\nSuccess\nC:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40389869187-1\\app\\build\\outputs\\apk\\debug\\app-debug.apk: 1 file pushed, 0 skipped. 120.2 MB/s (63885192 bytes in 0.507s)"
+  },
+  {
+    "test": "profile_ui",
+    "success": false,
+    "error_type": "ConnectionError"
+  }
+]

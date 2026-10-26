@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "status": "prepared_not_provisioned",
+  "checked_at": "2026-10-26",
+  "provider": "Oracle Cloud Infrastructure",
+  "offer": "Always Free",
+  "target": {
+    "shape": "VM.Standard.A1.Flex",
+    "ocpus": 1,
+    "memory_gb": 4,
+    "boot_volume_gb": 50,
+    "os": "Ubuntu 24.04 ARM64, official eligible image",
+    "region": "verified account home region required"
+  },
+  "monthly_31_day_usage": {
+    "ocpu_hours": 744,
+    "memory_gb_hours": 2976
+  },
+  "account_wide_documented_limits": {
+    "ocpu_hours": 1500,
+    "memory_gb_hours": 9000,
+    "boot_and_block_gb": 200,
+    "outbound_tb": 10
+  },
+  "current_runtime_server_id": 9417611,
+  "mutations": {
+    "cloud_resources_created": false,
+    "paid_plan_enabled": false,
+    "data_migrated": false,
+    "dns_changed": false,
+    "timeweb_removed": false
+  },
+  "required_live_evidence": [
+    "verified OCI account and capacity",
+    "aggregate free quota availability",
+    "instance/VNIC/public-IP identity",
+    "ARM64 runtime compatibility",
+    "TLS and owner sign-in",
+    "consistent database and existing key restoration",
+    "single writable runtime",
+    "rollback after new writes"
+  ],
+  "sources": [
+    "https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm",
+    "https://www.oracle.com/cloud/free/faq/"
+  ]
+}
