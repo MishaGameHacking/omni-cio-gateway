@@ -150,7 +150,7 @@ jobs:
 
         raw=source.read_bytes()
 
-        assert hashlib.sha256(raw).hexdigest()==''82f21af42df27574f1e2f75a7930657f9935d468422cc0a2d75ac810bf8d03f8''
+        assert hashlib.sha256(raw).hexdigest()==''376f316104b502f728d3c42ec5dae0c04e190df0e0ab76f440262abf2640ff2e''
 
         target=pathlib.Path(os.environ[''PATCH_DIR''])/''n00-single-style47.b64''
 
@@ -199,12 +199,12 @@ jobs:
     - name: 'Stage verified administrative transport: patch-manifest.json'
       shell: cmd
       run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''PATCH_DIR''])/''patch-manifest.json.b64'';
-        p.open(''w'',encoding=''ascii'').write(''eNp9kEtuIzEMRO+idQxQFCVRvkoQBBQ/SQC7Hbg7iyDw3Uezmk0wS4JVRb76Sbu++1XSOT+lKbu/6u16/TjSORn3LIEULdgbNOrNBreQIK+jKmkFKDzSMn5tdvE9nZ9/0iZXX+4N4LR/bG8XP+3H98WpL91xl23/vN2P1/1dsLalYwxcZwgtsNdOkR2jV+mjQKs9xijVqDEhqoKgrZ1yhhlsUIJXqrnezO1fZuEpqCEjvOIoiLmWNWVjsDphSoSu910zZVRAGUDTzFh8tig9PZ7+w3H6lPuBv9MotUCMCcLCCsRQC/YiWuriwtVYzK7TcK4aJ8XIDGGRM1TuTew3GvXJf0nMV01dMjVj7roerWSZRlbJ3AsUZCIE0cVCMDhXGYPY0+Pl8QfrwI7+'')"
+        p.open(''w'',encoding=''ascii'').write(''eNp9kEFOazEMRfeSMZUcx4mdbgV9ISe2Aal9RX3vDxDq3smMCWLse698zlfa55tfNZ3zUxq6+8u8Xa/vRzonE84aSNFCvEEjbtalhQZ57XXSrABFelrF/5tdfE/n56+06dVXewM47e/b68VP+/F5ceKVO+667R+3+/GyvynWtnKFW5TcMtCogMEoViahz2rqMIE8d7AABx0rSgTYUEdgI4hAX6vm82ZuP5tchKmrdsYxrQSrd+6jQGDR6LNP84UFkX0w1spqwL5OZQ4Ra+nx9AfH6UPvB/5OM6kFYgxQUVnPC9SCXHSWmh1xGYvBcxiOpXFQ9CwQFjlDFW5qv9FMH9LDq/kyz5qpmQjPpa2SZep5ahYuUFCIEHTSMIIuuWrvJJ4e/x7fAtOPAw=='')"
 
         if errorlevel 1 exit /b 1
 
         py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''PATCH_DIR'']); b=zlib.decompress(base64.b64decode((p/''patch-manifest.json.b64'').read_text()));
-        assert hashlib.sha256(b).hexdigest()==''ef4aefd3bea652fd5465a2e182cade273bdeffd04938ceed236d5bfc75d399a4''; (p/''patch-manifest.json'').write_bytes(b)"
+        assert hashlib.sha256(b).hexdigest()==''8137b9594ea21f8b238e59817886e4f9eba18f9d739cc898fb8aafb272e87dd9''; (p/''patch-manifest.json'').write_bytes(b)"
 
         if errorlevel 1 exit /b 1'
       id: setup

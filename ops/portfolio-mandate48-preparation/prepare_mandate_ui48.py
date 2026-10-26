@@ -207,5 +207,5 @@ def apply(files, base):
     text = text[:start]
     for line in ('import androidx.compose.foundation.text.KeyboardOptions\n', 'import androidx.compose.ui.text.input.KeyboardType\n', 'import java.util.UUID\n'):
         text = text.replace(line, '')
-    files[path] = text
+    files[path] = text.rstrip() + '\n'
     files['app/src/main/java/ru/omnicio/app/ui/workspace/StrategyMandateControls.kt'] = CONTROLS

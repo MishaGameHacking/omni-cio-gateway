@@ -1,14 +1,20 @@
 """Move reviewed transport bytes out of YAML; keep exact hash checks on Windows."""
 from pathlib import Path
 import ast
+import argparse
 import hashlib
 import json
 import shutil
 import yaml
 
 ROOT=Path(__file__).resolve().parents[2]
-SOURCE=ROOT/'context/candidate48-mandate-v2'
-OUT=ROOT/'context/candidate48-mandate-v3'
+parser=argparse.ArgumentParser()
+parser.add_argument('--source',default='candidate48-mandate-v2')
+parser.add_argument('--output',default='candidate48-mandate-v3')
+args=parser.parse_args()
+SOURCE=ROOT/'context'/args.source
+OUT=ROOT/'context'/args.output
+assert SOURCE.parent==OUT.parent==ROOT/'context'
 assert not OUT.exists()
 shutil.copytree(SOURCE,OUT)
 w=yaml.safe_load((OUT/'workflow.yml').read_text())
@@ -52,6 +58,7 @@ entries=[]
 for name in ['reviewed-files.json','manifest-summary.json',*[s['name']+'.b64' for s in summary['bundle_specs']]]:
     entries.append({'path':'ops/portfolio-mandate48-preparation/'+name,'mode':'100644','type':'blob','content':(OUT/name).read_text()})
 entries.append({'path':'ops/portfolio-mandate48-preparation/prepare_compact_transport48.py','mode':'100644','type':'blob','content':Path(__file__).read_text()})
+entries.append({'path':'ops/portfolio-mandate48-preparation/prepare_mandate_ui48.py','mode':'100644','type':'blob','content':(ROOT/'context/design47/prepare_mandate_ui48.py').read_text()})
 entries.append({'path':'.github/workflows/windows-development.yml','mode':'100644','type':'blob','content':raw})
 encoded=json.dumps(entries,ensure_ascii=False)
 (ROOT/'context/mandate48-compact-dispatch.json').write_text(encoded)
