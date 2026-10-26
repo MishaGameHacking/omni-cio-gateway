@@ -1,5 +1,5 @@
-name: Inspect exact candidate42 original portfolio runtime
-'on':
+name: Inspect candidate42 complete portfolio diagnostic results
+on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [.github/workflows/windows-n00-evidence.yml]
@@ -11,15 +11,44 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Preserve original runtime observations and actual native captures
+      - name: Preserve candidate42 complete portfolio diagnostic results and passed discovery captures
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          script: "const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');\nif(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('wrong_host');\nconst root='C:/actions-runner/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40267647899-1/app/build/outputs/apk/preview';\nconst source=p.join(root,'ui-screens-api37-16384');const observations=JSON.parse(fs.readFileSync(p.join(source,'portfolio-focused-observations.json'),'utf8'));\nif(observations.diagnostic_only!==true||observations.release_gate_pass!==false)throw Error('unexpected_diagnostic_contract');\nconst out=p.join(process.env.RUNNER_TEMP,'n00-candidate42-ui-'+context.runId);fs.mkdirSync(out,{recursive:false});const identities={};let total=0;\nfunction copy(from,name){const st=fs.lstatSync(from);if(!st.isFile()||st.isSymbolicLink()||st.size>3000000||st.mtimeMs<Date.parse('2026-10-26T04:10:00Z'))throw Error('unexpected_file');const b=fs.readFileSync(from);total+=b.length;if(total>25000000)throw Error('too_large');fs.writeFileSync(p.join(out,name),b,{flag:'wx'});identities[name]={bytes:b.length,sha256:c.createHash('sha256').update(b).digest('hex')};}\nconst available=fs.readdirSync(source);\nfor(const name of available.filter(n=>n.endsWith('.png')||n.endsWith('.xml')||['portfolio-focused-observations.json','portfolio-verification.json'].includes(n)))copy(p.join(source,name),name);\nconst log=p.join(root,'install-api37-16384/runtime-console.log');copy(log,'runtime-16384.log');const lines=fs.readFileSync(log,'utf8').split(/\\r?\\n/);\nconst installed=p.join(root,'install-api37-16384/install-results.json');if(fs.existsSync(installed))copy(installed,'install-results.json');\nconst result={run_id:40267647899,source_root:source,base_commit:'c2d572e992516ed3080a22582e926754fb61262d',source_sha256:'cd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e',debug_apk_sha256:'b7a883b22c5fd3f53178862733c92b6dbcebbca10aecde6f2d4bbba15deb551b',page_bytes:16384,observations,identities,available,log_tail:lines.slice(-80).map(x=>x.slice(0,1200)).join('\\n').slice(-22000)};\nfs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(result,null,2));const fence=String.fromCharCode(96).repeat(3);const summary=fence+'json\\n'+JSON.stringify(result,null,2)+'\\n'+fence;if(summary.length>63000)throw Error('summary_too_large');\nawait github.rest.checks.create({...context.repo,name:'N00 exact candidate42 portfolio runtime evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Original portfolio runtime and exact native captures',summary}});core.setOutput('folder',out);"
-      - name: Preserve exact candidate42 portfolio evidence
+          script: |
+            const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
+            if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
+            const root='C:/actions-runner-4/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40268185222-1/app/build/outputs/apk/preview';
+            const finished=p.join(root,'ui-screens-api37-16384');
+            const source=fs.existsSync(finished)?finished:p.join(root,'ui-screens');
+            const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
+            fs.mkdirSync(out,{recursive:false});
+            const identities={};let total=0;
+            function copy(from,name){
+              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T04:16:00Z'))throw new Error('unexpected_file');
+              const data=fs.readFileSync(from);total+=data.length;if(total>25000000)throw new Error('evidence_too_large');
+              fs.writeFileSync(p.join(out,name),data,{flag:'wx'});
+              identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
+            }
+            const available=fs.readdirSync(source);
+            for(const name of available.filter(n=>/^portfolio-diagnostic-.*-failure\.(png|xml)$/.test(n)||['portfolio-focused-observations.json','portfolio-verification.json','portfolio-history-exact-observation.png','portfolio-history-missing-observation.png','portfolio-history-range.png','portfolio-history-ready.png','portfolio-markets-ready.png','portfolio-appearance-ready.png','portfolio-dossier-event-draft.png'].includes(n)))copy(p.join(source,name),name);
+            const observations=JSON.parse(fs.readFileSync(p.join(source,'portfolio-focused-observations.json'),'utf8'));
+            if(observations.diagnostic_cases_observed!==14||observations.portfolio.cases.length!==6||observations.portfolio.case_failures.length!==8||observations.release_gate_pass!==false)throw new Error('diagnostic_case_counts_changed');
+            const log=p.join(root,'install-api37-16384/runtime-console.log');
+            copy(log,'runtime-16384.log');
+            const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
+            if(!lines.some(l=>l.startsWith('PORTFOLIO_DIAGNOSTIC_CASE_FAILED=')&&l.includes('quotes/ready')))throw new Error('expected_completed_failure_not_observed');
+            const report={source_run:40268185222,source_root:source,diagnostic_only:true,release_gate_pass:false,page_bytes:16384,
+              base_commit:'c2d572e992516ed3080a22582e926754fb61262d',verified_backup_commit:'c2d572e992516ed3080a22582e926754fb61262d',source_inventory:'cd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e',
+              debug_apk_sha256:'b7a883b22c5fd3f53178862733c92b6dbcebbca10aecde6f2d4bbba15deb551b',
+              case_summary:{observed:observations.diagnostic_cases_observed,passed:observations.portfolio.cases.map(x=>({case:x.case,font:x.font_scale})),failed:observations.portfolio.case_failures},identities,available_files:available,native_reveals:lines.filter(l=>l.startsWith('UI_ACCESSIBILITY_ACTION=')&&l.includes(';show-')).slice(-20),log_tail:lines.slice(-100).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
+            fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
+            await github.rest.checks.create({...context.repo,name:'N00 candidate42 complete portfolio diagnostic results evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'All fourteen original diagnostic outcomes preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
+            core.setOutput('folder',out);
+      - name: Retain private synthetic failure evidence for inspection
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate42-portfolio-16384
+          name: n00-candidate42-portfolio-scan-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
