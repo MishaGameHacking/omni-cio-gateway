@@ -51,6 +51,10 @@ def main():
         recovery.apply(files, source.base)
         native_controls=load_admin('native_controls_source_text',HERE/'prepare_native_controls.py')
         native_controls.apply(files, source.base)
+        popup=load_admin('popup_fixture_source_text',HERE/'prepare_popup_fixture.py')
+        popup.apply(files, source.base)
+        performance=load_admin('portfolio_performance_source_text',HERE/'prepare_portfolio_performance.py')
+        performance.apply(files, source.base)
         gradle=files['app/build.gradle.kts']
         assert gradle.count('    testImplementation(libs.junit)')==1
         files['app/build.gradle.kts']=gradle.replace('    testImplementation(libs.junit)',
@@ -142,6 +146,8 @@ def main():
         'automatic_editors_generator_sha256':digest((HERE/'prepare_automatic_editors.py').read_bytes()) if args.include_autosave else None,
         'autosave_recovery_generator_sha256':digest((HERE/'prepare_autosave_recovery.py').read_bytes()) if args.include_autosave else None,
         'native_controls_generator_sha256':digest((HERE/'prepare_native_controls.py').read_bytes()) if args.include_autosave and not args.repair_v12_jvm else None,
+        'popup_fixture_generator_sha256':digest((HERE/'prepare_popup_fixture.py').read_bytes()) if args.include_autosave and not args.repair_v12_jvm else None,
+        'portfolio_performance_generator_sha256':digest((HERE/'prepare_portfolio_performance.py').read_bytes()) if args.include_autosave and not args.repair_v12_jvm else None,
         'applied_on_windows':False,'build_passed':False,'native_passed':False,'deployed':False,'plan_complete':False,
         'supersedes':'Unpublished multi-theme46. Failed builds remain original failed evidence.'}
     if args.repair_v12_jvm:
