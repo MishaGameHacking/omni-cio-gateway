@@ -72,7 +72,17 @@ class SpectrumResearchIntegrationTests(unittest.TestCase):
         self.assertIn("github.event_name == 'workflow_dispatch'", publication)
         self.assertIn("github.event_name == 'push'", publication)
         self.assertIn("contains(github.event.head_commit.message, '[publish-apk]')", publication)
-        self.assertIn('python3 .github/scripts/validate_distribution.py', workflow)
+        runtime = workflow.split("  runtime:\n", 1)[1].split("  collect:\n", 1)[0]
+        self.assertIn('windows_android_ci.py" validate\n', runtime)
+        helper = (ROOT / '.github/scripts/windows_android_ci.py').read_text(encoding='utf-8')
+        helper_module = ast.parse(helper)
+        worker = next(node for node in helper_module.body if isinstance(node, ast.FunctionDef) and node.name == 'worker')
+        commands = [node for node in ast.walk(worker) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'run' and node.args and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == 'distribution-validation']
+        self.assertEqual(len(commands), 1)
+        self.assertIn('.github/scripts/validate_distribution.py', [node.value for node in ast.walk(commands[0])
+                      if isinstance(node, ast.Constant)])
         self.assertNotIn('publish_moscow_release.sh', workflow)
         # Version code 34 belongs to the published 0.10.0 upgrade baseline.
         # Any changed APK bytes must use a strictly newer identity.

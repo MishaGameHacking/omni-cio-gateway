@@ -39,3 +39,5 @@ jobs:
       group: analyst-android-release-${{ github.ref }}
       cancel-in-progress: false
     uses: ./.github/workflows/android-ci.yml
+    secrets:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}

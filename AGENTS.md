@@ -1,32 +1,127 @@
-## N00 26.10.2026 — candidate43 Windows checks passed; build/runtime pending
+## Актуальное состояние N00 на 26.10.2026 — сборка43 и доставка подтверждены, native проверка не завершена
 
-> **26.10.2026, N00 — кандидат43 применён на Windows; базовые проверки прошли.** Исправления ввода и заголовка при font200, ожидания котировок, обхода досье и подтверждения сброса настроек сохранены после проверки на LAPTOP-NPSGA016. В40277268871 прошли1092 host tests (прежние3 skips),52 tools, Node и1684 backend tests +1515 subtests; Android-сборка пока выполняется. Предыдущий original14 в40272254653 завершился отказом выбора «Час», а не успехом. Original14 для43, полная15-stage матрица4096/16384, обычный CI и внешний exact-head Sonar ещё не пройдены. Канал38 сохранён. N00 открыт, N01–N11 не реализованы. [Точное состояние и продолжение](docs/N00_CANDIDATE43_2026-10-26.md).
+**N00 остаётся открытым. N01–N11 ещё не реализованы; N10 требует 30 фактических
+торговых сессий.** Актуальный канал — **0.13.5-preview / 43**. Не повторять как
+текущий статус старые записи «канал38», «43 не опубликован» или «сборка43 ещё
+выполняется». Подробные доказательства и следующие действия:
+[checkpoint43](docs/N00_CANDIDATE43_2026-10-26.md).
 
-Exact applied candidate43 source inventory:
-269b6755933d6504082a9ee4bc86dbbf458beb22abcb51918c852cccddefd11b.
-Fourteen application/test files applied only on LAPTOP-NPSGA016 in40277268871,
-base49d6a75; Windows full check passed06:04:21Z, Gradle still running at this checkpoint.
-Expected complete pre-documentation inventory:
-fafb95aef217a0de5536788c047e16481d9de53ee7fdf390a58c1275379c8cb4.
-Transport decoded bundle3330c9fabb07ca880abae1e430cf7ce508d7387accff077390fa2329cbe88fbe.
-Original quote, appearance-reset and long-dossier regressions each reproduced
-with2 conditional variants; repaired full host suite1092/50.103s passed (same3 skips).
-WSL1684 tests +1515 subtests passed118.91s; tools52 and Node passed.
-Current build root:
-C:\actions-runner-3\_work\omni-cio-gateway\omni-cio-gateway\windows-development-40277268871-1.
-A failed first build40276690834-2 stopped at two stale version42 assertions;
-these strict assertions now require43/0.13.5. It did not build an APK.
-Do not infer full build/runtime acceptance from the successful check phase.
-After exact successful build receipt, run unchanged original14 atfont100/font200
-on API37/16384 with candidate43 and exact published baseline38. Only then run
-all15 stages on4096 and16384. Diagnostic sentinel intentionally is not releasePASS.
-Normal CI migration candidates are prepared only, not applied or validated;
-retain synthetic merge integration coverage and separate exactPRhead Sonar.
-Canonical lease blobc9626f3bf90b612a71b9bbf2954d0c134aa29b22/wait1200s unchanged.
-Existing shared SDK/JDK, signing key, owner/session/broker binding and DB preserved.
-All application/backend/test execution stays on the laptop;9417611 only runtime/archive.
-No paidAI or real orders. No new APK publication or physical-phone claim.
-N00 remains open. N01–N11 remain unimplemented; N10 needs actual trading sessions.
+### Постоянное указание владельца от 26.10.2026
+
+> Не забывай обновлять приложение! Постоянно если есть актуальная сборка апк то обнови ту что на телефоне!
+
+Доводить актуальную сборку до существующего канала обновления и проверять
+сообщаемую активным клиентом версию, продолжая разработку. Это постоянное
+указание владельца; уже разрешённую выдачу не оставлять только в виде APK
+в каталоге сборки и не запрашивать повторное подтверждение того же действия.
+Сохранять существующие подпись, package, данные, owner/session/broker binding.
+Сообщать отдельно результаты сборки, публикации, клиентского наблюдения и
+полной native приёмки. Из одного сообщения совместимости нельзя выводить
+независимо подтверждённую установку Android на физическом телефоне.
+Выдача preview43 по этому указанию уже состоялась при явно незавершённой
+native матрице; это не делает её успешной и не снимает обычные release/merge gates.
+Включено ежечасное наблюдение за обновлениями, часовой пояс Europe/Moscow.
+
+### Подтверждённые результаты43
+
+- [Windows build40277268871](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40277268871)
+  завершился успешно по всем jobs. На LAPTOP-NPSGA016 прошли 1092 host tests
+  (прежние 3 skips), 52 tools, 61 Node, backend1684 tests +1515 subtests,
+  health/OpenAPI, 174 JVM tests в 30 suites без failures/errors/skips, lint
+  и все 8 Gradle tasks. Read-only observer40280005733 подтвердил результаты;
+  его evidence inventory SHA256 —
+  `11a8894609773ac490a9a3cb941591df1faf1739f9286f4c7443e47c3c978c6d`.
+- Исходники43 сохранены commit
+  `859c067198e52927df1b66983d02841e3fa6ff6a`; code inventory
+  `269b6755933d6504082a9ee4bc86dbbf458beb22abcb51918c852cccddefd11b`.
+  На Windows были применены 14 application/test файлов от49d6a75.
+  Полный build/source archive, 68 895 589 bytes, SHA256
+  `052ce18b76f27f6c9822347bbe34323ceb6445d1ae1d2c58e253816158ae3b20`,
+  сохранён на9417611 в06:17 UTC. Приложение/тесты на Timeweb не исполнялись.
+- [Original14 run40278915893](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40278915893)
+  реально завершился FAILED: все 7 font100 случаев прошли, первый font200
+  discovery остановился на «List target not reachable: Название, заметка или источник».
+  До этого прошли установка baseline38, upgrade38→43, clean install43
+  и запуск preview на API37/16384. Это install smoke, не успешные original14
+  или полная 15-stage матрица.
+- Причина возврата в библиотеку: ResearchLibraryScreen использовал одно
+  состояние списка для library/detail, поэтому offset длинного архива
+  переносился обратно в библиотеку. Candidate44 подготовлен только в 4 файлах:
+  отдельные saveable состояния library/detail, версия44 /0.13.6 и два прежних
+  строгих version tests. Не применён и не собран; native probes/assertions
+  оставлены без изменений.
+
+### Публикация и сообщение активного клиента
+
+[Delivery run40280610534](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40280610534)
+на административном commit80c1cb… успешно завершился в attempts1 и2.
+Первичная выдача и повторная проверка подтвердили policy43, полные публичные
+байты APK по HTTPS и health200. Неизменный published_at1792996509 соответствует
+26.10.2026 06:35:09 UTC. APK — 29 771 254 bytes, SHA256
+`4e9bf0a2fd54d8ab4b9d49ef9ddf96bc14a274ac4c145585fcfdb88d6ae774b6`;
+сертификат прежний:
+`bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1`.
+
+Read-only сводка сначала показывала активный клиент38 с last_seen1792996502
+(06:35:02 UTC). При повторной проверке observed_at1792997048 (06:44:08 UTC)
+была одна активная авторизованная сессия43, сообщившая точный SHA этого APK;
+last_seen1792996623 (06:37:03 UTC). Допустимо фиксировать наблюдаемый переход
+версии активного клиента38→43. Это compatibility headers, не OS/device attestation;
+проверка физического телефона и полной native матрицы остаётся открытой.
+Данные БД, session/owner binding, подпись и backend deployment не менялись.
+
+### Текущая работа и порядок продолжения
+
+Административный [Windows CI apply/check40281546498](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40281546498)
+завершился PASS по всем4 jobs. На базе859c067… применены точные13 CI-файлов;
+payload SHA256
+`d22b4131bf00b541819cddf30065840e26dc8900120bccaec5d8b5bb297178c1`.
+Worker завершился06:46:33.098995 UTC. Host1126 total:1123 passed и3 прежних
+symlink skips; tools52 и Node61 PASS, в том числе14 новых Android CI regressions.
+Source audit, зависимости и diff check прошли; все13 хешей, неизменность
+проверяемых исходников после применения и существующего ключа подтверждены.
+Report SHA256 `2c091137d7d92bcb90a4036057fce7869184036c4353568d4fbdbd79feb2c93c`.
+Новый code inventory:
+`4fcf1b15db4d40c249966d072e22d31f286515fc0e84974364cb71e07f282aaf`;
+complete source до этой docs-правки:
+`c04223c2c787b34c22c2514c23437ae39c1990f20b28d1b96840ca0c15a4128d`.
+Архив7 747 953 bytes /SHA256
+`8934180d9d622db860cf5a242fa0271ca27faaed277be1b36c57817afc400a4f`
+получен9417611 в06:48:11 UTC. Прошли только source-contract checks;
+обычный CI, полный backend, Gradle, native и внешний Sonar в этом этапе
+не запускались. Сохранить эти точные Windows-applied байты новым backup,
+затем привязать candidate44 к нему и указанному code inventory.
+Сопутствующие docs должны сохранять concurrent delivery-checkpoint commit
+`b8198744558e0cff006419a8d9b687a1e8aaf3a1`, потомок859; его первоначальная
+сводка клиента38 обновлена позднейшим сообщением43, а доказательства выдачи сохранены.
+Обычный CI должен проверять настоящий PR merge с отдельной привязкой PR head/base;
+внешний Sonar обязателен для точного PR head. Локальные sonar helper tests не
+заменяют внешний quality gate. Не сливать старые PR880/887 или менять main
+на основании этой подготовки.
+
+После сборки44 повторить неизменённый original14, включая font200 discovery,
+затем всю 15-stage матрицу на API37/16384 и4096. Актуальный upgrade baseline —
+точный опубликованный43, а38 остаётся baseline исторического прогона43.
+N00 закрывать только по фактическим результатам, далее идти N01–N11 по порядку.
+
+Новое пожелание владельца о боковых и нижних панелях («Богомола») сохраняется.
+Отдельного такого проекта/объекта в репозитории и доступном контексте не найдено;
+значение названия не подтверждено. Подготовка панелей candidate45 относится
+к текущему Analyst AI и ведётся отдельно от четырёхфайлового44. Это подготовка,
+не реализация и не разрешение подменить другой проект без его идентификации.
+
+Все application/backend/test исполнения — только LAPTOP-NPSGA016 и его
+существующая WSL Ubuntu-24.04. Timeweb9417611 — runtime и хранение архивов.
+Canonical lease blob `c9626f3bf90b612a71b9bbf2954d0c134aa29b22`, wait1200s;
+общий lock не удалять. SDK/JDK, подпись, реальные данные и owner binding сохранять.
+Платный ИИ и реальные поручения не включались.
+
+## История исполнения и ранее зафиксированные требования
+
+Статусы сборок, каналов и окружения ниже относятся к своим прежним датам.
+Текущее состояние и новое постоянное указание об обновлении указаны выше.
+Неизменённые требования владельца и ограничения проекта продолжают действовать;
+исторический «не опубликован» не отменяет фактическую выдачу43.
 
 ## N00 26.10.2026 — quote-state ремонт прошёл1083 tests, original14 продолжается
 

@@ -12,73 +12,121 @@ permissions:
 
 concurrency:
   group: backend-ci-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Do not automatically kill a Windows lease holder while its WSL guest runs.
+  cancel-in-progress: false
 
 jobs:
-  test:
-    name: Backend smoke test
+  admission:
+    name: Admit trusted PR merge and source identities
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      TELEGRAM_CLIENT_ID: "123456"
-      TELEGRAM_CLIENT_SECRET: test-only
-      BACKEND_PUBLIC_URL: https://example.invalid
-      FERNET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-      ANALYSIS_SCHEDULER_ENABLED: "false"
-      AI_EXTERNAL_PROCESSING_APPROVED: "false"
-
+    timeout-minutes: 5
+    outputs:
+      tested_merge_sha: ${{ steps.source.outputs.tested_merge_sha }}
+      pr_head_sha: ${{ steps.source.outputs.pr_head_sha }}
+      pr_base_sha: ${{ steps.source.outputs.pr_base_sha }}
     steps:
-      - name: Checkout source
+      - name: Validate event metadata without checking out or executing source
+        id: source
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            if (context.payload.repository?.full_name !== 'MishaGameHacking/omni-cio-gateway') {
+              throw new Error('Unexpected backend repository');
+            }
+            const testedMergeSha = context.sha;
+            let prHeadSha = '', prBaseSha = '';
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              if (pr.base.ref !== 'main' || pr.head.repo?.full_name !== context.payload.repository.full_name) {
+                throw new Error('Fork source is not authorized on the owner laptop; backend verification remains failed');
+              }
+              prHeadSha = pr.head.sha;
+              prBaseSha = pr.base.sha;
+            } else if (context.eventName === 'push' && context.ref === 'refs/heads/main') {
+              // A main push has one tested source SHA and no PR binding.
+            } else {
+              throw new Error('Unexpected backend event');
+            }
+            const identities = [testedMergeSha, ...(context.eventName === 'pull_request' ? [prHeadSha, prBaseSha] : [])];
+            if (!identities.every(sha => /^[a-f0-9]{40}$/.test(sha))) throw new Error('Invalid exact source SHA');
+            core.setOutput('tested_merge_sha', testedMergeSha);
+            core.setOutput('pr_head_sha', prHeadSha);
+            core.setOutput('pr_base_sha', prBaseSha);
+
+  backend:
+    name: Backend suite on the Windows laptop
+    needs: admission
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - omni-cio-ci
+    # 20 min shared lease + bounded 31 min guest + source checks + 22 min Sonar.
+    timeout-minutes: 90
+    outputs:
+      tested_merge_sha: ${{ steps.verify.outputs.tested_merge_sha }}
+      pr_head_sha: ${{ steps.verify.outputs.pr_head_sha }}
+      pr_base_sha: ${{ steps.verify.outputs.pr_base_sha }}
+    env:
+      EXPECTED_TESTED_MERGE_SHA: ${{ needs.admission.outputs.tested_merge_sha }}
+      EXPECTED_PR_HEAD_SHA: ${{ needs.admission.outputs.pr_head_sha }}
+      EXPECTED_PR_BASE_SHA: ${{ needs.admission.outputs.pr_base_sha }}
+      SOURCE_SUBDIRECTORY: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+      GIT_CONFIG_KEY_1: core.autocrlf
+      GIT_CONFIG_VALUE_1: 'false'
+    steps:
+      - name: Checkout the exact event merge into this run's directory
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.admission.outputs.tested_merge_sha }}
+          path: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
           clean: true
 
-      - name: Validate deployment script
-        run: bash -n .github/scripts/deploy_timeweb_backend.sh
-
-      - name: Create isolated Python environment
+      - name: Verify all tracked Python sources and the complete backend suite on the laptop
+        id: verify
+        shell: cmd
+        working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          backend_venv="$RUNNER_TEMP/analyst-ai-backend-ci"
-          python3 -m venv "$backend_venv"
-          "$backend_venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir -r backend/requirements-dev.txt
-          echo "BACKEND_CI_VENV=$backend_venv" >> "$GITHUB_ENV"
+          py -3 .github\scripts\laptop_backend_ci.py
+          if errorlevel 1 exit /b 1
 
-      - name: Audit syntax of all tracked Python sources
-        run: '"$BACKEND_CI_VENV/bin/python" .github/scripts/audit_python_sources.py'
-
-      - name: Compile backend
-        run: '"$BACKEND_CI_VENV/bin/python" -m compileall -q backend'
-
-      - name: Run all backend unittest and pytest scenarios
-        env:
-          DATABASE_PATH: ${{ runner.temp }}/analyst-ai-backend-tests.sqlite3
-        run: '"$BACKEND_CI_VENV/bin/python" -m pytest backend/tests -q'
-
-      - name: Verify health endpoint and OpenAPI
-        env:
-          DATABASE_PATH: ${{ runner.temp }}/analyst-ai-backend-ci.sqlite3
-        run: |
-          "$BACKEND_CI_VENV/bin/python" - <<'PYCODE'
-          from fastapi.testclient import TestClient
-          from backend.app import app
-          with TestClient(app) as client:
-              health = client.get('/health')
-              assert health.status_code == 200 and health.json() == {'status': 'ok'}
-              assert client.get('/openapi.json').status_code == 200
-          PYCODE
+      - name: Retain synthetic backend reports, JUnit and logs
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backend-laptop-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/windows-backend-report.json
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/python-source-audit.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/sonar-helper-tests.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/backend-ci-regressions.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/linux-backend.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/guest-evidence/*.json
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/guest-evidence/*.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/guest-evidence/*.xml
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Read exact-head Sonar findings for remediation
-        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request' }}
         timeout-minutes: 22
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
           script: |
-            const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
-            const { runTests } = require('./.github/scripts/require_clean_sonar.test.cjs');
-            core.info('SONAR_GATE_TESTS=' + runTests());
+            const path = require('node:path');
+            const scripts = path.join(process.env.GITHUB_WORKSPACE, process.env.SOURCE_SUBDIRECTORY, '.github', 'scripts');
+            const { newestSonarCheck, assertCleanSonar } = require(path.join(scripts, 'require_clean_sonar.cjs'));
             const ref = context.payload.pull_request.head.sha;
+            if (ref !== process.env.EXPECTED_PR_HEAD_SHA) throw new Error('Sonar head differs from the admitted PR head');
             let sonar = null;
             for (let attempt = 0; attempt < 120; attempt++) {
               const checks = await github.paginate(github.rest.checks.listForRef, {
@@ -105,3 +153,37 @@ jobs:
             core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
             assertCleanSonar(sonar, annotations, ref);
             core.info('SONAR_ZERO_ISSUES_GATE=passed');
+
+  test:
+    # Retain the existing required check name; a skipped Windows job cannot pass it.
+    name: Backend smoke test
+    needs: [admission, backend]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require laptop merge verification bound to the admitted PR head and base
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ADMISSION_RESULT: ${{ needs.admission.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          EXPECTED_TESTED_MERGE_SHA: ${{ needs.admission.outputs.tested_merge_sha }}
+          EXPECTED_PR_HEAD_SHA: ${{ needs.admission.outputs.pr_head_sha }}
+          EXPECTED_PR_BASE_SHA: ${{ needs.admission.outputs.pr_base_sha }}
+          TESTED_MERGE_SHA: ${{ needs.backend.outputs.tested_merge_sha }}
+          TESTED_PR_HEAD_SHA: ${{ needs.backend.outputs.pr_head_sha }}
+          TESTED_PR_BASE_SHA: ${{ needs.backend.outputs.pr_base_sha }}
+        with:
+          script: |
+            const env = process.env;
+            if (env.ADMISSION_RESULT !== 'success' || env.BACKEND_RESULT !== 'success') {
+              throw new Error('Backend laptop verification did not pass: admission=' + env.ADMISSION_RESULT + ', backend=' + env.BACKEND_RESULT);
+            }
+            if (!/^[a-f0-9]{40}$/.test(env.EXPECTED_TESTED_MERGE_SHA) ||
+                env.TESTED_MERGE_SHA !== env.EXPECTED_TESTED_MERGE_SHA ||
+                env.TESTED_PR_HEAD_SHA !== env.EXPECTED_PR_HEAD_SHA ||
+                env.TESTED_PR_BASE_SHA !== env.EXPECTED_PR_BASE_SHA) {
+              throw new Error('Backend tested merge / PR head / PR base receipt is missing or mismatched');
+            }
+            core.info('BACKEND_LAPTOP_SOURCE_GATE=' + JSON.stringify({tested_merge_sha: env.TESTED_MERGE_SHA,
+              pr_head_sha: env.TESTED_PR_HEAD_SHA, pr_base_sha: env.TESTED_PR_BASE_SHA}));

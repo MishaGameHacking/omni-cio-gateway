@@ -33,8 +33,15 @@ class SpectrumFixtureTests(unittest.TestCase):
         for required in ('launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)', 'probe-screen:', 'self.palette(DARK_BACKGROUND)', 'self.capture("spectrum-" + screen)'):
             self.assertIn(required, stage)
         workflow = (ROOT / '.github/workflows/android-ci.yml').read_text(encoding='utf-8')
-        for name in ('spectrum-home', 'spectrum-portfolio', 'spectrum-allocation'):
-            self.assertIn(name, workflow)
+        self.assertIn('windows_android_ci.py" export\n', workflow)
+        self.assertIn('for screen in ("home", "portfolio"):', stage)
+        self.assertIn('self.capture("spectrum-allocation")', stage)
+        helper = (ROOT / '.github/scripts/windows_android_ci.py').read_text(encoding='utf-8')
+        export = helper.split('def export_evidence(', 1)[1].split('def runtime_reference(', 1)[0]
+        self.assertIn('formats = {".json", ".log", ".txt", ".xml", ".png"}', export)
+        self.assertIn('tree("runtime/preview", root / "app/build/outputs/apk/preview", formats)', export)
+        self.assertIn('os.walk(folder, followlinks=False)', export)
+        self.assertIn('"ui-screens-api37-16384"', helper)
 
 
 if __name__ == '__main__':
