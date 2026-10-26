@@ -1,0 +1,82 @@
+name: Read original native47 progress and completed synthetic captures
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/windows-n00-design47-status.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read only the exact owned native run files
+        shell: 'py -3 {0}'
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: utf-8
+        run: |
+          import datetime, hashlib, json, os, pathlib, sys
+          assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
+          run = 40389869187
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / ('native47-observation-' + os.environ['GITHUB_RUN_ID'])
+          output.mkdir(exist_ok=False)
+          report = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'native_run_id': run, 'host': os.environ['COMPUTERNAME'], 'profiles': [], 'captures': []}
+          for suffix in ('', '-2', '-3', '-4'):
+              runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
+              root = runner / ('omni-cio-gateway/omni-cio-gateway/windows-development-' + str(run) + '-1/app/build/outputs/apk/preview')
+              state = runner / ('_temp/n00-native47-focused-' + str(run) + '-1')
+              if not root.is_dir():
+                  continue
+              active_page = 4096 if (root / 'install-api37-4096/runtime-console.log').exists() else 16384
+              for page, folder in ((16384, 'ui-screens-api37-16384'), (4096, 'ui-screens')):
+                  item = {'page_bytes': page, 'files': {}}
+                  paths = [state / ('runtime-' + str(page) + '.json'),
+                      root / ('install-api37-' + str(page)) / 'install-results.json']
+                  if page == 16384 and (root / folder).is_dir():
+                      paths.append(root / folder / 'design47-focused-observations.json')
+                  elif page == active_page:
+                      paths.append(root / 'ui-screens/design47-focused-observations.json')
+                  for path in paths:
+                      if not path.is_file() or path.is_symlink():
+                          continue
+                      raw = path.read_bytes()
+                      assert len(raw) < 4 * 1024**2
+                      value = json.loads(raw)
+                      if path.name == 'design47-focused-observations.json':
+                          value = {key: value.get(key) for key in ('status', 'error_type', 'error', 'failed_case')} | {
+                              key: len(value.get(key, [])) for key in ('cases', 'appearance_restart_cases', 'autosave_cases')}
+                      item['files'][path.name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': value}
+                  path = root / ('install-api37-' + str(page)) / 'runtime-console.log'
+                  if path.is_file() and not path.is_symlink():
+                      with path.open('rb') as stream:
+                          stream.seek(max(0, path.stat().st_size - 16000))
+                          lines = stream.read().decode('utf-8', errors='replace').splitlines()
+                      item['console_tail'] = [line[:1000] for line in lines[-22:]]
+                  report['profiles'].append(item)
+              for folder in ('ui-screens-api37-16384', 'ui-screens'):
+                  paths = sorted((root / folder).glob('design47-*.png'), key=lambda path: path.stat().st_mtime_ns)
+                  for path in paths[-3:]:
+                      before = path.stat()
+                      assert not path.is_symlink() and before.st_size < 16 * 1024**2
+                      raw = path.read_bytes()
+                      after = path.stat()
+                      if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                          continue
+                      if not raw.startswith(b'\x89PNG\r\n\x1a\n') or raw[-12:] != b'\0\0\0\0IEND\xaeB`\x82':
+                          continue
+                      name = folder + '-' + path.name
+                      (output / name).write_bytes(raw)
+                      report['captures'].append({'name': name, 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                          'source_path': str(path), 'page_bytes': 16384 if folder.endswith('16384') else active_page,
+                          'synthetic_debug_fixture': True})
+          (output / 'observation.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+          print('NATIVE47_OBSERVATION=' + json.dumps(report, ensure_ascii=True))
+      - name: Retain copied original synthetic frames and read-only observation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native47-progress-observation
+          retention-days: 3
+          if-no-files-found: error
+          path: ${{ runner.temp }}/native47-observation-${{ github.run_id }}/*
