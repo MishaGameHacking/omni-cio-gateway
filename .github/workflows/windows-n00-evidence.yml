@@ -1,4 +1,4 @@
-name: Inspect candidate41 rating source geometry failure
+name: Inspect candidate41 dossier report tabs failure
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,41 +11,41 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Preserve candidate41 rating source geometry failure and passed discovery captures
+      - name: Preserve candidate41 dossier report tabs failure and passed discovery captures
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
             if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
-            const root='C:/actions-runner-4/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40256049480-1/app/build/outputs/apk/preview';
+            const root='C:/actions-runner-3/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40257272188-1/app/build/outputs/apk/preview';
             const source=p.join(root,'ui-screens-api37-16384');
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const identities={};let total=0;
             function copy(from,name){
-              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T01:48:00Z'))throw new Error('unexpected_file');
+              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T02:05:49Z'))throw new Error('unexpected_file');
               const data=fs.readFileSync(from);total+=data.length;if(total>25000000)throw new Error('evidence_too_large');
               fs.writeFileSync(p.join(out,name),data,{flag:'wx'});
               identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
             }
             const available=fs.readdirSync(source);
-            for(const name of available.filter(n=>n.startsWith('rating-source-') && /\.(png|xml|json)$/.test(n)))copy(p.join(source,name),name);
+            for(const name of available.filter(n=>['portfolio-focused-failure.png','portfolio-focused-failure.xml','portfolio-focused-observations.json','portfolio-discovery-ready.png','portfolio-discovery-common-period.png','portfolio-discovery-comparison.png','portfolio-discovery-archive.png','portfolio-discovery-watch-dossier.png'].includes(n)))copy(p.join(source,name),name);
             const log=p.join(root,'install-api37-16384/runtime-console.log');
             copy(log,'runtime-16384.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
-            if(!lines.some(l=>l.includes('RATING_SOURCE_DIAGNOSTIC=')))throw new Error('expected_completed_failure_not_observed');
-            const report={source_run:40256049480,source_root:source,diagnostic_only:true,release_gate_pass:false,page_bytes:16384,
-              base_commit:'722adbe43c8bf1604ec89c0469a4b1ff40e6119e',verified_backup_commit:'5bfec1ab339da82478c8d6123b64ba2d4de9f33e',source_inventory:'6b793696cf0fd5cf30cfe44a19c55453a6ead01be1526ea6eeb5a0a48ea05052',
+            if(!lines.some(l=>l.includes('List target not reachable: Опубликованы')))throw new Error('expected_completed_failure_not_observed');
+            const report={source_run:40257272188,source_root:source,diagnostic_only:true,release_gate_pass:false,page_bytes:16384,
+              base_commit:'5bfec1ab339da82478c8d6123b64ba2d4de9f33e',verified_backup_commit:'46f36b824fc008fce6115423a5e57c8ddc095621',source_inventory:'9c0e24a49ae94e38642254d53d7de81688af569496dcf73d08b2d346db28bdb7',
               debug_apk_sha256:'925a7f8a874e70123c380c9ef2ac256c5e9be08f41c7fb53758e77f7e7dd0931',
               identities,available_files:available,native_reveals:lines.filter(l=>l.startsWith('UI_ACCESSIBILITY_ACTION=')&&l.includes(';show-')).slice(-20),log_tail:lines.slice(-100).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 candidate41 rating source geometry failure evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Original rating source frames and reverse observations',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
+            await github.rest.checks.create({...context.repo,name:'N00 candidate41 dossier report tabs failure evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Rating sources passed; nested report tab failure preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
             core.setOutput('folder',out);
       - name: Retain private synthetic failure evidence for inspection
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate41-rating-source-16384
+          name: n00-candidate41-dossier-report-tabs-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
