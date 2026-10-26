@@ -99,7 +99,7 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
     SpectrumCard(emphasized = true) {
         Text("Инвестиционный профиль", style = MaterialTheme.typography.titleLarge)
         Text("Выбор сохраняется автоматически. Пока обязательные параметры не выбраны, изменения остаются вашим черновиком.")
-        Text("Торговля выключена. Правила используются для проверки допустимости предложений.", style = MaterialTheme.typography.bodySmall)
+        Text("Торговля выключена. Состав портфеля, счёт и рейтинг учитываются в проверках. Перераспределение и реинвестирование пока недоступны.", style = MaterialTheme.typography.bodySmall)
         val modes = listOf("bonds", "shares", "mixed")
         WorkspaceChoices("Состав", listOf("Облигации", "Акции", "Облигации и акции"),
             modes.indexOf(mandate.optString("asset_mode")), enabled) { index ->
@@ -158,7 +158,7 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
             val value = mandate.opt(key) as? Boolean
             if (value == null) WorkspaceChoices("$title · реинвестирование", listOf("Оставлять в резерве", "Использовать для покупок"), -1, enabled) {
                 change(key, it == 1)
-            } else WorkspaceToggle("$title · реинвестирование", "Учитывается при распределении поступлений", value,
+            } else WorkspaceToggle("$title · реинвестирование", "Ваш выбор для будущих поступлений", value,
                 enabled = enabled) { change(key, it) }
         }
     }

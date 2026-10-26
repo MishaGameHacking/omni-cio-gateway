@@ -7,25 +7,25 @@
   "new_paths": 42,
   "version_code": 48,
   "version_name": "0.14.1-preview",
-  "reviewed_files_sha256": "21d6ec5892f343989d684f86ff70ac886bbf257807d864f6e99a48b487ff2747",
-  "bundle_sha256": "054c1835370ad2603152c2c7da0704f09c4dedf922087c88dc969d35d652185d",
-  "transport_sha256": "376f316104b502f728d3c42ec5dae0c04e190df0e0ab76f440262abf2640ff2e",
-  "patch_manifest_sha256": "8137b9594ea21f8b238e59817886e4f9eba18f9d739cc898fb8aafb272e87dd9",
+  "reviewed_files_sha256": "a6ea5c5a389db5b32bf256015eaed833391119b094902a2fbd96ab3a125a60e3",
+  "bundle_sha256": "7ce3371f317aabe7afe649d9f0de8ee2a72689316cfd9bbbda04b780bc226365",
+  "transport_sha256": "7536a4d0a5502ad2b8c0a250b5de17cc8b4d425d68c462575a3fd4c041b10167",
+  "patch_manifest_sha256": "ad9c995ae30f892c588658e322cf8853a6160040ee7fdc310f46519e8334cbc4",
   "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
-  "workflow_sha256": "fdb61960e30dc4f33f2ff3bfbcdf7c3e5cc8ddb295785e1085b141ec3716a49c",
+  "workflow_sha256": "f1e718dfc66fa918ecaade7f45755842d1386c55ccef72cfc53c9de05317924c",
   "source_generator_sha256": "3a6afdea9ee64ab3f800d0d9c9a9266d885b7326351b9c834c566df4dcf50fb5",
   "dock_generator_sha256": "71d687577525b6116305c9fef3f8c34fd1d5c39524d2fc46f699b46fdd79c7dd",
   "controls_generator_sha256": "c1663ceb74ed9127afd7d6f62db7ee0fc03b8e2a5eea1d489cf495ce4862c637",
   "bundle_specs": [
     {
       "name": "n00-single-style47",
-      "transport_sha256": "376f316104b502f728d3c42ec5dae0c04e190df0e0ab76f440262abf2640ff2e",
-      "decoded_sha256": "738749aa972bcd3f7ae979b30f23af9c9cde4f60f1eb72557ad07e3af3cb88d6"
+      "transport_sha256": "7536a4d0a5502ad2b8c0a250b5de17cc8b4d425d68c462575a3fd4c041b10167",
+      "decoded_sha256": "7d30b5764f953d5548a44c154140e4abe1bb2a37ffd509f31bd9b9fc6ffb9cbc"
     },
     {
       "name": "n00-single-style47-part2",
-      "transport_sha256": "c46f22fb0a8a8c048053273ac351e22c50fb7cbd2bfafb4f9180fdf1105876ad",
-      "decoded_sha256": "ceb89fe5deaf47a146d887c6f354d1491ca187303284420ac4bd409815a9948e"
+      "transport_sha256": "5dd2219421e8ae637b2ea3b10760dff4e7518a03fdee52bafddb4f2a0de4cf14",
+      "decoded_sha256": "827065314ecbc2f79cc67edc5247b33f1cf5eaef40eb83505d58d1b1f76ce0b1"
     }
   ],
   "autosave_included": true,
@@ -37,8 +37,8 @@
   "portfolio_performance_generator_sha256": "e9fb2ab8f9d152fada0ec3a4f4bcf058953c6d3ab055f6021786bcaf1475426b",
   "mandate_generators": {
     "prepare_mandate48.py": "eab62bd128e7b5bb9acbb2b89bbb8a84e33d67980d76a227f3ad383bff0e76dd",
-    "prepare_mandate_ui48.py": "d9fe8ee5356fef5fd0397bcefaf9cb499be4cc0739001d3f165db858025b359c",
-    "prepare_mandate_tests48.py": "311911b230d029790603bab7813e1e87eb9237ae6532860535f330cd7e2ab7b8"
+    "prepare_mandate_ui48.py": "a838ccf53f19bd28492c7d9c86cebf1e2455ef3e474c61fa87541fdcd4f43ec7",
+    "prepare_mandate_tests48.py": "15ccbc901200a0acfdad3f0e2574e11fb76cc83a24e74077130adde1edd84b28"
   },
   "applied_on_windows": false,
   "build_passed": false,

@@ -150,7 +150,7 @@ jobs:
 
         raw=source.read_bytes()
 
-        assert hashlib.sha256(raw).hexdigest()==''376f316104b502f728d3c42ec5dae0c04e190df0e0ab76f440262abf2640ff2e''
+        assert hashlib.sha256(raw).hexdigest()==''7536a4d0a5502ad2b8c0a250b5de17cc8b4d425d68c462575a3fd4c041b10167''
 
         target=pathlib.Path(os.environ[''PATCH_DIR''])/''n00-single-style47.b64''
 
@@ -181,7 +181,7 @@ jobs:
 
         raw=source.read_bytes()
 
-        assert hashlib.sha256(raw).hexdigest()==''c46f22fb0a8a8c048053273ac351e22c50fb7cbd2bfafb4f9180fdf1105876ad''
+        assert hashlib.sha256(raw).hexdigest()==''5dd2219421e8ae637b2ea3b10760dff4e7518a03fdee52bafddb4f2a0de4cf14''
 
         target=pathlib.Path(os.environ[''PATCH_DIR''])/''n00-single-style47-part2.b64''
 
@@ -199,12 +199,12 @@ jobs:
     - name: 'Stage verified administrative transport: patch-manifest.json'
       shell: cmd
       run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''PATCH_DIR''])/''patch-manifest.json.b64'';
-        p.open(''w'',encoding=''ascii'').write(''eNp9kEFOazEMRfeSMZUcx4mdbgV9ISe2Aal9RX3vDxDq3smMCWLse698zlfa55tfNZ3zUxq6+8u8Xa/vRzonE84aSNFCvEEjbtalhQZ57XXSrABFelrF/5tdfE/n56+06dVXewM47e/b68VP+/F5ceKVO+667R+3+/GyvynWtnKFW5TcMtCogMEoViahz2rqMIE8d7AABx0rSgTYUEdgI4hAX6vm82ZuP5tchKmrdsYxrQSrd+6jQGDR6LNP84UFkX0w1spqwL5OZQ4Ra+nx9AfH6UPvB/5OM6kFYgxQUVnPC9SCXHSWmh1xGYvBcxiOpXFQ9CwQFjlDFW5qv9FMH9LDq/kyz5qpmQjPpa2SZep5ahYuUFCIEHTSMIIuuWrvJJ4e/x7fAtOPAw=='')"
+        p.open(''w'',encoding=''ascii'').write(''eNp9kMlqI0EQRP+lzhZkVWXWol8xxuRqG6SWUbcPxujfp+Y2BzPnWIgXP2nXd79yOuenJLz7q96u148jnZONnjkKRovhDRr2ZnO04ECnSYpKAHXMtIJfm118T+fnn7Tx1Vd6AzjtH9vbxU/78X1x7Mt33HnbP2/343V/50Jt+TrVxmjARFDYigyFJYGQee6qQ9CwkLWh2Ap14hqGCpglQ25/W831Zm7/dFpd+d4wJlUjwsGImgkzgiOLZ5HCtUcYwYyaxabM0BYhU0XT4+k/HKdPvh/ldxoyKyVPLNkHe6tdinNdS3sDi3VcpzwYFoI7FeEwE4zCYI4aGX+jGaVDo5rR17QSfaq27qZUsEutkTXI2WOxyagEZDRsvRO9qYPk9Hh5/AGVOI/w'')"
 
         if errorlevel 1 exit /b 1
 
         py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''PATCH_DIR'']); b=zlib.decompress(base64.b64decode((p/''patch-manifest.json.b64'').read_text()));
-        assert hashlib.sha256(b).hexdigest()==''8137b9594ea21f8b238e59817886e4f9eba18f9d739cc898fb8aafb272e87dd9''; (p/''patch-manifest.json'').write_bytes(b)"
+        assert hashlib.sha256(b).hexdigest()==''ad9c995ae30f892c588658e322cf8853a6160040ee7fdc310f46519e8334cbc4''; (p/''patch-manifest.json'').write_bytes(b)"
 
         if errorlevel 1 exit /b 1'
       id: setup

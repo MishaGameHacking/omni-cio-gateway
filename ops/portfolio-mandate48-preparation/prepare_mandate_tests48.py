@@ -51,9 +51,11 @@ def test_account_revocation_between_preview_and_commit_blocks_same_snapshot_iden
     snapshot = deepcopy(fixture['snapshot'])
     snapshot['accounts'] = [row for row in snapshot['accounts'] if row['id'] != 'owned-account-a']
     workspace.persist(fixture['user'], snapshot)
+    assert snapshot['snapshot_id'] == fixture['snapshot']['snapshot_id']
     with pytest.raises(HTTPException) as error:
-        state.confirm_strategy(state.StrategyConfirm(preview_id=preview['preview_id'],expected_version=0,request_id='revoked'),user=fixture['user'])
+        state.confirm_strategy(state.StrategyConfirm(preview_id=preview['preview_id'],expected_version=0,request_id='revoked-account'),user=fixture['user'])
     assert error.value.status_code == 409
+    assert error.value.detail == 'mandate_account_not_in_current_verified_snapshot'
     assert state.active_strategy(fixture['user']['id']) is None
 
 def test_mandate_exact_percentages_ignore_external_decimal_precision():
