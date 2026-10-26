@@ -116,10 +116,10 @@ The private1033-file build archive is68,773,030 bytes, SHA256
 Timeweb9417611 confirmed receipt at2026-10-26T01:16:15Z under
 /var/lib/analyst-ai-build/incoming/windows-development-40252011635-1/.
 Transport cleanup and the full workflow completed successfully.
-External quality was not run by this bootstrap. Android runtime acceptance
-of candidate41 remains pending; build success alone does not prove the tab fix.
+External quality was not run by this bootstrap. The original discovery/ready/font1 case subsequently passed. Complete candidate41
+runtime acceptance remains open; the next dossier failure is detailed below.
 
-## Original portfolio acceptance in progress
+## Original portfolio acceptance result
 
 [Focused40253475330](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40253475330)
 uses exact backed source6b6a359dfffdb61626c6766fc5952900761b7015 and
@@ -137,7 +137,10 @@ its external hook SHA256 is
 ddff3bb7c57670141b9e5f0ce02994fb0d8ed7748b781776a284460614f2276e.
 The hook preserves the first actual failure screenshot/XML after an error.
 Even all14 focused cases do not claim the complete15-stage suite.
-Actual portfolio results remain pending.
+Attempt2 completed with discovery/ready/font1 passed and dossier/ready/font1
+failed at the fixed bottom action dock. The27-file failure archive was preserved.
+[Actual native evidence and the Windows-tested harness repair](N00_DOSSIER_DOCK_2026-10-26.md)
+record the exact cause, regression and next14-case run40255133373.
 
 ## Continue in order
 

@@ -1,15 +1,16 @@
 ## N00 26.10.2026 — кандидат41 после подтверждённого перекрытия вкладок
 
-> **26.10.2026, N00 — кандидат41 собран, runtime ещё не проверен.** На APK40 воспроизведено перекрытие вкладок нативной областью кнопки прокрученного списка: «Выплаты» получали28px вместо52px. SpectrumTabs поднят над соседним содержимым; тесты нажатия сохранены. Windows/WSL build40252011635 прошёл:1066 host-тестов,52 tools,1684 backend-теста и1515 subtests, все Android unit/lint/assemble и APK-проверки. Preview41 /0.13.3-preview SHA2560cad98a49c15678cc2933610a5165d90f8442ef356e86e8d1d91215374f12fda. Выполняются14 исходных portfolio cases в40253475330/attempt2, затем нужна полная15-stage матрица4096/16384. Независимо проверены174 Android JVM tests без failures/errors/skips. Канал38 сохранён,41 не опубликован; N00 открыт, N01–N11 не реализованы. [Причина, доказательства и продолжение](docs/N00_TAB_LAYERING_2026-10-26.md).
+> **26.10.2026, N00 — первый portfolio case кандидата41 прошёл; исправлен поиск закреплённой кнопки.** Полный Windows/WSL build41 подтверждён. В40253475330/attempt2 прошёл discovery/ready/font1; dossier остановился из-за поиска нижней панели внутри списка. PNG/XML подтвердили расположение кнопки вне workspace-content. В40255133373 старый тест воспроизвёл отказ в двух вариантах, исправление прошло все1066 host-тестов (прежние3 skips). Сейчас повторяются14 portfolio cases на прежнем APK41. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_DOSSIER_DOCK_2026-10-26.md).
 
-Build40252011635 на omni-cio-ci-4 применил4 файла с baseb9f4ca0,
-inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
-Источник после полной сборки совпал, прежний ключ/сертификат сохранены.
-Finished01:15:01Z, owned processes0. Driver тот же7fb9ad41….
-Следующий runtime требует именно APK41, опубликованный baseline38 и полный
-набор14 portfolio cases. Старый prepared full40 НЕ запускать. До успешного
-focused-прогона полного15-stage PASS нет. Exact-head Sonar bootstrap не запускал.
-[Доказательства](docs/N00_TAB_LAYERING_2026-10-26.md).
+Build41:40252011635 /inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
+Harness repair40255133373: base958616b, two Windows-applied files;
+inventory6b793696cf0fd5cf30cfe44a19c55453a6ead01be1526ea6eeb5a0a48ea05052.
+Host1066 passed; focused14 cases still pending. APK41 and driver7fb9ad41 unchanged.
+Do not run prepared old full40/old full41 source after this harness repair.
+Regenerate the original full41 wrapper from the exact backed repair inventory
+only after focused acceptance. No diagnostic hook in the full15-stage matrix.
+Existing key, signature, baseline38, canonical lease1200s and all gates remain.
+[Evidence and continuation](docs/N00_DOSSIER_DOCK_2026-10-26.md).
 
 ## N00 26.10.2026 — проверен ремонт протокола портфеля
 

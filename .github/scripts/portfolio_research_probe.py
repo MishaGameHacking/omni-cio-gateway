@@ -22,7 +22,7 @@ def _context_risks(case):
     from business_ui_probe import labels
     p = case.probe
     original_window = active_window_id(p.tree())
-    p.tap_resource("instrument-context-actions", AREA)
+    p.tap_visible("Действия с бумагой")
     wait_for_new_app_window(p, original_window, "SYN-A", AREA)
     original_window = active_window_id(p.tree())
     p.tap_resource("instrument-context-risks", AREA)

@@ -1,4 +1,4 @@
-> **Next confirmed issue:** candidate40's native tab area is overlapped by a scrolled position action. The product repair and candidate41 full build are recorded in [N00 tab layering](N00_TAB_LAYERING_2026-10-26.md). No complete runtime acceptance yet.
+> **Latest:** candidate41 passed the original discovery case after the [tab layering repair](N00_TAB_LAYERING_2026-10-26.md). The next dossier failure is a fixed-dock test-container error; [its evidence and Windows-tested repair](N00_DOSSIER_DOCK_2026-10-26.md) are current. No complete runtime acceptance yet.
 
 # N00 — compound native portfolio targets
 

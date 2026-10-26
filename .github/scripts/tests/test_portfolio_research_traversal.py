@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import portfolio_research_probe as research
+from profile_ui_probe import ProfileProbe
 from profile_scroll import PACKAGE, reveal_in_list, reveal_resource_in_list, visible_label
 
 ISSUER = "СИНТЕТИЧЕСКИЙ проверенный эмитент"
@@ -178,6 +179,7 @@ class DossierTraversalTests(unittest.TestCase):
 RESEARCH = "discovery-research-" + research.SHARE_A
 WATCH = "Открыть бумагу на всех счетах"
 MENU = "instrument-context-actions"
+MENU_LABEL = "Действия с бумагой"
 RISKS = "instrument-context-risks"
 EVENTS = "instrument-context-events"
 CHANGES = "Изменения риска этой бумаги"
@@ -191,7 +193,7 @@ class ResearchWindowProbe(DossierViewportProbe):
     EXTENTS = {"source": 1200, "research": 900, "watch": 900,
                "menu": 1000, "risks": 1250}
     ROWS = {
-        "source": ((20, 60, RESEARCH), (100, 60, WATCH), (180, 60, MENU), (260, 60, "SYN-A")),
+        "source": ((20, 60, RESEARCH), (100, 60, WATCH), (260, 60, "SYN-A")),
         "research": ((0, 60, "Закрыть разбор"),
                      (120, 100, "Показана одна выбранная карточка. Общие выводы относятся к исходному анализу."),
                      (350, 80, "СИНТЕТИЧЕСКОЕ исследование RESEARCH")),
@@ -219,6 +221,26 @@ class ResearchWindowProbe(DossierViewportProbe):
     def __init__(self, scale):
         super().__init__(453, scale=scale, page="source")
         self.expanded = False
+        self.dock_frame_reads = 0
+
+    def tree(self):
+        tree = super().tree()
+        if self.page == "source":
+            # Scaffold.bottomBar is a sibling of the scrolling body. These
+            # conditional extents model that ownership, not device pixels.
+            top = self.height + 163 + 8
+            bottom = top + 48 * self.scale
+            tree.set("display-height", str(bottom + 24))
+            dock = ET.SubElement(tree, "node", {"package": PACKAGE,
+                "resource-id": MENU, "class": "android.widget.Button",
+                "bounds": f"[20,{top}][300,{bottom}]", "clickable": "true",
+                "visible-to-user": "true", "enabled": "true"})
+            ET.SubElement(dock, "node", {"package": PACKAGE, "text": MENU_LABEL,
+                "bounds": f"[20,{top}][300,{bottom}]",
+                "visible-to-user": "true", "enabled": "true"})
+            if self.pending is None:
+                self.dock_frame_reads += 1
+        return tree
 
     def rows(self):
         return [row for row in super().rows() if row[2] != RISK_EVENT or self.expanded]
@@ -242,9 +264,15 @@ class ResearchWindowProbe(DossierViewportProbe):
             return super().reveal(text, area, direction)
         return ET.Element("node")
 
-    @staticmethod
-    def tap_visible(_text):
-        return None
+    def tap_visible(self, text):
+        if text == MENU_LABEL:
+            ProfileProbe.tap_visible(self, text)
+
+    def tap_node(self, node):
+        if self.page != "source" or node.get("resource-id") != MENU:
+            raise AssertionError("Unexpected fixed-dock action")
+        self.actions.append(MENU)
+        self.selected(MENU)
 
     @staticmethod
     def find(_text):
@@ -285,6 +313,8 @@ class ResearchWindowTraversalTests(unittest.TestCase):
                 research._context_risks(case)
                 self.assertEqual(probe.wrong_window_scrolls, 0)
                 self.assertEqual(probe.old_frame_reads, 6)
+                self.assertEqual(probe.dock_frame_reads, 4)
+                self.assertFalse(any(page == "source" for page, _ in probe.movements))
                 self.assertEqual(probe.actions, [MENU, RISKS, CHANGES, BACK, EVENTS])
                 self.assertTrue(probe.expanded)
                 case.call.assert_any_call("/workspace/risks", {"currency": "RUB"})
