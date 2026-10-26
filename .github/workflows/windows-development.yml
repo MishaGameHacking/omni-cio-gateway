@@ -634,3 +634,5 @@ jobs:
       run: "for result in \"$PREFLIGHT\" \"$DEVELOP\" \"$COLLECT\" \"$CLEANUP\"; do\n  if [ \"$result\" != success ]; then\n\
         \    echo \"A required local Linux verification or evidence transport stage failed.\"\n    exit 1\n  fi\ndone\necho\
         \ \"Local Linux backend checks and evidence transport passed; Android and phone checks are separate.\"\n"
+
+# Retry the same reviewed v16 bytes after the prior queued head lost transfer eligibility.
