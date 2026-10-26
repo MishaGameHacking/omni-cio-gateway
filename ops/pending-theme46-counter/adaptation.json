@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "actual45_build_run": 40342969750,
+  "actual45_source_backup": "63fb5cf430382ef1398c63eaef206d46e0f7b4c3",
+  "actual45_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "exact_source_path_count": 29,
+  "changes": "Only exact actual45 run/source guard, helper paths and their SHA256 pins; all other admission, inventory, signing and native checks retained.",
+  "frozen_theme_packages_unchanged": true,
+  "application_or_tests_executed": false,
+  "files": {
+    "prepare_native45_counter.py": {
+      "bytes": 29959,
+      "sha256": "6b9a7a7787cb295243e726db48c9fa90ccf41124c9e0db1c6f0a16a8397197ed"
+    },
+    "prepare_candidate46_counter.py": {
+      "bytes": 14621,
+      "sha256": "d69db46e29d20ca680b85d4f6d936856fd28f2fa5346c374d1a948ce355c84f3"
+    },
+    "prepare_native46_counter.py": {
+      "bytes": 44423,
+      "sha256": "5d56376b734f93210ae7de9243e9d9aaa5b622a6a80151c333f60c275623137d"
+    }
+  }
+}
