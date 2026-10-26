@@ -17,30 +17,43 @@
 не означают прохождение полной native проверки или всего инвестиционного плана.
 N10 требует 30 фактических торговых сессий.
 
+**Новейшая собранная версия —44 /0.13.6-preview.** Полный Windows build
+[40282775349](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40282775349)
+успешно завершён по всем5 jobs; архив принят9417611 в07:13:11 UTC. Оригинальные
+описи и174 JVM tests44 подтверждены recovery40287234844 в07:41 UTC;
+точные применённые исходники44 сохраняются с этим checkpoint. Native44 не запускался.
+Публикация и сообщение клиента пока остаются43.
+
 | Область | Подтверждённое состояние |
 | --- | --- |
-| Полный build43 | [40277268871](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40277268871): все jobs PASS; 1092 host tests (3 прежних skips), 52 tools, 61 Node, backend1684 +1515 subtests; JVM174 в30 suites без failures/errors/skips; lint и все8 Gradle tasks PASS |
-| Исходники и архив | Backup859c067…; code inventory269b675…; полный архив68 895 589 bytes сохранён на9417611 в06:17 UTC |
+| Полный build44 | [40282775349](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40282775349):1126 host tests (3 прежних skips),52 tools,61 Node, backend1684 +1515 subtests, health/OpenAPI PASS;174 JVM tests в30 suites без failures/errors/skips по оригинальным XML44;197 Gradle tasks executed, все8 запрошенных задач PASS |
+| Предыдущий build43 | [40277268871](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40277268871): все jobs PASS; 1092 host tests (3 прежних skips), 52 tools, 61 Node, backend1684 +1515 subtests; JVM174 в30 suites без failures/errors/skips; lint и все8 Gradle tasks PASS |
+| Исходники43 и архив43 | Backup859c067…; code inventory269b675…; полный архив68 895 589 bytes сохранён на9417611 в06:17 UTC |
 | Установка preview43 на эмулятор | Baseline38, upgrade38→43, clean install43 и запуск прошли на API37/16384 |
 | Original14 | [40278915893](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40278915893) FAILED: 7 font100 случаев прошли; font200 discovery не нашёл поле после возврата из длинного сохранённого архива |
-| Следующее исправление44 | Подготовлены отдельные library/detail scroll states и версия44 /0.13.6; только4 файла, ещё не применены и не собраны |
+| Ремонт44 | Отдельные library/detail scroll states и версия44 /0.13.6 применены и собраны;4 файла. Исходный font200 native сценарий ещё должен подтвердить ремонт |
 | Перенос обычного CI | [Windows apply/check40281546498](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40281546498): все4 jobs PASS,13 файлов применены;1126 host tests (1123 passed/3 прежних skips),52 tools,61 Node; архив7 747 953 bytes принят9417611 в06:48:11 UTC. Это source-contract checks; новые обычные workflows ещё не проверены |
 | Полная приёмка | 15-stage матрица на16384/4096, обычный CI и внешний Sonar для точного PR head ещё не пройдены |
 
 Известное ограничение43: при шрифте200% возврат из длинного сохранённого
-исследования может перенести его прокрутку в библиотеку. Подготовленный44
-разделяет состояния прокрутки; исходный native сценарий сохранён и должен
-подтвердить исправление на настоящем Android-прогоне. Отдельно подготовлены
-изменения боковых/нижних панелей текущего Analyst AI для candidate45; они
-не включены в44 и ещё не реализованы. Название «Богомола» из нового пожелания
-пока не привязано к отдельному проекту.
+исследования может перенести его прокрутку в библиотеку. Собранный44 разделяет
+состояния прокрутки; исходный native сценарий сохранён и должен подтвердить
+исправление на настоящем Android-прогоне. Панели45 не включены в44 и ещё
+дорабатываются: меню нужно сделать доступным в6 детальных разделах, сохранив
+защиту несохранённых изменений. Владелец также поручил полностью переделать
+цвета всех элементов светлой и тёмной тем; аудит46 начат, реализация впереди.
+Название «Богомола» не привязано к отдельному проекту; Analyst AI не переименован.
 
-После CI source-contract checks новый code inventory —
-`4fcf1b15db4d40c249966d072e22d31f286515fc0e84974364cb71e07f282aaf`.
-Точные применённые байты необходимо сохранить новым backup перед сборкой44;
-Gradle/backend/native для этой CI-правки не запускались.
+CI source-contract bytes сохранены backup043e1da… с code inventory4fcf1b15…;
+на этой базе завершена сборка44. Её code inventory —
+`e34b717fa408fbe377d910a372933c35a2ba1bdddf02263b6daa477df70f93b9`.
+Полный архив44:68 927 139 bytes, SHA256
+`f8dd107e1714fcc1a3aeed4afd25b6d9efa3dca878b7106191f3fd77e4fa1b89`.
+Следующий шаг — подтвердить backup44 и выполнить original14 с baseline43,
+затем полную native матрицу. Обычные CI workflows и внешний Sonar ещё не пройдены.
 
-[Подробные факты, идентичность APK/исходников и продолжение](docs/N00_CANDIDATE43_2026-10-26.md).
+[Точные факты44, SHA и продолжение](docs/N00_CANDIDATE44_2026-10-26.md).
+[Предыдущая сборка, выдача и native43](docs/N00_CANDIDATE43_2026-10-26.md).
 [План N00–N11](docs/AUTONOMOUS_PORTFOLIO_2026-10-25.md).
 Разработка и тесты выполняются на Windows-ноутбуке и его WSL; Timeweb9417611
 используется для runtime и хранения архивов. Реальные поручения и платный ИИ

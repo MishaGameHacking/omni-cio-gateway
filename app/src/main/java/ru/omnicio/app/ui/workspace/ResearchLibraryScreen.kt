@@ -7,6 +7,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +63,8 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
     val delete = personal.research.firstOrNull { it.id == deleteId }
     var currentKey by rememberSaveable(user) { mutableStateOf<String?>(null) }
     val selected = personal.research.firstOrNull { it.id == selectedId }
+    val libraryState = rememberSaveable(user, saver = LazyListState.Saver) { LazyListState() }
+    val detailState = rememberSaveable(user, selectedId, saver = LazyListState.Saver) { LazyListState() }
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
     BackHandler(selectedId != null) { selectedId = null }
     LaunchedEffect(user, selectedId) {
@@ -69,7 +72,8 @@ fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId
     }
     WorkspaceDetailPage("Сохранённое", "Исследования с датой и источниками", { if (selectedId != null) selectedId = null else onBack() }, SpectrumSymbol.Sources) { padding ->
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content")
-            .padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(20.dp),
+            .padding(padding).consumeWindowInsets(padding), state = if (selected == null) libraryState else detailState,
+            contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             if (!personal.loaded) item { SpectrumLoadingIndicator(description = "Читаем сохранённые исследования") }
             personal.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = personal.retry) { Text("Повторить чтение") } } }
