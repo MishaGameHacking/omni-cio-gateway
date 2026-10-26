@@ -51,3 +51,12 @@ internal fun acknowledgeAutoSave(current: AutoSaveRecord, sent: AutoSaveRecord,
         phase = if (pending) { if (current.valid) AutoSavePhase.Pending else AutoSavePhase.Invalid } else AutoSavePhase.Saved,
         error = null)
 }
+
+/** An uncertain command keeps its identity, but another document cannot bypass its retry delay. */
+internal fun nextAutoSaveRecord(records: Collection<AutoSaveRecord>, recovery: AutoSaveRecord?): AutoSaveRecord? {
+    if (recovery != null) {
+        val current = records.firstOrNull { it.key == recovery.key } ?: return null
+        return recovery.takeUnless { current.phase == AutoSavePhase.Failed }
+    }
+    return records.firstOrNull { it.phase == AutoSavePhase.Pending && it.valid }
+}

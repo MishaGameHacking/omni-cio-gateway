@@ -120,7 +120,9 @@ def semantic_scroll_direction(
     x2: int,
     y2: int,
 ) -> str:
-    if area in {"profile-tabs", "dossier-tabs", "quotes-intervals"}:
+    if area in {"profile-tabs", "dossier-tabs", "quotes-intervals",
+                "navigation-row-main", "navigation-row-portfolio",
+                "navigation-row-research", "navigation-row-personal"}:
         return _horizontal_scroll_direction(x1, y1, x2, y2)
     return _vertical_scroll_direction(x1, y1, x2, y2)
 

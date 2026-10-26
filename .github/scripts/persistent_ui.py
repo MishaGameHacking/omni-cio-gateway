@@ -37,6 +37,10 @@ SCROLL_LIST_CODES = {
     "quotes-intervals": 7,
     "assistant-composer": 8,
     "navigation-panel-content": 9,
+    "navigation-row-main": 10,
+    "navigation-row-portfolio": 11,
+    "navigation-row-research": 12,
+    "navigation-row-personal": 13,
 }
 
 

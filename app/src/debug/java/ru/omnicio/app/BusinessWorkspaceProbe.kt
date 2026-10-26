@@ -168,7 +168,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
                         savedPages.SaveableStateProvider(page) { workspace() }
                     }
                 }
-            } else Box(Modifier.fillMaxSize()) { workspace() }
+            } else WorkspaceAutoSaveProvider { Box(Modifier.fillMaxSize()) { workspace() } }
         }
     }
 }

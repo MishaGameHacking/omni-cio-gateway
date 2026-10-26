@@ -155,7 +155,7 @@ internal fun PortfolioWorkspaceProbe(route: String, scenario: String, onBack: ()
                 else navigationErrors = navigationErrors + "Маршрут ${target.name} не входит в этот портфельный сценарий"
             },
         ) {
-            Box(Modifier.fillMaxSize()) {
+            WorkspaceAutoSaveProvider { Box(Modifier.fillMaxSize()) {
                 savedPages.SaveableStateProvider(page) {
                     when (page) {
                         "discovery" -> DiscoveryWorkspaceScreen(state, back)
@@ -174,7 +174,7 @@ internal fun PortfolioWorkspaceProbe(route: String, scenario: String, onBack: ()
                             initialHistoryResolution = "hour".takeIf { initialRoute == "history" })
                     }
                 }
-            }
+            } }
         }
     }
 }

@@ -70,4 +70,27 @@ class AutoSaveModelTest {
         assertEquals("moderate", writable.getString("risk_level"))
         assertFalse(writable.has("configured")); assertFalse(writable.has("updated_at"))
     }
+    @Test fun anotherDocumentCannotSpinAnUncertainFailedRequest() {
+        val sent = AutoSaveRecord(AutoSaveKind.Goal, 1, "{}", "{}", 0, true,
+            AutoSavePhase.Saving, documentId = "first")
+        val failed = sent.copy(phase = AutoSavePhase.Failed)
+        val other = sent.copy(documentId = "second", phase = AutoSavePhase.Pending)
+        assertNull(nextAutoSaveRecord(listOf(failed, other), sent))
+        assertEquals(sent, nextAutoSaveRecord(listOf(failed.copy(phase = AutoSavePhase.Pending), other), sent))
+        assertEquals(other, nextAutoSaveRecord(listOf(failed, other), null))
+    }
+    @Test fun recoveryKeepsTheSubmittedCommandWhenNewerInputIsInvalid() {
+        val sent = AutoSaveRecord(AutoSaveKind.Strategy, 1, "{}", "{}", 3, true, AutoSavePhase.Saving)
+        val changed = sent.copy(revision = 2, valid = false, phase = AutoSavePhase.Invalid)
+        assertEquals(sent, nextAutoSaveRecord(listOf(changed), sent))
+        assertNull(nextAutoSaveRecord(listOf(changed), null))
+    }
+    @Test fun subsequentEditDoesNotRevertAnUnrelatedServerChange() {
+        val displayed = JSONObject().put("morning", "09:00").put("evening", "18:00")
+        val edited = JSONObject(displayed.toString()).put("morning", "10:00")
+        val latest = JSONObject(displayed.toString()).put("evening", "20:00")
+        val merged = mergeAutoSaveChanges(displayed, edited, latest)
+        assertEquals("10:00", merged.getString("morning"))
+        assertEquals("20:00", merged.getString("evening"))
+    }
 }

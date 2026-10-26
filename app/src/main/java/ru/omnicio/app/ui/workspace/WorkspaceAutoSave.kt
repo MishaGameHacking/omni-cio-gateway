@@ -26,6 +26,19 @@ class WorkspaceAutoSaveController {
     internal val storeWake = Channel<Unit>(Channel.CONFLATED)
     internal var lastEditAt = 0L
     internal var inFlight: JSONObject? = null
+    internal val selections = mutableStateMapOf<String, String>()
+    var selectionRevision by mutableLongStateOf(0L); private set
+    var savedSelectionRevision by mutableLongStateOf(0L); internal set
+    var selectionError by mutableStateOf<String?>(null); internal set
+    fun selection(name: String): JSONObject? = selections[name]?.let(::JSONObject)
+    fun rememberSelection(name: String, value: JSONObject) {
+        require(name in setOf("portfolio_filters", "chat_context_editor"))
+        if (!ready || selections[name]?.let { equivalentJson(JSONObject(it), value) } == true) return
+        selections[name] = value.toString()
+        selectionRevision++
+        selectionError = null
+        storeWake.trySend(Unit)
+    }
     operator fun get(kind: AutoSaveKind, documentId: String = ""): AutoSaveRecord? = records[AutoSaveKey(kind, documentId)]
     fun documents(kind: AutoSaveKind): List<AutoSaveRecord> = records.values.filter { it.kind == kind }
     fun edit(kind: AutoSaveKind, baseline: JSONObject, draft: JSONObject, version: Int, valid: Boolean,
@@ -83,19 +96,53 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
             controller.loadError = "Не удалось прочитать сохранённые изменения. Повторите проверку."
             return@LaunchedEffect
         }
-        controller.loadError = null
-        restored?.optJSONArray("records")?.let { rows ->
-            for (index in 0 until rows.length()) runCatching { restoreAutoSaveRecord(rows.getJSONObject(index)) }
-                .getOrNull()?.let { controller.records[it.key] = it }
+        val recovered = runCatching {
+            val rows = restored?.getJSONArray("records") ?: JSONArray()
+            val entries = (0 until rows.length()).map { restoreAutoSaveRecord(rows.getJSONObject(it)) }
+            check(entries.map { it.key }.distinct().size == entries.size)
+            check(entries.all { it.revision > 0 && it.version >= 0 })
+            val command = restored?.optJSONObject("in_flight")
+            command?.let {
+                val submitted = restoreAutoSaveRecord(it.getJSONObject("record"))
+                check(entries.any { current -> current.key == submitted.key && current.revision >= submitted.revision })
+                check(it.getInt("version") >= 0 && it.getString("request_id").isNotBlank())
+                it.getJSONObject("config")
+                if (submitted.kind == AutoSaveKind.Strategy) it.getString("preview_id")
+            }
+            val memory = restored?.optJSONObject("selections") ?: JSONObject()
+            val selections = memory.keys().asSequence().associateWith { name ->
+                check(name in setOf("portfolio_filters", "chat_context_editor"))
+                memory.getJSONObject(name).toString()
+            }
+            Triple(entries, command, selections)
+        }.getOrElse {
+            controller.loadError = "Не удалось восстановить журнал изменений. Сохранённые данные оставлены без изменений."
+            return@LaunchedEffect
         }
-        controller.inFlight = restored?.optJSONObject("in_flight")
+        controller.loadError = null
+        controller.records.clear()
+        recovered.first.forEach { controller.records[it.key] = it }
+        controller.inFlight = recovered.second
+        controller.selections.clear()
+        controller.selections.putAll(recovered.third)
         controller.ready = true
         val failures = mutableMapOf<Pair<AutoSaveKey, Long>, Int>()
         val storageMutex = Mutex()
         suspend fun persist(): Boolean = storageMutex.withLock {
             val value = JSONObject().put("records", JSONArray(controller.records.values.map { it.json() }))
                 .put("in_flight", controller.inFlight ?: JSONObject.NULL)
-            withContext(Dispatchers.IO) { storage.saveJson(session.userId, key, value) }
+                .put("selections", JSONObject().apply {
+                    controller.selections.forEach { (name, content) -> put(name, JSONObject(content)) }
+                })
+            val revision = controller.selectionRevision
+            val saved = withContext(Dispatchers.IO) { storage.saveJson(session.userId, key, value) }
+            if (saved) {
+                controller.savedSelectionRevision = maxOf(controller.savedSelectionRevision, revision)
+                controller.selectionError = null
+            } else if (controller.selectionRevision > controller.savedSelectionRevision) {
+                controller.selectionError = "Выбор ещё не записан на устройстве. Повторяем сохранение…"
+            }
+            saved
         }
         // Device writes must never wait behind HTTP, debounce, or a stalled connection.
         launch {
@@ -107,6 +154,7 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
                             error = "Не удалось сохранить изменение на устройстве.")
                     } }
                     delay(2_000)
+                    if (controller.selectionRevision > controller.savedSelectionRevision) controller.storeWake.trySend(Unit)
                     revisions.forEach { (kind, revision) ->
                         val waiting = controller.records[kind]
                         if (waiting?.revision == revision && waiting.phase == AutoSavePhase.Failed)
@@ -133,8 +181,8 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
             } while (android.os.SystemClock.elapsedRealtime() - controller.lastEditAt < 450L)
             if (!foreground) continue
             val recovery = controller.inFlight
-            val sent = if (recovery != null) runCatching { restoreAutoSaveRecord(recovery.getJSONObject("record")) }.getOrNull()
-                else controller.records.values.firstOrNull { it.phase == AutoSavePhase.Pending && it.valid }
+            val recovering = recovery?.let { restoreAutoSaveRecord(it.getJSONObject("record")) }
+            val sent = nextAutoSaveRecord(controller.records.values, recovering)
             if (sent == null) continue
             val current = controller.records[sent.key] ?: continue
             if (current.revision == sent.revision) controller.records[sent.key] = current.copy(phase = AutoSavePhase.Saving)
@@ -179,7 +227,12 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
                                 JSONObject().put("expected_version", version).put("config", merged))
                             if (prepared.signedOut) { reauthenticate(); break }
                             val preview = prepared.data ?: error(prepared.error ?: "Не удалось проверить правила стратегии.")
-                            check(preview.optBoolean("can_confirm")) { "Сервер пока не разрешил применить эти правила." }
+                            check(preview.optBoolean("can_confirm")) {
+                                val warnings = preview.optJSONObject("impact")?.optJSONArray("warnings")
+                                (0 until (warnings?.length() ?: 0)).mapNotNull { index ->
+                                    warnings?.optString(index)?.takeIf(String::isNotBlank)
+                                }.joinToString("\n").ifBlank { "Сервер пока не разрешил применить эти правила." }
+                            }
                             command.put("preview_id", preview.getString("preview_id"))
                         }
                         controller.inFlight = command
@@ -252,7 +305,7 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
                         controller.retry(sent.kind, sent.documentId)
                 }
             }
-            if (controller.records.values.any { it.phase == AutoSavePhase.Pending && it.valid }) controller.wake.trySend(Unit)
+            if (controller.inFlight == null && controller.records.values.any { it.phase == AutoSavePhase.Pending && it.valid }) controller.wake.trySend(Unit)
         }
     }
     CompositionLocalProvider(LocalWorkspaceAutoSave provides controller, content = content)

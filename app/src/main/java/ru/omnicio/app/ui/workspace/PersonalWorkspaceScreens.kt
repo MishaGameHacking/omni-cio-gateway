@@ -129,7 +129,7 @@ private fun GoalEditor(documentId: String, existing: JSONObject?, close: () -> U
     val config = remember(record?.draft, baseline.toString()) { record?.draft?.let(::JSONObject) ?: baseline }
     val editable = auto?.ready == true
     val edit: (JSONObject) -> Unit = { next ->
-        auto?.edit(AutoSaveKind.Goal, baseline, next, 0, goalDocumentValid(next), documentId)
+        auto?.edit(AutoSaveKind.Goal, config, next, 0, goalDocumentValid(next), documentId)
     }
     LaunchedEffect(record?.phase, record?.revision) { if (record?.phase == AutoSavePhase.Saved) refresh() }
     WorkspaceDialog(if (config.autoSaveId() == null) "Новая цель" else "Изменить цель", close) {

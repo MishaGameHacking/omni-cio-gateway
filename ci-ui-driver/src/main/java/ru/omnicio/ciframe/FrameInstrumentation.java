@@ -56,6 +56,10 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final int LIST_QUOTES_INTERVALS = 7;
     private static final int LIST_ASSISTANT_COMPOSER = 8;
     private static final int LIST_NAVIGATION_PANEL = 9;
+    private static final int LIST_NAVIGATION_MAIN = 10;
+    private static final int LIST_NAVIGATION_PORTFOLIO = 11;
+    private static final int LIST_NAVIGATION_RESEARCH = 12;
+    private static final int LIST_NAVIGATION_PERSONAL = 13;
     private static final String PROFILE_LIST = "profile-content";
     private static final String EDUCATION_LIST = "education-content";
     private static final String PORTFOLIO_LIST = "portfolio-content";
@@ -65,6 +69,10 @@ public final class FrameInstrumentation extends Instrumentation {
     private static final String QUOTES_INTERVALS = "quotes-intervals";
     private static final String ASSISTANT_COMPOSER = "assistant-composer";
     private static final String NAVIGATION_PANEL = "navigation-panel-content";
+    private static final String NAVIGATION_MAIN = "navigation-row-main";
+    private static final String NAVIGATION_PORTFOLIO = "navigation-row-portfolio";
+    private static final String NAVIGATION_RESEARCH = "navigation-row-research";
+    private static final String NAVIGATION_PERSONAL = "navigation-row-personal";
 
     private String socketName;
     private byte[] token;
@@ -261,6 +269,10 @@ public final class FrameInstrumentation extends Instrumentation {
             case LIST_QUOTES_INTERVALS -> QUOTES_INTERVALS;
             case LIST_ASSISTANT_COMPOSER -> ASSISTANT_COMPOSER;
             case LIST_NAVIGATION_PANEL -> NAVIGATION_PANEL;
+            case LIST_NAVIGATION_MAIN -> NAVIGATION_MAIN;
+            case LIST_NAVIGATION_PORTFOLIO -> NAVIGATION_PORTFOLIO;
+            case LIST_NAVIGATION_RESEARCH -> NAVIGATION_RESEARCH;
+            case LIST_NAVIGATION_PERSONAL -> NAVIGATION_PERSONAL;
             default -> null;
         };
     }

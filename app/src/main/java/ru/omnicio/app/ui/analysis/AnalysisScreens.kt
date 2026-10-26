@@ -485,7 +485,7 @@ private fun AnalysisProfileContent(
                 if (section == 2) item { MonitoringStatus(status) }
                 if (section == 1) item { NotificationDeliverySettingsLink(enabled = true) }
                 profileControls(profile, section, enabled = auto?.ready == true) { changed ->
-                    auto?.edit(AutoSaveKind.Analysis, resource.data?.let(::analysisEditableDocument) ?: profile.automaticDocument(),
+                    auto?.edit(AutoSaveKind.Analysis, profile.automaticDocument(),
                         changed.automaticDocument(), 0, supportedProfile(changed))
                 }
                 if (!supportedProfile(profile)) item { Text("Проверьте значения профиля. Применение приостановлено.") }

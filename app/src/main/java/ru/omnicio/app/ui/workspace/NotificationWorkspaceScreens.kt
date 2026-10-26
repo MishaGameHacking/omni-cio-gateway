@@ -67,7 +67,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
     val edit: (String, Any) -> Unit = { key, input ->
         if (editable && !simulate.busy) {
             val next = JSONObject(config.toString()).put(key, input)
-            auto?.edit(AutoSaveKind.Notifications, remote ?: JSONObject(), next, remoteVersion ?: -1, notificationRulesValid(next))
+            auto?.edit(AutoSaveKind.Notifications, JSONObject(config.toString()), next, remoteVersion ?: -1, notificationRulesValid(next))
             preview = null
         }
     }

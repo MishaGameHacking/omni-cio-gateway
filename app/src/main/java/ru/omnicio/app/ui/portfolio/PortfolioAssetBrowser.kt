@@ -57,6 +57,9 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     var showRestricted by rememberSaveable { mutableStateOf(false) }
     var showCash by rememberSaveable { mutableStateOf(false) }
+    val memory = LocalWorkspaceAutoSave.current
+    val memoryUser = LocalWorkspaceSession.current.userId
+    var selectionsRestored by rememberSaveable(memoryUser) { mutableStateOf(memory == null) }
     val personal = rememberPersonalWorkspace()
     var onlyWatched by rememberSaveable { mutableStateOf(false) }
     var exposureId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -70,6 +73,29 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     var saveFilter by rememberSaveable { mutableStateOf(false) }
     var filterTitle by rememberSaveable { mutableStateOf("") }
     var batchReason by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(memoryUser, memory?.ready, initialQuery, initialKind, initialSector, selectedAccount) {
+        if (selectionsRestored || memory?.ready == false) return@LaunchedEffect
+        memory?.selection("portfolio_filters")?.let { saved ->
+            if (selectedAccount == null) accountId = saved.optString("account_id").takeUnless { it.isBlank() || it == "null" }
+            if (initialQuery.isBlank()) query = saved.optString("query", "")
+            if (initialKind == null) kind = saved.optString("kind", "all")
+            if (initialSector == null) sector = saved.optString("sector").takeUnless { it.isBlank() || it == "null" }
+            group = saved.optInt("group", 0).coerceIn(0, 4)
+            order = saved.optInt("order", 0).coerceIn(0, 3)
+            onlyWatched = saved.optBoolean("only_watched")
+            showRestricted = saved.optBoolean("show_restricted")
+            showCash = saved.optBoolean("show_cash")
+            exposureId = saved.optString("exposure_id").takeUnless { it.isBlank() || it == "null" }
+        }
+        selectionsRestored = true
+    }
+    LaunchedEffect(memory?.ready, selectionsRestored, accountId, query, kind, sector, group, order, onlyWatched, showRestricted, showCash, exposureId) {
+        if (selectionsRestored) memory?.rememberSelection("portfolio_filters", org.json.JSONObject()
+            .put("account_id", accountId ?: org.json.JSONObject.NULL).put("query", query).put("kind", kind)
+            .put("sector", sector ?: org.json.JSONObject.NULL).put("group", group).put("order", order)
+            .put("only_watched", onlyWatched).put("show_restricted", showRestricted).put("show_cash", showCash)
+            .put("exposure_id", exposureId ?: org.json.JSONObject.NULL))
+    }
     val allCurrent = snapshot.accounts.flatMap { account -> account.positions.map { PortfolioRow(account, it) } }
     val chosen = allCurrent.filter { portfolioRowKey(it) in selectedKeys }
     val open: (String, PortfolioPosition) -> Unit = { id, position ->
@@ -98,7 +124,15 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     val assets = rows.filter { !it.position.blocked && it.position.instrumentType !in setOf("cash", "currency") }
     val groups = assets.groupBy { portfolioGroupLabel(it, group, exposureAxis) }
     val changed = accountId != null || query.isNotBlank() || kind != "all" || sector != null || group != 0 || order != 0 || onlyWatched || exposureId != null
+    if (!selectionsRestored) {
+        Column(modifier.fillMaxWidth().padding(20.dp)) {
+            SpectrumLoadingIndicator(description = "Восстанавливаем ваш выбор")
+            AutoSaveStatus(null) { memory?.retry(AutoSaveKind.Notifications) }
+        }
+        return
+    }
     Column(modifier.fillMaxWidth()) {
+        memory?.selectionError?.let { Text(it, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error) }
         SpectrumTextField(query, { query = it }, label = { Text("Название, тикер или ISIN") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("portfolio-search"))
         if (query.isNotBlank()) WorkspaceSuggestionRow(query,

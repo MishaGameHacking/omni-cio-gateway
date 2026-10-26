@@ -105,6 +105,47 @@ class SemanticActionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             profile.semantic_scroll_direction("dossier-tabs", 100, 200, 100, 400)
 
+    def test_dock_rows_use_distinct_bounded_native_requests_without_shell_fallback(self):
+        expected = {"navigation-row-main": 10, "navigation-row-portfolio": 11,
+                    "navigation-row-research": 12, "navigation-row-personal": 13}
+        source = (SCRIPTS.parents[1] / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text(encoding="utf-8")
+        for area, code in expected.items():
+            for direction, geometry in (("end", (300, 100, 100, 100)), ("start", (100, 100, 300, 100))):
+                with self.subTest(area=area, direction=direction):
+                    stream = Stream(ack())
+                    reader = frames.FrameReader(stream)
+                    device = Mock()
+                    probe = profile.ProfileProbe(device)
+                    probe.read_tree = reader.ready_tree
+                    self.assertEqual(frames.SCROLL_LIST_CODES[area], code)
+                    self.assertEqual(list(frames.SCROLL_LIST_CODES.values()).count(code), 1)
+                    with patch.dict(sys.modules, {"persistent_ui": frames}):
+                        probe._semantic_scroll_callback(area, direction)(*geometry)
+                    raw = 0x80000000 | (code << 24) | 1
+                    if direction == "start": raw |= 0x10000000
+                    self.assertEqual(stream.sent, [struct.pack(">I", raw)])
+                    device.assert_not_called()
+                    key = area.removeprefix("navigation-row-").upper()
+                    self.assertIn(f"LIST_NAVIGATION_{key} = {code};", source)
+                    self.assertIn(f'NAVIGATION_{key} = "{area}";', source)
+                    self.assertIn(f"case LIST_NAVIGATION_{key} -> NAVIGATION_{key};", source)
+
+    def test_dock_rows_reject_vertical_or_wrong_direction_before_any_action(self):
+        for group in ("main", "portfolio", "research", "personal"):
+            for geometry in ((100, 100, 100, 300), (100, 100, 300, 100)):
+                with self.subTest(group=group, geometry=geometry):
+                    stream = Stream(b"")
+                    reader = frames.FrameReader(stream)
+                    device = Mock()
+                    probe = profile.ProfileProbe(device)
+                    probe.read_tree = reader.ready_tree
+                    with patch.dict(sys.modules, {"persistent_ui": frames}):
+                        callback = probe._semantic_scroll_callback("navigation-row-" + group, "end")
+                        with self.assertRaises(ValueError): callback(*geometry)
+                    self.assertEqual(reader.sequence, 0)
+                    self.assertEqual(stream.sent, [])
+                    device.assert_not_called()
+
     def test_unknown_list_or_direction_sends_nothing(self):
         for resource_id, direction in (
             ("other-list", "end"),

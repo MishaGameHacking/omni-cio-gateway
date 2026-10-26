@@ -65,7 +65,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val edit: (JSONObject) -> Unit = { next ->
         if (editor.canEdit) {
             configText = next.toString()
-            auto?.edit(AutoSaveKind.Strategy, active?.optJSONObject("config") ?: defaultStrategy(), next,
+            auto?.edit(AutoSaveKind.Strategy, config, next,
                 version, validStrategy(next))
         }
     }
@@ -81,7 +81,12 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                item { WorkspaceRequestState(resource); AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) } }
+                item {
+                    WorkspaceRequestState(resource)
+                    Text(if (version > 0) "Действует версия $version" else "Активной версии пока нет",
+                        style = MaterialTheme.typography.labelLarge)
+                    AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) }
+                }
                 when (tab) {
                     0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
                     1 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }

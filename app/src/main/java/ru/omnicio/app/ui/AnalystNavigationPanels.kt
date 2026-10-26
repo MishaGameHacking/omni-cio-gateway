@@ -189,11 +189,17 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
     val top = WindowInsets.safeDrawing.getTop(density)
     val offset = with(density) { IntOffset(12.dp.roundToPx(), top + 60.dp.roundToPx()) }
     Popup(alignment = Alignment.TopStart, offset = offset, onDismissRequest = { close(null) },
-        properties = PopupProperties(focusable = true, dismissOnBackPress = true,
+        properties = PopupProperties(focusable = true, dismissOnBackPress = false,
             dismissOnClickOutside = true, clippingEnabled = true)) {
+        val backProgress by rememberDockBackProgress(enabled) { close(null) }
         val colors = MaterialTheme.colorScheme
         Column(Modifier.width(width).heightIn(max = height)
-            .graphicsLayer { alpha = opacity.value; scaleX = .96f + .04f * opacity.value; scaleY = scaleX }
+            .graphicsLayer {
+                alpha = opacity.value
+                scaleX = (.96f + .04f * opacity.value) * (1f - .06f * backProgress)
+                scaleY = scaleX
+                translationY = -12.dp.toPx() * backProgress
+            }
             .clip(RoundedCornerShape(28.dp))
             .background(Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surface)))
             .border(1.dp, colors.outlineVariant, RoundedCornerShape(28.dp))
