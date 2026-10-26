@@ -1,0 +1,37 @@
+{
+  "at": "2026-10-26T17:13:09.425947+00:00",
+  "goal": "Single style47, brain icon menu, all-screen hierarchy, predictive controls and automatic persistence; continue N00-N11; update real server",
+  "source_branch": "codex/windows-development-2026-10-25",
+  "source_head": "121f431965baa5b7938d69cf47a96734331c73a2",
+  "admin_head": "80ba939c77a158335373ca5e39bac64dda57a960",
+  "build_base": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "latest_prepared": "/workspace/scratch/137de25203f5/context/candidate47-smart-controls-v7",
+  "latest_dispatched_commit": "80ba939c77a158335373ca5e39bac64dda57a960",
+  "prior_build_run": 40363506188,
+  "prior_build_result": "failed compileDebugKotlin SpectrumSelectionControls.kt:106 missing enabled parameter SpectrumProgressBar; repaired in v7",
+  "host_tests": {
+    "count": 1263,
+    "skipped": 3,
+    "failed": 0
+  },
+  "tools_tests": 52,
+  "backend": {
+    "tests": 1690,
+    "subtests": 1557,
+    "failed": 0
+  },
+  "autosave_source_generator": "context/design47/prepare_autosave.py",
+  "autosave_state": "draft source text only; not wired into render_candidate47 or any Windows build; review before adoption",
+  "server_channel": 45,
+  "server_version": "0.13.7-preview",
+  "publisher_run": 40349269558,
+  "publisher_reverify_run": 40349907036,
+  "apk_sha256": "488f95a0c1527ebf5a172c7af675769cb8ed81c116d9ec24175fc89adab1da0d",
+  "apk_bytes": 29820407,
+  "new_design_deployed": false,
+  "native47_passed": false,
+  "full15_passed": false,
+  "phone_installation_verified": false,
+  "plan_complete": false,
+  "next": "Read actual v7 Windows result; repair without weakening gates. Finish/review/wire automatic persistence and updated native acceptance. Exact source backup, API37 both page-size full15, external Sonar, actual server+APK publish."
+}
