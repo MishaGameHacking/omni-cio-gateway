@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "run_id": 40331453486,
+  "source_commit": "5f724e18007cfbf437367e87a17dde1b37bb8921",
+  "build_run": 40327866834,
+  "native_navigation_complete": false,
+  "error": "home/error;font=1.0: am force-stop timed out after15seconds",
+  "automation_cases_logged_passed": 3,
+  "complete_automation_receipt_present": false,
+  "wide_scenarios_reached": false,
+  "app_crash_buffer_empty": true,
+  "system_gms_background_anr_observed": true,
+  "causal_explanation_confirmed": false,
+  "checks_or_timeouts_changed": false,
+  "artifacts": {
+    "id": 12653574618,
+    "bytes": 488307,
+    "sha256": "6fd86837492d548d5e3c421913cbea504b31f1b2d2cbf260303f2ec3a799258a"
+  },
+  "retained_native_archive": {
+    "bytes": 732746,
+    "sha256": "70e7c97001f8726dac8d89653e0f3e49e1f761a1a78e08a774a4f974fd819f72"
+  },
+  "receipts": {
+    "runtime-16384.json": {
+      "bytes": 460,
+      "sha256": "beb69232b3b709d4eff98d4d1d79f734a0726c4f9db828021f9a6e73e2a5645d"
+    },
+    "native45-navigation-summary.json": {
+      "bytes": 1584,
+      "sha256": "253767bd8630a85e041303fb0f7089e0c45a17504ce750a7a24f7a36b37d3d05"
+    },
+    "navigation-focused-observations.json": {
+      "bytes": 423,
+      "sha256": "895a11a77b01b0e0c289094b28ee1bbcfed1b8c0ebbff046fb5c528003bc61d4"
+    },
+    "install-results.json": {
+      "bytes": 10491,
+      "sha256": "228ed9e270eaa53436cfbdc5fa4205a93bccc538d7829305478e1bad642289e0"
+    }
+  },
+  "next_action": "One fresh full34 run with exact same source/APKs/limits; do not erase this failure or call it acceptance.",
+  "published45": false,
+  "physical_phone_verified": false
+}
