@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.spatial.SpatialGeographyGeometryTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:36:16.838Z" hostname="LAPTOP-NPSGA016" time="0.006">
+  <properties/>
+  <testcase name="unknownAndAmbiguousAnchorsDoNotInventCoordinates" classname="ru.omnicio.app.ui.spatial.SpatialGeographyGeometryTest" time="0.005"/>
+  <testcase name="northRemainsUpAndOppositeHemisphereIsHidden" classname="ru.omnicio.app.ui.spatial.SpatialGeographyGeometryTest" time="0.001"/>
+  <testcase name="selectingAnAnchorCentersItsLongitudeWithoutChangingLatitude" classname="ru.omnicio.app.ui.spatial.SpatialGeographyGeometryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

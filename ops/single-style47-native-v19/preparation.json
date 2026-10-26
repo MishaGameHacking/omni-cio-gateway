@@ -1,0 +1,39 @@
+{
+  "apk_publication_performed": false,
+  "application_or_test_execution": false,
+  "build_run_id": 40386457173,
+  "files": {
+    "build-provenance.json": {
+      "bytes": 151083,
+      "sha256": "b7ec6ff7dd32cc41861e0106a8fa9db6a4c73ad04f501afcd02561f2a3c47895"
+    },
+    "n00-build-export-receipt.json": {
+      "bytes": 407,
+      "sha256": "58b99d5bdc7776e772e5263ae82a8ed7881e953895f937100a2e4340d5e1a694"
+    },
+    "n00-design47-focused-hook.py": {
+      "bytes": 30074,
+      "sha256": "f6910e05cb1ac3e93d199d84055854db2467e4049c80b719639452899290dc26"
+    },
+    "n00-runtime.py": {
+      "bytes": 276151,
+      "sha256": "c7f2cc138999bbd7cb7114b7517c02a449a92146b95313b9f9767bf18dd00212"
+    },
+    "n00-successful-build-report.json": {
+      "bytes": 56852,
+      "sha256": "24cec335d6c3035adaee5a0b27cd4f6493bc65067f958b87420de818d211002f"
+    },
+    "workflow.yml": {
+      "bytes": 193794,
+      "sha256": "10c4f8a21fe5ef211be60137eacb79f378273da75d48a5e0acff081f35f1b118"
+    }
+  },
+  "full15_accepted": false,
+  "native_hook_sha256": "f6910e05cb1ac3e93d199d84055854db2467e4049c80b719639452899290dc26",
+  "request_sha256": "37de26dbbaa78fe297466628545f020ef87357ab7f6b284e56f4d9229729c1fc",
+  "schema": 1,
+  "source_backup_commit": "dd23de9c125b35e7c94974d7ef3f23198a21b0dd",
+  "source_sha256": "92a9b9867c184388b81db58437761578bc0f1098b902a8827acc87591136545a",
+  "state": "prepared_only_not_executed",
+  "target_workflow": ".github/workflows/windows-n00-design47.yml"
+}

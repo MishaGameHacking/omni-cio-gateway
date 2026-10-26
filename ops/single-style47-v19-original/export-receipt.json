@@ -1,0 +1,10 @@
+{
+  "bytes": 69640897,
+  "sha256": "b1f659198769cfdfe522d92495e2b314c216894ca6fe06d8207c3b5926d2e1c6",
+  "files": 1116,
+  "source_sha256": "92a9b9867c184388b81db58437761578bc0f1098b902a8827acc87591136545a",
+  "complete_source_sha256": "6e1161fd5dd031dde68d8fcfdd944282342c5f0bbdf210ed67a4b42fabc11c4a",
+  "status": "passed_check_and_build_only",
+  "runtime_pass": false,
+  "publication_authorized": false
+}

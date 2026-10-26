@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.backend.SessionTransitionsTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:36:16.465Z" hostname="LAPTOP-NPSGA016" time="0.105">
+  <properties/>
+  <testcase name="cleanupFinishesBeforeAReplacementSessionCanBeSaved" classname="ru.omnicio.app.data.backend.SessionTransitionsTest" time="0.075"/>
+  <testcase name="failedTransitionDoesNotPreventTheNextLogin" classname="ru.omnicio.app.data.backend.SessionTransitionsTest" time="0.024"/>
+  <testcase name="recreatingTheAwaitingActivityDoesNotCancelCleanup" classname="ru.omnicio.app.data.backend.SessionTransitionsTest" time="0.006"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

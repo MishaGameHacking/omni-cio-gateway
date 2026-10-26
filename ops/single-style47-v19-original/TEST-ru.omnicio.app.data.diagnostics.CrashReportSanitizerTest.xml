@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:36:16.573Z" hostname="LAPTOP-NPSGA016" time="0.016">
+  <properties/>
+  <testcase name="processStateRoundTripDoesNotInventCurrentVersion" classname="ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest" time="0.007"/>
+  <testcase name="obfuscatedAndForeignFramesAreNotInvented" classname="ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest" time="0.001"/>
+  <testcase name="absentAndMalformedHistoricalVersionRemainUnknown" classname="ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest" time="0.0"/>
+  <testcase name="onlyBoundedApplicationSymbolsAreCollected" classname="ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest" time="0.007"/>
+  <testcase name="exceptionMessageIsNeverReadAndRootCategoryIsBounded" classname="ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

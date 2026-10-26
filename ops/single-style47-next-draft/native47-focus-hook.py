@@ -154,6 +154,23 @@ class IconDockCase(_DetailNavigationCase):
                 "host_window_restored": self.host_window, "underlying_page_unchanged": True, **capture}
 
     def gesture_dismissal(self):
+        from emulator_user_setup import completed_emulator_setup
+        from spatial_policy_probe import active_navigation_overlay, _cleanup_back
+        overlay = active_navigation_overlay(self.probe.command("shell", "cmd", "overlay", "list"))
+        scale = self.probe.command("shell", "settings", "get", "global", "animator_duration_scale").strip()
+        with completed_emulator_setup(self.probe) as setup:
+            try:
+                self.probe.command("shell", "settings", "put", "global", "animator_duration_scale", "1")
+                self.probe.command("shell", "cmd", "overlay", "enable-exclusive", "--category",
+                                   "com.android.internal.systemui.navbar.gestural")
+                self.probe.wait_for(
+                    lambda: self.probe.command("shell", "settings", "get", "secure", "navigation_mode").strip() == "2",
+                    "The predictive Popup check requires actual Android gesture navigation")
+                return {**self._gesture_dismissal(), "emulator_setup": setup}
+            finally:
+                _cleanup_back(self.probe, False, overlay, scale, sys.exc_info()[1])
+
+    def _gesture_dismissal(self):
         held = False
 
         def progressed(baseline, phase):

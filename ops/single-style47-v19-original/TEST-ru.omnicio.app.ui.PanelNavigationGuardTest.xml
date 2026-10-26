@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.PanelNavigationGuardTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:36:16.637Z" hostname="LAPTOP-NPSGA016" time="0.012">
+  <properties/>
+  <testcase name="disposedEditorCannotContinueAnOldRequest" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.003"/>
+  <testcase name="outgoingCleanupCannotRemoveTheIncomingEditorGuard" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="aDirtyEditorCanHoldTheRealDestinationUntilConfirmation" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="repeatingAConfirmationCannotNavigateTwice" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.0"/>
+  <testcase name="anUnguardedDestinationContinues" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="aDestinationChangeInvalidatesThePendingWideContinuation" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="choosingTheCurrentPrimaryTabDoesNotPromptOrNavigate" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="replacedRegistrationInvalidatesItsPendingContinuation" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="theWidePrimaryPathMustWaitForTheCurrentEditorsConfirmation" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="anUnrelatedRouteNeverUsesAnotherEditorsConfirmation" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <testcase name="anOutgoingRouteCannotOpenAConfirmationForTheIncomingPage" classname="ru.omnicio.app.ui.PanelNavigationGuardTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

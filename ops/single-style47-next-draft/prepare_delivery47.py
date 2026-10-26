@@ -66,7 +66,7 @@ def helpers():
     delivery = load_admin('administrative_delivery44', 'prep/delivery44/prepare_delivery44.py',
         '64db4d35e4fa983ac0d90f0398a9edbfed6263851fe03f1460c9671828ff8ab4')
     native = load_admin('administrative_native47', 'design47/prepare_native47.py',
-        '64ab543552f25c51f7a31a7e548fa44cc641f682b993e7b48ef7d59958e97d46')
+        'dd431dc0f3c93362ec8db6faf10fad8ffa75775ac5001926bf9f88c3fdba8a17')
     return delivery, native
 
 

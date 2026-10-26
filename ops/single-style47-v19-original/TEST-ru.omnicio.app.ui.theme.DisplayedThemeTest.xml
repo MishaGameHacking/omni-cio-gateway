@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.theme.DisplayedThemeTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:36:17.015Z" hostname="LAPTOP-NPSGA016" time="0.04">
+  <properties/>
+  <testcase name="savedModesCannotChangeTheSingleStyleWhenSystemPreferenceChanges" classname="ru.omnicio.app.ui.theme.DisplayedThemeTest" time="0.039"/>
+  <testcase name="unavailableDisplayCannotIntroduceAnotherPalette" classname="ru.omnicio.app.ui.theme.DisplayedThemeTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
