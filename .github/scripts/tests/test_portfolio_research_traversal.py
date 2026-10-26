@@ -34,7 +34,8 @@ class DossierViewportProbe:
         "fact": ((20, 60, "Контекст факта"),
                  (150, 90, "Первый СИНТЕТИЧЕСКИЙ подтверждённый факт"),
                  (1260, 60, COMPANY)),
-        "company": ((150, 100, ISSUER), (320, 60, "synthetic-issuer"),
+        "company": ((20, 60, "Контекст факта"),
+                    (150, 100, ISSUER), (320, 60, "synthetic-issuer"),
                     (970, 80, POSITIONS)),
         "holdings": ((1320, 70, HOLDING),),
         "instrument": ((20, 60, "СИНТЕТИЧЕСКАЯ компания"), (90, 60, "SYN-A"),
@@ -541,6 +542,43 @@ class EventDossierTraversalTests(unittest.TestCase):
                     "/workspace/chat/threads",
                     "/workspace/chat/threads/synthetic-portfolio-thread/messages"])
                 case.capture.assert_called_once_with("event-draft")
+
+
+class ShortCompanyViewportProbe(DossierViewportProbe):
+    """Company content is below the top landmark in a shortened sheet viewport."""
+
+    EXTENTS = {**DossierViewportProbe.EXTENTS, "company": 900}
+    ROWS = {**DossierViewportProbe.ROWS, "company": (
+        (20, 60, "Контекст факта"), (150, 100, ISSUER),
+        (320, 60, "synthetic-issuer"), (700, 80, POSITIONS))}
+
+    def __init__(self, company_height):
+        super().__init__(453)
+        self.company_height = company_height
+
+    def transition(self, page, *, preserve):
+        super().transition(page, preserve=preserve)
+        if page == "company":
+            self.height, self.offset = self.company_height, 0
+        elif page in {"holdings", "instrument"}:
+            self.height = 453
+            self.offset = min(self.offset, self.maximum_offset)
+
+
+class ShortCompanyTraversalTests(unittest.TestCase):
+    def test_exact_holding_reaches_company_below_a_short_top_viewport(self):
+        for height in (101, 140):
+            with self.subTest(company_height=height):
+                probe = ShortCompanyViewportProbe(height)
+                case = SimpleNamespace(probe=probe, destination=Mock(), capture=Mock())
+                research._exact_holding(case)
+                self.assertEqual(probe.actions, [FACT, COMPANY, POSITIONS, HOLDING])
+                self.assertIn(("company", "end"), probe.movements)
+                self.assertNotIn(("company", "start"), probe.movements)
+                self.assertEqual(probe.wrong_window_scrolls, 0)
+                self.assertEqual(probe.found, ["СИНТЕТИЧЕСКАЯ компания", "SYN-A", "СИНТЕТИЧЕСКИЙ счёт B"])
+                case.destination.assert_called_once_with(account=research.ACCOUNT_B, query=research.SHARE_A)
+                case.capture.assert_called_once_with("selected-holding")
 
 
 if __name__ == "__main__":

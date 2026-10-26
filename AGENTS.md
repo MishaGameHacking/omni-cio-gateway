@@ -1,27 +1,37 @@
-## N00 26.10.2026 — кандидат41 после подтверждённого перекрытия вкладок
+## N00 26.10.2026 — подтверждена сборка кандидата42
 
-> **26.10.2026, N00 — досье пройдено, исправлено чтение нативного выбора в истории.** В Android40260472248 прошли discovery и всё досье, включая точное событие и неотправленный вопрос ассистенту. История выбрала верное закрывающее наблюдение, но проверка не учитывала checked/checkable у элемента Compose. В40261499076 на ноутбуке воспроизведены2 исходных отказа, затем прошли1075 host-тестов за49.031s (прежние3 skips), включая отрицательные проверки даты, суммы и состояния. Повтор14 portfolio cases выполняется. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_RATING_FOLDS_2026-10-26.md).
+> **26.10.2026, N00 — собран кандидат42 для исправления портфеля при увеличенном шрифте.** Диагностика APK41 завершила14 сценариев:6 PASS/8 FAIL. Измеренные ошибки раскладки исправлены; build40266100999 прошёл1076 host tests, WSL1684 tests +1515 subtests, Android174 tests/30 suites, lint и сборку всех APK. Независимо проверены точные исходники, APK и прежняя подпись. Runtime14 portfolio cases и полная15-stage матрица4096/16384 для42 ещё не пройдены; external exact-head Sonar не выполнен. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
 
-Build41 remains40252011635, compiled inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
-Current history selection repair40261499076 applied two files on Windows from
-base729f59f; inventorydd762dde5a301bf972cc72794171ea3e3f0e04a3751ddaf833d0a0f003ed2066.
-The original assertion failed2 conditional variants in0.209s; all1075 host tests
-passed49.031s (same3 skips). The14 actual portfolio cases are still pending.
-Prior40260472248 passed discovery and the entire dossier, including the exact
-event context and native unsent assistant draft. History then failed because
-its genuinely selected closing row exported selected=false/checked=true/
-checkable=true, with the exact22.10.2026 21:00:00 /901.75 label.
-Verified PNG/XML and the production Compose selection contract support reading
-either native selected or the checked-and-checkable pair. Exact label remains required.
-Its44-file archive1344672 bytes SHA2567cd51b18c115508904249ba452da4bdd23b77a9fb63d7e694d887df7dc6c9561
-was received by9417611 at02:50:11Z. Evidence40261139101/all15 entries verified.
-APK41/debug41/driver unchanged. ALL older prepared full wrappers have stale
-harness inventories and MUST NOT be dispatched (including event-traversal-full).
-After14 focused cases pass, regenerate full original15-stage4096/16384
-matrix from exact backed source, with no diagnostic hook. Retain baseline38,
-canonical lease1200s, signature, private transfer and exact-head Sonar.
-CI migration remains unapplied. No PR, main update, publication41 or phone claim.
-[Current evidence](docs/N00_RATING_FOLDS_2026-10-26.md).
+Current exact build40266100999 on LAPTOP-NPSGA016 /omni-cio-ci-3:
+source inventorycd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e.
+15 source/test files applied only on Windows fromd5a5763. All1076 host tests
+passed50.286s (same3 skips), full WSL1684 +1515 subtests passed124.44s,
+Android174 tests/30 suites0 failures/errors/skips; lint and all APK builds PASS.
+Independent proof40267432826 recomputed full source and19 exact identities.
+Preview42 /0.13.4-preview29771254bytes SHA256
+b0b18508e80f763edb0d54dc9aa077462fca0163168d8f5c4ca6a5e7c2f91a0c.
+Debug42 63292529bytes SHA256
+b7a883b22c5fd3f53178862733c92b6dbcebbca10aecde6f2d4bbba15deb551b.
+Driver2683192bytes SHA2567fb9ad4121c2a1e981cacc611522941122c9fe3178e2eeb3849683200f3c7705.
+Same signing certificatebbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1.
+Archive1036files /68845185bytes SHA256
+c7456f981f618f900906b05d26c6c78552b69a8563bfcefd77625225b58ec185
+received by9417611 at04:07:15.8875303Z; no app source executed there.
+
+Original all14 diagnostic40262170820 on unchangedAPK41 observed6 PASS/8 FAIL.
+It is NOT full acceptance: collecting errors deliberately kept release_gate_pass=false.
+The font100 dossier/history repairs passed; font200 layouts and quote buttons failed.
+The exact original14 cases on42 and full15-stage4096/16384 are NEXT, not passed.
+Never reuse prepared40/41 runtime wrappers as proof of42. Use exact new APKs,
+source inventory, published38 baseline058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef,
+canonical lease blobc9626f3bf90b612a71b9bbf2954d0c134aa29b22 with1200s wait.
+Keep48px targets, font200, exact account/UID/date/value assertions and all scenarios.
+First40265060473 failed before applying files (wrong transport key);40265186363
+passed host/WSL but compiler rejected missing SpectrumIconButton import.
+Both failures and archives are retained; current40266100999 repairs the import.
+Runtime generator is administrative only; do not execute app/backend/tests off laptop.
+Normal CI migration and exact-head Sonar remain unapplied/unverified. No PR,
+main update, publication42, physical-phone claim or N01 implementation.
 
 ## N00 26.10.2026 — проверен ремонт протокола портфеля
 

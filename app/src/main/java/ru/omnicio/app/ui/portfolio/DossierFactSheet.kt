@@ -23,7 +23,8 @@ import ru.omnicio.app.ui.workspace.*
 @Composable
 internal fun DossierFactSheet(payload: JSONObject, fact: DossierFact, close: () -> Unit, onNavigate: () -> Unit) {
     var step by rememberSaveable(fact.key) { mutableIntStateOf(0) }
-    ModalBottomSheet(onDismissRequest = close, dragHandle = null) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = close, sheetState = sheetState, dragHandle = null) {
         SpatialWindow(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }
                 .testTag("workspace-content").navigationBarsPadding().padding(20.dp),

@@ -1,4 +1,4 @@
-> **Latest:** candidate41 passed the original discovery case after the [tab layering repair](N00_TAB_LAYERING_2026-10-26.md). The next dossier failure is a fixed-dock test-container error; [its evidence and Windows-tested repair](N00_DOSSIER_DOCK_2026-10-26.md) are current. No complete runtime acceptance yet.
+> **Latest:** candidate42 has a verified Windows/WSL/Android build; its original runtime matrix is still pending. See [the current layout checkpoint](N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md). Published38 remains unchanged.
 
 # N00 — compound native portfolio targets
 

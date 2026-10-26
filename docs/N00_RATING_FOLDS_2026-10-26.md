@@ -1,3 +1,5 @@
+> **Latest:** candidate42 has a verified Windows/WSL/Android build; its original runtime matrix is still pending. See [the current layout checkpoint](N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md). Published38 remains unchanged.
+
 # N00 — stable native actions for exact rating source folds
 
 N00 is open; N01–N11 are not implemented. Published APK38 is unchanged.

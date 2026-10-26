@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -63,7 +64,9 @@ internal fun InstrumentContextActions(position: PortfolioPosition, accountId: St
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InstrumentActionSheet(position: PortfolioPosition, close: () -> Unit, back: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
-    ModalBottomSheet(onDismissRequest = close, dragHandle = null, containerColor = Color.Transparent, tonalElevation = 0.dp) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = close, sheetState = sheetState, dragHandle = null,
+        containerColor = Color.Transparent, tonalElevation = 0.dp) {
         SpatialWindow(Modifier.fillMaxWidth().heightIn(max = 680.dp)) {
             SpectrumCard(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }
                 .testTag("workspace-content"), emphasized = true) {

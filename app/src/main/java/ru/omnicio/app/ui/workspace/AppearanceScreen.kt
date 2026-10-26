@@ -49,9 +49,13 @@ fun AppearanceScreen(onBack: () -> Unit) {
         if (dirty) { controller.preview(draft); theme.preview(draftTheme) }
     }
     DisposableEffect(Unit) { onDispose { controller.cancelPreview(); theme.cancelPreview() } }
-    WorkspaceDetailPage("Оформление", "Просмотр → применить или отменить", leave) { padding ->
+    WorkspaceDetailPage("Оформление", "Просмотр → применить или отменить", leave, adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+            if (compact) item(key = "page-heading") {
+                WorkspacePageHeading("Оформление", "Просмотр → применить или отменить")
+            }
             item {
                 SpectrumCard(emphasized = true) {
                     Text("Analyst AI", style = MaterialTheme.typography.headlineMedium)

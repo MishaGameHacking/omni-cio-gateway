@@ -211,7 +211,10 @@ def _exact_holding(case):
     p.reveal("Контекст факта", AREA)
     p.reveal("Первый СИНТЕТИЧЕСКИЙ подтверждённый факт", AREA)
     p.tap("Перейти к компании", AREA)
-    p.reveal("СИНТЕТИЧЕСКИЙ проверенный эмитент", AREA, direction="start")
+    # The sheet can retain an offset or reopen a short viewport at its start.
+    # Find the shared top landmark before reading the company below it.
+    p.reveal("Контекст факта", AREA, direction="start")
+    p.reveal("СИНТЕТИЧЕСКИЙ проверенный эмитент", AREA)
     p.reveal("synthetic-issuer", AREA)
     p.tap("Мои позиции в этой бумаге", AREA)
     p.tap_resource("dossier-holding-" + ACCOUNT_B, AREA)

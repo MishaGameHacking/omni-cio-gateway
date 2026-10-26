@@ -162,18 +162,20 @@ fun DiscoveryWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit) {
     val research = rememberDiscoveryResearch()
     val results = discoveryResults(snapshot, personal, request.json, research.json, query)
     val chosen = results.rows.filter { portfolioRowKey(it) in selection.chosenKeys }
-    WorkspaceDetailPage("Найти и исследовать", "Активы, счета, выплаты и ваши рабочие материалы", onBack, SpectrumSymbol.Market) { padding ->
+    WorkspaceDetailPage("Найти и исследовать", "Активы, счета, выплаты и ваши рабочие материалы", onBack, SpectrumSymbol.Market,
+        adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            TextButton(onClick = { catalogue = true }, modifier = Modifier.padding(horizontal = 20.dp)) {
-                Text("Каталог брокера · найти новые активы")
-            }
             SpectrumTextField(query, { query = it.take(300) }, label = { Text("Поиск по приложению") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("discovery-query"))
             SpectrumTabs(listOf("Всё", "Активы", "Счета", "Выплаты", "Исследования", "Страницы", "Наблюдение", "Календарь"),
                 category, { category = it }, Modifier.padding(horizontal = 12.dp))
-            DiscoveryComparisonTray(selection, chosen.size)
             DiscoveryResultList(results, snapshot, personal, request, research, selection, query, category, shown,
-                { if (category == 0) category = 1 else shown += 30 }, { shown += 30 }, Modifier.weight(1f))
+                { if (category == 0) category = 1 else shown += 30 }, { shown += 30 }, Modifier.weight(1f)) {
+                if (compact) WorkspacePageHeading("Найти и исследовать", "Активы, счета, выплаты и ваши рабочие материалы")
+                TextButton(onClick = { catalogue = true }) { Text("Каталог брокера · найти новые активы") }
+                DiscoveryComparisonTray(selection, chosen.size)
+            }
         }
     }
     DiscoveryOverlays(selection, results.rows, chosen, snapshot?.asOf, research)
@@ -192,11 +194,15 @@ private fun DiscoveryComparisonTray(selection: DiscoverySelection, count: Int) {
 @Composable
 private fun DiscoveryResultList(results: DiscoveryResults, snapshot: PortfolioSnapshot?, personal: PersonalWorkspaceController,
     request: WorkspaceRequest, research: DiscoveryResearch, selection: DiscoverySelection,
-    query: String, category: Int, shown: Int, moreAssets: () -> Unit, more: () -> Unit, modifier: Modifier) {
+    query: String, category: Int, shown: Int, moreAssets: () -> Unit, more: () -> Unit, modifier: Modifier,
+    header: @Composable () -> Unit) {
     val navigate = LocalWorkspaceNavigator.current
     val destination = LocalPortfolioDestination.current
     LazyColumn(modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag(WORKSPACE_CONTENT_TAG), contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+        item(key = "page-controls") {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(workspaceGap)) { header() }
+        }
         item(key = "scope") {
             Text("Поиск охватывает подключённый портфель, полученные события и материалы этого аккаунта.", style = MaterialTheme.typography.bodySmall)
             if (snapshot == null) Text("Позиции и счета ещё не получены. Личные записи и страницы доступны.")

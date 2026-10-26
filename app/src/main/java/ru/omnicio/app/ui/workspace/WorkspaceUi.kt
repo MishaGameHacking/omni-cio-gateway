@@ -78,6 +78,16 @@ fun WorkspaceEmpty(title: String, detail: String, action: String? = null, onActi
     }
 }
 
+/** Keep the full page context in the scrollable body when the header yields space. */
+@Composable
+internal fun WorkspacePageHeading(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+        if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
 @Composable
 fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol: SpectrumSymbol? = null) {
     Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))

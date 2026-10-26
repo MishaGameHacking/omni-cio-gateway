@@ -5,6 +5,9 @@ import ru.omnicio.app.ui.spectrum.SpectrumTextButton
 import ru.omnicio.app.ui.workspace.WorkspaceDialog
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -15,7 +18,9 @@ import ru.omnicio.app.data.portfolio.PortfolioAccount
 internal fun AccountSelector(accounts: List<PortfolioAccount>, selectedId: String, onSelect: (String) -> Unit,
     modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    val scroll = rememberScrollState()
+    Box(if (largeText) modifier.horizontalScroll(scroll) else modifier) {
         SpectrumTextButton(accounts.firstOrNull { it.id == selectedId }?.name ?: "Выберите счёт", { expanded = true },
             symbol = SpectrumSymbol.Expand)
         if (expanded) WorkspaceDialog("Выберите счёт", { expanded = false }) {

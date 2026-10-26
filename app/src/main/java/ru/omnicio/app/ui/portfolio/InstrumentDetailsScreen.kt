@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -35,44 +36,74 @@ internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> U
     }
     val content: @Composable () -> Unit = {
         SpectrumBackground(Modifier.fillMaxSize()) {
-            Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
-                topBar = { WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close) },
-                bottomBar = { ru.omnicio.app.ui.spatial.SpatialSurface(kind = ru.omnicio.app.ui.spatial.SpatialSurfaceKind.Dock, color = MaterialTheme.colorScheme.background) {
-                    Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        InstrumentContextActions(position, accountId) { section = 2 }
-                    }
-                } }) { insets ->
-                BoxWithConstraints(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
-                val wide = maxWidth >= 840.dp
+            BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                val compact = maxHeight < 240.dp * LocalDensity.current.fontScale
                 Row(Modifier.fillMaxSize()) {
-                    if (wide) Column(Modifier.width(300.dp).padding(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                        Text(position.title, style = MaterialTheme.typography.headlineSmall)
-                        Text(accountName ?: "Ваша позиция")
-                        Text(position.currentValue.moneyText(), style = MaterialTheme.typography.headlineMedium)
-                        Text("Сводка остаётся рядом с подробностями.", style = MaterialTheme.typography.bodyMedium)
+                    if (compact) Box(Modifier.width(56.dp).fillMaxHeight().padding(top = 4.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+                        SpectrumIconButton(SpectrumSymbol.Back, "Назад", close)
                     }
-                Column(Modifier.weight(1f).fillMaxHeight()) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ru.omnicio.app.ui.spatial.SpatialObject(sharedKey) {
-                            SpectrumAssetMark(position.instrumentType, position.company ?: position.title, instrumentSharedModifier(sharedKey).size(64.dp))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(position.title, style = MaterialTheme.typography.titleMedium)
-                            Text(position.ticker ?: labels.type, style = MaterialTheme.typography.bodySmall)
+                    Scaffold(Modifier.weight(1f).fillMaxHeight(),
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        topBar = {
+                            if (!compact) WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close)
+                        },
+                        bottomBar = {
+                            ru.omnicio.app.ui.spatial.SpatialSurface(
+                                kind = ru.omnicio.app.ui.spatial.SpatialSurfaceKind.Dock,
+                                color = MaterialTheme.colorScheme.background) {
+                                Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                                    InstrumentContextActions(position, accountId) { section = 2 }
+                                }
+                            }
+                        }) { insets ->
+                        BoxWithConstraints(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
+                            val wide = !compact && maxWidth >= 840.dp
+                            Row(Modifier.fillMaxSize()) {
+                                if (wide) Column(Modifier.width(300.dp).padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+                                    Text(position.title, style = MaterialTheme.typography.headlineSmall)
+                                    Text(accountName ?: "Ваша позиция")
+                                    Text(position.currentValue.moneyText(), style = MaterialTheme.typography.headlineMedium)
+                                    Text("Сводка остаётся рядом с подробностями.", style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Column(Modifier.weight(1f).fillMaxHeight()) {
+                                    if (!compact) Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        ru.omnicio.app.ui.spatial.SpatialObject(sharedKey) {
+                                            SpectrumAssetMark(position.instrumentType, position.company ?: position.title,
+                                                instrumentSharedModifier(sharedKey).size(64.dp))
+                                        }
+                                        Column(Modifier.weight(1f)) {
+                                            Text(position.title, style = MaterialTheme.typography.titleMedium)
+                                            Text(position.ticker ?: labels.type, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    SpectrumTabs(listOf("Позиция", "Котировки", "Досье", "Исследование", "Паспорт"),
+                                        section, { section = it }, Modifier.padding(horizontal = 20.dp))
+                                    val contextHeader: (@Composable () -> Unit)? = if (compact) {
+                                        {
+                                            Text(accountName ?: "Ваша позиция", style = MaterialTheme.typography.bodyMedium)
+                                            Text(position.title, style = MaterialTheme.typography.titleMedium)
+                                            Text(position.ticker ?: labels.type, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    } else null
+                                    InstrumentDetailBody(position, accountId, section, { section = it },
+                                        close, discuss, contextHeader)
+                                }
+                            }
                         }
                     }
-                    SpectrumTabs(listOf("Позиция", "Котировки", "Досье", "Исследование", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
-                    InstrumentDetailBody(position, accountId, section, { section = it }, close, discuss)
-                }
-                }
                 }
             }
         }
     }
     if (embedded) content() else Dialog(onDismissRequest = close,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-            SpatialWindow(Modifier.fillMaxSize()) { content() }
-        }
+        SpatialWindow(Modifier.fillMaxSize()) { content() }
+    }
 }
 
 @Composable
@@ -122,6 +153,7 @@ private fun ColumnScope.InstrumentDetailBody(
     onSection: (Int) -> Unit,
     close: () -> Unit,
     discuss: () -> Unit,
+    contextHeader: (@Composable () -> Unit)? = null,
 ) {
     val session = LocalWorkspaceSession.current
     val navigate = LocalWorkspaceNavigator.current
@@ -134,6 +166,11 @@ private fun ColumnScope.InstrumentDetailBody(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(workspaceGap),
     ) {
+        contextHeader?.let { header ->
+            item(key = "instrument-context") {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) { header() }
+            }
+        }
         if (position.blocked)
             item(key = "restriction") {
                 SpectrumCard(emphasized = true) {

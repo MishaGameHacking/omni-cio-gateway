@@ -25,9 +25,14 @@ fun MarketWorkspaceScreen(state: PortfolioUiState, onBack: () -> Unit, onPortfol
     val groups = positions.groupBy {
         marketGroupLabel(it, section)
     }.toList().sortedByDescending { it.second.size }
-    WorkspaceDetailPage("Рынки и география", "Ваши вложения и подтверждённые сессии", onBack, SpectrumSymbol.Market) { padding ->
+    WorkspaceDetailPage("Рынки и география", "Ваши вложения и подтверждённые сессии", onBack, SpectrumSymbol.Market,
+        adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+            if (compact) item(key = "page-heading") {
+                WorkspacePageHeading("Рынки и география", "Ваши вложения и подтверждённые сессии")
+            }
             item { SpectrumCard(emphasized = true) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {

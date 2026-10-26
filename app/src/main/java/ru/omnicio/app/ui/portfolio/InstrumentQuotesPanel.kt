@@ -61,7 +61,8 @@ internal fun InstrumentQuotesPanel(position: PortfolioPosition, accountId: Strin
                 if (chosen != null) CandleDetails(chosen, snapshot.unitLabel)
                 else Text("Коснитесь свечи, чтобы увидеть точные значения.")
                 CandleSurface(snapshot.candles, selected) { selectedTime = snapshot.candles[it].time }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { selectedTime = snapshot.candles[(if (selected < 0) snapshot.candles.lastIndex else selected - 1).coerceAtLeast(0)].time }) { Text("Предыдущая") }
                     TextButton(onClick = { selectedTime = null }) { Text("Сбросить") }
                     TextButton(onClick = { selectedTime = snapshot.candles[(selected + 1).coerceIn(0, snapshot.candles.lastIndex)].time }) { Text("Следующая") }
