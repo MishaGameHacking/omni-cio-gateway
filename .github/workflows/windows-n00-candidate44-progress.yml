@@ -1,0 +1,274 @@
+name: Read fixed candidate44 build and existing authorized device versions
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-candidate44-progress.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 5
+    steps:
+    - name: Take one bounded read-only build and authorized-device snapshot
+      shell: py -3 {0}
+      env:
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
+        PYTHONUNBUFFERED: '1'
+      run: "\"\"\"One bounded read-only snapshot of build44 and already authorized Android transports.\n\nThis payload runs\
+        \ only later on the owner Windows laptop. It starts no ADB\nprocess, daemon, app, emulator or test, and sends no device\
+        \ mutation command.\nRaw ADB identifiers and package dumps remain only in process memory.\n\"\"\"\nimport datetime\n\
+        import hashlib\nimport json\nimport os\nfrom pathlib import Path, PurePosixPath\nimport re\nimport socket\nimport\
+        \ stat\nimport sys\nimport time\nimport xml.etree.ElementTree as ET\n\nBUILD_RUN = 40282775349\nBUILD_ATTEMPT = 1\n\
+        BUILD_BASE = \"043e1da910da2fcf952cc00c46d0e81a761076ea\"\nBASE_SOURCE = \"4fcf1b15db4d40c249966d072e22d31f286515fc0e84974364cb71e07f282aaf\"\
+        \nBOOTSTRAP_SHA256 = \"249ed8dc1157e4ae6bc285855689b3d19baa1df18b860598bcd35d84fb99cc8b\"\nPATCH_MANIFEST_SHA256 =\
+        \ \"bd36306c0ff435e0b9b229dee3643de3e37382b86f59aba5e17f23694c97a506\"\nBUILD_REPORT_SHA256 = \"808a43afb0585b3cf2cd9519d54c525f51be4d66fa239e3d9c4c4257d2eafd40\"\
+        \nSOURCE_SHA256 = \"e34b717fa408fbe377d910a372933c35a2ba1bdddf02263b6daa477df70f93b9\"\nCOMPLETE_SOURCE_SHA256 = \"\
+        69c10c8d65c0559b58d45231390cd0e84dc681df3f7dbaed3d0a5ee716c20fe6\"\nRUNNERS = [Path(\"C:/actions-runner\" + suffix)\
+        \ for suffix in (\"\", \"-2\", \"-3\", \"-4\")]\nBUILD_ROOT = Path(\"C:/actions-runner-3/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40282775349-1\"\
+        )\nBUILD_STATE = Path(\"C:/actions-runner-3/_work/_temp/analyst-development-40282775349-1\")\nADB_EXE = Path(\"C:/actions-runner-2/_work/_tool/AndroidSdk/sdk/platform-tools/adb.exe\"\
+        )\nADB_ENDPOINT = (\"127.0.0.1\", 5037)\nMAX_DEVICE_QUERIES = 4\nADB_TOTAL_SECONDS = 45\nPACKAGE = \"ru.omnicio.app.debug\"\
+        \n# One fixed read-only shell command on one exact existing transport. Markers\n# separate empty getprop values without\
+        \ exposing any additional property.\nDEVICE_QUERY = (\n    \"printf '__N00_QEMU__\\\\n'; getprop ro.kernel.qemu; \"\
+        \n    \"printf '__N00_MANUFACTURER__\\\\n'; getprop ro.product.manufacturer; \"\n    \"printf '__N00_MODEL__\\\\n';\
+        \ getprop ro.product.model; \"\n    \"printf '__N00_API__\\\\n'; getprop ro.build.version.sdk; \"\n    \"printf '__N00_PACKAGE__\\\
+        \\n'; dumpsys package ru.omnicio.app.debug\"\n)\n\n\ndef need(value, code):\n    if not value:\n        raise RuntimeError(code)\n\
+        \n\ndef sha(data):\n    return hashlib.sha256(data).hexdigest()\n\n\ndef checked(path, *, directory=False):\n    value\
+        \ = path.lstat()\n    need((stat.S_ISDIR(value.st_mode) if directory else stat.S_ISREG(value.st_mode) and value.st_nlink\
+        \ == 1)\n         and not path.is_symlink() and not getattr(value, \"st_file_attributes\", 0) & 0x400\n         and\
+        \ path.resolve(strict=True) == path, \"nonregular_or_redirected_observation_path\")\n    return value\n\n\ndef read_bounded(path,\
+        \ limit, *, tail=False):\n    before = checked(path)\n    need(before.st_size <= (128 * 1024**2 if tail else limit),\
+        \ \"observation_file_exceeds_bound\")\n    with path.open(\"rb\") as stream:\n        opened = os.fstat(stream.fileno())\n\
+        \        need((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino), \"observation_file_replaced\")\n \
+        \       offset = max(0, opened.st_size - limit) if tail else 0\n        stream.seek(offset)\n        data = stream.read(limit\
+        \ + (0 if tail else 1))\n        after = os.fstat(stream.fileno())\n    need(len(data) <= limit, \"observation_file_grew_beyond_bound\"\
+        )\n    return data, {\"bytes\": before.st_size, \"read_bytes\": len(data), \"offset\": offset,\n                 \
+        \ \"read_sha256\": hashlib.sha256(data).hexdigest(),\n                  \"stable_during_read\": (before.st_size, before.st_mtime_ns)\
+        \ == (after.st_size, after.st_mtime_ns)}\n\n\ndef bounded_json(path):\n    if not path.exists():\n        return {\"\
+        present\": False}, None\n    raw, metadata = read_bounded(path, 2 * 1024**2)\n    metadata[\"present\"] = True\n \
+        \   if not metadata[\"stable_during_read\"]:\n        metadata[\"state\"] = \"being_written\"\n        return metadata,\
+        \ None\n    try:\n        value = json.loads(raw)\n    except (json.JSONDecodeError, UnicodeDecodeError):\n      \
+        \  metadata[\"state\"] = \"incomplete_json_observed\"\n        return metadata, None\n    need(isinstance(value, dict),\
+        \ \"unexpected_observed_json_shape\")\n    return metadata, value\n\n\ndef fields(value, names):\n    if not isinstance(value,\
+        \ dict):\n        return {}\n    result = {}\n    for name in names:\n        item = value.get(name)\n        if name\
+        \ not in value:\n            continue\n        if item is None or type(item) in (bool, int, float):\n            result[name]\
+        \ = item\n        elif isinstance(item, str):\n            result[name] = item[:240]\n    return result\n\n\ndef safe_log_lines(raw):\n\
+        \    selected = []\n    for line in raw.decode(\"utf-8\", errors=\"replace\").splitlines():\n        # Do not export\
+        \ lines containing credential/device-identifier labels.\n        if re.search(r\"(?i)token|secret|password|authorization|api[_-]?key|serial|imei\"\
+        , line):\n            continue\n        if re.search(r\"^Ran \\d+ tests?|^OK\\b|^FAILED\\b|^BUILD (?:SUCCESSFUL|FAILED)\\\
+        b|\"\n                     r\"^> Task :[A-Za-z0-9:_-]+|^\\s*=*\\s*\\d+ (?:passed|failed)\\b|\"\n                 \
+        \    r\"^LINUX_GUEST_(?:STEP|RESULT)=|^e: |^w: \", line):\n            selected.append(line[:500])\n        else:\n\
+        \            match = re.match(r\"^(AssertionError|RuntimeError|ValueError|TimeoutError|OSError|Exception):\", line)\n\
+        \            if match:\n                selected.append(match.group(1) + \": message omitted from bounded observer\"\
+        )\n    return selected[-10:]\n\n\ndef build_observation():\n    state, source = BUILD_STATE, BUILD_ROOT\n    checked(state,\
+        \ directory=True)\n    checked(source, directory=True)\n    result = {\"run_id\": BUILD_RUN, \"run_attempt\": BUILD_ATTEMPT,\
+        \ \"state_found\": True}\n    metadata, report = bounded_json(state / \"windows-development.json\")\n    result[\"\
+        report_file\"] = metadata\n    need(report is not None and metadata[\"stable_during_read\"] and metadata[\"read_sha256\"\
+        ] == BUILD_REPORT_SHA256,\n         \"completed_build44_report_changed\")\n    need(report.get(\"schema\") == 1 and\
+        \ report.get(\"kind\") == \"windows_development_check_build\" and\n         report.get(\"origin\") == \"Windows laptop\"\
+        \ and report.get(\"host\") == \"LAPTOP-NPSGA016\",\n         \"unexpected_build_report_origin\")\n    need(report.get(\"\
+        github\", {}).get(\"run_id\") == BUILD_RUN and\n         report.get(\"github\", {}).get(\"run_attempt\") == BUILD_ATTEMPT\
+        \ and\n         report.get(\"base_commit\") == BUILD_BASE and report.get(\"base_source_sha256\") == BASE_SOURCE and\n\
+        \         report.get(\"bootstrap_sha256\") == BOOTSTRAP_SHA256 and\n         report.get(\"patch_manifest_sha256\"\
+        ) == PATCH_MANIFEST_SHA256 and\n         Path(report.get(\"root\", \"\")) == source and Path(report.get(\"state\"\
+        , \"\")) == state,\n         \"exact_build44_identity_mismatch\")\n    need(report.get(\"status\") == \"passed_check_and_build_only\"\
+        \ and\n         report.get(\"source_sha256\") == report.get(\"source_sha256_after\") == SOURCE_SHA256 and\n      \
+        \   report.get(\"complete_source_sha256\") == report.get(\"complete_source_sha256_after\") == COMPLETE_SOURCE_SHA256\
+        \ and\n         all(report.get(phase, {}).get(\"status\") == \"passed\" and\n             report[phase].get(\"source_sha256\"\
+        ) == SOURCE_SHA256 for phase in (\"check\", \"build\")),\n         \"completed_build44_success_or_source_changed\"\
+        )\n    result[\"completed_report_verified\"] = True\n    result[\"state_root\"] = str(state)\n    result[\"report\"\
+        ] = fields(report, (\"status\", \"base_commit\", \"base_source_sha256\", \"source_sha256\",\n        \"source_sha256_after\"\
+        , \"complete_source_sha256\", \"complete_source_sha256_after\", \"started_at\",\n        \"finished_at\", \"failed_stage\"\
+        , \"error_type\", \"certificate_sha256\"))\n    for phase in (\"check\", \"build\", \"runtime\"):\n        result[\"\
+        report\"][phase] = fields(report.get(phase),\n            (\"status\", \"started_at\", \"finished_at\", \"source_sha256\"\
+        , \"apk_sha256\"))\n    steps = report.get(\"steps\", [])\n    need(isinstance(steps, list) and len(steps) <= 64,\
+        \ \"unexpected_build_step_count\")\n    result[\"report\"][\"steps\"] = [fields(row, (\"label\", \"exit_code\", \"\
+        duration_seconds\", \"error_type\")) for row in steps]\n    result[\"state_files\"] = {}\n    for name in (\"controller.json\"\
+        , \"export-receipt.json\", \"linux-linux-test-report.json\"):\n        meta, value = bounded_json(state / name)\n\
+        \        if value is not None:\n            meta[\"report\"] = fields(value, (\"status\", \"started_at\", \"finished_at\"\
+        , \"worker_started\",\n                \"worker_exit_code\", \"remaining_before_cleanup\", \"owned_processes_after\"\
+        , \"error_type\",\n                \"cleanup_error\", \"bytes\", \"sha256\", \"source_sha256\", \"complete_source_sha256\"\
+        ,\n                \"runtime_pass\", \"publication_authorized\"))\n        result[\"state_files\"][name] = meta\n\
+        \    logs = sorted(path for path in state.glob(\"*.log\") if re.fullmatch(\n        r\"(?:\\d{2}-(?:host-tests|tools-tests|node-tests|backend-tests|gradle|apk-verification)|\"\
+        \n        r\"linux-(?:backend-full-suite|health-openapi)|failure)\\.log\", path.name))\n    need(len(logs) <= 16,\
+        \ \"unexpected_exact_build_log_count\")\n    result[\"test_summaries\"] = {}\n    for path in logs:\n        raw,\
+        \ meta = read_bounded(path, 18000, tail=True)\n        meta[\"lines\"] = safe_log_lines(raw)\n        result[\"test_summaries\"\
+        ][path.name] = meta\n    return result\n\n\ndef export_inventory(name, output, expected_code, expected_complete=None):\n\
+        \    path = BUILD_STATE / name\n    if not path.exists():\n        need(name != \"source-final.json\", \"completed_build44_source_final_missing\"\
+        )\n        return {\"present\": False}\n    raw, metadata = read_bounded(path, 8 * 1024**2)\n    need(metadata[\"\
+        stable_during_read\"], \"completed_source_inventory_is_changing\")\n    def unique_pairs(pairs):\n        value =\
+        \ {}\n        for key, item in pairs:\n            need(key not in value, \"duplicate_inventory_key\")\n         \
+        \   value[key] = item\n        return value\n    inventory = json.loads(raw, object_pairs_hook=unique_pairs)\n   \
+        \ need(isinstance(inventory, dict) and set(inventory) == {\n        \"source_sha256\", \"complete_source_sha256\"\
+        , \"files\"}, \"unexpected_actual_inventory_format\")\n    files = inventory[\"files\"]\n    need(isinstance(files,\
+        \ dict) and 1 <= len(files) <= 20000, \"invalid_actual_inventory_file_count\")\n    code, complete, seen = hashlib.sha256(),\
+        \ hashlib.sha256(), set()\n    for relative in sorted(files, key=lambda item: item.encode(\"utf-8\")):\n        parts\
+        \ = PurePosixPath(relative)\n        need(relative and \"\\\\\" not in relative and \"\\0\" not in relative and\n\
+        \             not parts.is_absolute() and parts.as_posix() == relative and\n             all(part not in (\".\", \"\
+        ..\") for part in parts.parts) and relative.casefold() not in seen,\n             \"unsafe_actual_inventory_path\"\
+        )\n        seen.add(relative.casefold())\n        identity = files[relative]\n        need(isinstance(identity, dict)\
+        \ and set(identity) == {\"bytes\", \"sha256\"} and\n             type(identity[\"bytes\"]) is int and identity[\"\
+        bytes\"] >= 0 and\n             isinstance(identity[\"sha256\"], str) and re.fullmatch(r\"[a-f0-9]{64}\", identity[\"\
+        sha256\"]),\n             \"invalid_actual_inventory_identity\")\n        row = relative.encode(\"utf-8\") + b\"\\\
+        0\" + identity[\"sha256\"].encode(\"ascii\") + b\"\\0\"\n        complete.update(row)\n        if relative not in\
+        \ (\"AGENTS.md\", \"README.md\") and not relative.startswith(\"docs/\"):\n            code.update(row)\n    need(code.hexdigest()\
+        \ == expected_code == inventory[\"source_sha256\"] and\n         complete.hexdigest() == inventory[\"complete_source_sha256\"\
+        ], \"actual_inventory_hash_mismatch\")\n    if expected_complete is not None:\n        need(complete.hexdigest() ==\
+        \ expected_complete, \"actual_inventory_differs_from_completed_report\")\n    with (output / name).open(\"xb\") as\
+        \ destination:\n        destination.write(raw)  # The exact observed bytes, never regenerated JSON.\n    need(sha((output\
+        \ / name).read_bytes()) == metadata[\"read_sha256\"], \"inventory_export_readback_changed\")\n    return {**metadata,\
+        \ \"present\": True, \"copied_bytes_unchanged\": True, \"file_count\": len(files),\n            \"source_sha256\"\
+        : code.hexdigest(), \"complete_source_sha256\": complete.hexdigest(),\n            \"bound_completed_report_sha256\"\
+        : BUILD_REPORT_SHA256}\n\n\ndef inventories_observation(output):\n    raw, metadata = read_bounded(BUILD_STATE / \"\
+        windows-development.json\", 2 * 1024**2)\n    need(metadata[\"stable_during_read\"] and sha(raw) == BUILD_REPORT_SHA256,\n\
+        \         \"completed_report_changed_before_inventory_export\")\n    with (output / \"windows-development.json\").open(\"\
+        xb\") as destination:\n        destination.write(raw)\n    return {\"source-final.json\": export_inventory(\"source-final.json\"\
+        , output, SOURCE_SHA256, COMPLETE_SOURCE_SHA256),\n            \"source-before.json\": export_inventory(\"source-before.json\"\
+        , output, BASE_SOURCE)}\n\n\ndef remaining(deadline):\n    seconds = deadline - time.monotonic()\n    need(seconds\
+        \ > 0, \"adb_observation_deadline\")\n    return min(seconds, 3.0)\n\n\ndef connect_existing(deadline):\n    # No\
+        \ adb client process exists in this observer, so neither absence nor a\n    # version mismatch can launch/restart\
+        \ a daemon. Only loopback5037 is used.\n    channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n    try:\n\
+        \        channel.settimeout(remaining(deadline))\n        channel.connect(ADB_ENDPOINT)\n        return channel\n\
+        \    except BaseException:\n        channel.close()\n        raise\n\n\ndef read_exact(channel, length, deadline):\n\
+        \    result = bytearray()\n    while len(result) < length:\n        channel.settimeout(remaining(deadline))\n    \
+        \    block = channel.recv(length - len(result))\n        need(block, \"adb_response_ended_early\")\n        result.extend(block)\n\
+        \    return bytes(result)\n\n\ndef read_protocol_string(channel, limit, deadline):\n    header = read_exact(channel,\
+        \ 4, deadline)\n    need(re.fullmatch(b\"[0-9a-fA-F]{4}\", header), \"adb_invalid_length_header\")\n    length = int(header,\
+        \ 16)\n    need(length <= limit, \"adb_response_exceeds_bound\")\n    return read_exact(channel, length, deadline)\n\
+        \n\ndef request(channel, service, deadline):\n    allowed = service == \"host:devices-l\" or re.fullmatch(r\"host:transport-id:[1-9]\\\
+        d{0,19}\", service) or service == \"shell:\" + DEVICE_QUERY\n    need(allowed, \"adb_service_outside_readonly_allowlist\"\
+        )\n    payload = service.encode(\"ascii\")\n    need(len(payload) <= 4096, \"adb_request_exceeds_bound\")\n    channel.settimeout(remaining(deadline))\n\
+        \    channel.sendall(f\"{len(payload):04x}\".encode(\"ascii\") + payload)\n    status = read_exact(channel, 4, deadline)\n\
+        \    if status == b\"FAIL\":\n        read_protocol_string(channel, 4096, deadline)  # Discard private daemon reason.\n\
+        \        raise RuntimeError(\"adb_service_unavailable\")\n    need(status == b\"OKAY\", \"adb_invalid_response_status\"\
+        )\n\n\ndef read_device(transport_id, overall_deadline):\n    deadline = min(overall_deadline, time.monotonic() + 8.0)\n\
+        \    with connect_existing(deadline) as channel:\n        request(channel, \"host:transport-id:\" + str(transport_id),\
+        \ deadline)\n        request(channel, \"shell:\" + DEVICE_QUERY, deadline)\n        result = bytearray()\n       \
+        \ while True:\n            channel.settimeout(remaining(deadline))\n            block = channel.recv(min(16384, 512\
+        \ * 1024 + 1 - len(result)))\n            if not block:\n                return bytes(result)\n            result.extend(block)\n\
+        \            need(len(result) <= 512 * 1024, \"adb_package_response_exceeds_bound\")\n\n\ndef safe_property(value,\
+        \ private_identifiers, *, empty=False):\n    need((empty or bool(value)) and len(value) <= 120 and all(character.isprintable()\
+        \ for character in value),\n         \"adb_property_shape_unexpected\")\n    need(not any(value == identifier or len(identifier)\
+        \ >= 4 and identifier in value\n                 for identifier in private_identifiers), \"adb_property_contains_private_identifier\"\
+        )\n    return value\n\n\ndef parse_device(raw, private_identifiers):\n    text = raw.decode(\"utf-8\", errors=\"strict\"\
+        ).replace(\"\\r\\n\", \"\\n\")\n    markers = (\"__N00_QEMU__\", \"__N00_MANUFACTURER__\", \"__N00_MODEL__\", \"__N00_API__\"\
+        , \"__N00_PACKAGE__\")\n    need(all(text.count(marker + \"\\n\") == 1 for marker in markers) and text.startswith(markers[0]\
+        \ + \"\\n\"),\n         \"adb_property_markers_invalid\")\n    values = []\n    remainder = text\n    for index, marker\
+        \ in enumerate(markers[:-1]):\n        need(remainder.startswith(marker + \"\\n\"), \"adb_property_marker_order_invalid\"\
+        )\n        current, remainder = remainder[len(marker) + 1:].split(markers[index + 1] + \"\\n\", 1)\n        need(current.endswith(\"\
+        \\n\") and \"\\n\" not in current[:-1], \"adb_property_not_single_line\")\n        values.append(current[:-1])\n \
+        \       remainder = markers[index + 1] + \"\\n\" + remainder\n    package_dump = remainder[len(markers[-1]) + 1:]\n\
+        \    qemu, manufacturer, model, api = values\n    need(qemu in (\"\", \"0\", \"1\") and re.fullmatch(r\"[1-9]\\d{0,2}\"\
+        , api), \"adb_qemu_or_api_unexpected\")\n    record = {\"qemu\": qemu if qemu else \"unset\", \"manufacturer\": safe_property(manufacturer,\
+        \ private_identifiers),\n              \"model\": safe_property(model, private_identifiers), \"android_api\": int(api),\n\
+        \              \"package\": PACKAGE, \"versionCode\": None, \"versionName\": None, \"package_state\": \"unavailable\"\
+        }\n    headers = list(re.finditer(r\"(?m)^  Package \\[ru\\.omnicio\\.app\\.debug\\] \\([^\\r\\n]*\\):\\s*$\", package_dump))\n\
+        \    if len(headers) == 1:\n        block = package_dump[headers[0].end():]\n        next_header = re.search(r\"(?m)^(?:\
+        \  Package \\[|[A-Za-z][^\\r\\n]*:)\" , block)\n        if next_header:\n            block = block[:next_header.start()]\n\
+        \        codes = re.findall(r\"(?m)^\\s+versionCode=(\\d+)(?:\\s|$)\", block)\n        names = re.findall(r\"(?m)^\\\
+        s+versionName=([^\\r\\n]+)$\", block)\n        need(len(codes) == len(names) == 1 and 0 < int(codes[0]) < 2**63, \"\
+        adb_package_version_ambiguous\")\n        record.update(versionCode=int(codes[0]), versionName=safe_property(names[0].strip(),\
+        \ private_identifiers),\n                      package_state=\"version_observed\")\n    elif not headers and package_dump.strip()\
+        \ == \"Unable to find package: \" + PACKAGE:\n        record[\"package_state\"] = \"not_installed_observed\"\n   \
+        \ return record\n\n\ndef device_observation():\n    result = {\"status\": \"not_observed\", \"sdk_adb_file_present\"\
+        : False, \"daemon_started\": False,\n              \"client_process_executed\": False, \"device_mutations\": False,\
+        \ \"physical_phone_verified\": False,\n              \"device_query_limit\": MAX_DEVICE_QUERIES, \"observations\"\
+        : []}\n    try:\n        checked(ADB_EXE)\n        result[\"sdk_adb_file_present\"] = True\n    except (OSError, RuntimeError):\n\
+        \        result[\"status\"] = \"existing_sdk_adb_unavailable_queries_skipped\"\n        return result\n    deadline\
+        \ = time.monotonic() + ADB_TOTAL_SECONDS\n    try:\n        with connect_existing(deadline) as channel:\n        \
+        \    request(channel, \"host:devices-l\", deadline)\n            raw = read_protocol_string(channel, 32768, deadline)\n\
+        \    except ConnectionRefusedError:\n        result[\"status\"] = \"loopback_adb_not_listening_queries_skipped\"\n\
+        \        return result\n    except (OSError, RuntimeError, UnicodeError):\n        result[\"status\"] = \"existing_adb_unavailable_queries_skipped\"\
+        \n        return result\n    lines = raw.decode(\"utf-8\", errors=\"strict\").splitlines()\n    need(len(lines) <=\
+        \ 32, \"adb_device_inventory_exceeds_bound\")\n    counts = {\"listed\": len(lines), \"authorized\": 0, \"offline\"\
+        : 0, \"unauthorized\": 0, \"other\": 0,\n              \"authorized_emulator_serials\": 0, \"authorized_non_emulator_candidates\"\
+        : 0,\n              \"eligible_with_current_transport_id\": 0, \"query_attempts\": 0, \"query_unavailable\": 0,\n\
+        \              \"qemu_observations\": 0, \"non_qemu_observations\": 0}\n    candidates, private_identifiers, seen_ids\
+        \ = [], [], set()\n    for line in lines:\n        parts = line.split()\n        if len(parts) < 2:\n            counts[\"\
+        other\"] += 1\n            continue\n        identifier, state = parts[:2]\n        private_identifiers.append(identifier)\n\
+        \        if state != \"device\":\n            counts[state if state in (\"offline\", \"unauthorized\") else \"other\"\
+        ] += 1\n            continue\n        counts[\"authorized\"] += 1\n        if re.fullmatch(r\"emulator-\\d+\", identifier):\n\
+        \            counts[\"authorized_emulator_serials\"] += 1\n            continue\n        counts[\"authorized_non_emulator_candidates\"\
+        ] += 1\n        ids = [part.removeprefix(\"transport_id:\") for part in parts[2:] if part.startswith(\"transport_id:\"\
+        )]\n        if len(ids) != 1 or not re.fullmatch(r\"[1-9]\\d{0,19}\", ids[0]):\n            continue\n        transport_id\
+        \ = int(ids[0])\n        if transport_id >= 2**64 or transport_id in seen_ids:\n            continue\n        seen_ids.add(transport_id)\n\
+        \        candidates.append(transport_id)\n    counts[\"eligible_with_current_transport_id\"] = len(candidates)\n \
+        \   for transport_id in candidates[:MAX_DEVICE_QUERIES]:\n        counts[\"query_attempts\"] += 1\n        try:\n\
+        \            record = parse_device(read_device(transport_id, deadline), private_identifiers)\n            result[\"\
+        observations\"].append(record)\n            counts[\"qemu_observations\" if record[\"qemu\"] == \"1\" else \"non_qemu_observations\"\
+        ] += 1\n        except (OSError, RuntimeError, UnicodeError, ValueError):\n            counts[\"query_unavailable\"\
+        ] += 1\n    result.update(status=\"existing_authorized_device_snapshot\", counts=counts)\n    return result\n\n\n\
+        def junit_observation(output):\n    directory = BUILD_ROOT / 'app/build/test-results/testDebugUnitTest'\n    result\
+        \ = {'build_run_id': BUILD_RUN, 'build_run_attempt': BUILD_ATTEMPT, 'build_root': str(BUILD_ROOT),\n             \
+        \ 'directory': str(directory), 'build_report_sha256': BUILD_REPORT_SHA256,\n              'build_report_source_sha256':\
+        \ SOURCE_SHA256, 'status': 'not_found', 'files': []}\n    if not directory.exists():\n        return result\n    checked(directory,\
+        \ directory=True)\n    paths = sorted(directory.glob('TEST-*.xml'))\n    need(0 < len(paths) <= 256, 'unexpected_junit_file_count')\n\
+        \    destination = output / 'junit-xml'\n    destination.mkdir()\n    totals = {key: 0 for key in ('tests', 'failures',\
+        \ 'errors', 'skipped')}\n    inventory = hashlib.sha256()\n    total_bytes = 0\n    for path in paths:\n        need(re.fullmatch(r'TEST-[A-Za-z0-9_.$-]+\\\
+        .xml', path.name), 'unexpected_junit_filename')\n        data, metadata = read_bounded(path, 2 * 1024**2)\n      \
+        \  need(metadata['stable_during_read'], 'completed_build_junit_is_changing')\n        total_bytes += len(data)\n \
+        \       need(total_bytes <= 16 * 1024**2, 'junit_inventory_exceeds_bound')\n        tree = ET.fromstring(data)\n \
+        \       need(tree.tag in ('testsuite', 'testsuites'), 'unexpected_junit_root')\n        suites = [tree] if tree.tag\
+        \ == 'testsuite' else list(tree.findall('testsuite'))\n        need(suites, 'empty_junit_suite')\n        counts =\
+        \ {key: 0 for key in totals}\n        cases = 0\n        for suite in suites:\n            values = {key: int(suite.attrib.get(key,\
+        \ '0')) for key in counts}\n            need(all(value >= 0 for value in values.values()) and 'tests' in suite.attrib,\
+        \ 'invalid_junit_counters')\n            actual_cases = list(suite.findall('testcase'))\n            need(values['tests']\
+        \ == len(actual_cases), 'junit_testcase_count_mismatch')\n            for key, tag in (('failures', 'failure'), ('errors',\
+        \ 'error'), ('skipped', 'skipped')):\n                need(values[key] == sum(case.find(tag) is not None for case\
+        \ in actual_cases), 'junit_result_count_mismatch')\n            cases += len(actual_cases)\n            for key in\
+        \ counts:\n                counts[key] += values[key]\n        with (destination / path.name).open('xb') as stream:\n\
+        \            stream.write(data)\n        inventory.update(path.name.encode('utf-8') + b'\\0' + sha(data).encode('ascii')\
+        \ + b'\\0')\n        result['files'].append({'name': path.name, 'bytes': len(data), 'sha256': sha(data), 'suites':\
+        \ len(suites), 'testcases': cases, **counts})\n        for key in totals:\n            totals[key] += counts[key]\n\
+        \    result.update(status='observed_exact_xml', file_count=len(paths), total_bytes=total_bytes,\n                \
+        \  inventory_sha256=inventory.hexdigest(), totals=totals,\n                  all_observed_tests_passed=totals['tests']\
+        \ > 0 and totals['failures'] == totals['errors'] == totals['skipped'] == 0)\n    return result\n\n\ndef main():\n\
+        \    need(__debug__ and sys.platform == \"win32\" and os.environ.get(\"COMPUTERNAME\") == \"LAPTOP-NPSGA016\",\n \
+        \        \"observer_requires_owner_windows_laptop\")\n    need(os.environ.get(\"GITHUB_REPOSITORY\") == \"MishaGameHacking/omni-cio-gateway\"\
+        , \"unexpected_repository\")\n    run, attempt = os.environ[\"GITHUB_RUN_ID\"], os.environ[\"GITHUB_RUN_ATTEMPT\"\
+        ]\n    need(re.fullmatch(r\"[1-9]\\d{0,19}\", run) and re.fullmatch(r\"[1-9]\\d{0,4}\", attempt), \"invalid_observer_run\"\
+        )\n    temp = Path(os.environ[\"RUNNER_TEMP\"]).resolve(strict=True)\n    need(temp in {runner / \"_work/_temp\" for\
+        \ runner in RUNNERS}, \"unexpected_observer_temp_root\")\n    checked(temp, directory=True)\n    output = temp / f\"\
+        n00-candidate44-progress-{run}-{attempt}\"\n    need(not output.exists() and not output.is_symlink(), \"observer_output_already_exists\"\
+        )\n    output.mkdir()\n    report = {\"observed_at\": datetime.datetime.now(datetime.timezone.utc).isoformat(),\n\
+        \              \"observer_run_id\": int(run), \"observer_run_attempt\": int(attempt), \"diagnostic_only\": True,\n\
+        \              \"target_build_run_id\": BUILD_RUN, \"target_build_attempt\": BUILD_ATTEMPT,\n              \"application_or_tests_executed\"\
+        : False, \"phone_installation_performed\": False}\n    failed = False\n    try:\n        report[\"build\"] = build_observation()\n\
+        \        report[\"source_inventories\"] = inventories_observation(output)\n    except (OSError, RuntimeError, ValueError,\
+        \ KeyError, TypeError):\n        report[\"build_observation_status\"] = \"bounded_build_or_inventory_observation_unavailable\"\
+        \n        failed = True\n    if report.get(\"build\", {}).get(\"completed_report_verified\"):\n        try:\n    \
+        \        report[\"junit\"] = junit_observation(output)\n        except (OSError, RuntimeError, ValueError, KeyError,\
+        \ TypeError, ET.ParseError):\n            report[\"junit\"] = {\"status\": \"bounded_junit_observation_unavailable\"\
+        }\n    try:\n        report[\"devices\"] = device_observation()\n    except (OSError, RuntimeError, ValueError, KeyError,\
+        \ TypeError, UnicodeError):\n        report[\"devices\"] = {\"status\": \"bounded_device_observation_unavailable\"\
+        , \"raw_details_discarded\": True}\n        failed = True\n    report[\"status\"] = \"observation_incomplete\" if\
+        \ failed else \"read_only_observation_complete\"\n    raw = (json.dumps(report, ensure_ascii=True, indent=2) + \"\\\
+        n\").encode(\"utf-8\")\n    need(len(raw) <= 128 * 1024, \"observer_output_exceeds_bound\")\n    with (output / \"\
+        candidate44-progress.json\").open(\"xb\") as destination:\n        destination.write(raw)\n    console = dict(report)\n\
+        \    if \"junit\" in console:\n        console[\"junit\"] = {key: value for key, value in report[\"junit\"].items()\
+        \ if key != \"files\"}\n    print(\"N00_CANDIDATE44_OBSERVATION=\" + json.dumps(console, ensure_ascii=True, separators=(\"\
+        ,\", \":\")), flush=True)\n    if failed:\n        raise RuntimeError(\"one_readonly_observation_was_unavailable\"\
+        ) from None\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      id: observe
+      timeout-minutes: 3
+    - name: Retain only the bounded build and anonymous device observations
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: n00-candidate44-phone-progress-${{ github.run_id }}-${{ github.run_attempt }}
+        path: '${{ runner.temp }}/n00-candidate44-progress-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+
+          ${{ runner.temp }}/n00-candidate44-progress-${{ github.run_id }}-${{ github.run_attempt }}/junit-xml/TEST-*.xml'
+        retention-days: 3
+        if-no-files-found: error
+      if: always()
+    name: Read only build40282775349 and existing loopback ADB transports
+concurrency:
+  group: analyst-candidate44-one-shot-build-phone-observer
+  cancel-in-progress: false
