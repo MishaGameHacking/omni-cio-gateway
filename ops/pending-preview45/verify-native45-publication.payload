@@ -1,0 +1,87 @@
+def verify_native_navigation(expected):
+    """Verify the original Windows archive before preview publication is possible."""
+    folder = FOLDER.parent / ('windows-development-' + str(expected['run_id']) + '-1')
+    trusted(folder, directory=True)
+    archive_path = folder / 'windows-development-evidence.zip'
+    need(file_sha(archive_path, expected['archive_bytes']) == expected['archive_sha256'],
+         'wrong_native_archive')
+    with zipfile.ZipFile(archive_path) as native_zip:
+        names = native_zip.namelist()
+        need(len(names) == len(set(names)), 'duplicate_native_archive_member')
+        need(native_zip.getinfo('n00-runtime-envelope.json').file_size < 4 * 1024**2, 'native_envelope_too_large')
+        envelope = json.loads(native_zip.read('n00-runtime-envelope.json'))
+        need(envelope['kind'] == 'n00_candidate45_navigation_focused', 'wrong_native_archive_kind')
+        need(envelope['source_commit'] == SOURCE_BACKUP and envelope['source_sha256'] == SOURCE_SHA
+             and envelope['base_source_sha256'] == SOURCE_SHA and envelope['test_patch_sha256'] is None,
+             'native_source_identity_changed')
+        need(envelope['diagnostic_only'] is True and envelope['release_gate_pass'] is False
+             and envelope['original_portfolio_executed'] is False and envelope['full_ui_suite_executed'] is False
+             and envelope['phone_verified'] is False and envelope['publication_authorized'] is False,
+             'native_full_acceptance_claim_conflict')
+        need(envelope['input_files']['app/build/outputs/apk/preview/app-preview.apk'] == [APK_BYTES, APK_SHA],
+             'native_apk_identity_changed')
+        provenance = envelope['build_provenance']
+        need(provenance['build_report_sha256'] == BUILD_REPORT_SHA
+             and provenance['source_backup_commit'] == SOURCE_BACKUP and provenance['source_sha256'] == SOURCE_SHA
+             and provenance['build_archive'] == {'bytes': ARCHIVE_BYTES, 'sha256': ARCHIVE_SHA},
+             'native_build_provenance_conflict')
+
+        def member(name):
+            need(native_zip.getinfo(name).file_size < 4 * 1024**2, 'native_receipt_too_large')
+            raw = native_zip.read(name)
+            need(envelope['files'][name] == {'bytes': len(raw), 'sha256': sha(raw)}, 'native_receipt_identity_changed')
+            need(expected['receipts'][name] == sha(raw), 'prepared_native_receipt_changed')
+            return json.loads(raw)
+
+        summary = member('controller/native45-navigation-summary.json')
+        observed = member('ui-screens/navigation-focused-observations.json')
+        runtime = member('controller/runtime-16384.json')
+        installs = member('install-api37-16384/install-results.json')
+        need(summary['source_commit'] == SOURCE_BACKUP and summary['source_sha256'] == SOURCE_SHA
+             and summary['build_report_sha256'] == BUILD_REPORT_SHA, 'native_summary_provenance_changed')
+        need(summary['navigation']['complete'] is True and observed['navigation_complete'] is True,
+             'native_navigation_not_complete')
+        need(summary['diagnostic_only'] is True and summary['release_gate_pass'] is False
+             and summary['original14']['executed'] is False and summary['full15']['executed'] is False
+             and observed['original_portfolio_executed'] is False and observed['full15_executed'] is False,
+             'partial_native_claim_conflict')
+        need(observed.get('error') == 'Diagnostic only: full UI suite was deliberately not claimed',
+             'unexpected_native_failure')
+        need(runtime['host'] == 'LAPTOP-NPSGA016' and runtime['page_bytes'] == 16384
+             and runtime['apk_sha256'] == APK_SHA and runtime['test_source_sha256'] == SOURCE_SHA
+             and runtime['exit_code'] == 1, 'native_runtime_identity_changed')
+        required = {'automation-verification.json': 26, 'navigation-panels-verification.json': 4,
+                    'navigation-detail-verification.json': 2, 'navigation-wide-verification.json': 2}
+        for name, count in required.items():
+            value = member('ui-screens/' + name)
+            need(value['schema_version'] == 1 and len(value['cases']) == count, 'native_case_count_changed')
+            need(value['fixture_apk_sha256'] == envelope['input_files']['app/build/outputs/apk/debug/app-debug.apk'][1],
+                 'native_fixture_identity_changed')
+            identity = envelope['files']['ui-screens/' + name]
+            need(observed['evidence'][name] == {**identity, 'case_count': count}, 'native_case_evidence_changed')
+            if name in ('navigation-detail-verification.json', 'navigation-wide-verification.json'):
+                need(value['status'] == 'passed' and {row['font_scale'] for row in value['cases']} == {1.0, 2.0},
+                     'native_detail_or_wide_not_passed')
+            if name == 'navigation-wide-verification.json':
+                need(value['viewport']['restored'] is True, 'native_viewport_not_restored')
+        need(isinstance(installs, list), 'invalid_native_install_receipts')
+        by_name = {row['test']: row for row in installs}
+        need(len(by_name) == len(installs), 'duplicate_native_install_receipt')
+        for name in ('kernel_page_size', 'previous_clean_install', 'upgrade_to_candidate',
+                     'upgrade_bootstrap_launch', 'candidate_clean_install', 'bootstrap_activity_launch'):
+            row = by_name[name]
+            need(row['success'] is True, 'native_install_or_launch_failed')
+            need(row['apk_sha256'] == (OLD_SHA if name == 'previous_clean_install' else APK_SHA),
+                 'native_install_apk_changed')
+        kernel = by_name['kernel_page_size']
+        need(kernel['android_api'] == 37 and kernel['page_size_bytes'] == 16384 and kernel['abi'] == 'x86_64',
+             'native_emulator_profile_changed')
+    return {'run_id': expected['run_id'], 'run_attempt': 1,
+            'archive_sha256': expected['archive_sha256'], 'archive_bytes': expected['archive_bytes'],
+            'receipts': expected['receipts'], 'navigation_cases': required,
+            'navigation_complete': True, 'android_api': 37, 'page_size_bytes': 16384,
+            'previous44_clean_install': True, 'upgrade44_to45': True, 'candidate45_clean_install': True,
+            'upgrade_and_clean_bootstrap_launch': True, 'physical_phone_verified': False,
+            'original14_executed': False, 'full_runtime_matrix_passed': False}
+
+
