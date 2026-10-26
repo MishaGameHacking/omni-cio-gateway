@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "reviewed_at": "2026-10-26T11:41:54.899723+00:00",
+  "scope": "static_administrative_source_review_only",
+  "files": {
+    "prepare-deployment.py": "f2f1e60585f9086fdde01dfb8aac810d53c6e8a750ad1558fe1a0b1f20bd8a01",
+    "deploy-runtime.py": "deeb19675c148b73fa44a392fd95994b9aaa1d9e48622024a91f74abe0be7ebe",
+    "public-checks.py": "24b90c9143dbc890aaba79cd41ea1a37a74cca73b204de9f6e7eef948c41062f",
+    "receive-deployment.py": "adbad3ec31921fa6f8c52114f8ea51f2a6ea113aa554bb821a5c473eb38dc1bb"
+  },
+  "runtime_helper_sha256": "79c73c55a07e5a96f92c84ad89982dd84a3655598b64a90d774b28781bcca177",
+  "observations": [
+    "Remote scope remains the exact three owned HTML/CSS files.",
+    "Before mutation, full original Windows archive and six actual backend HTML tests must match exact source inventory.",
+    "Source backup and exact current GitHub build attempt with all five jobs are verified independently.",
+    "Only the owner service stops/restarts; updates, Caddy, config, identities and public policy are preserved and checked.",
+    "Journal and immutable originals support rollback; failures are retained as failed receipts.",
+    "Public verifier reads health, error callback, retired route and update policy; it does not start login."
+  ],
+  "pending": [
+    "Actual successful Windows46 evidence and exact source backup",
+    "Render and review concrete generated workflow",
+    "Authorized deployment and real public verification"
+  ],
+  "execution_performed": false,
+  "deployment_performed": false
+}
