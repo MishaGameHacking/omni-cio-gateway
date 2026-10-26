@@ -1,0 +1,23 @@
+{
+  "state": "prepared_source_text_only",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "base_build_run": 40342969750,
+  "source_paths": 84,
+  "new_paths": 25,
+  "version_code": 47,
+  "version_name": "0.14.0-preview",
+  "reviewed_files_sha256": "501d9f1875540a0b7ef3a3d139254ddea8dd72b210d3be917849e010517fc595",
+  "bundle_sha256": "3acaca008ed38d3b0023954c412ef8f54d53fabc314c7cae8dc1b1881bc094bc",
+  "transport_sha256": "994acd3140adeab3dd03da0b4befa99c7b5093ff8766d785f1bf4c414ce6c2c6",
+  "patch_manifest_sha256": "c7fcbde4382bde92b6bd248609946b23020ee1e61409b66986b0dd24605427c3",
+  "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
+  "workflow_sha256": "ee22d361f743168157becad9b05499eb0015eeb89491694c5ad3da57b02744f8",
+  "source_generator_sha256": "c933072d4062cfff0be8006a56ee505a940875d8241e60e394cc4771949ca3f7",
+  "applied_on_windows": false,
+  "build_passed": false,
+  "native_passed": false,
+  "deployed": false,
+  "plan_complete": false,
+  "supersedes": "Unpublished multi-theme46. Failed builds remain original failed evidence."
+}
