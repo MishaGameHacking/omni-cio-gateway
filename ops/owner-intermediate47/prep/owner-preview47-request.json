@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "build_binding": {
+    "path": "context/native47-request-v20.json",
+    "sha256": "f94a91b35ec58a95706163646da621b94f86aa725dacbc7e9f3014b2ef14a42c"
+  },
+  "owner_requested_intermediate_without_full_native": true
+}

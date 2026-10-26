@@ -1,0 +1,126 @@
+{
+  "application_or_test_execution_performed": false,
+  "authorization": {
+    "apk_bytes": 29921459,
+    "apk_sha256": "1f699684618f44f1da4c71f3fa19bbf9125e906ab431865747cf44e0b5ea0602",
+    "backend_deployment_performed": false,
+    "build_export_receipt_sha256": "4f20137595c4a306315b9d3cd6914c96c89f5cf170ce266822cbb3aef3b76998",
+    "build_report_sha256": "d8f681a58a6b1574f16f284ac514c13a1b942e4683b5de66306a5728b498276f",
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+    "complete_release_gate_passed": false,
+    "database_mutations_performed": false,
+    "date": "2026-10-26",
+    "design47_run_id": null,
+    "design47_status": "not_executed_for_published_build",
+    "explicit_intermediate_preview": true,
+    "full15_runtime_matrix_passed": false,
+    "full_check_and_build_passed": true,
+    "kind": "owner_requested_latest_built_preview_delivery",
+    "original14_status": "not_executed_for_published_build",
+    "owner_request": "Вся работа на ноуте и на исходный код приложения и его апк на Timeweb; новое обновление без повторной полной проверки",
+    "package_name": "ru.omnicio.app.debug",
+    "paid_ai_calls_performed": false,
+    "phone_verified": false,
+    "preview_install_smoke": {
+      "full_runtime_matrix_passed": false,
+      "physical_phone_verified": false,
+      "run_id": null,
+      "status": "not_executed_for_published_build"
+    },
+    "prior_native_attempt": {
+      "artifact_id": 12685050936,
+      "artifact_sha256": "9f8dc6419f23bcaf4fd964684582dcf7920fae9a0394aba44555cdd7c7869762",
+      "build_run_id": 40386457173,
+      "is_evidence_for_published_build": false,
+      "run_id": 40389869187,
+      "status": "failed"
+    },
+    "reason_for_current_manifest_change": "Owner explicitly requests an intermediate Timeweb update without another full native matrix; previous failures remain failures.",
+    "runtime_pass": false,
+    "service_restart_performed": false,
+    "session_or_owner_binding_mutations_performed": false,
+    "signing_key_mutations_performed": false,
+    "source_archive_bytes": 69236711,
+    "source_archive_reexport": {
+      "all_original_source_files_and_apks_reverified": true,
+      "build_run_id": 40392908825,
+      "created_at": "2026-10-26T20:31:28.191358+00:00",
+      "kind": "verified_retained_build_reexport",
+      "new_build_or_tests_executed": false,
+      "original_archive_byte_identity_claimed": false,
+      "original_build_receipts_unchanged": true,
+      "original_export": {
+        "bytes": 69653108,
+        "complete_source_sha256": "68f9925fdc6318c5f46521946a80227993c0a4053a7c89c6cbc1dc0c08ec735f",
+        "files": 1118,
+        "publication_authorized": false,
+        "runtime_pass": false,
+        "sha256": "aea7801e218826639becbe384f5b231a6b328b7bc5c68fddc0c41e7763eebd76",
+        "source_sha256": "adef801a470b74659ff0b76be33cd5fa24f1763ca4e0d7d98d65e26c3efa8964",
+        "status": "passed_check_and_build_only"
+      },
+      "original_failed_collector_job": 121827044250,
+      "schema": 1,
+      "transport_run_id": 40396335708
+    },
+    "source_archive_sha256": "f0f78259e0abed96f4a151be72c986ba22cde08e9b4acf086212f91ff8c3b613",
+    "source_backup_commit": "a7abc2baf3d84d24cdde8cc14dad3a7f143be221",
+    "source_sha256": "adef801a470b74659ff0b76be33cd5fa24f1763ca4e0d7d98d65e26c3efa8964",
+    "trading_orders_submitted": false,
+    "version_code": 47,
+    "windows_run_attempt": 1,
+    "windows_run_id": 40392908825
+  },
+  "candidate": {
+    "bytes": 29921459,
+    "sha256": "1f699684618f44f1da4c71f3fa19bbf9125e906ab431865747cf44e0b5ea0602",
+    "version_code": 47,
+    "version_name": "0.14.0-preview"
+  },
+  "complete_release_gate_passed": false,
+  "files": {
+    "hosted-delivery.py": {
+      "bytes": 29248,
+      "sha256": "4b5f74f6605bb74679621acbe88a9a3463ebb03b880921c41189bf79730f0819"
+    },
+    "publish-preview47.py": {
+      "bytes": 18480,
+      "sha256": "81e5647393bbbcbcd14d9c9d3d95739057a14b2845f9c2ff9ad0b531d584f662"
+    },
+    "remote-wrapper.py": {
+      "bytes": 19519,
+      "sha256": "62eb2d3f727612fad53434805e2a48cf5181dcd9844fb2532439d6c83faaef47"
+    },
+    "verify-public47.py": {
+      "bytes": 4871,
+      "sha256": "dd772d820147ee0fd08e576163128600f51f9007134b3baf940db64d59c06a1e"
+    },
+    "workflow.yml": {
+      "bytes": 35976,
+      "sha256": "bcbccf3d9418342c4f76b7cee9f5739f923688c31a155ca87cca194b67f7fe8c"
+    }
+  },
+  "full15_runtime_matrix_passed": false,
+  "native_evidence": {
+    "full_runtime_matrix_passed": false,
+    "physical_phone_verified": false,
+    "run_id": null,
+    "status": "not_executed_for_published_build"
+  },
+  "owner_requested_intermediate_without_full_native": true,
+  "physical_phone_verified": false,
+  "preparation_only": true,
+  "prior_channel": {
+    "bytes": 29820407,
+    "sha256": "488f95a0c1527ebf5a172c7af675769cb8ed81c116d9ec24175fc89adab1da0d",
+    "version_code": 45,
+    "version_name": "0.13.7-preview"
+  },
+  "publication_performed": false,
+  "request_sha256": "e04f80de08165d227484e75874565a03d4affddc0bdef7251afc64e017001dfb",
+  "schema": 1,
+  "source_backup_commit": "a7abc2baf3d84d24cdde8cc14dad3a7f143be221",
+  "source_sha256": "adef801a470b74659ff0b76be33cd5fa24f1763ca4e0d7d98d65e26c3efa8964",
+  "strict_native_preparer_unchanged_sha256": "d047e30186927c342868e0dad6777a305938f0e723fda89029bd30c72a60b20d",
+  "target_workflow": ".github/workflows/deliver-preview47.yml"
+}

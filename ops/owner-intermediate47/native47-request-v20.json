@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "build_request": {
+    "path": "context/native47-build-request-v20.json",
+    "sha256": "e1ad145867685055ac9076d01ae05079c63051890342405ea5c008ba26ee0975"
+  },
+  "baseline_publication": {
+    "path": "context/delivery45-reverified.json",
+    "sha256": "5cc5de2a936a99d0f3f984266691c097c67e009df8ea3a0f34967c168a9ccb60"
+  }
+}
