@@ -63,13 +63,12 @@ def _rating_history(case):
         for text in (moment, "СИНТЕТИЧЕСКОЕ историческое агентство · " + grade,
                      "СИНТЕТИЧЕСКАЯ историческая шкала", "Выпуск" if kind == "issue" else "Эмитент", subject, status):
             case.record_text(resource, text)
-        source = case.record_text(resource, "Публикация и актуальность рейтинга")
-        p.tap_node(source)
+        case.record_fold(resource, "Публикация и актуальность рейтинга", expanded=True)
         case.record_text(resource, "Публикация: " + moment)
         case.record_text(resource, "https://example.invalid/synthetic/synthetic-rating-" + kind + "-history")
         observed.append({"resource": resource, "published_at_moscow": moment, "grade": grade,
                          "subject_kind": kind, "subject_id": subject, "status": status})
-        p.tap_node(case.record_text(resource, "Публикация и актуальность рейтинга", direction="start"))
+        case.record_fold(resource, "Публикация и актуальность рейтинга", expanded=False, direction="start")
     case.extra["rating_history"] = observed
     p.tap("Как менялся рейтинг", AREA, direction="start")
 

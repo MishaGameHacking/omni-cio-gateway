@@ -111,7 +111,10 @@ whether the exact publication exists above the missed viewport.
 Wrapper SHA2564306160c725b65d563c4e4134b01cdd252ed8219836ae99df10106f359c04db8;
 external observation hook SHA2566d7defb45ffa194775177d45175a2964c20a97e5c8ae9aeaf356c2ae35ae167f.
 No app source/APK is changed and no acceptance gate is claimed by that diagnostic.
-Its result is pending. Prepared full runtime is withheld until focused cases pass.
+The diagnostic completed with the same original failure. Native state remained
+Свёрнуто before the raw tap and after21 reverse scrolls; no expanded publication
+was found. [The measured frames and Windows-tested native fold repair](N00_RATING_FOLDS_2026-10-26.md)
+are the current continuation. Prepared full runtime remains withheld until focused cases pass.
 
 ## Continue in order
 

@@ -1,18 +1,20 @@
 ## N00 26.10.2026 — кандидат41 после подтверждённого перекрытия вкладок
 
-> **26.10.2026, N00 — кнопка досье и проверки рисков пройдены; исследуется следующий отказ рейтинга.** Кандидат41 собран и проверен Windows/WSL. Исправление поиска нижней панели прошло1066 host-тестов (прежние3 skips) в40255133373; original discovery/ready/font1 вновь прошёл. Dossier прошёл контекстные риски и остановился на дате публикации исторического рейтинга. Архив30 файлов сохранён, PNG/XML отдельно проверены. В40256049480 выполняется наблюдение исходного нажатия и прокрутки без изменения APK. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_DOSSIER_DOCK_2026-10-26.md).
+> **26.10.2026, N00 — исправлена проверка раскрытия точного источника рейтинга.** Кандидат41 имеет подтверждённую Windows/WSL сборку. Нативное наблюдение40256049480 показало: после прежнего нажатия источник остался «Свёрнуто», поэтому дата была недоступна. В40257272188 новый тест подтвердил отказ старого кода и прошли1070 host-проверок (прежние3 skips). Добавлены стабильное нажатие внутри точной карточки и ожидание её реального состояния; дата/UID/URL проверяются как прежде. Выполняется повтор14 исходных portfolio cases. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_RATING_FOLDS_2026-10-26.md).
 
-Build41:40252011635 /inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
-Harness repair40255133373: base958616b, two Windows-applied files;
-inventory6b793696cf0fd5cf30cfe44a19c55453a6ead01be1526ea6eeb5a0a48ea05052.
-Host1066 passed; focused40255133373 failed at rating publication after dock/risks passed.
-Read-only evidence40255682533 verified; original traversal diagnostic40256049480 running.
-APK41 and driver7fb9ad41 unchanged. Do not apply a rating repair before its cause is evidenced.
-Do not run prepared old full40/old full41 source after this harness repair.
-Regenerate the original full41 wrapper from the exact backed repair inventory
-only after focused acceptance. No diagnostic hook in the full15-stage matrix.
-Existing key, signature, baseline38, canonical lease1200s and all gates remain.
-[Evidence and continuation](docs/N00_DOSSIER_DOCK_2026-10-26.md).
+Build41 remains40252011635, compiled inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
+Current harness repair40257272188 applied three files on Windows from base5bfec1a,
+inventory9c0e24a49ae94e38642254d53d7de81688af569496dcf73d08b2d346db28bdb7.
+Old regression failed2 variants; all1070 host tests passed47.426s (same3 skips).
+The14 original portfolio cases are still pending. APK41/debug41/driver unchanged.
+Dossier fixed dock and risks already passed in40255133373; the next rating
+failure remained collapsed in actual40256049480, not a wrong-date conclusion.
+Prepared full wrappers with older harness inventories MUST NOT be dispatched.
+After14 focused cases pass, regenerate full original15-stage4096/16384
+matrix from exact backed source, with no diagnostic hook. Retain baseline38,
+canonical lease1200s, signature, private transfer and exact-head Sonar.
+CI migration remains unapplied. No PR, main update, publication41 or phone claim.
+[Current evidence](docs/N00_RATING_FOLDS_2026-10-26.md).
 
 ## N00 26.10.2026 — проверен ремонт протокола портфеля
 

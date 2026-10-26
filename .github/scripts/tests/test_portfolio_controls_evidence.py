@@ -106,5 +106,156 @@ class PortfolioControlsEvidenceTests(unittest.TestCase):
             control.set(field, before)
 
 
+FOLD_LABEL = "Публикация и актуальность рейтинга"
+RATING_RECORDS = tuple("dossier-rating-history-synthetic-rating-" + kind + "-history"
+                       for kind in ("issue", "issuer"))
+
+
+class SourceFoldProbe:
+    """Conditional scrolling motion consumes early taps; no device-pixel claim."""
+
+    def __init__(self, scale=1):
+        self.scale, self.reads, self.stable = scale, 0, 0
+        self.previous_top, self.pending = None, None
+        self.expanded = dict.fromkeys(RATING_RECORDS, False)
+        self.tap_attempts, self.fold_actions = [], []
+        self.ignore_tap = False
+        self.read_tree = self.tree
+
+    def tree(self):
+        self.reads += 1
+        top = 400 - min(self.reads, 3)
+        self.stable = self.stable + 1 if top == self.previous_top else 1
+        self.previous_top = top
+        if self.pending is not None:
+            resource, expanded, remaining = self.pending
+            if remaining:
+                self.pending = resource, expanded, remaining - 1
+            else:
+                self.expanded[resource] = expanded
+                self.fold_actions.append((resource, expanded))
+                self.pending = None
+        bottom = 552 + (self.scale - 1) * 200
+        tree = ET.Element("hierarchy", {"display-width": "320",
+            "display-height": str(bottom + 88), "active-window-id": "19"})
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        viewport = ET.SubElement(tree, "node", {**common, "resource-id": "workspace-content",
+            "scrollable": "true", "bounds": f"[0,319][320,{bottom}]"})
+        for index, resource in enumerate(RATING_RECORDS):
+            upper = top + index * 72 * self.scale
+            lower = upper + 63 * self.scale
+            bounds = f"[38,{upper}][282,{lower}]"
+            row = ET.SubElement(viewport, "node", {**common, "resource-id": resource, "bounds": bounds})
+            owner = ET.SubElement(row, "node", {**common, "bounds": bounds, "clickable": "true",
+                "state-description": "Развёрнуто" if self.expanded[resource] else "Свёрнуто"})
+            ET.SubElement(owner, "node", {**common, "text": FOLD_LABEL,
+                "bounds": f"[80,{upper + 12}][270,{lower - 12}]"})
+        return tree
+
+    def reveal_resource(self, resource, _area, **_kwargs):
+        return next(node for node in self.tree().iter("node") if node.get("resource-id") == resource)
+
+    @staticmethod
+    def scroll_list(_area, _direction):
+        raise AssertionError("These visible source folds must not be scrolled past")
+
+    def _semantic_scroll_callback(self, area, direction):
+        if area != "workspace-content" or direction not in ("start", "end"):
+            raise AssertionError("Wrong native source list")
+        return lambda *_args: self.scroll_list(area, direction)
+
+    def tap_node(self, node):
+        from profile_ui_probe import node_bounds
+        self.tap_attempts.append(dict(node.attrib))
+        if self.stable < 3 or self.ignore_tap:
+            return  # A tap during the modeled scroll stops motion, not the fold.
+        left, top, right, bottom = node_bounds(node)
+        center = (top + bottom) // 2
+        index = 0 if center < self.previous_top + 72 * self.scale else 1
+        resource = RATING_RECORDS[index]
+        self.pending = resource, not self.expanded[resource], 2
+
+    @staticmethod
+    def tap(text, _area, **_kwargs):
+        if text != "Как менялся рейтинг":
+            raise AssertionError("Unrelated dossier action is not part of this fixture")
+
+    @staticmethod
+    def wait_for(read, message):
+        for _ in range(16):
+            value = read()
+            if value is not None and value is not False:
+                return value
+        raise AssertionError(message)
+
+
+class RatingFoldCase(PortfolioCase):
+    """Financial field assertions are scaffolding; fold traversal uses real helpers."""
+
+    def __init__(self, scale=1):
+        self.probe, self.day, self.extra = SourceFoldProbe(scale), date(2026, 10, 26), {}
+
+    def record_text(self, resource, text, *, direction="end"):
+        if text == FOLD_LABEL:
+            return super().record_text(resource, text, direction=direction)
+        if text.startswith(("Публикация: ", "https://")) and not self.probe.expanded[resource]:
+            raise AssertionError("Selected rating source remained collapsed")
+        return ET.Element("node", {"text": text})
+
+
+class RatingFoldTraversalTests(unittest.TestCase):
+    def test_rating_history_waits_for_scoped_native_fold_transition(self):
+        from portfolio_research_probe import _rating_history
+        for scale in (1, 2):
+            with self.subTest(scale=scale):
+                case = RatingFoldCase(scale)
+                _rating_history(case)
+                self.assertEqual(case.probe.fold_actions,
+                    [(resource, expanded) for resource in RATING_RECORDS for expanded in (True, False)])
+                self.assertEqual(len(case.probe.tap_attempts), 4)
+                self.assertEqual([row["resource"] for row in case.extra["rating_history"]], list(RATING_RECORDS))
+
+    def test_scope_excludes_sibling_labels_and_preserves_clipping_and_disabled_ancestors(self):
+        from native_label_target import label_target
+        from portfolio_ui_probe import _record_scope
+        probe = SourceFoldProbe()
+        tree = probe.tree()
+        first, second = RATING_RECORDS
+        target = label_target(_record_scope(tree, first), FOLD_LABEL)
+        self.assertIsNotNone(target)
+        self.assertNotEqual(target.get("bounds"), label_target(_record_scope(tree, second), FOLD_LABEL).get("bounds"))
+        self.assertIsNone(label_target(_record_scope(tree, "absent-source"), FOLD_LABEL))
+        viewport = next(node for node in tree.iter("node") if node.get("resource-id") == "workspace-content")
+        viewport.set("enabled", "false")
+        self.assertIsNone(label_target(_record_scope(tree, first), FOLD_LABEL))
+        viewport.set("enabled", "true")
+        viewport.set("bounds", "[0,319][320,420]")
+        self.assertIsNone(label_target(_record_scope(tree, first), FOLD_LABEL))
+        row = next(node for node in tree.iter("node") if node.get("resource-id") == first)
+        duplicate = ET.SubElement(viewport, "node", dict(row.attrib))
+        with self.assertRaisesRegex(AssertionError, "several native records"):
+            _record_scope(tree, first)
+        duplicate.set("package", "another.app")
+        row.set("visible-to-user", "false")
+        self.assertIsNone(label_target(_record_scope(tree, first), FOLD_LABEL))
+
+    def test_missing_native_transition_is_a_failure_without_repeated_taps(self):
+        case = RatingFoldCase()
+        case.probe.ignore_tap = True
+        with self.assertRaisesRegex(AssertionError, "did not change state"):
+            case.record_fold(RATING_RECORDS[0], FOLD_LABEL, expanded=True)
+        self.assertEqual(len(case.probe.tap_attempts), 1)
+        self.assertFalse(case.probe.fold_actions)
+
+    def test_unexpected_fold_state_does_not_toggle_the_source_again(self):
+        case = RatingFoldCase()
+        case.probe.expanded[RATING_RECORDS[0]] = True
+        with self.assertRaisesRegex(AssertionError, "Unexpected initial"):
+            case.record_fold(RATING_RECORDS[0], FOLD_LABEL, expanded=True)
+        self.assertFalse(case.probe.tap_attempts)
+        with self.assertRaises(ValueError):
+            case.record_fold(RATING_RECORDS[0], FOLD_LABEL, expanded="true")
+
+
 if __name__ == "__main__":
     unittest.main()

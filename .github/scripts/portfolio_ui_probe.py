@@ -6,12 +6,14 @@ widgets, navigation, native input and mesh renderer are exercised unchanged.
 from __future__ import annotations
 
 from datetime import date, datetime
+import copy
 import json
 import math
 from pathlib import Path
 import re
 import secrets
 import time
+import xml.etree.ElementTree as ET
 
 from business_ui_probe import BANNER, labels
 from portfolio_frame_evidence import has_call, portfolio_observation
@@ -114,6 +116,37 @@ class PortfolioCase:
             time.sleep(.15)
         raise AssertionError("Exact native source record did not expose its value: " + resource_id + " / " + text)
 
+    def record_fold(self, resource_id, text, *, expanded, direction="end"):
+        """Tap one settled source fold and confirm its native state before reading."""
+        from native_label_target import label_target, settled_label
+        from profile_scroll import reveal_in_list
+
+        if type(expanded) is not bool:
+            raise ValueError("A native source fold needs an explicit boolean state")
+        self.record_text(resource_id, text, direction=direction)
+
+        def read_record():
+            return _record_scope(self.probe.tree(), resource_id)
+
+        target = reveal_in_list(
+            read_record, self.probe._semantic_scroll_callback("workspace-content", direction),
+            text, resource_id="workspace-content", direction=direction,
+            max_swipes=20, layout_timeout=12, for_tap=True,
+        )
+        if target is None:
+            raise AssertionError("The exact native source action is not visible: " + resource_id)
+        target = settled_label(read_record, text)
+        before, after = ("Свёрнуто", "Развёрнуто") if expanded else ("Развёрнуто", "Свёрнуто")
+        if target.get("state-description") != before:
+            raise AssertionError("Unexpected initial native source fold state: " + resource_id)
+        self.probe.tap_node(target)
+
+        def changed():
+            current = label_target(read_record(), text)
+            return current if current is not None and current.get("state-description") == after else None
+
+        return self.probe.wait_for(changed, "Exact native source fold did not change state: " + resource_id)
+
     def destination(self, *, account, query, section=1):
         expected = {"section": section, "account_id": account, "query": query,
                     "sector": None, "kind": None, "operation_id": None, "operation_date": None}
@@ -173,6 +206,27 @@ def _write_report(report):
         raise AssertionError("Portfolio evidence exceeded the bounded collector")
     destination.write_text(payload, encoding="utf-8")
     print("PORTFOLIO_UI_VERIFICATION=" + json.dumps(report, ensure_ascii=True, sort_keys=True), flush=True)
+
+
+def _record_scope(tree, resource_id):
+    """Retain the exact source record and every real clipping/enabled ancestor."""
+    records = [node for node in tree.iter("node") if node.get("package") == PACKAGE
+               and node.get("visible-to-user") == "true"
+               and node.get("resource-id") in {resource_id, PACKAGE + ":id/" + resource_id}]
+    if len(records) > 1:
+        raise AssertionError("A source-record tag identifies several native records")
+    scoped = ET.Element(tree.tag, dict(tree.attrib))
+    if not records:
+        return scoped
+    parents = {child: parent for parent in tree.iter() for child in parent}
+    branch = copy.deepcopy(records[0])
+    parent = parents.get(records[0])
+    while parent is not None and parent is not tree:
+        ancestor = ET.Element(parent.tag, dict(parent.attrib))
+        ancestor.append(branch)
+        branch, parent = ancestor, parents.get(parent)
+    scoped.append(branch)
+    return scoped
 
 
 def _record_value_node(record, text):
