@@ -1,0 +1,336 @@
+name: Recover original build44 metadata and observe fixed Windows paths
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-build44-original-evidence.yml
+permissions:
+  contents: read
+concurrency:
+  group: build44-original-evidence-readonly
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/codex/timeweb-owner-prepare-2026-10-23'
+      && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+    - name: Checkout pinned administrative transport only
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Read only exact9417611 archive and recover original metadata bytes
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        PYTHONUNBUFFERED: '1'
+      run: "python3 - <<'PY'\nimport hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error\n\
+        sys.path[:0]=[\".transport-admin/deploy\",\".transport-admin/tools\"]\nimport prepare_owner_vm as p\nimport access_owner_vm\
+        \ as access\ntoken=p.validated_token(os.environ[\"TIMEWEB_CLOUD_TOKEN\"])\ndef api(method,path,body=None):\n    req=urllib.request.Request(\"\
+        https://api.timeweb.cloud/api/v1\"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={\"\
+        Authorization\":\"Bearer \"+token,\"Accept\":\"application/json\",\"Content-Type\":\"application/json\"})\n    try:\n\
+        \        with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45)\
+        \ as r:\n            raw=r.read(4194305);assert len(raw)<=4194304\n            return r.status,json.loads(raw) if\
+        \ raw else {}\n    except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))\n\ndef with_ams(remote_script,\
+        \ *, timeout=300, capture=False, binary_input=None):\n    sid=9417611;ip=\"83.217.195.29\";host=\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU\
+        \ runner@runnervmtai0g\"\n    status,data=api(\"GET\",\"/servers/\"+str(sid));assert status==200\n    server=data[\"\
+        server\"]\n    assert server[\"name\"]==\"Analyst AI runtime 20261025\" and server[\"project_id\"]==2941515 and server[\"\
+        availability_zone\"]==\"ams-1\" and p.cloud.public_ipv4(server)==ip\n    access.SERVER_ID=sid\n    with tempfile.TemporaryDirectory(prefix=\"\
+        analyst-ams-admin-\",dir=os.environ[\"RUNNER_TEMP\"]) as directory:\n        folder=pathlib.Path(directory);p.cloud.generate_key(folder/\"\
+        client\");public=(folder/\"client.pub\").read_text().strip()\n        created=access.request(token,\"POST\",\"/ssh-keys\"\
+        ,{\"name\":\"analyst-ams-admin-\"+os.environ[\"GITHUB_RUN_ID\"],\"body\":public,\"is_default\":False})\n        key=created.get(\"\
+        ssh_key\",created.get(\"ssh-key\",{}));kid=key[\"id\"]\n        assert type(kid) is int and key[\"body\"].split()[:2]==public.split()[:2]\n\
+        \        attached=False\n        try:\n            access.request(token,\"POST\",\"/servers/\"+str(sid)+\"/ssh-keys\"\
+        ,{\"ssh_key_ids\":[kid]});attached=True\n            cmd=p.ssh_command(folder,ip,host);cmd[1:1]=[\"-o\",\"ServerAliveInterval=20\"\
+        ,\"-o\",\"ServerAliveCountMax=3\"]\n            for attempt in range(12):\n                try:p.remote(cmd,\"test\
+        \ $(id -u) = 0\",timeout=12);break\n                except (p.ProbeError,subprocess.TimeoutExpired):\n           \
+        \         if attempt==11:raise\n                    time.sleep(5)\n            payload=remote_script.encode() if binary_input\
+        \ is None else binary_input\n            remote_command=\"python3 -\" if binary_input is None else \"python3 -c \"\
+        +shlex.quote(remote_script)\n            result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)\n\
+        \            if not capture:print(result.stdout.decode(errors=\"replace\"),flush=True)\n            if result.returncode:\n\
+        \                print(\"AMS_REMOTE_ERROR=\"+result.stderr.decode(errors=\"replace\")[-4000:],flush=True)\n      \
+        \          raise RuntimeError(\"remote_task_failed\")\n            return result.stdout\n        finally:\n      \
+        \      try:\n                if attached:access.request(token,\"DELETE\",\"/servers/\"+str(sid)+\"/ssh-keys/\"+str(kid))\n\
+        \            finally:\n                access.request(token,\"DELETE\",\"/ssh-keys/\"+str(kid))\n            print(\"\
+        AMS_TEMP_KEY_REMOVED=true\",flush=True)\n\n\nREMOTE_SHA256 = '490416cd9abc408e961a4b519e68e1b1c6da5814f333165192c60ab988893c98'\n\
+        remote = '\"\"\"Read only the exact retained build44 archive; return original evidence bytes.\\n\\nThis administrative\
+        \ payload uses only Python\\'s standard library. It never imports\\nthe application, opens its database, executes\
+        \ tests, writes remote files, publishes\\na release, or contacts an Android transport.\\n\"\"\"\\nfrom __future__\
+        \ import annotations\\n\\nimport base64\\nimport datetime\\nimport hashlib\\nimport io\\nimport json\\nimport os\\\
+        nfrom pathlib import Path, PurePosixPath, PureWindowsPath\\nimport pwd\\nimport re\\nimport stat\\nimport sys\\nimport\
+        \ xml.etree.ElementTree as ET\\nimport zipfile\\n\\nARCHIVE = Path(\\'/var/lib/analyst-ai-build/incoming/windows-development-40282775349-1/windows-development-evidence.zip\\\
+        ')\\nARCHIVE_BYTES = 68927139\\nARCHIVE_SHA256 = \\'f8dd107e1714fcc1a3aeed4afd25b6d9efa3dca878b7106191f3fd77e4fa1b89\\\
+        '\\nARCHIVE_EVIDENCE_FILES = 1045\\nBUILD_REPORT_BYTES = 25453\\nBUILD_REPORT_SHA256 = \\'808a43afb0585b3cf2cd9519d54c525f51be4d66fa239e3d9c4c4257d2eafd40\\\
+        '\\nCONTROLLER_SHA256 = \\'3e752a8d71d73956901af62cbca2382c60f2e99c8387656c7efcda02df3d7b43\\'\\nBASE_COMMIT = \\\
+        '043e1da910da2fcf952cc00c46d0e81a761076ea\\'\\nBASE_SOURCE = \\'4fcf1b15db4d40c249966d072e22d31f286515fc0e84974364cb71e07f282aaf\\\
+        '\\nSOURCE_SHA256 = \\'e34b717fa408fbe377d910a372933c35a2ba1bdddf02263b6daa477df70f93b9\\'\\nCOMPLETE_SOURCE_SHA256\
+        \ = \\'69c10c8d65c0559b58d45231390cd0e84dc681df3f7dbaed3d0a5ee716c20fe6\\'\\nBUILD_WORKFLOW_SHA = \\'07e291f9efd6ba6b1be96ead7d3b42340776ffce\\\
+        '\\nBOOTSTRAP_SHA256 = \\'249ed8dc1157e4ae6bc285855689b3d19baa1df18b860598bcd35d84fb99cc8b\\'\\nPATCH_MANIFEST_SHA256\
+        \ = \\'bd36306c0ff435e0b9b229dee3643de3e37382b86f59aba5e17f23694c97a506\\'\\nBUILD_ROOT = PureWindowsPath(\\'C:/actions-runner-3/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40282775349-1\\\
+        ')\\nBUILD_STATE = PureWindowsPath(\\'C:/actions-runner-3/_work/_temp/analyst-development-40282775349-1\\')\\nJUNIT_PREFIX\
+        \ = \\'reports/app/build/test-results/testDebugUnitTest/\\'\\nMAX_SELECTED_BYTES = 40 * 1024**2\\nMAX_METADATA_ZIP\
+        \ = 8 * 1024**2\\n\\n\\nclass ObservationError(RuntimeError):\\n    pass\\n\\n\\ndef need(value, code):\\n    if not\
+        \ value:\\n        raise ObservationError(code)\\n\\n\\ndef sha(raw):\\n    return hashlib.sha256(raw).hexdigest()\\\
+        n\\n\\ndef encoded(value):\\n    return (json.dumps(value, ensure_ascii=True, sort_keys=True, indent=2) + \\'\\\\\
+        n\\').encode(\\'utf-8\\')\\n\\n\\ndef unique_object(pairs):\\n    result = {}\\n    for key, value in pairs:\\n  \
+        \      need(key not in result, \\'duplicate_json_key\\')\\n        result[key] = value\\n    return result\\n\\n\\\
+        ndef parsed(raw):\\n    result = json.loads(raw, object_pairs_hook=unique_object)\\n    need(isinstance(result, dict),\
+        \ \\'unexpected_json_root\\')\\n    return result\\n\\n\\ndef safe_relative(name):\\n    need(isinstance(name, str)\
+        \ and 0 < len(name) <= 1024 and \\'\\\\\\\\\\' not in name and \\'\\\\0\\' not in name,\\n         \\'invalid_evidence_path\\\
+        ')\\n    path = PurePosixPath(name)\\n    need(not path.is_absolute() and path.as_posix() == name and\\n         all(part\
+        \ not in (\\'.\\', \\'..\\') for part in path.parts), \\'unsafe_evidence_path\\')\\n\\n\\ndef identity(value):\\n\
+        \    need(isinstance(value, dict) and set(value) == {\\'bytes\\', \\'sha256\\'} and\\n         type(value[\\'bytes\\\
+        ']) is int and 0 <= value[\\'bytes\\'] <= 128 * 1024**2 and\\n         isinstance(value[\\'sha256\\'], str) and re.fullmatch(r\\\
+        '[a-f0-9]{64}\\', value[\\'sha256\\']),\\n         \\'invalid_evidence_identity\\')\\n\\n\\ndef trusted(path, *, directory=False,\
+        \ owners=(0,)):\\n    info = path.lstat()\\n    need((stat.S_ISDIR if directory else stat.S_ISREG)(info.st_mode) and\\\
+        n         info.st_uid in owners and not info.st_mode & 0o022 and\\n         path.resolve(strict=True) == path and\
+        \ (directory or info.st_nlink == 1),\\n         \\'untrusted_archive_path\\')\\n    return info\\n\\n\\ndef stable_tuple(info):\\\
+        n    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_nlink,\\n            info.st_size, info.st_mtime_ns,\
+        \ info.st_ctime_ns)\\n\\n\\ndef read_member(bundle, files, name, limit):\\n    metadata = bundle.getinfo(name)\\n\
+        \    need(metadata.file_size <= limit and not metadata.flag_bits & 1 and not metadata.is_dir(),\\n         \\'selected_evidence_outside_bound\\\
+        ')\\n    with bundle.open(metadata) as stream:\\n        raw = stream.read(limit + 1)\\n    need(len(raw) == metadata.file_size\
+        \ <= limit, \\'selected_evidence_size_changed\\')\\n    if files is not None:\\n        need(files.get(name) == {\\\
+        'bytes\\': len(raw), \\'sha256\\': sha(raw)}, \\'envelope_member_hash_mismatch\\')\\n    return raw\\n\\n\\ndef verify_inventory(raw,\
+        \ expected_code, expected_complete=None):\\n    value = parsed(raw)\\n    need(set(value) == {\\'source_sha256\\',\
+        \ \\'complete_source_sha256\\', \\'files\\'}, \\'unexpected_inventory_schema\\')\\n    files = value[\\'files\\']\\\
+        n    need(isinstance(files, dict) and 1 <= len(files) <= 20000, \\'inventory_file_count_outside_bound\\')\\n    code,\
+        \ complete, seen = hashlib.sha256(), hashlib.sha256(), set()\\n    for name in sorted(files, key=lambda item: item.encode(\\\
+        'utf-8\\')):\\n        safe_relative(name)\\n        need(name.casefold() not in seen, \\'case_colliding_inventory_path\\\
+        ')\\n        seen.add(name.casefold())\\n        identity(files[name])\\n        row = name.encode(\\'utf-8\\') +\
+        \ b\\'\\\\0\\' + files[name][\\'sha256\\'].encode(\\'ascii\\') + b\\'\\\\0\\'\\n        complete.update(row)\\n  \
+        \      if name not in (\\'AGENTS.md\\', \\'README.md\\') and not name.startswith(\\'docs/\\'):\\n            code.update(row)\\\
+        n    need(code.hexdigest() == expected_code == value[\\'source_sha256\\'] and\\n         complete.hexdigest() == value[\\\
+        'complete_source_sha256\\'], \\'original_inventory_digest_mismatch\\')\\n    if expected_complete is not None:\\n\
+        \        need(complete.hexdigest() == expected_complete, \\'original_inventory_complete_digest_mismatch\\')\\n   \
+        \ return value, {\\'bytes\\': len(raw), \\'sha256\\': sha(raw), \\'file_count\\': len(files),\\n                 \
+        \  \\'source_sha256\\': code.hexdigest(), \\'complete_source_sha256\\': complete.hexdigest(),\\n                 \
+        \  \\'original_bytes_preserved\\': True}\\n\\n\\ndef observe_junit(bundle, files):\\n    names = sorted(name for name\
+        \ in files if name.startswith(JUNIT_PREFIX) and\\n                   re.fullmatch(r\\'TEST-[A-Za-z0-9_.$-]+\\\\.xml\\\
+        ', name[len(JUNIT_PREFIX):]))\\n    result = {\\'status\\': \\'not_found_in_exact_archive\\', \\'files\\': [], \\\
+        'original_xml_exported\\': False}\\n    if not names:\\n        return result, {}\\n    need(len(names) <= 256, \\\
+        'junit_file_count_outside_bound\\')\\n    totals = {key: 0 for key in (\\'tests\\', \\'failures\\', \\'errors\\',\
+        \ \\'skipped\\')}\\n    raw_files, inventory, total_bytes, privacy_safe = {}, hashlib.sha256(), 0, True\\n    for\
+        \ name in names:\\n        raw = read_member(bundle, files, name, 2 * 1024**2)\\n        total_bytes += len(raw)\\\
+        n        need(total_bytes <= 16 * 1024**2, \\'junit_bytes_outside_bound\\')\\n        need(b\\'<!DOCTYPE\\' not in\
+        \ raw.upper() and b\\'<!ENTITY\\' not in raw.upper(), \\'junit_declarations_not_allowed\\')\\n        tree = ET.fromstring(raw)\\\
+        n        need(tree.tag in (\\'testsuite\\', \\'testsuites\\'), \\'unexpected_junit_root\\')\\n        suites = [tree]\
+        \ if tree.tag == \\'testsuite\\' else list(tree.findall(\\'testsuite\\'))\\n        need(suites and not any(suite.findall(\\\
+        'testsuite\\') for suite in suites), \\'unexpected_nested_junit_suites\\')\\n        counts = {key: 0 for key in totals}\\\
+        n        for suite in suites:\\n            values = {key: int(suite.attrib.get(key, \\'0\\')) for key in counts}\\\
+        n            need(\\'tests\\' in suite.attrib and all(value >= 0 for value in values.values()), \\'invalid_junit_counters\\\
+        ')\\n            cases = list(suite.findall(\\'testcase\\'))\\n            need(values[\\'tests\\'] == len(cases),\
+        \ \\'junit_testcase_count_mismatch\\')\\n            for key, tag in ((\\'failures\\', \\'failure\\'), (\\'errors\\\
+        ', \\'error\\'), (\\'skipped\\', \\'skipped\\')):\\n                need(values[key] == sum(case.find(tag) is not\
+        \ None for case in cases), \\'junit_result_count_mismatch\\')\\n            for key in counts:\\n                counts[key]\
+        \ += values[key]\\n        # Do not export environment properties, console text or failure messages.\\n        # Counters/hashes\
+        \ may still be returned if raw diagnostic content exists.\\n        for element in tree.iter():\\n            if element.tag\
+        \ in (\\'property\\', \\'failure\\', \\'error\\', \\'skipped\\') or (\\n                    element.tag in (\\'system-out\\\
+        ', \\'system-err\\') and \\'\\'.join(element.itertext()).strip()):\\n                privacy_safe = False\\n     \
+        \   short = name[len(JUNIT_PREFIX):]\\n        raw_files[\\'junit-xml/\\' + short] = raw\\n        inventory.update(short.encode(\\\
+        'utf-8\\') + b\\'\\\\0\\' + sha(raw).encode(\\'ascii\\') + b\\'\\\\0\\')\\n        result[\\'files\\'].append({\\\
+        'archive_member\\': name, \\'name\\': short, \\'bytes\\': len(raw),\\n                                \\'sha256\\\
+        ': sha(raw), \\'suites\\': len(suites), **counts})\\n        for key in totals:\\n            totals[key] += counts[key]\\\
+        n    result.update(status=\\'observed_exact_archived_xml\\', file_count=len(names), total_bytes=total_bytes,\\n  \
+        \                inventory_sha256=inventory.hexdigest(), totals=totals,\\n                  all_observed_tests_passed=totals[\\\
+        'tests\\'] > 0 and\\n                      totals[\\'failures\\'] == totals[\\'errors\\'] == totals[\\'skipped\\']\
+        \ == 0,\\n                  original_xml_exported=privacy_safe,\\n                  xml_export_status=\\'original_bytes_preserved\\\
+        ' if privacy_safe else \\'withheld_nonempty_diagnostics_or_properties\\')\\n    return result, raw_files if privacy_safe\
+        \ else {}\\n\\n\\ndef main():\\n    need(__debug__ and sys.platform == \\'linux\\' and os.geteuid() == 0, \\'requires_reviewed_linux_administrative_transport\\\
+        ')\\n    for path in (Path(\\'/\\'), Path(\\'/var\\'), Path(\\'/var/lib\\'), ARCHIVE.parent.parent, ARCHIVE.parent):\\\
+        n        trusted(path, directory=True)\\n    trusted(ARCHIVE.parent.parent.parent, directory=True, owners=(0, pwd.getpwnam(\\\
+        'analyst-build\\').pw_uid))\\n    before = trusted(ARCHIVE)\\n    need(before.st_size == ARCHIVE_BYTES, \\'wrong_full_archive_size\\\
+        ')\\n    descriptor = os.open(ARCHIVE, os.O_RDONLY | os.O_NOFOLLOW)\\n    selected = {}\\n    with os.fdopen(descriptor,\
+        \ \\'rb\\') as stream:\\n        need(stable_tuple(os.fstat(stream.fileno())) == stable_tuple(before), \\'archive_replaced_before_read\\\
+        ')\\n        digest, size = hashlib.sha256(), 0\\n        for block in iter(lambda: stream.read(1024**2), b\\'\\'):\\\
+        n            size += len(block)\\n            need(size <= ARCHIVE_BYTES, \\'archive_grew_during_hash\\')\\n     \
+        \       digest.update(block)\\n        need(size == ARCHIVE_BYTES and digest.hexdigest() == ARCHIVE_SHA256, \\'wrong_full_archive_hash\\\
+        ')\\n        stream.seek(0)\\n        with zipfile.ZipFile(stream) as bundle:\\n            infos = bundle.infolist()\\\
+        n            names = [item.filename for item in infos]\\n            need(len(names) == ARCHIVE_EVIDENCE_FILES + 1\
+        \ and len(set(names)) == len(names), \\'archive_entry_count_or_duplicates\\')\\n            need(sum(item.file_size\
+        \ for item in infos) <= 494 * 1024**2, \\'archive_expansion_outside_bound\\')\\n            for item in infos:\\n\
+        \                safe_relative(item.filename)\\n                mode = item.external_attr >> 16\\n               \
+        \ need(not item.is_dir() and not item.flag_bits & 1 and\\n                     stat.S_IFMT(mode) in (0, stat.S_IFREG),\
+        \ \\'unsupported_archive_member_type\\')\\n            envelope_raw = read_member(bundle, None, \\'windows-development-envelope.json\\\
+        ', 4 * 1024**2)\\n            envelope = parsed(envelope_raw)\\n            need(envelope.get(\\'schema\\') == 1 and\
+        \ envelope.get(\\'kind\\') == \\'windows_check_build_source_archive\\' and\\n                 envelope.get(\\'base_commit\\\
+        ') == BASE_COMMIT and envelope.get(\\'source_sha256\\') == SOURCE_SHA256 and\\n                 envelope.get(\\'complete_source_sha256\\\
+        ') == COMPLETE_SOURCE_SHA256,\\n                 \\'wrong_archive_envelope_identity\\')\\n            need(all(envelope.get(key)\
+        \ is False for key in (\\'runtime_pass\\', \\'publication_authorized\\', \\'phone_verified\\')),\\n              \
+        \   \\'unexpected_archive_quality_or_delivery_claim\\')\\n            files = envelope.get(\\'files\\')\\n       \
+        \     need(isinstance(files, dict) and set(files) == set(names) - {\\'windows-development-envelope.json\\'},\\n  \
+        \               \\'envelope_entry_set_mismatch\\')\\n            for name, expected in files.items():\\n         \
+        \       identity(expected)\\n                need(bundle.getinfo(name).file_size == expected[\\'bytes\\'], \\'envelope_entry_size_mismatch\\\
+        ')\\n            report_raw = read_member(bundle, files, \\'evidence/windows-development.json\\', 2 * 1024**2)\\n\
+        \            need(len(report_raw) == BUILD_REPORT_BYTES and sha(report_raw) == BUILD_REPORT_SHA256, \\'wrong_original_build_report\\\
+        ')\\n            report = parsed(report_raw)\\n            need(report == envelope.get(\\'report\\'), \\'envelope_report_conflict\\\
+        ')\\n            need(report.get(\\'schema\\') == 1 and report.get(\\'kind\\') == \\'windows_development_check_build\\\
+        ' and\\n                 report.get(\\'origin\\') == \\'Windows laptop\\' and report.get(\\'host\\') == \\'LAPTOP-NPSGA016\\\
+        ' and\\n                 report.get(\\'github\\') == {\\'run_id\\': 40282775349, \\'run_attempt\\': 1,\\n        \
+        \                                  \\'workflow_sha\\': BUILD_WORKFLOW_SHA, \\'runner_name\\': \\'omni-cio-ci-3\\'}\
+        \ and\\n                 report.get(\\'base_commit\\') == BASE_COMMIT and report.get(\\'base_source_sha256\\') ==\
+        \ BASE_SOURCE and\\n                 report.get(\\'bootstrap_sha256\\') == BOOTSTRAP_SHA256 and\\n               \
+        \  report.get(\\'patch_manifest_sha256\\') == PATCH_MANIFEST_SHA256 and\\n                 PureWindowsPath(report.get(\\\
+        'root\\', \\'\\')) == BUILD_ROOT and\\n                 PureWindowsPath(report.get(\\'state\\', \\'\\')) == BUILD_STATE,\
+        \ \\'wrong_build44_report_identity\\')\\n            need(report.get(\\'status\\') == \\'passed_check_and_build_only\\\
+        ' and\\n                 all(report.get(key) == SOURCE_SHA256 for key in (\\'source_sha256\\', \\'source_sha256_after\\\
+        ')) and\\n                 all(report.get(key) == COMPLETE_SOURCE_SHA256 for key in (\\'complete_source_sha256\\',\
+        \ \\'complete_source_sha256_after\\')) and\\n                 all(report.get(phase, {}).get(\\'status\\') == \\'passed\\\
+        ' and report[phase].get(\\'source_sha256\\') == SOURCE_SHA256\\n                     for phase in (\\'check\\', \\\
+        'build\\')), \\'full_build44_success_or_source_changed\\')\\n            controller_raw = read_member(bundle, files,\
+        \ \\'evidence/controller.json\\', 65536)\\n            need(sha(controller_raw) == CONTROLLER_SHA256, \\'wrong_original_controller\\\
+        ')\\n            controller = parsed(controller_raw)\\n            need(controller == envelope.get(\\'controller\\\
+        ') and controller.get(\\'worker_started\\') is True and\\n                 controller.get(\\'worker_exit_code\\')\
+        \ == 0 and controller.get(\\'owned_processes_after\\') == 0 and\\n                 not controller.get(\\'error\\')\
+        \ and not controller.get(\\'cleanup_error\\'), \\'worker_cleanup_not_passed\\')\\n            before_raw = read_member(bundle,\
+        \ files, \\'evidence/source-before.json\\', 8 * 1024**2)\\n            final_raw = read_member(bundle, files, \\'evidence/source-final.json\\\
+        ', 8 * 1024**2)\\n            baseline, baseline_receipt = verify_inventory(before_raw, BASE_SOURCE)\\n          \
+        \  final, final_receipt = verify_inventory(final_raw, SOURCE_SHA256, COMPLETE_SOURCE_SHA256)\\n            need({\\\
+        'source/\\' + key: value for key, value in final[\\'files\\'].items()} ==\\n                 {key: value for key,\
+        \ value in files.items() if key.startswith(\\'source/\\')},\\n                 \\'original_final_inventory_differs_from_archive_source_inventory\\\
+        ')\\n            need(set(baseline[\\'files\\']) == set(final[\\'files\\']), \\'unexpected_build44_source_path_change\\\
+        ')\\n            changes = {key for key in final[\\'files\\'] if final[\\'files\\'][key] != baseline[\\'files\\'][key]}\\\
+        n            patches = report[\\'patch_files\\']\\n            need(isinstance(patches, list) and len(patches) ==\
+        \ 4 and changes == {row[\\'path\\'] for row in patches},\\n                 \\'build44_original_inventory_patch_scope_mismatch\\\
+        ')\\n            for row in patches:\\n                need(baseline[\\'files\\'][row[\\'path\\']][\\'sha256\\'] ==\
+        \ row[\\'old_sha256\\'] and\\n                     final[\\'files\\'][row[\\'path\\']][\\'sha256\\'] == row[\\'new_sha256\\\
+        '], \\'build44_original_patch_hash_mismatch\\')\\n            selected.update({\\'source-before.json\\': before_raw,\
+        \ \\'source-final.json\\': final_raw,\\n                             \\'windows-development.json\\': report_raw, \\\
+        'windows-development-envelope.json\\': envelope_raw,\\n                             \\'controller.json\\': controller_raw})\\\
+        n            try:\\n                junit, junit_files = observe_junit(bundle, files)\\n                selected.update(junit_files)\\\
+        n            except (ObservationError, OSError, KeyError, TypeError, ValueError, ET.ParseError, zipfile.BadZipFile):\\\
+        n                junit = {\\'status\\': \\'bounded_archived_junit_observation_unavailable\\', \\'original_xml_exported\\\
+        ': False}\\n        need(stable_tuple(os.fstat(stream.fileno())) == stable_tuple(before) == stable_tuple(trusted(ARCHIVE)),\\\
+        n             \\'archive_changed_during_evidence_read\\')\\n    recovery = {\\n        \\'schema\\': 1, \\'kind\\\
+        ': \\'original_build44_archive_evidence_recovery\\',\\n        \\'status\\': \\'original_source_evidence_recovered\\\
+        ', \\'observed_at\\': datetime.datetime.now(datetime.timezone.utc).isoformat(),\\n        \\'build_run_id\\': 40282775349,\
+        \ \\'build_run_attempt\\': 1, \\'archive_bytes\\': ARCHIVE_BYTES, \\'archive_sha256\\': ARCHIVE_SHA256,\\n       \
+        \ \\'archive_stable_during_read\\': True, \\'archive_envelope_verified\\': True, \\'archive_evidence_file_count\\\
+        ': ARCHIVE_EVIDENCE_FILES,\\n        \\'build_report_sha256\\': BUILD_REPORT_SHA256, \\'base_commit\\': BASE_COMMIT,\
+        \ \\'base_source_sha256\\': BASE_SOURCE,\\n        \\'source_sha256\\': SOURCE_SHA256, \\'complete_source_sha256\\\
+        ': COMPLETE_SOURCE_SHA256,\\n        \\'inventories\\': {\\'source-before.json\\': baseline_receipt, \\'source-final.json\\\
+        ': final_receipt},\\n        \\'junit\\': junit, \\'application_or_tests_executed\\': False, \\'remote_files_written\\\
+        ': False,\\n        \\'database_opened\\': False, \\'release_published\\': False, \\'phone_accessed\\': False,\\n\
+        \        \\'runtime_pass\\': False, \\'full_runtime_matrix_passed\\': False, \\'phone_verified\\': False,\\n     \
+        \   \\'exported_files\\': {name: {\\'bytes\\': len(raw), \\'sha256\\': sha(raw)} for name, raw in sorted(selected.items())},\\\
+        n    }\\n    selected[\\'recovery-report.json\\'] = encoded(recovery)\\n    need(sum(len(raw) for raw in selected.values())\
+        \ <= MAX_SELECTED_BYTES, \\'selected_evidence_exceeds_bound\\')\\n    memory = io.BytesIO()\\n    with zipfile.ZipFile(memory,\
+        \ \\'w\\', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as outgoing:\\n        for name, raw in sorted(selected.items()):\\\
+        n            outgoing.writestr(name, raw)\\n    data = memory.getvalue()\\n    need(len(data) <= MAX_METADATA_ZIP,\
+        \ \\'outgoing_metadata_zip_exceeds_bound\\')\\n    transfer = {\\'schema\\': 1, \\'kind\\': \\'build44_readonly_metadata_transfer\\\
+        ',\\n                \\'archive_bytes\\': ARCHIVE_BYTES, \\'archive_sha256\\': ARCHIVE_SHA256,\\n                \\\
+        'build_report_sha256\\': BUILD_REPORT_SHA256, \\'source_sha256\\': SOURCE_SHA256,\\n                \\'metadata_zip_bytes\\\
+        ': len(data), \\'metadata_zip_sha256\\': sha(data),\\n                \\'files\\': {name: {\\'bytes\\': len(raw),\
+        \ \\'sha256\\': sha(raw)} for name, raw in sorted(selected.items())},\\n                \\'metadata_zip_base64\\':\
+        \ base64.b64encode(data).decode(\\'ascii\\')}\\n    response = json.dumps(transfer, ensure_ascii=True, separators=(\\\
+        ',\\', \\':\\')).encode(\\'ascii\\')\\n    need(len(response) <= 12 * 1024**2, \\'outgoing_response_exceeds_bound\\\
+        ')\\n    sys.stdout.buffer.write(response + b\\'\\\\n\\')\\n\\n\\nif __name__ == \\'__main__\\':\\n    try:\\n   \
+        \     main()\\n    except BaseException as error:\\n        # Exception text and tracebacks can contain private archive\
+        \ data. Never\\n        # return them through the administrative transport\\'s stderr logger.\\n        code = str(error)\
+        \ if isinstance(error, ObservationError) else type(error).__name__\\n        if not re.fullmatch(r\\'[A-Za-z0-9_]{1,100}\\\
+        ', code):\\n            code = \\'readonly_recovery_unavailable\\'\\n        print(\\'BUILD44_READONLY_RECOVERY_FAILED=\\\
+        ' + code, file=sys.stderr, flush=True)\\n        raise SystemExit(1) from None\\n'\n\"\"\"Receive the remote metadata\
+        \ in memory; preserve only an explicit allowlist.\n\nThe generator prepends the byte-pinned proven9417611 transport\
+        \ and exact remote\npayload. This script is administrative data handling, not an application runner.\n\"\"\"\nimport\
+        \ base64\nimport io\nimport re\nimport stat\nimport zipfile\n\nassert __debug__ and os.environ['GITHUB_REPOSITORY']\
+        \ == 'MishaGameHacking/omni-cio-gateway'\nassert os.environ['GITHUB_REF'] == 'refs/heads/codex/timeweb-owner-prepare-2026-10-23'\n\
+        assert os.environ['GITHUB_EVENT_NAME'] == 'push'\nrun, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']\n\
+        assert re.fullmatch(r'[1-9]\\d{0,19}', run) and re.fullmatch(r'[1-9]\\d{0,4}', attempt)\nassert hashlib.sha256(remote.encode('utf-8')).hexdigest()\
+        \ == REMOTE_SHA256\nraw_response = with_ams(remote, timeout=240, capture=True)\nassert len(raw_response) <= 12 * 1024**2\n\
+        transfer = json.loads(raw_response)\nassert transfer['schema'] == 1 and transfer['kind'] == 'build44_readonly_metadata_transfer'\n\
+        assert transfer['archive_bytes'] == 68927139\nassert transfer['archive_sha256'] == 'f8dd107e1714fcc1a3aeed4afd25b6d9efa3dca878b7106191f3fd77e4fa1b89'\n\
+        assert transfer['build_report_sha256'] == '808a43afb0585b3cf2cd9519d54c525f51be4d66fa239e3d9c4c4257d2eafd40'\nassert\
+        \ transfer['source_sha256'] == 'e34b717fa408fbe377d910a372933c35a2ba1bdddf02263b6daa477df70f93b9'\ndata = base64.b64decode(transfer.pop('metadata_zip_base64'),\
+        \ validate=True)\nassert len(data) == transfer['metadata_zip_bytes'] <= 8 * 1024**2\nassert hashlib.sha256(data).hexdigest()\
+        \ == transfer['metadata_zip_sha256']\nrequired = {'source-before.json', 'source-final.json', 'windows-development.json',\n\
+        \            'windows-development-envelope.json', 'controller.json', 'recovery-report.json'}\nvalues = {}\nwith zipfile.ZipFile(io.BytesIO(data))\
+        \ as archive:\n    infos = archive.infolist()\n    names = [item.filename for item in infos]\n    assert required\
+        \ <= set(names) and len(names) == len(set(names)) <= 262\n    assert set(names) == set(transfer['files'])\n    assert\
+        \ sum(item.file_size for item in infos) <= 40 * 1024**2\n    for item in infos:\n        name = item.filename\n  \
+        \      assert name in required or re.fullmatch(r'junit-xml/TEST-[A-Za-z0-9_.$-]+\\.xml', name)\n        assert not\
+        \ item.is_dir() and not item.flag_bits & 1 and stat.S_IFMT(item.external_attr >> 16) in (0, stat.S_IFREG)\n      \
+        \  limit = 8 * 1024**2 if name in ('source-before.json', 'source-final.json') else 4 * 1024**2\n        assert item.file_size\
+        \ <= limit\n        with archive.open(item) as stream:\n            raw = stream.read(limit + 1)\n        assert len(raw)\
+        \ == item.file_size and transfer['files'][name] == {\n            'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}\n\
+        \        values[name] = raw\nassert hashlib.sha256(values['windows-development.json']).hexdigest() == transfer['build_report_sha256']\n\
+        receipt = json.loads(values['recovery-report.json'])\nassert receipt['status'] == 'original_source_evidence_recovered'\n\
+        assert receipt['archive_stable_during_read'] is receipt['archive_envelope_verified'] is True\nassert receipt['archive_sha256']\
+        \ == transfer['archive_sha256'] and receipt['source_sha256'] == transfer['source_sha256']\nassert receipt['exported_files']\
+        \ == {name: value for name, value in transfer['files'].items() if name != 'recovery-report.json'}\nassert all(receipt[key]\
+        \ is False for key in ('application_or_tests_executed', 'remote_files_written', 'database_opened',\n    'release_published',\
+        \ 'phone_accessed', 'runtime_pass', 'full_runtime_matrix_passed', 'phone_verified'))\nfor name in ('source-before.json',\
+        \ 'source-final.json'):\n    assert receipt['inventories'][name]['original_bytes_preserved'] is True\n    assert receipt['inventories'][name]['sha256']\
+        \ == transfer['files'][name]['sha256']\n    assert receipt['inventories'][name]['bytes'] == transfer['files'][name]['bytes']\n\
+        output = pathlib.Path(os.environ['RUNNER_TEMP']).resolve(strict=True) / ('n00-build44-recovery-' + run + '-' + attempt)\n\
+        assert not output.exists() and not output.is_symlink()\noutput.mkdir()\nfor name, raw in sorted(values.items()):\n\
+        \    path = output / name\n    path.parent.mkdir(exist_ok=True)\n    with path.open('xb') as stream:\n        stream.write(raw)\n\
+        \    assert hashlib.sha256(path.read_bytes()).hexdigest() == transfer['files'][name]['sha256']\nwith (output / 'recovery-transfer.json').open('x',\
+        \ encoding='utf-8') as stream:\n    json.dump(transfer, stream, ensure_ascii=True, sort_keys=True, indent=2)\n   \
+        \ stream.write('\\n')\nsummary = {key: value for key, value in receipt.items() if key not in ('exported_files', 'junit')}\n\
+        summary['junit'] = {key: value for key, value in receipt['junit'].items() if key != 'files'}\nsummary['metadata_zip_bytes']\
+        \ = transfer['metadata_zip_bytes']\nsummary['metadata_zip_sha256'] = transfer['metadata_zip_sha256']\nprint('N00_BUILD44_ORIGINAL_EVIDENCE_RECOVERED='\
+        \ + json.dumps(summary, ensure_ascii=True, separators=(',', ':')), flush=True)\n\nPY\n"
+    - name: Preserve verified original inventory and available JVM XML
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: build44-original-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/n00-build44-recovery-${{ github.run_id }}-${{ github.run_attempt }}/
+        if-no-files-found: warn
+        retention-days: 3
+  windows_path_stat:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/codex/timeweb-owner-prepare-2026-10-23'
+      && github.event_name == 'push'
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 3
+    steps:
+    - name: Observe only fixed retained source and former temp state paths
+      shell: py -3 {0}
+      env:
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
+        PYTHONUNBUFFERED: '1'
+      run: "\"\"\"One-shot lstat only for fixed build44 paths; no traversal/content/ADB reads.\"\"\"\nimport datetime\nimport\
+        \ json\nimport os\nfrom pathlib import Path\nimport re\nimport stat\nimport sys\n\nROOT = Path('C:/actions-runner-3/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40282775349-1')\n\
+        STATE = Path('C:/actions-runner-3/_work/_temp/analyst-development-40282775349-1')\nPATHS = {\n    'retained_build_root':\
+        \ ROOT,\n    'runner_temp_parent': STATE.parent,\n    'build_state': STATE,\n    'completed_report': STATE / 'windows-development.json',\n\
+        \    'source_before': STATE / 'source-before.json',\n    'source_final': STATE / 'source-final.json',\n    'junit_directory':\
+        \ ROOT / 'app/build/test-results/testDebugUnitTest',\n}\n\n\ndef main():\n    assert __debug__ and sys.platform ==\
+        \ 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'\n    assert os.environ.get('RUNNER_OS') == 'Windows'\
+        \ and os.environ.get('RUNNER_ARCH') == 'X64'\n    assert os.environ.get('GITHUB_REPOSITORY') == 'MishaGameHacking/omni-cio-gateway'\n\
+        \    assert os.environ.get('GITHUB_REF') == 'refs/heads/codex/timeweb-owner-prepare-2026-10-23'\n    assert os.environ.get('GITHUB_EVENT_NAME')\
+        \ == 'push'\n    run, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']\n    assert re.fullmatch(r'[1-9]\\\
+        d{0,19}', run) and re.fullmatch(r'[1-9]\\d{0,4}', attempt)\n    result = {'schema': 1, 'kind': 'fixed_build44_path_stat',\
+        \ 'target_build_run_id': 40282775349,\n              'target_build_attempt': 1, 'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),\n\
+        \              'observation_run_id': int(run), 'observation_run_attempt': int(attempt),\n              'read_only':\
+        \ True, 'directory_enumeration_performed': False, 'file_contents_read': False,\n              'adb_accessed': False,\
+        \ 'app_or_tests_executed': False, 'paths': {}}\n    for label, path in PATHS.items():\n        value = {'path': str(path)}\n\
+        \        try:\n            info = path.lstat()\n            redirected = stat.S_ISLNK(info.st_mode) or bool(getattr(info,\
+        \ 'st_file_attributes', 0) & 0x400)\n            value.update(exists=True, redirected=redirected, bytes=info.st_size,\
+        \ mtime_ns=info.st_mtime_ns,\n                         type='directory' if stat.S_ISDIR(info.st_mode) else 'regular_file'\
+        \ if stat.S_ISREG(info.st_mode) else 'other')\n        except FileNotFoundError:\n            value.update(exists=False,\
+        \ observation='not_found')\n        except OSError:\n            value.update(exists=None, observation='stat_unavailable')\n\
+        \        result['paths'][label] = value\n    result['retained_source_with_missing_temp_state_observed'] = (\n    \
+        \    result['paths']['retained_build_root'].get('exists') is True and\n        result['paths']['retained_build_root'].get('type')\
+        \ == 'directory' and\n        result['paths']['build_state'].get('exists') is False)\n    result['cleanup_actor_or_cause_proven']\
+        \ = False\n    temp = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)\n    assert temp in {Path('C:/actions-runner'\
+        \ + suffix) / '_work/_temp' for suffix in ('', '-2', '-3', '-4')}\n    info = temp.lstat()\n    assert stat.S_ISDIR(info.st_mode)\
+        \ and not info.st_file_attributes & 0x400\n    output = temp / ('n00-build44-path-stat-' + run + '-' + attempt)\n\
+        \    assert not output.exists() and not output.is_symlink()\n    output.mkdir()\n    with (output / 'fixed-build44-path-stat.json').open('x',\
+        \ encoding='utf-8') as stream:\n        json.dump(result, stream, ensure_ascii=True, indent=2)\n        stream.write('\\\
+        n')\n    print('N00_BUILD44_FIXED_PATH_STAT=' + json.dumps(result, ensure_ascii=True, separators=(',', ':')), flush=True)\n\
+        \n\nif __name__ == '__main__':\n    main()\n"
+    - name: Preserve fixed path existence and stat observations
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: build44-fixed-path-stat-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/n00-build44-path-stat-${{ github.run_id }}-${{ github.run_attempt }}/fixed-build44-path-stat.json
+        if-no-files-found: warn
+        retention-days: 3
