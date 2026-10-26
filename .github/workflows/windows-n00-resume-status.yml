@@ -19,11 +19,11 @@ jobs:
           import datetime, hashlib, json, os, pathlib, re, sys
           assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
           report = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    'host': os.environ['COMPUTERNAME'], 'build_run_id': 40301089324,
+                    'host': os.environ['COMPUTERNAME'], 'build_run_id': 40305442294,
                     'build': [], 'theme_packages': []}
           for suffix in ('', '-2', '-3', '-4'):
               runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
-              state = runner / '_temp/analyst-development-40301089324-1'
+              state = runner / '_temp/analyst-development-40305442294-1'
               if state.is_dir():
                   item = {'state': str(state), 'files': {}}
                   for name in ('windows-development.json', 'controller.json', 'export-receipt.json',
@@ -67,7 +67,7 @@ jobs:
           for suffix in ('', '-2', '-3', '-4'):
               runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
               checkout = runner / 'omni-cio-gateway/omni-cio-gateway'
-              results = checkout / 'windows-development-40301089324-1/app/build/test-results/testDebugUnitTest'
+              results = checkout / 'windows-development-40305442294-1/app/build/test-results/testDebugUnitTest'
               if results.is_dir():
                   suites = []
                   for p in sorted(results.glob('TEST-*.xml')):
@@ -82,7 +82,7 @@ jobs:
               if not root.is_dir():
                   continue
               item = {'root': str(root), 'files': {}, 'log_tail': []}
-              allowed = [root / 'install-api37-16384/installation.json',
+              allowed = [root / 'install-api37-16384/install-results.json',
                   root / 'ui-screens/navigation-focused-observations.json',
                   root / 'ui-screens/automation-verification.json',
                   root / 'ui-screens/navigation-panels-verification.json',
