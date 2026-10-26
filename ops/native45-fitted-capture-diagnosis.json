@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "native_run": 40332477922,
+  "source_commit": "5f724e18007cfbf437367e87a17dde1b37bb8921",
+  "build_run": 40327866834,
+  "navigation_complete": false,
+  "case_counts": {
+    "automation": 26,
+    "panels": 4,
+    "detail": 2,
+    "wide": 0
+  },
+  "wide_failed_font_scale": 1.0,
+  "wide_failure": "Scroll layout not ready: workspace-content",
+  "observed_viewport": {
+    "bounds": "[128,201][960,1568]",
+    "scrollable": false,
+    "visible": true
+  },
+  "avd_identity": {
+    "blank_lines": 2,
+    "matches_current_process": true,
+    "payload_count": 1
+  },
+  "display_restored": true,
+  "previous_force_stop_timeout_reproduced": false,
+  "new_repair": "Use exact unique visible viewport for complete capture; scrollability still required before any gesture. Five behavioral regressions.",
+  "new_windows_build": 40334863828,
+  "published45": false,
+  "physical_phone_verified": false,
+  "artifact": {
+    "id": 12656171605,
+    "bytes": 4272955,
+    "sha256": "1308ff6046cb4f1869fc0497df70e093bee128c38e3c922bc3a926ac46fead85"
+  },
+  "retained_native_archive": {
+    "bytes": 4505044,
+    "sha256": "ba769546a6444417b6cb61aa0bd4f9f5fc2596f4d752b726f0078412dd398e25"
+  },
+  "receipts": {
+    "navigation-focused-observations.json": {
+      "bytes": 258,
+      "sha256": "e63d75543602d30f678648b46fbe789cfa9d49d22d8d9d5b5e7d0b2fd1b6a454",
+      "error": "Scroll layout not ready: workspace-content"
+    },
+    "automation-verification.json": {
+      "bytes": 139673,
+      "sha256": "ca8ff612bdbd903342f576227f33db4e9f5a9c108e0cf9bd8ba0167176587b7f",
+      "cases": 26
+    },
+    "navigation-panels-verification.json": {
+      "bytes": 39211,
+      "sha256": "38f105bf064d3bc5bd007ad2ecf3a530cead633530663e671a0ea367c9fc67b4",
+      "cases": 4
+    },
+    "navigation-detail-verification.json": {
+      "bytes": 54205,
+      "sha256": "9e1928933addaefec1758115858cc99d3d7072d9ef174d4ce554a0cedcdb726a",
+      "status": "incomplete",
+      "error": "Scroll layout not ready: workspace-content",
+      "cases": 2
+    },
+    "navigation-wide-verification.json": {
+      "bytes": 1281,
+      "sha256": "9af70efe0320b5419baa97efe0f529e9da4df37c24bf851bada2759d09a04501",
+      "status": "incomplete",
+      "error": "Scroll layout not ready: workspace-content",
+      "cases": 0
+    },
+    "install-results.json": {
+      "bytes": 10485,
+      "sha256": "8733a5c1c24d1de2c45c0f1a65a06530e955b4c748db6d2df6f04be5352cc9c8"
+    },
+    "native45-navigation-summary.json": {
+      "bytes": 1993,
+      "sha256": "ed61928f2e4e0c95447204beb2f19013aaa7f4669f82cd92abf5a4f3b3d841d1"
+    }
+  }
+}
