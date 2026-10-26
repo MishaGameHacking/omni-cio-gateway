@@ -964,7 +964,7 @@ jobs:
         \ {'bytes': 9239, 'sha256': 'f4dad1825fc6635af442dafb30fee7696d8a3b40c9f359e0dfbdfcfd82227f94'}, 'tools/timeweb_ci_capacity.py':\
         \ {'bytes': 12671, 'sha256': 'd97eca520eadcf0827e86cb261c370845604555b700a6d085dae113332e8c64c'}, 'tools/timeweb_ci_catalog.py':\
         \ {'bytes': 4751, 'sha256': 'be88f4fa2e593c8a3555c1dd4af3efb0abb0aea58c1651122355c30be17f635e'}}\nREMOTE_SHA256 =\
-        \ '30ac8b5c1af68f48d35c5be9cbb38b269fb256675427949cb1ebaad8e81fae93'\nremote = '\"\"\"Deploy exactly three Windows-tested\
+        \ 'e6e39e160931e5c3beff90f4709819e02daf7f9106d78780240fd43e7f12175b'\nremote = '\"\"\"Deploy exactly three Windows-tested\
         \ HTML/CSS sources to the pinned owner service.\\n\\nThis payload is a future administrative action, not a local application\
         \ runner.\\nIt never imports the application, opens a database/configuration secret, installs\\ndependencies, calls\
         \ trading/model endpoints, or publishes/installs an APK.\\n\"\"\"\\nfrom __future__ import annotations\\n\\nimport\
@@ -1123,33 +1123,35 @@ jobs:
         nfrom html.parser import HTMLParser\\nimport http.client\\nimport json\\nimport socket\\nimport ssl\\n\\nPUBLIC_HOST\
         \ = \\'analyst-ai-2941515.twc1.net\\'\\nPUBLIC_IP = \\'83.217.195.29\\'\\nCALLBACK = \\'/auth/telegram/callback?error=theme_verification\\\
         '\\nPOLICY = \\'/client/update-policy?package_name=ru.omnicio.app.debug\\'\\nRETIRED = \\'/auth/telegram/owner-enrollment/callback\\\
-        '\\nCALLBACK_HEADERS = {\\n    \\'cache-control\\': \\'no-store, private\\',\\n    \\'referrer-policy\\': \\'no-referrer\\\
-        ',\\n    \\'x-content-type-options\\': \\'nosniff\\',\\n    \\'content-security-policy\\': \"default-src \\'none\\\
-        '; script-src \\'unsafe-inline\\'; style-src \\'unsafe-inline\\'; base-uri \\'none\\'\",\\n}\\n\\n\\nclass PinnedRuntimeTLS(http.client.HTTPSConnection):\\\
-        n    def __init__(self):\\n        super().__init__(PUBLIC_HOST, timeout=8, context=ssl.create_default_context())\\\
-        n\\n    def connect(self):\\n        raw = socket.create_connection((PUBLIC_IP, 443), timeout=self.timeout)\\n   \
-        \     try:\\n            self.sock = self._context.wrap_socket(raw, server_hostname=PUBLIC_HOST)\\n        except\
-        \ BaseException:\\n            raw.close()\\n            raise\\n\\n\\nclass CallbackPage(HTMLParser):\\n    def __init__(self):\\\
-        n        super().__init__(convert_charrefs=True)\\n        self.styles = []\\n        self.links = []\\n        self.color_scheme\
-        \ = []\\n        self.scripts = []\\n        self.current = None\\n\\n    def handle_starttag(self, tag, pairs):\\\
-        n        values = dict(pairs)\\n        if tag == \\'style\\':\\n            self.styles.append(\\'\\')\\n       \
-        \     self.current = \\'style\\'\\n        elif tag == \\'script\\':\\n            self.scripts.append(\\'\\')\\n\
-        \            self.current = \\'script\\'\\n        elif tag == \\'a\\':\\n            self.links.append(values.get(\\\
-        'href\\'))\\n        elif tag == \\'meta\\' and values.get(\\'name\\') == \\'color-scheme\\':\\n            self.color_scheme.append(values.get(\\\
-        'content\\'))\\n\\n    def handle_endtag(self, tag):\\n        if tag == self.current:\\n            self.current\
-        \ = None\\n\\n    def handle_data(self, data):\\n        if self.current == \\'style\\':\\n            self.styles[-1]\
-        \ += data\\n        elif self.current == \\'script\\':\\n            self.scripts[-1] += data\\n\\n\\ndef public_read(path,\
-        \ maximum):\\n    need(path in {\\'/health\\', CALLBACK, POLICY, RETIRED}, \\'public_path_not_allowlisted\\')\\n \
-        \   connection = PinnedRuntimeTLS()\\n    try:\\n        connection.request(\\'GET\\', path, headers={\\'Cache-Control\\\
-        ': \\'no-cache\\', \\'Accept-Encoding\\': \\'identity\\'})\\n        response = connection.getresponse()\\n      \
-        \  raw = response.read(maximum + 1)\\n        need(len(raw) <= maximum and response.getheader(\\'Content-Encoding\\\
-        ', \\'identity\\') == \\'identity\\',\\n             \\'public_body_outside_bound\\')\\n        headers = {key: response.getheader(key)\
-        \ for key in (*CALLBACK_HEADERS, \\'content-type\\')}\\n        return response.status, headers, raw\\n    finally:\\\
-        n        connection.close()\\n\\n\\ndef public_check(*, expected_style=None, expected_policy=None):\\n    status,\
-        \ headers, raw = public_read(\\'/health\\', 1024)\\n    need(status == 200 and (headers[\\'content-type\\'] or \\\
-        '\\').split(\\';\\')[0] == \\'application/json\\'\\n         and json.loads(raw) == {\\'status\\': \\'ok\\'}, \\'public_owner_health_failed\\\
-        ')\\n    status, headers, raw = public_read(CALLBACK, 65536)\\n    need(status == 200 and (headers[\\'content-type\\\
-        '] or \\'\\').split(\\';\\')[0] == \\'text/html\\'\\n         and all(headers[key] == value for key, value in CALLBACK_HEADERS.items()),\
+        '\\nCALLBACK_HEADERS = {\\n    # The active Caddy route adds no-store to the application\\'s private header.\\n  \
+        \  # Observed by the read-only workflow40380214063 before any deployment.\\n    \\'cache-control\\': \\'no-store,\
+        \ no-store, private\\',\\n    \\'referrer-policy\\': \\'no-referrer\\',\\n    \\'x-content-type-options\\': \\'nosniff\\\
+        ',\\n    \\'content-security-policy\\': \"default-src \\'none\\'; script-src \\'unsafe-inline\\'; style-src \\'unsafe-inline\\\
+        '; base-uri \\'none\\'\",\\n}\\n\\n\\nclass PinnedRuntimeTLS(http.client.HTTPSConnection):\\n    def __init__(self):\\\
+        n        super().__init__(PUBLIC_HOST, timeout=8, context=ssl.create_default_context())\\n\\n    def connect(self):\\\
+        n        raw = socket.create_connection((PUBLIC_IP, 443), timeout=self.timeout)\\n        try:\\n            self.sock\
+        \ = self._context.wrap_socket(raw, server_hostname=PUBLIC_HOST)\\n        except BaseException:\\n            raw.close()\\\
+        n            raise\\n\\n\\nclass CallbackPage(HTMLParser):\\n    def __init__(self):\\n        super().__init__(convert_charrefs=True)\\\
+        n        self.styles = []\\n        self.links = []\\n        self.color_scheme = []\\n        self.scripts = []\\\
+        n        self.current = None\\n\\n    def handle_starttag(self, tag, pairs):\\n        values = dict(pairs)\\n   \
+        \     if tag == \\'style\\':\\n            self.styles.append(\\'\\')\\n            self.current = \\'style\\'\\n\
+        \        elif tag == \\'script\\':\\n            self.scripts.append(\\'\\')\\n            self.current = \\'script\\\
+        '\\n        elif tag == \\'a\\':\\n            self.links.append(values.get(\\'href\\'))\\n        elif tag == \\\
+        'meta\\' and values.get(\\'name\\') == \\'color-scheme\\':\\n            self.color_scheme.append(values.get(\\'content\\\
+        '))\\n\\n    def handle_endtag(self, tag):\\n        if tag == self.current:\\n            self.current = None\\n\\\
+        n    def handle_data(self, data):\\n        if self.current == \\'style\\':\\n            self.styles[-1] += data\\\
+        n        elif self.current == \\'script\\':\\n            self.scripts[-1] += data\\n\\n\\ndef public_read(path, maximum):\\\
+        n    need(path in {\\'/health\\', CALLBACK, POLICY, RETIRED}, \\'public_path_not_allowlisted\\')\\n    connection\
+        \ = PinnedRuntimeTLS()\\n    try:\\n        connection.request(\\'GET\\', path, headers={\\'Cache-Control\\': \\'no-cache\\\
+        ', \\'Accept-Encoding\\': \\'identity\\'})\\n        response = connection.getresponse()\\n        raw = response.read(maximum\
+        \ + 1)\\n        need(len(raw) <= maximum and response.getheader(\\'Content-Encoding\\', \\'identity\\') == \\'identity\\\
+        ',\\n             \\'public_body_outside_bound\\')\\n        headers = {key: response.getheader(key) for key in (*CALLBACK_HEADERS,\
+        \ \\'content-type\\')}\\n        return response.status, headers, raw\\n    finally:\\n        connection.close()\\\
+        n\\n\\ndef public_check(*, expected_style=None, expected_policy=None):\\n    status, headers, raw = public_read(\\\
+        '/health\\', 1024)\\n    need(status == 200 and (headers[\\'content-type\\'] or \\'\\').split(\\';\\')[0] == \\'application/json\\\
+        '\\n         and json.loads(raw) == {\\'status\\': \\'ok\\'}, \\'public_owner_health_failed\\')\\n    status, headers,\
+        \ raw = public_read(CALLBACK, 65536)\\n    need(status == 200 and (headers[\\'content-type\\'] or \\'\\').split(\\\
+        ';\\')[0] == \\'text/html\\'\\n         and all(headers[key] == value for key, value in CALLBACK_HEADERS.items()),\
         \ \\'public_callback_headers_changed\\')\\n    page = CallbackPage()\\n    page.feed(raw.decode(\\'utf-8\\'))\\n \
         \   page.close()\\n    need(page.links == [\\'analystai://auth?error=telegram_denied\\'] and\\n         page.scripts\
         \ == [\\'window.location.replace(\"analystai://auth?error=telegram_denied\");\\'] and\\n         len(page.styles)\
@@ -1396,23 +1398,24 @@ jobs:
         \ Bodies stay in memory; no login transaction is created.\"\"\"\nimport hashlib\nfrom html.parser import HTMLParser\n\
         import http.client\nimport json\nimport socket\nimport ssl\n\nPUBLIC_HOST = 'analyst-ai-2941515.twc1.net'\nPUBLIC_IP\
         \ = '83.217.195.29'\nCALLBACK = '/auth/telegram/callback?error=theme_verification'\nPOLICY = '/client/update-policy?package_name=ru.omnicio.app.debug'\n\
-        RETIRED = '/auth/telegram/owner-enrollment/callback'\nCALLBACK_HEADERS = {\n    'cache-control': 'no-store, private',\n\
-        \    'referrer-policy': 'no-referrer',\n    'x-content-type-options': 'nosniff',\n    'content-security-policy': \"\
-        default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'\",\n}\n\n\nclass PinnedRuntimeTLS(http.client.HTTPSConnection):\n\
-        \    def __init__(self):\n        super().__init__(PUBLIC_HOST, timeout=8, context=ssl.create_default_context())\n\
-        \n    def connect(self):\n        raw = socket.create_connection((PUBLIC_IP, 443), timeout=self.timeout)\n       \
-        \ try:\n            self.sock = self._context.wrap_socket(raw, server_hostname=PUBLIC_HOST)\n        except BaseException:\n\
-        \            raw.close()\n            raise\n\n\nclass CallbackPage(HTMLParser):\n    def __init__(self):\n      \
-        \  super().__init__(convert_charrefs=True)\n        self.styles = []\n        self.links = []\n        self.color_scheme\
-        \ = []\n        self.scripts = []\n        self.current = None\n\n    def handle_starttag(self, tag, pairs):\n   \
-        \     values = dict(pairs)\n        if tag == 'style':\n            self.styles.append('')\n            self.current\
-        \ = 'style'\n        elif tag == 'script':\n            self.scripts.append('')\n            self.current = 'script'\n\
-        \        elif tag == 'a':\n            self.links.append(values.get('href'))\n        elif tag == 'meta' and values.get('name')\
-        \ == 'color-scheme':\n            self.color_scheme.append(values.get('content'))\n\n    def handle_endtag(self, tag):\n\
-        \        if tag == self.current:\n            self.current = None\n\n    def handle_data(self, data):\n        if\
-        \ self.current == 'style':\n            self.styles[-1] += data\n        elif self.current == 'script':\n        \
-        \    self.scripts[-1] += data\n\n\ndef public_read(path, maximum):\n    need(path in {'/health', CALLBACK, POLICY,\
-        \ RETIRED}, 'public_path_not_allowlisted')\n    connection = PinnedRuntimeTLS()\n    try:\n        connection.request('GET',\
+        RETIRED = '/auth/telegram/owner-enrollment/callback'\nCALLBACK_HEADERS = {\n    # The active Caddy route adds no-store\
+        \ to the application's private header.\n    # Observed by the read-only workflow40380214063 before any deployment.\n\
+        \    'cache-control': 'no-store, no-store, private',\n    'referrer-policy': 'no-referrer',\n    'x-content-type-options':\
+        \ 'nosniff',\n    'content-security-policy': \"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';\
+        \ base-uri 'none'\",\n}\n\n\nclass PinnedRuntimeTLS(http.client.HTTPSConnection):\n    def __init__(self):\n     \
+        \   super().__init__(PUBLIC_HOST, timeout=8, context=ssl.create_default_context())\n\n    def connect(self):\n   \
+        \     raw = socket.create_connection((PUBLIC_IP, 443), timeout=self.timeout)\n        try:\n            self.sock\
+        \ = self._context.wrap_socket(raw, server_hostname=PUBLIC_HOST)\n        except BaseException:\n            raw.close()\n\
+        \            raise\n\n\nclass CallbackPage(HTMLParser):\n    def __init__(self):\n        super().__init__(convert_charrefs=True)\n\
+        \        self.styles = []\n        self.links = []\n        self.color_scheme = []\n        self.scripts = []\n  \
+        \      self.current = None\n\n    def handle_starttag(self, tag, pairs):\n        values = dict(pairs)\n        if\
+        \ tag == 'style':\n            self.styles.append('')\n            self.current = 'style'\n        elif tag == 'script':\n\
+        \            self.scripts.append('')\n            self.current = 'script'\n        elif tag == 'a':\n            self.links.append(values.get('href'))\n\
+        \        elif tag == 'meta' and values.get('name') == 'color-scheme':\n            self.color_scheme.append(values.get('content'))\n\
+        \n    def handle_endtag(self, tag):\n        if tag == self.current:\n            self.current = None\n\n    def handle_data(self,\
+        \ data):\n        if self.current == 'style':\n            self.styles[-1] += data\n        elif self.current == 'script':\n\
+        \            self.scripts[-1] += data\n\n\ndef public_read(path, maximum):\n    need(path in {'/health', CALLBACK,\
+        \ POLICY, RETIRED}, 'public_path_not_allowlisted')\n    connection = PinnedRuntimeTLS()\n    try:\n        connection.request('GET',\
         \ path, headers={'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity'})\n        response = connection.getresponse()\n\
         \        raw = response.read(maximum + 1)\n        need(len(raw) <= maximum and response.getheader('Content-Encoding',\
         \ 'identity') == 'identity',\n             'public_body_outside_bound')\n        headers = {key: response.getheader(key)\
