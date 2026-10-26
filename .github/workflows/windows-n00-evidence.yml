@@ -19,7 +19,8 @@ jobs:
             const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
             if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
             const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40262170820-1/app/build/outputs/apk/preview';
-            const source=p.join(root,'ui-screens-api37-16384');
+            const finished=p.join(root,'ui-screens-api37-16384');
+            const source=fs.existsSync(finished)?finished:p.join(root,'ui-screens');
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const identities={};let total=0;
