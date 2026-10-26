@@ -1,4 +1,4 @@
-name: Observe candidate40 purchase result geometry progress
+name: Observe complete candidate40 Android37 matrix
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -7,40 +7,15 @@ permissions:
   contents: read
   checks: write
   actions: read
+concurrency:
+  group: analyst-n00-candidate40-full-runtime-observer
+  cancel-in-progress: false
 jobs:
   inspect:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 40
+    timeout-minutes: 150
     steps:
-      - name: Read actual geometry observations from the separate laptop checkout
+      - name: Observe both full profiles without changing gates
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          script: |
-            const fs=require('node:fs'),p=require('node:path');
-            if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
-            const run_id=40245350516;
-            const root='C:/actions-runner/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40245350516-1';
-            const file=p.join(root,'app/build/outputs/apk/preview/ui-screens/purchase-result-observations.json');
-            const check=(await github.rest.checks.create({...context.repo,name:'N00 purchase result diagnostic progress',head_sha:context.sha,status:'in_progress',output:{title:'Awaiting actual native result observations',summary:'Read-only observation; no release acceptance.'}})).data;
-            const fence=String.fromCharCode(96).repeat(3);
-            function frame(row,expected){
-              if(!row)return null;
-              return {...row,labels:row.labels.map(x=>({text:x.text,bounds:x.bounds,visible:x['visible-to-user']}))};
-            }
-            for(let attempt=0;attempt<150;attempt++){
-              let observed=null;
-              if(fs.existsSync(file)){try{observed=JSON.parse(fs.readFileSync(file,'utf8'));}catch(error){if(!(error instanceof SyntaxError))throw error;}}
-              const run=(await github.rest.actions.getWorkflowRun({...context.repo,run_id})).data;
-              const report={run_id,source_root:root,workflow_status:run.status,workflow_conclusion:run.conclusion,diagnostic_only:true,release_gate_pass:false};
-              if(observed){
-                report.active_case=observed.active_case;report.cases=observed.cases.map(x=>({case:x.case,font_scale:x.font_scale,checks:x.checks}));
-                report.result=observed.result;
-                report.geometry=observed.result_traversals.map(x=>({case:x.case,expected:x.expected,original_search_passed:x.original_search_passed,original_failure:x.original_failure,reachable_by_reverse_scroll:x.reachable_by_reverse_scroll,
-                  frames:x.frames?.map(r=>frame(r,x.expected)),first_frame:frame(x.first_frame,x.expected),last_frame:frame(x.last_frame,x.expected)}));
-              }
-              const completed=!!observed?.result||run.status==='completed';
-              await github.rest.checks.update({...context.repo,check_run_id:check.id,status:completed?'completed':'in_progress',...(completed?{conclusion:'neutral'}:{}),output:{title:completed?'Actual diagnostic observations preserved; no complete acceptance':'Observing unchanged native traversal',summary:fence+'json\n'+JSON.stringify(report,null,2)+'\n'+fence}});
-              if(completed)return;
-              await new Promise(resolve=>setTimeout(resolve,15000));
-            }
-            throw new Error('Bounded observation period ended before diagnostic completion');
+          script: "const cp=require('node:child_process');const created=await github.rest.checks.create({...context.repo,name:'N00 candidate40 complete runtime after result recovery',head_sha:context.sha,status:'in_progress',output:{title:'Waiting for complete Android37 matrix',summary:'Run40247318025; source46158e9a5b8da09f0188fc882154a455d119f127 and exact APK40.'}});let terminal=false;const seen={};\nfor(let poll=0;poll<290;poll++){\n const r=cp.spawnSync('py',['-3','-c',\"import pathlib,sys,os,json\\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\\nout={'run_id':40247318025,'profiles':{},'controllers':{}}\\nroots=[pathlib.Path('C:/actions-runner'+s+'/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40247318025-1') for s in ('','-2','-3','-4')]\\nroots=[p for p in roots if p.is_dir()]\\nassert len(roots)<=1\\nif roots:\\n root=roots[0];out['source_root']=str(root);base=root/'app/build/outputs/apk/preview'\\n for page in (16384,4096):\\n  work=base/('install-api37-'+str(page));profile={}\\n  log=work/'runtime-console.log'\\n  if log.is_file():\\n   with log.open('rb') as f:\\n    f.seek(max(0,log.stat().st_size-4*1024**2));lines=f.read().decode('utf-8',errors='replace').splitlines()\\n   profile['console_bytes']=log.stat().st_size\\n   profile['stages']=[s[:1000] for s in lines if s.startswith(('PROFILE_UI_STAGE=','PROFILE_UI_STAGE_PASSED=','PROFILE_UI_TESTS='))][-40:]\\n   profile['cases']=[s[:500] for s in lines if s.startswith(('BUSINESS_UI_CASE=','BUSINESS_UI_CASE_PASSED=','PORTFOLIO_UI_CASE=','AUTOMATION_UI_CASE='))][-16:]\\n   profile['failures']=[s[:1200] for s in lines if s.startswith(('AssertionError:','RuntimeError:','ValueError:','TimeoutError:','subprocess.TimeoutExpired:'))][-5:]\\n  p=work/'install-results.json'\\n  if p.is_file():\\n   rows=json.loads(p.read_text(encoding='utf-8'))\\n   profile['installation']=[{k:v for k,v in row.items() if k in ('test','success','page_size_bytes','android_api','apk_sha256','error_type','ui_suite','ui_stages','business_case_count','portfolio_case_count','automation_case_count')} for row in rows]\\n  out['profiles'][str(page)]=profile\\nfor suffix in ('','-2','-3','-4'):\\n state=pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/n00-runtime-40247318025-1')\\n for p in state.glob('runtime-*.json'):out['controllers'][p.stem]=json.loads(p.read_text(encoding='utf-8'))\\nprint(json.dumps(out,ensure_ascii=True))\\n\"],{encoding:'utf8',timeout:45000,maxBuffer:120000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});\n let report;try{if(r.status!==0)throw Error('Read failed');report=JSON.parse(r.stdout);}catch(e){report={error:String(e),stderr:r.stderr?.slice(-1500)};}\n Object.assign(seen,report.controllers||{});report.controllers=seen;\n const run=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40247318025});report.workflow_status=run.data.status;report.workflow_conclusion=run.data.conclusion;\n terminal=run.data.status==='completed'||Boolean(seen['runtime-16384']&&seen['runtime-4096']);\n const passed=seen['runtime-16384']?.exit_code===0&&seen['runtime-4096']?.exit_code===0&&!seen['runtime-16384']?.error&&!seen['runtime-4096']?.error;\n const fence=String.fromCharCode(96).repeat(3);const summary=fence+'json\\n'+JSON.stringify(report,null,2)+'\\n'+fence;if(summary.length>63000)throw Error('Report exceeded bound');\n await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:terminal?'completed':'in_progress',...(terminal?{conclusion:passed?'success':Object.values(seen).some(x=>x.error||x.exit_code!==0)?'failure':'neutral'}:{}),output:{title:'Actual complete Android37 matrix observations',summary}});\n if(terminal)break;await new Promise(resolve=>setTimeout(resolve,30000));\n}\nif(!terminal)await github.rest.checks.update({...context.repo,check_run_id:created.data.id,status:'completed',conclusion:'neutral',output:{title:'Observation window ended',summary:'Inspect full runtime run40247318025.'}});"
