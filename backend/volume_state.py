@@ -158,7 +158,11 @@ def strategy_data(user_id: int) -> dict:
 
 @router.get("/strategy", responses=HTTP_ERRORS)
 def get_strategy(user: Any = Depends(backend.current_user)) -> dict:
-    return strategy_data(int(user["id"]))
+    result = strategy_data(int(user["id"]))
+    snapshot = saved_snapshot(user, "RUB")
+    result["available_accounts"] = (snapshot or {}).get("accounts", [])
+    result["mandate_execution_mode"] = "read_only"
+    return result
 
 
 def positions(snapshot: dict | None) -> list[dict]:
@@ -344,6 +348,12 @@ class Limits(StrictModel):
     currency_percent: str
 
 
+try:
+    from .portfolio_mandate import PortfolioMandate, validated_mandate, preserve_mandate, assert_mandate_account
+except ImportError:
+    from portfolio_mandate import PortfolioMandate, validated_mandate, preserve_mandate, assert_mandate_account
+
+
 class StrategyConfig(StrictModel):
     goal: Literal["preservation", "income", "growth"]
     horizon_months: int = Field(ge=1, le=600)
@@ -351,10 +361,11 @@ class StrategyConfig(StrictModel):
     limits: Limits
     risk_level: Literal["conservative", "moderate", "aggressive"]
     allowed_markets: list[Literal["MOEX", "SPB", "RU"]] = Field(min_length=1, max_length=3)
+    mandate: PortfolioMandate | None = None
 
 
 def validate_config(config: StrategyConfig | dict) -> dict:
-    value = config.model_dump() if isinstance(config, BaseModel) else StrategyConfig.model_validate(config).model_dump()
+    value = config.model_dump(exclude_none=True) if isinstance(config, BaseModel) else StrategyConfig.model_validate(config).model_dump(exclude_none=True)
     reserve = decimal(value["reserve"]["amount"])
     if reserve is None or reserve < 0:
         raise HTTPException(422, "strategy_reserve_invalid")
@@ -365,6 +376,10 @@ def validate_config(config: StrategyConfig | dict) -> dict:
             raise HTTPException(422, "strategy_limit_invalid")
         value["limits"][axis] = text_number(limit)
     value["allowed_markets"] = sorted(set(value["allowed_markets"]))
+    if value.get("mandate") is not None:
+        value["mandate"] = validated_mandate(value["mandate"])
+        if value["reserve"]["currency"] != "RUB":
+            raise HTTPException(422, "mandate_requires_ruble_portfolio")
     return value
 
 
@@ -395,12 +410,14 @@ def _preview_strategy(payload: StrategyPreview, user: Any) -> dict:
         config = validate_config(json.loads(row[0]))
     else:
         config = validate_config(payload.config)
+    config = preserve_mandate(config, active, supplied=((payload.config is not None and "mandate" in payload.config.model_fields_set) or (payload.rollback_to_version is not None and config.get("mandate") is not None)))
     snapshot = saved_snapshot(user, config["reserve"]["currency"])
     if not snapshot:
         raise HTTPException(409, "workspace_refresh_required")
     age = _observation_age(snapshot.get("as_of"))
     if age is None or age >= 900:
         raise HTTPException(409, "strategy_fresh_snapshot_required")
+    assert_mandate_account(config, snapshot)
     risk = risk_data(user, config=config, snapshot=snapshot)
     total = decimal(snapshot.get("capital", {}).get("total"))
     reserve = decimal(config["reserve"])
@@ -449,9 +466,10 @@ def confirm_strategy(payload: StrategyConfirm, user: Any = Depends(backend.curre
         if preview is None or preview["consumed_at"] is not None or preview["expires_at"] <= now or preview["expected_version"] != payload.expected_version:
             raise HTTPException(409, "strategy_preview_expired_or_changed")
         config = validate_config(json.loads(preview["config_json"]))
-        current = db.execute("SELECT id,broker_key FROM workspace_snapshots WHERE user_id=? AND currency=?", (user_id, config["reserve"]["currency"])).fetchone()
+        current = db.execute("SELECT id,broker_key,payload_json FROM workspace_snapshots WHERE user_id=? AND currency=?", (user_id, config["reserve"]["currency"])).fetchone()
         if current is None or current["id"] != preview["snapshot_id"] or current["broker_key"] != broker_key(user):
             raise HTTPException(409, "strategy_snapshot_changed")
+        assert_mandate_account(config, json.loads(current["payload_json"]))
         version = payload.expected_version + 1
         db.execute("INSERT INTO workspace_strategy_versions VALUES (?,?,?,?,?,?,?,?)", (user_id, version, encode(config), preview["snapshot_id"], payload.expected_version, preview["reason"], payload.request_id, now))
         db.execute("UPDATE workspace_strategy_previews SET consumed_at=? WHERE id=?", (now, payload.preview_id))

@@ -11,6 +11,11 @@ except ImportError:
     from credit_evidence import Source
     from volume_contract import decimal, financial_context, instrument_currency, money, text_number, timestamp, ZERO
 
+try:
+    from .portfolio_mandate import mandate_purchase_reasons
+except ImportError:
+    from portfolio_mandate import mandate_purchase_reasons
+
 POLICY_VERSION = "purchase-constraints-0.11.0-v1"
 AXES = ("position", "issuer", "group", "sector", "currency")
 
@@ -217,6 +222,7 @@ def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
         raise ValueError("whole_positive_lots_required")
     currency = str(meta.get("currency", "")).upper()
     reasons = instrument_reasons(meta, info, config) + credit_reasons(credit, meta.get("instrumentType"))
+    reasons.extend(mandate_purchase_reasons(config, meta.get("instrumentType"), account_id, credit))
     reasons.extend(_observation_reasons(snapshot, config, meta, identity, observed_at, now))
     costs, cost_errors = cost_basis(quote, capacity, currency, lots)
     reasons.extend(cost_errors)

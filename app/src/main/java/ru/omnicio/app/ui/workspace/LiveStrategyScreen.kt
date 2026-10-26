@@ -3,7 +3,6 @@ package ru.omnicio.app.ui.workspace
 import ru.omnicio.app.ui.spatial.SpatialBackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -13,13 +12,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.UUID
 import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.RegisterPanelExit
@@ -77,7 +74,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
         adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
+            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Цель", "Профиль", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
@@ -89,15 +86,16 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 }
                 when (tab) {
                     0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
-                    1 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
-                    2 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
+                    1 -> item { StrategyMandateEditor(config, resource.data?.records("available_accounts").orEmpty(), editor.canEdit, edit) }
+                    2 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
+                    3 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
                     else -> resource.data?.records("history").orEmpty().forEach { old -> item {
                         StrategyHistoryCard(old, active, loaded, editor, version, restoreVersion)
                     } }
                 }
                 item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
                 item { WorkspaceActionState(restoreVersion) }
-                if (!validStrategy(config)) item { Text("Проверьте горизонт, сумму резерва и лимиты больше 0 и до 100%.", color = MaterialTheme.colorScheme.error) }
+                if (!validStrategy(config)) item { Text("Выберите обязательные параметры профиля; проверьте горизонт, резерв и лимиты. Черновик сохранён на устройстве.", color = MaterialTheme.colorScheme.error) }
             }
         }
     }
@@ -121,6 +119,7 @@ internal fun validStrategy(config: JSONObject): Boolean {
     val horizon = config.opt("horizon_months") as? Int ?: return false
     val amount = config.optJSONObject("reserve")?.optString("amount")?.toBigDecimalOrNull()
     val limits = config.optJSONObject("limits") ?: return false
+    if (config.has("mandate") && (config.optJSONObject("mandate")?.let(::validPortfolioMandate) != true || config.optJSONObject("reserve")?.optString("currency") != "RUB")) return false
     return horizon in 1..600 && amount != null && amount.signum() >= 0 && limitTitles.keys.all {
         val number = limits.optString(it).toBigDecimalOrNull()
         number != null && number.signum() > 0 && number <= java.math.BigDecimal(100)
@@ -136,15 +135,9 @@ private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSON
         val riskLevels = listOf("conservative", "moderate", "aggressive")
         WorkspaceChoices("Отношение к риску", listOf("Консервативное", "Умеренное", "Высокое"),
             riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0), enabled) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
-        WorkspaceTextInput(config.opt("horizon_months")?.toString().orEmpty(),
-            { raw ->
-                val draft = raw.take(4)
-                edit(JSONObject(config.toString()).put("horizon_months", draft.toIntOrNull() ?: draft))
-            },
-            "Горизонт, месяцев", Modifier.fillMaxWidth().testTag("strategy-horizon"), enabled = enabled,
-            keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
-        WorkspaceSuggestionRow("", listOf(12, 36, 60, 120).map { WorkspaceSuggestion(it.toString(), "$it мес.") }, enabled) { months ->
-            edit(JSONObject(config.toString()).put("horizon_months", months.toInt()))
+        StrategyNumberChoice("Горизонт", config.opt("horizon_months")?.toString().orEmpty(), "мес.", enabled,
+            "1", "600", listOf("12", "36", "60", "120"), listOf("1", "12")) {
+            edit(JSONObject(config.toString()).put("horizon_months", it.toInt()))
         }
         Text("Выбор цели не добавляет ожидаемую прибыль к капиталу. Доступность инструмента проверяется у брокера.")
     }
@@ -154,9 +147,10 @@ private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSON
 private fun StrategyReserveEditor(config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
     val reserve = config.getJSONObject("reserve")
     SpectrumCard {
-        WorkspaceTextInput(reserve.text("amount", "0"), { raw ->
-            edit(JSONObject(config.toString()).put("reserve", JSONObject(reserve.toString()).put("amount", raw.replace(',', '.').take(18))))
-        }, "Неприкосновенный резерв", Modifier.fillMaxWidth(), enabled = enabled, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        StrategyNumberChoice("Неприкосновенный резерв", reserve.text("amount", "0"), reserve.text("currency"), enabled,
+            "0", "999999999999999.99", listOf("0", "1000", "10000", "100000"), listOf("1000", "100", "1", "0.01")) { amount ->
+            edit(JSONObject(config.toString()).put("reserve", JSONObject(reserve.toString()).put("amount", amount)))
+        }
         WorkspaceChoices("Валюта резерва", listOf("RUB", "USD", "EUR"), listOf("RUB", "USD", "EUR").indexOf(reserve.text("currency")).coerceAtLeast(0), enabled) {
             edit(JSONObject(config.toString()).put("reserve", JSONObject(reserve.toString()).put("currency", listOf("RUB", "USD", "EUR")[it])))
         }
@@ -168,14 +162,10 @@ private fun StrategyReserveEditor(config: JSONObject, enabled: Boolean, edit: (J
 private fun StrategyLimitEditor(title: String, key: String, config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
     val limits = config.getJSONObject("limits")
     SpectrumCard {
-        WorkspaceTextInput(limits.text(key, "100"), { raw ->
-            edit(JSONObject(config.toString()).put("limits", JSONObject(limits.toString()).put(key, raw.replace(',', '.').take(8))))
-        }, title + ", %", Modifier.fillMaxWidth(), enabled = enabled, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        val percent = limits.text(key, "").toFloatOrNull()?.takeIf { it.isFinite() && it in 0f..100f }
-        if (percent != null) SpectrumSlider(percent, { next ->
-            edit(JSONObject(config.toString()).put("limits", JSONObject(limits.toString()).put(key, next.toInt().toString())))
-        }, Modifier.fillMaxWidth().semantics { contentDescription = title + ", %" }, enabled = enabled,
-            valueRange = 0f..100f, steps = 99)
+        StrategyNumberChoice(title, limits.text(key, "100"), "%", enabled, "0.01", "100",
+            listOf("1", "3", "5", "8", "10", "20", "100"), listOf("1", "0.1", "0.01"), true) { percent ->
+            edit(JSONObject(config.toString()).put("limits", JSONObject(limits.toString()).put(key, percent)))
+        }
         Text("Ограничение применяется к подтверждённой доле. 100% не ограничивает эту долю; неизвестные связи не считаются нулём.", style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -199,21 +189,6 @@ private fun strategyValue(value: String?): String = when (value) {
 }
 
 @Composable
-private fun StrategyPreview(preview: JSONObject, enabled: Boolean, confirm: () -> Unit) {
-    val impact = preview.optJSONObject("impact") ?: JSONObject()
-    SpectrumCard(emphasized = true) {
-        Text("Влияние на текущий портфель", style = MaterialTheme.typography.titleLarge)
-        Text("Нарушений новых лимитов: " + impact.records("breaches").size)
-        impact.records("breaches").forEach { item -> Text(item.text("label", "Ограничение") + ": " + item.text("share_percent") + "% / " + item.text("limit_percent") + "%") }
-        impact.optJSONObject("reserve_gap")?.let { Text("Недостающий резерв: " + PrivateValue(moneyText(it))) }
-        impact.strings("warnings").forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-        Text("Расчёт действителен до " + localMoment(preview.text("expires_at", "")), style = MaterialTheme.typography.bodySmall)
-        Text("Если портфель или правила изменятся, потребуется новый расчёт.", style = MaterialTheme.typography.bodySmall)
-        SpectrumPrimaryButton("Подтвердить эту версию", confirm, Modifier.fillMaxWidth(), enabled && preview.optBoolean("can_confirm"), SpectrumSymbol.Goal)
-    }
-}
-
-@Composable
 private fun StrategyHistoryCard(old: JSONObject, active: JSONObject?, loaded: Boolean,
     editor: StrategyEditorAvailability, version: Int, previewAction: WorkspaceAction) {
     SpectrumCard {
@@ -226,32 +201,4 @@ private fun StrategyHistoryCard(old: JSONObject, active: JSONObject?, loaded: Bo
                 .put("rollback_to_version", old.optInt("version")))
         }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
     }
-}
-
-@Composable
-private fun StrategyEditorStatus(hasEditorState: Boolean, active: JSONObject?, dirty: Boolean,
-    draftSaved: Boolean, loaded: Boolean, savedMessage: String?, retryDraft: () -> Unit) {
-    if (hasEditorState) StrategyStateCard(active, dirty, draftSaved, loaded, savedMessage, retryDraft)
-    else SpectrumCard {
-        Text("Подготавливаем редактор стратегии", style = MaterialTheme.typography.titleLarge)
-        Text("Ждём действующие правила и сохранённый черновик. После загрузки поля станут доступны.")
-    }
-}
-
-@Composable
-private fun StrategyStateCard(active: JSONObject?, dirty: Boolean, draftSaved: Boolean, loaded: Boolean,
-    savedMessage: String?, retryDraft: () -> Unit) {
-    val version = active?.optInt("version") ?: 0
-    SpectrumCard(emphasized = true) {
-                        Text(if (active == null) "Правила ещё не подтверждены" else "Действует версия " + version, style = MaterialTheme.typography.titleLarge)
-                        Text(when {
-                            dirty && draftSaved -> "Изменения сохранены как ваш черновик. Для применения нужен расчёт и подтверждение."
-                            dirty -> "Изменения пока открыты на этом экране. Сохранение черновика ещё не подтверждено."
-                            active == null -> "Рассчитайте влияние правил и подтвердите первую версию, чтобы использовать её при проверке портфеля."
-                            else -> "Подтверждённая версия используется при серверной проверке портфеля."
-                        })
-                        if (loaded && dirty && !draftSaved) SpectrumSecondaryButton("Повторить сохранение черновика", retryDraft, Modifier.fillMaxWidth())
-                        active?.optString("confirmed_at")?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
-                        savedMessage?.let { Text(it, color = LocalSpectrumPalette.current.emerald) }
-                    }
 }

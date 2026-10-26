@@ -306,6 +306,10 @@ def _claim_discovery(user: Any, now: int) -> tuple[str, int] | None:
 def _catalogue_candidate(row: dict, config: dict) -> bool:
     exchange = {"REAL_EXCHANGE_MOEX": "MOEX", "REAL_EXCHANGE_RTS": "SPB"}.get(row.get("realExchange"))
     lot = decimal(row.get("lot"))
+    mandate = config.get("mandate")
+    permitted = {"bonds": {"bond"}, "shares": {"share"}, "mixed": {"bond", "share"}}
+    if mandate and row.get("instrument_type") not in permitted[mandate["asset_mode"]]:
+        return False
     return bool(exchange and ({exchange, "RU"} & set(config["allowed_markets"]))
                 and str(row.get("currency", "")).upper() == config["reserve"]["currency"]
                 and row.get("buyAvailableFlag") is True and row.get("apiTradeAvailableFlag") is True
@@ -327,7 +331,9 @@ def _account_for_research(snapshot: dict, config: dict) -> str | None:
                 and amount is not None and amount > 0):
             account = row["account_id"]
             cash[account] = cash.get(account, ZERO) + amount
-    eligible = [(amount, account) for account, amount in cash.items() if amount > reserve]
+    selected = (config.get("mandate") or {}).get("account_id")
+    eligible = [(amount, account) for account, amount in cash.items()
+                if amount > reserve and (selected is None or account == selected)]
     return max(eligible)[1] if eligible else None
 
 
