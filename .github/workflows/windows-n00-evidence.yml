@@ -31,7 +31,7 @@ jobs:
               identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
             }
             const available=fs.readdirSync(source);
-            for(const name of ['quote-navigation-failure.png','quote-navigation-failure.xml','quote-navigation-controls.png','quote-navigation-controls.xml','portfolio-focused-observations.json','portfolio-verification.json'])copy(p.join(source,name),name);
+            for(const name of ['quote-navigation-failure.png','quote-navigation-failure.xml','quote-navigation-controls.png','quote-navigation-controls.xml','portfolio-focused-observations.json'])copy(p.join(source,name),name);
             const observations=JSON.parse(fs.readFileSync(p.join(source,'portfolio-focused-observations.json'),'utf8'));
             if(observations.release_gate_pass!==false||observations.error!=='List target not reachable: Следующая')throw new Error('unexpected_quote_result');
             const log=p.join(root,'install-api37-16384/runtime-console.log');
