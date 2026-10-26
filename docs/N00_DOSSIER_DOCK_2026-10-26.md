@@ -71,13 +71,47 @@ regression failed in both subtests with the exact unreachable-dock error
 host tests passed in45.414s with the same three platform skips; diff check passed.
 Source/APK identity checks passed. Host stage finished01:39:00Z.
 
-The focused runtime now runs all14 original portfolio cases on measured16KB,
+The focused runtime attempted all14 original portfolio cases on measured16KB,
 using exactly the preview41/debug41/driver bytes from
 [build40252011635](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40252011635).
 No APK is rebuilt for this harness-only change.
-Focused runtime results are pending; no full-matrix result is claimed.
+Runtime01:39:03Z–01:43:13Z completed with failure: discovery/ready/font1 passed;
+dossier passed the fixed dock and contextual risk/menu/event checks, then failed
+at the exact historical rating publication value. No full-matrix result is claimed.
 The external diagnostic hook preserves the first actual failure PNG/XML and
 deliberately does not report full-suite success even if all14 cases pass.
+
+## Next actual failure: historical rating publication
+
+The original assertion was:
+Exact native source record did not expose its value:
+dossier-rating-history-synthetic-rating-issue-history / Публикация:20.10.2026 13:00.
+The unchanged expected value remains required.
+
+The30-file archive is679144 bytes, SHA256
+27a9a9bf688db2af51d74eb26b82b23a1b0016ff748b50c7467de57d1cfe42d8.
+Timeweb9417611 confirmed receipt at2026-10-26T01:44:06Z under
+/var/lib/analyst-ai-build/incoming/windows-development-40255133373-1/.
+Collector and cleanup passed; the overall failed runtime status remains.
+
+Read-only [evidence40255682533](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40255682533)
+produced295731 bytes SHA256c23284022d95162216988c0fd67fe9212b3fcfc847cc06084e8a2334c1fdb630.
+All9 manifest entries and the archive were verified. The actual failure PNG
+was visually inspected: the viewport had scrolled below the rating block into
+events/news. This alone does not establish why the exact publication was missed.
+PNG52895 bytes SHA256ae3570d21df5b997b6df08d279107d64967c50fc6f1b1e4c402cf4cddc609f65;
+XML23239 bytes SHA256b51437a5805c6dd6ff89c3c316b5b9401f98894af985fc04705c528b5c121a24.
+
+[Diagnostic40256049480](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40256049480) observes the original
+record_text traversal and original coordinate tap using exact backed source
+722adbe43c8bf1604ec89c0469a4b1ff40e6119e /inventory6b793696cf0fd5cf30cfe44a19c55453a6ead01be1526ea6eeb5a0a48ea05052.
+It records existing fresh frames without replacing the requested action/value.
+Only after preserving an original failure may it scroll backwards to inspect
+whether the exact publication exists above the missed viewport.
+Wrapper SHA2564306160c725b65d563c4e4134b01cdd252ed8219836ae99df10106f359c04db8;
+external observation hook SHA2566d7defb45ffa194775177d45175a2964c20a97e5c8ae9aeaf356c2ae35ae167f.
+No app source/APK is changed and no acceptance gate is claimed by that diagnostic.
+Its result is pending. Prepared full runtime is withheld until focused cases pass.
 
 ## Continue in order
 

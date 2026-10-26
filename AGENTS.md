@@ -1,11 +1,13 @@
 ## N00 26.10.2026 — кандидат41 после подтверждённого перекрытия вкладок
 
-> **26.10.2026, N00 — первый portfolio case кандидата41 прошёл; исправлен поиск закреплённой кнопки.** Полный Windows/WSL build41 подтверждён. В40253475330/attempt2 прошёл discovery/ready/font1; dossier остановился из-за поиска нижней панели внутри списка. PNG/XML подтвердили расположение кнопки вне workspace-content. В40255133373 старый тест воспроизвёл отказ в двух вариантах, исправление прошло все1066 host-тестов (прежние3 skips). Сейчас повторяются14 portfolio cases на прежнем APK41. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_DOSSIER_DOCK_2026-10-26.md).
+> **26.10.2026, N00 — кнопка досье и проверки рисков пройдены; исследуется следующий отказ рейтинга.** Кандидат41 собран и проверен Windows/WSL. Исправление поиска нижней панели прошло1066 host-тестов (прежние3 skips) в40255133373; original discovery/ready/font1 вновь прошёл. Dossier прошёл контекстные риски и остановился на дате публикации исторического рейтинга. Архив30 файлов сохранён, PNG/XML отдельно проверены. В40256049480 выполняется наблюдение исходного нажатия и прокрутки без изменения APK. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_DOSSIER_DOCK_2026-10-26.md).
 
 Build41:40252011635 /inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
 Harness repair40255133373: base958616b, two Windows-applied files;
 inventory6b793696cf0fd5cf30cfe44a19c55453a6ead01be1526ea6eeb5a0a48ea05052.
-Host1066 passed; focused14 cases still pending. APK41 and driver7fb9ad41 unchanged.
+Host1066 passed; focused40255133373 failed at rating publication after dock/risks passed.
+Read-only evidence40255682533 verified; original traversal diagnostic40256049480 running.
+APK41 and driver7fb9ad41 unchanged. Do not apply a rating repair before its cause is evidenced.
 Do not run prepared old full40/old full41 source after this harness repair.
 Regenerate the original full41 wrapper from the exact backed repair inventory
 only after focused acceptance. No diagnostic hook in the full15-stage matrix.
