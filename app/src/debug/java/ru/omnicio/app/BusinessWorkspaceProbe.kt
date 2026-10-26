@@ -184,22 +184,20 @@ internal fun BusinessProbeFrame(disclosure: @Composable (Boolean) -> Unit, conte
             disclosure(compact)
             Box(Modifier.fillMaxSize()) { content() }
         }, modifier = Modifier.fillMaxSize()) { children, constraints ->
-            val markerConstraints = if (compact) {
-                // A narrow window needs its full height too. Cap the rail's
-                // width rather than putting a tall banner above the editor.
-                val railWidth = minOf(224.dp.roundToPx(), (constraints.maxWidth * .45f).toInt())
-                Constraints.fixed(railWidth, constraints.maxHeight)
-            } else {
-                constraints.copy(minWidth = constraints.maxWidth, minHeight = 0)
-            }
+            // The disclosure must not narrow the production editor when a
+            // taller IME appears. Keep both slots full width; the compact
+            // disclosure scrolls within at most one third of the safe height.
+            val markerConstraints = constraints.copy(
+                minWidth = constraints.maxWidth, minHeight = 0,
+                maxHeight = if (compact) minOf(64.dp.roundToPx(), constraints.maxHeight / 3)
+                    else constraints.maxHeight,
+            )
             val marker = children[0].measure(markerConstraints)
-            val left = if (compact) marker.width else 0
-            val top = if (compact) 0 else marker.height
             val workspace = children[1].measure(Constraints.fixed(
-                constraints.maxWidth - left, constraints.maxHeight - top))
+                constraints.maxWidth, constraints.maxHeight - marker.height))
             layout(constraints.maxWidth, constraints.maxHeight) {
                 marker.placeRelative(0, 0)
-                workspace.placeRelative(left, top)
+                workspace.placeRelative(0, marker.height)
             }
         }
     }
@@ -215,11 +213,11 @@ private fun BusinessProbeDisclosure(marker: String, route: String, trace: ProbeT
         .testTag("business-probe-marker").semantics { contentDescription = marker },
         propagateMinConstraints = true) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(if (compact) 4.dp else 6.dp)) {
-            Text(if (compact) "Синтетика" else "ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ",
-                style = MaterialTheme.typography.labelSmall)
-            Text(if (compact) "Запр.${trace.requests} · ош.${trace.errors.size}"
-                else "$route · запросов ${trace.requests} · ошибок контракта ${trace.errors.size}", style = detailStyle)
-            if (!compact) {
+            if (compact) {
+                Text("Синтетика · запр.${trace.requests} · ош.${trace.errors.size}", style = detailStyle)
+            } else {
+                Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                Text("$route · запросов ${trace.requests} · ошибок контракта ${trace.errors.size}", style = detailStyle)
                 if (navigation != "none") Text("Тест перехода: $navigation", style = detailStyle)
                 trace.errors.lastOrNull()?.let { Text(it, style = detailStyle) }
             }

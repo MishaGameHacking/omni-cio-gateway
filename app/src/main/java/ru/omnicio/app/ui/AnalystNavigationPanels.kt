@@ -153,7 +153,8 @@ fun AnalystNavigationPanels(
             drawerState = drawer,
             // Only the menu button opens the sheet; edge gestures belong to Android Back.
             gesturesEnabled = false,
-            modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true },
+            // A closed sheet must remain outside its own viewport, including embedded windows.
+            modifier = Modifier.fillMaxSize().clipToBounds().semantics { testTagsAsResourceId = true },
             drawerContent = {
                 // The DrawerState overload handles native predictive Back and cancellation.
                 ModalDrawerSheet(
