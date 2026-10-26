@@ -1,10 +1,10 @@
-"""Conditional dossier geometry, not measured Android or font-scale acceptance."""
+"""Conditional portfolio geometry, not measured Android or font-scale acceptance."""
 from datetime import date
 from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -297,7 +297,7 @@ class ResearchWindowTraversalTests(unittest.TestCase):
                 probe = ResearchWindowProbe(scale)
                 case = SimpleNamespace(probe=probe, day=date(2026, 10, 18),
                     history_start="2026-01-01", history_end="2026-06-30",
-                    call=Mock(), search=Mock(), prefix=Mock(), capture=Mock(), observed=Mock())
+                    call=Mock(), search=Mock(), prefix=Mock(), capture=Mock(), observed=Mock(), record_text=Mock())
                 checks = research.exercise_discovery(case)
                 self.assertEqual(probe.wrong_window_scrolls, 0)
                 self.assertEqual(probe.old_frame_reads, 4)
@@ -579,6 +579,147 @@ class ShortCompanyTraversalTests(unittest.TestCase):
                 self.assertEqual(probe.found, ["СИНТЕТИЧЕСКАЯ компания", "SYN-A", "СИНТЕТИЧЕСКИЙ счёт B"])
                 case.destination.assert_called_once_with(account=research.ACCOUNT_B, query=research.SHARE_A)
                 case.capture.assert_called_once_with("selected-holding")
+
+
+class DiscoveryComparisonComplete(Exception):
+    """Stop after the comparison section; unrelated discovery phases have tests."""
+
+
+class DiscoveryComparisonProbe(ProfileProbe):
+    """Conditional scrolling controls, not Android layout or font acceptance."""
+
+    COMPARE = "Сравнить (2/3)"
+    CLEAR = "Снять выбор"
+    IDS = tuple("discovery-compare-" + research.ACCOUNT_A + ":" + uid
+                for uid in (research.SHARE_A, research.SHARE_B))
+
+    def __init__(self, height, scale):
+        self.height, self.scale, self.offset = height, scale, 0
+        self.page, self.cleared = "search", False
+        self.chosen, self.actions, self.movements = [], [], []
+        self.read_tree = self.tree
+
+    def tree(self):
+        common = {"package": PACKAGE, "enabled": "true", "visible-to-user": "true"}
+        tree = ET.Element("hierarchy", {"display-width": "320",
+            "display-height": str(self.height + 187), "active-window-id": "23"})
+        body = ET.SubElement(tree, "node", {**common, "resource-id": research.AREA,
+            "bounds": f"[0,163][320,{163 + self.height}]", "scrollable": "true"})
+        height = 64 * self.scale
+        rows = [(250, "scope", "Поиск охватывает подключённый портфель, полученные события и материалы этого аккаунта."),
+                (650, self.IDS[0], "Выбрать SYN-A"),
+                (1000, self.IDS[1], "Выбрать SYN-B")]
+        if self.chosen:
+            rows += [(40, "comparison-open", self.COMPARE),
+                     (40 + height + 80 * self.scale, "comparison-clear", self.CLEAR)]
+        for top, resource, label in rows:
+            upper, lower = max(0, top - self.offset), min(self.height, top + height - self.offset)
+            if upper >= lower:
+                continue
+            owner = ET.SubElement(body, "node", {**common, "resource-id": resource,
+                "class": "android.widget.Button", "clickable": "true",
+                "bounds": f"[20,{163 + upper}][300,{163 + lower}]"})
+            ET.SubElement(owner, "node", {**common, "text": label,
+                "bounds": f"[28,{163 + upper}][292,{163 + lower}]"})
+        return tree
+
+    def _semantic_scroll_callback(self, area, direction):
+        if area != research.AREA or direction not in ("start", "end"):
+            raise AssertionError("Wrong discovery scroll target")
+        def move(_x1, y1, _x2, y2):
+            if ("end" if y1 > y2 else "start") != direction:
+                raise AssertionError("Wrong discovery scroll direction")
+            before = self.offset
+            self.offset = max(0, min(1400 - self.height, before + y1 - y2))
+            self.movements.append((direction, before, self.offset))
+        return move
+
+    def tap_resource(self, resource, area, direction="end"):
+        if resource not in self.IDS or area != research.AREA:
+            raise AssertionError("Wrong account or instrument selected")
+        target = reveal_resource_in_list(self.tree,
+            self._semantic_scroll_callback(area, direction), resource,
+            resource_id=area, direction=direction, for_tap=True)
+        self.tap_node(target)
+
+    def tap_node(self, node):
+        resource = node.get("resource-id")
+        if resource in self.IDS:
+            if resource in self.chosen:
+                raise AssertionError("Duplicate instrument selected")
+            self.chosen.append(resource)
+            self.actions.append(resource)
+        elif resource == "comparison-open":
+            if self.chosen != list(self.IDS):
+                raise AssertionError("Comparison must retain both exact instruments")
+            self.page = "comparison"
+            self.actions.append(self.COMPARE)
+        elif resource == "comparison-clear":
+            if self.page != "search":
+                raise AssertionError("Clear belongs to the original search window")
+            self.chosen.clear()
+            self.cleared = True
+            self.actions.append(self.CLEAR)
+        else:
+            raise AssertionError("Unexpected native comparison action")
+
+    def tap(self, text, area, direction="end"):
+        if area == "profile-tabs":
+            if text == "Активы":
+                return
+            if text == "Выплаты" and self.cleared:
+                raise DiscoveryComparisonComplete()
+            raise AssertionError("Comparison did not finish")
+        if self.page == "comparison":
+            if text != "Одинаковый период по реальным котировкам":
+                raise AssertionError("Unexpected comparison section")
+            return
+        return ProfileProbe.tap(self, text, area, direction)
+
+    def tap_visible(self, text):
+        if text == research.BACK_LABEL and self.page == "comparison":
+            self.page = "search"
+            self.return_movements = len(self.movements)
+            self.actions.append(text)
+            return
+        return ProfileProbe.tap_visible(self, text)
+
+    def find(self, text):
+        expected = "Сравнение" if self.page == "comparison" else "Найти и исследовать"
+        if text != expected:
+            raise AssertionError("Unexpected discovery page")
+
+    def reveal(self, text, area, direction="end"):
+        if self.page == "search" and area == research.AREA:
+            return ProfileProbe.reveal(self, text, area, direction)
+        if self.page != "comparison" or area != research.AREA:
+            raise AssertionError("Unrelated discovery content was not reached")
+        return ET.Element("node", {"text": text})
+
+
+class DiscoveryComparisonTraversalTests(unittest.TestCase):
+    def test_offscreen_comparison_controls_preserve_exact_selected_instruments(self):
+        for height, scale in ((269, 1), (190, 2)):
+            with self.subTest(viewport=height, conditional_scale=scale):
+                probe = DiscoveryComparisonProbe(height, scale)
+                case = SimpleNamespace(probe=probe, day=date(2026, 10, 26),
+                    call=Mock(), search=Mock(), prefix=Mock(), capture=Mock(), observed=Mock(), record_text=Mock())
+                with patch("native_label_target.time.sleep"):
+                    with self.assertRaises(DiscoveryComparisonComplete):
+                        research.exercise_discovery(case)
+                self.assertEqual(probe.actions, [*probe.IDS, probe.COMPARE,
+                    research.BACK_LABEL, probe.CLEAR])
+                self.assertEqual(probe.chosen, [])
+                self.assertTrue(probe.cleared)
+                self.assertTrue(any(direction == "start" and before > after
+                                    for direction, before, after in probe.movements))
+                if scale == 2:
+                    self.assertTrue(any(direction == "end" and after > before
+                                        for direction, before, after in probe.movements[probe.return_movements:]))
+                for uid in (research.SHARE_A, research.SHARE_B):
+                    case.call.assert_any_call(research.INSTRUMENTS_PATH + uid + "/candles",
+                        {"start": "2026-09-26", "end": "2026-10-26", "interval": "day"})
+                case.capture.assert_any_call("comparison")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-## N00 26.10.2026 — подтверждена сборка кандидата42
+## N00 26.10.2026 — проверен ремонт навигации42, runtime продолжается
 
-> **26.10.2026, N00 — собран кандидат42 для исправления портфеля при увеличенном шрифте.** Диагностика APK41 завершила14 сценариев:6 PASS/8 FAIL. Измеренные ошибки раскладки исправлены; build40266100999 прошёл1076 host tests, WSL1684 tests +1515 subtests, Android174 tests/30 suites, lint и сборку всех APK. Независимо проверены точные исходники, APK и прежняя подпись. Runtime14 portfolio cases и полная15-stage матрица4096/16384 для42 ещё не пройдены; external exact-head Sonar не выполнен. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
+> **26.10.2026, N00 — ремонт навигации42 прошёл1081 host tests.** Неизменный APK42 имеет успешную Windows/WSL/Android сборку. Его исходная диагностика40268185222 завершила14 случаев:6 PASS/8 FAIL. После измерений экранов и четырёх доказанных регрессий семифайловый Python-ремонт проверен на ноутбуке в40271124381; оригинальные14 portfolio cases выполняются. Полная15-stage матрица4096/16384 и external exact-head Sonar ещё не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
 
 Current exact build40266100999 on LAPTOP-NPSGA016 /omni-cio-ci-3:
 source inventorycd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e.
@@ -18,20 +18,32 @@ Archive1036files /68845185bytes SHA256
 c7456f981f618f900906b05d26c6c78552b69a8563bfcefd77625225b58ec185
 received by9417611 at04:07:15.8875303Z; no app source executed there.
 
-Original all14 diagnostic40262170820 on unchangedAPK41 observed6 PASS/8 FAIL.
-It is NOT full acceptance: collecting errors deliberately kept release_gate_pass=false.
-The font100 dossier/history repairs passed; font200 layouts and quote buttons failed.
-The exact original14 cases on42 and full15-stage4096/16384 are NEXT, not passed.
-Never reuse prepared40/41 runtime wrappers as proof of42. Use exact new APKs,
-source inventory, published38 baseline058e307855cad135a30bccc8a4a5bafc96638fd8400ba31fda0af07f255d0bef,
-canonical lease blobc9626f3bf90b612a71b9bbf2954d0c134aa29b22 with1200s wait.
-Keep48px targets, font200, exact account/UID/date/value assertions and all scenarios.
-First40265060473 failed before applying files (wrong transport key);40265186363
-passed host/WSL but compiler rejected missing SpectrumIconButton import.
-Both failures and archives are retained; current40266100999 repairs the import.
-Runtime generator is administrative only; do not execute app/backend/tests off laptop.
-Normal CI migration and exact-head Sonar remain unapplied/unverified. No PR,
-main update, publication42, physical-phone claim or N01 implementation.
+
+Latest tested harness:40271124381 /omni-cio-ci-3, basec2d572e.
+Seven Python source/test files were first applied on Windows and all1081 host
+tests passed75.171s, same3 skips; diff-check PASS. Four original failures were
+reproduced with2 conditional variants each before running the repaired suite.
+Source inventory5d2cd2b6f8c8d7fbec7276835634ed4cb701d2e80809cc67a59c066a692cc76b.
+Patchd1a42af907aadb5a64b9a6a12465ee0d9e60f2940b7712beb555525b095907d1.
+Original14 portfolio cases on unchangedAPK42 are RUNNING, not passed.
+Read their exact result before launching full15-stage4096/16384.
+Regenerate the full wrapper with this tested harness/source; oldc2 wrapper
+does not contain the navigation repair. Keep exactAPK42 and baseline38.
+Original focused40267647899 failed comparison; all14 diagnostic40268185222
+observed6 PASS/8 FAIL. All8 native failure PNG and23 identities were inspected.
+History-only40270073435 proved clipped tooltip8px and value above the chart;
+evidence40270560034 verified14 identities and native child ownership.
+First repair40270824697 correctly reproduced all4 original failures but host
+suite failed5 conditional fixture assertions; Android was not executed.
+Second run fixes tooltip-parent modeling and genuinely offscreen Clear fixture;
+it preserves original selection/date/tap checks and strengthens value binding.
+Keep48px targets, bothfont scales, account/UID/date/value/source assertions.
+Canonical lease blobc9626f3bf90b612a71b9bbf2954d0c134aa29b22, wait1200s;
+never delete the shared lock. App/backend/tests execute only on the laptop.
+9417611 stores runtime/evidence only. No paidAI or real orders.
+Normal CI still requires migration to laptop and baseline38; exact-head Sonar
+must remain required. No PR/main update/publication42/phone-verification claim.
+N00 remains open; N01–N11 are unimplemented, N10 needs actual trading sessions.
 
 ## N00 26.10.2026 — проверен ремонт протокола портфеля
 

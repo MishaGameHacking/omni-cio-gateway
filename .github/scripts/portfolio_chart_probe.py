@@ -127,8 +127,16 @@ def _select_history_bar(case, index, expected, *, direction="end"):
     left, top, right, bottom = node_bounds(chart)
     p.command("shell", "input", "tap", str(left + int((right - left) * (index + .5) / 14)), str((top + bottom) // 2))
     selected_day = case.history_start + timedelta(days=index)
-    p.reveal(f"Выбранный интервал: {selected_day} — {selected_day}", AREA, direction="start")
-    p.reveal(expected, AREA)
+    interval = f"Выбранный интервал: {selected_day} — {selected_day}"
+    p.reveal(interval, AREA, direction="start")
+    # The tooltip is above the chart. Its clipped bottom edge may expose the
+    # description while the value is still above the viewport.
+    p.reveal(expected, AREA, direction="start")
+    records = [node for node in p.tree().iter("node") if node.get("package") == PACKAGE
+               and node.get("visible-to-user") == "true" and interval in labels(node)]
+    if len(records) != 1 or not any(expected in labels(child) for child in records[0].iter("node")
+            if child.get("package") == PACKAGE and child.get("visible-to-user") == "true"):
+        raise AssertionError("The selected history tooltip did not expose its exact interval value")
 
 
 def exercise_history(case):
@@ -173,7 +181,8 @@ def exercise_history(case):
     case.capture("missing-observation")
     p.tap_resource("history-selection-reset", AREA, direction="start")
     params = _drag_range(case)
-    p.reveal("Движение денег", AREA)
+    for heading in ("Сравнить два периода", "События рядом с графиком", "Движение денег"):
+        p.reveal(heading, AREA)
     p.reveal("Денежные потоки в исходных валютах. Это не расчёт инвестиционной прибыли.", AREA)
     p.tap("Обсудить выбранный период", AREA)
     p.find("Ассистент")
@@ -210,7 +219,7 @@ def exercise_quotes(case):
     _first_candle(case)
     case.capture("exact-ohlc")
     p.tap("Сбросить", AREA)
-    p.tap("Предыдущая", AREA)
+    p.tap("Предыдущая", AREA, direction="start")
     p.reveal("Текущий интервал ещё формируется", AREA, direction="start")
     _tap_interval(case, "Неделя")
     failed = _candle_query(case, "week", status=503)

@@ -36,8 +36,15 @@ def _expect_preferences(case, expected):
 
 def _reset(case):
     p = case.probe
+    sections = ("Тема", "Цвет акцента", "Плотность карточек", "Движение", "Яркое освещение", "Приватность")
+    p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
+    for heading in sections:
+        p.reveal(heading, AREA)
     p.tap("Вернуть оформление по умолчанию", AREA)
-    apply = p.reveal("Применить", AREA, direction="start")
+    for heading in reversed(sections):
+        p.reveal(heading, AREA, direction="start")
+    p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
+    apply = p.reveal("Применить", AREA)
     if apply.get("enabled") == "true":
         p.tap_node(apply)
     _expect_preferences(case, DEFAULT)

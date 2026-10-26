@@ -326,5 +326,168 @@ class HistorySelectionEvidenceTests(unittest.TestCase):
                 self.exercise(**variant)
 
 
+
+class QuotePreviousReached(Exception):
+    pass
+
+
+class QuoteReflowProbe:
+    """Reset removes selected details; Previous remains before Reset in the list."""
+
+    def __init__(self, scale):
+        self.scale, self.height, self.offset = scale, 236, 0
+        self.selection = None
+        self.actions, self.movements = [], []
+
+    def rows(self):
+        import portfolio_chart_probe as chart
+        rows = [(0, "% номинала · 2026-09-26 — 2026-10-26")]
+        if self.selection == "first":
+            rows += [(100, "98.125000001 / 98.375000001 % номинала"),
+                     (200, "97.625000001 / 99.125000001 % номинала"), (300, "100 лотов")]
+        shift = 350 if self.selection == "first" else 0
+        rows += [(400 + shift, "Предыдущая"), (480 + shift, "Сбросить"), (560 + shift, "Следующая")]
+        return rows
+
+    def tree(self):
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640", "active-window-id": "52"})
+        body = ET.SubElement(root, "node", {**common, "resource-id": "workspace-content",
+            "bounds": "[56,272][320,508]", "scrollable": "true"})
+        for position, label in self.rows():
+            top = max(0, position * self.scale - self.offset)
+            bottom = min(self.height, (position + 64) * self.scale - self.offset)
+            if top < bottom:
+                ET.SubElement(body, "node", {**common, "text": label,
+                    "bounds": f"[76,{272 + top}][300,{272 + bottom}]",
+                    "class": "android.widget.Button", "clickable": "true"})
+        return root
+
+    def scroll(self, _x1, y1, _x2, y2):
+        before = self.offset
+        self.offset = max(0, min(1600 * self.scale - self.height, before + y1 - y2))
+        self.movements.append((before, self.offset))
+
+    def tap(self, text, area, direction="end"):
+        from native_label_target import settled_label
+        from profile_scroll import reveal_in_list
+        if text == "Котировки" and area == "profile-tabs":
+            return
+        reveal_in_list(self.tree, self.scroll, text, resource_id=area, direction=direction, for_tap=True)
+        target = settled_label(self.tree, text)
+        self.actions.append(target.get("text"))
+        if text == "Сбросить":
+            self.selection = None
+        elif text == "Следующая":
+            self.selection = "first"
+        elif text == "Предыдущая":
+            self.selection = "last"
+        else:
+            raise AssertionError("Unexpected quote action")
+
+    def reveal(self, text, area, direction="end"):
+        from profile_scroll import reveal_in_list
+        if text == "Текущий интервал ещё формируется" and self.selection == "last":
+            raise QuotePreviousReached()
+        return reveal_in_list(self.tree, self.scroll, text, resource_id=area, direction=direction)
+
+
+class QuoteReflowTraversalTests(unittest.TestCase):
+    def test_previous_reached_after_reset_removes_selected_details(self):
+        from unittest.mock import Mock, patch
+        import portfolio_chart_probe as chart
+        for scale in (1, 2):
+            with self.subTest(conditional_scale=scale):
+                probe = QuoteReflowProbe(scale)
+                case = SimpleNamespace(probe=probe, day=date(2026, 10, 26), call=Mock(), capture=Mock())
+                with patch("native_label_target.time.sleep"):
+                    with self.assertRaises(QuotePreviousReached):
+                        chart.exercise_quotes(case)
+                self.assertEqual(probe.actions, ["Сбросить", "Следующая", "Сбросить", "Предыдущая"])
+                self.assertEqual(probe.selection, "last")
+                case.capture.assert_called_once_with("exact-ohlc")
+                case.call.assert_called_once_with("/workspace/instruments/synthetic-bond/candles",
+                    {"start": "2026-09-26", "end": "2026-10-26", "interval": "day"}, status=200, after=0)
+
+
+class HistoryTooltipProbe:
+    """A clipped semantic parent remains visible above the chart's tap target."""
+
+    def __init__(self, scale, *, unrelated_value=False):
+        self.scale = scale
+        self.height = 333 if scale == 1 else 157
+        self.top = 198 if scale == 1 else 329
+        self.offset = 150 * scale - 8
+        self.unrelated_value = unrelated_value
+        self.commands, self.movements = [], []
+
+    def tree(self):
+        common = {"package": PACKAGE, "enabled": "true", "visible-to-user": "true"}
+        tree = ET.Element("hierarchy", {"display-width": "320", "display-height": "640", "active-window-id": "53"})
+        body = ET.SubElement(tree, "node", {**common, "resource-id": "workspace-content",
+            "bounds": f"[0,{self.top}][320,{self.top + self.height}]", "scrollable": "true"})
+
+        def node(parent, begin, end, **attrs):
+            first, last = max(0, begin - self.offset), min(self.height, end - self.offset)
+            if first >= last:
+                return None
+            return ET.SubElement(parent, "node", {**common, **attrs,
+                "bounds": f"[34,{self.top + first}][286,{self.top + last}]"})
+
+        tooltip = node(body, 100 * self.scale, 150 * self.scale,
+            **{"content-desc": "Выбранный интервал: 2026-10-22 — 2026-10-22"})
+        if tooltip is not None:
+            node(tooltip, 123 * self.scale, 142 * self.scale,
+                text="101,25 ₽" if self.unrelated_value else "901,75 ₽")
+        if self.unrelated_value:
+            node(body, 20, 60, text="901,75 ₽")
+        node(body, 162 * self.scale, 162 * self.scale + 188, **{"resource-id": "history-bars"})
+        return tree
+
+    def scroll(self, _x1, y1, _x2, y2):
+        before = self.offset
+        self.offset = max(0, min(2000, before + y1 - y2))
+        self.movements.append((before, self.offset))
+
+    def resource_tap_target(self, resource, area, direction="end"):
+        from profile_scroll import tappable_resource
+        target = tappable_resource(self.tree(), resource, area)
+        if target is None:
+            raise AssertionError("The starting chart is not actually tappable")
+        return target
+
+    def command(self, *args):
+        if args[:3] != ("shell", "input", "tap"):
+            raise AssertionError("Only the actual chart tap belongs to this fixture")
+        self.commands.append(args)
+
+    def reveal(self, text, area, direction="end"):
+        from profile_scroll import reveal_in_list
+        return reveal_in_list(self.tree, self.scroll, text, resource_id=area, direction=direction)
+
+
+class HistoryTooltipTraversalTests(unittest.TestCase):
+    def test_clipped_selected_tooltip_reveals_value_above_chart(self):
+        import portfolio_chart_probe as chart
+        for scale in (1, 2):
+            with self.subTest(conditional_scale=scale):
+                probe = HistoryTooltipProbe(scale)
+                case = SimpleNamespace(probe=probe, history_start=date(2026, 10, 12))
+                chart._select_history_bar(case, 10, "901,75 ₽")
+                self.assertEqual(len(probe.commands), 1)
+                self.assertEqual(probe.commands[0][3], "223")
+                self.assertTrue(probe.movements)
+                self.assertTrue(all(after < before for before, after in probe.movements))
+
+    def test_another_visible_value_cannot_replace_selected_interval_value(self):
+        import portfolio_chart_probe as chart
+        for scale in (1, 2):
+            with self.subTest(conditional_scale=scale):
+                probe = HistoryTooltipProbe(scale, unrelated_value=True)
+                case = SimpleNamespace(probe=probe, history_start=date(2026, 10, 12))
+                with self.assertRaisesRegex(AssertionError, "selected history tooltip did not expose its exact interval value"):
+                    chart._select_history_bar(case, 10, "901,75 ₽")
+
+
 if __name__ == "__main__":
     unittest.main()

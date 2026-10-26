@@ -48,17 +48,19 @@ class HistoryChartViewportProbe:
                       {"resource-id": "history-bars", "enabled": "true"})
         if self.selected is not None:
             selected_day = self.history_start + timedelta(days=self.selected)
-            self._row(viewport, self.chart_top - 140 * self.scale, 60 * self.scale,
+            # Compose exposes the value inside the tooltip's semantic parent.
+            tooltip = self._row(viewport, self.chart_top - 140 * self.scale, 126 * self.scale,
                       {"content-desc": f"Выбранный интервал: {selected_day} — {selected_day}"})
-            self._row(viewport, self.chart_top - 70 * self.scale, 56 * self.scale,
-                      {"text": chart.SELECTED_HISTORY_VALUE})
+            if tooltip is not None:
+                self._row(tooltip, self.chart_top - 70 * self.scale, 56 * self.scale,
+                          {"text": chart.SELECTED_HISTORY_VALUE})
         return tree
 
     def _row(self, parent, top, height, attributes):
         clipped_top = max(0, top - self.offset)
         clipped_bottom = min(self.height, top + height - self.offset)
         if clipped_top < clipped_bottom:
-            ET.SubElement(parent, "node", {
+            return ET.SubElement(parent, "node", {
                 "package": chart.PACKAGE, "visible-to-user": "true", **attributes,
                 "bounds": f"[20,{163 + int(clipped_top)}][300,{163 + int(clipped_bottom)}]",
             })

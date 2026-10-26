@@ -130,5 +130,66 @@ class AppearanceTraversalTests(unittest.TestCase):
         self.assertEqual(probe.prefs, preferences.PREVIEW)
 
 
+
+class ResetSectionsProbe:
+    """Conditional long list; actual native evidence remains a device gate."""
+
+    def __init__(self, scale):
+        self.scale, self.offset, self.height = scale, 0, 401
+        self.actions, self.movements = [], []
+        self.prefs = dict(preferences.APPLIED)
+
+    def tree(self):
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640", "active-window-id": "51"})
+        body = ET.SubElement(root, "node", {**common, "resource-id": preferences.AREA,
+            "bounds": "[56,215][320,616]", "scrollable": "true"})
+        rows = [(0, "Предпросмотр цвета, контраста и движения"), (110, "Применить"),
+                (500, "Тема"), (1400, "Цвет акцента"), (2300, "Плотность карточек"),
+                (3200, "Движение"), (4100, "Яркое освещение"), (5000, "Приватность"),
+                (5700, "Вернуть оформление по умолчанию")]
+        for position, label in rows:
+            top, bottom = max(0, position * self.scale - self.offset), min(self.height, (position + 64) * self.scale - self.offset)
+            if top < bottom:
+                ET.SubElement(body, "node", {**common, "text": label,
+                    "bounds": f"[76,{215 + top}][300,{215 + bottom}]",
+                    "class": "android.widget.Button", "clickable": "true"})
+        return root
+
+    def scroll(self, _x1, y1, _x2, y2):
+        before = self.offset
+        self.offset = max(0, min(5800 * self.scale - self.height, self.offset + y1 - y2))
+        self.movements.append((before, self.offset))
+
+    def reveal(self, text, area, direction="end"):
+        return reveal_in_list(self.tree, self.scroll, text, resource_id=area, direction=direction)
+
+    def tap(self, text, area, direction="end"):
+        from native_label_target import settled_label
+        reveal_in_list(self.tree, self.scroll, text, resource_id=area, direction=direction, for_tap=True)
+        self.tap_node(settled_label(self.tree, text))
+
+    def tap_node(self, node):
+        label = node.get("text")
+        self.actions.append(label)
+        if label == "Вернуть оформление по умолчанию":
+            self.prefs = dict(preferences.DEFAULT)
+        elif label != "Применить":
+            raise AssertionError("Unexpected reset action")
+
+
+class ResetSectionsTests(unittest.TestCase):
+    def test_reset_crosses_long_settings_and_returns_to_actual_apply(self):
+        for scale in (1, 2):
+            with self.subTest(conditional_scale=scale):
+                probe = ResetSectionsProbe(scale)
+                with patch("native_label_target.time.sleep"):
+                    preferences._reset(AppearanceCase(probe))
+                self.assertEqual(probe.actions, ["Вернуть оформление по умолчанию", "Применить"])
+                self.assertEqual(probe.prefs, preferences.DEFAULT)
+                self.assertGreater(len(probe.movements), 20)
+                self.assertTrue(any(after < before for before, after in probe.movements))
+
+
 if __name__ == "__main__":
     unittest.main()

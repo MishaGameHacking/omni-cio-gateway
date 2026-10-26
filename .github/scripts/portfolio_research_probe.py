@@ -70,6 +70,10 @@ def _rating_history(case):
                          "subject_kind": kind, "subject_id": subject, "status": status})
         case.record_fold(resource, "Публикация и актуальность рейтинга", expanded=False, direction="start")
     case.extra["rating_history"] = observed
+    # Return through the two actual records; one page search cannot span their
+    # expanded text at a large system font in a short instrument viewport.
+    for record in reversed(observed):
+        case.record_text(record["resource"], record["published_at_moscow"], direction="start")
     p.tap("Как менялся рейтинг", AREA, direction="start")
 
 
@@ -98,9 +102,15 @@ def exercise_discovery(case):
     p.find("Найти и исследовать")
     p.tap("Активы", "profile-tabs")
     case.search("SYN")
-    for uid in (SHARE_A, SHARE_B):
+    holdings = ((SHARE_A, "SYN-A ·"), (SHARE_B, "SYN-B ·"))
+    for uid, ticker in holdings:
+        # Reach the exact holding before its action in a tall result card.
+        case.record_text("discovery-asset-" + ACCOUNT_A + ":" + uid, ticker)
         p.tap_resource("discovery-compare-" + ACCOUNT_A + ":" + uid, AREA)
-    p.tap_visible("Сравнить (2/3)")
+    for uid, ticker in reversed(holdings):
+        case.record_text("discovery-asset-" + ACCOUNT_A + ":" + uid, ticker, direction="start")
+    p.reveal("Поиск охватывает подключённый портфель, полученные события и материалы этого аккаунта.", AREA, direction="start")
+    p.tap("Сравнить (2/3)", AREA, direction="start")
     p.find("Сравнение")
     p.reveal("SYN-A · SYN-B", AREA)
     p.reveal("Цены представлены в одной валюте; сравнивается стоимость единицы инструмента, не доходность за период.", AREA)
@@ -117,7 +127,7 @@ def exercise_discovery(case):
     for uid in (SHARE_A, SHARE_B):
         case.call(INSTRUMENTS_PATH + uid + "/candles",
                   {"start": str(month_before(case.day)), "end": str(case.day), "interval": "day"})
-    p.tap_visible("Снять выбор")
+    p.tap("Снять выбор", AREA)
 
     p.tap("Выплаты", "profile-tabs")
     case.search("PAYOUT")

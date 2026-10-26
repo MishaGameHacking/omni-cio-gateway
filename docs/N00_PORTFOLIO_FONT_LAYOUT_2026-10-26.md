@@ -4,6 +4,103 @@ N00 открыт. N01–N11 не реализованы. Опубликован�
 Кандидат42 /0.13.4-preview пока не опубликован; физический телефон не проверен.
 Этот checkpoint продолжает [проверки досье и истории](N00_RATING_FOLDS_2026-10-26.md).
 
+## Исходные проверки кандидата42 и измеренная навигация
+
+На исходниках c2d572e992516ed3080a22582e926754fb61262d, inventory
+cd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e,
+использованы точные APK42 из успешного build40266100999.
+Оригинальный focused [40267647899](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40267647899)
+наomni-cio-ci завершился FAILED после install/upgrade38→42/clean/launch:
+discovery/ready/font100 — Native action geometry or enabled state did not settle:
+«Сравнить (2/3)». Runtime04:10:42.213011Z–04:13:49.417434Z.
+Архив32files /276421bytes SHA256
+7b5b786851cc14ed423b450fd80c27623ff9bd7a6b5a866bd464618bb7d16c79
+принят9417611 в04:15:09.9951721Z. Evidence40268183002:
+artifact12627172643 /81675bytes SHA256
+fd68caeee8bc1ae3cf02647389b63683a8cb46eaf1f19b9f588ba05c8f5a6a40,
+проверены5 identities, PNG просмотрен. ВыбранаSYN-B, tray сравнения выше списка.
+
+Затем диагностический [40268185222](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40268185222)
+наomni-cio-ci-4, измеренные16384-byte pages, завершил все14 исходных
+независимых сценариев:6 PASS/8 FAIL. Runtime04:16:41.321333Z–04:24:35.355537Z.
+Обработчики и assertions исходные; продолжение после каждой ошибки
+НЕ является PASS исходного fail-fast suite. release_gate_pass=false,
+portfolio_cases_complete=false. Архив110files /3141426bytes SHA256
+8e28dad8a6d3ebf5d509ea9f7687391b89a44f5981f1fdc5c0f902556fc62996
+получен9417611 в04:26:12.2926267Z. Все job завершены, cleanup PASS.
+
+| Сценарий42 | Font100 | Font200 |
+| --- | --- | --- |
+| discovery/ready | «Сравнить (2/3)» вне текущего viewport | действие первойSYN-A ниже длинной карточки |
+| dossier/ready | PASS | возврат к«Как менялся рейтинг» не завершён |
+| history/ready | выбранная901,75₽ выше графика | «Движение денег» ниже текущего раздела |
+| history/partial | PASS | PASS |
+| quotes/ready | «Предыдущая» выше позиции после сброса | та же ошибка направления |
+| markets/ready | PASS | PASS |
+| appearance/ready | PASS | сброс ниже длинного списка настроек |
+
+[Evidence40269082850](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40269082850):
+artifact12626659272 /598674bytes SHA256
+445f6faeb59e4e6e68dff141a0b46a3b7f83ffd9022e2f964633ad97f92ad235,
+проверены23 identities, все8 failure PNG просмотрены.
+Клавиатура отсутствовала во всех8 отказах.
+Приfont200 видимые viewport: discovery215px, dossier/quotes236px,
+history157px, appearance401px. Они не заменяют проверку целей и точных данных.
+
+Отдельная неизменная история [40270073435](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40270073435)
+наomni-cio-ci-2 сохранила исходный отказ901,75₽ и до/после кадры.
+Runtime04:38:41.618387Z–04:41:47.357530Z, источник/APK не менялись.
+Нативный tooltip«Выбранный интервал:2026-10-22—2026-10-22» имел лишь
+[62,198][286,206] —8px у верхней границы. Число находилось выше viewport.
+При обратной прокрутке тот же tooltip стал[62,324][286,374], его дочернее
+число901,75₽ —[74,347][138,366]. Исходная ошибка не заменялась этим наблюдением.
+Архив54files /777152bytes SHA256
+8f419bc3b4b08a1e6909464f0176adaefb0684d314d02a2288c4391991892295
+принят9417611 в04:43:07.9235876Z.
+[Evidence40270560034](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40270560034):
+artifact12628496006 /280077bytes SHA256
+c8d2aa7994d11e3a10839011f076363b9d733d47e5abb965df4dc6b74622523b;
+проверены14 identities, исходный clipped и восстановленный tooltip PNG просмотрены.
+
+Подготовлен ремонт только Python-проверок; APK42 не меняется.
+Выбор сравнения привязан к account+UID и тикеру конкретной карточки; возврат
+проходит через те же записи и видимый scope поиска. История рейтинга возвращается
+через точные датированные записи. Настройки и cashflow проходят через реальные
+заголовки. «Предыдущая» после сброса ищется назад. Tooltip истории ищется выше
+графика, а сумма дополнительно проверяется внутри единственного выбранного
+интервала; совпадение суммы в постороннем узле не принимается.
+48px, font100/font200, IDs, значения, даты, источники и исходные сценарии сохранены.
+
+Первый Windows [40270824697](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40270824697)
+наomni-cio-ci-4 применил6 файлов, inventory
+76aef6e3aba2f5299763688515b6db3cf2420a000f852bfc7ed8f0dfd3603b64,
+patch5820015948b7e8cbe1d7613702e1b021142065349a9ff7a9264e8afbe4dff475.
+Все4 отдельные регрессии воспроизвели исходные ошибки — по2 условных варианта;
+diff-check PASS. Общий host suite:1081 tests /69.149s,
+5 failures (прежние3 skips), finished04:49:04.383954Z.
+Четыре отказа — старая модель test_history_chart_traversal размещала число
+соседом tooltip, хотя измеренный Android вкладывает его внутрь semantic parent.
+Пятый — условная модель сравнения уже показывала«Снять выбор», но требовала
+дополнительную прокрутку. Нативные guards не ослаблялись; Android не запускался.
+Архив14files /78961bytes SHA256
+93310bc00b1e10484f363d8eb88f0a0c7d7d4d23dad5c18395a8351ec6f78066
+принят9417611 в04:50:10.7363505Z.
+
+Условные модели исправлены по измеренной структуре и заданному сценарию:
+число дочернее точному интервалу; кнопка очистки в модели действительно
+начинается вне viewport. Прежние assertions выбора/даты/тапа сохранены.
+Семифайловый patchd1a42af907aadb5a64b9a6a12465ee0d9e60f2940b7712beb555525b095907d1
+проверен на Windows в [40271124381](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40271124381),
+triggerd8663f0fdfa01346ff6b5efdba12771de06d04d7, runneromni-cio-ci-3.
+Все4 исходные регрессии вновь доказаны по2 условных варианта.
+Все1081 host tests прошли за75.171s (прежние3 skips), diff-check PASS,
+finished04:52:42.533399Z. Новый source inventory
+5d2cd2b6f8c8d7fbec7276835634ed4cb701d2e80809cc67a59c066a692cc76b.
+Все7 применённых файлов сверены поSHA с точным проверенным transport.
+Исходные14 portfolio cases выполняются; их PASS пока не заявляется.
+Изменён только harness, APK42 и подпись сохранены.
+
+
 ## Что установлено на точном APK41
 
 Диагностика [40262170820](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40262170820)
@@ -171,9 +268,10 @@ Canonical emulator lease blob c9626f3bf90b612a71b9bbf2954d0c134aa29b22,
 
 ## Продолжение по порядку
 
-Сборка42 подтверждена; исходные14 portfolio cases и полная15-stage матрица
-на4096/16384 для этого APK пока НЕ пройдены. Подготовлен административный
-генератор точного runtime; запуск только с новым APK42 и backed source inventory.
+Сборка42 и новый Python-harness подтверждены; исходные14 portfolio cases
+повторно выполняются в40271124381. Полная15-stage матрица4096/16384 для42
+пока НЕ пройдена. После исходных14 PASS подготовить новый full wrapper с
+проверенным harness/inventory5d2cd2b6…, сохранив точные APK42 и baseline38.
 
 1. На точном подписанном APK42 пройти исходные14 portfolio cases,
    затем полную исходную15-stage матрицу Android37 на4096/16384.
