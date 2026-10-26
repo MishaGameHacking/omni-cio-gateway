@@ -1,4 +1,4 @@
-name: Inspect candidate41 dossier context failure
+name: Inspect candidate41 dossier rating failure
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,20 +11,20 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Preserve first candidate41 dossier failure and passed discovery captures
+      - name: Preserve candidate41 dossier rating failure and passed discovery captures
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');
             if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw new Error('wrong_host');
-            const root='C:/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40253475330-2/app/build/outputs/apk/preview';
+            const root='C:/actions-runner-3/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40255133373-1/app/build/outputs/apk/preview';
             const source=p.join(root,'ui-screens-api37-16384');
             const out=p.join(process.env.RUNNER_TEMP,'n00-ui-evidence-'+process.env.GITHUB_RUN_ID);
             fs.mkdirSync(out,{recursive:false});
             const identities={};let total=0;
             function copy(from,name){
-              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T01:19:01Z'))throw new Error('unexpected_file');
+              const stat=fs.lstatSync(from);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>3000000||stat.mtimeMs<Date.parse('2026-10-26T01:39:00Z'))throw new Error('unexpected_file');
               const data=fs.readFileSync(from);total+=data.length;if(total>25000000)throw new Error('evidence_too_large');
               fs.writeFileSync(p.join(out,name),data,{flag:'wx'});
               identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
@@ -34,18 +34,18 @@ jobs:
             const log=p.join(root,'install-api37-16384/runtime-console.log');
             copy(log,'runtime-16384.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
-            if(!lines.some(l=>l.includes('List target not reachable: instrument-context-actions')))throw new Error('expected_completed_failure_not_observed');
-            const report={source_run:40253475330,source_root:source,diagnostic_only:true,release_gate_pass:false,page_bytes:16384,
-              base_commit:'6b6a359dfffdb61626c6766fc5952900761b7015',verified_backup_commit:'6b6a359dfffdb61626c6766fc5952900761b7015',source_inventory:'8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9',
+            if(!lines.some(l=>l.includes('Exact native source record did not expose its value: dossier-rating-history-synthetic-rating-issue-history / Публикация:')))throw new Error('expected_completed_failure_not_observed');
+            const report={source_run:40255133373,source_root:source,diagnostic_only:true,release_gate_pass:false,page_bytes:16384,
+              base_commit:'958616b8b73d5a869aff632742c55bd155a7d82d',verified_backup_commit:'722adbe43c8bf1604ec89c0469a4b1ff40e6119e',source_inventory:'6b793696cf0fd5cf30cfe44a19c55453a6ead01be1526ea6eeb5a0a48ea05052',
               debug_apk_sha256:'925a7f8a874e70123c380c9ef2ac256c5e9be08f41c7fb53758e77f7e7dd0931',
               identities,available_files:available,native_reveals:lines.filter(l=>l.startsWith('UI_ACCESSIBILITY_ACTION=')&&l.includes(';show-')).slice(-20),log_tail:lines.slice(-100).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 candidate41 dossier context failure evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Discovery passed; first dossier native failure preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
+            await github.rest.checks.create({...context.repo,name:'N00 candidate41 dossier rating failure evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Dock and risks passed; rating history failure preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
             core.setOutput('folder',out);
       - name: Retain private synthetic failure evidence for inspection
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate41-dossier-context-16384
+          name: n00-candidate41-dossier-rating-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
