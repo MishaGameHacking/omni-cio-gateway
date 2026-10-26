@@ -12,7 +12,7 @@ import json
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'context/retransfer47-v20'
+OUT = ROOT / 'context/retransfer47-v20-r2'
 TARGET = '.github/workflows/retransfer-preview47.yml'
 
 WINDOWS = r'''
@@ -60,6 +60,10 @@ for name, identity in build['apks'].items():
     add('outputs/' + name, data)
 for name in ('signature.txt', 'alignment.txt', 'badging.txt', 'manifest.txt', 'apk-verification.json', 'native-alignment.json'):
     relative = 'app/build/outputs/apk/preview/' + name
+    # The original exporter includes this optional extra report only if present.
+    # Required signature/alignment/APK verification reports remain mandatory.
+    if name == 'native-alignment.json' and not (root / relative).exists():
+        continue
     add('outputs/' + relative, read(root / relative))
 recovery = {'schema': 1, 'kind': 'verified_retained_build_reexport',
     'build_run_id': 40392908825, 'transport_run_id': int(os.environ['GITHUB_RUN_ID']),

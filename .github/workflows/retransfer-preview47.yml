@@ -92,8 +92,10 @@ jobs:
         \ + ('original-export-receipt.json' if name == 'export-receipt.json' else name), data)\nfor name, identity in build['apks'].items():\n\
         \    data = read(root / name)\n    assert {'bytes': len(data), 'sha256': sha(data)} == identity, name\n    add('outputs/'\
         \ + name, data)\nfor name in ('signature.txt', 'alignment.txt', 'badging.txt', 'manifest.txt', 'apk-verification.json',\
-        \ 'native-alignment.json'):\n    relative = 'app/build/outputs/apk/preview/' + name\n    add('outputs/' + relative,\
-        \ read(root / relative))\nrecovery = {'schema': 1, 'kind': 'verified_retained_build_reexport',\n    'build_run_id':\
+        \ 'native-alignment.json'):\n    relative = 'app/build/outputs/apk/preview/' + name\n    # The original exporter includes\
+        \ this optional extra report only if present.\n    # Required signature/alignment/APK verification reports remain\
+        \ mandatory.\n    if name == 'native-alignment.json' and not (root / relative).exists():\n        continue\n    add('outputs/'\
+        \ + relative, read(root / relative))\nrecovery = {'schema': 1, 'kind': 'verified_retained_build_reexport',\n    'build_run_id':\
         \ 40392908825, 'transport_run_id': int(os.environ['GITHUB_RUN_ID']),\n    'original_failed_collector_job': 121827044250,\
         \ 'original_export': original_export,\n    'all_original_source_files_and_apks_reverified': True,\n    'original_build_receipts_unchanged':\
         \ True, 'new_build_or_tests_executed': False,\n    'original_archive_byte_identity_claimed': False,\n    'created_at':\
