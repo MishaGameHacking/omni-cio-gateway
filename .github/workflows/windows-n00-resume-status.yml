@@ -1,4 +1,4 @@
-name: Observe candidate47 v12 build progress on the authorized laptop
+name: Observe candidate47 v12 original JVM failure details
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -75,7 +75,10 @@ jobs:
                       raw = p.read_bytes()
                       node = ET.fromstring(raw)
                       suites.append({'name': p.name, 'sha256': hashlib.sha256(raw).hexdigest(),
-                          **{k: int(node.get(k, '0')) for k in ('tests', 'failures', 'errors', 'skipped')}})
+                          **{k: int(node.get(k, '0')) for k in ('tests', 'failures', 'errors', 'skipped')},
+                          'failure_details': [{'case': case.get('name'), 'type': failure.get('type'),
+                              'message': failure.get('message', '')[:1500], 'trace': (failure.text or '')[:1800]}
+                              for case in node.findall('testcase') for failure in case.findall('failure')][:12]})
                   report['jvm'].append({'path': str(results), 'suites': suites,
                       'totals': {k: sum(s[k] for s in suites) for k in ('tests', 'failures', 'errors', 'skipped')}})
               root = checkout / 'windows-development-40346435997-1/app/build/outputs/apk/preview'
