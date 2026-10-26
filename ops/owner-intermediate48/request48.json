@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "owner_requested_intermediate_without_full_native": true,
+  "build_request": {
+    "path": "context/portfolio-mandate48-runtime-deployment/request48.json",
+    "sha256": "bc4d9bf9933b3bcc0e3d94af074aa9549e6f5300f8e2d545ffac1e1a3c95574f"
+  },
+  "baseline_publication": {
+    "path": "context/delivery47-published/owner-preview47-public-verification.json",
+    "sha256": "0c535e6f1925649ac219f65fae688526f07c578a406f5850d285db2ab12201d5"
+  },
+  "runtime_verification": {
+    "path": "context/portfolio-mandate48-runtime-deployment/actual40404836879/verification.json",
+    "sha256": "9f5033be41137e42ec8237a2f16504351524c8eb48e2ca5d904f637fded0a530"
+  }
+}

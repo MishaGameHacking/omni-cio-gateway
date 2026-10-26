@@ -1,0 +1,78 @@
+{
+  "actual_mandate_test_evidence": {
+    "original_backend_junit": {
+      "bytes": 268667,
+      "sha256": "35722c896f3fbea6eb865a65c27015cdaa3ed65dee4077ca2a672e138ec4159b"
+    },
+    "original_linux_report": {
+      "bytes": 1471,
+      "sha256": "94abf796ddb08f8634744fbc3c1423669fba62fc494afe35254c00c9afe7f1f3"
+    },
+    "original_mandate_test_count": 21
+  },
+  "apk_published_or_installed": false,
+  "archive": {
+    "bytes": 69697259,
+    "sha256": "2c6ef4e2f6f176d237f97871ced48d9ab7b22a20486f2c852c5e25d7abfcfa62"
+  },
+  "build_report": {
+    "bytes": 60205,
+    "sha256": "3d0d4f59f709054469cefa274f3bb92d7ba840d10a5f9a2e68bcdc77d535c72f"
+  },
+  "caddy_or_service_configuration_changed": false,
+  "database_or_environment_files_opened_by_deployer": false,
+  "dependencies_changed": false,
+  "full_android_runtime_matrix_passed": false,
+  "full_windows_check_and_build_passed": true,
+  "help_deployed": false,
+  "idempotent_verification": false,
+  "kind": "portfolio_mandate48_exact_four_file_deployment",
+  "normal_owner_startup_has_possible_database_effects": true,
+  "observed_at": "2026-10-26T21:31:10.259465+00:00",
+  "other_services_restarted_by_deployer": false,
+  "owner_service_restart_performed": true,
+  "physical_phone_verified": false,
+  "public": {
+    "browser_pixels_verified": false,
+    "callback_handoff_verified": true,
+    "callback_headers_verified": true,
+    "callback_http": 200,
+    "callback_style_sha256": "d20328944ed84302094181fdffee0b5d79522034eb8af980f487382ddebef40a",
+    "callback_theme_verified": true,
+    "health_body": {
+      "status": "ok"
+    },
+    "health_http": 200,
+    "login_start_requested": false,
+    "login_transaction_created_by_verifier": false,
+    "owner_denial_requested": false,
+    "retired_enrollment_http": 410,
+    "update_policy_sha256": "3633f68b8c000ee833c4a56f3ef3336f4ddd24b3c76e23bff925a0421a9701be",
+    "update_version_code": 47
+  },
+  "public_host": "analyst-ai-2941515.twc1.net",
+  "runtime_server_id": 9417611,
+  "runtime_sources": {
+    "autonomous_controller.py": {
+      "bytes": 35571,
+      "sha256": "926d10f0ee53b17a8c77fc90b6e7d07a8cf656f7e0ab9a3bb344fa063e3bbff5"
+    },
+    "portfolio_mandate.py": {
+      "bytes": 4743,
+      "sha256": "a8647933e107a3e1427438999b266869ae9be456786710cea56f997d57459c78"
+    },
+    "purchase_policy.py": {
+      "bytes": 12689,
+      "sha256": "53a264d7d091125c759b1d0cbf7d49542be3e27ca44c3661ea56b3d03aec0040"
+    },
+    "volume_state.py": {
+      "bytes": 41301,
+      "sha256": "0aeea80a5043a936619a302c415455542f0b7c7ddc62a8179c33a753823779bd"
+    }
+  },
+  "schema": 1,
+  "source_backup_commit": "fd2a307220158b0fc2055cfb0eb4fd9fc51d8d4b",
+  "source_sha256": "26d1ccf6b9685925291edb968f17ef091b145831d7c6ca791e5e942246af49fa",
+  "status": "deployed_verified",
+  "trading_or_model_routes_called": false
+}
