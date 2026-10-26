@@ -2,13 +2,15 @@
 
 Administrative preparation only. No46 application, build, runtime or publication
 has occurred. The68-file source transport is pinned to actual successful
-Windows40323002197 and source backup a92e690a49cec440b4de0b1913b04264e17b0e73.
-Source code inventory:27c1b54fa78e1618fe93e098f581fadf48e1f22267ea8af98c872a395a8c00f3.
+Windows40327866834 and source backup 5f724e18007cfbf437367e87a17dde1b37bb8921.
+Source code inventory:d3f4bbb6a6317e18f2b4b6e05f7a0f3b45c1423f12a47164c5b8c9776562f8af.
 
 The original frozen packages remain in ops/frozen-theme46. This core inherits
-only the proven45 header repair and the currently re-tested viewport clipping;
+only the proven45 header repair and the native-confirmed IME viewport clipping;
 39 other core files, palettes, tests and all other packages remain unchanged.
-The compact debug disclosure fix remains in baseline45 and is not overwritten.
+The compact debug disclosure fix and strict wide-console framing parser remain
+in baseline45 and are not overwritten. Full34 rerun40331453486 is in progress;
+the earlier32/34 result is not a complete acceptance receipt.
 The bundle is base64(zlib(JSON)); every file has exact old/new hashes and sizes.
 The two generators change only the prior generator path/identity pins.
 
