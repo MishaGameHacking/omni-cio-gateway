@@ -31,9 +31,9 @@ jobs:
         \ st=p.lstat();assert stat.S_ISREG(st.st_mode) and st.st_nlink==1 and not getattr(st,'st_file_attributes',0)&0x400\n\
         \ with p.open('rb') as f:\n  f.seek(max(0,st.st_size-18000));tail=f.read().decode('utf-8',errors='replace').splitlines()\n\
         \ lines=[line[:1500] for line in tail if re.search(r'^Ran \\d+ tests?|^OK\\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|\\\
-        bpassed\\b|\\bfailed\\b|\\bERROR\\b|Error:|Exception:|LINUX_GUEST_STEP=|LINUX_GUEST_RESULT=',line)]\n out.setdefault('test_summaries',{})[p.name]=lines[-10:]\n\
-        print('N00_BUILD_OBSERVATION='+json.dumps(out,ensure_ascii=True),flush=True)\ntarget=pathlib.Path(os.environ['RUNNER_TEMP'])/'n00-candidate43-progress.json'\n\
-        target.write_text(json.dumps(out,indent=2),encoding='utf-8')\n"
+        bpassed\\b|\\bfailed\\b|\\bERROR\\b|Error:|Exception:|^> Task|^e: |^w: |LINUX_GUEST_STEP=|LINUX_GUEST_RESULT=',line)]\n\
+        \ out.setdefault('test_summaries',{})[p.name]=lines[-10:]\nprint('N00_BUILD_OBSERVATION='+json.dumps(out,ensure_ascii=True),flush=True)\n\
+        target=pathlib.Path(os.environ['RUNNER_TEMP'])/'n00-candidate43-progress.json'\ntarget.write_text(json.dumps(out,indent=2),encoding='utf-8')\n"
     - name: Retain bounded observation
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
