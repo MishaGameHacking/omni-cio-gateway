@@ -1,0 +1,62 @@
+name: Observe current N00 build and retained theme packages
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/windows-n00-resume-status.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read only task-owned build receipts and package names
+        shell: 'py -3 {0}'
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: utf-8
+        run: |
+          import datetime, hashlib, json, os, pathlib, re, sys
+          assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
+          report = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'host': os.environ['COMPUTERNAME'], 'build_run_id': 40301089324,
+                    'build': [], 'theme_packages': []}
+          for suffix in ('', '-2', '-3', '-4'):
+              runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
+              state = runner / '_temp/analyst-development-40301089324-1'
+              if state.is_dir():
+                  item = {'state': str(state), 'files': {}}
+                  for name in ('windows-development.json', 'controller.json', 'export-receipt.json',
+                               'source-after-patches.json', 'source-final.json', 'applied-patches.json'):
+                      p = state / name
+                      if not p.is_file() or p.is_symlink():
+                          continue
+                      raw = p.read_bytes()
+                      assert len(raw) <= 4 * 1024**2
+                      value = json.loads(raw)
+                      if name.startswith('source-'):
+                          value = {k: value[k] for k in ('source_sha256', 'complete_source_sha256')}
+                      if name == 'windows-development.json':
+                          for step in value.get('steps', []):
+                              step.pop('command', None)
+                      item['files'][name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': value}
+                  item['summaries'] = {}
+                  for p in state.glob('*.log'):
+                      if p.is_symlink() or not any(k in p.name for k in ('host-tests','tools-tests','node-tests','gradle','linux','failure')):
+                          continue
+                      with p.open('rb') as f:
+                          f.seek(max(0, p.stat().st_size - 20000))
+                          lines = f.read().decode('utf-8', errors='replace').splitlines()
+                      item['summaries'][p.name] = [x[:800] for x in lines if len(x) < 1000 and
+                          re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|Error:|Exception:', x)][-10:]
+                  report['build'].append(item)
+              checkout = runner / 'omni-cio-gateway/omni-cio-gateway'
+              if checkout.is_dir():
+                  for directory in checkout.glob('windows-development-patches-*'):
+                      if directory.is_symlink() or not directory.is_dir():
+                          continue
+                      for p in directory.iterdir():
+                          if p.is_file() and not p.is_symlink() and re.search(r'theme|native46|candidate46|publisher45', p.name, re.I):
+                              report['theme_packages'].append({'path': str(p), 'bytes': p.stat().st_size,
+                                  'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
+          print('N00_RESUME_OBSERVATION=' + json.dumps(report, ensure_ascii=True))
