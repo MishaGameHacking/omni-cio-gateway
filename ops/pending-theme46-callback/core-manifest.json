@@ -1,0 +1,433 @@
+{
+  "schema": 1,
+  "kind": "theme46-core-prepared-source",
+  "frozen": true,
+  "application_or_tests_executed": false,
+  "repository_applied": false,
+  "source_file_count": 40,
+  "existing_file_count": 30,
+  "new_file_count": 10,
+  "files": [
+    {
+      "path": ".github/scripts/profile_ui_probe.py",
+      "old_sha256": "b61f6b062bcec76078da8de46d30d5cfc1b395a1bf854096f11f5d18637d455c",
+      "old_git_blob": "219fa696daa1dc42d872ad08935c7ab0fa684a10",
+      "old_bytes": 33588,
+      "new_sha256": "39b514be7837256de258e2b3a014a387a99f37f46c1c20ed03350f90c2e08840",
+      "new_git_blob": "dccae823358e05249850ee7ea1877d9df20d9fd5",
+      "new_bytes": 33588
+    },
+    {
+      "path": ".github/scripts/tests/test_android17_live_spectrum.py",
+      "old_sha256": "ee7c103e1be172a43ba7b6e348bbe37fa46d2edbe87c4c8d20b290438998b790",
+      "old_git_blob": "049087acff30b2b368b3703a187eab5db66b3b34",
+      "old_bytes": 7591,
+      "new_sha256": "7d3d8d724ec3b5ac1549266fd96ff1b8ae65deee2b94cc45d04e8e9134ddb0bb",
+      "new_git_blob": "b533b88c4d4e78a8c29191b506886f89d047c099",
+      "new_bytes": 7674,
+      "old_bytes_source": "candidate45 retry1 reviewed 0a52b20c3374bd78291f847983eca5186a4745f8985cbb0301c8e165d6f450ee; version45 retained pending union46 bump"
+    },
+    {
+      "path": ".github/scripts/tests/test_spectrum_contrast.py",
+      "old_sha256": "f456319c86b624affe0163591b4f8d98807c2ed8a0ea0c2d14cfe18c92609ab6",
+      "old_git_blob": "d4d32f5d6440c1dd10aed7e5b015f965318b70e2",
+      "old_bytes": 2171,
+      "new_sha256": "55c63b61d9b112dc5c62e27e6a27383370293da8a9ea990c264f5f8c8f5c7aed",
+      "new_git_blob": "3c64804ddb7a787de6861b4c38e72b5adcc43b22",
+      "new_bytes": 3798
+    },
+    {
+      "path": ".github/scripts/tests/test_spectrum_foreground.py",
+      "old_sha256": "c6ae9c9998885b48d0889af98666b78b57d045ac0e4df1b06839d508940658d1",
+      "old_git_blob": "55213965c1db52a9d80d8ec690409438fb2ff358",
+      "old_bytes": 2806,
+      "new_sha256": "92404d472ea3eb3b846d24dcce6ca0e3141ebdae5c680f5fb81c6eb01eb44768",
+      "new_git_blob": "0da1cad97cc27da9467c69b5ad6ff40c70c760cf",
+      "new_bytes": 2807
+    },
+    {
+      "path": ".github/scripts/tests/test_spectrum_production_tokens.py",
+      "old_sha256": "2eec573bf9db0fee8955400c2fa4b9bddb5cfeefbbbe82183e96deb618888a05",
+      "old_git_blob": "d3deb57f1e16ec263f1584fc0779421fb93db45e",
+      "old_bytes": 6619,
+      "new_sha256": "033346f52732ccce4dcc2261daed2a66b6b93333f803f06982540aaef25e22e9",
+      "new_git_blob": "b91487fc89b407104162e472e0579349d9edab0c",
+      "new_bytes": 12402
+    },
+    {
+      "path": ".github/scripts/tests/test_theme_state_evidence.py",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "5e6832c7c2eabfbc50fabfc08befc79ead7d46dc1448a2673539d68b6760cafa",
+      "new_git_blob": "80aefef5f227aab8fb1c00780e8d10f8c5338f59",
+      "new_bytes": 28957
+    },
+    {
+      "path": ".github/scripts/theme_palette_expectations.json",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "4fb4aa65c080eeaf705398d4879ebee6ed8836bc9d17aece12d5b26627e0a9cc",
+      "new_git_blob": "5db1ae40daa9ee05753987ead1a0f8113c99bc8d",
+      "new_bytes": 16754
+    },
+    {
+      "path": ".github/scripts/theme_state_evidence.py",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "db53c575ce7de05a4adb22d88c3f7ec9bd9bffa790038bfa697e6b17603c64fa",
+      "new_git_blob": "2fd809ac4cda5985d23c77b1be2e93dd2e541324",
+      "new_bytes": 58008
+    },
+    {
+      "path": "app/src/debug/java/ru/omnicio/app/ProfileUiProbeActivity.kt",
+      "old_sha256": "1bf301b726607746d7c236a066b63726eb5484670b0865d65a519601d0b169e4",
+      "old_git_blob": "930cd45785088eb22f6679ea1c96abddeb4600d2",
+      "old_bytes": 7443,
+      "new_sha256": "24f782bb97be34640cb230ac437d2b6250b6e30c24488cec91023c36be181ddc",
+      "new_git_blob": "585a17ec557fe30729bc923c83192ea1f191795f",
+      "new_bytes": 8260
+    },
+    {
+      "path": "app/src/debug/java/ru/omnicio/app/ThemeStateProbe.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "cf60d57e09d2994fb7571ffc281569b21fd8e5c7a8921dc870d47c0e586f9193",
+      "new_git_blob": "6d5cc604113343caf5e5dce5eea77d15e53cbd0b",
+      "new_bytes": 21510
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/AnalystBottomBar.kt",
+      "old_sha256": "5e52cef551af74fb81b895809e05cc1806098c67026cbf27d25d1c475c02e2ae",
+      "old_git_blob": "45bad35dd60149ff43fe04c2ee335edf44fc2c7d",
+      "old_bytes": 8072,
+      "new_sha256": "5868bfd6d0d0730ddeadf89680a60bf2f44525014d7d778a6a38fc563320c94b",
+      "new_git_blob": "af0b87c2d7540272768f3fe50add49615df5015c",
+      "new_bytes": 8153,
+      "old_bytes_source": "candidate45 retry1 reviewed 0a52b20c3374bd78291f847983eca5186a4745f8985cbb0301c8e165d6f450ee"
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt",
+      "old_sha256": "50d085aa2c7d6d1ca7d670247175e5d0fda42c24349e6e3fd1e58abb138fe168",
+      "old_git_blob": "d2cd6afb97b4129439fdf9990982c9ff5545a386",
+      "old_bytes": 9916,
+      "new_sha256": "2a85268644052cc5e0b467d1de4cc9afbcb24a2083941de99723218521debab6",
+      "new_git_blob": "7d648703ba7e1a3194fcd8bb476596e39453750a",
+      "new_bytes": 10754,
+      "old_bytes_source": "Windows40323002197 applied source; exact backup/full build/native pending"
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisCards.kt",
+      "old_sha256": "e2e70804e3ec3f2ad9002f165fcf3ac7f4bedbafc242138de5a0f3ef70093ff9",
+      "old_git_blob": "b7dac38ffdd51dddaf44a01d53c7491534def8d8",
+      "old_bytes": 18572,
+      "new_sha256": "4b16274eb242c87ff76bdc3cc90f765bc2c25ca3fceae7e05e10291de660cff6",
+      "new_git_blob": "d8bd51d6617cb0b1dc7540e1436e47ec854f276c",
+      "new_bytes": 18720
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt",
+      "old_sha256": "e13065f64e829139a5d5f1ce2fe95d2ce7ae27bd9c2cd19c16b0232f6e7b17a5",
+      "old_git_blob": "d5816666866a16a163d3347357282edf10085fd2",
+      "old_bytes": 12737,
+      "new_sha256": "75347bc093dad16f6f5e3dd21823d05e506608487ab968c27eca3759d8c8cf69",
+      "new_git_blob": "e62e6284c356977a956ae5e7f4aad644cdb53ef4",
+      "new_bytes": 12739
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt",
+      "old_sha256": "8b16d9f1d892438925163a93acb2053a53a10f547279e6b48704a3e0e967d1cc",
+      "old_git_blob": "4c9a8dabd39af76e59c91b246f38c33336d3456c",
+      "old_bytes": 7793,
+      "new_sha256": "c5e26ccbcf6601b91c02a48add175c0b56f690cbb47cb16cefaeeab14115d177",
+      "new_git_blob": "344e6e55ae44951ca359379ee7885db92df7b277",
+      "new_bytes": 7889
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt",
+      "old_sha256": "95c8d64271485a09b312d72035bdee0d5f15f58ac23c8cce7f7992a7b0a3bf55",
+      "old_git_blob": "b5135b70ac48d5da2ac4d20d893582473e1a2e00",
+      "old_bytes": 21078,
+      "new_sha256": "87ba3f8375b1c445e9d980486a11fad6286a33ab704a4b31da5e4c1c09d5948e",
+      "new_git_blob": "a18bd10294baa7c33855bc5062095b17cab8b428",
+      "new_bytes": 21134
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioComponents.kt",
+      "old_sha256": "34c91e8b37b45b225840488fa14f43f9080bb41b104491272b58144566547887",
+      "old_git_blob": "6cfd24d4bf6e4883fc17d34aaada34afb941864c",
+      "old_bytes": 15347,
+      "new_sha256": "02ef810b450a19a5023dd4551453854f6ca8b70dfc50109795de02d7995f4dcb",
+      "new_git_blob": "e29a5fbb9ed46c8bc3c03e7826e1eb5ffde891f4",
+      "new_bytes": 15131
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt",
+      "old_sha256": "2d6a6f925791590bd4029d9c5880ff7ca199a3f9a47e49de7d307df7e5e0410e",
+      "old_git_blob": "befc5e74678275fd3a5e849350c79a7945592d36",
+      "old_bytes": 18002,
+      "new_sha256": "332b159e052387dddc38bd7fed3cb708528ed79166563b47c7531eab664b3fdf",
+      "new_git_blob": "eff4bda7d1cf74a09263eab24438beb6b3599bc9",
+      "new_bytes": 18061
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/FlatArtwork.kt",
+      "old_sha256": "3d1a29fa9e5fa5e052e3616aa3d338e612d5c85e43e15a883004e0e6bf652fa3",
+      "old_git_blob": "17a8ae5e8d3253791b779a6c8bd696b69f84a232",
+      "old_bytes": 12237,
+      "new_sha256": "b4b42e7aff7142d0b7084375e6a9f08c0ec7d01e336154de8955f5e57e6d0510",
+      "new_git_blob": "f579e6ba5bf1e7327c9dd8f147aa18443f988b4c",
+      "new_bytes": 14681
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt",
+      "old_sha256": "00ffe65419481ffc3d830aafffa926e772bfb60839601ea06ecc4de9515420c3",
+      "old_git_blob": "8fc8f51081df96977a5ac5f44bbc2fd21ea18bcb",
+      "old_bytes": 3801,
+      "new_sha256": "15b078a44ce0d8b1cd38d37c849f884770aca2a5f50ef4c89cfdef1d8ec1994a",
+      "new_git_blob": "f990a5462b094eccc32304a9d548b1769e57fbce",
+      "new_bytes": 3924
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialColors.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "2662c96857324fb91d022dc1d5e11c8040219ab5d04ef982cb9cbb5af6328d03",
+      "new_git_blob": "b8471538c32cac8861a4e85af304916af69f3c71",
+      "new_bytes": 4104
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt",
+      "old_sha256": "c9ffb88d3aed284ab88610034a05874e932d9b55ddc2323e613493df83f847a9",
+      "old_git_blob": "cb8cb54a2fa656d659adc49bf08725fd3e09f1f2",
+      "old_bytes": 11376,
+      "new_sha256": "6f3df684f0d5768bb736ab1028fdf1401151f934c1a5c0d2b741be5e93691997",
+      "new_git_blob": "f58386f57b3db27f9f6a55b9ae06957e44dd1bf6",
+      "new_bytes": 11697
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialModels.kt",
+      "old_sha256": "b24250605d79b67883efd37299dd2483240ab101087f88126b3bd81cc0c3109c",
+      "old_git_blob": "31f7a2e5499de607837bd7dfc467a8d0bb345d23",
+      "old_bytes": 4188,
+      "new_sha256": "ac6639c2eb63b5bf55748e4fc2a6234b1153d0811d6923c4811f165a958ed817",
+      "new_git_blob": "84cab4c1226e5f04598bd670f289fc2fde07c951",
+      "new_bytes": 4359
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt",
+      "old_sha256": "6f7eebe86e3cf8ef0583338e1378bdb812dc2baf61e2a18a57d5e4fec4f58d98",
+      "old_git_blob": "89a605611d97e2e523f9bba63f5780e8a12397de",
+      "old_bytes": 7783,
+      "new_sha256": "376e226b70933dd8291dd991428d108ecf088b0a783b6683dc41ccd404feae43",
+      "new_git_blob": "b1ad35500570c1c1570d08aace3566a3442da417",
+      "new_bytes": 7839
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAssetMark.kt",
+      "old_sha256": "c803fd01f54fa1a5b392b54b85be3ec53adc9b5306cd3c0370b419103964b109",
+      "old_git_blob": "058b84c8a827f1b0e4ba746db8546b43436b12fb",
+      "old_bytes": 1664,
+      "new_sha256": "f5501302ad9830f758f1af7bf5bc4c6a78430e698c6f29b2b9b1ab9822448d93",
+      "new_git_blob": "0a5584bb0e6373276dfe9395ee0a68e8767aea24",
+      "new_bytes": 1705
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumCalendarColors.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "2ee0f4e2672e2482121180d2e9ddd74dbff9b6cea7f748853842ada9d9f7d67a",
+      "new_git_blob": "9e978648fc7a71d79779c53f08eef8791f32b921",
+      "new_bytes": 3042
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt",
+      "old_sha256": "d434d100da1fa97c7cf83c58c8e2bda6e95b93508ae74eff04a5c7ed365a5c1e",
+      "old_git_blob": "c8dc7f4d608b642288b2e11515a9d444d567dc15",
+      "old_bytes": 11445,
+      "new_sha256": "0fec8446b279a3d5b9f44f7e2e43487e7474a316828cff1f86b608f79c8a55f1",
+      "new_git_blob": "3080f6ff294501f5e1d491a65dada91f343e83a0",
+      "new_bytes": 13343
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumIcon.kt",
+      "old_sha256": "2169702f8cf4eeb648f0d4bd55560372bbcc34f8a2e7f55ddc94ea617db1e040",
+      "old_git_blob": "77fcaac52e4ed79517766ae745cf814dd251cb48",
+      "old_bytes": 2190,
+      "new_sha256": "bb065b35192a31eca3ee4c777636a1593bac93fc6358d0cbfd7b70270bfb76b9",
+      "new_git_blob": "53adfcf3127f9efb8bf0d8c6487b3425a6fe435a",
+      "new_bytes": 2221
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt",
+      "old_sha256": "cacb220b228075c2536ddbac97545dceb1f00e871d1dae6f9c361effb7c6550a",
+      "old_git_blob": "c8b14fcc3e01022d41e86845bbf43833ff2d9c0a",
+      "old_bytes": 3971,
+      "new_sha256": "b821bb1d2d6005caf3e5efebbbfe8610f1015c41bc1bd6aadf62923e4687651d",
+      "new_git_blob": "03df8b17cf03bf7d44aab8692c225392f44ce213",
+      "new_bytes": 3979
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt",
+      "old_sha256": "ecff41072feef83c74c3490ff1d069c7a247828c447706d1f576efd500ec5299",
+      "old_git_blob": "b48c34e31f33d239ab5a166684b61e9eb45fe8cc",
+      "old_bytes": 3967,
+      "new_sha256": "c2459acdfddd865eaa2f0d385b69fe956deff6b2a75432f4d2a82903b44caeae",
+      "new_git_blob": "e58adb06cc3de9c499600debd3edb88d2db3c70c",
+      "new_bytes": 5644
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTabs.kt",
+      "old_sha256": "51599f1211c2630451a17b5ea1d2e4efbd3521e0cf8f39b0e23ffac8ca18c145",
+      "old_git_blob": "a6dc5d3c26442a874941a65b2e0dd1ec3e85cf0c",
+      "old_bytes": 5495,
+      "new_sha256": "0d957d2a5f5e3f8431ef7dbb78035a222ec531690fc13d8ce61f4818cc2af933",
+      "new_git_blob": "80c610ff3bef4e32541ead4b7fbb8b65eb7c5b4e",
+      "new_bytes": 5557
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt",
+      "old_sha256": "eb322c69f83a4e478983799be9795008ec86a1829d9a554ce7a02c0eb2acf2a9",
+      "old_git_blob": "9cdb1a8c72a752dfaa6d2db111812142115f0a37",
+      "old_bytes": 5045,
+      "new_sha256": "c2ef5231fa55251dc75d4963ecba02279de6d838bb5afa5d788fbcd772ea197b",
+      "new_git_blob": "85397715ceea54757a1eb5598463de880c42d5ce",
+      "new_bytes": 5169
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt",
+      "old_sha256": "64724be9830c0d17bcb05707d9b3bae4a2eea801d6238a6e64b1687355297cf6",
+      "old_git_blob": "cffc3796cfe4a9f3d607b4cd84a00e28307a92d9",
+      "old_bytes": 11889,
+      "new_sha256": "26a62e9a50bba8796b04443a7f4794770b038e2b9b3f341445a52c32ac876026",
+      "new_git_blob": "cd1587ac8132a50835b1399f3ece91a1d52fb22f",
+      "new_bytes": 13066
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "64fb359e451f8503f98ca63cc766d60283471728411a4063ef70ae91ea1336da",
+      "new_git_blob": "06d709edaa8c0cc21749c47c3cc232ca6bc436ae",
+      "new_bytes": 8504
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/theme/AnalystTheme.kt",
+      "old_sha256": "32757f21b22fca3d492a7aec56a406b8020ef3a99c3664787ed490fc3a35ced1",
+      "old_git_blob": "ee93c641393ca1a0cf3bfa8bcfb18a9a6d648bb9",
+      "old_bytes": 11170,
+      "new_sha256": "1c6ce52f1581c21a5e782a5a94caa51963a29417aed13bb8fb5616f0d3ab17a4",
+      "new_git_blob": "7bcf8a446776ae77cfa0d1dc7400fff38ead14c3",
+      "new_bytes": 9544
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt",
+      "old_sha256": "5e1e6c210c11ae1f643e153bd0f0d7e291b203e36db071cf8fe9121954ef13e0",
+      "old_git_blob": "780cda78725b1e119f72302913d4328eeb685b59",
+      "old_bytes": 11771,
+      "new_sha256": "20190c9dd62a31763278bd710d20e26d17b3cf5807c099ea6cbf68daabfdc899",
+      "new_git_blob": "edcc3ec6ae892b586dd1218d980a37382d65d260",
+      "new_bytes": 12234,
+      "old_bytes_source": "candidate45 reviewed-files 5b38c63c09e578088965f93dbc6a44fc0a79953d63d6e6bb34a83a67c9320ca8"
+    },
+    {
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceControls.kt",
+      "old_sha256": "4f63c01ac0d1704738d978593cebfdf67ced48011650536b6a1529efa5932d10",
+      "old_git_blob": "2ea2cb74c7365c9e70ab89035ee756813f5f3253",
+      "old_bytes": 3664,
+      "new_sha256": "f708730470200cdbe251c950796754236d17c95fae0e46d6b1225e6391a1c2ff",
+      "new_git_blob": "2f41d89c78c7ca7626a9cea146732b9a9f1e2c8f",
+      "new_bytes": 3820
+    },
+    {
+      "path": "app/src/test/java/ru/omnicio/app/ui/spatial/SpatialColorsTest.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "9897cd256cbe32b8ed5b62174553965226fe6f49fa0c284999431f5095001da0",
+      "new_git_blob": "55c0658a100afc093ee0448871aea38e71825114",
+      "new_bytes": 6075
+    },
+    {
+      "path": "app/src/test/java/ru/omnicio/app/ui/theme/AnalystColorsTest.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "11a1506775d30d5a7fb9bc60f548e3c4b28fb2fc1f637df7e99a10ec53d30e0c",
+      "new_git_blob": "61beeb876f3f47fba781ea0d2dba34f9ea892600",
+      "new_bytes": 5909
+    },
+    {
+      "path": "app/src/test/java/ru/omnicio/app/ui/theme/DisplayedThemeTest.kt",
+      "old_sha256": null,
+      "old_git_blob": null,
+      "old_bytes": null,
+      "new_sha256": "774e3f6fc6d17607e0e26fc08b8b7ade54532742f7e10c8bbc999b85741a05b8",
+      "new_git_blob": "154ef2213383894ed97b8200cdaea5daaf439fa4",
+      "new_bytes": 1505
+    }
+  ],
+  "candidate_inventory_sha256": "3783566aa9319fe298c393c7b8091e07192a2994a12dbb15eab720702679c4df",
+  "candidate_inventory_encoding": "sorted path + NUL + new_sha256 + NUL + decimal new_bytes + LF; not a runtime repository inventory",
+  "patch_sha256": "25907f0751ffb634b5fef39d403afa9a0d7972f33a248e269c0fcb8ea357f686",
+  "patch_bytes": 248535,
+  "approved_palette_sha256": "bec4160ad8794cc251968dd3bc8199dcedcd188d5796eff2e0c3cd320845cf95",
+  "effective_accent_roles_sha256": "c48903a7b523f5dda7197de55b783903da331794a15a23707ee32a268ec27ba7",
+  "coverage_matrix_sha256": "95714220db27b72e9725126f321828bbc39bfb87dc4f970c853312f523bbf4f3",
+  "prepared_jvm_tests": 16,
+  "prepared_new_native_host_tests": 30,
+  "native_color_capture_count": 52,
+  "native_lifecycle_case_count_in_separate_slice": 4,
+  "original_case_ids_counts_schemas_changed": false,
+  "golden_pngs_changed": false,
+  "saved_preference_keys_or_enum_values_changed": false,
+  "required_base": "Actual successful45 Windows source backup; exact old bytes must match this manifest after permitted version-oracle union. No final45 backup commit is inferred here.",
+  "navigation_production_base_review_sha256": "0a52b20c3374bd78291f847983eca5186a4745f8985cbb0301c8e165d6f450ee",
+  "router_lifecycle_delta_sha256": "393d8b99b39ca378004a2d9253c6f5edfeb03f6fe5942a3d95c7364445313a73",
+  "dependencies": [
+    "theme46-assets ApplicationThemeMode.kt, AnalystApplication.kt and main/debug manifests",
+    "theme46-lifecycle ThemeLifecycleProbe.kt, theme_lifecycle_probe.py and its tests; actual router delta merged",
+    "parent-owned version46 merge into test_android17_live_spectrum.py (currently45/0.13.7)",
+    "unchanged inherited45 navigation/owned-emulator/native driver machinery"
+  ],
+  "version_managed_paths": [
+    ".github/scripts/tests/test_android17_live_spectrum.py"
+  ],
+  "static_reviews": [
+    "ci_investigation production Kotlin and finite native evidence: no remaining blockers after corrections",
+    "quote_diagnosis snapshot reuse and independent font/app cleanup: no remaining blocker",
+    "root source and critical52-frame/snapshot/interior paths: no new blocker"
+  ],
+  "runtime_acceptance_claimed": false,
+  "windows_execution_required": true,
+  "original_frozen_manifest_sha256": "e46e5485ca4673d2363e90cf86cd2550307c1e8e8821de7ddb4f662b5cfc7747",
+  "header_repair": {
+    "observed_failure_run": 40316011498,
+    "windows_apply_run": 40317683432,
+    "path": "app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt",
+    "palette_or_test_changes": false,
+    "native_acceptance_pending": true
+  },
+  "ime_viewport_repair": {
+    "observed_failure_run": 40320280942,
+    "windows_apply_run": 40323002197,
+    "path": "app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt",
+    "palette_or_test_changes": false,
+    "native_acceptance_pending": true
+  },
+  "confirmed_compile_repair": {
+    "failed_windows_run": 40349646381,
+    "original_manifest_sha256": "2082541c1da162c0e63d966051cfe2d7d841b02c325f9d46160d5fdf5d0fa912",
+    "path": "app/src/debug/java/ru/omnicio/app/ThemeStateProbe.kt",
+    "old_sha256": "a6f1cc354db093e30b88b0efcc8590090f118f0c53093d76585821b0c63351f8",
+    "new_sha256": "cf60d57e09d2994fb7571ffc281569b21fd8e5c7a8921dc870d47c0e586f9193",
+    "scope": "One typed callback expression; state change remains conditional on the first enabled control.",
+    "application_or_test_execution_performed_here": false
+  }
+}

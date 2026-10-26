@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "failed_windows_run": 40349646381,
+  "changed_source": "app/src/debug/java/ru/omnicio/app/ThemeStateProbe.kt",
+  "old_source_sha256": "a6f1cc354db093e30b88b0efcc8590090f118f0c53093d76585821b0c63351f8",
+  "new_source_sha256": "cf60d57e09d2994fb7571ffc281569b21fd8e5c7a8921dc870d47c0e586f9193",
+  "core_other_files_unchanged": 39,
+  "all_other_union_files_unchanged": 67,
+  "core_manifest_sha256": "8ee006ffc0a6067278ba1f366487779536e14c4e89471f18aea9a0274c971944",
+  "candidate_generator_sha256": "b8aec4b9273356c5890c392c008aad8c059d3d982de881ca4d81a82dd089b7c7",
+  "native_generator_sha256": "b242293f01804d55ac6c516e25185bb2585da3d17ab13560163348f6553805d9",
+  "delivery_generator_sha256": "45166354e32094f8933fa858cb543e0bcbcd1c51b20bd1b275db0df35357ce15",
+  "application_or_tests_executed": false
+}
