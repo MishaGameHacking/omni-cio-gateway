@@ -48,7 +48,7 @@ jobs:
                           f.seek(max(0, p.stat().st_size - 20000))
                           lines = f.read().decode('utf-8', errors='replace').splitlines()
                       item['summaries'][p.name] = [x[:800] for x in lines if len(x) < 1000 and
-                          re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|Error:|Exception:', x)][-10:]
+                          re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|Error:|Exception:|^> Task|^e:|OutOfMemory', x)][-20:]
                   report['build'].append(item)
               checkout = runner / 'omni-cio-gateway/omni-cio-gateway'
               if checkout.is_dir():
