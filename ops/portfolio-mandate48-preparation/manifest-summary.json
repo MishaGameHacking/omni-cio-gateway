@@ -12,7 +12,7 @@
   "transport_sha256": "82f21af42df27574f1e2f75a7930657f9935d468422cc0a2d75ac810bf8d03f8",
   "patch_manifest_sha256": "ef4aefd3bea652fd5465a2e182cade273bdeffd04938ceed236d5bfc75d399a4",
   "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
-  "workflow_sha256": "584b928287185ffe7b5ebe9e27585b15f6bc295f542dbeddee32a96f5f9a0ab2",
+  "workflow_sha256": "53a1ca46768abb373729c71f19d2d468bd5dd40216ef71ebc274d433d5f2d79b",
   "source_generator_sha256": "3a6afdea9ee64ab3f800d0d9c9a9266d885b7326351b9c834c566df4dcf50fb5",
   "dock_generator_sha256": "71d687577525b6116305c9fef3f8c34fd1d5c39524d2fc46f699b46fdd79c7dd",
   "controls_generator_sha256": "c1663ceb74ed9127afd7d6f62db7ee0fc03b8e2a5eea1d489cf495ce4862c637",
@@ -45,5 +45,7 @@
   "native_passed": false,
   "deployed": false,
   "plan_complete": false,
-  "supersedes": "Unpublished multi-theme46. Failed builds remain original failed evidence."
+  "supersedes": "Unpublished multi-theme46. Failed builds remain original failed evidence.",
+  "transport_storage": "exact GitHub event SHA, per-file SHA256 checked before Windows staging",
+  "superseded_unstarted_workflow_run": 40397424506
 }
