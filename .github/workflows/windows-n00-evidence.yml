@@ -1,4 +1,4 @@
-name: Inspect candidate41 portfolio quote navigation failure
+name: Inspect candidate41 complete portfolio diagnostic results
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,7 +11,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 8
     steps:
-      - name: Preserve candidate41 portfolio quote navigation failure and passed discovery captures
+      - name: Preserve candidate41 complete portfolio diagnostic results and passed discovery captures
         id: evidence
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -31,7 +31,9 @@ jobs:
               identities[name]={bytes:data.length,sha256:c.createHash('sha256').update(data).digest('hex')};
             }
             const available=fs.readdirSync(source);
-            for(const name of available.filter(n=>['portfolio-diagnostic-quotes-ready-font1p0-failure.png','portfolio-diagnostic-quotes-ready-font1p0-failure.xml','portfolio-history-ready.png','portfolio-history-missing-observation.png','portfolio-history-range.png'].includes(n)))copy(p.join(source,name),name);
+            for(const name of available.filter(n=>/^portfolio-diagnostic-.*-failure\.(png|xml)$/.test(n)||['portfolio-focused-observations.json','portfolio-verification.json','portfolio-history-exact-observation.png','portfolio-history-missing-observation.png','portfolio-history-range.png','portfolio-history-ready.png','portfolio-markets-ready.png','portfolio-appearance-ready.png','portfolio-dossier-event-draft.png'].includes(n)))copy(p.join(source,name),name);
+            const observations=JSON.parse(fs.readFileSync(p.join(source,'portfolio-focused-observations.json'),'utf8'));
+            if(observations.diagnostic_cases_observed!==14||observations.portfolio.cases.length!==6||observations.portfolio.case_failures.length!==8||observations.release_gate_pass!==false)throw new Error('diagnostic_case_counts_changed');
             const log=p.join(root,'install-api37-16384/runtime-console.log');
             copy(log,'runtime-16384.log');
             const lines=fs.readFileSync(log,'utf8').split(/\r?\n/);
@@ -39,14 +41,14 @@ jobs:
             const report={source_run:40262170820,source_root:source,diagnostic_only:true,release_gate_pass:false,page_bytes:16384,
               base_commit:'d5a5763fbd85ab2d2c1a9f1734ce24a5083a739e',verified_backup_commit:'d5a5763fbd85ab2d2c1a9f1734ce24a5083a739e',source_inventory:'dd762dde5a301bf972cc72794171ea3e3f0e04a3751ddaf833d0a0f003ed2066',
               debug_apk_sha256:'925a7f8a874e70123c380c9ef2ac256c5e9be08f41c7fb53758e77f7e7dd0931',
-              identities,available_files:available,native_reveals:lines.filter(l=>l.startsWith('UI_ACCESSIBILITY_ACTION=')&&l.includes(';show-')).slice(-20),log_tail:lines.slice(-100).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
+              case_summary:{observed:observations.diagnostic_cases_observed,passed:observations.portfolio.cases.map(x=>({case:x.case,font:x.font_scale})),failed:observations.portfolio.case_failures},identities,available_files:available,native_reveals:lines.filter(l=>l.startsWith('UI_ACCESSIBILITY_ACTION=')&&l.includes(';show-')).slice(-20),log_tail:lines.slice(-100).map(x=>x.slice(0,1200)).join('\n').slice(-26000)};
             fs.writeFileSync(p.join(out,'manifest.json'),JSON.stringify(report,null,2));
-            await github.rest.checks.create({...context.repo,name:'N00 candidate41 portfolio quote navigation failure evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Dossier passed; daily portfolio quote navigation failure preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
+            await github.rest.checks.create({...context.repo,name:'N00 candidate41 complete portfolio diagnostic results evidence',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Dossier passed; daily complete portfolio diagnostic results preserved',summary:'\x60\x60\x60json\n'+JSON.stringify(report,null,2)+'\n\x60\x60\x60'}});
             core.setOutput('folder',out);
       - name: Retain private synthetic failure evidence for inspection
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: n00-candidate41-quote-navigation-16384
+          name: n00-candidate41-portfolio-scan-16384
           path: ${{ steps.evidence.outputs.folder }}
           if-no-files-found: error
           retention-days: 3
