@@ -154,12 +154,25 @@ def _owned_emulator(probe):
     # exclusive_emulator lease. This identity must also belong to that process,
     # rather than another AVD or a physical device exposed by the same ADB server.
     assert_disposable(probe.device)
-    lines = [line.strip() for line in probe.command("emu", "avd", "name").splitlines()]
-    names = [line for line in lines if re.fullmatch(r"analyst-install-[0-9]+-[12]", line)]
+    output = probe.command("emu", "avd", "name")
+    if len(output) > 4096:
+        raise AssertionError("The wide AVD identity response exceeds its protocol limit")
+    # Match the existing boot-readiness parser: blank lines and OK are console
+    # framing, never identities. Still require exactly one payload belonging
+    # to this process; a second name, error or foreign process remains fatal.
+    raw_lines = output.splitlines()
+    lines = [line.strip() for line in raw_lines if line.strip()]
+    identities = [line for line in lines if line != "OK"]
     allowed = {"analyst-install-" + str(os.getpid()) + "-" + str(attempt) for attempt in (1, 2)}
-    if len(names) != 1 or names[0] not in allowed or any(line not in {names[0], "OK"} for line in lines):
+    owned = len(identities) == 1 and identities[0] in allowed
+    print("NAVIGATION_AVD_IDENTITY=" + json.dumps({
+        "line_count": len(lines), "blank_lines": len(raw_lines) - len(lines),
+        "acknowledgements": lines.count("OK"), "payload_count": len(identities),
+        "matches_current_process": owned,
+    }, sort_keys=True), flush=True)
+    if not owned:
         raise AssertionError("The wide case refuses a different process's emulator")
-    return {"avd": names[0], "owner_process_id": os.getpid(), "physical_device": False}
+    return {"avd": identities[0], "owner_process_id": os.getpid(), "physical_device": False}
 
 
 @contextmanager

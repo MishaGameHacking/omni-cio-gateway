@@ -1,3 +1,15 @@
+## Текущий checkpoint — 26.10.2026, 13:27 UTC
+
+Новый Windows45 build40327866834 завершён13:25:33 UTC:1193 host tests
+(3 прежних skips),52 tools,61 Node,1684 backend tests+1515 subtests,
+185 JVM tests без ошибок/пропусков; полный Gradle build/lint успешен.
+Code inventory d3f4bbb6…; preview45 теперь04caa12e…; debug APK побайтно
+сохранился aa7254a2…. Изменены только wide AVD parser и6 регрессий.
+Native-повтор новых точных байтов ещё не завершён, публикации45 нет.
+Предыдущие32/34 наблюдения не подменяют новый полный результат.
+[Доказательства](docs/N00_RESUME_2026-10-26.md). Канал44, N00 открыт.
+Постоянные инструкции ниже сохраняют силу.
+
 ## Текущий checkpoint — 26.10.2026, 13:10 UTC
 
 Native45 40325497967 на source a92e690 / APK ef1511b… прошёл26 automation,

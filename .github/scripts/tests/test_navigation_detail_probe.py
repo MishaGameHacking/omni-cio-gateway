@@ -408,6 +408,7 @@ class DisplayCommands(NativeFrames):
             self.display["density"]["Override"] = "180"
         self.scale = "2.0"
         self.avd = "analyst-install-" + str(os.getpid()) + "-1"
+        self.avd_output = None
         self.qemu = "1"
         self.api = "37"
         self.commands = []
@@ -421,7 +422,7 @@ class DisplayCommands(NativeFrames):
     def command(self, *args, timeout=15):
         self.commands.append(args)
         if args == ("emu", "avd", "name"):
-            return self.avd + "\nOK\n"
+            return self.avd_output if self.avd_output is not None else self.avd + "\nOK\n"
         if args[:3] == ("shell", "getprop", "ro.kernel.qemu"):
             return self.qemu + "\n"
         if args[:3] == ("shell", "getprop", "ro.build.version.sdk"):
@@ -457,6 +458,62 @@ class DisplayCommands(NativeFrames):
 
 
 class WideDisplayOwnershipTests(unittest.TestCase):
+    def test_owned_identity_accepts_only_console_whitespace_and_ack_framing(self):
+        for attempt in (1, 2):
+            name = "analyst-install-" + str(os.getpid()) + "-" + str(attempt)
+            for output in (name + "\n", name + "\r\nOK\r\n",
+                           "\r\n " + name + " \r\n\r\nOK\r\n\r\n",
+                           "OK\n\n" + name + "\nOK\n"):
+                probe = DisplayCommands(overrides=True)
+                probe.avd_output = output
+                before = deepcopy(probe.display)
+                receipt = {}
+                with self.subTest(attempt=attempt, output=repr(output)):
+                    with details.wide_emulator_viewport(probe, receipt):
+                        self.assertEqual(probe.display["size"]["Override"], "960x1600")
+                        self.assertEqual(receipt["owner"]["avd"], name)
+                        self.assertEqual(receipt["owner"]["owner_process_id"], os.getpid())
+                    self.assertEqual(probe.display, before)
+                    self.assertTrue(receipt["restored"])
+
+    def test_duplicate_owned_identity_is_rejected_before_display_mutation(self):
+        probe = DisplayCommands()
+        probe.avd_output = probe.avd + "\n\n" + probe.avd + "\nOK\n"
+        self.reject_identity_without_mutation(probe)
+
+    def test_foreign_identity_with_valid_framing_is_rejected(self):
+        probe = DisplayCommands()
+        probe.avd_output = "\nanalyst-install-" + str(os.getpid() + 1) + "-1\n\nOK\n"
+        self.reject_identity_without_mutation(probe)
+
+    def test_owned_name_with_extra_payload_or_error_is_rejected(self):
+        for extra in ("KO: unknown command", "unexpected", "analyst-install-999999999-1"):
+            probe = DisplayCommands()
+            probe.avd_output = probe.avd + "\n" + extra + "\nOK\n"
+            with self.subTest(extra=extra):
+                self.reject_identity_without_mutation(probe)
+
+    def test_missing_identity_is_rejected_before_display_mutation(self):
+        for output in ("", "\r\n \n", "\nOK\nOK\n"):
+            probe = DisplayCommands()
+            probe.avd_output = output
+            with self.subTest(output=repr(output)):
+                self.reject_identity_without_mutation(probe)
+
+    def test_oversized_response_is_rejected_even_with_one_owned_payload(self):
+        probe = DisplayCommands()
+        probe.avd_output = probe.avd + "\nOK\n" + "\n" * 4096
+        self.reject_identity_without_mutation(probe)
+
+    def reject_identity_without_mutation(self, probe):
+        before = deepcopy(probe.display)
+        with self.assertRaises((AssertionError, ValueError)):
+            with details.wide_emulator_viewport(probe, {}):
+                self.fail("Ambiguous or unowned display was admitted")
+        self.assertEqual(probe.display, before)
+        self.assertFalse(any(command[:2] == ("shell", "wm") and len(command) == 4
+                             for command in probe.commands))
+
     def test_owned_actual_emulator_is_required_before_any_display_mutation(self):
         for field, value in (("qemu", "0"), ("avd", "analyst-install-" + str(os.getpid() + 1) + "-1"), ("api", "36")):
             probe = DisplayCommands()
