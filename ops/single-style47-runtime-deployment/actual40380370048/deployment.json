@@ -1,0 +1,74 @@
+{
+  "actual_html_test_evidence": {
+    "original_backend_junit": {
+      "bytes": 265580,
+      "sha256": "b9b34430fb148afc09cc49a9e8f36abf07c60e30cfa6861a85111302f50e82e1"
+    },
+    "original_html_test_count": 6,
+    "original_linux_report": {
+      "bytes": 1471,
+      "sha256": "14eb707c88c5f3f13363573891f42a25c090b1e377a6cf1d634e22638d29db75"
+    }
+  },
+  "apk_published_or_installed": false,
+  "archive": {
+    "bytes": 69596979,
+    "sha256": "480e184f2ab5580b2fca1adb8112da966cc0c854d824143d0735fb187e153277"
+  },
+  "build_report": {
+    "bytes": 54907,
+    "sha256": "563753a516f814a00c743bd02ce4ecfc343bc78a7d30cc3c3be3e6381709e757"
+  },
+  "caddy_or_service_configuration_changed": false,
+  "database_or_environment_files_opened_by_deployer": false,
+  "dependencies_changed": false,
+  "full_android_runtime_matrix_passed": false,
+  "full_windows_check_and_build_passed": true,
+  "help_deployed": false,
+  "idempotent_verification": false,
+  "kind": "single_style47_exact_three_file_web_deployment",
+  "normal_owner_startup_has_possible_database_effects": true,
+  "observed_at": "2026-10-26T18:45:14.279835+00:00",
+  "other_services_restarted_by_deployer": false,
+  "owner_service_restart_performed": true,
+  "physical_phone_verified": false,
+  "public": {
+    "browser_pixels_verified": false,
+    "callback_handoff_verified": true,
+    "callback_headers_verified": true,
+    "callback_http": 200,
+    "callback_style_sha256": "d20328944ed84302094181fdffee0b5d79522034eb8af980f487382ddebef40a",
+    "callback_theme_verified": true,
+    "health_body": {
+      "status": "ok"
+    },
+    "health_http": 200,
+    "login_start_requested": false,
+    "login_transaction_created_by_verifier": false,
+    "owner_denial_requested": false,
+    "retired_enrollment_http": 410,
+    "update_policy_sha256": "c0d4c4cbaab4b79f38187138dacff7a8757d4e560cdde1c41c04ae7e8090bd2f",
+    "update_version_code": 45
+  },
+  "public_host": "analyst-ai-2941515.twc1.net",
+  "runtime_server_id": 9417611,
+  "schema": 1,
+  "source_backup_commit": "7c5bc44519aab7bdfaa2c2971fcbb3a05a981dbb",
+  "source_sha256": "b1dbca76caa0ea697be54a5907436e08af9b609f6300b35e9873fcbe0f30b7d6",
+  "status": "deployed_verified",
+  "trading_or_model_routes_called": false,
+  "web_sources": {
+    "app.py": {
+      "bytes": 29265,
+      "sha256": "33950c712e6442ce00af8de84f1e2c174c75d140728c1c093f00d717f5948c40"
+    },
+    "owner_app.py": {
+      "bytes": 5798,
+      "sha256": "09dda073a447e12f742e4540945e1695be14ce943cf9471189cf4ca80c3d729b"
+    },
+    "telegram_browser_app.py": {
+      "bytes": 16927,
+      "sha256": "5a1ef0f644948cad8d38b4537b9b5c938582fea79955c143453c797b67c46793"
+    }
+  }
+}

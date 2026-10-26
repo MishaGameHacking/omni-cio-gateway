@@ -12,7 +12,9 @@ CALLBACK = '/auth/telegram/callback?error=theme_verification'
 POLICY = '/client/update-policy?package_name=ru.omnicio.app.debug'
 RETIRED = '/auth/telegram/owner-enrollment/callback'
 CALLBACK_HEADERS = {
-    'cache-control': 'no-store, private',
+    # The active Caddy route adds no-store to the application's private header.
+    # Observed by the read-only workflow40380214063 before any deployment.
+    'cache-control': 'no-store, no-store, private',
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'",

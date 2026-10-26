@@ -1,0 +1,38 @@
+{
+  "apk_published_or_installed": false,
+  "application_or_test_execution_performed": false,
+  "changed_runtime_files": [
+    "/opt/analyst-ai/backend/app.py",
+    "/opt/analyst-ai/backend/telegram_browser_app.py",
+    "/opt/analyst-ai/backend/owner_app.py"
+  ],
+  "files": {
+    "deploy-runtime.py": {
+      "bytes": 47013,
+      "sha256": "e6e39e160931e5c3beff90f4709819e02daf7f9106d78780240fd43e7f12175b"
+    },
+    "expected-identities.json": {
+      "bytes": 6416,
+      "sha256": "86983817198ab42ac16f15ed9769a6927e5134814e363d9c7f2d1a9fddc91328"
+    },
+    "hosted-deployment.py": {
+      "bytes": 202216,
+      "sha256": "ea616f3bff82d2b457c2958f1784355e488b6ffc0bc1866a4fceebbb648c4fae"
+    },
+    "workflow.yml": {
+      "bytes": 222939,
+      "sha256": "5330b5d77570fde8f14b9a613e78d78a9c645c4a5837550772020d875dc720cd"
+    }
+  },
+  "help_deployed": false,
+  "pinned_transport_prefix_sha256": "5569d1c96c52b11766e5f9a2610a442827693491360cd5c051f1b86dc0531800",
+  "request_sha256": "02fd97015fa2acc21e31ae1a9296329783981f5c63ccee4b0b4d3c1a5231d84b",
+  "reviewed_manifest_sha256": "c3a658f71a431b2b18746468608b518e6e357998322b26d14e64663eca0d129c",
+  "runtime_routing_observation_sha256": "ba03f61215f07602830d295e8a5257444c58dba6735d737ba2771ff44254f1be",
+  "schema": 1,
+  "server_mutation_performed": false,
+  "source_backup_commit": "7c5bc44519aab7bdfaa2c2971fcbb3a05a981dbb",
+  "source_sha256": "b1dbca76caa0ea697be54a5907436e08af9b609f6300b35e9873fcbe0f30b7d6",
+  "state": "prepared_only_not_dispatched",
+  "target_workflow": ".github/workflows/single-style47-web-runtime-deployment.yml"
+}

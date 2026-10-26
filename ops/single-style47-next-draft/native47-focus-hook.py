@@ -1,0 +1,345 @@
+"""Windows-only native observations for the real candidate47 icon dock.
+
+This file is staged into a disposable emulator run. It is not executed by the
+source preparation environment and does not replace the full15 release gate.
+"""
+import hashlib
+import json
+import math
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+import profile_ui_probe as module
+import profile_scroll
+from automation_ui_probe import navigation_window, navigation_target, navigation_menu_absent
+from navigation_detail_probe import _DetailNavigationCase, DETAILS
+from predictive_back_input import back_gesture
+from profile_snapshot import restore_device_settings
+from profile_ui_probe import node_bounds
+
+ROWS = {
+    "main": (("primary-home", "Главная"), ("primary-portfolio", "Портфель"),
+             ("primary-actions", "Решения"), ("primary-profile", "Настройки")),
+    "portfolio": (("primary-risk", "Риски"), ("workspace-strategies", "Стратегия"),
+                  ("workspace-market", "Рынок"), ("workspace-discovery", "Поиск инструментов"),
+                  ("workspace-goals", "Цель и резерв")),
+    "research": (("workspace-assistant", "Аналитик"), ("workspace-reports", "Выводы аналитика"),
+                 ("workspace-library", "Исследования"), ("workspace-analysistimeline", "История проверок"),
+                 ("workspace-messages", "События")),
+    "personal": (("workspace-analysissettings", "Правила анализа"),
+                 ("workspace-notificationsettings", "Уведомления"),
+                 ("workspace-appearance", "Оформление"), ("workspace-devices", "Устройства"),
+                 ("workspace-activityhistory", "Недавно открыто"), ("workspace-education", "Обучение"),
+                 ("workspace-newfeatures", "Что нового")),
+}
+DESTINATION_GROUP = {key: group for group, items in ROWS.items() for key, _ in items}
+DESTINATION_LABEL = {key: label for items in ROWS.values() for key, label in items}
+
+
+class IconDockCase(_DetailNavigationCase):
+    def __init__(self, probe, scale):
+        super().__init__(probe, scale)
+        self.host_window = None
+        self.host_geometry = None
+        self.popup_window = None
+
+    def start(self):
+        result = super().start()
+        self.host_window = self.window
+        self.host_geometry = navigation_window(self.owned_frame())[:2]
+        return result
+
+    def open_menu(self):
+        if self.popup_window is not None or self.window != self.host_window:
+            raise AssertionError("Opening the dock requires the previously observed host window")
+        brain = self.target("navigation-menu-open", label="Открыть меню")
+        if node_bounds(brain)[0] >= self.host_geometry[0] // 4:
+            raise AssertionError("The brain menu is not on the left of the header")
+        self.probe.tap_node(brain)
+
+        def opened():
+            tree = self.probe.tree()
+            window = navigation_window(tree)
+            if window is None or window[:2] != self.host_geometry or window[2] == self.host_window:
+                return None
+            panel = navigation_target(tree, "navigation-panel")
+            close = navigation_target(tree, "navigation-menu-close", minimum=self.minimum,
+                                      touch=True, label="Закрыть меню")
+            return window[2] if panel is not None and close is not None else None
+
+        self.popup_window = self.probe.wait_for(opened, "The brain did not open its owned native Popup")
+        self.window = self.popup_window
+        return self.target("navigation-menu-close", label="Закрыть меню")
+
+    def closed(self):
+        if self.popup_window is None:
+            raise AssertionError("A missing initial popup cannot prove dismissal")
+        previous_popup = self.popup_window
+
+        def dismissed():
+            tree = self.probe.tree()
+            window = navigation_window(tree)
+            return tree if window is not None and window[:2] == self.host_geometry \
+                and window[2] == self.host_window and window[2] != previous_popup \
+                and navigation_menu_absent(tree) else None
+
+        tree = self.probe.wait_for(dismissed, "The dock did not restore its original focused host window")
+        self.window = self.host_window
+        self.popup_window = None
+        return tree
+
+    def item(self, key, *, selected=None, touch=True):
+        if self.popup_window is None:
+            raise AssertionError("Dock items require the explicitly opened popup")
+        group = DESTINATION_GROUP[key]
+        row = "navigation-row-" + group
+        self.probe.reveal_resource("navigation-row-main", "navigation-panel-content", direction="start",
+                                   for_capture=True, minimum_size=(self.minimum, self.minimum))
+        self.probe.reveal_resource(row, "navigation-panel-content", direction="end",
+                                   for_capture=True, minimum_size=(self.minimum, self.minimum))
+        first = "navigation-" + ROWS[group][0][0]
+        self.probe.reveal_resource(first, row, direction="start", for_capture=True,
+                                   minimum_size=(self.minimum, self.minimum))
+        self.probe.reveal_resource("navigation-" + key, row, direction="end", for_capture=True,
+                                   minimum_size=(self.minimum, self.minimum))
+        node = self.target("navigation-" + key, selected=selected, touch=touch,
+                           label=DESTINATION_LABEL[key])
+        if any(child.get("text", "").strip() for child in node.iter("node")):
+            raise AssertionError("A dock icon unexpectedly contains a persistent text label")
+        return node
+
+    def menu_item(self, page, *, selected=None, touch=True):
+        key, _ = DETAILS[page]
+        return self.item("workspace-" + key, selected=selected, touch=touch)
+
+    def screen_anchor(self, page):
+        if page == "appearance":
+            self.probe.reveal("Единый стиль · движение и удобство", "workspace-content",
+                               direction="start", max_swipes=20)
+        else:
+            super().screen_anchor(page)
+
+    def all_icons(self):
+        self.open_menu()
+        observed = []
+        for group, items in ROWS.items():
+            for key, label in items:
+                node = self.item(key, touch=False)
+                observed.append({"id": key, "label": label, "group": group,
+                                 "bounds": list(node_bounds(node)), "popup_window": self.popup_window})
+        if len(observed) != 21 or len({row["id"] for row in observed}) != 21:
+            raise AssertionError("The full21 icon catalogue was not observed")
+        self.tap("navigation-menu-close", label="Закрыть меню")
+        self.closed()
+        self.observed("strategy")
+        return observed
+
+    def outside_dismissal(self):
+        self.open_menu()
+        panel = self.target("navigation-panel", touch=False)
+        bounds = node_bounds(panel)
+        width, height = self.host_geometry
+        y = (bounds[3] + height - self.minimum) // 2
+        x = width // 2
+        if not (bounds[3] < y < height - self.minimum // 2):
+            raise AssertionError("The popup left no verified outside area for dismissal")
+        popup = self.popup_window
+        capture = self.capture("design47-dock-outside")
+        self.probe.command("shell", "input", "tap", str(x), str(y))
+        self.closed()
+        self.observed("strategy")
+        return {"popup_window": popup, "panel_bounds": list(bounds), "outside_tap": [x, y],
+                "host_window_restored": self.host_window, "underlying_page_unchanged": True, **capture}
+
+    def gesture_dismissal(self):
+        held = False
+
+        def progressed(baseline, phase):
+            advances = 0
+
+            def read():
+                nonlocal advances
+                node = navigation_target(self.owned_frame(), "navigation-menu-close")
+                bounds = node.get("bounds") if node is not None else None
+                if bounds is not None and bounds != baseline:
+                    return bounds
+                if advances < 16:
+                    back_gesture(self.probe, "advance")
+                    advances += 1
+                return None
+
+            return self.probe.wait_for(read, "The native Popup did not animate predictive Back: " + phase)
+
+        try:
+            self.open_menu()
+            baseline = self.target("navigation-menu-close", label="Закрыть меню").get("bounds")
+            held = True
+            back_gesture(self.probe, "hold")
+            cancel_progress = progressed(baseline, "cancel")
+            back_gesture(self.probe, "cancel")
+            held = False
+            restored = self.target("navigation-menu-close", label="Закрыть меню").get("bounds")
+            if restored != baseline:
+                raise AssertionError("Cancelled predictive Back did not restore the original dock bounds")
+            # A focusable popup intentionally owns the accessibility window.
+            # Observe the original page only after explicit close, then reopen.
+            self.tap("navigation-menu-close", label="Закрыть меню")
+            self.closed()
+            self.observed("strategy")
+            self.open_menu()
+            second = self.target("navigation-menu-close", label="Закрыть меню").get("bounds")
+            held = True
+            back_gesture(self.probe, "hold")
+            commit_progress = progressed(second, "commit")
+            back_gesture(self.probe, "commit")
+            held = False
+            self.closed()
+            self.observed("strategy")
+            return {"cancel_baseline": baseline, "cancel_progress": cancel_progress,
+                    "cancel_restored": restored, "commit_baseline": second,
+                    "commit_progress": commit_progress, "underlying_page_unchanged": True}
+        finally:
+            if held:
+                original = sys.exc_info()[1]
+                try:
+                    back_gesture(self.probe, "cancel")
+                except Exception as cleanup:
+                    if original is None:
+                        raise
+                    original.add_note("Popup gesture cleanup failed: " + type(cleanup).__name__)
+
+    def motion(self, title, expected):
+        before = self.observed("appearance")
+        if before["preferences"].split(",")[2] != expected:
+            self.probe.tap(title, "workspace-content", direction="end", max_swipes=20)
+        value = self.probe.wait_for(
+            lambda: (row if (row := self.observed("appearance"))["preferences"].split(",")[2] == expected else None),
+            "Motion choice was not applied immediately")
+        self.probe.reveal("Сохранено на устройстве", "workspace-content", direction="start", max_swipes=20)
+        return value["preferences"]
+
+    def run(self):
+        renderer, density, initial, pid = self.start()
+        initial_motion = initial["preferences"].split(",")[2]
+        self.choose("appearance"); self.closed(); self.observed("appearance")
+        self.motion("Живое", "LIVE")
+        self.choose("strategy"); self.closed(); self.observed("strategy")
+        self.phase = "all21-icons"
+        icons = self.all_icons()
+        self.phase = "outside-dismissal"
+        outside = self.outside_dismissal()
+        self.phase = "predictive-popup-back"
+        gestures = self.gesture_dismissal()
+        destinations = []
+        current = "strategy"
+        for page in DETAILS:
+            self.phase = "real-destination-" + page
+            if page != current:
+                self.choose(page); self.closed()
+            state = self.observed(page)
+            self.screen_anchor(page)
+            screen = self.capture("design47-screen-" + page)
+            self.open_menu()
+            selected = self.menu_item(page, selected=True, touch=False)
+            selected_bounds = list(node_bounds(selected))
+            self.tap("navigation-menu-close", label="Закрыть меню")
+            self.closed(); self.observed(page)
+            destinations.append({"page": page, "observed": state, "selected_bounds": selected_bounds, **screen})
+            current = page
+        self.phase = "automatic-appearance"
+        if current != "appearance":
+            self.choose("appearance"); self.closed(); self.observed("appearance")
+        automatic = []
+        for title, expected in (("Без движения", "OFF"), ("Сдержанное", "SUBDUED")):
+            persisted = self.motion(title, expected)
+            self.choose("markets"); self.closed()
+            away = self.observed("markets")
+            self.choose("appearance"); self.closed()
+            returned = self.observed("appearance")
+            if away["preferences"] != persisted or returned["preferences"] != persisted:
+                raise AssertionError("Automatically saved appearance was discarded during navigation")
+            self.probe.reveal("Сохранено на устройстве", "workspace-content", direction="start", max_swipes=20)
+            automatic.append({"motion": expected, "persisted": persisted, "away": away["preferences"],
+                              "returned": returned["preferences"], "save_button_pressed": False})
+        self.motion({"LIVE": "Живое", "SUBDUED": "Сдержанное", "OFF": "Без движения"}[initial_motion], initial_motion)
+        self.choose("strategy"); self.closed()
+        final = self.observed("strategy")
+        if final["preferences"] != initial["preferences"]:
+            raise AssertionError("The native check did not restore original appearance preferences")
+        final_pid = self.probe.command("shell", "pidof", module.PACKAGE).strip()
+        if final_pid != pid:
+            raise AssertionError("The process restarted during the dock/appearance observations")
+        return {"font_scale": self.scale, "renderer": renderer, "density": density,
+                "minimum_touch_dp": 48, "host_window": self.host_window, "process_id": pid,
+                "process_id_after": final_pid, "before": initial, "after": final,
+                "icons": icons, "outside": outside, "predictive_back": gestures,
+                "destinations": destinations, "automatic_appearance": automatic,
+                "native_targets": self.targets, "server_mutations": 0}
+
+
+def focused(device, read_tree):
+    from persistent_ui import FrameReader
+    if not isinstance(getattr(read_tree, "__self__", None), FrameReader):
+        raise AssertionError("A genuine owned frame reader is required")
+    probe = module.ProfileProbe(device)
+    probe.read_tree = read_tree
+    root = Path(module.__file__).resolve().parents[2]
+    folder = root / "app/build/outputs/apk/preview/ui-screens"
+    apk = root / "app/build/outputs/apk/debug/app-debug.apk"
+    if apk.is_symlink() or not apk.resolve(strict=True).is_relative_to(root):
+        raise AssertionError("The installed fixture APK is outside the owned checkout")
+    night = module.night_setting(probe.command("shell", "cmd", "uimode", "night"))
+    scale = probe.command("shell", "settings", "get", "system", "font_scale").strip()
+    axes, ids = dict(profile_scroll.SCROLL_AXES), profile_scroll.LIST_IDS
+    direction = module.semantic_scroll_direction
+    report = {"schema_version": 1, "diagnostic_only": True, "release_gate_pass": False,
+              "full15_executed": False, "physical_phone_verified": False,
+              "fixture_apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+              "actual_device_observations": True, "external_broker_model_calls": False,
+              "real_order_execution": False, "status": "incomplete", "cases": []}
+    try:
+        # Add the four exact new horizontal lists to the existing bounded
+        # semantic-scrolling implementation; all ownership/geometry gates stay.
+        for group in ROWS:
+            profile_scroll.SCROLL_AXES["navigation-row-" + group] = "horizontal"
+        profile_scroll.LIST_IDS = frozenset(profile_scroll.SCROLL_AXES)
+        module.semantic_scroll_direction = lambda area, x1, y1, x2, y2: \
+            module._horizontal_scroll_direction(x1, y1, x2, y2) if area in {
+                "navigation-row-" + group for group in ROWS} else direction(area, x1, y1, x2, y2)
+        folder.mkdir(parents=True, exist_ok=True)
+        for font in (1.0, 2.0):
+            case = IconDockCase(probe, font)
+            try:
+                report["cases"].append(case.run())
+            except Exception:
+                report["failed_case"] = {"font_scale": font, "phase": case.phase,
+                    "host_window": case.host_window, "popup_window": case.popup_window,
+                    "native_targets": case.targets}
+                raise
+        if len(report["cases"]) != 2 or {r["font_scale"] for r in report["cases"]} != {1.0, 2.0} \
+                or any([d["page"] for d in r["destinations"]] != list(DETAILS) for r in report["cases"]):
+            raise AssertionError("The original six destinations at both font scales were not completed")
+        report["status"] = "passed"
+        # Preserve the existing full-suite acceptance boundary: a focused
+        # diagnostic never makes test_apk_installation claim all15 stages.
+        raise AssertionError("Diagnostic complete: full15 runtime acceptance is still pending")
+    except BaseException as error:
+        report.update(error_type=type(error).__name__, error=str(error)[:1000])
+        if report["status"] != "passed":
+            try:
+                probe.capture("design47-focused-failure")
+                (folder / "design47-focused-failure.xml").write_text(ET.tostring(probe.tree(), encoding="unicode"), encoding="utf-8")
+            except Exception as capture:
+                report["failure_capture_error"] = type(capture).__name__
+        raise
+    finally:
+        profile_scroll.SCROLL_AXES.clear(); profile_scroll.SCROLL_AXES.update(axes)
+        profile_scroll.LIST_IDS = ids
+        module.semantic_scroll_direction = direction
+        (folder / "design47-focused-observations.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("DESIGN47_FOCUSED_OBSERVATIONS=" + json.dumps(report, ensure_ascii=True), flush=True)
+        restore_device_settings(probe.command, scale, night, sys.exc_info()[1])
+
+
+module.exercise_checks = focused

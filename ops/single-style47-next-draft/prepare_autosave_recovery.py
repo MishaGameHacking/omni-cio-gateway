@@ -219,8 +219,8 @@ internal fun nextAutoSaveRecord(records: Collection<AutoSaveRecord>, recovery: A
     val memory = LocalWorkspaceAutoSave.current
     var restored by rememberSaveable { mutableStateOf(memory == null) }''')
     replace(path, '    var keepEvent by rememberSaveable(current.eventId) { mutableStateOf(current.eventId != null) }',
-        '''    val contextEventId = rememberSaveable { current.eventId }
-    val contextInstrument = rememberSaveable { current.instrumentUid }
+        '''    val contextEventId by rememberSaveable { mutableStateOf(current.eventId) }
+    val contextInstrument by rememberSaveable { mutableStateOf(current.instrumentUid) }
     var keepEvent by rememberSaveable { mutableStateOf(current.eventId != null) }''')
     replace(path, '    WorkspaceDialog("Контекст следующего вопроса", onClose) {', '''    LaunchedEffect(memory?.ready) {
         if (restored || memory?.ready == false) return@LaunchedEffect

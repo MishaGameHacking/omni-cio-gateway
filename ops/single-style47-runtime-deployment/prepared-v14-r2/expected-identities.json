@@ -1,0 +1,177 @@
+{
+  "active_caddy": {
+    "bytes": 933,
+    "sha256": "57192fc11c94c8691c036d6208ce20ab429a5af7047ea17f3432498212db3041"
+  },
+  "archive": {
+    "bytes": 69596979,
+    "sha256": "480e184f2ab5580b2fca1adb8112da966cc0c854d824143d0735fb187e153277"
+  },
+  "archive_files": 1115,
+  "archive_path": "/var/lib/analyst-ai-build/incoming/windows-development-40376362140-1/windows-development-evidence.zip",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "build_controller": {
+    "bytes": 443,
+    "sha256": "4498dc616542bd9f9ab349bec199426e2f369e0cfa117eeae5349b8fca3a038e"
+  },
+  "build_report": {
+    "bytes": 54907,
+    "sha256": "563753a516f814a00c743bd02ce4ecfc343bc78a7d30cc3c3be3e6381709e757"
+  },
+  "caddy_file": {
+    "bytes": 501,
+    "sha256": "01f467fb00ccb6034bb98e82bb59e405ac9e33b241ecaf472e4d844fcfbf262e"
+  },
+  "callback_style_sha256": "d20328944ed84302094181fdffee0b5d79522034eb8af980f487382ddebef40a",
+  "complete_source_sha256": "09adad85fe1f74cc66b41fbae439f9e33a40d1cdd726a04c488f056f5ecfa693",
+  "github": {
+    "run_attempt": 1,
+    "run_id": 40376362140,
+    "runner_name": "omni-cio-ci-4",
+    "workflow_sha": "01b1ecddd2da93fd183c709820aeae972f842a6e"
+  },
+  "reviewed_manifest_sha256": "c3a658f71a431b2b18746468608b518e6e357998322b26d14e64663eca0d129c",
+  "schema": 1,
+  "services": {
+    "analyst-ai-owner.service": {
+      "active_state": "active",
+      "effective_dropins_present": false,
+      "expected_fragment_path": true,
+      "invocation": {
+        "argument_count": 12,
+        "executable": "/opt/analyst-ai/venv/bin/uvicorn",
+        "module": "owner_app:create_app",
+        "options": {
+          "--factory": true,
+          "--host": "127.0.0.1",
+          "--lifespan": "on",
+          "--no-access-log": true,
+          "--port": "8080",
+          "--workers": "1"
+        },
+        "owner_factory_binding_verified": true,
+        "public_update_factory_binding_verified": false,
+        "source_path": "/opt/analyst-ai/backend/owner_app.py",
+        "status": "allowlisted_invocation_observed"
+      },
+      "load_state": "loaded",
+      "matches_prior_unit_identity": true,
+      "need_daemon_reload": "no",
+      "status": "observed",
+      "unit_file_identity": {
+        "bytes": 923,
+        "sha256": "7df9096fbc578716208077355fa8ac4cbc5c1480844e83910bfa7a0b40c06ed0",
+        "status": "observed"
+      },
+      "working_directory": "/opt/analyst-ai/backend",
+      "working_directory_allowlisted": true
+    },
+    "analyst-ai-updates.service": {
+      "active_state": "active",
+      "effective_dropins_present": false,
+      "expected_fragment_path": true,
+      "invocation": {
+        "argument_count": 13,
+        "executable": "/opt/analyst-ai-updates/venv/bin/python",
+        "module": "backend.public_updates_app:create_app",
+        "options": {
+          "--factory": true,
+          "--host": "127.0.0.1",
+          "--no-access-log": true,
+          "--port": "8081",
+          "--workers": "1"
+        },
+        "owner_factory_binding_verified": false,
+        "public_update_factory_binding_verified": true,
+        "source_path": "/opt/analyst-ai-updates/backend/public_updates_app.py",
+        "status": "allowlisted_invocation_observed"
+      },
+      "load_state": "loaded",
+      "matches_prior_unit_identity": true,
+      "need_daemon_reload": "no",
+      "status": "observed",
+      "unit_file_identity": {
+        "bytes": 893,
+        "sha256": "98a5a053ccdbb37938b7cac9bcba937da09cdcd828f913ec2750e01d0bc95cc9",
+        "status": "observed"
+      },
+      "working_directory": "/opt/analyst-ai-updates",
+      "working_directory_allowlisted": true
+    }
+  },
+  "source_backup_commit": "7c5bc44519aab7bdfaa2c2971fcbb3a05a981dbb",
+  "source_inventory": {
+    "bytes": 166568,
+    "sha256": "c7ff7e44a1421a10f43e5c7ec478cc616fd4f3613e88657b6f9f3756b8728686"
+  },
+  "source_sha256": "b1dbca76caa0ea697be54a5907436e08af9b609f6300b35e9873fcbe0f30b7d6",
+  "units": {
+    "/etc/systemd/system/analyst-ai-owner.service": {
+      "bytes": 923,
+      "sha256": "7df9096fbc578716208077355fa8ac4cbc5c1480844e83910bfa7a0b40c06ed0"
+    },
+    "/etc/systemd/system/analyst-ai-updates.service": {
+      "bytes": 893,
+      "sha256": "98a5a053ccdbb37938b7cac9bcba937da09cdcd828f913ec2750e01d0bc95cc9"
+    }
+  },
+  "untouched_sources": {
+    "/opt/analyst-ai-updates/backend/client_updates.py": {
+      "bytes": 13743,
+      "sha256": "79c1f8670cc61f94f917c9ad4b6e394f1430a08b61b8ef87216624fec12b9184"
+    },
+    "/opt/analyst-ai-updates/backend/public_updates_app.py": {
+      "bytes": 1219,
+      "sha256": "65223e183ab426c2e9fb7619e97aa321f6a9b9c1e4f72392ee8b4fe056edf0d8"
+    },
+    "/opt/analyst-ai/backend/client_updates.py": {
+      "bytes": 13743,
+      "sha256": "79c1f8670cc61f94f917c9ad4b6e394f1430a08b61b8ef87216624fec12b9184"
+    }
+  },
+  "web_sources": {
+    "app.py": {
+      "new": {
+        "bytes": 29265,
+        "sha256": "33950c712e6442ce00af8de84f1e2c174c75d140728c1c093f00d717f5948c40"
+      },
+      "old": {
+        "bytes": 28437,
+        "sha256": "6a44c9fbe9cd06a91c890961db9708accf7f4a9096987fae5b490113933ad455"
+      }
+    },
+    "owner_app.py": {
+      "new": {
+        "bytes": 5798,
+        "sha256": "09dda073a447e12f742e4540945e1695be14ce943cf9471189cf4ca80c3d729b"
+      },
+      "old": {
+        "bytes": 4170,
+        "sha256": "4162966c03c3793d6cb9903a690842600fcc241dff1a402ae253e3fc0b285419"
+      }
+    },
+    "telegram_browser_app.py": {
+      "new": {
+        "bytes": 16927,
+        "sha256": "5a1ef0f644948cad8d38b4537b9b5c938582fea79955c143453c797b67c46793"
+      },
+      "old": {
+        "bytes": 16754,
+        "sha256": "be7d2b0b122740bd02d8fecf0148db9c6569f0cf3b1c255b79eb4bf020bca5ff"
+      }
+    }
+  },
+  "web_test_names": [
+    "test_all_actual_pages_keep_the_same_style_in_both_system_preferences",
+    "test_login_enabled_pressed_disabled_and_keyboard_focus_are_readable",
+    "test_return_link_and_login_fallback_keep_paired_inks_in_interactive_states",
+    "test_real_html_keeps_nonce_headers_and_the_escaped_handoff",
+    "test_owner_denial_admits_only_the_exact_rendered_static_style",
+    "test_owner_non_html_denials_keep_the_original_json_contract"
+  ],
+  "web_test_source": {
+    "bytes": 13006,
+    "sha256": "fa51860122d7a91d46ff36b0eeb927a0e26a4ddf35c1780a159336e839596e81"
+  }
+}

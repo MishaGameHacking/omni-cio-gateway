@@ -29,7 +29,7 @@ TRANSPORT_SHA = '11eb69a59124adb8042b9b811cd652bc34ae282c7907f3e6e31493ade9bbe91
 TRANSPORT_PREFIX_SHA = '5569d1c96c52b11766e5f9a2610a442827693491360cd5c051f1b86dc0531800'
 WORKFLOW_SHA = '3b3788939022a2227a3b8d2c41079eb0a7d5c5f8428eeb875c00cc2e90a4bc85'
 HELPER_SHA = '64db4d35e4fa983ac0d90f0398a9edbfed6263851fe03f1460c9671828ff8ab4'
-TEMPLATE_PINS = {'deploy-runtime.py': 'cf26d63c472722296f2b6fb955776b59bb2028e07f0473ec54afa04b4f925e2e', 'public-checks.py': '52d1af965802c2ed4130cbc04761fbc283a82b3e97219b0ec4d72342a87ab2f0', 'receive-deployment.py': 'bd46273fce3c4273d5b76fa50aecb1b0e45d606259aa807082987ac75ea3e06f'}
+TEMPLATE_PINS = {'deploy-runtime.py': 'cf26d63c472722296f2b6fb955776b59bb2028e07f0473ec54afa04b4f925e2e', 'public-checks.py': 'a06973def653186a586ae86a56991c53c702955c0e6469c4c3ba353cd44ea210', 'receive-deployment.py': 'bd46273fce3c4273d5b76fa50aecb1b0e45d606259aa807082987ac75ea3e06f'}
 WEB_NAMES = ('app.py', 'telegram_browser_app.py', 'owner_app.py')
 REQUIRED_CHECKS = {'host-tests', 'tools-tests', 'node-tests', 'backend-tests', 'gradle', 'apk-verification'}
 
