@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-10-26T20:48:28.672386+00:00",
+  "lease": "C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\analyst-ai-emulator-lease\\android.lock",
+  "worker_started": true,
+  "owned_processes_after": 0,
+  "error": "RuntimeError",
+  "lease_acquired_at": "2026-10-26T20:48:28.672881+00:00",
+  "worker_pid": 12824,
+  "worker_exit_code": 1,
+  "remaining_before_cleanup": 0,
+  "message": "windows_worker_failed",
+  "finished_at": "2026-10-26T21:05:32.976335+00:00"
+}

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "kind": "retained_original_failed_build",
+  "run_id": 40398531747,
+  "workflow_sha": "7f053a20ec0b620e0e8374d7cb324fd47738c250",
+  "status": "failed_checks_build_passed",
+  "failure": "Test fixture request_id revoked had 7 characters; server requires at least 8. Corrected fixture keeps and strengthens account-revocation assertions.",
+  "original_artifact": {
+    "id": 12689591770,
+    "bytes": 252307,
+    "sha256": "f28b49d27304ca80d0ca0955b591c793b01309144b58d1727525aede427aca4d"
+  },
+  "android_jvm": {
+    "tests": 232,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "backend": {
+    "passed": 1710,
+    "failed": 1,
+    "subtests_passed": 1557
+  },
+  "publication_authorized": false,
+  "superseding_run": 40400521138
+}
