@@ -66,7 +66,7 @@ def helpers():
     delivery = load_admin('administrative_delivery44', 'prep/delivery44/prepare_delivery44.py',
         '64db4d35e4fa983ac0d90f0398a9edbfed6263851fe03f1460c9671828ff8ab4')
     native = load_admin('administrative_native47', 'design47/prepare_native47.py',
-        '25408f8fa57deebaefff6eb0a0cc1d643f6d5332830ea8d8afd8e8e5f7af3a37')
+        '64ab543552f25c51f7a31a7e548fa44cc641f682b993e7b48ef7d59958e97d46')
     return delivery, native
 
 
@@ -166,7 +166,7 @@ def native_receipt(helper, item, expected, build):
                  and report['release_gate_pass'] is False and report['full15_executed'] is False
                  and report['physical_phone_verified'] is False and report['real_order_execution'] is False
                  and report['external_broker_model_calls'] is False, 'Incomplete or mis-scoped live observations')
-            for group in ('cases', 'autosave_cases'):
+            for group in ('cases', 'appearance_restart_cases', 'autosave_cases'):
                 need(len(report[group]) == 2 and {c['font_scale'] for c in report[group]} == {1.0, 2.0},
                      'Both font profiles are required: ' + group)
             captures = []
@@ -186,6 +186,15 @@ def native_receipt(helper, item, expected, build):
                          and appearance['persisted'] == appearance['away'] == appearance['returned'],
                          'Appearance was not automatically retained')
                 captures.extend([case['outside'], *case['destinations']])
+            for case in report['appearance_restart_cases']:
+                need(case['force_stop_and_relaunch'] is True
+                     and case['previous_process_id'] != case['restarted_process_id']
+                     and case['save_button_pressed'] is False and case['server_mutations'] == 0
+                     and case['after_restart']['writes'] == case['after_restore']['writes'] == 0
+                     and case['after_restart']['preferences'] == case['persisted']
+                     and case['before']['preferences'] == case['after_restore']['preferences']
+                     and len(case['captures']) == 2, 'Appearance did not survive the actual process restart')
+                captures.extend(case['captures'])
             for case in report['autosave_cases']:
                 need(case['invalid_draft_retained'] is True and case['invalid_server_writes'] == 0
                      and case['invalid']['writes'] == case['invalid_after_navigation']['writes'] == 0
@@ -212,7 +221,7 @@ def native_receipt(helper, item, expected, build):
             profiles[str(page)] = {'installation_sha256': sha(installed_raw),
                 'runtime_sha256': sha(runtime_raw), 'observations_sha256': sha(observations_raw),
                 'fonts': [1.0, 2.0], 'icons_per_font': 21, 'destinations_per_font': 6,
-                'automatic_appearance': True, 'automatic_strategy': True,
+                'automatic_appearance': True, 'appearance_process_restart': True, 'automatic_strategy': True,
                 'invalid_draft_retained': True, 'extra_server_writes_after_navigation': 0}
         for name, raw in evidence.items():
             need(envelope['files'][name] == {'bytes': len(raw), 'sha256': sha(raw)},

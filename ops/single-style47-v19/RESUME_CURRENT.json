@@ -164,7 +164,7 @@
   },
   "native47_preparation": {
     "hook": "context/design47/native47-focus-hook.py",
-    "hook_sha256": "cdc6abbb9e7db328eed92b3e7fd5d206a362d5cbf90400a5b2b337f745e532fd",
+    "hook_sha256": "05b8008ea68b221b27d8bb61160c88db5bd4fdae606cc22e41f8a102c8fe6858",
     "preparer": "context/design47/prepare_native47.py",
     "state": "source_text_only_not_executed",
     "profiles": [
@@ -179,7 +179,9 @@
     "real_destinations_per_font": 6,
     "full15_claimed": false,
     "requires": "Successful v19 build and full exact-source Git backup; v18 debug navigation fixture did not provide production autosave",
-    "automatic_strategy_cases_per_profile": 2
+    "automatic_strategy_cases_per_profile": 2,
+    "appearance_restart_cases_per_profile": 2,
+    "process_restart_uses_original_force_stop_launch": true
   },
   "source_backup_head": "dc13985c154def997f2896bbf702c96c2055f42f",
   "v18": {
@@ -213,7 +215,7 @@
     "archive_sha256": "3e5fd4a495c862d9730ad8236525b2e0be890a73ff46dd2726d3d3910b102ea3",
     "archive_bytes": 69639994
   },
-  "updated_at": "2026-10-26T19:29:48.061324+00:00",
+  "updated_at": "2026-10-26T19:36:41.201089+00:00",
   "v19": {
     "state": "running",
     "review_sha256": "e8c7813ab20140b6ceca7a2734326929badecd59d9e7d74d35129f2f14e47d1e",

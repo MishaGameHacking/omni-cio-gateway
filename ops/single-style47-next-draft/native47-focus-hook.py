@@ -279,6 +279,38 @@ class IconDockCase(_DetailNavigationCase):
                 "native_targets": self.targets, "server_mutations": 0}
 
 
+class AppearanceRestartCase(IconDockCase):
+    """Observe the real device preference after force-stop and a fresh process."""
+    def run(self):
+        _, _, initial, previous_pid = self.start()
+        original = initial["preferences"]
+        self.phase = "appearance-before-process-restart"
+        self.choose("appearance"); self.closed(); self.observed("appearance")
+        persisted = self.motion("Без движения", "OFF")
+        before_capture = self.capture("design47-appearance-before-restart")
+        # The original launch_profile helper performs force-stop + explicit
+        # Activity launch. A navigation round trip cannot satisfy this check.
+        relaunch = IconDockCase(self.probe, self.scale)
+        renderer, density, restarted, restarted_pid = relaunch.start()
+        self.phase = "appearance-after-process-restart"
+        if restarted_pid == previous_pid or restarted["preferences"] != persisted:
+            raise AssertionError("Automatically saved appearance did not survive a real process restart")
+        relaunch.choose("appearance"); relaunch.closed(); relaunch.observed("appearance")
+        self.probe.reveal("Сохранено на устройстве", "workspace-content", direction="start", max_swipes=20)
+        after_capture = relaunch.capture("design47-appearance-after-restart")
+        motion = original.split(",")[2]
+        relaunch.motion({"LIVE": "Живое", "SUBDUED": "Сдержанное", "OFF": "Без движения"}[motion], motion)
+        final = relaunch.observed("appearance")
+        if final["preferences"] != original or final["writes"] != 0:
+            raise AssertionError("Original preferences were not restored after restart verification")
+        return {"font_scale": self.scale, "renderer": renderer, "density": density,
+                "minimum_touch_dp": 48, "previous_process_id": previous_pid,
+                "restarted_process_id": restarted_pid, "before": initial, "persisted": persisted,
+                "after_restart": restarted, "after_restore": final, "force_stop_and_relaunch": True,
+                "server_mutations": 0, "save_button_pressed": False,
+                "captures": [before_capture, after_capture]}
+
+
 class AutomaticStrategyCase(IconDockCase):
     """Only an explicit native edit may authorize the fixture's two write calls."""
     def __init__(self, probe, scale):
@@ -407,7 +439,8 @@ def focused(device, read_tree):
               "full15_executed": False, "physical_phone_verified": False,
               "fixture_apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
               "actual_device_observations": True, "external_broker_model_calls": False,
-              "real_order_execution": False, "status": "incomplete", "cases": [], "autosave_cases": []}
+              "real_order_execution": False, "status": "incomplete", "cases": [],
+              "appearance_restart_cases": [], "autosave_cases": []}
     try:
         # The exact built driver and Python client must already support all four
         # rows. Do not replace the authenticated native protocol with swipes.
@@ -430,6 +463,14 @@ def focused(device, read_tree):
         if len(report["cases"]) != 2 or {r["font_scale"] for r in report["cases"]} != {1.0, 2.0} \
                 or any([d["page"] for d in r["destinations"]] != list(DETAILS) for r in report["cases"]):
             raise AssertionError("The original six destinations at both font scales were not completed")
+        for font in (1.0, 2.0):
+            case = AppearanceRestartCase(probe, font)
+            try:
+                report["appearance_restart_cases"].append(case.run())
+            except Exception:
+                report["failed_case"] = {"font_scale": font, "phase": case.phase,
+                    "host_window": case.host_window, "native_targets": case.targets}
+                raise
         for font in (1.0, 2.0):
             case = AutomaticStrategyCase(probe, font)
             try:
