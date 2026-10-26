@@ -1,4 +1,4 @@
-> **Latest:** candidate42 navigation harness passed all1081 host tests on Windows. Original14 portfolio cases are running; the full4096/16384 matrix and exact-head Sonar remain open. See [the current layout checkpoint](N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md). Published38 remains unchanged.
+> **Latest:** candidate42 navigation harness passed all1081 host tests on Windows. Original14 stopped at quote selected-state after4 PASS/font100; all-case diagnosis and its repair continue; the full4096/16384 matrix and exact-head Sonar remain open. See [the current layout checkpoint](N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md). Published38 remains unchanged.
 
 # N00 — stable native actions for exact rating source folds
 

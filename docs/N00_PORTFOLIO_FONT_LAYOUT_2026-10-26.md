@@ -101,6 +101,45 @@ finished04:52:42.533399Z. Новый source inventory
 Изменён только harness, APK42 и подпись сохранены.
 
 
+
+## Продолжение после ремонта навигации42
+
+Run40271124381 завершился FAILED только после успешных1081 host tests.
+Runtime04:52:45.540706Z–04:58:23.456834Z; Android37, фактические16384-byte pages.
+Install/upgrade38→42/clean/launch PASS. Исходные discovery/ready, dossier/ready,
+history/ready и history/partial приfont100 прошли; quotes/ready остановился на
+«Candle interval did not acquire its actual native selected state».
+Остальные случаи исходного fail-fast suite не выполнялись.
+Архив62files /1846818bytes SHA256
+b8566a2fc08797b709ea172d89032cf02174bc6b42c6846a93bfd3f16654b264
+принят9417611 в04:59:07.4702487Z, cleanup PASS.
+
+[Evidence40271951745](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40271951745):
+artifact12628393679 /865571bytes SHA256
+44553a7fc0955cfc04af62f163e2b5208d3e27a30b401a843016a9099976b8d5,
+все22 identities проверены; failure PNG и XML просмотрены.
+На экране выбранная«Неделя» и точная ошибка недельного источника.
+Native quotes-intervals-item-2:[137,319][210,371], selected=true,
+clickable=false, enabled=true. Это успешный выбор: текущий detector ошибочно
+требуетclickable=true и после нажатия. checked/checkable здесьfalse;
+не подменять выбранное состояние только подписью или checked.
+
+Подготовленный двухфайловый ремонт разделяет action и selected observation:
+перед тапом остаётсяclickable=true, после —selected=true внутри того же rail,
+с прежними48px, видимостью и дополнительным enabled guard. Новые условные тесты
+требуют один тап и отклоняют отсутствующее/постороннее/disabled selected state.
+Patch02737e718f6d48d0487a94267ebd232e1af739afc481ac3eee104be1495f85a9
+пока НЕ проверен и не входит в рабочие исходники; отправлен Windows trigger
+5579a4b6ef7b1c15138a5e7de74ed66980264378. Тяжёлые этапы ждут общей lease.
+
+Диагностический [40271927516](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40271927516)
+на исходниках14153157fb21456fe9edc8597d4cf2256fe116a4 /inventory5d2cd2b6…
+выполняет все14 независимых оригинальных случаев с семифайловым проверенным
+ремонтом; ошибки собираются отдельно, release_gate_pass=false неизменно.
+Не выдавать этот run за исходную полную приёмку. Полный wrapper3bee07c1…
+подготовлен с этой же версией harness, но НЕ запущен; после следующего
+проверенного изменения harness его source pin потребуется обновить.
+
 ## Что установлено на точном APK41
 
 Диагностика [40262170820](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40262170820)
@@ -269,7 +308,9 @@ Canonical emulator lease blob c9626f3bf90b612a71b9bbf2954d0c134aa29b22,
 ## Продолжение по порядку
 
 Сборка42 и новый Python-harness подтверждены; исходные14 portfolio cases
-повторно выполняются в40271124381. Полная15-stage матрица4096/16384 для42
+в40271124381 остановились на selected-state котировок после4 PASS/font100.
+All14 diagnostic40271927516 выполняется; новый quote-state patch ожидает проверки.
+Полная15-stage матрица4096/16384 для42
 пока НЕ пройдена. После исходных14 PASS подготовить новый full wrapper с
 проверенным harness/inventory5d2cd2b6…, сохранив точные APK42 и baseline38.
 

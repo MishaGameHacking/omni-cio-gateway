@@ -1,6 +1,6 @@
-## N00 26.10.2026 — проверен ремонт навигации42, runtime продолжается
+## N00 26.10.2026 — навигация42 проверена, обнаружен quote selected-state отказ
 
-> **26.10.2026, N00 — ремонт навигации42 прошёл1081 host tests.** Неизменный APK42 имеет успешную Windows/WSL/Android сборку. Его исходная диагностика40268185222 завершила14 случаев:6 PASS/8 FAIL. После измерений экранов и четырёх доказанных регрессий семифайловый Python-ремонт проверен на ноутбуке в40271124381; оригинальные14 portfolio cases выполняются. Полная15-stage матрица4096/16384 и external exact-head Sonar ещё не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
+> **26.10.2026, N00 — ремонт навигации42 прошёл1081 host tests.** Неизменный APK42 имеет успешную Windows/WSL/Android сборку. Его исходная диагностика40268185222 завершила14 случаев:6 PASS/8 FAIL. После измерений экранов и четырёх доказанных регрессий семифайловый Python-ремонт проверен на ноутбуке в40271124381; исходный run остановился на selected-state котировок после4 PASS/font100. All14 diagnostic40271927516 и новый quote-state patch продолжаются. Полная15-stage матрица4096/16384 и external exact-head Sonar ещё не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
 
 Current exact build40266100999 on LAPTOP-NPSGA016 /omni-cio-ci-3:
 source inventorycd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e.
@@ -25,8 +25,15 @@ tests passed75.171s, same3 skips; diff-check PASS. Four original failures were
 reproduced with2 conditional variants each before running the repaired suite.
 Source inventory5d2cd2b6f8c8d7fbec7276835634ed4cb701d2e80809cc67a59c066a692cc76b.
 Patchd1a42af907aadb5a64b9a6a12465ee0d9e60f2940b7712beb555525b095907d1.
-Original14 portfolio cases on unchangedAPK42 are RUNNING, not passed.
-Read their exact result before launching full15-stage4096/16384.
+Original14 run40271124381 FAILED after4 PASS/font100 (discovery,dossier,
+history-ready,history-partial): quote selected-state detector rejects the
+already selected nonclickable Week tab. Evidence40271951745 verified22 identities;
+native selected=true, clickable=false, enabled=true, item-2 bounds137,319,210,371.
+All14 diagnostic40271927516 runs on backed14153157 /inventory5d2cd2b6….
+Prepared2-file quote patch02737e718f6d48d0487a94267ebd232e1af739afc481ac3eee104be1495f85a9
+was sent by trigger5579a4b6ef7b1c15138a5e7de74ed66980264378; NOT yet tested/backed.
+It separates action targeting from selected observation, preserving48px/exact rail.
+Read both actual outcomes before another full15-stage4096/16384 run.
 Regenerate the full wrapper with this tested harness/source; oldc2 wrapper
 does not contain the navigation repair. Keep exactAPK42 and baseline38.
 Original focused40267647899 failed comparison; all14 diagnostic40268185222
