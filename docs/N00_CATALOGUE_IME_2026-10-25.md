@@ -240,16 +240,52 @@ at23:56:14Z. The isolated checkout is:
 |catalogue_ui_probe.py|16cdc217183c5c22f52565cbd3de080eac6fac290377ec4caa808d5c800a6dbb|
 |test_catalogue_dialog_transition.py|57e71e186d7a1474ddb408218cc3ae82eebe99fe96cd4ab143f573557ef69ed2|
 
-Four actual ready/partial cases at fonts2 and1 are now running with the repair.
-Screenshots are captured only after the original repaired traversal returns;
-they cannot make its search succeed. This focused workflow remains diagnostic
-and deliberately cannot claim complete Android acceptance.
-After it finishes, run all15 stages on both page sizes again without any
-diagnostic hook. Application/debug/driver APK bytes remain exactly those of40.
+## Four focused Android cases passed after the repair
+
+Run40246855859 completed all four ready/partial cases at fonts2 and1 at
+2026-10-26T00:00:36Z. Each retained the required price validation, typed
+purchase-check request, displayed constraints, result invalidation after input
+change and no-order assertion. Actual runtime output confirms
+CATALOGUE_RESULT_REVEALED=reverse-after-response-scroll in ready/font2.
+The other three cases passed without that recovery.
+
+Four result screenshots were captured only after the repaired original traversal
+returned, with the native heading checked again before and after capture.
+All four were visually inspected. Native heading bounds were:
+font2/ready[18,125][302,239], font2/partial[18,288][302,362],
+font1/ready[18,416][302,459], font1/partial[18,426][255,446].
+These are actual synthetic Android observations, separate from host fixtures.
+
+The workflow deliberately finished FAILURE with
+"Diagnostic only: full UI suite was deliberately not claimed".
+Its four case passes do not claim complete Android acceptance.
+The34-file private archive is979,292 bytes, SHA-256
+`d4b8d1e0bdb0c83c0f01c187fe6c5ab1cf05ecafb48748e95f7742ccbd11beef`;
+Timeweb9417611 confirmed receipt at2026-10-26T00:02:08Z under
+`/var/lib/analyst-ai-build/incoming/windows-development-40246855859-1/`.
+
+[Visual evidence run40247472177](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40247472177)
+provided artifact12618719925,216,951 bytes, SHA-256
+`1d75d03f7d48eb751b4db1b4a7096cbec9cae238e5674faf29eebc9d4bb25095`.
+The archive and all six manifest file hashes were verified.
+
+## Complete unchanged-candidate matrix in progress
+
+[Run40247318025](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40247318025)
+uses exact backed-up source
+`46158e9a5b8da09f0188fc882154a455d119f127`,
+code inventory770337e637aadcccec66047048aa7e696a58524d2536f2f66d4d20a16b633bac.
+Both repaired files were fetched back from GitHub and matched the exact
+Windows-tested bytes. This run has no diagnostic hook and requires all15
+stages on both16384-byte and4096-byte profiles, with actual published38
+upgrade and candidate40 clean installation. Runtime wrapper SHA-256:
+`38510b7ae3383d9c14c780eda80015a683271373d575ee9536084c9c2e491367`.
+Application/debug/driver APKs remain exactly those built in40239983022.
+The final runtime result has not yet been obtained.
 
 No complete Android PASS, physical-phone result or publication40 is claimed.
 The full build also explicitly records external_quality_gate as not_run_by_this_bootstrap;
-the tested source2347eb5 has no automatic check runs. Before a release/merge,
+the runtime source46158e9 has no automatic check runs. Before a release/merge,
 retain the exact-head external quality gate and adapt the existing PR workflows
 to the owner's Windows/WSL execution rule and published38 upgrade baseline;
 do not launch their legacy cloud test/runtime paths or remove any quality gate.

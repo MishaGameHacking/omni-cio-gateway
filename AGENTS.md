@@ -24,9 +24,14 @@ host-теста прошли за45.054s (прежние3 skips), git diff --che
 заголовка после точного forward-exhaustion. Отсутствующий/просроченный/иной
 результат и прочие ошибки всё ещё отвергаются. APK/driver не пересобирались.
 
-Сейчас40246855859 выполняет4 focused ready/partial случая при font2/font1.
-После них обязательна полная15-stage матрица4096/16384 без diagnostic hook,
-с baseline опубликованного38. Focused workflow намеренно не даёт полного PASS.
+В40246855859 прошли все4 focused ready/partial случая при font2/font1.
+Четыре снимка фактических результатов просмотрены; reverse recovery реально
+выполнилась в ready/font2. Архив34 файлов979292 bytes SHA256
+d4b8d1e0bdb0c83c0f01c187fe6c5ab1cf05ecafb48748e95f7742ccbd11beef
+принят9417611 в2026-10-26T00:02:08Z. Focused workflow намеренно FAILED:
+Diagnostic only: full UI suite was deliberately not claimed.
+Полный run40247318025 выполняет все15 stages на16384/4096 без hook,
+source46158e9 / inventory770337e…, baseline38. Итог ещё не получен.
 [Доказательства и продолжение](docs/N00_CATALOGUE_IME_2026-10-25.md).
 
 N00 открыт; публикации40, полного runtime PASS и проверки телефона нет.
