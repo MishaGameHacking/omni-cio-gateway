@@ -1,0 +1,43 @@
+name: Read current candidate43 laptop build progress
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-candidate43-progress.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 5
+    steps:
+    - name: Read only the exact active Windows build receipt
+      shell: py -3 {0}
+      env:
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
+      run: "import pathlib,sys,os,json,re,stat,hashlib\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\n\
+        run=40277268871\nroots=[pathlib.Path('C:/actions-runner'+suffix+'/_work/_temp/analyst-development-40277268871-1')\
+        \ for suffix in ('','-2','-3','-4')]\nfound=[p for p in roots if (p/'windows-development.json').is_file()]\nassert\
+        \ len(found)==1, 'Exact build state not unique'\nroot=found[0]\nreport_path=root/'windows-development.json'\ndata=report_path.read_bytes();assert\
+        \ len(data)<2*1024**2\nreport=json.loads(data);assert report['github']['run_id']==run and report['github']['run_attempt']==1\n\
+        out={'run_id':run,'state_root':str(root),'status':report['status'],'check':report['check'],'build':report['build'],'source_sha256':report.get('source_sha256'),'steps':[{'label':s['label'],'exit_code':s.get('exit_code'),'duration_seconds':s.get('duration_seconds')}\
+        \ for s in report['steps']]}\nfor p in root.glob('*.log'):\n if not any(s in p.name for s in ('host-tests','tools-tests','backend-tests','node-tests','gradle','failure','linux')):continue\n\
+        \ st=p.lstat();assert stat.S_ISREG(st.st_mode) and st.st_nlink==1 and not getattr(st,'st_file_attributes',0)&0x400\n\
+        \ with p.open('rb') as f:\n  f.seek(max(0,st.st_size-18000));tail=f.read().decode('utf-8',errors='replace').splitlines()\n\
+        \ lines=[line[:1500] for line in tail if re.search(r'^Ran \\d+ tests?|^OK\\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|\\\
+        bpassed\\b|\\bfailed\\b|\\bERROR\\b|Error:|Exception:|LINUX_GUEST_STEP=|LINUX_GUEST_RESULT=',line)]\n out.setdefault('test_summaries',{})[p.name]=lines[-10:]\n\
+        print('N00_BUILD_OBSERVATION='+json.dumps(out,ensure_ascii=True),flush=True)\ntarget=pathlib.Path(os.environ['RUNNER_TEMP'])/'n00-candidate43-progress.json'\n\
+        target.write_text(json.dumps(out,indent=2),encoding='utf-8')\n"
+    - name: Retain bounded observation
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: n00-candidate43-progress
+        path: ${{ runner.temp }}/n00-candidate43-progress.json
+        retention-days: 3
+        if-no-files-found: error
