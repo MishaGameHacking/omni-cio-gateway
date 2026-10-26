@@ -269,7 +269,7 @@ provided artifact12618719925,216,951 bytes, SHA-256
 `1d75d03f7d48eb751b4db1b4a7096cbec9cae238e5674faf29eebc9d4bb25095`.
 The archive and all six manifest file hashes were verified.
 
-## Complete unchanged-candidate matrix in progress
+## Complete unchanged-candidate matrix: catalogue passed, portfolio failed
 
 [Run40247318025](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40247318025)
 uses exact backed-up source
@@ -281,7 +281,12 @@ stages on both16384-byte and4096-byte profiles, with actual published38
 upgrade and candidate40 clean installation. Runtime wrapper SHA-256:
 `38510b7ae3383d9c14c780eda80015a683271373d575ee9536084c9c2e491367`.
 Application/debug/driver APKs remain exactly those built in40239983022.
-The final runtime result has not yet been obtained.
+The16KB profile passed the first five stages and all60 business cases,
+including all eight catalogue case/font combinations. It then failed in
+discovery/ready/font1 before native target alignment: the protocol rejects
+the colon in an existing compound portfolio resource ID. The4KB profile is
+still running; there is no complete15-stage PASS.
+[Exact evidence and next repair](N00_PORTFOLIO_NATIVE_TARGETS_2026-10-26.md).
 
 No complete Android PASS, physical-phone result or publication40 is claimed.
 The full build also explicitly records external_quality_gate as not_run_by_this_bootstrap;
