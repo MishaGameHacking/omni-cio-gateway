@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:00:28.871Z" hostname="LAPTOP-NPSGA016" time="0.002">
+  <properties/>
+  <testcase name="invalidDatesOrClockResetCannotPermitStaleResult" classname="ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest" time="0.001"/>
+  <testcase name="olderObservationKeepsItsShorterDeadline" classname="ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest" time="0.0"/>
+  <testcase name="excessiveServerLifetimeCannotExceedLocalCap" classname="ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest" time="0.0"/>
+  <testcase name="responseDelayAndBackgroundTimeConsumeLifetime" classname="ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

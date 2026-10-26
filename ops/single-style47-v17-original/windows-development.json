@@ -1,0 +1,1257 @@
+{
+  "schema": 1,
+  "kind": "windows_development_check_build",
+  "origin": "Windows laptop",
+  "host": "LAPTOP-NPSGA016",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "github": {
+    "run_id": 40381689236,
+    "run_attempt": 1,
+    "workflow_sha": "e2863633ec16f94d18514e29aca8296c1cb3ad61",
+    "runner_name": "omni-cio-ci-2"
+  },
+  "status": "passed_check_and_build_only",
+  "started_at": "2026-10-26T18:53:39.392897+00:00",
+  "steps": [
+    {
+      "label": "java-default-profile",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\Java_Temurin-Hotspot_jdk\\17.0.20-101\\x64\\bin\\java.exe",
+        "-XshowSettings:properties",
+        "-version"
+      ],
+      "started_at": "2026-10-26T18:53:52.872739+00:00",
+      "timeout_seconds": 30,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\java-default-profile.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:53:52.951507+00:00",
+      "duration_seconds": 0.078,
+      "log_bytes": 3558,
+      "log_sha256": "ac8a374a714bc8066013f69733d6db970306c280f8a33baed80148eac3ac7631"
+    },
+    {
+      "label": "venv",
+      "command": [
+        "C:\\Program Files\\Python314\\python.exe",
+        "-m",
+        "venv",
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv"
+      ],
+      "started_at": "2026-10-26T18:53:53.358069+00:00",
+      "timeout_seconds": 300,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\02-venv.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:53:59.892830+00:00",
+      "duration_seconds": 6.533,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "install-test-requirements",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "--require-virtualenv",
+        "install",
+        "--no-input",
+        "--no-cache-dir",
+        "--index-url",
+        "https://pypi.org/simple",
+        "-r",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\backend\\requirements-dev.txt"
+      ],
+      "started_at": "2026-10-26T18:53:59.895160+00:00",
+      "timeout_seconds": 900,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\03-install-test-requirements.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:20.605023+00:00",
+      "duration_seconds": 20.709,
+      "log_bytes": 11270,
+      "log_sha256": "6437f99d59a50e49443b7caac911c1aab4c4d08c5e489d6ba6ac6b8db6226420"
+    },
+    {
+      "label": "install-native-tls-requirements",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "--require-virtualenv",
+        "install",
+        "--no-input",
+        "--no-cache-dir",
+        "--index-url",
+        "https://pypi.org/simple",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "-r",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\tools\\timeweb-actions-requirements.txt"
+      ],
+      "started_at": "2026-10-26T18:54:20.616857+00:00",
+      "timeout_seconds": 900,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\04-install-native-tls-requirements.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:21.976630+00:00",
+      "duration_seconds": 1.358,
+      "log_bytes": 326,
+      "log_sha256": "92771f79616b50a8c9a1cc22aab46c33f4f308877ea7557720e63d1ef8b6f868"
+    },
+    {
+      "label": "resolved-test-dependencies",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "freeze",
+        "--all"
+      ],
+      "started_at": "2026-10-26T18:54:21.985587+00:00",
+      "timeout_seconds": 60,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\05-resolved-test-dependencies.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:22.586538+00:00",
+      "duration_seconds": 0.6,
+      "log_bytes": 609,
+      "log_sha256": "1c090018235e688ee655318b01d6fd7d4d2c18b040e08ae28c3954cde2eb0491"
+    },
+    {
+      "label": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_at": "2026-10-26T18:54:22.597192+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\06-diff-check.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:22.855875+00:00",
+      "duration_seconds": 0.257,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "dependencies",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "check"
+      ],
+      "started_at": "2026-10-26T18:54:22.857795+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\07-dependencies.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:23.586355+00:00",
+      "duration_seconds": 0.727,
+      "log_bytes": 31,
+      "log_sha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+    },
+    {
+      "label": "python-source-audit",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        ".github/scripts/audit_python_sources.py"
+      ],
+      "started_at": "2026-10-26T18:54:23.594287+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\08-python-source-audit.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:24.912855+00:00",
+      "duration_seconds": 1.317,
+      "log_bytes": 111,
+      "log_sha256": "f896658f17882d12d1119b4ad4fa4fe1a267fbf7fe81c84eec93b19c363a6e77"
+    },
+    {
+      "label": "workspace-guard-tests",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "deploy/tests",
+        "-p",
+        "test_timeweb_workspace.py",
+        "-v"
+      ],
+      "started_at": "2026-10-26T18:54:24.922368+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\09-workspace-guard-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:54:26.688287+00:00",
+      "duration_seconds": 1.765,
+      "log_bytes": 2392,
+      "log_sha256": "3b05d41355902024129d68903c6e6b2c0991e3375d0172bd4698dd37df3a3547"
+    },
+    {
+      "label": "host-tests",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".github/scripts/tests",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "started_at": "2026-10-26T18:54:26.697183+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\10-host-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:55:36.225474+00:00",
+      "duration_seconds": 69.527,
+      "log_bytes": 310109,
+      "log_sha256": "725f08d84afc7b241511887c041d8d802e09cf50299732760385e50a4fe9de23"
+    },
+    {
+      "label": "tools-tests",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/tests",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "started_at": "2026-10-26T18:55:36.235571+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\11-tools-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:55:36.948385+00:00",
+      "duration_seconds": 0.711,
+      "log_bytes": 7962,
+      "log_sha256": "7ff651d33da50f6ad7bd24b6ec426143096be5edc9a64af7f9894283ed5e4862"
+    },
+    {
+      "label": "node-tests",
+      "command": [
+        "node",
+        "--test",
+        ".github\\scripts\\authoritative_merge_gate.test.cjs",
+        ".github\\scripts\\ci_private_transfer.test.cjs",
+        ".github\\scripts\\require_clean_sonar.test.cjs",
+        ".github\\scripts\\require_main_release.test.cjs"
+      ],
+      "started_at": "2026-10-26T18:55:36.959149+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\12-node-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:55:37.188667+00:00",
+      "duration_seconds": 0.228,
+      "log_bytes": 4065,
+      "log_sha256": "70ab309ffd58059fe1e59989d5f24e8d6ede8e379f21fa356b17139aedb7ea15"
+    },
+    {
+      "label": "backend-tests",
+      "command": [
+        "wsl.exe",
+        "--distribution",
+        "Ubuntu-24.04",
+        "--user",
+        "analyst-ci",
+        "--exec",
+        "/usr/bin/timeout",
+        "--kill-after=15s",
+        "1800s",
+        "/usr/bin/python3",
+        "/mnt/c/actions-runner-2/_work/omni-cio-gateway/omni-cio-gateway/windows-development-patches-40381689236-1/n00-linux-guest.py",
+        "/mnt/c/actions-runner-2/_work/_temp/analyst-development-40381689236-1/linux-source.tar",
+        "bca3cdf9528dbf17cac97618c767b98b210b19fbbe9b6b7ba9bbc9be65ac5a99",
+        "/mnt/c/actions-runner-2/_work/_temp/analyst-development-40381689236-1/linux-source-manifest.json",
+        "5dc4228e771c3be358d4f269028d92c72c4bc9839d639c719cdaa6e1a0a6857e",
+        "/opt/analyst-ci/runs/40381689236-1",
+        "/mnt/c/actions-runner-2/_work/_temp/analyst-development-40381689236-1/linux-evidence.zip"
+      ],
+      "started_at": "2026-10-26T18:55:38.145139+00:00",
+      "timeout_seconds": 1850,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\13-backend-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:58:05.950744+00:00",
+      "duration_seconds": 147.804,
+      "log_bytes": 14405,
+      "log_sha256": "c12039bfe8577ea73123bdaa7e177669fda2862916b68795c09b416de78f4fc8"
+    },
+    {
+      "label": "stop-owned-linux-distribution",
+      "command": [
+        "wsl.exe",
+        "--terminate",
+        "Ubuntu-24.04"
+      ],
+      "started_at": "2026-10-26T18:58:05.970449+00:00",
+      "timeout_seconds": 60,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\14-stop-owned-linux-distribution.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:58:06.450532+00:00",
+      "duration_seconds": 0.479,
+      "log_bytes": 60,
+      "log_sha256": "10c05eb58e0a214b1b705eb5cf80f917a4a3280b42df742a773da555f030e740"
+    },
+    {
+      "label": "assets",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "tools/prepare_spectrum_checkout.py"
+      ],
+      "started_at": "2026-10-26T18:58:07.794948+00:00",
+      "timeout_seconds": 120,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\15-assets.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:58:08.153493+00:00",
+      "duration_seconds": 0.357,
+      "log_bytes": 368,
+      "log_sha256": "3cae5c476107ebfa0ce41e5755fc1ba5e51274a3aea494970450e9c17390acca"
+    },
+    {
+      "label": "native-alignment-tests",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "tools/test_native_alignment.py"
+      ],
+      "started_at": "2026-10-26T18:58:08.156902+00:00",
+      "timeout_seconds": 180,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\16-native-alignment-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:58:08.440877+00:00",
+      "duration_seconds": 0.283,
+      "log_bytes": 115,
+      "log_sha256": "08c6a11b9e01be12011f293967cd0d537cf7c83d379e9377e2401b49e8bfebd6"
+    },
+    {
+      "label": "mesh-tests",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "tools/test_spectrum_meshes.py"
+      ],
+      "started_at": "2026-10-26T18:58:08.444099+00:00",
+      "timeout_seconds": 180,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\17-mesh-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T18:58:16.238620+00:00",
+      "duration_seconds": 7.793,
+      "log_bytes": 439,
+      "log_sha256": "f70c17dcdb2371cf7d6dc889791521d008e8fb11630b882433065b597621d2ab"
+    },
+    {
+      "label": "gradle",
+      "command": [
+        "C:\\WINDOWS\\system32\\cmd.exe",
+        "/d",
+        "/c",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\gradlew.bat",
+        ":app:testDebugUnitTest",
+        ":app:lintDebug",
+        ":app:lintPreview",
+        ":app:assembleDebug",
+        ":app:assembleRelease",
+        ":app:assemblePreview",
+        ":ci-ui-driver:lintDebug",
+        ":ci-ui-driver:assembleDebug",
+        "--no-daemon",
+        "--parallel",
+        "--max-workers=2",
+        "--stacktrace"
+      ],
+      "started_at": "2026-10-26T18:58:16.247219+00:00",
+      "timeout_seconds": 7200,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\18-gradle.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:44.571960+00:00",
+      "duration_seconds": 628.323,
+      "log_bytes": 21063,
+      "log_sha256": "30549eef7702f0d454d0c3a35408e6aed2bf7d99b01db0553e5cd26466c21c4a"
+    },
+    {
+      "label": "mesh-apk-check",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        "tools/generate_spectrum_meshes.py",
+        "--check",
+        "--check-apk"
+      ],
+      "started_at": "2026-10-26T19:08:44.585383+00:00",
+      "timeout_seconds": 180,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\19-mesh-apk-check.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:45.372662+00:00",
+      "duration_seconds": 0.785,
+      "log_bytes": 84,
+      "log_sha256": "8f1d9aec03bb93fcedbf209beba501e98b183727a3329bc96b870b1d7b4b11e5"
+    },
+    {
+      "label": "apk-signature.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\Java_Temurin-Hotspot_jdk\\17.0.20-101\\x64\\bin\\java.exe",
+        "-jar",
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\lib\\apksigner.jar",
+        "verify",
+        "--verbose",
+        "--print-certs",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk"
+      ],
+      "started_at": "2026-10-26T19:08:45.384838+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\signature.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:45.742227+00:00",
+      "duration_seconds": 0.356,
+      "log_bytes": 1044,
+      "log_sha256": "358379d88acd6d8198426c114466a94563ade5edfd3147d7eef8049a61c68177"
+    },
+    {
+      "label": "apk-alignment.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\zipalign.exe",
+        "-c",
+        "-P",
+        "16",
+        "-v",
+        "4",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk"
+      ],
+      "started_at": "2026-10-26T19:08:45.746560+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\alignment.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:45.767076+00:00",
+      "duration_seconds": 0.019,
+      "log_bytes": 14390,
+      "log_sha256": "b38fef667d8fe69c1dfd11865c38e43e0022d47cc273ada4078bfec54245bcee"
+    },
+    {
+      "label": "apk-badging.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\aapt.exe",
+        "dump",
+        "badging",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk"
+      ],
+      "started_at": "2026-10-26T19:08:45.776704+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\badging.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:45.796338+00:00",
+      "duration_seconds": 0.018,
+      "log_bytes": 5234,
+      "log_sha256": "e029df0ba3b6c13d884d04a2e0fd11ce612255483e5698e20cce2111edce1fc2"
+    },
+    {
+      "label": "apk-manifest.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\aapt.exe",
+        "dump",
+        "xmltree",
+        "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk",
+        "AndroidManifest.xml"
+      ],
+      "started_at": "2026-10-26T19:08:45.800005+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1\\app\\build\\outputs\\apk\\preview\\manifest.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:45.816910+00:00",
+      "duration_seconds": 0.015,
+      "log_bytes": 8885,
+      "log_sha256": "57d39c6bfc9611a9bc774429cc64e25ddaec0f6bf770525c6d0fdb4c3e44e029"
+    },
+    {
+      "label": "apk-verification",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\venv\\Scripts\\python.exe",
+        ".github/scripts/verify_apk.py"
+      ],
+      "started_at": "2026-10-26T19:08:45.827889+00:00",
+      "timeout_seconds": 120,
+      "log": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1\\24-apk-verification.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-26T19:08:47.467412+00:00",
+      "duration_seconds": 1.638,
+      "log_bytes": 10356,
+      "log_sha256": "29a40809cec5a99f5a34576bb471a2d1363f9c1851dbcb03db270e2fe28ab88d"
+    }
+  ],
+  "check": {
+    "status": "passed",
+    "started_at": "2026-10-26T18:54:22.595793+00:00",
+    "finished_at": "2026-10-26T18:58:07.791796+00:00",
+    "source_sha256": "6ef5e7bbddb2f28ff826f1238389775fd862e0987e7a6bfa0a0c35601f3add06"
+  },
+  "build": {
+    "status": "passed",
+    "started_at": "2026-10-26T18:58:07.793433+00:00",
+    "finished_at": "2026-10-26T19:08:48.885530+00:00",
+    "source_sha256": "6ef5e7bbddb2f28ff826f1238389775fd862e0987e7a6bfa0a0c35601f3add06",
+    "apk_sha256": "a85e9d2360e8fbd42a7b9467eec86af4c13a29894f29c8deff8f3df2dd5d30eb"
+  },
+  "runtime": {
+    "status": "not_run"
+  },
+  "publication_authorized": false,
+  "phone_verified": false,
+  "timeweb_execution": false,
+  "root": "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1",
+  "state": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1",
+  "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
+  "patch_manifest_sha256": "883911cd42df0b93ff50feff524e1f42f9519bf56deca0640c894bdd4cfa5a65",
+  "python_version": "3.14.6",
+  "external_quality_gate": {
+    "status": "not_run_by_this_bootstrap"
+  },
+  "retention": {
+    "owned_checkout": "C:\\actions-runner-2\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40381689236-1",
+    "owned_state": "C:\\actions-runner-2\\_work\\_temp\\analyst-development-40381689236-1",
+    "automatic_deletion_performed": false,
+    "cleanup_requires": [
+      "exact_private_archive_confirmed_on_Timeweb",
+      "exact_source_inventory_backed_up_in_Git",
+      "required_APK_inputs_retained_for_runtime_and_phone"
+    ],
+    "preserve_shared_sdk_gradle_signing_profile": true
+  },
+  "patch_files": [
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/automation_ui_probe.py",
+      "old_sha256": "b240df02dcc1ec652ab1ee44085dcbc80dddc3b3703f6290fd51777352b48ec4",
+      "new_sha256": "3935c3b3ab90feae8fbb822dde258d5c4513ab20c06df1b04cf70cc56f90c8c3"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/navigation_detail_probe.py",
+      "old_sha256": "1d1755e07d3fbd1467488a164b9dd10fa64f20de157aadded0e65d51216a69f0",
+      "new_sha256": "b720feba113e0bf26c1275412606dd4f2f5293a483a88eec471e9e2a3a06f440"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/portfolio_preferences_probe.py",
+      "old_sha256": "be9f1e23e1e41b2aeedd06de7d7436ca341221a317b21010d8d59ea4f5008071",
+      "new_sha256": "bdc67cd577dbea585dc32e48c7ffe08ebef9f7a2fcfdc28545acd501be8f31f4"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/profile_ui_probe.py",
+      "old_sha256": "b61f6b062bcec76078da8de46d30d5cfc1b395a1bf854096f11f5d18637d455c",
+      "new_sha256": "8e1006b61bf331b1cad38376c53832f8942b5d85b5d172ae0725cbd6ae23e9a8"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_android17_live_spectrum.py",
+      "old_sha256": "ee7c103e1be172a43ba7b6e348bbe37fa46d2edbe87c4c8d20b290438998b790",
+      "new_sha256": "7c7a0c0935f56adac9f4cd5aaa00da28def0181b4fa2815ef1c62adf5a44542b"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_automation_ui_probe.py",
+      "old_sha256": "526f67659d610b62f25c1373d80843f42dde34658b5ee792ac609eec1d5937a0",
+      "new_sha256": "c84a506352aa202aefbbe269c3c187b6771faab36486171c8049d8ac6e92521f"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_navigation_detail_probe.py",
+      "old_sha256": "4bfef7ea1b80eca33adc00cbe1dc3ea976a5c3e294f2418262b5e06853fd3504",
+      "new_sha256": "cb4db236e7ae07256fea184f6a971121ef33f94e4417ffa565c1148664fbd823"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_navigation_return_scroll.py",
+      "old_sha256": "c0e1b8d8f83c45e4c47e9aa61f7ffeaa378883f7b1256d43bfa0642e92862530",
+      "new_sha256": "c22a12183bc7e0ce422631938e25ead1736d86c187c900c5bd4d95b8eb02c41a"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_portfolio_preferences_traversal.py",
+      "old_sha256": "01b934d2a8052ed3cfdc364db2347f00bab5c1de0decef923203f2df65fc61a3",
+      "new_sha256": "5ae7f59fb662c566d723412c200f93890ddb3167fe6913f1ac98b695c396d9d0"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_spectrum_brand_identity.py",
+      "old_sha256": "1c9f8fe84952155441e07a8f6e367dfa78f83b963839804857ff3db5e9374f09",
+      "new_sha256": "c1c0e9f345b33849fa75cf5ec17237d4accd29c7982c78ba3a061fb87c06e55b"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_spectrum_compact_home.py",
+      "old_sha256": "ba645fe18ed8f0811399176103aeb019a149d5c6810389bb6abcb32b2a5163b1",
+      "new_sha256": "0868811358c1ab4a098dfa9ba78bf8f50fb04dc59da081a17f2a31532f6d1d41"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_spectrum_contrast.py",
+      "old_sha256": "f456319c86b624affe0163591b4f8d98807c2ed8a0ea0c2d14cfe18c92609ab6",
+      "new_sha256": "5f97068be270356deaa55f4cd490afb6f238770f599d7eb38e45e3c0bffd5bb2"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_spectrum_foreground.py",
+      "old_sha256": "c6ae9c9998885b48d0889af98666b78b57d045ac0e4df1b06839d508940658d1",
+      "new_sha256": "845aeb91c98e2a193087f2e83a6ca44bfbd09f20c2df455841fc6ad4792b4f69"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_spectrum_production_tokens.py",
+      "old_sha256": "2eec573bf9db0fee8955400c2fa4b9bddb5cfeefbbbe82183e96deb618888a05",
+      "new_sha256": "867e33930bbea0d5b58d83ad9fb23f529f716f7344178138e8f3853f855f9ce8"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_theme_lifecycle_probe.py",
+      "old_sha256": null,
+      "new_sha256": "4956ee328d5e7847a506a835e7cc1f6084e45f6388c893d0e3105b2c3a1ff97d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_theme_state_evidence.py",
+      "old_sha256": null,
+      "new_sha256": "5e6832c7c2eabfbc50fabfc08befc79ead7d46dc1448a2673539d68b6760cafa"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/tests/test_unified_update_contract.py",
+      "old_sha256": "0e434d61f139f598a16b835562e17bf6bbac7b1dd8fc0658c339602617e2ae1f",
+      "new_sha256": "9f781c374e5630ae9b42df6e134682a6233c1f3a29b4cc944b6c6a4e38cf18da"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/theme_lifecycle_probe.py",
+      "old_sha256": null,
+      "new_sha256": "cb9bdfdc652ae96625805ad1a670f8c6728fbbc318c464795fcff91778734dbb"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/theme_palette_expectations.json",
+      "old_sha256": null,
+      "new_sha256": "4fb4aa65c080eeaf705398d4879ebee6ed8836bc9d17aece12d5b26627e0a9cc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/theme_state_evidence.py",
+      "old_sha256": null,
+      "new_sha256": "db53c575ce7de05a4adb22d88c3f7ec9bd9bffa790038bfa697e6b17603c64fa"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": ".github/scripts/update-help.html",
+      "old_sha256": "6c12714f6b2a2a0b698f3fa94aaa979325d53a281f8ea1938572451ca60866ff",
+      "new_sha256": "b9a9f61fae72c3da8ec24a588dfed83bff9fb16a1ec161981e872b1cd1d71dc3"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/build.gradle.kts",
+      "old_sha256": "1ef6b7ed3bf900af23536ef77c0e5530cfbddd96ddebfb8b96a8e4ed73ce9ce3",
+      "new_sha256": "ed85b373e406293f09612d725b9be9560007420cd03368c10e8f88f4e052045d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/gradle.lockfile",
+      "old_sha256": "71b3e3821985938a16d5b7ac3a101995738e955da6b485a864b02a5551f7b45b",
+      "new_sha256": "efdde5734772c77d2d7bda43c3a06837d7ee8c8b66e01b75e2029c9d9b6db586"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/debug/AndroidManifest.xml",
+      "old_sha256": "bba5b326e147df23db2f771e071465fd3e8d2284e57e99a0a75b5197a6f60ea3",
+      "new_sha256": "ee43a26f9601c685533c6197f1eefdf01740cd979645a9a9347de8237a09b9e1"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt",
+      "old_sha256": "e5132424c31da9b0cdbadfb2d3538aee6b55b567a4a1aa10349c351e0a6978b2",
+      "new_sha256": "d4c9f3a9044670aa56f0411e2495f9b973d725c135d07762fe3fad7cf6490236"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt",
+      "old_sha256": "43843b391a534a6add46bb218226fdbcd67d14e3df5b74d983ae667db6b79202",
+      "new_sha256": "3f344a4969e11bde72c5ee2eb829e9f021b44614c23b9af2e3392d23493f5dd4"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/debug/java/ru/omnicio/app/ProfileUiProbeActivity.kt",
+      "old_sha256": "1bf301b726607746d7c236a066b63726eb5484670b0865d65a519601d0b169e4",
+      "new_sha256": "b2c836f8feb35e31b8a255dbec8d92017efbf5e0761dcfd673f8ee16f72a79d5"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/debug/java/ru/omnicio/app/ThemeLifecycleProbe.kt",
+      "old_sha256": null,
+      "new_sha256": "5e3dc8c9e2b62196895f122803e0011f0d6274cd1e6e2956b26d7c5f4b1c0bca"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/debug/java/ru/omnicio/app/ThemeStateProbe.kt",
+      "old_sha256": null,
+      "new_sha256": "cf60d57e09d2994fb7571ffc281569b21fd8e5c7a8921dc870d47c0e586f9193"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/AndroidManifest.xml",
+      "old_sha256": "367c66fd21238e1f4e4e261b7e24bb175b950fe843bf610ffc041c382973bada",
+      "new_sha256": "1d570fb3d24a3e3c7940be4d08422807a309b4aa4af1bf326776242b4a87dec5"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/AnalystApplication.kt",
+      "old_sha256": "41a06e6ee882a754ff3850f9232fa13c4c706719eca4fa89eb2517ee9389d341",
+      "new_sha256": "5d970352d4c0388faf2f882c8ef08821a6fe7cac8aab4cf1a15449066395e3db"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/MainActivity.kt",
+      "old_sha256": "aca58f260f3f1953ef34824e2c6989a14653ea636fa48c4151127027b4e42e72",
+      "new_sha256": "62b99e59df86834e68df106bb8db4a838fd9ef32f5b8f9f3b2ad37fdcf8cca2c"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/data/workspace/WorkspaceEndpointPolicy.kt",
+      "old_sha256": "fb8f42c272e0c1280a5d42f1b9e4f33add12ce487af90dcd2f14637919141cbc",
+      "new_sha256": "715638cc5874cae63c64ac6aa9ab2294d847ab7dce7fd02704a329bfe214dddd"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/AnalystBottomBar.kt",
+      "old_sha256": "5e52cef551af74fb81b895809e05cc1806098c67026cbf27d25d1c475c02e2ae",
+      "new_sha256": "94e176e3f926abd89745967ae31eaa6078ff21396c3a611f48c8e8fd3a1c8096"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt",
+      "old_sha256": "50d085aa2c7d6d1ca7d670247175e5d0fda42c24349e6e3fd1e58abb138fe168",
+      "new_sha256": "ba766f6f52b142dcfd2dda8aa27e353162c141d0bb8ec5caa14aea3a8212e222"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/DockPredictiveBack.kt",
+      "old_sha256": null,
+      "new_sha256": "9f85eecd76af125a312bb1c157874030666be9d195fae94d2b63f24a6dafd6e4"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/NavigationCatalogue.kt",
+      "old_sha256": null,
+      "new_sha256": "233337f9d8d94375253a0727d014e5a6ffb8ed8ee1876121e4ca08181c045c81"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisCards.kt",
+      "old_sha256": "e2e70804e3ec3f2ad9002f165fcf3ac7f4bedbafc242138de5a0f3ef70093ff9",
+      "new_sha256": "4b16274eb242c87ff76bdc3cc90f765bc2c25ca3fceae7e05e10291de660cff6"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt",
+      "old_sha256": "70fc4409cf40939bd37074d3635f4436684c14d254ca26aad6b096143a3eb95b",
+      "new_sha256": "d2e8b57cb684e0db2f4ea887e4b14d8324cde653f4d51a55e1f0499905360613"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/auth/TelegramLoginScreen.kt",
+      "old_sha256": "474147d3ca016bb389fca99475f1ae1e3e12e5184f20fc07710e104a1bf3a810",
+      "new_sha256": "672291d95848b76ab1a63160c773a1983f1d36f781bdd5bcb87d6171a679fb71"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt",
+      "old_sha256": "e13065f64e829139a5d5f1ce2fe95d2ce7ae27bd9c2cd19c16b0232f6e7b17a5",
+      "new_sha256": "75347bc093dad16f6f5e3dd21823d05e506608487ab968c27eca3759d8c8cf69"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/home/HomePortfolioHero.kt",
+      "old_sha256": null,
+      "new_sha256": "17e15cde968e12ab46ed013eae2c59d985a0fc927151fc3270090da39f87f526"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt",
+      "old_sha256": "4f3aba4fee1127e315224d5d331385b1d8583f1dbaf4a8ac0cdcff69e2e2fd26",
+      "new_sha256": "836d5dac4e9f1d1ed263389b6196cb5dbec04bef19a8465103730db5a5af7aea"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt",
+      "old_sha256": "8b16d9f1d892438925163a93acb2053a53a10f547279e6b48704a3e0e967d1cc",
+      "new_sha256": "c5e26ccbcf6601b91c02a48add175c0b56f690cbb47cb16cefaeeab14115d177"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt",
+      "old_sha256": "95c8d64271485a09b312d72035bdee0d5f15f58ac23c8cce7f7992a7b0a3bf55",
+      "new_sha256": "87ba3f8375b1c445e9d980486a11fad6286a33ab704a4b31da5e4c1c09d5948e"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt",
+      "old_sha256": "0a3baa1cef5b58a22bc8ae5bb5adccf14bbfdcb1f0c7220154917c7d68f88300",
+      "new_sha256": "0a38fff1cf690ec569d8b516ec8433a4150aa4002be86f542ccef1dcc64d7324"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioAssetBrowser.kt",
+      "old_sha256": "3f68425086aaf139174bea742829e3234f9b0e965c52d1a615bba7e4c3fb9d8c",
+      "new_sha256": "9e1eb06625e4290761a75c32733d9068189be9771ef3c7218b3cf39efa4e52fd"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioComponents.kt",
+      "old_sha256": "34c91e8b37b45b225840488fa14f43f9080bb41b104491272b58144566547887",
+      "new_sha256": "02ef810b450a19a5023dd4551453854f6ca8b70dfc50109795de02d7995f4dcb"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioDashboard.kt",
+      "old_sha256": "ce7b4abcd0dbccd19b96172ce3a39713742d43dd93e85ed6cdebc1b9ad2e17a2",
+      "new_sha256": "61ad33fc1751d973d0b983f59a7d39bb04322507d5b5bd66d76f5c399dcfb79e"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt",
+      "old_sha256": "2d6a6f925791590bd4029d9c5880ff7ca199a3f9a47e49de7d307df7e5e0410e",
+      "new_sha256": "cf14eeac1d7020dfb647c166031d5c97e70deaf0bfe54eb445590dc49816c3f7"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/FlatArtwork.kt",
+      "old_sha256": "3d1a29fa9e5fa5e052e3616aa3d338e612d5c85e43e15a883004e0e6bf652fa3",
+      "new_sha256": "29d0c5c536741ab30306dd7ff851ad2ad57f77703b3f60ef87cce15e3a41fa9f"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/LiveIconClock.kt",
+      "old_sha256": null,
+      "new_sha256": "e48ae47f7657212102b331dca57edc1b5a3740b529647940bfd93fe7119061e2"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt",
+      "old_sha256": "00ffe65419481ffc3d830aafffa926e772bfb60839601ea06ecc4de9515420c3",
+      "new_sha256": "15b078a44ce0d8b1cd38d37c849f884770aca2a5f50ef4c89cfdef1d8ec1994a"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialColors.kt",
+      "old_sha256": null,
+      "new_sha256": "304ae139c25114454aa10d6249c4ec628f070d279d1f67ee8f4b245cef453689"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt",
+      "old_sha256": "c9ffb88d3aed284ab88610034a05874e932d9b55ddc2323e613493df83f847a9",
+      "new_sha256": "86b3c6b08b2b120a55750ec928eb6eaaa7eea459c35f89ff584d0570c06f725f"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialModels.kt",
+      "old_sha256": "b24250605d79b67883efd37299dd2483240ab101087f88126b3bd81cc0c3109c",
+      "new_sha256": "ac6639c2eb63b5bf55748e4fc2a6234b1153d0811d6923c4811f165a958ed817"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt",
+      "old_sha256": "6f7eebe86e3cf8ef0583338e1378bdb812dc2baf61e2a18a57d5e4fec4f58d98",
+      "new_sha256": "268d655cf2070461c17d36c3da618a043242ceddcd952908d1d8fec1f3cfa39d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAlertDialog.kt",
+      "old_sha256": "4cb4d35f82110b28cff698d376ddf935c384a7cfc355d1089a2673383ec5496e",
+      "new_sha256": "8bda64f38cbea5597c4ef54c4f3ff960064df3af17533dfd8cd1e06cb6d5a71c"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAssetMark.kt",
+      "old_sha256": "c803fd01f54fa1a5b392b54b85be3ec53adc9b5306cd3c0370b419103964b109",
+      "new_sha256": "f5501302ad9830f758f1af7bf5bc4c6a78430e698c6f29b2b9b1ab9822448d93"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumCalendarColors.kt",
+      "old_sha256": null,
+      "new_sha256": "2ee0f4e2672e2482121180d2e9ddd74dbff9b6cea7f748853842ada9d9f7d67a"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt",
+      "old_sha256": "d434d100da1fa97c7cf83c58c8e2bda6e95b93508ae74eff04a5c7ed365a5c1e",
+      "new_sha256": "fa7b7a26f3beaffd0537acb7477844bdfc2b3305a605cf45b00ee6a5d8f759aa"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumGlyphButton.kt",
+      "old_sha256": null,
+      "new_sha256": "a259c82c352c17b88871c6ea2583304c864aaa391549bf1c5a430046582b21ed"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumIcon.kt",
+      "old_sha256": "2169702f8cf4eeb648f0d4bd55560372bbcc34f8a2e7f55ddc94ea617db1e040",
+      "new_sha256": "98e393b0461edfd17b73d9c7c92353b9883fd6ffe78b7866b437e105ed07eb06"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumModal.kt",
+      "old_sha256": null,
+      "new_sha256": "8f5d1239e1e8709c57b340271bc781d0215b636fabcf6ca00ed05ccc1933d610"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt",
+      "old_sha256": "cacb220b228075c2536ddbac97545dceb1f00e871d1dae6f9c361effb7c6550a",
+      "new_sha256": "b821bb1d2d6005caf3e5efebbbfe8610f1015c41bc1bd6aadf62923e4687651d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt",
+      "old_sha256": "ecff41072feef83c74c3490ff1d069c7a247828c447706d1f576efd500ec5299",
+      "new_sha256": "c2459acdfddd865eaa2f0d385b69fe956deff6b2a75432f4d2a82903b44caeae"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTabs.kt",
+      "old_sha256": "51599f1211c2630451a17b5ea1d2e4efbd3521e0cf8f39b0e23ffac8ca18c145",
+      "new_sha256": "0d957d2a5f5e3f8431ef7dbb78035a222ec531690fc13d8ce61f4818cc2af933"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt",
+      "old_sha256": "eb322c69f83a4e478983799be9795008ec86a1829d9a554ce7a02c0eb2acf2a9",
+      "new_sha256": "c2ef5231fa55251dc75d4963ecba02279de6d838bb5afa5d788fbcd772ea197b"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt",
+      "old_sha256": "64724be9830c0d17bcb05707d9b3bae4a2eea801d6238a6e64b1687355297cf6",
+      "new_sha256": "26a62e9a50bba8796b04443a7f4794770b038e2b9b3f341445a52c32ac876026"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt",
+      "old_sha256": null,
+      "new_sha256": "3b59b6f534d6b62be60c9e2367e2afd27e0da242df14416be5b76071993b1e52"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/theme/AnalystTheme.kt",
+      "old_sha256": "32757f21b22fca3d492a7aec56a406b8020ef3a99c3664787ed490fc3a35ced1",
+      "new_sha256": "56a75465e17446957fe2f270c138cf2b7feea84a38f84277ff3f73468af242cd"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/theme/ApplicationThemeMode.kt",
+      "old_sha256": null,
+      "new_sha256": "3a7cad19ce3b42f5090af10672860195e807638c73fb3ef057594a9109af0e84"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt",
+      "old_sha256": "5e1e6c210c11ae1f643e153bd0f0d7e291b203e36db071cf8fe9121954ef13e0",
+      "new_sha256": "433fcbd210c0b6e1ebb668c890a9afc36841e4b1d13528495d47f9f6b543a32f"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/AutoSaveDocuments.kt",
+      "old_sha256": null,
+      "new_sha256": "81f2478e327f93255dafddc785dc3fa4461a8bcd39614c2b1d177d683769863a"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/AutoSaveModel.kt",
+      "old_sha256": null,
+      "new_sha256": "f99f3b036255aae065baa1de829527c2ae5e7742acc6fbf1ec69f01e30a8b87a"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/AutoSaveStatus.kt",
+      "old_sha256": null,
+      "new_sha256": "444b7495dd2b976cb8333037077e5546fd19558ad72a611f18b9565e6a233249"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt",
+      "old_sha256": "e2899e3837c07a7e1955bfafa4a55e3f49d5ac87c8e2087456c4325ee27c01c1",
+      "new_sha256": "26833818a1a81b37421217088ee649d361a83589a0a56707ee25490cb037216d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/LiveStrategyScreen.kt",
+      "old_sha256": "a2128ebcc009afc73d13c258b3c536d4ff50c82a0db9748455c1d790971be5f1",
+      "new_sha256": "0c624a29a76dc17dc641ec6e3df76525deda3ada7ea8c63d4d2b6b1ab7243130"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/NotificationWorkspaceScreens.kt",
+      "old_sha256": "165125c173bc30ffee829c5ee5e04458bb7147a8f4d1776e6b12a7cc46d380db",
+      "new_sha256": "38182e55a6348e3d2302c13cd602418a2ef212e79ff7dedd73a9f4f08300b44d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt",
+      "old_sha256": "776511f32cb8b83477ae4b502a1d44e58818e2be158c4c242e15e390111f67c0",
+      "new_sha256": "075a4d64d96c05dcbb51e2463702ec7110933a894f510314dde6c38efb6c654e"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/RiskScenarioDialog.kt",
+      "old_sha256": "be6105976a96375e6259c0550b64d82d29ef0764868f95c9f4af783a23021b72",
+      "new_sha256": "da2e703bc3b3c7b68f98e3ee4a282f8628cc0bd01e185676f8a6ef3bc2dc9dd3"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/SuggestedInputModel.kt",
+      "old_sha256": null,
+      "new_sha256": "9266230e1cf3606093ef30a7d6dd4ae550cd1bea6bf6394a385469f75226c85d"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceAutoSave.kt",
+      "old_sha256": null,
+      "new_sha256": "e6108f6c2398c1fc77e447a0f209f39bd2bfbe25ed8ecc517a015cfce110d750"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceControls.kt",
+      "old_sha256": "4f63c01ac0d1704738d978593cebfdf67ced48011650536b6a1529efa5932d10",
+      "new_sha256": "54ee6b9ae8d617747c35dd6060796998e1b95427c597388e158e43c58744e512"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceDialog.kt",
+      "old_sha256": "bf370f5709007161d05d5f2e32da31c8c8d44746182ad7affb2927638048e01b",
+      "new_sha256": "211fffbaa012b8e2af4eeebe7caab82b5eecf8f6c40c29509c46fd953e1a2372"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePreferences.kt",
+      "old_sha256": "1bbc53f76dfcc94c3d2a7ca0f275fd596381a85120d466ea2eb7d9ec2840f37d",
+      "new_sha256": "bc53efc15747e185ec1e9aa40adaeca0724ca4df50fb984e6b17488b2fd4a360"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceSuggestedControls.kt",
+      "old_sha256": null,
+      "new_sha256": "9e760d7a92a6f82df1a54e697f7704397b275f103cd171068af8252093106091"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceUi.kt",
+      "old_sha256": "1d038a4c84b9c5dd3c67263e94e9b56f40539abd6a8eb84cc3fb247b76d7ca4d",
+      "new_sha256": "c07adaaa701c790a86264f79f3726bd5cb58df6357baa9ff963cfa4f99680162"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/drawable/analyst_brain_foreground.xml",
+      "old_sha256": "8178110657ac419c674a55063394dd4f577ec53a515f2c9327f88a493013fe91",
+      "new_sha256": "d0d2fd80978ccf5f352618945084f9ad6ed5b80d2ab3ee913cee02785d24f4c7"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/drawable/analyst_launcher_background.xml",
+      "old_sha256": "3e817d8bb936074a24027fbf737a222320fb4509670f1f0506e40003459daa44",
+      "new_sha256": "f5dc865efadab4a6d05ce1c3b3c6b879e236688c8e24ff1d378220e636dfb5c6"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/drawable/omni_launcher_background.xml",
+      "old_sha256": "c4073e70359178c9a65a117eb8cdc9454b9f954be3ac25a88eedac5045f2157c",
+      "new_sha256": "f5dc865efadab4a6d05ce1c3b3c6b879e236688c8e24ff1d378220e636dfb5c6"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/drawable/omni_launcher_foreground.xml",
+      "old_sha256": null,
+      "new_sha256": "f5261f5e4a48d6c205a59598a89cddd5667e1be310f3465f4d887622bef88e99"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "old_sha256": "c6d8003944462536e556906599bb0b758a8498029d53deb3d443cc9fc826a836",
+      "new_sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+      "old_sha256": "c6d8003944462536e556906599bb0b758a8498029d53deb3d443cc9fc826a836",
+      "new_sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml",
+      "old_sha256": "47e6a26bfdf9a1b0be1555e993b62f62122e4b5b99797345c1c29034fe5645d3",
+      "new_sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/mipmap-anydpi-v33/ic_launcher_round.xml",
+      "old_sha256": "47e6a26bfdf9a1b0be1555e993b62f62122e4b5b99797345c1c29034fe5645d3",
+      "new_sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/values-night/colors.xml",
+      "old_sha256": null,
+      "new_sha256": "7d8444372f4d24422d2e36ddf4fdef119054ea81dd1bf07ab6613f69ae359ccc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/values-night/themes.xml",
+      "old_sha256": null,
+      "new_sha256": "1a7148b4ec333bee19b4e9cde3775a383e1e69a5d4744bee995c2405a071f6d0"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/values/colors.xml",
+      "old_sha256": null,
+      "new_sha256": "7d8444372f4d24422d2e36ddf4fdef119054ea81dd1bf07ab6613f69ae359ccc"
+    },
+    {
+      "bundle": "n00-single-style47",
+      "path": "app/src/main/res/values/themes.xml",
+      "old_sha256": "3488c5626e4696ee468212ac958bc696ff2180a239b136170851b349ed196faa",
+      "new_sha256": "1a7148b4ec333bee19b4e9cde3775a383e1e69a5d4744bee995c2405a071f6d0"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/NavigationCatalogueTest.kt",
+      "old_sha256": null,
+      "new_sha256": "7fa0cee3bafe2cb13565e5741985d36508c804c71be49ccff0ae90dc9959a14b"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/spatial/LiveIconClockTest.kt",
+      "old_sha256": null,
+      "new_sha256": "a8e025c12a665c0c49f70aaee8ed8387c97633558394a54f66308e9ce0464c66"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/spatial/SpatialColorsTest.kt",
+      "old_sha256": null,
+      "new_sha256": "9897cd256cbe32b8ed5b62174553965226fe6f49fa0c284999431f5095001da0"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/theme/AnalystColorsTest.kt",
+      "old_sha256": null,
+      "new_sha256": "7df1466237a2092b77c19f86050bf45e562e65d2a48ee02606ad077e2c8a8c37"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/theme/ApplicationThemeModeTest.kt",
+      "old_sha256": null,
+      "new_sha256": "c9d72e974f62e78859f27e4a528e491816a32f5d33e266866b516e18cebd8a7a"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/theme/DisplayedThemeTest.kt",
+      "old_sha256": null,
+      "new_sha256": "3c516c9a52f80e3404ac2a2f6881034a4a60fa6e5cbb36860fb3696ce9114fb7"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/workspace/AutoSaveModelTest.kt",
+      "old_sha256": null,
+      "new_sha256": "2b37e5651264f9ba023878210f7621d1a6bda87b57fb8e1e4d254772b83f12f3"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "app/src/test/java/ru/omnicio/app/ui/workspace/SuggestedInputModelTest.kt",
+      "old_sha256": null,
+      "new_sha256": "19138a851172da36d7692275e33c47c7a0b06697d632f64fe97d4917be03ddf0"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "backend/app.py",
+      "old_sha256": "6a44c9fbe9cd06a91c890961db9708accf7f4a9096987fae5b490113933ad455",
+      "new_sha256": "33950c712e6442ce00af8de84f1e2c174c75d140728c1c093f00d717f5948c40"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "backend/owner_app.py",
+      "old_sha256": "4162966c03c3793d6cb9903a690842600fcc241dff1a402ae253e3fc0b285419",
+      "new_sha256": "09dda073a447e12f742e4540945e1695be14ce943cf9471189cf4ca80c3d729b"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "backend/telegram_browser_app.py",
+      "old_sha256": "be7d2b0b122740bd02d8fecf0148db9c6569f0cf3b1c255b79eb4bf020bca5ff",
+      "new_sha256": "5a1ef0f644948cad8d38b4537b9b5c938582fea79955c143453c797b67c46793"
+    },
+    {
+      "bundle": "n00-single-style47-part2",
+      "path": "backend/tests/test_owned_web_theme.py",
+      "old_sha256": null,
+      "new_sha256": "fa51860122d7a91d46ff36b0eeb927a0e26a4ddf35c1780a159336e839596e81"
+    }
+  ],
+  "source_sha256": "6ef5e7bbddb2f28ff826f1238389775fd862e0987e7a6bfa0a0c35601f3add06",
+  "complete_source_sha256": "75dcea238a70821b8387496db351e34c7b1893194a454de1b1389bd93a40bc01",
+  "signing_keystore_sha256_before": "bf4443e8ed6cb10b4ea4c9c0f46751e5955560e8c5f1bbb928b70febfc9e8ef2",
+  "java_runtime": "17.0.20.1+1",
+  "profile_locations": {
+    "java_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService",
+    "gradle_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService\\.gradle",
+    "android_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService\\.android",
+    "existing_debug_keystore": "C:\\Windows\\ServiceProfiles\\NetworkService\\.android\\debug.keystore",
+    "profile_directory_created": false
+  },
+  "sdk_packages": {
+    "platforms;android-37.0": {
+      "source.properties": "fa89029fc0cee414cb5e44a37cd3033771217eeecb5086577bb6d9b1b03b5b5f",
+      "package.xml": "9efedaa8306dc2b690b3ed328b417f19dde7537000701fc761241c6b6ed94c32"
+    },
+    "build-tools;37.0.0": {
+      "source.properties": "fbd87c8567afbc6dc78e140097fcde234f4a61fa7065e85081d43e442ccd3d24",
+      "package.xml": "4a779a6941a75fa0e49074cfab118d499eb5706aa55a08c699578f731fcaa74e"
+    },
+    "emulator": {
+      "source.properties": "ba13085f647fb8389a4d06a1de0e4104ac4e841733e50f67223ac230e1ce685a",
+      "package.xml": "2fd2c4996482128e96927d491431b3aa6771c255091e34f8cd8fa305fd0a4cac"
+    },
+    "platform-tools": {
+      "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+      "package.xml": "5cc8d2f28e44f701d784b4cb31c8fcb5b3a67272856fd8851543b50a879efc8c"
+    },
+    "system-images;android-37.0;google_apis;x86_64": {
+      "source.properties": "bf15b0b43bd0155b258b3756cf523dd917735042633edbb645b34c285a45832d",
+      "package.xml": "bb564bbd70e0de0889a4ebb941cfb74591e445cfedafa1b02cf454a2986deab4"
+    },
+    "system-images;android-37.0;google_apis_ps16k;x86_64": {
+      "source.properties": "758a3348bdeda7cfa1d14ec4c749d5216a8fac5a81b71b80471ac5c7ba837365",
+      "package.xml": "1382dd8ecb580304ea8557eb3124ebcddc7a01c7b71ee322c91a21b2b45fa922"
+    }
+  },
+  "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+  "capacity": {
+    "physical_bytes": 17044721664,
+    "available_bytes": 9290657792,
+    "disk_free_bytes": 50780377088,
+    "logical_cpus": 8,
+    "observed_at": "2026-10-26T18:53:53.356235+00:00"
+  },
+  "apks": {
+    "app/build/outputs/apk/debug/app-debug.apk": {
+      "bytes": 63885192,
+      "sha256": "40362736e8ea16bd464ec5d1dbde3c4df0fa4251c3eb6608ca9b4d94633e235e"
+    },
+    "app/build/outputs/apk/preview/app-preview.apk": {
+      "bytes": 29921459,
+      "sha256": "a85e9d2360e8fbd42a7b9467eec86af4c13a29894f29c8deff8f3df2dd5d30eb"
+    },
+    "app/build/outputs/apk/release/app-release-unsigned.apk": {
+      "bytes": 29913247,
+      "sha256": "a3665dd1ecdfc07d1705999115cd9ea60b216bfef3f864461a1466efb9228a9c"
+    },
+    "ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk": {
+      "bytes": 2686124,
+      "sha256": "25a83ebed67ec49216320e6e887fce34aeabd12f3c1227c924c0372071d2744c"
+    }
+  },
+  "finished_at": "2026-10-26T19:08:48.959197+00:00",
+  "source_sha256_after": "6ef5e7bbddb2f28ff826f1238389775fd862e0987e7a6bfa0a0c35601f3add06",
+  "complete_source_sha256_after": "75dcea238a70821b8387496db351e34c7b1893194a454de1b1389bd93a40bc01"
+}

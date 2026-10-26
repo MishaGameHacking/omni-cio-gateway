@@ -145,17 +145,26 @@
   "v17": {
     "run": 40381689236,
     "head": "e2863633ec16f94d18514e29aca8296c1cb3ad61",
-    "outcome": "in_progress",
+    "outcome": "passed_check_and_build_only",
     "preflight": "success",
     "only_changed_application_file": "app/src/main/java/ru/omnicio/app/ui/workspace/ChatContextEditor.kt",
     "review_sha256": "1c2df150695e0c19b43849976fcd34cfd5d68736704481ac82dbc5fcd69223b1",
     "source_paths": 112,
     "native_passed": false,
-    "published": false
+    "published": false,
+    "build_passed": true,
+    "finished_at": "2026-10-26T19:08:48.959197+00:00",
+    "source_sha256": "6ef5e7bbddb2f28ff826f1238389775fd862e0987e7a6bfa0a0c35601f3add06",
+    "jvm_tests": 228,
+    "jvm_suites": 39,
+    "artifact": 12678329644,
+    "artifact_sha256": "0c7087f2733c54299ae5315542a5851a26f2bb6ee4e3f6c87202f98b2cea503b",
+    "archive_sha256": "f1c332718b8b97985774dba83abfd1119309bf082debdcdc1a676319a2ae1efc",
+    "archive_bytes": 69637759
   },
   "native47_preparation": {
     "hook": "context/design47/native47-focus-hook.py",
-    "hook_sha256": "a141d3ff9e8995a943cad485ec6634afd52aabfdb8a66d6524b6dcc0ac2d4ad1",
+    "hook_sha256": "cdc6abbb9e7db328eed92b3e7fd5d206a362d5cbf90400a5b2b337f745e532fd",
     "preparer": "context/design47/prepare_native47.py",
     "state": "source_text_only_not_executed",
     "profiles": [
@@ -169,11 +178,12 @@
     "icons_per_font": 21,
     "real_destinations_per_font": 6,
     "full15_claimed": false,
-    "requires": "v18 built driver with exact native row protocol; no shell swipe fallback"
+    "requires": "v18 built driver with exact native row protocol; no shell swipe fallback",
+    "automatic_strategy_cases_per_profile": 2
   },
   "source_backup_head": "04e06ab863db3513ad1c7423c9dd3fa4124f2a88",
   "v18": {
-    "state": "prepared_for_dispatch",
+    "state": "running",
     "files": 116,
     "review_sha256": "48ba8c63aba4710d59f034c8455c8c588193356109aac45dac951313da327939",
     "only_changes_from_v17": [
@@ -187,6 +197,14 @@
     "app_source_unchanged_from_v17": true,
     "build_passed": false,
     "native_passed": false,
-    "published": false
-  }
+    "published": false,
+    "run": 40383742952,
+    "head": "591bef10cc7341ddf5a02f0196db70ccf940eb38",
+    "preflight": "success",
+    "check_passed": true,
+    "source_sha256": "bba525f2b26c5aa261e20f3f52a07025cc6733c12795fce2f76fd8c0237664fb",
+    "host_tests": 1265,
+    "host_skips": 3
+  },
+  "updated_at": "2026-10-26T19:19:16.559744+00:00"
 }

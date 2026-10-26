@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -278,6 +279,117 @@ class IconDockCase(_DetailNavigationCase):
                 "native_targets": self.targets, "server_mutations": 0}
 
 
+class AutomaticStrategyCase(IconDockCase):
+    """Only an explicit native edit may authorize the fixture's two write calls."""
+    def __init__(self, probe, scale):
+        super().__init__(probe, scale)
+        self.allowed_writes = {0}
+        self.expected_version = 3
+
+    def observed(self, page):
+        if self.allowed_writes == {0}:
+            return super().observed(page)
+        from business_ui_probe import business_marker
+        maximum = 0
+
+        def read():
+            nonlocal maximum
+            tree = self.owned_frame()
+            business = business_marker(tree, "strategy", "ready")
+            rows = [node for node in tree.iter("node") if node.get("resource-id") in {
+                "navigation-detail-page", module.PACKAGE + ":id/navigation-detail-page"}
+                and node.get("package") == module.PACKAGE and node.get("visible-to-user") == "true"
+                and node.get("enabled") == "true"]
+            if len(rows) > 1:
+                raise AssertionError("Ambiguous automatic strategy fixture")
+            if not rows or business is None:
+                return None
+            fields = [part.split(":", 1) for part in rows[0].get("content-desc", "").split(";") if ":" in part]
+            value = dict(fields)
+            if len(fields) != len(value) or set(value) != {
+                    "navigation-detail", "transport", "page", "requests", "writes", "contract-errors", "prefs", "user"} \
+                    or value["navigation-detail"] != "business-strategy/ready" or value["transport"] != "synthetic" \
+                    or value["user"] != self.user or value["page"] not in DETAILS:
+                raise AssertionError("Automatic strategy fixture identity changed")
+            if any(re.fullmatch(r"[0-9]{1,12}", value[key]) is None for key in ("requests", "writes", "contract-errors")):
+                raise AssertionError("Invalid native autosave request counters")
+            count, writes, errors = (int(value[key]) for key in ("requests", "writes", "contract-errors"))
+            if errors != 0 or writes not in self.allowed_writes or writes > count:
+                raise AssertionError("Autosave performed an unrequested or invalid synthetic mutation")
+            prefs = value["prefs"].split(",")
+            if len(prefs) != 8 or prefs[0] not in {"AURORA", "OCEAN", "IRIS"} \
+                    or prefs[1] not in {"COMFORT", "COMPACT"} or prefs[2] not in {"LIVE", "SUBDUED", "OFF"} \
+                    or any(flag not in {"true", "false"} for flag in prefs[3:]):
+                raise AssertionError("Automatic strategy preference identity changed")
+            maximum = max(maximum, count, business["requests"])
+            if count != business["requests"] or count < maximum or value["page"] != page:
+                return None
+            return {"page": page, "requests": count, "writes": writes, "contract_errors": 0,
+                    "preferences": value["prefs"], "user": value["user"]}
+
+        return self.probe.wait_for(read, "Automatic strategy did not settle on the actual page: " + page)
+
+    def reveal_horizon(self):
+        from profile_scroll import fully_visible_resource
+        minimum = (self.minimum, self.minimum)
+        if fully_visible_resource(self.owned_frame(), "strategy-horizon", "workspace-content", minimum) is None:
+            self.probe.reveal("Действует версия " + str(self.expected_version), "workspace-content",
+                               direction="start", max_swipes=20)
+        return self.probe.reveal_resource("strategy-horizon", "workspace-content", direction="end",
+                                          for_capture=True, minimum_size=minimum)
+
+    def run(self):
+        from native_input_evidence import append_native_text, native_input_ready
+        renderer, density, initial, pid = self.start()
+        self.phase = "invalid-native-draft"
+        self.horizon("36")
+        # One actual input command avoids an artificial pause at the valid
+        # intermediate digit3. The following fresh frames still prove emptiness.
+        self.probe.command("shell", "input", "keyevent", "KEYCODE_MOVE_END", "KEYCODE_DEL", "KEYCODE_DEL")
+        self.probe.wait_for(lambda: native_input_ready(self.probe.tree(), ""), "Native horizon did not clear")
+        self.probe.dismiss_keyboard()
+        self.probe.reveal("Некорректное значение. Применение приостановлено", "workspace-content",
+                           direction="start", max_swipes=20)
+        invalid = self.observed("strategy")
+        self.choose("markets"); self.closed(); self.observed("markets")
+        self.choose("strategy"); self.closed(); self.observed("strategy")
+        self.horizon("")
+        self.probe.dismiss_keyboard()
+        restored_invalid = self.observed("strategy")
+        if invalid["writes"] != 0 or restored_invalid["writes"] != 0:
+            raise AssertionError("An invalid draft reached the synthetic server")
+        self.phase = "valid-native-autosave"
+        self.horizon("")
+        self.allowed_writes = {0, 1, 2}
+        append_native_text(self.probe, "", "48")
+        self.probe.dismiss_keyboard()
+        self.probe.reveal("Сохранено на сервере", "workspace-content", direction="start", max_swipes=20)
+        self.expected_version = 4
+        self.probe.reveal("Действует версия 4", "workspace-content", direction="start", max_swipes=20)
+        saved = self.observed("strategy")
+        if saved["writes"] != 2:
+            raise AssertionError("One edit must produce exactly one preview and one confirmation")
+        self.allowed_writes = {2}
+        self.choose("markets"); self.closed(); self.observed("markets")
+        self.choose("strategy"); self.closed(); self.observed("strategy")
+        self.horizon("48")
+        self.probe.dismiss_keyboard()
+        self.probe.reveal("Сохранено на сервере", "workspace-content", direction="start", max_swipes=20)
+        final = self.observed("strategy")
+        final_pid = self.probe.command("shell", "pidof", module.PACKAGE).strip()
+        if final_pid != pid or final["writes"] != 2 or final["preferences"] != initial["preferences"]:
+            raise AssertionError("Returning to the saved editor repeated a mutation or restarted the fixture")
+        return {"font_scale": self.scale, "renderer": renderer, "density": density,
+                "minimum_touch_dp": 48, "host_window": self.host_window, "process_id": pid,
+                "process_id_after": final_pid, "before": initial, "invalid": invalid,
+                "invalid_after_navigation": restored_invalid, "saved": saved, "after": final,
+                "invalid_draft_retained": True, "invalid_server_writes": 0,
+                "valid_horizon_months": 48, "confirmed_version": 4,
+                "server_mutations": 2, "save_or_confirm_button_pressed": False,
+                "navigation_preserved_saved_value": True,
+                "native_targets": self.targets, **self.capture("design47-strategy-autosaved")}
+
+
 def focused(device, read_tree):
     from persistent_ui import FrameReader, SCROLL_LIST_CODES
     if not isinstance(getattr(read_tree, "__self__", None), FrameReader):
@@ -295,7 +407,7 @@ def focused(device, read_tree):
               "full15_executed": False, "physical_phone_verified": False,
               "fixture_apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
               "actual_device_observations": True, "external_broker_model_calls": False,
-              "real_order_execution": False, "status": "incomplete", "cases": []}
+              "real_order_execution": False, "status": "incomplete", "cases": [], "autosave_cases": []}
     try:
         # The exact built driver and Python client must already support all four
         # rows. Do not replace the authenticated native protocol with swipes.
@@ -318,6 +430,17 @@ def focused(device, read_tree):
         if len(report["cases"]) != 2 or {r["font_scale"] for r in report["cases"]} != {1.0, 2.0} \
                 or any([d["page"] for d in r["destinations"]] != list(DETAILS) for r in report["cases"]):
             raise AssertionError("The original six destinations at both font scales were not completed")
+        for font in (1.0, 2.0):
+            case = AutomaticStrategyCase(probe, font)
+            try:
+                report["autosave_cases"].append(case.run())
+            except Exception:
+                report["failed_case"] = {"font_scale": font, "phase": case.phase,
+                    "host_window": case.host_window, "popup_window": case.popup_window,
+                    "allowed_synthetic_write_counts": sorted(case.allowed_writes), "native_targets": case.targets}
+                raise
+        if len(report["autosave_cases"]) != 2 or {r["font_scale"] for r in report["autosave_cases"]} != {1.0, 2.0}:
+            raise AssertionError("Both genuine automatic strategy observations are required")
         report["status"] = "passed"
         # Preserve the existing full-suite acceptance boundary: a focused
         # diagnostic never makes test_apk_installation claim all15 stages.

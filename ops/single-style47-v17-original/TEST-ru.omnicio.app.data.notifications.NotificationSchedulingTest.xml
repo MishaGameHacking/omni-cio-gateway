@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.notifications.NotificationSchedulingTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:00:28.344Z" hostname="LAPTOP-NPSGA016" time="0.004">
+  <properties/>
+  <testcase name="successfulScheduleIsReportedOnce" classname="ru.omnicio.app.data.notifications.NotificationSchedulingTest" time="0.001"/>
+  <testcase name="fatalVmErrorIsNotDisguisedAsDeliveryFailure" classname="ru.omnicio.app.data.notifications.NotificationSchedulingTest" time="0.001"/>
+  <testcase name="systemRefusalIsNeverReportedAsScheduled" classname="ru.omnicio.app.data.notifications.NotificationSchedulingTest" time="0.001"/>
+  <testcase name="permissionDenialDoesNotKillForegroundSettings" classname="ru.omnicio.app.data.notifications.NotificationSchedulingTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

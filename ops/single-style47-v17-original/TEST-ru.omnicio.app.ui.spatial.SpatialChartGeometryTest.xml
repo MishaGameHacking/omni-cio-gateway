@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.spatial.SpatialChartGeometryTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:00:28.493Z" hostname="LAPTOP-NPSGA016" time="0.003">
+  <properties/>
+  <testcase name="invalidOHLCIsNotRenderedAsAMisleadingCandle" classname="ru.omnicio.app.ui.spatial.SpatialChartGeometryTest" time="0.001"/>
+  <testcase name="validExtremeAllocationsRemainProportionalAndInvalidWeightsAreAbsent" classname="ru.omnicio.app.ui.spatial.SpatialChartGeometryTest" time="0.001"/>
+  <testcase name="finiteExtremeRangeDoesNotOverflowOrMoveTheZeroBaseline" classname="ru.omnicio.app.ui.spatial.SpatialChartGeometryTest" time="0.0"/>
+  <testcase name="signedBarsShareOneScaleAndMissingObservationsStayMissing" classname="ru.omnicio.app.ui.spatial.SpatialChartGeometryTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.data.workspace.LiveCursorTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:00:28.358Z" hostname="LAPTOP-NPSGA016" time="0.005">
+  <properties/>
+  <testcase name="malformedOrUnboundedServerVersionsAreRejected" classname="ru.omnicio.app.data.workspace.LiveCursorTest" time="0.001"/>
+  <testcase name="anotherSessionStartsWithoutTheOldCursor" classname="ru.omnicio.app.data.workspace.LiveCursorTest" time="0.0"/>
+  <testcase name="offlineRetriesGrowAndStayBounded" classname="ru.omnicio.app.data.workspace.LiveCursorTest" time="0.0"/>
+  <testcase name="heartbeatsAndReconnectsDoNotRepeatRefreshOrBrokerReads" classname="ru.omnicio.app.data.workspace.LiveCursorTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

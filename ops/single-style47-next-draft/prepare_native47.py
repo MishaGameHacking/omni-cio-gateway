@@ -22,7 +22,7 @@ PINS = {
     'native44-bound/n00-runtime.py': 'b5479dcb488eed6e38a1c2dc40d21b43e6ce61aeeaed644037be169e4d0d0cb9',
     'native44-bound/workflow.yml': '9ee2325a8746d5123d0ae07792195639b50f1e738f9f10466fa1c59d04e391d8',
     'single-style47-runtime-deployment/prepare-deployment.py': 'dbafd2466f38cb876e0a09dc059c5ea1c97f00ccefc798772c4127e5460f2f0e',
-    'design47/native47-focus-hook.py': 'a141d3ff9e8995a943cad485ec6634afd52aabfdb8a66d6524b6dcc0ac2d4ad1',
+    'design47/native47-focus-hook.py': 'cdc6abbb9e7db328eed92b3e7fd5d206a362d5cbf90400a5b2b337f745e532fd',
 }
 APKS = ('app/build/outputs/apk/preview/app-preview.apk',
         'app/build/outputs/apk/debug/app-debug.apk',
@@ -129,6 +129,14 @@ for (const [page,folder] of [[16384,'ui-screens-api37-16384'],[4096,'ui-screens'
     && value.full15_executed===false && value.status==='passed' && value.fixture_apk_sha256===identity.debug_apk_sha256
     && value.actual_device_observations===true && value.cases.length===2
     && JSON.stringify(value.cases.map(c=>c.font_scale).sort())==='[1,2]'
+    && value.autosave_cases.length===2
+    && JSON.stringify(value.autosave_cases.map(c=>c.font_scale).sort())==='[1,2]'
+    && value.autosave_cases.every(c=>c.invalid_draft_retained===true && c.invalid_server_writes===0
+      && c.invalid.writes===0 && c.invalid_after_navigation.writes===0
+      && c.server_mutations===2 && c.saved.writes===2 && c.after.writes===2
+      && c.valid_horizon_months===48 && c.confirmed_version===4
+      && c.save_or_confirm_button_pressed===false && c.navigation_preserved_saved_value===true
+      && c.process_id===c.process_id_after && c.minimum_touch_dp===48)
     && value.cases.every(c=>c.icons.length===21 && new Set(c.icons.map(i=>i.id)).size===21
       && JSON.stringify(c.destinations.map(d=>d.page))===JSON.stringify(identity.destinations)
       && c.automatic_appearance.length===2 && c.server_mutations===0 && c.minimum_touch_dp===48

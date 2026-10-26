@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:00:28.744Z" hostname="LAPTOP-NPSGA016" time="0.015">
+  <properties/>
+  <testcase name="queuedCallbacksCannotChangeTheUiAfterDisposal" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.005"/>
+  <testcase name="unexpectedFailuresPropagateAfterReleasingTheRegistration" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.001"/>
+  <testcase name="partialRegistrationFailureIsExplicitAndStillUnregisters" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.002"/>
+  <testcase name="sessionSubscribesBeforeReadingAndPublishesRealSourceChanges" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.001"/>
+  <testcase name="removedContextDuringCleanupDoesNotRearmItsCallback" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.0"/>
+  <testcase name="undefinedNightBitsAreUnknownRatherThanInventedDaylight" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.003"/>
+  <testcase name="removedDisplayDuringInitialReadCannotRetainAPreviousKnownValue" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.0"/>
+  <testcase name="applicationPolicyUsesThePlatformApplicationContract" classname="ru.omnicio.app.ui.theme.ApplicationThemeModeTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

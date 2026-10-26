@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ru.omnicio.app.BusinessChatContractTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-10-26T19:00:27.619Z" hostname="LAPTOP-NPSGA016" time="0.08">
+  <properties/>
+  <testcase name="aChangedEstimateDoesNotAuthorizeThePreviousDraft" classname="ru.omnicio.app.BusinessChatContractTest" time="0.058"/>
+  <testcase name="requestIdentifierMustBeCanonicalBeforeItCanBeAccepted" classname="ru.omnicio.app.BusinessChatContractTest" time="0.002"/>
+  <testcase name="manualTiersReturnConcreteRoutesWithTheRequiredConfirmation" classname="ru.omnicio.app.BusinessChatContractTest" time="0.002"/>
+  <testcase name="changingTheReturnedPayloadCannotChangeTheServerAuthorization" classname="ru.omnicio.app.BusinessChatContractTest" time="0.0"/>
+  <testcase name="everyEstimatedInputRemainsBoundToTheSend" classname="ru.omnicio.app.BusinessChatContractTest" time="0.0"/>
+  <testcase name="jobReceiptsPreserveTheAcceptedRequestAndActualJobKind" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="missingMalformedAndChangedRoutesAreRejected" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="missingChangedAndCoercedCostsAreRejected" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="invalidEstimateInputsAreNotIssuedAQuote" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="bothJsonIntegerRepresentationsRetainTheQuotedCeiling" classname="ru.omnicio.app.BusinessChatContractTest" time="0.0"/>
+  <testcase name="premiumCannotBeSentWithoutExplicitBooleanConfirmation" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="autoEstimateIsUsableByTheProductionQuoteAndBindsTheUnchangedAutoRequest" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="messageWithoutAnEstimateIsRejected" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="ordinaryRequestsAlsoRejectCoercedConfirmation" classname="ru.omnicio.app.BusinessChatContractTest" time="0.001"/>
+  <testcase name="uncertainSavedJobsDoNotBecomeRetryable" classname="ru.omnicio.app.BusinessChatContractTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
