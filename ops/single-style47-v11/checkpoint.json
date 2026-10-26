@@ -1,0 +1,42 @@
+{
+  "at": "2026-10-26T17:43:17.624300+00:00",
+  "goal": "Single style47, brain icon menu, all-screen hierarchy, predictive controls and automatic persistence; continue N00-N11; update real server",
+  "source_branch": "codex/windows-development-2026-10-25",
+  "source_head": "121f431965baa5b7938d69cf47a96734331c73a2",
+  "admin_head": "874a380442588a5c4acd5822d1dd5bcac93947f7",
+  "build_base": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "latest_prepared": "/workspace/scratch/137de25203f5/context/candidate47-autosave-v11",
+  "latest_dispatched_commit": "874a380442588a5c4acd5822d1dd5bcac93947f7",
+  "prior_build_run": 40367948446,
+  "prior_build_result": "v9 failed before source application: 104 paths exceeds unchanged 100 paths per bundle. v11 uses two bounded transport bundles. v7 JVM216/1failed decorative cyan role fixed in v11.",
+  "host_tests": {
+    "count": 1263,
+    "skipped": 3,
+    "failed": 0
+  },
+  "tools_tests": 52,
+  "backend": {
+    "tests": 1690,
+    "subtests": 1557,
+    "failed": 0
+  },
+  "autosave_source_generator": "context/design47/prepare_autosave.py",
+  "autosave_state": "v11 dispatched; appearance, notifications, strategy, goals, analysis profile prepared; native acceptance, local filters/context remain",
+  "server_channel": 45,
+  "server_version": "0.13.7-preview",
+  "publisher_run": 40349269558,
+  "publisher_reverify_run": 40349907036,
+  "apk_sha256": "488f95a0c1527ebf5a172c7af675769cb8ed81c116d9ec24175fc89adab1da0d",
+  "apk_bytes": 29820407,
+  "new_design_deployed": false,
+  "native47_passed": false,
+  "full15_passed": false,
+  "phone_installation_verified": false,
+  "plan_complete": false,
+  "next": "Read actual v7 and v9 results. Finish native acceptance for icon Popup and auto appearance/notification/strategy; extend remaining settings/goal/filter persistence. Preserve exact checked source, both API37 page sizes full15/Sonar, then server runtime and signed APK publication.",
+  "build_run": null,
+  "admin_backup": "ops/single-style47-v7/ (outdated; new backup pending)",
+  "current_package": "/workspace/scratch/137de25203f5/context/candidate47-autosave-v11",
+  "source_paths": 108,
+  "in_progress_prior_build": null
+}
