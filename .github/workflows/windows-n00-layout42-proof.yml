@@ -1,26 +1,73 @@
-name: Preserve candidate42 exact Windows build proof
+name: Verify exact candidate42 compiled outputs on laptop
 'on':
   push:
-    branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [.github/workflows/windows-n00-layout42-proof.yml]
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-layout42-proof.yml
 permissions:
   contents: read
   checks: write
-  actions: read
 jobs:
   inspect:
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 100
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 8
     steps:
-      - name: Verify completed build reports and original APK bytes
-        id: evidence
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        with:
-          script: "for(let n=0;n<180;n++){const r=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40265186363});if(r.data.status==='completed')break;if(n===179)throw Error('Exact build has not completed');await new Promise(resolve=>setTimeout(resolve,30000));}\nconst cp=require('node:child_process');const r=cp.spawnSync('py',['-3','-c',\"import pathlib,sys,os,json,hashlib,re,xml.etree.ElementTree as ET\\nassert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'\\nrun=40265186363\\nstate=pathlib.Path('C:/actions-runner-4/_work/_temp/analyst-development-40265186363-1')\\nroot=pathlib.Path('C:/actions-runner-4/_work/omni-cio-gateway/omni-cio-gateway/windows-development-40265186363-1')\\nreport=json.loads((state/'windows-development.json').read_text(encoding='utf-8'))\\ncontroller=json.loads((state/'controller.json').read_text(encoding='utf-8'))\\nassert report['status']=='passed_check_and_build_only',report.get('error')\\nassert report['check']['status']==report['build']['status']=='passed'\\nassert report['source_sha256']==report['source_sha256_after']=='6025e9bf286b253361d894fc421bbefcfa0b40c7fd1364be470d11a68ce3589d'\\nassert report['complete_source_sha256']==report['complete_source_sha256_after']\\nassert controller['owned_processes_after']==0 and not controller.get('error') and not controller.get('cleanup_error')\\nout=pathlib.Path(os.environ['RUNNER_TEMP'])/('n00-build42-proof-'+os.environ['GITHUB_RUN_ID'])\\nout.mkdir(exist_ok=False);identities={}\\ndef sha(p):\\n h=hashlib.sha256()\\n with p.open('rb') as f:\\n  for b in iter(lambda:f.read(1048576),b''):h.update(b)\\n return h.hexdigest()\\ndef copy(p,name):\\n assert pathlib.Path(name).name==name and p.is_file() and not p.is_symlink() and p.stat().st_size<4000000\\n data=p.read_bytes();(out/name).write_bytes(data);identities[name]={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}\\nfor name in ('windows-development.json','controller.json','export-receipt.json','applied-patches.json','linux-linux-test-report.json','linux-backend-tests.xml'):\\n copy(state/name,name)\\nfor name in ('host-tests.log','tools-tests.log','node-tests.log','gradle.log'):\\n files=list(state.glob('*-'+name));assert len(files)==1;copy(files[0],name)\\nfor name in ('linux-backend-full-suite.log','linux-health-openapi.log'):\\n copy(state/name,name)\\ntests=[]\\nfor f in sorted((root/'app/build/test-results/testDebugUnitTest').glob('TEST-*.xml')):\\n tree=ET.parse(f).getroot();assert tree.tag=='testsuite'\\n row={k:int(tree.get(k,'0')) for k in ('tests','failures','errors','skipped')};row['name']=tree.get('name');tests.append(row);copy(f,'android-'+f.name)\\nassert tests and all(x['failures']==0 and x['errors']==0 for x in tests)\\napks={}\\nfor name,ident in report['apks'].items():\\n p=root/name;assert p.is_file() and p.stat().st_size==ident['bytes'] and sha(p)==ident['sha256'];apks[name]=ident\\nhost=(out/'host-tests.log').read_text(encoding='utf-8',errors='replace')\\nmatch=re.search(r'Ran (\\\\d+) tests in ([0-9.]+)s',host);assert match\\nassert re.search(r'^OK(?: \\\\(skipped=\\\\d+\\\\))?\\\\s*$',host,re.M)\\nandroid={k:sum(x[k] for x in tests) for k in ('tests','failures','errors','skipped')}\\nbackend=(state/'linux-backend-full-suite.log').read_text(encoding='utf-8',errors='replace')\\nlinux=json.loads((state/'linux-linux-test-report.json').read_text(encoding='utf-8'))\\nresult={'run_id':run,'source_root':str(root),'source_sha256':report['source_sha256'],'base_commit':report['base_commit'],'source_unchanged':True,'apks':apks,'certificate_sha256':report['certificate_sha256'],'host_tests':int(match.group(1)),'host_seconds':float(match.group(2)),'host_summary':host[-300:],'android_jvm':{'suites':len(tests),**android},'backend_tail':backend[-2000:],'linux_report':linux,'check':report['check'],'build':report['build'],'external_quality_gate':report['external_quality_gate'],'owned_processes_after':controller['owned_processes_after'],'identities':identities}\\n(out/'manifest.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')\\nprint(json.dumps({'folder':str(out),'report':result},ensure_ascii=True))\\n\"],{encoding:'utf8',timeout:120000,maxBuffer:200000,env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'}});\nif(r.status!==0)throw Error('Proof failed: '+r.stderr.slice(-2500));const value=JSON.parse(r.stdout);const report=value.report;delete report.identities;const fence=String.fromCharCode(96).repeat(3);const summary=fence+'json\\n'+JSON.stringify(report,null,2)+'\\n'+fence;if(summary.length>60000)throw Error('Proof summary too large');\nawait github.rest.checks.create({...context.repo,name:'N00 candidate42 exact build proof',head_sha:context.sha,status:'completed',conclusion:'neutral',output:{title:'Verified laptop source, APKs and actual test reports',summary}});core.setOutput('folder',value.folder);"
-      - name: Preserve exact build report evidence
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: n00-candidate42-build-proof
-          path: ${{ steps.evidence.outputs.folder }}
-          if-no-files-found: error
-          retention-days: 3
+    - name: Recompute exact source and APK identities and inspect actual JVM XML
+      id: evidence
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const cp=require(''node:child_process''),fs=require(''node:fs''),p=require(''node:path'');
+
+          const r=cp.spawnSync(''py'',[''-3'',''-c'',"import pathlib,hashlib,json,os,stat,subprocess,xml.etree.ElementTree as ET\nassert os.name==''nt''
+          and os.environ.get(''COMPUTERNAME'')==''LAPTOP-NPSGA016''\nspec=json.loads(''{\"run_id\": 40266100999, \"source_sha256\": \"cd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e\",
+          \"root\": \"C:\\\\\\\\actions-runner-3\\\\\\\\_work\\\\\\\\omni-cio-gateway\\\\\\\\omni-cio-gateway\\\\\\\\windows-development-40266100999-1\",
+          \"files\": {\"app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceUi.kt\": {\"bytes\": 6595, \"sha256\": \"b19159118d44a11908d1fac1de723934d818563f76b7558f833a8cd674d37a1f\"},
+          \"app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt\": {\"bytes\": 28952, \"sha256\": \"bafd723f94ff66d7038fe50be2231983ff99ac8e558616bacb14cb6a211d49c9\"},
+          \"app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt\": {\"bytes\": 6902, \"sha256\": \"8ecf6e9311d9eb38f866bad4580448064599e05ca03ec44f7f13671dbb681099\"},
+          \"app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt\": {\"bytes\": 11096, \"sha256\": \"6b2a614ad49766248f78ddce753c5a0317868012f2defae40c92cf6e0e970add\"},
+          \"app/src/main/java/ru/omnicio/app/ui/portfolio/AccountSelector.kt\": {\"bytes\": 1651, \"sha256\": \"405b970f458b033dc59c09bff67d7678c7ce0ad33b015ea9d12627f834dd2f66\"},
+          \"app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioScreen.kt\": {\"bytes\": 25385, \"sha256\": \"82c1d47e88c51e7e529a76ba69c97ae3f0496ee747b42351b0dd2a720a5a21b1\"},
+          \"app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentContextActions.kt\": {\"bytes\": 11755, \"sha256\": \"ea1f2c57095bc178b952604a0de5bf357e9be0209afa586bb5dc1700a8fcea54\"},
+          \"app/src/main/java/ru/omnicio/app/ui/portfolio/DossierFactSheet.kt\": {\"bytes\": 4388, \"sha256\": \"53bbb8a53a218565b3ec29766c5236dd0b7d0819b73d38340075fe9fda8e84ce\"},
+          \"app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDetailsScreen.kt\": {\"bytes\": 14613, \"sha256\": \"970dd348d641817d4ea1461298b87ca9acb843fb9ce337000da260854f1050cb\"},
+          \"app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt\": {\"bytes\": 11009, \"sha256\": \"0a3baa1cef5b58a22bc8ae5bb5adccf14bbfdcb1f0c7220154917c7d68f88300\"},
+          \"app/build.gradle.kts\": {\"bytes\": 2450, \"sha256\": \"c6af0f94cf1a4f1ded04d47394284d1077109cc7d1a2087d0834ce66ab3b4a18\"}, \".github/scripts/tests/test_android17_live_spectrum.py\":
+          {\"bytes\": 7591, \"sha256\": \"e505f60ddd869279bcaef72b020e2c7aa60cfeb6980fc0d73f00c14e0a61c411\"}, \".github/scripts/tests/test_spectrum_brand_identity.py\":
+          {\"bytes\": 4023, \"sha256\": \"054edc34ef555cde02ef595f238e703271beb08a3deeb5cc90c0804d74931073\"}, \".github/scripts/portfolio_research_probe.py\":
+          {\"bytes\": 16641, \"sha256\": \"8d7b77b2f96157508066d9f50895a2fd2c1c262ed684fd2247aa324090b378a0\"}, \".github/scripts/tests/test_portfolio_research_traversal.py\":
+          {\"bytes\": 28988, \"sha256\": \"838f41df3d925d254fc9fce2f44221b2b6c633960ef24d8850a87da8e9cfda19\"}, \"app/build/outputs/apk/debug/app-debug.apk\":
+          {\"bytes\": 63292529, \"sha256\": \"b7a883b22c5fd3f53178862733c92b6dbcebbca10aecde6f2d4bbba15deb551b\"}, \"app/build/outputs/apk/preview/app-preview.apk\":
+          {\"bytes\": 29771254, \"sha256\": \"b0b18508e80f763edb0d54dc9aa077462fca0163168d8f5c4ca6a5e7c2f91a0c\"}, \"app/build/outputs/apk/release/app-release-unsigned.apk\":
+          {\"bytes\": 29763042, \"sha256\": \"3785d8b22b22a462867b4581762dee17500be7aa32d8c74a9e033d4a2beff998\"}, \"ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk\":
+          {\"bytes\": 2683192, \"sha256\": \"7fb9ad4121c2a1e981cacc611522941122c9fe3178e2eeb3849683200f3c7705\"}}}'')\nroot=pathlib.Path(spec[''root''])\nexpected=spec[''files'']\nfor
+          name,identity in expected.items():\n p=root/name;s=p.lstat();assert stat.S_ISREG(s.st_mode) and not p.is_symlink() and not getattr(s,''st_file_attributes'',0)&0x400\n
+          h=hashlib.sha256()\n with p.open(''rb'') as f:\n  for b in iter(lambda:f.read(1048576),b''''):h.update(b)\n assert s.st_size==identity[''bytes'']
+          and h.hexdigest()==identity[''sha256''],name\nraw=subprocess.check_output([''git'',''ls-files'',''--cached'',''--others'',''--exclude-standard'',''-z''],cwd=root,timeout=45)\ninventory=hashlib.sha256()\nfor
+          name in sorted(set(raw.split(b''\\0''))-{b''''}):\n rel=name.decode(''utf-8'');f=root/rel\n if rel in (''AGENTS.md'',''README.md'') or rel.startswith(''docs/'')
+          or not f.is_file():continue\n assert not f.is_symlink()\n inventory.update(name+b''\\0''+hashlib.sha256(f.read_bytes()).hexdigest().encode()+b''\\0'')\nassert
+          inventory.hexdigest()==spec[''source_sha256'']\nsuites=[];totals={k:0 for k in (''tests'',''failures'',''errors'',''skipped'')}\nfor p in sorted((root/''app/build/test-results/testDebugUnitTest'').glob(''TEST-*.xml'')):\n
+          assert p.stat().st_size<3000000 and not p.is_symlink()\n data=p.read_bytes();suite=ET.fromstring(data);row={''name'':suite.get(''name''),''file'':p.name,''sha256'':hashlib.sha256(data).hexdigest()}\n
+          for k in totals:\n  value=int(suite.get(k,''0''));assert value>=0;totals[k]+=value;row[k]=value\n suites.append(row)\nassert suites and totals[''tests'']>0
+          and totals[''failures'']==totals[''errors'']==totals[''skipped'']==0\nsignature=(root/''app/build/outputs/apk/preview/signature.txt'').read_text(encoding=''utf-8'')\nassert
+          ''bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1'' in signature\nprint(json.dumps({''run_id'':spec[''run_id''],''source_root'':str(root),''source_sha256'':spec[''source_sha256''],''source_unchanged'':True,''files'':expected,''android_jvm_totals'':totals,''suite_count'':len(suites),''suites'':suites,''certificate_sha256'':''bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1'',''runtime_pass'':False,''publication_authorized'':False}))\n"],{encoding:''utf8'',timeout:90000,maxBuffer:180000,env:{...process.env,PYTHONUTF8:''1'',PYTHONIOENCODING:''utf-8''}});
+
+          if(r.status!==0)throw Error(''Build proof failed: ''+r.stderr.slice(-2000));
+
+          const report=JSON.parse(r.stdout);const out=p.join(process.env.RUNNER_TEMP,''n00-candidate42-exact-proof-''+context.runId);fs.mkdirSync(out);fs.writeFileSync(p.join(out,''manifest.json''),JSON.stringify(report,null,2));
+
+          const fence=String.fromCharCode(96).repeat(3);await github.rest.checks.create({...context.repo,name:''N00 candidate42 exact compiled source APK
+          and JVM proof'',head_sha:context.sha,status:''completed'',conclusion:''neutral'',output:{title:''Actual original Windows source APK and JVM evidence'',summary:fence+''json\n''+JSON.stringify(report,null,2)+''\n''+fence}});core.setOutput(''folder'',out);
+
+          '
+    - name: Preserve independent exact build proof
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: n00-candidate42-build-proof
+        path: ${{ steps.evidence.outputs.folder }}
+        if-no-files-found: error
+        retention-days: 3
