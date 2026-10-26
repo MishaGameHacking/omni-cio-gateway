@@ -24,8 +24,8 @@ The next stage failed in discovery/ready/font1:
 "ValueError: Unknown list or invalid native reveal target".
 The exact call chain is exercise_discovery → tap_resource → partial native
 alignment → FrameReader.show_on_screen. Discovery constructs the existing
-resource ID discovery-compare-<account>:<instrument>. Both the Python wire
-validator and Java NodeRevealAction.readTarget currently reject a colon.
+resource ID discovery-compare-<account>:<instrument>. Both the original Python wire
+validator and Java NodeRevealAction.readTarget rejected a colon.
 This is a confirmed test-protocol defect, not an absent application control.
 
 The failure image was visually inspected. It shows the actual discovery
@@ -109,9 +109,35 @@ New test-only driver:2,683,192 bytes, SHA256
 built at00:38:28Z from inventory4aa72786….
 Exact Windows source receipts match all four backed-up file bytes.
 
-All14 existing portfolio cases are now executing on measured16KB Android37.
-The focused workflow deliberately fails after success because it cannot
-claim the complete15-stage suite. Actual focused results are still pending.
+The actual16KB focused run finished FAILURE at00:41:49Z, before any of the14
+portfolio cases completed. The repaired compound target performed a public
+ACTION_SHOW_ON_SCREEN and the production comparison completed both the
+common-period and quantity assertions. The next original action failed:
+"List target not reachable: Выплаты" in discovery/ready/font1.
+This is a real focused failure, not merely the intentional diagnostic exit.
+
+The26-file private archive is1,181,884 bytes, SHA256
+6cd4be3eeb7e56ca65dd137b345899063c918d2ea7955ab1d45af5d28d3d1de2.
+Timeweb9417611 confirmed receipt at2026-10-26T00:43:11Z. Cleanup succeeded.
+
+[Read-only evidence40250807767](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40250807767)
+artifact12619464704 is104,385 bytes, SHA256
+944fc596a9238ec7e4c9a8bf52072c01beac4ab817295ba19c692ae86cd0bdea.
+The archive and all four manifest entries were verified; both common-period
+and comparison PNGs were visually inspected. They show comparison, not the
+subsequent tab failure. No failure screenshot was present in that focused export.
+
+[Native observation40251310156](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40251310156)
+is running from exact backup4e4af39281f8cf15c7cc42f3837340384b6928c3,
+inventory4aa72786… and the same verified application/driver bytes.
+Its external hook observes only original frame reads before the failure,
+then captures the failure and bounded reverse/forward native scrolling.
+It rethrows the original assertion and cannot claim complete acceptance.
+Administrative wrapper SHA256
+0cb6bd7d9db09bf939761d4dce28ab1374ebec6ece8aea5abd585f8aeeb24459,
+hook SHA25647e00148b3eb6cb9de6829702235de1b691a7300d3002a594a3b26d056218f28.
+Do not dispatch the prepared complete runtime until focused portfolio
+acceptance is actually confirmed. Do not reduce48px or three-frame guards.
 
 Application preview40/debug40 remain the exact bytes from40239983022.
 Only the test-only driver requires recompilation. After focused acceptance,
