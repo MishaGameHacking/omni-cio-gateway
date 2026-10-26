@@ -166,11 +166,13 @@ def _reports(case):
     p = case.probe
     p.reveal("Календарь отчётности", AREA)
     p.reveal("Все даты", AREA)
+    p.reveal_resource("dossier-tabs", AREA, direction="start", for_capture=True, minimum_size=(48, 48))
     p.tap("Объявлены", "dossier-tabs")
     p.reveal("СИНТЕТИЧЕСКИЙ объявленный отчёт", AREA)
     p.reveal("Объявленная дата прошла; подтверждение публикации ещё не получено.", AREA)
     case.capture("scheduled-report")
     p.reveal("Календарь отчётности", AREA, direction="start")
+    p.reveal_resource("dossier-tabs", AREA, for_capture=True, minimum_size=(48, 48))
     p.tap("Опубликованы", "dossier-tabs")
     p.reveal("СИНТЕТИЧЕСКИЙ опубликованный документ", AREA)
     p.reveal("Опубликован: есть проверенный источник документа", AREA)

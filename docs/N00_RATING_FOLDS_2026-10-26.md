@@ -87,18 +87,87 @@ collapsed (Ran1 test, failures2). The reviewed probe was then restored.
 All1070 host tests passed in47.426s (same3 platform skips), plus diff check.
 Source and APK identity checks passed; host stage finished02:05:49Z.
 
-## Runtime and continuation
+## Android result and next nested report-tab failure
 
-The same run now exercises all14 original portfolio cases at fonts100/200
-on the measured16KB emulator with preview41/debug41/driver7fb9ad41.
-No application is rebuilt for this harness-only change. Actual runtime
-results are pending; unit success alone does not prove the Android repair.
-The focused diagnostic hook cannot claim the complete UI acceptance gate.
+Run40257272188 completed02:05:51Z–02:10:15Z on measured16384-byte pages.
+The original discovery case passed again. Dossier passed contextual navigation,
+both rating-source opening/closing transitions, exact publication dates and URLs,
+and the existing conflicting-period/currency assertions.
+It then failed at List target not reachable: Опубликованы in _reports.
+This is not completion of all14 portfolio cases.
+
+The33-file archive is786410 bytes, SHA256
+647588b9f9f7c65dda0770daf02694395195f3514dc92a1cdf87e92540580b3d.
+Timeweb9417611 confirmed receipt at02:11:10Z under
+/var/lib/analyst-ai-build/incoming/windows-development-40257272188-1/.
+Collector and cleanup succeeded; failed runtime status is preserved.
+
+[Read-only evidence40258014046](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40258014046)
+returned297289 bytes SHA256c219bab35e45f51607471def50f4b19bac4fd53dd167bf78c5c0ede7a8f12691.
+The archive and all9 manifest entries were verified; its failure PNG was
+visually inspected. PNG52640 bytes SHA25645a4a04eb154a18ff3fe7086f4e319feb8f57bf17aabf09048a6110ad5357859;
+XML24002 bytes SHA2569de6134681e820df7676e0c8a46bea3f6de00454df3e92c9db8e54a0ede5fafd.
+
+The tree shows workspace-content at[0,319][320,552] and dossier-tabs
+at[38,519][282,552]: only33px of the rail is visible vertically.
+Опубликованы is inside that clipped rail; ten horizontal gestures cannot
+restore its vertical tap area. Returning to Календарь отчётности reveals
+the heading, not necessarily the entire nested rail below it.
+
+## Parent visibility before horizontal report navigation
+
+The two-file repair first reveals dossier-tabs inside workspace-content
+with for_capture=True and minimum_size=(48,48), then performs the original
+horizontal label action with its existing three-frame native stability check.
+Before Объявлены it moves toward the start from the already revealed month
+label; before Опубликованы it moves toward the end from the calendar heading.
+No tap threshold, label, source-data assertion, driver or APK changes.
+
+The regression uses the real ProfileProbe reveal and tap methods with
+conditional nested clipping at two scales, starting both with an already
+visible rail and a rail clipped above the viewport. Returning to the
+calendar clips it below the viewport. Four variants prove the parent list
+must move in the appropriate direction before horizontal actions.
+Unrelated report content is fixture scaffolding, not Android acceptance.
+
+[First attempt40258503020](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40258503020)
+failed before any Android work: the new test fixture initially omitted its
+ProfileProbe inheritance, producing AttributeError instead of the required
+original traversal failures. The red gate rejected it.
+Its5-file archive14324 bytes SHA256
+a1347f1175b94f9df5ed5931286aee11ac72ec05978d97ae028ac6c9c6056c5e
+was received by9417611 at02:21:07Z; cleanup succeeded. This is not a patch PASS.
+
+[Corrected40258706962](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40258706962)
+applied the two files at02:22:10Z on LAPTOP-NPSGA016 /omni-cio-ci from
+base46f36b824fc008fce6115423a5e57c8ddc095621.
+The fixture inherits the genuine helper, preserving its native lookup logic.
+The original research probe then failed all4 subtests with unreachable
+Объявлены/Опубликованы (Ran1 test in8.448s, failures4).
+After restoring the reviewed probe, all1071 host tests passed49.643s with
+the same3 platform skips, plus diff check; host finished02:23:15Z.
+Source and APK identity checks passed.
+
+| Windows-applied source | SHA256 |
+|---|---|
+|.github/scripts/portfolio_research_probe.py|7b364a9a895129aecb67c1c13999750159fe8a558b50274efba4cfb765785689|
+|.github/scripts/tests/test_portfolio_research_traversal.py|8700a52ca6c12ddfbba2a97a99743be849af3ecbe903c9c25ef5a8b8b7129d70|
+
+Current code inventory72d26c91967cc92c84c608830a04b011aea7b65cdacae0736dd0a0ba170b9382.
+Patch SHA25601edc5058f0c8f6f6235cde97502faa0290fe696e853f74d7802b8c43aeb5715;
+Windows wrapper SHA2560f591779f97fb2ea541548387094af546ddaa4b435679f35f051b1cdaf5c788e.
+The canonical lease and1200s wait limit remain unchanged.
+
+## Continue in order
+
+Run40258706962 is now repeating all14 original portfolio cases at fonts100/200
+on the measured16KB emulator using the exact preview41/debug41/driver bytes.
+Actual runtime results remain pending; no complete UI acceptance is claimed.
+The older prepared full wrappers have obsolete harness inventories.
 
 After all14 focused cases pass, regenerate the full original15-stage wrapper
 from this exact backed source and run both4096/16384 profiles, including
-baseline38→41 upgrade and clean installation. Older prepared wrappers have
-obsolete harness inventories and must not be dispatched.
-Then finish the laptop/WSL CI migration and exact-head Sonar gates before
-closing N00 and moving to N01. No release41, real orders, paid AI activation
-or physical-phone acceptance is implied by these results.
+baseline38→41 upgrade and clean installation. Then finish the laptop/WSL CI
+migration and exact-head Sonar gates before closing N00 and moving to N01.
+No release41, real orders, paid AI activation or physical-phone acceptance
+is implied by these results.

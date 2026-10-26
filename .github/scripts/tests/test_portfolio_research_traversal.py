@@ -321,5 +321,93 @@ class ResearchWindowTraversalTests(unittest.TestCase):
                 case.call.assert_any_call(research.INSTRUMENTS_PATH + research.SHARE_A + research.DOSSIER_SUFFIX, {})
 
 
+class ReportTabsProbe(ProfileProbe):
+    """Conditional nested rail clipping; unrelated report content is scaffolding."""
+
+    def __init__(self, scale, clipped_first):
+        self.scale, self.clipped_first = scale, clipped_first
+        self.top, self.selected, self.visits, self.horizontal = 326, 0, 0, 0
+        self.vertical_moves, self.actions = [], []
+        self.read_tree = self.tree
+
+    def tree(self):
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        tree = ET.Element("hierarchy", {"display-width": "320",
+            "display-height": "640", "active-window-id": "19"})
+        body = ET.SubElement(tree, "node", {**common, "resource-id": research.AREA,
+            "scrollable": "true", "bounds": "[0,319][320,552]"})
+        bottom = self.top + 52 * self.scale
+        rail = ET.SubElement(body, "node", {**common, "resource-id": "dossier-tabs",
+            "scrollable": "true", "bounds": f"[38,{max(319, self.top)}][282,{min(552, bottom)}]"})
+        for index, (left, right, text) in enumerate(((38, 84, "Все"),
+                (92, 196, "Объявлены"), (204, 333, "Опубликованы"))):
+            left, right = left - self.horizontal, right - self.horizontal
+            owner = ET.SubElement(rail, "node", {**common,
+                "resource-id": "dossier-tabs-item-" + str(index),
+                "bounds": f"[{left},{self.top}][{right},{bottom}]",
+                "clickable": str(index != self.selected).lower()})
+            ET.SubElement(owner, "node", {**common, "text": text,
+                "bounds": f"[{left + 5},{self.top + 10}][{right - 5},{bottom - 10}]"})
+        return tree
+
+    def reveal(self, text, area, direction="end"):
+        if area != research.AREA:
+            raise AssertionError("Unexpected report content list")
+        if text == "Календарь отчётности":
+            self.visits += 1
+            self.top = 519
+        elif text == "Все даты":
+            self.top = 319 - (52 * self.scale - 33) if self.clipped_first else 326
+        return ET.Element("node", {"text": text})
+
+    def reveal_resource(self, *args, **kwargs):
+        return ProfileProbe.reveal_resource(self, *args, **kwargs)
+
+    def _semantic_scroll_callback(self, area, direction):
+        if area == research.AREA:
+            def vertical(*_coordinates):
+                expected = "start" if self.top < 319 else "end"
+                if direction != expected:
+                    raise AssertionError("Parent must move the clipped rail toward its viewport")
+                self.vertical_moves.append(direction)
+                self.top = 326
+            return vertical
+        if area == "dossier-tabs":
+            def horizontal(*_coordinates):
+                self.horizontal = 51
+            return horizontal
+        raise AssertionError("Unexpected scroll axis")
+
+    def tap(self, text, area, direction="end", **kwargs):
+        if area == "dossier-tabs":
+            return ProfileProbe.tap(self, text, area, direction, **kwargs)
+        if text not in ("Проверенная публикация документа", "Открыть источник"):
+            raise AssertionError("Unexpected report action")
+
+    def tap_node(self, node):
+        resource = node.get("resource-id")
+        if resource not in ("dossier-tabs-item-1", "dossier-tabs-item-2"):
+            raise AssertionError("Wrong native report tab")
+        self.selected = int(resource[-1])
+        self.actions.append(resource)
+
+    wait_for = staticmethod(DossierViewportProbe.wait_for)
+
+
+class ReportTabsTraversalTests(unittest.TestCase):
+    def test_reports_reveal_nested_rail_vertically_before_horizontal_tab_actions(self):
+        for scale in (1, 2):
+            for clipped_first in (False, True):
+                with self.subTest(scale=scale, clipped_first=clipped_first):
+                    probe = ReportTabsProbe(scale, clipped_first)
+                    case = SimpleNamespace(probe=probe, capture=Mock(), expect=Mock())
+                    research._reports(case)
+                    self.assertEqual(probe.actions, ["dossier-tabs-item-1", "dossier-tabs-item-2"])
+                    self.assertEqual(probe.vertical_moves, (["start"] if clipped_first else []) + ["end"])
+                    self.assertEqual(probe.visits, 2)
+                    case.capture.assert_any_call("scheduled-report")
+                    case.capture.assert_any_call("published-report")
+
+
 if __name__ == "__main__":
     unittest.main()

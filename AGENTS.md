@@ -1,15 +1,19 @@
 ## N00 26.10.2026 — кандидат41 после подтверждённого перекрытия вкладок
 
-> **26.10.2026, N00 — исправлена проверка раскрытия точного источника рейтинга.** Кандидат41 имеет подтверждённую Windows/WSL сборку. Нативное наблюдение40256049480 показало: после прежнего нажатия источник остался «Свёрнуто», поэтому дата была недоступна. В40257272188 новый тест подтвердил отказ старого кода и прошли1070 host-проверок (прежние3 skips). Добавлены стабильное нажатие внутри точной карточки и ожидание её реального состояния; дата/UID/URL проверяются как прежде. Выполняется повтор14 исходных portfolio cases. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_RATING_FOLDS_2026-10-26.md).
+> **26.10.2026, N00 — рейтинги пройдены, исправлена видимость вложенных вкладок отчётности.** Кандидат41 имеет подтверждённую Windows/WSL сборку. В Android40257272188 прошли оба исторических источника рейтинга с точными датами/UID/URL; следующий отказ вызван вертикальным обрезанием dossier-tabs до33px. В40258706962 сначала воспроизведены4 исходных отказа, затем прошли1071 host-тест (прежние3 skips). Панель теперь выводится в видимую область родительского списка до горизонтального выбора; порог48px и стабильные нативные кадры сохранены. Повтор14 portfolio cases ещё выполняется. Полной15-stage матрицы4096/16384 и exact-head Sonar пока нет. Канал38 сохранён;41 не опубликован; N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_RATING_FOLDS_2026-10-26.md).
 
 Build41 remains40252011635, compiled inventory8d309ea0b418dcf125957d72806bde5dd6fa65db716d8024e02e2ca406cfbef9.
-Current harness repair40257272188 applied three files on Windows from base5bfec1a,
-inventory9c0e24a49ae94e38642254d53d7de81688af569496dcf73d08b2d346db28bdb7.
-Old regression failed2 variants; all1070 host tests passed47.426s (same3 skips).
-The14 original portfolio cases are still pending. APK41/debug41/driver unchanged.
-Dossier fixed dock and risks already passed in40255133373; the next rating
-failure remained collapsed in actual40256049480, not a wrong-date conclusion.
-Prepared full wrappers with older harness inventories MUST NOT be dispatched.
+Current nested report-tab repair40258706962 applied two files on Windows from
+base46f36b8; inventory72d26c91967cc92c84c608830a04b011aea7b65cdacae0736dd0a0ba170b9382.
+The original traversal failed4 conditional variants; all1071 host tests passed
+49.643s (same3 skips). The14 actual portfolio cases are still pending.
+Prior40257272188 passed both historical rating source dates/URLs, then failed
+at Опубликованы because the rail had only33px inside its vertical parent.
+Native PNG/XML proved the cause; parent visibility now precedes horizontal selection.
+First report wrapper40258503020 failed before Android because the new fixture
+omitted ProfileProbe inheritance; its failed result/archive are preserved.
+APK41/debug41/driver unchanged. Older prepared full wrappers have stale
+harness inventories and MUST NOT be dispatched.
 After14 focused cases pass, regenerate full original15-stage4096/16384
 matrix from exact backed source, with no diagnostic hook. Retain baseline38,
 canonical lease1200s, signature, private transfer and exact-head Sonar.
