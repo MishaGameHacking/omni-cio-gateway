@@ -97,7 +97,10 @@ The complete WSL backend suite passed1684 tests plus1515 subtests in130.03s,
 with health/OpenAPI passed. The check stage finished01:04:21Z.
 
 All requested Android unit-test, debug/preview lint, debug/release/preview
-assemble and driver lint/assemble tasks passed. Gradle finished in10m26s.
+assemble and driver lint/assemble tasks passed. Independent read-only
+[evidence40253711382](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40253711382)
+rechecked all four changed source hashes and all four APK identities, and
+parsed30 actual JVM XML suites:174 tests,0 failures,0 errors,0 skipped. Gradle finished in10m26s.
 Signature, manifest, native/ZIP alignment and APK verification all passed.
 The existing certificate/key and source inventories remained unchanged.
 Build finished2026-10-26T01:15:01Z; owned processes remaining after cleanup:0.
@@ -110,9 +113,31 @@ Build finished2026-10-26T01:15:01Z; owned processes remaining after cleanup:0.
 
 The private1033-file build archive is68,773,030 bytes, SHA256
 34e5fb996f8fec39e0734354fd4d9b37daa7827560a7eb1ee684c28313d37f83.
-Collector receipt will be recorded after it completes.
+Timeweb9417611 confirmed receipt at2026-10-26T01:16:15Z under
+/var/lib/analyst-ai-build/incoming/windows-development-40252011635-1/.
+Transport cleanup and the full workflow completed successfully.
 External quality was not run by this bootstrap. Android runtime acceptance
 of candidate41 remains pending; build success alone does not prove the tab fix.
+
+## Original portfolio acceptance in progress
+
+[Focused40253475330](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40253475330)
+uses exact backed source6b6a359dfffdb61626c6766fc5952900761b7015 and
+the build receipts above. The first attempt stopped before any laptop work:
+the anonymous private-transfer probe receivedHTTP403 instead of required404.
+Cleanup succeeded. The unchanged failed/dependent jobs were retried; the
+second attempt passed that same privacy gate and started on omni-cio-ci-2.
+No privacy requirement, test or APK was changed to retry.
+
+The second attempt's source root ends/windows-development-40253475330-2.
+The original14 portfolio cases run at fonts100/200 on measured16KB.
+The focused wrapper SHA256 is
+a967a710dc2250d4e1443f3163368d43223edff7b8e5a1a02d2d8628acecbeab;
+its external hook SHA256 is
+ddff3bb7c57670141b9e5f0ce02994fb0d8ed7748b781776a284460614f2276e.
+The hook preserves the first actual failure screenshot/XML after an error.
+Even all14 focused cases do not claim the complete15-stage suite.
+Actual portfolio results remain pending.
 
 ## Continue in order
 
