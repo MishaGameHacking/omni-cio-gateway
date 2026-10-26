@@ -59,4 +59,48 @@ jobs:
                           if p.is_file() and not p.is_symlink() and re.search(r'theme|native46|candidate46|publisher45', p.name, re.I):
                               report['theme_packages'].append({'path': str(p), 'bytes': p.stat().st_size,
                                   'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})
+
+          report['native_run_id'] = 40304000382
+          report['native'] = []
+          report['jvm'] = []
+          import xml.etree.ElementTree as ET
+          for suffix in ('', '-2', '-3', '-4'):
+              runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
+              checkout = runner / 'omni-cio-gateway/omni-cio-gateway'
+              results = checkout / 'windows-development-40301089324-1/app/build/test-results/testDebugUnitTest'
+              if results.is_dir():
+                  suites = []
+                  for p in sorted(results.glob('TEST-*.xml')):
+                      assert p.is_file() and not p.is_symlink() and p.stat().st_size < 4 * 1024**2
+                      raw = p.read_bytes()
+                      node = ET.fromstring(raw)
+                      suites.append({'name': p.name, 'sha256': hashlib.sha256(raw).hexdigest(),
+                          **{k: int(node.get(k, '0')) for k in ('tests', 'failures', 'errors', 'skipped')}})
+                  report['jvm'].append({'path': str(results), 'suites': suites,
+                      'totals': {k: sum(s[k] for s in suites) for k in ('tests', 'failures', 'errors', 'skipped')}})
+              root = checkout / 'windows-development-40304000382-1/app/build/outputs/apk/preview'
+              if not root.is_dir():
+                  continue
+              item = {'root': str(root), 'files': {}, 'log_tail': []}
+              allowed = [root / 'install-api37-16384/installation.json',
+                  root / 'ui-screens/navigation-focused-observations.json',
+                  root / 'ui-screens/automation-verification.json',
+                  root / 'ui-screens/navigation-panels-verification.json',
+                  root / 'ui-screens/navigation-detail-verification.json',
+                  root / 'ui-screens/navigation-wide-verification.json',
+                  runner / '_temp/n00-native45-focused-40304000382-1/native45-navigation-summary.json']
+              for p in allowed:
+                  if p.is_file() and not p.is_symlink():
+                      raw = p.read_bytes()
+                      assert len(raw) < 4 * 1024**2
+                      v = json.loads(raw)
+                      item['files'][p.name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': v}
+              p = root / 'install-api37-16384/runtime-console.log'
+              if p.is_file() and not p.is_symlink():
+                  with p.open('rb') as f:
+                      f.seek(max(0, p.stat().st_size - 16000))
+                      lines = f.read().decode('utf-8', errors='replace').splitlines()
+                  item['log_tail'] = [line[:800] for line in lines[-40:]]
+              report['native'].append(item)
+
           print('N00_RESUME_OBSERVATION=' + json.dumps(report, ensure_ascii=True))
