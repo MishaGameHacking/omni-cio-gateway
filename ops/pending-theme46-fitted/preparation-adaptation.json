@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "reason": "Exact Windows45 applied29 paths after adding five fitted capture regressions; prior administrative validator allowed at most28.",
+  "new_scope": "Exactly29 enumerated paths, exact c7db1ac1 source and actual successful40334863828 build; all original inventory/report/hash guards remain.",
+  "application_or_test_execution": false,
+  "native_requirements_changed": false,
+  "package_manifests_changed": false,
+  "generators": {
+    "prepare_native45_fitted.py": "d8409174633f3705134d84ccdb0e185b0388a86870b382351d78ce0898861eae",
+    "prepare_candidate46_fitted.py": "7afb3521b0cf9637c08ce424a6fb9fc5bcb690372a9b138582f2dd219f9816a3",
+    "prepare_native46_fitted.py": "dd55f5fcf40c0840f44b6ef02b0632f4669141b18bbd3cf4009c8fe5b68bb9f0"
+  }
+}

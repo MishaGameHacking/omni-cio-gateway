@@ -1,0 +1,53 @@
+{
+  "state": "prepared_only_no_application_or_test_execution",
+  "base_commit": "969fd8e29f8fea0981508603c0981bf91eec66de",
+  "base_source_sha256": "c7db1ac10f4dca90d57bf740bd57a9dfe6ef44002f2de0593cfa3d755f0512fd",
+  "base45_inventory_sha256": "2acfec655b8d572640acf1a52cad838bc1a748acdb8c78d91d65caacba2481cd",
+  "base45_build_run": 40334863828,
+  "source_paths": 68,
+  "new_source_paths": 20,
+  "reviewed_files_sha256": "8024b3df4da5e297ff8670df84e726aa0bae4b811a69ede1093a0d30dd18f487",
+  "bootstrap_sha256": "cfafbf7d582d2b6577fb0f4c5b3530ef5bf72f7821b959ef2baa26326880a1bd",
+  "patch_manifest_sha256": "ce568ef09f93f612d85667c88d923afedd1055592315f3ed535a09acdb949284",
+  "bundle_sha256": "fa373b8ca755f45cb4341559dc84300a603bbb0c729287b892f109fd5181683b",
+  "transport_sha256": "c3a54aadcd9eb5930257fcb7579632c0a8f91b16d87d22d6582016e186b42f70",
+  "workflow_sha256": "63405924f7c667625c78b5617ebdf860d405847f9ee6ebe5d4959151e7528056",
+  "package_manifests": {
+    "assets": {
+      "path": "context/theme46-assets/manifest.json",
+      "sha256": "a320b29b48f408945d9f446070a9ef126262e31c806a60fa4123d7367ae3fd50"
+    },
+    "core": {
+      "path": "context/theme46-core-ime-viewport/manifest.json",
+      "sha256": "2082541c1da162c0e63d966051cfe2d7d841b02c325f9d46160d5fdf5d0fa912"
+    },
+    "lifecycle": {
+      "path": "context/theme46-lifecycle/manifest.json",
+      "sha256": "11bff56200fc64e8b1a886861ec2739e0522740f192d9dd77536f4ef0f17a134"
+    },
+    "quotes": {
+      "path": "context/quote-reset46/manifest.json",
+      "sha256": "d128777f368d916c0689c9f6ab378c2cdc36d9eae730e78e9fa6a2be3acd56a3"
+    }
+  },
+  "version": {
+    "code": 46,
+    "name": "0.13.8"
+  },
+  "bootstrap_changes": [
+    "BASE_COMMIT",
+    "BASE_SOURCE"
+  ],
+  "extra_small_artifact": "app/build/test-results/testDebugUnitTest/*.xml",
+  "source_applied_on_windows": false,
+  "build_passed": false,
+  "runtime_passed": false,
+  "publication_performed": false,
+  "phone_verified": false,
+  "n00_complete": false,
+  "native_additional_requirements": {
+    "color_frames": 52,
+    "lifecycle_cases": 4
+  },
+  "original_native_counts_changed": false
+}

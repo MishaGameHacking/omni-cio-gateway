@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "kind": "theme46_one_file_inherited45_ime_viewport_rebase_preparation",
+  "original_core_sha256": "e46e5485ca4673d2363e90cf86cd2550307c1e8e8821de7ddb4f662b5cfc7747",
+  "revised_core_sha256": "2082541c1da162c0e63d966051cfe2d7d841b02c325f9d46160d5fdf5d0fa912",
+  "changed_source": {
+    "path": "app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt",
+    "old_sha256": "50d085aa2c7d6d1ca7d670247175e5d0fda42c24349e6e3fd1e58abb138fe168",
+    "old_git_blob": "d2cd6afb97b4129439fdf9990982c9ff5545a386",
+    "old_bytes": 9916,
+    "new_sha256": "2a85268644052cc5e0b467d1de4cc9afbcb24a2083941de99723218521debab6",
+    "new_git_blob": "7d648703ba7e1a3194fcd8bb476596e39453750a",
+    "new_bytes": 10754,
+    "old_bytes_source": "Windows40323002197 applied source; exact backup/full build/native pending"
+  },
+  "unchanged_core_source_count": 39,
+  "untouched_other_packages": [
+    "assets23",
+    "lifecycle3",
+    "quote-reset1"
+  ],
+  "palette_changes": false,
+  "native_case_counts_or_assertions_changed": false,
+  "build_generator": {
+    "path": "prepare_candidate46_ime.py",
+    "sha256": "4fa846f8900fb88e7a81aea21633536490a9b119159ddba0a9b4066953ef3bf8"
+  },
+  "native_generator": {
+    "path": "prepare_native46_ime.py",
+    "sha256": "d35ff52649cb7f4db3b2c0c76b9e4ecaff66010214c38c85cc0083c378c6b551"
+  },
+  "only_generator_path_and_pin_literals_changed": true,
+  "windows46_applied": false,
+  "windows46_built": false,
+  "runtime_verified": false,
+  "publication_performed": false,
+  "dispatch_requires": "Complete actual native45 and publication45, followed by rebinding actual successful45 receipts"
+}
