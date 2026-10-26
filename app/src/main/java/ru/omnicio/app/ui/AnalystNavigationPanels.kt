@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -159,7 +161,8 @@ fun AnalystNavigationPanels(
                     modifier = Modifier.fillMaxHeight().widthIn(max = 360.dp).testTag("navigation-panel"),
                     windowInsets = WindowInsets.safeDrawing,
                 ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    // The fixed header must retain its full native touch bounds after list scrolling.
+                    Row(Modifier.fillMaxWidth().zIndex(1f).padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Разделы", Modifier.weight(1f).semantics { heading() },
@@ -167,7 +170,7 @@ fun AnalystNavigationPanels(
                         SpectrumIconButton(SpectrumSymbol.Close, "Закрыть меню",
                             { scope.launch { drawer.close() } }, Modifier.testTag("navigation-menu-close"))
                     }
-                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+                    Column(Modifier.weight(1f).fillMaxWidth().clipToBounds().verticalScroll(rememberScrollState())
                         .testTag("navigation-panel-content").padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf(AnalystTab.Home to "Система", AnalystTab.Actions to "Решения",
