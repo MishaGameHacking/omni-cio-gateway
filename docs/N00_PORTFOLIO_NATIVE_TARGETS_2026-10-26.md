@@ -43,10 +43,24 @@ The downloaded archive and all three manifest file hashes were verified.
 |failure.png|ec411b7242f7f04933fd22f12b04673b0e31419b3ee786c0bcd3b29ab12e9cf2|
 |runtime-16384.log|d135d7a9a358d281eb45964073f72d3b5608601ffaa90d067a4ad2147d8c6430|
 
-The4KB profile is still executing independently; final archive collection
-for the complete run has not yet finished.
+The4KB profile also failed at the same compound target after all five stages
+and60 business cases passed. It ran00:18:42.967641Z–00:36:19.390312Z.
+The full workflow concluded FAILURE. The238-file archive is9,746,314 bytes,
+SHA2564270e98b4b3ae40014322201f670c08aa45d4288b2a5c73c0446db15f79a12d8.
+Timeweb9417611 confirmed receipt at2026-10-26T00:37:07Z under
+/var/lib/analyst-ai-build/incoming/windows-development-40247318025-1/.
+No application source ran on Timeweb.
 
-## Reviewed repair and pending Windows verification
+[Independent4KB evidence40250377192](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40250377192)
+artifact12619633604 is112,681 bytes, archive SHA256
+f68f43668d4200d03d350240dccfbd2c22ad464c9f4ae8b0fbc9f2a8512b8540.
+The archive and all three manifest file hashes were verified. The second
+business report contains exactly30 cases at each font and60 total; its
+SHA256 is299e5dfe4a4f76c3d24cb9a1fd8c9ed6bd24b82ea891d15bf502fcb92be532d9.
+The second failure PNG was visually inspected; SHA256
+9301d78b5671ba97bac607a5ac77775891c04265ca4128945f032a2fd49659cb.
+
+## Windows repair, original failure and complete host verification
 
 Four files extend the test-only grammar to nonempty colon-separated bounded
 ASCII components. The96-byte limit, exact whitelisted list, focused app
@@ -78,11 +92,26 @@ was received by9417611 at00:28:06Z. No application code ran on Timeweb.
 uses the unchanged four-file patch and the original canonical lease contract.
 Its corrected administrative wrapper SHA256 is
 cf690a0ba993dfe70882726f23266e4e93f6378a9bc396e63e256c7f6b7d3311.
-It must first reproduce the original Python and Java rejection, restore the
-patch, run every host test, then lint/build the separate test-only driver
-under the same host lease. It then exercises all14 existing portfolio cases.
+It applied the same patch at00:28:59Z and waited for the original full run
+to release the canonical host lease. The new Python regression first failed
+against the original code in all eight compound-ID/qualification variants;
+the actual original Java class also rejected the compound ID as expected.
+The repaired sources were restored before verification.
+
+All1066 host tests passed in48.413s with the same three platform skips,
+including the actual Java guard program's65 cases. git diff --check passed.
+The separate driver lint/assemble tasks passed in1m14s. Source inventory
+and the existing signing key were checked unchanged. The host stage completed
+at2026-10-26T00:38:29.828314Z.
+
+New test-only driver:2,683,192 bytes, SHA256
+7fb9ad4121c2a1e981cacc611522941122c9fe3178e2eeb3849683200f3c7705,
+built at00:38:28Z from inventory4aa72786….
+Exact Windows source receipts match all four backed-up file bytes.
+
+All14 existing portfolio cases are now executing on measured16KB Android37.
 The focused workflow deliberately fails after success because it cannot
-claim the complete15-stage suite. These results are still pending.
+claim the complete15-stage suite. Actual focused results are still pending.
 
 Application preview40/debug40 remain the exact bytes from40239983022.
 Only the test-only driver requires recompilation. After focused acceptance,

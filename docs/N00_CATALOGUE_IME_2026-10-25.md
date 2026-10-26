@@ -284,8 +284,8 @@ Application/debug/driver APKs remain exactly those built in40239983022.
 The16KB profile passed the first five stages and all60 business cases,
 including all eight catalogue case/font combinations. It then failed in
 discovery/ready/font1 before native target alignment: the protocol rejects
-the colon in an existing compound portfolio resource ID. The4KB profile is
-still running; there is no complete15-stage PASS.
+the colon in an existing compound portfolio resource ID. The4KB profile also passed all60 business cases and failed at the same
+compound portfolio target. There is no complete15-stage PASS.
 [Exact evidence and next repair](N00_PORTFOLIO_NATIVE_TARGETS_2026-10-26.md).
 
 No complete Android PASS, physical-phone result or publication40 is claimed.

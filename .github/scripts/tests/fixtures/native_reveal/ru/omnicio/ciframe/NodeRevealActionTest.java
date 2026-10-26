@@ -20,12 +20,18 @@ public final class NodeRevealActionTest {
             root.children.add(list);list.children.add(target);
         }
         boolean run() throws IOException {
-            return NodeRevealAction.perform(root,AREA,TARGET,new Rect(0,0,320,640));
+            return run(TARGET);
+        }
+        boolean run(String targetId) throws IOException {
+            return NodeRevealAction.perform(root,AREA,targetId,new Rect(0,0,320,640));
         }
     }
     private static void refused(Consumer<Scene> change) throws Exception {
+        refused(TARGET,change);
+    }
+    private static void refused(String targetId,Consumer<Scene> change) throws Exception {
         Scene scene=new Scene();change.accept(scene);
-        try { scene.run(); throw new AssertionError("Invalid scene accepted"); }
+        try { scene.run(targetId); throw new AssertionError("Invalid scene accepted"); }
         catch(IOException expected) {
             if(scene.target.actionsPerformed!=0)throw new AssertionError("Acted before validation");
         }
@@ -36,6 +42,42 @@ public final class NodeRevealActionTest {
             NodeRevealAction.readTarget(new DataInputStream(new ByteArrayInputStream(data)));
             throw new AssertionError("Invalid target accepted");
         } catch(IOException expected) { cases++; }
+    }
+    private static byte[] packet(String target) {
+        byte[] bytes=target.getBytes(StandardCharsets.US_ASCII);
+        byte[] result=new byte[bytes.length+2];result[1]=(byte)bytes.length;
+        System.arraycopy(bytes,0,result,2,bytes.length);
+        return result;
+    }
+    private static void compoundTargets() throws Exception {
+        String[] targets={
+            "discovery-compare-synthetic-account-a:synthetic-share-a",
+            "discovery-compare-synthetic-account-a:synthetic-share-b",
+            "dossier-news-event:synthetic-reviewed-event",
+            "a".repeat(94)+":1"
+        };
+        for(String target:targets) {
+            for(String prefix:new String[]{"","ru.omnicio.app.debug:id/"}) {
+                String decoded=NodeRevealAction.readTarget(
+                    new DataInputStream(new ByteArrayInputStream(packet(target))));
+                if(!target.equals(decoded))throw new AssertionError("Compound resource changed in transit");
+                cases++;
+                Scene scene=new Scene();scene.target.id=prefix+target;
+                if(!scene.run(decoded)||scene.target.actionsPerformed!=1)
+                    throw new AssertionError("Observed compound descendant rejected");
+                cases++;
+            }
+            refused(target,s->{s.target.id=target;s.target.packageName="foreign.app";});
+            refused(target,s->s.target.id=target+"-other");
+            refused(target,s->{
+                s.target.id=target;
+                AccessibilityNodeInfo duplicate=new AccessibilityNodeInfo();
+                duplicate.id=target;duplicate.bounds=new Rect(38,330,282,382);
+                s.list.children.add(duplicate);
+            });
+        }
+        for(String target:new String[]{"a::b",":a","a:","a:-b","a:../b","a:b/c",
+                "a: b","a:b;click","a\0:b"})invalidTarget(packet(target));
     }
     public static void main(String[] args) throws Exception {
         Scene valid=new Scene();
@@ -83,6 +125,7 @@ public final class NodeRevealActionTest {
         if(!TARGET.equals(NodeRevealAction.readTarget(new DataInputStream(new ByteArrayInputStream(packet)))))
             throw new AssertionError("Exact resource did not round-trip");
         cases++;
+        compoundTargets();
         System.out.println("NATIVE_REVEAL_GUARD_CASES="+cases);
     }
 }

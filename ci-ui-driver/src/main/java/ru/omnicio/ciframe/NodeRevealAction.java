@@ -24,7 +24,7 @@ final class NodeRevealAction {
         byte[] bytes = new byte[length];
         input.readFully(bytes);
         String target = new String(bytes, StandardCharsets.US_ASCII);
-        if (!target.matches("[a-z][a-z0-9-]{0,95}")) {
+        if (!target.matches("[a-z][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)*")) {
             throw new IOException("Invalid native reveal resource id");
         }
         return target;

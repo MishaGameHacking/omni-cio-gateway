@@ -1,36 +1,41 @@
-## N00 26.10.2026 — текущий отказ протокола портфеля
+## N00 26.10.2026 — проверен ремонт протокола портфеля
 
-Канал остаётся38. Кандидат40 /0.13.2-preview, SHA256
+Канал38 сохранён. Кандидат40 /0.13.2-preview, SHA256
 a3b7d0ec4e0ac568ed15a0853635e2056898618a911c4114f7576b4c5c315aa0,
-прошёл полный Windows/WSL build40239983022; внешнего Sonar bootstrap не было.
+прошёл полный Windows/WSL build40239983022. External Sonar bootstrap не было.
 
-Каталог исправлен и проверен:4 focused случая40246855859,1063 host-теста
-с прежними3 skips. В полном40247318025 source46158e9 /inventory770337e…
-16KB прошёл5 UI-stage и60 бизнес-сценариев100%/200%, затем FAILED
-в discovery/ready/font1: Unknown list or invalid native reveal target.
-Стек указывает на существующий составной ID discovery-compare-<account>:<uid>:
-Python/Java test-only протокол допускает только буквы/цифры/дефис.
-4KB ещё выполняется; полного15-stage PASS нет.
+Полный40247318025 source46158e9 /inventory770337e… FAILED на16KB и4KB
+в discovery/ready/font1: прежний test-only протокол не допускал двоеточие
+в существующем ID discovery-compare-<account>:<uid>. На каждом профиле
+прошли install/upgrade38→40/clean/launch,5 UI-stage и все60 business cases.
+Архив238 файлов9746314 bytes SHA256
+4270e98b4b3ae40014322201f670c08aa45d4288b2a5c73c0446db15f79a12d8
+принят9417611 в00:37:07Z; оба PNG и60-case отчёты отдельно проверены.
 
-Четыре файла исправления применены на Windows в40249378336, inventory
-4aa72786eeb5021e012e97b1d4ad12fabb7336c1d43721d8b477f5736f159025.
-Тот запуск остановился ДО тестов: неверное ожидание7200 превышало
-канонический максимум1200. Ошибка административного wrapper исправлена
-без изменения lease или патча; повтор40249497543 ожидает общую блокировку.
-Далее: original-failure Python/Java регрессии, полный host-suite,
-lint/build только test-only driver и14 фактических portfolio cases.
-Focused workflow намеренно не заявляет полный runtime. Затем повторить
-все15 stages/4096/16384 с неизменённым APK40 и новым проверенным driver.
-Исходники четырёх файлов не считать проверенными до фактического результата.
+Run40249497543 применил четыре файла на Windows, basecf6d0fe,
+inventory4aa72786eeb5021e012e97b1d4ad12fabb7336c1d43721d8b477f5736f159025.
+Сначала подтвердил отказ исходного Python (8 variants) и Java guard,
+затем все1066 host-тестов прошли за48.413s (прежние3 skips),65 Java cases.
+Lint/build только ci-ui-driver прошёл за1m14s, host finished00:38:29Z.
+Новый driver2683192 bytes SHA256
+7fb9ad4121c2a1e981cacc611522941122c9fe3178e2eeb3849683200f3c7705.
+Существующий ключ не изменился. Preview40/debug40 не пересобирались.
+
+Сейчас40249497543 выполняет14 focused portfolio cases на16KB. Его
+диагностический итог намеренно не означает полный15-stage PASS. После
+успешного focused-прогона повторить всю матрицу4096/16384 с точными APK40
+и новым driver. Общая canonical lease с пределом1200s сохранена;
+первый wrapper40249378336 был FAILED до тестов из-за неверного7200s,
+его ошибка/архив сохранены и не являются результатом патча.
 
 [Доказательства и продолжение](docs/N00_PORTFOLIO_NATIVE_TARGETS_2026-10-26.md).
-[История каталога и полный build](docs/N00_CATALOGUE_IME_2026-10-25.md).
+[Каталог и полный build](docs/N00_CATALOGUE_IME_2026-10-25.md).
 
 N00 открыт; N01–N11 не реализованы. Нет публикации40 или проверки телефона.
 Перед PR/merge сохранить exact-head Sonar и исправить старые cloud CI пути
-и upgrade baseline34→38. CI только исследован; неподтверждённый draft
-laptop_backend_ci.py не применён. Подпись, owner/session/broker binding,
-БД и read-only runtime сохранять; платный ИИ/реальные поручения не включать.
+и baseline34→38. CI только исследован; backend WSL draft не применён.
+Подпись, owner/session/broker binding, БД и read-only runtime сохранять;
+платный ИИ/реальные поручения не включать.
 
 ## OWNER 25.10.2026 — ноутбук без физического доступа владельца
 

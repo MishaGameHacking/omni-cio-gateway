@@ -150,8 +150,8 @@ class FrameReader:
         protocol. The acknowledgement never substitutes for a fresh UI frame.
         """
         code = SCROLL_LIST_CODES.get(resource_id)
-        if code is None or not isinstance(target_id, str) or re.fullmatch(
-                r"[a-z][a-z0-9-]{0,95}", target_id, flags=re.ASCII) is None:
+        if code is None or not isinstance(target_id, str) or not 1 <= len(target_id) <= 96 or re.fullmatch(
+                r"[a-z][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)*", target_id, flags=re.ASCII) is None:
             raise ValueError("Unknown list or invalid native reveal target")
         if self.broken:
             raise ConnectionError("Failed UiAutomation stream cannot perform actions")

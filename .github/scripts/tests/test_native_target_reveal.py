@@ -71,6 +71,38 @@ class RevealProtocolTests(unittest.TestCase):
         expected = struct.pack(">IH", 0x25000001, len(TARGET)) + TARGET.encode("ascii")
         self.assertEqual(stream.sent, [expected, struct.pack(">I", 2)])
 
+    def test_compound_portfolio_ids_preserve_exact_packet_and_fresh_geometry(self):
+        targets = (
+            "discovery-compare-synthetic-account-a:synthetic-share-a",
+            "discovery-compare-synthetic-account-a:synthetic-share-b",
+            "dossier-news-event:synthetic-reviewed-event",
+            "a" * 94 + ":1",
+        )
+        for target in targets:
+            for prefix in ("", scroll.PACKAGE + ":id/"):
+                with self.subTest(target=target, prefix=prefix):
+                    tree = frame("[38,330][282,382]")
+                    tree[0][0].set("resource-id", prefix + target)
+                    xml = ET.tostring(tree)
+                    stream = Stream(ack() + struct.pack(">III", 2, 1, len(xml)) + xml)
+                    reader = frames.FrameReader(stream)
+                    self.assertTrue(reader.show_on_screen(AREA, target))
+                    self.assertIsNotNone(scroll.tappable_resource(reader.tree(), target, AREA))
+                    self.assertEqual(stream.sent, [
+                        struct.pack(">IH", 0x25000001, len(target)) + target.encode("ascii"),
+                        struct.pack(">I", 2),
+                    ])
+
+    def test_malformed_compound_targets_send_nothing(self):
+        for target in ("a::b", ":a", "a:", "a:-b", "a:../b", "a:b/c", "a: b",
+                       "a:b;click", "a\0:b", "a" * 95 + ":1", "a:Я", "a:UPPER"):
+            with self.subTest(target=target):
+                reader = frames.FrameReader(Stream(b""))
+                with self.assertRaises(ValueError):
+                    reader.show_on_screen(AREA, target)
+                self.assertEqual(reader.connection.sent, [])
+                self.assertFalse(reader.broken)
+
     def test_non_performed_action_is_not_success_and_keeps_stream_readable(self):
         reader = frames.FrameReader(Stream(ack(status=6)))
         self.assertFalse(reader.show_on_screen(AREA, TARGET))
@@ -153,6 +185,23 @@ class PartialTargetTests(unittest.TestCase):
         show.assert_called_once_with(AREA, TARGET)
         swipe.assert_not_called()
 
+    def test_compound_partial_target_uses_protocol_then_fresh_geometry(self):
+        target_id = "discovery-compare-synthetic-account-a:synthetic-share-b"
+        partial, complete = frame(), frame("[38,330][282,382]")
+        for tree in (partial, complete):
+            tree[0][0].set("resource-id", target_id)
+        reader = frames.FrameReader(Stream(ack()))
+        read, swipe = Mock(side_effect=[partial, complete]), Mock()
+        target = scroll.reveal_resource_in_list(
+            read, swipe, target_id, resource_id=AREA, for_tap=True,
+            show_on_screen=reader.show_on_screen)
+        self.assertEqual(target.get("resource-id"), target_id)
+        self.assertEqual(target.get("bounds"), "[38,330][282,382]")
+        self.assertEqual(read.call_count, 2)
+        swipe.assert_not_called()
+        self.assertEqual(reader.connection.sent, [
+            struct.pack(">IH", 0x25000001, len(target_id)) + target_id.encode("ascii")])
+
     def test_ack_alone_never_makes_a_clipped_button_tappable(self):
         swipe, show = Mock(), Mock(return_value=True)
         with self.assertRaisesRegex(AssertionError, "not reachable"):
@@ -228,7 +277,7 @@ class RealJavaRevealGuardTests(unittest.TestCase):
                 [java, "-cp", output, "ru.omnicio.ciframe.NodeRevealActionTest"],
                 capture_output=True, text=True, timeout=10, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("NATIVE_REVEAL_GUARD_CASES=28", result.stdout)
+            self.assertIn("NATIVE_REVEAL_GUARD_CASES=65", result.stdout)
 
 
 if __name__ == "__main__":
