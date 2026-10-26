@@ -530,7 +530,10 @@ class EventDossierTraversalTests(unittest.TestCase):
                     call=lambda path, query: calls.append({"method": "GET", "path": path, "query": query}),
                     expect=lambda predicate, message: self.assertTrue(predicate(observed()), message))
                 case.record_text = lambda *args, **kwargs: PortfolioCase.record_text(case, *args, **kwargs)
-                research._event_draft(case)
+                # This fixture covers event ownership/navigation. The expanded
+                # metric records have their own full traversal regression.
+                with patch.object(research, "_metric_conflicts"):
+                    research._event_draft(case)
                 self.assertGreater(len(probe.movements), 10)
                 self.assertTrue(all(0 < after - before <= 141 for before, after in probe.movements))
                 self.assertEqual(probe.actions, [probe.EVENT_ACTION, "assistant-event-question"])

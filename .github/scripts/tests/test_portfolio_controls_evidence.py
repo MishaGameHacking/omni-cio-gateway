@@ -500,7 +500,8 @@ class SelectedQuoteIntervalProbe:
         self.selected = False
 
     def tree(self):
-        root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640"})
+        root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640",
+                                       "active-window-id": "31"})
         common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
         rail = ET.SubElement(root, "node", {**common, "resource-id": "quotes-intervals",
             "bounds": f"[38,319][282,{319 + self.height}]"})
@@ -566,6 +567,108 @@ class QuoteIntervalStateTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "Candle interval did not acquire its actual native selected state"):
                     chart._tap_interval(SimpleNamespace(probe=probe), "Неделя")
                 self.assertEqual(len(probe.taps), 1)
+
+
+class MovingQuoteIntervalProbe:
+    """Conditional scroll completion: an early physical tap stops the motion.
+
+    The final rectangles use the observed Hour rail. Intermediate frames model
+    asynchronous accessibility scrolling; they are not claimed device samples.
+    """
+
+    def __init__(self, height, *, changing=None, wrong_selection=False):
+        self.height, self.width = height, 48 if height == 52 else 58
+        self.changing, self.wrong_selection = changing, wrong_selection
+        self.scrolls, self.frames, self.stable = [], 0, 0
+        self.previous, self.selected = None, False
+        self.taps, self.accepted = [], 0
+        self.read_tree = self.tree
+
+    def tree(self):
+        if self.scrolls:
+            self.frames += 1
+            left = (30, 34, 38)[min(self.frames - 1, 2)] if self.width > 48 else 38
+            if self.changing == "bounds":
+                left = 38 + self.frames % 2
+        else:
+            left = 70 - self.width  # Only 32px is visible before the real scroll.
+        window = 31 + self.frames % 2 if self.changing == "window" else 31
+        rail_left = 38 + self.frames % 2 if self.changing == "rail" else 38
+        resource = "quotes-intervals-item-1" if self.changing == "item" else "quotes-intervals-item-0"
+        signature = (left, window, rail_left, resource)
+        self.stable = self.stable + 1 if self.scrolls and signature == self.previous else 1
+        self.previous = signature
+        root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640",
+                                       "active-window-id": str(window)})
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        rail = ET.SubElement(root, "node", {**common, "resource-id": "quotes-intervals",
+            "bounds": f"[{rail_left},319][282,{319 + self.height}]"})
+        chosen = self.selected and not self.wrong_selection
+        hour = ET.SubElement(rail, "node", {**common, "resource-id": resource,
+            "bounds": f"[{left},319][{left + self.width},{319 + self.height}]",
+            "clickable": str(not chosen).lower(), "selected": str(chosen).lower()})
+        ET.SubElement(hour, "node", {**common, "text": "Час",
+            "bounds": f"[{left + 8},336][{left + self.width - 8},355]"})
+        month = ET.SubElement(rail, "node", {**common, "resource-id": "quotes-intervals-item-3",
+            "bounds": f"[232,319][282,{319 + self.height}]",
+            "clickable": str(chosen).lower(), "selected": str(not chosen).lower()})
+        ET.SubElement(month, "node", {**common, "text": "Месяц", "bounds": "[240,336][282,355]"})
+        return root
+
+    resource_tap_target = staticmethod(SelectedQuoteIntervalProbe.resource_tap_target)
+    wait_for = staticmethod(SelectedQuoteIntervalProbe.wait_for)
+
+    def scroll_list(self, resource, direction):
+        if (resource, direction) != ("quotes-intervals", "start") or self.scrolls:
+            raise AssertionError("Only the one necessary backward candle scroll is permitted")
+        self.scrolls.append((resource, direction))
+        return True
+
+    def tap_node(self, target):
+        if target.get("resource-id") != "quotes-intervals-item-0" or target.get("clickable") != "true":
+            raise AssertionError("The action must be the exact clickable Hour item")
+        self.taps.append(dict(target.attrib))
+        if self.stable >= 3:
+            self.accepted += 1
+            self.selected = True
+
+
+class QuoteIntervalMotionTests(unittest.TestCase):
+    def test_backward_scroll_settles_before_the_single_hour_tap(self):
+        import portfolio_chart_probe as chart
+        from unittest.mock import patch
+        for height in (52, 57):
+            with self.subTest(height=height), patch.object(chart.time, "sleep"):
+                probe = MovingQuoteIntervalProbe(height)
+                chart._tap_interval(SimpleNamespace(probe=probe), "Час", direction="start")
+                self.assertEqual(probe.scrolls, [("quotes-intervals", "start")])
+                self.assertEqual((len(probe.taps), probe.accepted), (1, 1))
+                self.assertEqual(probe.taps[0]["bounds"], f"[38,319][{38 + probe.width},{319 + height}]")
+                selected = chart.quote_interval_target(probe.tree(), "Час", selected=True)
+                self.assertEqual(selected.get("resource-id"), "quotes-intervals-item-0")
+                self.assertEqual(selected.get("clickable"), "false")
+
+    def test_unsettled_window_rail_item_or_bounds_never_receive_a_tap(self):
+        import portfolio_chart_probe as chart
+        from unittest.mock import patch
+        for changing in ("bounds", "window", "rail", "item"):
+            with self.subTest(changing=changing), patch.object(chart.time, "sleep"):
+                probe = MovingQuoteIntervalProbe(57, changing=changing)
+                with self.assertRaisesRegex(AssertionError, "Candle interval action did not settle"):
+                    chart._tap_interval(SimpleNamespace(probe=probe), "Час", direction="start")
+                self.assertEqual(probe.taps, [])
+                self.assertLessEqual(probe.frames, 21)
+
+    def test_settled_action_with_another_selected_interval_is_a_failure_without_retap(self):
+        import portfolio_chart_probe as chart
+        from unittest.mock import patch
+        with patch.object(chart.time, "sleep"):
+            probe = MovingQuoteIntervalProbe(52, wrong_selection=True)
+            with self.assertRaisesRegex(AssertionError, "Candle interval did not acquire its actual native selected state"):
+                chart._tap_interval(SimpleNamespace(probe=probe), "Час", direction="start")
+        self.assertEqual((len(probe.taps), probe.accepted), (1, 1))
+        self.assertIsNone(chart.quote_interval_target(probe.tree(), "Час", selected=True))
+        self.assertIsNotNone(chart.quote_interval_target(probe.tree(), "Месяц", selected=True))
 
 
 if __name__ == "__main__":

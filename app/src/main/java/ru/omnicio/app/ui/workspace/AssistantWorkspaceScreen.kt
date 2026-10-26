@@ -161,10 +161,15 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     // Preserve room for the native editor in portrait with large system text.
     val subtitle = if (WindowInsets.isImeVisible) "" else "Объяснения с проверяемыми основаниями"
     WorkspaceDetailPage("Ассистент", subtitle, onBack, SpectrumSymbol.Analyst, adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         AssistantConversationLayout(padding, history = { historyModifier ->
             LazyColumn(historyModifier.semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 state = listState, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                item { AssistantContextCard(questionContext,
+                item {
+                    // The compact shell yields its header height to the conversation.
+                    // Keep its title in the existing first item so status indexes stay stable.
+                    if (compact) WorkspacePageHeading("Ассистент", subtitle)
+                    AssistantContextCard(questionContext,
                     assistantIconState(jobId, jobState, send.error != null || estimateAction.error != null,
                         busy, messageItems.lastOrNull()?.text("role")), busy, question, threads, create,
                     { question = eventImpactQuestion; estimate = null }, { threadId = it }, { editingContext = true }) }

@@ -131,7 +131,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
 /** Two stable slots: changing their bounds must not recreate the focused workspace. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BusinessProbeFrame(disclosure: @Composable (Boolean) -> Unit, content: @Composable () -> Unit) {
+internal fun BusinessProbeFrame(disclosure: @Composable (Boolean) -> Unit, content: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
         .semantics { testTagsAsResourceId = true }) {
         val compact = WindowInsets.isImeVisible && maxHeight < 240.dp

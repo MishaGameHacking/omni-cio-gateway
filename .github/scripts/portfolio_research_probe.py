@@ -241,8 +241,12 @@ def _event_draft(case):
     case.call(INSTRUMENTS_PATH + SHARE_A + DOSSIER_SUFFIX, {})
     # The selected holding opens a new position. Traverse its long dossier by
     # visible sections before locating the action in the exact event record.
-    for heading in ("Эта бумага на всех счетах", "Паспорт рейтинга",
-                    "Показатели компании", "Календарь отчётности", "События и новости"):
+    for heading in ("Эта бумага на всех счетах", "Паспорт рейтинга", "Показатели компании"):
+        p.reveal(heading, AREA, max_swipes=20)
+    # Reopened holdings contain the same expanded conflict observations. Walk
+    # their exact periods and values instead of skipping a whole tall section.
+    _metric_conflicts(case)
+    for heading in ("Календарь отчётности", "События и новости"):
         p.reveal(heading, AREA, max_swipes=20)
     case.record_text("dossier-news-" + EVENT, "Факт → компания → моя позиция")
     p.tap_resource("dossier-impact-" + EVENT, AREA)

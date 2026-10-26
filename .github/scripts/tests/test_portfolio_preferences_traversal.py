@@ -138,6 +138,7 @@ class ResetSectionsProbe:
         self.scale, self.offset, self.height = scale, 0, 401
         self.actions, self.movements = [], []
         self.prefs = dict(preferences.APPLIED)
+        self.applied = False
 
     def tree(self):
         common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
@@ -148,6 +149,8 @@ class ResetSectionsProbe:
                 (500, "Тема"), (1400, "Цвет акцента"), (2300, "Плотность карточек"),
                 (3200, "Движение"), (4100, "Яркое освещение"), (5000, "Приватность"),
                 (5700, "Вернуть оформление по умолчанию")]
+        if self.applied:
+            rows.append((60, "Оформление применено"))
         for position, label in rows:
             top, bottom = max(0, position * self.scale - self.offset), min(self.height, (position + 64) * self.scale - self.offset)
             if top < bottom:
@@ -174,7 +177,10 @@ class ResetSectionsProbe:
         self.actions.append(label)
         if label == "Вернуть оформление по умолчанию":
             self.prefs = dict(preferences.DEFAULT)
-        elif label != "Применить":
+            self.applied = False
+        elif label == "Применить":
+            self.applied = True
+        else:
             raise AssertionError("Unexpected reset action")
 
 

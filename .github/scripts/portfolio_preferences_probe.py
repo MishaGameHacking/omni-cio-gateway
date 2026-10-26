@@ -1,6 +1,7 @@
 """Saved appearance, temporary preview and real Activity recreation."""
 from business_ui_probe import labels
 from profile_launch import PACKAGE
+from profile_ui_probe import button_label
 from spatial_frame_evidence import ready_spatial_metrics
 
 MOTION_DISABLED = 'Без движения'
@@ -44,9 +45,15 @@ def _reset(case):
     for heading in reversed(sections):
         p.reveal(heading, AREA, direction="start")
     p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
-    apply = p.reveal("Применить", AREA)
+    p.reveal("Применить", AREA)
+    apply = button_label(p.tree(), "Применить")
+    if apply is None or apply.get("enabled") not in {"true", "false"}:
+        raise AssertionError("Appearance reset has no native Apply button state")
     if apply.get("enabled") == "true":
-        p.tap_node(apply)
+        # The text child can be clipped or enabled under a disabled owner.
+        # Apply through the same settled 48px action used by the user flow.
+        p.tap("Применить", AREA)
+        p.reveal("Оформление применено", AREA, direction="start")
     _expect_preferences(case, DEFAULT)
 
 

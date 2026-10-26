@@ -1,6 +1,36 @@
+## N00 26.10.2026 — candidate43 Windows checks passed; build/runtime pending
+
+> **26.10.2026, N00 — кандидат43 применён на Windows; базовые проверки прошли.** Исправления ввода и заголовка при font200, ожидания котировок, обхода досье и подтверждения сброса настроек сохранены после проверки на LAPTOP-NPSGA016. В40277268871 прошли1092 host tests (прежние3 skips),52 tools, Node и1684 backend tests +1515 subtests; Android-сборка пока выполняется. Предыдущий original14 в40272254653 завершился отказом выбора «Час», а не успехом. Original14 для43, полная15-stage матрица4096/16384, обычный CI и внешний exact-head Sonar ещё не пройдены. Канал38 сохранён. N00 открыт, N01–N11 не реализованы. [Точное состояние и продолжение](docs/N00_CANDIDATE43_2026-10-26.md).
+
+Exact applied candidate43 source inventory:
+269b6755933d6504082a9ee4bc86dbbf458beb22abcb51918c852cccddefd11b.
+Fourteen application/test files applied only on LAPTOP-NPSGA016 in40277268871,
+base49d6a75; Windows full check passed06:04:21Z, Gradle still running at this checkpoint.
+Expected complete pre-documentation inventory:
+fafb95aef217a0de5536788c047e16481d9de53ee7fdf390a58c1275379c8cb4.
+Transport decoded bundle3330c9fabb07ca880abae1e430cf7ce508d7387accff077390fa2329cbe88fbe.
+Original quote, appearance-reset and long-dossier regressions each reproduced
+with2 conditional variants; repaired full host suite1092/50.103s passed (same3 skips).
+WSL1684 tests +1515 subtests passed118.91s; tools52 and Node passed.
+Current build root:
+C:\actions-runner-3\_work\omni-cio-gateway\omni-cio-gateway\windows-development-40277268871-1.
+A failed first build40276690834-2 stopped at two stale version42 assertions;
+these strict assertions now require43/0.13.5. It did not build an APK.
+Do not infer full build/runtime acceptance from the successful check phase.
+After exact successful build receipt, run unchanged original14 atfont100/font200
+on API37/16384 with candidate43 and exact published baseline38. Only then run
+all15 stages on4096 and16384. Diagnostic sentinel intentionally is not releasePASS.
+Normal CI migration candidates are prepared only, not applied or validated;
+retain synthetic merge integration coverage and separate exactPRhead Sonar.
+Canonical lease blobc9626f3bf90b612a71b9bbf2954d0c134aa29b22/wait1200s unchanged.
+Existing shared SDK/JDK, signing key, owner/session/broker binding and DB preserved.
+All application/backend/test execution stays on the laptop;9417611 only runtime/archive.
+No paidAI or real orders. No new APK publication or physical-phone claim.
+N00 remains open. N01–N11 remain unimplemented; N10 needs actual trading sessions.
+
 ## N00 26.10.2026 — quote-state ремонт прошёл1083 tests, original14 продолжается
 
-> **26.10.2026, N00 — quote selected-state ремонт прошёл 1083 host tests.** Сборка APK42 успешна. После ремонта навигации диагностический прогон 40271927516 завершил 14 случаев: 8 PASS / 6 FAIL. Двухфайловое исправление проверки выбранного периода проверено на ноутбуке в 40272254653; его исходные Android-сценарии ещё выполняются. Полная матрица 4096/16384 и external exact-head Sonar не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
+> **26.10.2026, N00 — quote selected-state ремонт прошёл 1083 host tests.** Сборка APK42 успешна. После ремонта навигации диагностический прогон 40271927516 завершил 14 случаев: 8 PASS / 6 FAIL. Двухфайловое исправление проверки выбранного периода проверено на ноутбуке в 40272254653; его исходные Android-сценарии впоследствии завершились отказом выбора «Час» (см. актуальный checkpoint выше). Полная матрица 4096/16384 и external exact-head Sonar не пройдены. Канал38 сохранён,42 не опубликован. N00 открыт, N01–N11 не реализованы. [Доказательства и продолжение](docs/N00_PORTFOLIO_FONT_LAYOUT_2026-10-26.md).
 
 Current exact build40266100999 on LAPTOP-NPSGA016 /omni-cio-ci-3:
 source inventorycd798608db48de57f6a01e15293fda8fe093984054edfeeea0e0e210936c8f2e.
@@ -36,7 +66,7 @@ Two-file quote repair40272254653 reproduced original failure in2 variants and
 passed1083 host tests50.554s, same3skips; diff PASS, finished05:11:56Z.
 Source inventoryeea2c47dfc8707312eb7efba66d087d831907da8b087bf9421bec597ffe74e5b.
 Patch02737e718f6d48d0487a94267ebd232e1af739afc481ac3eee104be1495f85a9.
-Original14 Android is still running; do not claim completion.
+Original14 Android40272254653 FAILED at05:17:42Z selecting Hour; Week selection repair alone did not close the case.
 Action requires clickable; selected observation requires selected, with original
 package/enabled/48px/exact rail checks. Checked-only is rejected, no second tap.
 Read actual outcome and remainingfont200 evidence before another full15-stage run.

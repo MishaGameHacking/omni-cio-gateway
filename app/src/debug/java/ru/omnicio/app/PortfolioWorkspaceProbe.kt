@@ -2,6 +2,8 @@ package ru.omnicio.app
 
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,7 +19,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.net.URI
@@ -106,17 +107,25 @@ internal fun PortfolioWorkspaceProbe(route: String, scenario: String, onBack: ()
             }
         }
     }
-    Column(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).statusBarsPadding().padding(6.dp)) {
-            Column(Modifier.testTag("portfolio-probe").semantics { contentDescription = marker }) {
-                Text("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
-                Text("$initialRoute / $scenario · запросов ${trace.count} · ошибок ${trace.errors.size + navigationErrors.size}", fontSize = 10.sp)
-                preparationError?.let { Text(it, fontSize = 10.sp) }
-                (trace.errors + navigationErrors).lastOrNull()?.let { Text(it, fontSize = 10.sp) }
+    // Use the same stable disclosure/content slots as the business fixture.
+    // A large-font IME can leave too little height for a fixed banner above input.
+    BusinessProbeFrame(disclosure = { compact ->
+        val detailStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp)
+        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer)
+            .testTag("portfolio-probe").semantics { contentDescription = marker }, propagateMinConstraints = true) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(if (compact) 4.dp else 6.dp)) {
+                Text(if (compact) "Синтетика" else "ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ",
+                    style = MaterialTheme.typography.labelSmall)
+                Text(if (compact) "Запр.${trace.count} · ош.${trace.errors.size + navigationErrors.size}"
+                    else "$initialRoute / $scenario · запросов ${trace.count} · ошибок ${trace.errors.size + navigationErrors.size}",
+                    style = detailStyle)
+                preparationError?.let { Text(it, style = detailStyle) }
+                (trace.errors + navigationErrors).lastOrNull()?.let { Text(it, style = detailStyle) }
             }
             Box(Modifier.align(Alignment.TopEnd).size(2.dp).testTag("portfolio-probe-transcript")
                 .clearAndSetSemantics { contentDescription = transcript.toString() })
         }
+    }) {
         if (!initialized) SpectrumLoadingIndicator(description = "Подготовка изолированного портфельного теста")
         else CompositionLocalProvider(
             LocalWorkspaceSession provides WorkspaceSession(PORTFOLIO_PROBE_TOKEN, userId),
@@ -146,7 +155,7 @@ internal fun PortfolioWorkspaceProbe(route: String, scenario: String, onBack: ()
                 else navigationErrors = navigationErrors + "Маршрут ${target.name} не входит в этот портфельный сценарий"
             },
         ) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.fillMaxSize()) {
                 savedPages.SaveableStateProvider(page) {
                     when (page) {
                         "discovery" -> DiscoveryWorkspaceScreen(state, back)

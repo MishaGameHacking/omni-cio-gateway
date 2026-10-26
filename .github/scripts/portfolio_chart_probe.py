@@ -1,6 +1,7 @@
 """Precise native values, actual chart gestures and source-period contracts."""
 from calendar import monthrange
 from datetime import date, timedelta
+import json
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -19,23 +20,28 @@ BOND = "synthetic-bond"
 EXACT_MISSING = "Наблюдение с этим точным моментом не найдено в полученной выборке. Другая запись этого дня не подставляется. Возможно, детальная история уже вышла из срока хранения; проверьте источник и диапазон."
 
 
+def _quote_interval_rail(tree):
+    rows = [node for node in tree.iter("node") if node.get("package") == PACKAGE
+            and node.get("visible-to-user") == "true"
+            and node.get("resource-id") in {"quotes-intervals", PACKAGE + ":id/quotes-intervals"}]
+    return rows[0] if len(rows) == 1 else None
+
+
 def quote_interval_target(tree, text, *, selected=False):
     """Scope an action or selected-state observation to the exact candle rail."""
     if text not in {"Час", "День", "Неделя", "Месяц"}:
         raise ValueError("Unsupported quote interval label")
-    rows = [node for node in tree.iter("node") if node.get("package") == PACKAGE
-            and node.get("visible-to-user") == "true"
-            and node.get("resource-id") in {"quotes-intervals", PACKAGE + ":id/quotes-intervals"}]
-    if len(rows) != 1:
+    row = _quote_interval_rail(tree)
+    if row is None:
         return None
-    row = rows[0]
     x1, y1, x2, y2 = node_bounds(row)
     for node in row.iter("node"):
         required_state = "selected" if selected else "clickable"
         if node.get("package") != PACKAGE or node.get("visible-to-user") != "true" \
                 or node.get(required_state) != "true" or node.get("enabled") == "false":
             continue
-        if not any(text in labels(child) for child in node.iter("node") if child.get("visible-to-user") == "true"):
+        if not any(text in labels(child) for child in node.iter("node")
+                   if child.get("package") == PACKAGE and child.get("visible-to-user") == "true"):
             continue
         left, top, right, bottom = node_bounds(node)
         left, top, right, bottom = max(left, x1), max(top, y1), min(right, x2), min(bottom, y2)
@@ -46,6 +52,37 @@ def quote_interval_target(tree, text, *, selected=False):
     return None
 
 
+def settled_quote_interval(read_tree, text, max_frames=20):
+    """Observe one exact action until its native window and geometry settle."""
+    if type(max_frames) is not int or not 3 <= max_frames <= 30:
+        raise ValueError("Invalid quote interval frame limit")
+    resource = "quotes-intervals-item-" + str(("Час", "День", "Неделя", "Месяц").index(text))
+    names = {resource, PACKAGE + ":id/" + resource}
+    previous, stable = None, 0
+    deadline = time.monotonic() + 12
+    for _ in range(max_frames):
+        if time.monotonic() >= deadline:
+            break
+        tree = read_tree()
+        target, rail = quote_interval_target(tree, text), _quote_interval_rail(tree)
+        window = tree.get("active-window-id", "")
+        identity = None
+        if target is not None and window.isdecimal() and len(window) <= 6:
+            owners = [node for node in rail.iter("node") if node.get("package") == PACKAGE
+                      and node.get("visible-to-user") == "true" and node.get("resource-id") in names]
+            if len(owners) == 1 and target.get("resource-id") in names and target.get("enabled") == "true":
+                identity = {"window": int(window), "rail": rail.get("resource-id"),
+                            "rail_bounds": node_bounds(rail), "item": target.get("resource-id"),
+                            "owner_bounds": node_bounds(owners[0]), "tap_bounds": node_bounds(target)}
+        stable = stable + 1 if identity is not None and identity == previous else int(identity is not None)
+        if stable >= 3:
+            print("QUOTE_INTERVAL_TAP_READY=" + json.dumps(identity), flush=True)
+            return target
+        previous = identity
+        time.sleep(.1)
+    raise AssertionError("Candle interval action did not settle in its exact native rail: " + text)
+
+
 def _tap_interval(case, text, direction="end"):
     p = case.probe
     p.resource_tap_target("quotes-intervals", AREA, direction="start")
@@ -53,6 +90,7 @@ def _tap_interval(case, text, direction="end"):
     for _ in range(11):
         target = quote_interval_target(p.tree(), text)
         if target is not None:
+            target = settled_quote_interval(p.tree, text)
             p.tap_node(target)
             p.wait_for(lambda: quote_interval_target(p.tree(), text, selected=True),
                        "Candle interval did not acquire its actual native selected state")
