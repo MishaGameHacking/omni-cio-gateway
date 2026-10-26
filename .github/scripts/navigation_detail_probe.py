@@ -309,8 +309,7 @@ class _DetailNavigationCase:
 
     def screen_anchor(self, page):
         if page == "strategy":
-            self.probe.reveal_resource("strategy-horizon", "workspace-content", direction="start",
-                                       for_capture=True, minimum_size=(self.minimum, self.minimum))
+            self.reveal_horizon()
         elif page == "assistant":
             self.probe.wait_for(lambda: navigation_target(self.owned_frame(), "assistant-composer"),
                                "The real Assistant composer is absent")
@@ -320,9 +319,24 @@ class _DetailNavigationCase:
                      "library": "Название, заметка или источник"}[page]
             self.probe.reveal(label, "workspace-content", direction="start", max_swipes=20)
 
+    def reveal_horizon(self):
+        from profile_scroll import fully_visible_resource
+        minimum = (self.minimum, self.minimum)
+        # The Goal editor places this input after the state, goal and risk
+        # cards. Recover the fixture's actual top when returning from a saved
+        # scroll position, but keep an already visible editor/IME in place.
+        if fully_visible_resource(self.owned_frame(), "strategy-horizon",
+                                  "workspace-content", minimum) is None:
+            self.probe.reveal("Действует версия 3", "workspace-content",
+                              direction="start", max_swipes=20)
+        return self.probe.reveal_resource("strategy-horizon", "workspace-content", direction="end",
+                                          for_capture=True, minimum_size=minimum)
+
+
     def horizon(self, value):
         from native_input_evidence import native_input_ready
-        self.probe.tap_resource("strategy-horizon", "workspace-content", direction="start")
+        self.reveal_horizon()
+        self.probe.tap_resource("strategy-horizon", "workspace-content", direction="end")
         result = self.probe.wait_for(lambda: native_input_ready(self.probe.tree(), value),
                                      "The real strategy editor did not retain " + value)
         return result
