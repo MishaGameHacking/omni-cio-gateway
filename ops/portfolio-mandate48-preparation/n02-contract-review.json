@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "kind": "next_step_contract_review_not_implementation",
+  "reviewed_at_utc_date": "2026-10-26",
+  "plan_step": "N02",
+  "current_functional_candidate": 48,
+  "primary_sources": [
+    {
+      "url": "https://developer.tbank.ru/invest/services/instruments/methods",
+      "observed": "TradingSchedules returns exchange sections, UTC day boundaries, auctions, clearing, morning/evening fields and intervals. TradingInterval.type is a string without an enumerated vocabulary in the retrieved contract."
+    },
+    {
+      "repository": "RussianInvestments/investAPI",
+      "path": "src/docs/contracts/instruments.proto",
+      "blob_sha": "dfabbf1541111e86d069822f281d7c5a9765a77c",
+      "observed": "Current primary protocol includes TradingInterval and TimeInterval; no guessed mapping of interval names to the owner's main session is accepted."
+    },
+    {
+      "repository": "RussianInvestments/investAPI",
+      "path": "src/docs/contracts/orders.proto",
+      "blob_sha": "c934d0a5717fbb5620acd6b523aace1d0feecee0",
+      "observed": "GetOrderPrice exposes separate initial amount, total amount, executed commission, fee components and bond accrued interest. Total minus initial is not automatically a fee, and fee components must not be double counted."
+    }
+  ],
+  "existing_integration_points": {
+    "backend/volume_jobs.py": "Use the existing durable workspace queue, request idempotency, owner lease, checkpoint and per-user serialization. Do not introduce a second scheduler or independent state store.",
+    "backend/autonomous_ai.py": "run_scheduler_cycle currently queues full collection and analysis; _run_connected_analysis fetches current portfolio each cycle. Split automatic event work from ordinary price polling before suppressing any closed-market work.",
+    "backend/autonomous_controller.py": "enqueue_collection currently uses a 900-second completed-collection freshness bound and a connection-bound request key; discovery has a persistent cursor and lease.",
+    "backend/volume_workspace.py": "collect mixes portfolio, operations, issuer metadata, payouts, news and calendar. A future event-only refresh must preserve old valuation as_of and collection timestamps, while recording its own successful event check time.",
+    "backend/volume_market.py": "load_calendar reads UTC today through six future days; calendar is connection-bound in-memory cache with 900-second TTL. Raw exchange calendar is explicitly not an instrument trade authorization.",
+    "backend/volume_purchases.py": "Existing real execution and full suitability remain denied. Calendar, actual instrument trading status, account rights, order type and fresh prices must all agree before any later execution eligibility."
+  },
+  "required_next_changes": [
+    "Persist the broker calendar and its provenance without inventing a Monday-Friday schedule or using deprecated weekend_flag as authorization.",
+    "Separate continuous issuer events, ratings, payouts and health from ordinary market-price polling. Explicit owner refresh remains a distinct read-only action.",
+    "Keep unresolved submitted-order reconciliation independent of AI budget, application visibility, market closure and pause of new orders when the future executor is implemented.",
+    "Add bounded priorities and aging to the existing queue while retaining lease recovery, duplicate coalescing, per-user isolation and cursor continuity.",
+    "Validate holidays, weekend exceptions, UTC boundary dates, auctions, clearing, stale/missing/conflicting schedules, connection changes, retries and crash recovery using synthetic fixtures on the laptop.",
+    "Review exact interval vocabulary against primary evidence before using it to grant session eligibility; unknown classification stays explicitly unknown."
+  ],
+  "application_code_applied": false,
+  "tests_executed_for_N02": false,
+  "runtime_deployed_for_N02": false,
+  "live_orders_enabled": false,
+  "plan_complete": false
+}
