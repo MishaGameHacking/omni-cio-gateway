@@ -197,6 +197,8 @@ internal fun nextAutoSaveRecord(records: Collection<AutoSaveRecord>, recovery: A
 
     # The isolated fixtures must mount the production provider too.
     path = 'app/src/debug/java/ru/omnicio/app/BusinessWorkspaceProbe.kt'
+    replace(path, '            if (navigationFixture) {',
+        '            if (navigationFixture) WorkspaceAutoSaveProvider {')
     replace(path, '            } else Box(Modifier.fillMaxSize()) { workspace() }',
         '            } else WorkspaceAutoSaveProvider { Box(Modifier.fillMaxSize()) { workspace() } }')
     path = 'app/src/debug/java/ru/omnicio/app/PortfolioWorkspaceProbe.kt'

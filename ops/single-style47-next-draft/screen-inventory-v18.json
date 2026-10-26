@@ -1,0 +1,898 @@
+{
+  "status": "static_inventory_not_native_acceptance",
+  "scope": "named existing screens, panels and dialogs; not an invented screen count",
+  "surface_count": 60,
+  "rows": [
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/PlaceholderTabScreen.kt",
+      "surface": "PlaceholderTabScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "3ea6566fecd2b0b6c0da48276f33039eefa41f31dc2f2714d665962ef63cd118"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt",
+      "surface": "InsightFeedScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "d2e8b57cb684e0db2f4ea887e4b14d8324cde653f4d51a55e1f0499905360613"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt",
+      "surface": "PulseScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "d2e8b57cb684e0db2f4ea887e4b14d8324cde653f4d51a55e1f0499905360613"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt",
+      "surface": "InsightScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "d2e8b57cb684e0db2f4ea887e4b14d8324cde653f4d51a55e1f0499905360613"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt",
+      "surface": "IdeasScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "d2e8b57cb684e0db2f4ea887e4b14d8324cde653f4d51a55e1f0499905360613"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt",
+      "surface": "AnalysisProfileSettingsScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "d2e8b57cb684e0db2f4ea887e4b14d8324cde653f4d51a55e1f0499905360613"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/auth/TelegramLoginScreen.kt",
+      "surface": "TelegramLoginScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "672291d95848b76ab1a63160c773a1983f1d36f781bdd5bcb87d6171a679fb71"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt",
+      "surface": "EducationScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "75347bc093dad16f6f5e3dd21823d05e506608487ab968c27eca3759d8c8cf69"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt",
+      "surface": "HomeScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "836d5dac4e9f1d1ed263389b6196cb5dbec04bef19a8465103730db5a5af7aea"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/AccountOperations.kt",
+      "surface": "OperationTargetDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "493b2859ad4fefbb1dcd421d274543781e4efade2b6bd004d112719b6c99d060"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/AccountOperations.kt",
+      "surface": "OperationDetailDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "493b2859ad4fefbb1dcd421d274543781e4efade2b6bd004d112719b6c99d060"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/AssetComparisonScreen.kt",
+      "surface": "AssetComparisonDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "12be7ad7627fa5d965b0ebd93f220bf2eae7e3b27fa7a5e253159f4e31d62e8a"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/DossierNewsPanel.kt",
+      "surface": "DossierNewsPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "69966b19b5c32df96dec704920d962922ac3dc65f7cd37f4625a257a13b3b1d3"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/DossierRatingsPanel.kt",
+      "surface": "DossierRatingsPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "d5200b9e5eecfb78d2c75e7f43e06d2be2e63b33ceed91d3e476aabc5fa07f09"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/DossierReportsPanel.kt",
+      "surface": "DossierReportsPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "8af335fa03f8afe364130ef8c1aed4c8152a472e51ff49951385a84ab111f1f9"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDetailsScreen.kt",
+      "surface": "InstrumentDetailsScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "970dd348d641817d4ea1461298b87ca9acb843fb9ce337000da260854f1050cb"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt",
+      "surface": "InstrumentDossierPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "605fab58dbce2c43a46f734f25eca182b92d0f4b4ea7323fb6f9e806098a3b86"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt",
+      "surface": "DossierHoldingsPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "605fab58dbce2c43a46f734f25eca182b92d0f4b4ea7323fb6f9e806098a3b86"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentDossierPanel.kt",
+      "surface": "DossierMetricsPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "605fab58dbce2c43a46f734f25eca182b92d0f4b4ea7323fb6f9e806098a3b86"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt",
+      "surface": "InstrumentQuotesPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "0a38fff1cf690ec569d8b516ec8433a4150aa4002be86f542ccef1dcc64d7324"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioScreen.kt",
+      "surface": "PortfolioScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "82c1d47e88c51e7e529a76ba69c97ae3f0496ee747b42351b0dd2a720a5a21b1"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioScreen.kt",
+      "surface": "AccountScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "82c1d47e88c51e7e529a76ba69c97ae3f0496ee747b42351b0dd2a720a5a21b1"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/VerifiedExposurePanel.kt",
+      "surface": "VerifiedExposurePanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "5c34a451c1ea94749c9a6baf195448a86be8e721abe5813f463aab8c11c44dd1"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt",
+      "surface": "ProfileScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "cf14eeac1d7020dfb647c166031d5c97e70deaf0bfe54eb445590dc49816c3f7"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/profile/TApiScreen.kt",
+      "surface": "TApiScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "b3df96913fa593b05d89d8c402bc5f301115da8023156b987175e8213627a55b"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/research/PortfolioResearchPanel.kt",
+      "surface": "PortfolioResearchPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "583f7396aa0ebf2dcd0e13d15c59f5601876b091076843c2cc27b047b032873c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/spectrum/RequiredUpdateScreen.kt",
+      "surface": "RequiredUpdateScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "cdd0af57edf70af279f27f61415458fe749fe99c9cb9d99b5720a65a4230449c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAlertDialog.kt",
+      "surface": "SpectrumAlertDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "8bda64f38cbea5597c4ef54c4f3ff960064df3af17533dfd8cd1e06cb6d5a71c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAlertDialog.kt",
+      "surface": "SpectrumDatePickerDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "8bda64f38cbea5597c4ef54c4f3ff960064df3af17533dfd8cd1e06cb6d5a71c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/updates/MandatoryUpdateHost.kt",
+      "surface": "DefaultUpdateScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "b231d8157778ee8e175dff48537b144233311a59246799d5bfec4ba440d52732"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/AnalysisMonitorPanels.kt",
+      "surface": "AnalysisCheckDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "0fc9f5f934d8de7d070b3d5bc6d121af89dd20f4ed137b79f605ff077235532c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/AnalysisTimelineScreen.kt",
+      "surface": "AnalysisTimelineScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "4dc3dc0cd8b1d158f7a2e3309eb619624e96e1d353887ef2084bd86b5376ad4c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/AnalysisTimelineScreen.kt",
+      "surface": "AnalysisFactsDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "4dc3dc0cd8b1d158f7a2e3309eb619624e96e1d353887ef2084bd86b5376ad4c"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt",
+      "surface": "AppearanceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "433fcbd210c0b6e1ebb668c890a9afc36841e4b1d13528495d47f9f6b543a32f"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/AssistantWorkspaceScreen.kt",
+      "surface": "AssistantWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "850c9dc8431ed33859fd89ac7505ffaaae7b95b1e76894f5f6cbbc6383f8b872"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/AutonomousDecisionsScreen.kt",
+      "surface": "AutonomousDecisionsScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "2be5593493e93c081c3af4e5faa18add093060c6fcc588aa75991411c951ea2d"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt",
+      "surface": "DiscoveryWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "bafd723f94ff66d7038fe50be2231983ff99ac8e558616bacb14cb6a211d49c9"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt",
+      "surface": "DiscoveryResearchDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "bafd723f94ff66d7038fe50be2231983ff99ac8e558616bacb14cb6a211d49c9"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/GeographyWorkspacePanel.kt",
+      "surface": "GeographyWorkspacePanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "4ae1cd2743336568850b790d935b79b3b0b8193eb2dba40c9b9565d6edba5efd"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/ImpactHypothesisPanel.kt",
+      "surface": "ImpactHypothesisPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "fc1ceeb3ccb6bb4a3b9e16b2d48117ecb75fb1e2428e5042ad806a7f5a36af5a"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/LiveStrategyScreen.kt",
+      "surface": "LiveStrategyScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "0c624a29a76dc17dc641ec6e3df76525deda3ada7ea8c63d4d2b6b1ab7243130"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/MarketCatalogueScreen.kt",
+      "surface": "MarketCatalogueScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "fa5767d9c3b1a84a9645e14e7542e824fd2d1253d0c0a83d0d90a82acbc15aa9"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/MarketCatalogueScreen.kt",
+      "surface": "PurchaseCheckDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "fa5767d9c3b1a84a9645e14e7542e824fd2d1253d0c0a83d0d90a82acbc15aa9"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt",
+      "surface": "MarketWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "8ecf6e9311d9eb38f866bad4580448064599e05ca03ec44f7f13671dbb681099"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/NotificationWorkspaceScreens.kt",
+      "surface": "NotificationSettingsScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "38182e55a6348e3d2302c13cd602418a2ef212e79ff7dedd73a9f4f08300b44d"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/NotificationWorkspaceScreens.kt",
+      "surface": "NotificationEventsScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "38182e55a6348e3d2302c13cd602418a2ef212e79ff7dedd73a9f4f08300b44d"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt",
+      "surface": "DevicesWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "075a4d64d96c05dcbb51e2463702ec7110933a894f510314dde6c38efb6c654e"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt",
+      "surface": "GoalsWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "075a4d64d96c05dcbb51e2463702ec7110933a894f510314dde6c38efb6c654e"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt",
+      "surface": "RecentWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "075a4d64d96c05dcbb51e2463702ec7110933a894f510314dde6c38efb6c654e"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/PersonalWorkspaceScreens.kt",
+      "surface": "NewFeaturesWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "075a4d64d96c05dcbb51e2463702ec7110933a894f510314dde6c38efb6c654e"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/PlansWorkspaceScreen.kt",
+      "surface": "PlansWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "9c0e04c84ae4ceddad946e3ea36933ad5f02717ff22b49e49a64513283ddbb94"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt",
+      "surface": "ResearchLibraryScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "22f68c7013a9357b55058beae05898db25dcf6ba6dd9baf4fa3483abc1fd793a"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/RiskScenarioDialog.kt",
+      "surface": "RiskScenarioDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "da2e703bc3b3c7b68f98e3ee4a282f8628cc0bd01e185676f8a6ef3bc2dc9dd3"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/RiskWorkspaceScreen.kt",
+      "surface": "RiskWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "4687e089f86d1fadc8f22ec3c4b55d14c91ea8b541bffff19ca9fa33a133fc7e"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/StrategyWorkspaceScreen.kt",
+      "surface": "StrategyWorkspaceScreen",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "f55b4e9625df40061263f3924fb70bc1c133a7680a72c93ecdeb758c756d9aa0"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/StrategyWorkspaceScreen.kt",
+      "surface": "DraftLeaveDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "f55b4e9625df40061263f3924fb70bc1c133a7680a72c93ecdeb758c756d9aa0"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/TradingCalendarPanel.kt",
+      "surface": "TradingCalendarPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "1a83f2011b6797af5d03bfcace4c67c7eae189a150dd72b7c4a2ca17df67eebe"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceDialog.kt",
+      "surface": "WorkspaceDialog",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "211fffbaa012b8e2af4eeebe7caab82b5eecf8f6c40c29509c46fd953e1a2372"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt",
+      "surface": "WorkspaceJobPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "76b7492f3d96f61468e0359848bdefbc09c15475da747ff0eb7fc631c485041e"
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspacePanels.kt",
+      "surface": "WorkspaceJobPanel",
+      "native_review": "pending",
+      "font_scales": [
+        1,
+        2
+      ],
+      "motion": [
+        "live",
+        "off"
+      ],
+      "source_sha256": "76b7492f3d96f61468e0359848bdefbc09c15475da747ff0eb7fc631c485041e"
+    }
+  ],
+  "reviewed_manifest_sha256": "48ba8c63aba4710d59f034c8455c8c588193356109aac45dac951313da327939",
+  "screen_map_status": "source_inventory_only_not_native_acceptance",
+  "immediate_native_scope": {
+    "destinations": [
+      "strategy",
+      "markets",
+      "notifications",
+      "assistant",
+      "appearance",
+      "library"
+    ],
+    "icons": 21,
+    "fonts": [
+      1.0,
+      2.0
+    ],
+    "page_sizes": [
+      16384,
+      4096
+    ],
+    "completed": false
+  },
+  "remaining_automatic_editors": [
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt",
+      "surface": "PeriodControls",
+      "observation": "Date range still has explicit Apply; persist valid pair on selection and preserve incomplete range independently."
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioQuickPreview.kt",
+      "surface": "watch reason dialog",
+      "observation": "Note editor still requires Save; needs durable keyed draft and deduplicated apply."
+    },
+    {
+      "source": "app/src/main/java/ru/omnicio/app/MainActivity.kt",
+      "surface": "navigation_detail",
+      "observation": "Cancellation of LaunchedEffect does not serialize blocking storage writes; use durable ordered writer."
+    }
+  ],
+  "bookmark_creation_actions": [
+    "Named portfolio filter",
+    "Save research with context",
+    "Comparison snapshot"
+  ],
+  "bookmark_note": "Explicit creation of a new named object is separate from remembering the current selection; audit unfinished drafts and restore on reopen.",
+  "release_acceptance_pending": [
+    "full15 native matrix both page sizes",
+    "exact PR head external Sonar",
+    "physical phone installation evidence",
+    "remaining screen structure and editor acceptance"
+  ]
+}

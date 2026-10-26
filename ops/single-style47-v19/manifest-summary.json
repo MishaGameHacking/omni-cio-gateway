@@ -1,0 +1,42 @@
+{
+  "state": "prepared_source_text_only",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "base_build_run": 40342969750,
+  "source_paths": 116,
+  "new_paths": 36,
+  "version_code": 47,
+  "version_name": "0.14.0-preview",
+  "reviewed_files_sha256": "e8c7813ab20140b6ceca7a2734326929badecd59d9e7d74d35129f2f14e47d1e",
+  "bundle_sha256": "8e9d0bde349c9f6e1784f762ac2c1a8f36d80a5203f514a26877b38687910ec4",
+  "transport_sha256": "58c35e9668ded8a8d32693b2b8c2fda4671219175c8fc9c68efe3105f055e7bd",
+  "patch_manifest_sha256": "ee50300e3555d13f7285d411bc13e2921240a825ec82e61a921979e6cf6414ca",
+  "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
+  "workflow_sha256": "596a757b55d982794b1c1142c092ff442698ac5a6c0acdd4caf1e6ee21a91a96",
+  "source_generator_sha256": "3a6afdea9ee64ab3f800d0d9c9a9266d885b7326351b9c834c566df4dcf50fb5",
+  "dock_generator_sha256": "71d687577525b6116305c9fef3f8c34fd1d5c39524d2fc46f699b46fdd79c7dd",
+  "controls_generator_sha256": "c1663ceb74ed9127afd7d6f62db7ee0fc03b8e2a5eea1d489cf495ce4862c637",
+  "bundle_specs": [
+    {
+      "name": "n00-single-style47",
+      "transport_sha256": "58c35e9668ded8a8d32693b2b8c2fda4671219175c8fc9c68efe3105f055e7bd",
+      "decoded_sha256": "d3e9d40c47ae045c0de565d9a8d3094b7b297af63115c51132d9dc0c4bdd22e1"
+    },
+    {
+      "name": "n00-single-style47-part2",
+      "transport_sha256": "abdbc465a97799e69c2e7cd330ff429902d99b1d7d8470c7db6cb447dfee243a",
+      "decoded_sha256": "440855619100a0613e8110531727aac36989dc514c539196604544051a64b5d6"
+    }
+  ],
+  "autosave_included": true,
+  "autosave_generator_sha256": "f2ef27da67b6460dbb175693f266f81e8f93c451280da55da8a131fb6eacba05",
+  "automatic_editors_generator_sha256": "feff33dd735c8c528febcc53dc69ebd8c5aaee3dfe4dd5de906918ebb441189a",
+  "autosave_recovery_generator_sha256": "fcbd7ad8aa6310ea2bf94a6f863d7a70b43c50a59b0ed63a9a4abdd59d03d6d7",
+  "native_controls_generator_sha256": "ebbee8c2ea1f32e69856de11d58a00dee2f46daa1d3e8a4218f6057e2e088660",
+  "applied_on_windows": false,
+  "build_passed": false,
+  "native_passed": false,
+  "deployed": false,
+  "plan_complete": false,
+  "supersedes": "Unpublished multi-theme46. Failed builds remain original failed evidence."
+}
