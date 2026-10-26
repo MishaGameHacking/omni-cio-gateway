@@ -1,3 +1,5 @@
+> **26.10.2026, N00 — кандидат41 собран, runtime ещё не проверен.** На APK40 воспроизведено перекрытие вкладок нативной областью кнопки прокрученного списка: «Выплаты» получали28px вместо52px. SpectrumTabs поднят над соседним содержимым; тесты нажатия сохранены. Windows/WSL build40252011635 прошёл:1066 host-тестов,52 tools,1684 backend-теста и1515 subtests, все Android unit/lint/assemble и APK-проверки. Preview41 /0.13.3-preview SHA2560cad98a49c15678cc2933610a5165d90f8442ef356e86e8d1d91215374f12fda. Следом14 исходных portfolio cases, затем полная15-stage матрица4096/16384. Канал38 сохранён,41 не опубликован; N00 открыт, N01–N11 не реализованы. [Причина, доказательства и продолжение](N00_TAB_LAYERING_2026-10-26.md).
+
 # N00 — catalogue input and search after keyboard reflow
 
 N00 remains open. N01–N11 are not implemented by these repairs. The published

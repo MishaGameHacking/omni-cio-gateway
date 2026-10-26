@@ -1,3 +1,5 @@
+> **Next confirmed issue:** candidate40's native tab area is overlapped by a scrolled position action. The product repair and candidate41 full build are recorded in [N00 tab layering](N00_TAB_LAYERING_2026-10-26.md). No complete runtime acceptance yet.
+
 # N00 — compound native portfolio targets
 
 N00 is open; N01–N11 are not implemented. Published APK38 is unchanged.
@@ -128,7 +130,8 @@ and comparison PNGs were visually inspected. They show comparison, not the
 subsequent tab failure. No failure screenshot was present in that focused export.
 
 [Native observation40251310156](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40251310156)
-is running from exact backup4e4af39281f8cf15c7cc42f3837340384b6928c3,
+completed with the reproduced original failure from exact backup
+4e4af39281f8cf15c7cc42f3837340384b6928c3,
 inventory4aa72786… and the same verified application/driver bytes.
 Its external hook observes only original frame reads before the failure,
 then captures the failure and bounded reverse/forward native scrolling.

@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
@@ -54,7 +55,9 @@ fun SpectrumTabs(
     val gap = 6.dp
     val scroll = rememberScrollState()
     val scrollTag = LocalSpectrumTabScrollTag.current
-    BoxWithConstraints(modifier.fillMaxWidth()) {
+    // Keep fixed tabs above scrolling siblings whose native touch bounds can
+    // extend past the list viewport and otherwise obscure accessible tab targets.
+    BoxWithConstraints(modifier.fillMaxWidth().zIndex(1f)) {
         val available = (maxWidth - gap * (labels.size - 1)).coerceAtLeast(0.dp)
         val extra = ((available - minimumWidths.reduce { total, width -> total + width }) / labels.size).coerceAtLeast(0.dp)
         val widths = minimumWidths.map { it + extra }
