@@ -1,0 +1,63 @@
+{
+  "services": {
+    "all_web_source_files_match_reference44": true,
+    "deployment_performed": false,
+    "help_status": "no_static_file_server_observed_in_active_caddy",
+    "observed_at": "2026-10-26T14:54:09.664654+00:00",
+    "report_bytes": 2942,
+    "report_sha256": "bff2a5ee0e7bf1649d43c4c9a196044a823e052f94e3bb885c482c35610018a4",
+    "runtime_server_id": 9417611,
+    "served_help_path_verified": false,
+    "services": {
+      "analyst-ai-owner.service": "active",
+      "analyst-ai-updates.service": "active"
+    },
+    "sources": {
+      "app.py": {
+        "bytes": 28437,
+        "matches_prepared46": false,
+        "matches_reference44": true,
+        "sha256": "6a44c9fbe9cd06a91c890961db9708accf7f4a9096987fae5b490113933ad455",
+        "status": "observed"
+      },
+      "owner_app.py": {
+        "bytes": 4170,
+        "matches_prepared46": false,
+        "matches_reference44": true,
+        "sha256": "4162966c03c3793d6cb9903a690842600fcc241dff1a402ae253e3fc0b285419",
+        "status": "observed"
+      },
+      "telegram_browser_app.py": {
+        "bytes": 16754,
+        "matches_prepared46": false,
+        "matches_reference44": true,
+        "sha256": "be7d2b0b122740bd02d8fecf0148db9c6569f0cf3b1c255b79eb4bf020bca5ff",
+        "status": "observed"
+      }
+    }
+  },
+  "http": {
+    "apk_download_verified": false,
+    "backend_health_body": {
+      "status": "ok"
+    },
+    "backend_health_http": 200,
+    "kind": "owner_live_http_observation",
+    "observed_at": "2026-10-26T14:54:11.656469+00:00",
+    "phone_installation_verified": false,
+    "policy": {
+      "apk_bytes": 29771254,
+      "apk_sha256": "f0af0b45515143f8abb2c28e73d0d484acde5c6a36e18de1b398692bc45a4cf6",
+      "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+      "package_name": "ru.omnicio.app.debug",
+      "published_at": 1793002572,
+      "version_code": 44,
+      "version_name": "0.13.6-preview"
+    },
+    "public_update_policy_http": 200,
+    "release_published": false,
+    "runtime_files_changed": false,
+    "schema": 1
+  },
+  "workflow_run": 40343808853
+}

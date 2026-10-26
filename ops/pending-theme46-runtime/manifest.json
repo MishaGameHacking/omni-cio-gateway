@@ -1,0 +1,48 @@
+{
+  "actual_routing_receipt_sha256": "ba03f61215f07602830d295e8a5257444c58dba6735d737ba2771ff44254f1be",
+  "application_or_tests_executed": false,
+  "approved_assets_manifest_sha256": "a320b29b48f408945d9f446070a9ef126262e31c806a60fa4123d7367ae3fd50",
+  "bound_workflow_rendered": false,
+  "callback_error_returns_before_database_work_verified_by_ast": true,
+  "callback_style_sha256": "a9c8013e75ec2ee82308591852db6bab540e01b72d79c30069b7ba4babf9289c",
+  "cleanup_review_delta": "Exact owner/source rollback no longer depends on Caddy or update-service availability; restored source vs public verification remain separate, workflow fails honestly.",
+  "date": "2026-10-26",
+  "files": {
+    "README.md": {
+      "bytes": 8713,
+      "sha256": "e83f6f8abacc854f167a07adfad153619046d010e7e2a83a330dc60c31f828c4"
+    },
+    "deploy-runtime.py": {
+      "bytes": 26194,
+      "sha256": "deeb19675c148b73fa44a392fd95994b9aaa1d9e48622024a91f74abe0be7ebe"
+    },
+    "prepare-deployment.py": {
+      "bytes": 21436,
+      "sha256": "f2f1e60585f9086fdde01dfb8aac810d53c6e8a750ad1558fe1a0b1f20bd8a01"
+    },
+    "public-checks.py": {
+      "bytes": 5330,
+      "sha256": "24b90c9143dbc890aaba79cd41ea1a37a74cca73b204de9f6e7eef948c41062f"
+    },
+    "receive-deployment.py": {
+      "bytes": 8891,
+      "sha256": "adbad3ec31921fa6f8c52114f8ea51f2a6ea113aa554bb821a5c473eb38dc1bb"
+    }
+  },
+  "future_complete_windows46_evidence_required": true,
+  "generator_invoked": false,
+  "kind": "theme46_three_file_runtime_administrative_preparation",
+  "pinned_9417611_transport_prefix_sha256": "5569d1c96c52b11766e5f9a2610a442827693491360cd5c051f1b86dc0531800",
+  "pushed": false,
+  "schema": 1,
+  "scope": [
+    "/opt/analyst-ai/backend/app.py",
+    "/opt/analyst-ai/backend/telegram_browser_app.py",
+    "/opt/analyst-ai/backend/owner_app.py"
+  ],
+  "server_or_device_changed": false,
+  "source_backup_checked_by_future_hosted_checkout": true,
+  "source_repository_applied": false,
+  "state": "prepared_for_independent_static_review_not_rendered",
+  "template_composition_syntax_checked_by_ast_only": true
+}

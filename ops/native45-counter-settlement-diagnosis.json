@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "native_run_id": 40338644860,
+  "build_run_id": 40334863828,
+  "source_commit": "969fd8e29f8fea0981508603c0981bf91eec66de",
+  "source_sha256": "c7db1ac10f4dca90d57bf740bd57a9dfe6ef44002f2de0593cfa3d755f0512fd",
+  "native_complete": false,
+  "observed_counts": {
+    "automation-verification.json": 26,
+    "navigation-panels-verification.json": 4,
+    "navigation-detail-verification.json": 1,
+    "navigation-wide-verification.json": 0
+  },
+  "phase": "appearance-rollback",
+  "font_scale": 2.0,
+  "error": "Detail navigation lost its actual business transport counters",
+  "failure_snapshot_detail_requests": 7,
+  "failure_snapshot_business_requests": 7,
+  "failure_snapshot_writes": 0,
+  "failure_snapshot_contract_errors": 0,
+  "original_mismatching_pair_recorded": false,
+  "interpretation": "The immediate invariant failed during a transition; the later saved accessibility frame had converged. Bounded fresh-frame settlement is required, but application timing is not conclusively diagnosed from that later frame.",
+  "repair": {
+    "paths": [
+      ".github/scripts/navigation_detail_probe.py",
+      ".github/scripts/tests/test_navigation_detail_probe.py"
+    ],
+    "same_wait_deadline_seconds": 12,
+    "accept_only_matching_newest_seen_count": true,
+    "invalid_contract_or_mutation_or_user_change_fails_immediately": true,
+    "new_behavioral_tests": 5,
+    "application_sources_changed": false
+  },
+  "new_build_run_id": 40342969750,
+  "new_native_not_yet_executed": true
+}

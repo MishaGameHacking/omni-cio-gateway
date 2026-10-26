@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "reviewed_at": "2026-10-26T14:56:47.462620+00:00",
+  "kind": "independent_static_review_of_pending_runtime_deployment",
+  "actual_windows46_build_still_required": true,
+  "source_and_receipt_hashes_checked": true,
+  "all_four_administrative_templates_read": true,
+  "source_replacement_scope": [
+    "app.py",
+    "telegram_browser_app.py",
+    "owner_app.py"
+  ],
+  "observations": [
+    "Retained original archive and six real HTML/security tests checked before writes.",
+    "Only exact three old or new file identities are admitted; unknown content is never overwritten.",
+    "Owner service is stopped around source replacement; update service stays live and its PID is checked.",
+    "Same-filesystem atomic replacement preserves ownership and permissions; journal and original bytes support rollback.",
+    "Rollback of owner source does not depend on a healthy proxy or update service.",
+    "Public callback uses an error branch before database work; login transactions are not manufactured.",
+    "Deployment will be dispatched sequentially after APK45 publication, not concurrently with a publisher."
+  ],
+  "application_or_tests_executed": false,
+  "deployment_performed": false,
+  "workflow_bound": false
+}
