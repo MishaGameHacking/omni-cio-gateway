@@ -415,6 +415,13 @@ class _DetailNavigationCase:
                 "menu_opened_with_native_ime": True, "input_menu": input_menu,
                 "server_mutations": 0, **cancel_capture}
 
+    def saved_appearance_anchor(self):
+        # The saved caption is below the preview artwork/body, not at the
+        # list's top. At large fonts it requires its own downward reveal.
+        self.screen_anchor("appearance")
+        return self.probe.reveal("Текущие сохранённые настройки", "workspace-content",
+                                 direction="end", max_swipes=20)
+
     def appearance_exit(self):
         self.choose("appearance")
         self.closed()
@@ -438,7 +445,7 @@ class _DetailNavigationCase:
         returned = self.observed("appearance")
         if returned["preferences"] != before["preferences"]:
             raise AssertionError("Returning to Appearance restored a cancelled preview")
-        self.probe.reveal("Текущие сохранённые настройки", "workspace-content", direction="start", max_swipes=20)
+        self.saved_appearance_anchor()
         result = {"before": before["preferences"], "preview": preview["preferences"],
                   "after": after["preferences"], "returned": returned["preferences"],
                   "cancelled_draft_did_not_reappear": True, **self.capture("navigation-detail-appearance-return")}

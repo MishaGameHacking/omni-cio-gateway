@@ -292,6 +292,7 @@ class ScrollBoundaryFrames(NativeFrames):
                 "message-posts:0;message-request-id:none;by-request-gets:0;recovered-request-id:none"})
         viewport = node(tree[0], bounds="[56,100][320,700]",
                         **{"resource-id": "workspace-content", "scrollable": "true"})
+        node(viewport, bounds="[70,110][310,165]", text="Предпросмотр цвета, контраста и движения")
         node(viewport, bounds="[70,180][300,236]", text="Компактно", clickable="true",
              focusable="true", **{"class": "android.widget.Button"})
         node(viewport, bounds="[70,250][310,310]", text="Текущие сохранённые настройки")
@@ -354,7 +355,8 @@ class DetailScrollBoundaryTests(unittest.TestCase):
         with patch.object(profile_scroll, "_validate_request", wraps=profile_scroll._validate_request) as admission:
             receipt = value.appearance_exit()
             self.assertEqual([call.args for call in admission.call_args_list], [
-                ("workspace-content", "end", 20, 12), ("workspace-content", "start", 20, 12)])
+                ("workspace-content", "end", 20, 12), ("workspace-content", "start", 20, 12),
+                ("workspace-content", "end", 20, 12)])
         self.assertEqual(len(probe.taps), 1)
         self.assertTrue(receipt["cancelled_draft_did_not_reappear"])
         self.assertEqual(probe.page, "strategy")

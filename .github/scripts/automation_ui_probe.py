@@ -279,6 +279,15 @@ class _AutomationCase:
             raise AssertionError("Automation app process is absent or ambiguous")
         return value
 
+    def return_home(self, expected):
+        self.probe.tap_visible("Система")
+        self.wait_trace(lambda value: value["page"] == "home",
+                        "The actual Home page did not return")
+        # The previous visit scrolled down to its Results action. Returning
+        # retains that position; the status headline is earlier in this list.
+        self.probe.reveal(expected, "workspace-content", direction="start")
+
+
     def run(self):
         from profile_launch import launch_profile, profile_frame
         from spatial_frame_evidence import ready_spatial_metrics, read_screenshot
@@ -305,8 +314,7 @@ class _AutomationCase:
                 self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
                 self.probe.tap_visible("Настройки")
                 self.switch()
-                self.probe.tap_visible("Система")
-                self.probe.reveal(expected, "workspace-content")
+                self.return_home(expected)
         elif self.scenario == "ready":
             self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
         else:
