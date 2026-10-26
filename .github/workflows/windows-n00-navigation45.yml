@@ -1,4 +1,6 @@
-name: N00 candidate45 navigation after strict owned-emulator console framing repair
+# Preserve failed run40331453486: home/error force-stop timed out after15s; first3 home cases passed.
+# Fresh full34 run on identical APKs and unchanged source/checks; no timeout increase or failure suppression.
+name: N00 candidate45 same bytes fresh full34 after reviewed force-stop timeout
 'on':
   push:
     branches:
