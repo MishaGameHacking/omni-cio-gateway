@@ -1,4 +1,4 @@
-name: Observe candidate47 v19 original build evidence checkpoint2
+name: Observe candidate47 v20 original build evidence
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -19,7 +19,7 @@ jobs:
           import datetime, hashlib, json, os, pathlib, re, sys
           import xml.etree.ElementTree as ET
           assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
-          run = 40386457173
+          run = 40392908825
           result = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     'host': os.environ['COMPUTERNAME'], 'run_id': run, 'build': [], 'jvm': []}
           for suffix in ('', '-2', '-3', '-4'):
