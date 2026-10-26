@@ -53,6 +53,14 @@ def main():
         assert gradle.count('    testImplementation(libs.junit)')==1
         files['app/build.gradle.kts']=gradle.replace('    testImplementation(libs.junit)',
             '    testImplementation(libs.junit)\n    // Real JSON operations for JVM model checks; never packaged in the Android app.\n    testImplementation("org.json:json:20260814")')
+    if args.include_autosave:
+        lock=source.base('app/gradle.lockfile')
+        assert 'org.json:json:' not in lock
+        anchor='org.hamcrest:hamcrest-core:1.3=debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath\n'
+        assert lock.count(anchor)==1
+        # JSON-java has no runtime dependencies; retain strict existing configurations.
+        files['app/gradle.lockfile']=lock.replace(anchor, anchor+
+            'org.json:json:20260814=debugUnitTestCompileClasspath,debugUnitTestRuntimeClasspath\n')
     for path in ('app/build.gradle.kts','.github/scripts/tests/test_android17_live_spectrum.py',
                  '.github/scripts/tests/test_spectrum_brand_identity.py'):
         text=files[path].replace('versionCode = 46','versionCode = 47').replace('versionName = "0.13.8"','versionName = "0.14.0"')
@@ -137,7 +145,7 @@ def main():
         for key in tuple(summary):
             if key.endswith('_generator_sha256'): summary[key]=None
         summary['repair_of_reviewed_files_sha256']=digest(reviewed)
-        summary['repair_reason']='Original Windows225 JVM checks:8 failures because Android JSONObject was a JVM stub. Add pinned test-only org.json implementation; preserve all assertions.'
+        summary['repair_reason']='Original Windows225 JVM checks:8 failures because Android JSONObject was a JVM stub. Add pinned test-only org.json implementation and matching two-configuration dependency lock; preserve all assertions.'
     output.mkdir()
     outputs={'reviewed-files.json':review_raw,'bundle.json':bundle,'n00-single-style47.b64':transport,
         'patch-manifest.json':manifest,'windows-full-development.py':bootstrap,'n00-linux-guest.py':guest,

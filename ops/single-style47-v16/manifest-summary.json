@@ -1,0 +1,41 @@
+{
+  "state": "prepared_source_text_only",
+  "base_commit": "d871af24f6f8e606476d986faf4e595c4c500389",
+  "base_source_sha256": "de9339350d25e0f3731f8ccc3702f8be5d2a2110b2433b1c5d9ea74035e51d89",
+  "base_build_run": 40342969750,
+  "source_paths": 112,
+  "new_paths": 36,
+  "version_code": 47,
+  "version_name": "0.14.0-preview",
+  "reviewed_files_sha256": "5914ac360269b6a8fe21bf4f1e4db9876a871120b5d47e252cf2a46b0e7b05aa",
+  "bundle_sha256": "c465b8b188a251c70e971e46b75ab418a695c35a036c342321037c9d9f1cd8ee",
+  "transport_sha256": "aa9ad221b6fa2fce4afa8aaa1ff9f7fc568d69658f2064569231d461e9bb9ce9",
+  "patch_manifest_sha256": "eb75ee0c9aedc131a173da1d3236666680e8571c076c5cab693eeec940a6e7c4",
+  "bootstrap_sha256": "3b4e59d06021ce24955f62c06e4ea3de990f6446bc4927c63757e31dd65f33b8",
+  "workflow_sha256": "2a3f12337fd1386a18af4d0ec5c1c176efe958002f0382d7f42b8ad47b043ebc",
+  "source_generator_sha256": "3a6afdea9ee64ab3f800d0d9c9a9266d885b7326351b9c834c566df4dcf50fb5",
+  "dock_generator_sha256": "71d687577525b6116305c9fef3f8c34fd1d5c39524d2fc46f699b46fdd79c7dd",
+  "controls_generator_sha256": "c1663ceb74ed9127afd7d6f62db7ee0fc03b8e2a5eea1d489cf495ce4862c637",
+  "bundle_specs": [
+    {
+      "name": "n00-single-style47",
+      "transport_sha256": "aa9ad221b6fa2fce4afa8aaa1ff9f7fc568d69658f2064569231d461e9bb9ce9",
+      "decoded_sha256": "6c4b088165bcb463c3d6f957ede6851d0388545fc229721f4daa5dbe9c31fa86"
+    },
+    {
+      "name": "n00-single-style47-part2",
+      "transport_sha256": "dac71e5e469e7994a742156eeff285f5207e8ed5e92c86ded428b01b33666cd6",
+      "decoded_sha256": "a65a4b299cb311aa0617fbd426ebc45520b9307c0c9d9a468dd4b1bde6f50e7d"
+    }
+  ],
+  "autosave_included": true,
+  "autosave_generator_sha256": "f2ef27da67b6460dbb175693f266f81e8f93c451280da55da8a131fb6eacba05",
+  "automatic_editors_generator_sha256": "feff33dd735c8c528febcc53dc69ebd8c5aaee3dfe4dd5de906918ebb441189a",
+  "autosave_recovery_generator_sha256": "3ea4c3893925761b92f1f9c811b8f022e99436a6c0c94f1b528967699af2447a",
+  "applied_on_windows": false,
+  "build_passed": false,
+  "native_passed": false,
+  "deployed": false,
+  "plan_complete": false,
+  "supersedes": "Unpublished multi-theme46. Failed builds remain original failed evidence."
+}
