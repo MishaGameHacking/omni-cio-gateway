@@ -102,6 +102,66 @@ def navigation_menu_absent(tree):
                    for node in tree.iter("node"))
 
 
+def observe_drawer_back(probe, frame, settled_close, observed, route):
+    """Observe both real gestures; an input acknowledgement is never app progress."""
+    from predictive_back_input import back_gesture
+
+    baseline = settled_close().get("bounds")
+    held = False
+
+    def progress(phase):
+        advances = 0
+
+        def read():
+            nonlocal advances
+            node = navigation_target(frame(), "navigation-menu-close")
+            bounds = None if node is None else node.get("bounds")
+            if bounds is not None and bounds != baseline:
+                print("UI_DRAWER_BACK_PROGRESS=" + json.dumps(
+                    {"phase": phase, "baseline": baseline, "bounds": bounds, "advances": advances}), flush=True)
+                return bounds
+            if advances < 16:
+                back_gesture(probe, "advance")
+                advances += 1
+            return None
+
+        return probe.wait_for(read, "Predictive Back did not move the native drawer content: " + phase)
+
+    try:
+        held = True
+        back_gesture(probe, "hold")
+        progressed = progress("cancel")
+        back_gesture(probe, "cancel")
+        held = False
+        cancelled = settled_close().get("bounds")
+        if cancelled != baseline or observed()["page"] != route:
+            raise AssertionError("Cancelled Back changed drawer geometry or the underlying page")
+
+        held = True
+        back_gesture(probe, "hold")
+        # Android may accept injected input before the second predictive Back
+        # reaches the app. Wait for this gesture's actual geometry too, just as
+        # for cancellation; retain the same pointer and the existing bound16.
+        commit_progressed = progress("commit")
+        back_gesture(probe, "commit")
+        held = False
+        probe.wait_for(lambda: navigation_menu_absent(frame()), "Navigation menu remained visible")
+        if observed()["page"] != route:
+            raise AssertionError("Committed drawer Back navigated the underlying page")
+        return {"initial_close_bounds": baseline, "progress_close_bounds": progressed,
+                "cancelled_close_bounds": cancelled, "commit_progress_close_bounds": commit_progressed,
+                "commit_closed_menu": True, "underlying_page_unchanged": True}
+    finally:
+        if held:
+            original = sys.exc_info()[1]
+            try:
+                back_gesture(probe, "cancel")
+            except Exception as cleanup_error:
+                if original is None:
+                    raise
+                original.add_note("Held drawer Back cleanup failed: " + type(cleanup_error).__name__)
+
+
 def automation_marker(tree, route, scenario):
     records = []
     for node in tree.iter("node"):
@@ -284,7 +344,6 @@ class _AutomationCase:
 
     def navigation_panels(self):
         from emulator_user_setup import completed_emulator_setup
-        from predictive_back_input import back_gesture
         from profile_ui_probe import node_bounds
         from spatial_frame_evidence import ready_spatial_metrics
         from spatial_policy_probe import active_navigation_overlay, _cleanup_back
@@ -393,7 +452,6 @@ class _AutomationCase:
         open_menu()
         overlay = active_navigation_overlay(self.probe.command("shell", "cmd", "overlay", "list"))
         scale = self.probe.command("shell", "settings", "get", "global", "animator_duration_scale").strip()
-        held = False
         with completed_emulator_setup(self.probe) as setup:
             try:
                 self.probe.command("shell", "settings", "put", "global", "animator_duration_scale", "1")
@@ -401,34 +459,10 @@ class _AutomationCase:
                                    "com.android.internal.systemui.navbar.gestural")
                 self.probe.wait_for(lambda: self.probe.command("shell", "settings", "get", "secure", "navigation_mode").strip() == "2",
                                    "Navigation panel Back did not use Android gestures")
-                baseline = target("navigation-menu-close", label="Закрыть меню").get("bounds")
-                held = True
-                back_gesture(self.probe, "hold")
-                advances = 0
-                def progress():
-                    nonlocal advances
-                    node = navigation_target(frame(), "navigation-menu-close")
-                    if node is not None and node.get("bounds") != baseline:
-                        return node.get("bounds")
-                    if advances < 16:
-                        back_gesture(self.probe, "advance")
-                        advances += 1
-                    return None
-                progressed_bounds = self.probe.wait_for(progress, "Predictive Back did not move the native drawer content")
-                back_gesture(self.probe, "cancel")
-                held = False
-                cancelled = target("navigation-menu-close", label="Закрыть меню").get("bounds")
-                if cancelled != baseline or self.observed()["page"] != self.route:
-                    raise AssertionError("Cancelled Back changed drawer geometry or the underlying page")
-                held = True
-                back_gesture(self.probe, "hold")
-                back_gesture(self.probe, "commit")
-                held = False
-                closed()
-                if self.observed()["page"] != self.route:
-                    raise AssertionError("Committed drawer Back navigated the underlying page")
+                back_receipt = observe_drawer_back(self.probe, frame,
+                    lambda: target("navigation-menu-close", label="Закрыть меню"), self.observed, self.route)
             finally:
-                _cleanup_back(self.probe, held, overlay, scale, sys.exc_info()[1])
+                _cleanup_back(self.probe, False, overlay, scale, sys.exc_info()[1])
         tabs(self.route)
         after = self.observed()
         for key in ("writes", "applied", "rejected", "contract-errors", "version", "enabled"):
@@ -437,9 +471,7 @@ class _AutomationCase:
         return {"route": self.route, "scenario": "ready", "font_scale": self.scale,
                 "window_id": native_window, "minimum_touch_dp": 48, "density": density,
                 "native_targets": targets, "before": initial, "after": after,
-                "drawer_back": {"initial_close_bounds": baseline, "progress_close_bounds": progressed_bounds,
-                                "cancelled_close_bounds": cancelled, "commit_closed_menu": True,
-                                "underlying_page_unchanged": True, "emulator_setup": setup},
+                "drawer_back": {**back_receipt, "emulator_setup": setup},
                 "screenshot": menu_capture.name, "screenshot_sha256": hashlib.sha256(menu_capture.read_bytes()).hexdigest()}
 
     def settings(self):
