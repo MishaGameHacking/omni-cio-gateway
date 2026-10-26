@@ -1,4 +1,4 @@
-name: Observe mandate48 exact current Windows build progress
+name: Read original mandate48 failing synthetic backend case
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -47,6 +47,15 @@ jobs:
                           lines = stream.read().decode('utf-8', errors='replace').splitlines()
                       item['log_tail'][name] = [line[:700] for line in lines if len(line) < 1000 and
                           re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|^> Task|^e:', line)][-12:]
+                  backend = state / 'linux-backend-tests.xml'
+                  if backend.is_file() and not backend.is_symlink() and backend.stat().st_size <= 32 * 1024**2:
+                      raw = backend.read_bytes()
+                      assert b'<!DOCTYPE' not in raw.upper() and b'<!ENTITY' not in raw.upper()
+                      document = ET.fromstring(raw)
+                      item['mandate_failures'] = [{'name': case.get('name'), 'class': case.get('classname'),
+                          'message': failure.get('message', '')[:6000], 'details': (failure.text or '')[:14000]}
+                          for case in document.iter('testcase') if 'test_portfolio_mandate' in case.get('classname', '')
+                          for failure in case.findall('failure')][:5]
                   result['build'].append(item)
               folder = runner / ('omni-cio-gateway/omni-cio-gateway/windows-development-' + str(run) + '-1/app/build/test-results/testDebugUnitTest')
               if folder.is_dir():
