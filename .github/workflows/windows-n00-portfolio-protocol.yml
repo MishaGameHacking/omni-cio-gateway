@@ -1,0 +1,354 @@
+name: N00 exact compound native targets and fourteen actual portfolio cases
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-portfolio-protocol.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-n00-portfolio-protocol
+  cancel-in-progress: false
+jobs:
+  preflight:
+    name: Verify the existing private return transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.prepare.outputs.release_id }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+        persist-credentials: false
+    - name: Create and verify one private run-owned transfer
+      id: prepare
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const helper=require(''./.github/scripts/ci_private_transfer.cjs'');
+
+          await helper({github,context,core,command:''prepare''});
+
+          const identity=helper.identity(context,process.env);
+
+          const releases=await github.paginate(github.rest.repos.listReleases,{...context.repo,per_page:100});
+
+          const matches=releases.filter(value=>value.tag_name===identity.tag);
+
+          if(matches.length!==1) throw new Error(''Exactly one preflight-owned private draft is required'');
+
+          const release=helper.owned(matches[0],identity);
+
+          if(release.assets.length!==0) throw new Error(''Preflight draft must be empty'');
+
+          await helper.inaccessibleWithoutAuth(context.repo,''releases/''+release.id,fetch);
+
+          core.setOutput(''release_id'',String(release.id));'
+  develop:
+    name: Windows protocol regression host checks driver build and focused portfolio
+    needs: preflight
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 125
+    permissions:
+      contents: write
+      checks: write
+    outputs:
+      archive_sha256: ${{ steps.evidence_upload.outputs.archive_sha256 }}
+    env:
+      SOURCE_ROOT: ${{ github.workspace }}\windows-development-${{ github.run_id }}-${{ github.run_attempt }}
+      ANDROID_SDK_ROOT: C:\actions-runner-2\_work\_tool\AndroidSdk\sdk
+      ANDROID_HOME: C:\actions-runner-2\_work\_tool\AndroidSdk\sdk
+      PYTHONUNBUFFERED: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cf6d0fee70ebceabfa63267a28fc03ea8d9cbf3c
+        path: windows-development-${{ github.run_id }}-${{ github.run_attempt }}
+        persist-credentials: false
+    - name: Stage verified Windows transport n00-runtime.py
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-runtime.py.b64''; p.open(''w'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-runtime.py.b64''; p.open(''a'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-runtime.py.b64''; p.open(''a'',encoding=''ascii'').write(''FtBAlRMZCoKS+gn8EUFkA0M/WFbiTBZvk/Mz5lQV8BDP8OI3rNjkV+HFrOAG2giVpiry0nm5kbzjk22Fl9b3jYrZP/gDFVL4QhFLuZqkJ2hVm4JNDuzF3rLc3wdHzo9ANB+wITM+eREDzFMtIqGEgmyrFAsVVIGbwYNbfKzWU4SqI2rx14Z4BfcwYl9m6nRHdDgcOpZt20Pa7TnjoT5qjwb6qA/OXods7AHVR3TQH/X1/qY7GrZH9nBsD3tWpw2VfaAxPrIpRj6AAItGieuwKz6FD4VkapogaPJam7F4tsUbRF3RZks/gNACKsWPgaEYR7nLL+Dh6PgGxgSJ99fFGPVDB2aISR7Q8OsMIN7xJSRxpjlYZ6+KTHZFmOmaYg6EFLkHNjOzeNyvzcai4z7sk92zHEpHTndjW8Tpt0m3bVm0O+qRntPVu44+1q2RReiYWv3+qNMZ2v0x3bTRcQTLHKw3MzPygU3L6hy5XXy3ueZ5y24cMKQLpxbLq9kpumYtvL/XspTM9Xw+4VNzQxK8TD/JxkUmnusnZ7hTSrEGP5GwBUUtaxsNP2jYhG6Z29RobMlzg2fjxUaHlcQJOEhJhAbs3ze1CxpRWljiFpLg8x/pxR/rxPx4B0gIhbNh7CX2ngSwrHrr+QcT/s6nA3PD7c9FS/cl02th33gEYMLURul2FZ7LvXrvAsFLfngi9sbQMx8sDVl/LyMWr2X9XLoQ83M7c2FLODZyk9j3EAD6AqZfuwJXHbaWs77panWZ+oDs5Ahpq+ztY9lahN/X4HghMwl/6i/d4edDGYJqhcP4r73T/8o9+pO3ngS8CaH569apv8ydU3GnNy3F2Ei2jIeieUGFQM2LT3TMOXGUmaZwYZ4f8GDRn3HTb/n1+Mm68rJ7+dDofLFcmafns9NPb7jiDki/o5lvy6yPMO2RFRqKSC5UJmmW4RH1MvXcK5uIs6dMHce6uMAurqhP5Cd/2BX/hH9vIjcc1/SM3dmV+yOWNsGzIn/F25Y8IRLMZRaaMFk/2PP/BbdzYH0='')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''RUNNER_TEMP'']); b=zlib.decompress(base64.b64decode((p/''n00-runtime.py.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''99b4cc64416b7a0df5e4a8028e9b88ffcd76a5a9040e4395797893f75c032c0b''; (p/''n00-runtime.py'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Stage verified Windows transport n00-portfolio-protocol.json
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-portfolio-protocol.json.b64''; p.open(''w'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-portfolio-protocol.json.b64''; p.open(''a'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-portfolio-protocol.json.b64''; p.open(''a'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-portfolio-protocol.json.b64''; p.open(''a'',encoding=''ascii'').write(''1PpJq4yaGq0FPi/NlPQgv2nxswoWfjGz2hvWc0gpQvJbvmUdcDYCmjGUWOCrV4+fkAzclYXZZK0yihfbeBgE1fIOa+isFXzDPVVkFz1rknoyWq3GWB4/LPUtqtppacDZfFo5xDZTkgQQ5zeV0bp05HrRt5lWd4ZSVrcq0iZHYH1xlleNoxFNrh33qn91wO/B0pvR4bX197oEuEvJWYewduOlrC0HvIT7d/odvaO+juLrlKDd4/ikbpPPpb39CE0TAGGb0jyfVXDqPzQJDKuACydr7Q3brzhdQ8NTXQGIkzKO7Us41diL1pITp/aL2oAXV/cUQtpc1JETxB5qIxbHY3gCTSNvtonCm31bT6J7SVQqE6jGAfAH2KiqXCgrpsjFtTdxzyOJlEXpQRVjg/l1+BWFQaUwjfop89ESbNaIoxKXBzWIj+NVqZJhdUeFdFK7+fXXR6RF020F/myAwif1VdWKRrVyXAa706pMczMYHsoflbCXyWRp9819qgFCQiB/tCwq+VRvsA4eagphbez60EBK3Rgjq+p7aFhaw2VPfbH1Rs3auLficq5iS4Vc/eT9tDmLZ00688DqSE9s03jAwGsacj5etcPD+sI/Fa5T4SUyyU3muMkUtzzDTUtwK/Lb6kstEt5KeW1FWttDu6ybVNhDRRSxXapLInKV5AIGvxxnG/2SZiwRtO7kbb2g9yYbFFhXkD5uoNJt6FFF8kn9pZkU6yTIC47iDyDVSivmRzmdqeXM6Ba4vB/ZlPazaa3kTVPl2ubCxdI9joFR2dutEnl14AeiDNr8qalM0U0y6hXZqcXIRe+Cbjf2lxZp+UCLUR4FwjHVMso7GJTstvVxKR5EvIsM3A0csL2xIxcknVElrC0amvxFpHz+W3WQ1U+f0AO/QmTWX9u06l3YPDC1VtELWzSVsSXbNK3y1KGFFvUI/h1bZYu61He9FwMHkNESj3bfbkuy8XabelyYPtY1d9WskZ9MwKsIwVehX/WwwgBNLPCf1Fhn3vpRQjtbLZd0j5JPi5ydS0tKHvQMqruvSkcZ8KAgAbqbWXc8FW8f1kDy/kd0gpIGUGNQ+LO9PvCI9P/9119h0OXVV32LTcB+/mqXMx7vALUXqlo4sw6C1z2rdxC8etXeriLhxp0uy0t14cnMPXgol9ktaSy50X51D0xm24Z7k21bDjp/dP64beNehx0E1nfff8IE5h/5/7vliaR3QnqhZSGaZzk4WK0rHBySlRQeDm5QeDhKDTa5OKSyb3V4hE6/U+paZU+qmg6blb+ZN4snR3O2YrE9qmjkxqr67tEE6b+LX5HzGNereWHqcIpXIDXwK2jCzdeWoDfR+JrC3VAo0+lZ86mzNxW9qTV3hXCckTMcDifeoG+N5+7e0Jl43niMoc17YjhyJxN/aPWmvaE3HY8Hg1qhzOFAWN7U6s19y5lb45E1HPuDPa9v+T1/Op8OxsP5RPQcx++JuSPmvT4MLoTvWi5+Icp0vPNw9fB/e0gaQQ=='')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''RUNNER_TEMP'']); b=zlib.decompress(base64.b64decode((p/''n00-portfolio-protocol.json.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''41f58966198f2e2875296de620e4eea6c43514e2066e3ce4bbf12026c0921587''; (p/''n00-portfolio-protocol.json'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Stage verified Windows transport n00-portfolio-focused-hook.py
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''RUNNER_TEMP''])/''n00-portfolio-focused-hook.py.b64''; p.open(''w'',encoding=''ascii'').write(''eJyNVMlu2zAQvfsrCF8ooYqcBD0UDnRImgQIUNRBll4Mg2DEkc2GIlkuSYyi/94RJS/NAtQHgxTnveHMm8fxeHwTNeFKkcZEFwA0ccAVscaFxihpSM09+BOi4QkcqRWXLQkrILVprYIAxEcZoByPxyPZdijy0xtd+LUfNc60xPKwUvKBDIfXuN0EWmcaqYBFyXD5AIR70hoRFQzQzR12EQMSXsDV0gPbhgyIgdFrbv3KhE28Ax+MAybgSdZ4DCFIvfQjAQ3WXUcPIuvPCqxesOAA8umI4C/lrfprldc9/3X3bQDkJymi3OKq7SrhtVyuwgafNpv0WQ/ERrZci4z6FShFC1q3Av+jRAzgImFonic2X3MF1QfATVm4XELoPqx9gBYXjdGYtsPSvPTBSZv1fA66/lS/qZB8qY0PsmZGqzWd3rkIBXWgAPVnSx6w2dx7Or3kyuPJTpw0IGwzD0PAn0SPAQJc1YmeDS1gLCnEcuyYN+oJsry03IEOfn68mFBu7eQhSiUmJgYbg59w+zixDpsNz5MoD3yNrdWepgTBrXuZdsXMd1eji+rtpPRtzz9GvS5oUSnQ2Tvkc5oi6SKvqqPPW0LZEG3Cf/BOHcebkVPvwQVp9IVzxmX0dN+MvA7xrR0JNgwT/IrSgaB7tbxLeL7VlnTaTkkTMcX9VW9d8oy2E4AeBYcqq3W6fTL6lhtearCBnGHui7RE8s6t0CV4LUAZrUCiLB2ysLZQdX/9PscB0LzFASjSvsJpHE7m06PDw8PFq2r6OZIan6g9qfvBKttHIV02jE+VRhZepA/MPKbdjivrEZOdHAeD8Q/MA7briXc1+bJ7vNAjzw47wwK8hKz7UorYWj/MQCG1wHzVcV6Aro1Ay1U0hubgy54S1kkdMno9u7m7nH27mrHL2df724tzNju7vbj5cXp3Nft+W9FPb9jzolHRr15d/4MH7N8npEgOL9KD0T3AJcrGpG5Mls+PsK+DA7eWqFdQP/pq6MPoL//FHhM='')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''RUNNER_TEMP'']); b=zlib.decompress(base64.b64decode((p/''n00-portfolio-focused-hook.py.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''19e4c2b96fc1693427f79a5fd39a622a70b9fa3255d46b288ec95d3c9e983a72''; (p/''n00-portfolio-focused-hook.py'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Apply four exact protocol and regression files on Windows
+      id: prepare
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" prepare
+
+        if errorlevel 1 exit /b 1'
+    - name: Reproduce both original guards then run host Java and driver lint build
+      id: host
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" check
+
+        if errorlevel 1 exit /b 1'
+    - name: Report exact source host tests and new test-only driver
+      if: always() && steps.prepare.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const fs=require(''node:fs''),p=require(''node:path'');
+
+          const state=p.join(process.env.RUNNER_TEMP,''n00-portfolio-protocol-''+process.env.GITHUB_RUN_ID+''-''+process.env.GITHUB_RUN_ATTEMPT);
+
+          const source=JSON.parse(fs.readFileSync(p.join(state,''source-after-patches.json''),''utf8''));
+
+          const host=JSON.parse(fs.readFileSync(p.join(state,''host-check.json''),''utf8''));
+
+          const log=p.join(state,''host-tests.log'');
+
+          const report={source,host,test_summary:fs.existsSync(log)?fs.readFileSync(log,''utf8'').slice(-19000):null};
+
+          const fence=String.fromCharCode(96).repeat(3);
+
+          await github.rest.checks.create({...context.repo,name:''N00 compound native target host and driver checks'',head_sha:context.sha,status:''completed'',conclusion:host.status===''passed''?''success'':''failure'',output:{title:''Actual
+          laptop red green checks and driver build'',summary:fence+''json\n''+JSON.stringify(report,null,2)+''\n''+fence}});'
+    - name: Fourteen focused actual portfolio cases (not complete UI suite)
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" 16384
+
+        if errorlevel 1 exit /b 1'
+      id: runtime16
+      if: steps.host.outcome == 'success'
+    - name: Report focused portfolio observation separately from full matrix
+      if: always() && steps.host.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const fs=require(''node:fs''),p=require(''node:path'');
+
+          const file=p.join(process.env.SOURCE_ROOT,''app/build/outputs/apk/preview/ui-screens'',''portfolio-focused-observations.json'');
+
+          const source=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,''utf8'')):{diagnostic_only:true,release_gate_pass:false,error:''focused_report_missing''};
+
+          const report={...source,portfolio:source.portfolio?{...source.portfolio,cases:source.portfolio.cases.map(c=>({case:c.case,font_scale:c.font_scale,checks:c.checks,screenshots:c.screenshots}))}:null};
+
+          const fence=String.fromCharCode(96).repeat(3);
+
+          await github.rest.checks.create({...context.repo,name:''N00 candidate40 focused portfolio observations (diagnostic only)'',head_sha:context.sha,status:''completed'',conclusion:''neutral'',output:{title:''Focused
+          native observations are not full acceptance'',summary:fence+''json\n''+JSON.stringify(report,null,2)+''\n''+fence}});'
+    - name: Preserve genuine UI and install evidence after either outcome
+      shell: cmd
+      run: 'py -3 "%RUNNER_TEMP%\n00-runtime.py" export
+
+        if errorlevel 1 exit /b 1'
+      if: always() && steps.prepare.outcome == 'success'
+      id: export
+    - name: Require the same empty private return draft
+      id: evidence_prepare
+      if: always() && steps.export.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        RETAINED_RELEASE_ID: ${{ needs.preflight.outputs.release_id }}
+      with:
+        script: 'const fs=require(''node:fs''),path=require(''node:path''),crypto=require(''node:crypto'');
+
+          const target=path.join(process.env.SOURCE_ROOT,''.github/scripts/ci_private_transfer.cjs'');
+
+          const bytes=fs.readFileSync(target);
+
+          const blob=crypto.createHash(''sha1'').update(Buffer.from(''blob ''+bytes.length+''\0'')).update(bytes).digest(''hex'');
+
+          if(blob!==''de4d2913298b94dfd8ce2755ca0776b2080415d7'') throw new Error(''Private transfer helper changed'');
+
+          const helper=require(target);
+
+          const identity=helper.identity(context,process.env);
+
+          const releases=await github.paginate(github.rest.repos.listReleases,{...context.repo,per_page:100});
+
+          const matches=releases.filter(value=>value.tag_name===identity.tag);
+
+          if(matches.length!==1) throw new Error(''Exactly one owned return draft is required'');
+
+          const release=helper.owned(matches[0],identity);
+
+          if(String(release.id)!==process.env.RETAINED_RELEASE_ID || release.assets.length!==0) throw new Error(''Preflight return ownership changed'');
+
+          await helper.inaccessibleWithoutAuth(context.repo,''releases/''+release.id,fetch);
+
+          core.info(''WINDOWS_DEVELOPMENT_PRIVATE_RETURN_READY=true'');'
+    - name: Upload the private Windows result archive
+      id: evidence_upload
+      if: always() && steps.evidence_prepare.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: 'const fs=require(''node:fs''),path=require(''node:path''),crypto=require(''node:crypto'');
+
+          const target=path.join(process.env.SOURCE_ROOT,''.github/scripts/ci_private_transfer.cjs'');
+
+          const bytes=fs.readFileSync(target);
+
+          const blob=crypto.createHash(''sha1'').update(Buffer.from(''blob ''+bytes.length+''\0'')).update(bytes).digest(''hex'');
+
+          if(blob!==''de4d2913298b94dfd8ce2755ca0776b2080415d7'') throw new Error(''Private transfer helper changed'');
+
+          const helper=require(target);
+
+          await helper({github,context,core,command:''upload''});'
+  collect:
+    name: Return exact Windows source/build evidence to Timeweb storage
+    needs:
+    - preflight
+    - develop
+    if: always() && needs.develop.outputs.archive_sha256 != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+        persist-credentials: false
+    - name: Checkout the pinned Timeweb transport helpers
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Download and verify the exact private evidence archive
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        TRANSFER_SHA256: ${{ needs.develop.outputs.archive_sha256 }}
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'download'});
+    - name: Save verified evidence on Timeweb without publishing
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        TRANSFER_SHA256: ${{ needs.develop.outputs.archive_sha256 }}
+        PYTHONUNBUFFERED: '1'
+      run: "python3 - <<'PY'\nimport hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error\nsys.path[:0]=[\".transport-admin/deploy\"\
+        ,\".transport-admin/tools\"]\nimport prepare_owner_vm as p\nimport access_owner_vm as access\ntoken=p.validated_token(os.environ[\"TIMEWEB_CLOUD_TOKEN\"\
+        ])\ndef api(method,path,body=None):\n    req=urllib.request.Request(\"https://api.timeweb.cloud/api/v1\"+path,method=method,data=None if body is\
+        \ None else json.dumps(body).encode(),headers={\"Authorization\":\"Bearer \"+token,\"Accept\":\"application/json\",\"Content-Type\":\"application/json\"\
+        })\n    try:\n        with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45)\
+        \ as r:\n            raw=r.read(4194305);assert len(raw)<=4194304\n            return r.status,json.loads(raw) if raw else {}\n    except urllib.error.HTTPError\
+        \ as e:return e.code,p.cloud.error_details(e.read(65536))\n\ndef with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):\n  \
+        \  sid=9417611;ip=\"83.217.195.29\";host=\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU runner@runnervmtai0g\"\
+        \n    status,data=api(\"GET\",\"/servers/\"+str(sid));assert status==200\n    server=data[\"server\"]\n    assert server[\"name\"]==\"Analyst AI\
+        \ runtime 20261025\" and server[\"project_id\"]==2941515 and server[\"availability_zone\"]==\"ams-1\" and p.cloud.public_ipv4(server)==ip\n    access.SERVER_ID=sid\n\
+        \    with tempfile.TemporaryDirectory(prefix=\"analyst-ams-admin-\",dir=os.environ[\"RUNNER_TEMP\"]) as directory:\n        folder=pathlib.Path(directory);p.cloud.generate_key(folder/\"\
+        client\");public=(folder/\"client.pub\").read_text().strip()\n        created=access.request(token,\"POST\",\"/ssh-keys\",{\"name\":\"analyst-ams-admin-\"\
+        +os.environ[\"GITHUB_RUN_ID\"],\"body\":public,\"is_default\":False})\n        key=created.get(\"ssh_key\",created.get(\"ssh-key\",{}));kid=key[\"\
+        id\"]\n        assert type(kid) is int and key[\"body\"].split()[:2]==public.split()[:2]\n        attached=False\n        try:\n            access.request(token,\"\
+        POST\",\"/servers/\"+str(sid)+\"/ssh-keys\",{\"ssh_key_ids\":[kid]});attached=True\n            cmd=p.ssh_command(folder,ip,host);cmd[1:1]=[\"-o\"\
+        ,\"ServerAliveInterval=20\",\"-o\",\"ServerAliveCountMax=3\"]\n            for attempt in range(12):\n                try:p.remote(cmd,\"test $(id\
+        \ -u) = 0\",timeout=12);break\n                except (p.ProbeError,subprocess.TimeoutExpired):\n                    if attempt==11:raise\n    \
+        \                time.sleep(5)\n            payload=remote_script.encode() if binary_input is None else binary_input\n            remote_command=\"\
+        python3 -\" if binary_input is None else \"python3 -c \"+shlex.quote(remote_script)\n            result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)\n\
+        \            if not capture:print(result.stdout.decode(errors=\"replace\"),flush=True)\n            if result.returncode:\n                print(\"\
+        AMS_REMOTE_ERROR=\"+result.stderr.decode(errors=\"replace\")[-4000:],flush=True)\n                raise RuntimeError(\"remote_task_failed\")\n \
+        \           return result.stdout\n        finally:\n            try:\n                if attached:access.request(token,\"DELETE\",\"/servers/\"\
+        +str(sid)+\"/ssh-keys/\"+str(kid))\n            finally:\n                access.request(token,\"DELETE\",\"/ssh-keys/\"+str(kid))\n           \
+        \ print(\"AMS_TEMP_KEY_REMOVED=true\",flush=True)\n\n\nimport re\nrun=os.environ[\"GITHUB_RUN_ID\"];attempt=os.environ[\"GITHUB_RUN_ATTEMPT\"]\n\
+        expected=os.environ[\"TRANSFER_SHA256\"]\nassert re.fullmatch(r\"[1-9]\\d{0,19}\",run) and re.fullmatch(r\"[1-9]\\d{0,4}\",attempt)\nassert re.fullmatch(r\"\
+        [a-f0-9]{64}\",expected)\nblob=(pathlib.Path(os.environ[\"RUNNER_TEMP\"])/\"ci-handoff.zip\").read_bytes()\nassert 0<len(blob)<=512*1024**2 and\
+        \ hashlib.sha256(blob).hexdigest()==expected\nremote_script=r\"\"\"import pathlib,sys,hashlib,json,os,pwd,stat\ndata=sys.stdin.buffer.read(512*1024**2+1)\n\
+        assert len(data)==EXPECTED_BYTES and hashlib.sha256(data).hexdigest()==EXPECTED_HASH\nparent=pathlib.Path('/var/lib/analyst-ai-build/incoming')\n\
+        account=pwd.getpwnam('analyst-build')\nif not parent.exists():parent.mkdir(mode=0o750);os.chown(parent,0,account.pw_gid)\nassert parent.resolve()==parent\
+        \ and stat.S_ISDIR(parent.lstat().st_mode)\nfolder=parent/FOLDER\nfolder.mkdir(mode=0o750);os.chown(folder,0,account.pw_gid)\ndestination=folder/'windows-development-evidence.zip'\n\
+        with destination.open('xb') as out:out.write(data);out.flush();os.fsync(out.fileno())\nos.chown(destination,0,account.pw_gid);destination.chmod(0o640)\n\
+        assert hashlib.sha256(destination.read_bytes()).hexdigest()==EXPECTED_HASH\nreceipt={'path':str(destination),'sha256':EXPECTED_HASH,'bytes':len(data),'run_id':RUN_ID,'run_attempt':RUN_ATTEMPT,'publication_authorized':False,'origin':'Windows\
+        \ laptop','runtime_pass':False,'source_code_executed_on_timeweb':False}\nmetadata=folder/'transfer-receipt.json';metadata.write_text(json.dumps(receipt,indent=2)+'\\\
+        n');os.chown(metadata,0,account.pw_gid);metadata.chmod(0o640)\nprint('WINDOWS_DEVELOPMENT_RETURNED_ARCHIVE='+json.dumps(receipt),flush=True)\n\"\
+        \"\"\nremote_script=remote_script.replace(\"EXPECTED_BYTES\",str(len(blob))).replace(\"EXPECTED_HASH\",repr(expected)).replace(\"FOLDER\",repr(\"\
+        windows-development-\"+run+\"-\"+attempt)).replace(\"RUN_ID\",run).replace(\"RUN_ATTEMPT\",attempt)\nwith_ams(remote_script,timeout=180,binary_input=blob)\n\
+        PY\n"
+  cleanup:
+    name: Remove only this run's private transfer
+    needs:
+    - preflight
+    - develop
+    - collect
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: f4e3368fff1209c02b1cd088a5dc6a5380e7e433
+        persist-credentials: false
+    - name: Verify private transfer removal
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+  result:
+    name: Preserve focused portfolio evidence without claiming full acceptance
+    needs:
+    - preflight
+    - develop
+    - collect
+    - cleanup
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+    - env:
+        PREFLIGHT: ${{ needs.preflight.result }}
+        DEVELOP: ${{ needs.develop.result }}
+        COLLECT: ${{ needs.collect.result }}
+        CLEANUP: ${{ needs.cleanup.result }}
+      run: "for result in \"$PREFLIGHT\" \"$DEVELOP\" \"$COLLECT\" \"$CLEANUP\"; do\n  if [ \"$result\" != success ]; then\n    echo \"A required runtime\
+        \ or evidence transport stage failed.\"\n    exit 1\n  fi\ndone\necho \"Both exact APK38 emulator profiles passed; Linux and phone checks remain\
+        \ separate.\"\n"
