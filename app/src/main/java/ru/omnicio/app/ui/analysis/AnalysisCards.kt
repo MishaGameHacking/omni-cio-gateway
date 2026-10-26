@@ -430,8 +430,9 @@ internal fun SwitchCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp))
+            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk)
+            SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp), enabled = enabled)
         }
     }
 }

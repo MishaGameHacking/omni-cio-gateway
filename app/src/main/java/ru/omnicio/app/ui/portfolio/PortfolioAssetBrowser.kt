@@ -101,6 +101,10 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     Column(modifier.fillMaxWidth()) {
         SpectrumTextField(query, { query = it }, label = { Text("Название, тикер или ISIN") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("portfolio-search"))
+        if (query.isNotBlank()) WorkspaceSuggestionRow(query,
+            allCurrent.map { WorkspaceSuggestion(it.position.ticker ?: it.position.title, it.position.title,
+                listOfNotNull(it.position.ticker, it.position.isin).joinToString(" ")) },
+            modifier = Modifier.padding(horizontal = 20.dp)) { query = it }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { filtersOpen = true }) { Text("Фильтры и порядок") }
             Text("${rows.size}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -141,12 +145,14 @@ internal fun PortfolioAssetBrowser(snapshot: PortfolioSnapshot, onPosition: (Str
     }
     if (filtersOpen) AlertDialog(onDismissRequest = { filtersOpen = false }, title = { Text("Состав портфеля") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            WorkspaceChoices("Счёт", listOf("Все счета") + snapshot.accounts.map { it.name }, snapshot.accounts.indexOfFirst { it.id == accountId } + 1) {
-                accountId = snapshot.accounts.getOrNull(it - 1)?.id
-            }
-            WorkspaceChoices("Класс", labels, kinds.indexOf(kind).coerceAtLeast(0)) { kind = kinds[it] }
-            WorkspaceChoices("Группировать", listOf("По счетам", "По названиям компаний", "По отраслям", "Проверенные эмитенты", "Проверенные группы"), group) { group = it; exposureId = null }
-            WorkspaceChoices("Порядок", listOf("Сначала ограничения", "По стоимости", "По доле", "По названию"), order) { order = it }
+            WorkspaceChoicePicker("Счёт", accountId.orEmpty(), listOf(WorkspaceSuggestion("", "Все счета")) +
+                snapshot.accounts.map { WorkspaceSuggestion(it.id, it.name) }) { accountId = it.ifBlank { null } }
+            WorkspaceChoicePicker("Класс", kind, kinds.mapIndexed { index, id -> WorkspaceSuggestion(id, labels[index]) }) { kind = it }
+            WorkspaceChoicePicker("Группировать", group.toString(), listOf("По счетам", "По названиям компаний", "По отраслям", "Проверенные эмитенты", "Проверенные группы")
+                .mapIndexed { index, title -> WorkspaceSuggestion(index.toString(), title) }) { group = it.toInt(); exposureId = null }
+            WorkspaceChoicePicker("Порядок", order.toString(), listOf("Сначала ограничения", "По стоимости", "По доле", "По названию")
+                .mapIndexed { index, title -> WorkspaceSuggestion(index.toString(), title) }) { order = it.toInt() }
+            WorkspaceCheckbox("Только из наблюдения", onlyWatched) { onlyWatched = it }
         }
     }, confirmButton = { TextButton(onClick = { filtersOpen = false }) { Text("Показать") } })
     if (saveFilter) AlertDialog(onDismissRequest = { saveFilter = false }, title = { Text("Сохранить условия") },

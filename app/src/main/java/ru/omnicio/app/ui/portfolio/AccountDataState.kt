@@ -142,7 +142,9 @@ internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod)
                         }
                     }) { Text("Применить") }
             }, dismissButton = { TextButton(onClick = { calendar = false }) { Text("Отмена") } }) {
-            DateRangePicker(state = picker, modifier = Modifier.heightIn(max = 520.dp), title = { Text("Выбор периода", Modifier.padding(16.dp)) })
+            DateRangePicker(state = picker, modifier = Modifier.heightIn(max = 520.dp),
+                colors = ru.omnicio.app.ui.spectrum.spectrumDatePickerColors(),
+                title = { Text("Выбор периода", Modifier.padding(16.dp)) })
         }
     }
 }

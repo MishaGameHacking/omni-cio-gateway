@@ -30,16 +30,16 @@ fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick
 }
 
 @Composable
-fun WorkspaceToggle(title: String, detail: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
+fun WorkspaceToggle(title: String, detail: String, checked: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(modifier.fillMaxWidth().heightIn(min = 56.dp)
-        .toggleable(checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp))
+        SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp), enabled = enabled)
     }
 }
 
@@ -53,8 +53,9 @@ fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, enable
                     .selectable(selected == index, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(index) })
                     .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SpatialChoiceVisual(selected == index, Modifier.size(24.dp))
-                    Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    SpatialChoiceVisual(selected == index, Modifier.size(24.dp), enabled = enabled)
+                    Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge,
+                        color = if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk)
                 }
             }
         }

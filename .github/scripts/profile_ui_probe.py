@@ -24,8 +24,8 @@ EDUCATION_LABEL = "Обучение"
 BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
-LIGHT_BACKGROUND = "fff8fafc"
-DARK_BACKGROUND = "ff0f172a"
+LIGHT_BACKGROUND = "ff050e1c"
+DARK_BACKGROUND = "ff050e1c"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -408,7 +408,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        foreground = "fff8fafc" if expected == DARK_BACKGROUND else "ff0f172a"
+        foreground = "ffedf5ff" if expected == DARK_BACKGROUND else "ffedf5ff"
         self.marker("probe-foreground:" + foreground)
 
     def open(self):
@@ -440,7 +440,7 @@ class ProfileProbe:
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
-            self.find_all(("Система", "Решения", "Настройки"))
+            self.find_all(("Главная", "Решения", "Настройки"))
             self.find("Analyst AI" if screen == "home" else "Портфель")
             self.capture("spectrum-" + screen)
             if screen == "portfolio":
@@ -537,7 +537,7 @@ class ProfileProbe:
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
             self.tap_visible(WORKSPACE_BACK)
-            self.find("Система")
+            self.find("Главная")
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def profile_preflight(self):
@@ -551,47 +551,41 @@ class ProfileProbe:
         self.section_scroll_reset()
 
     def themes(self):
+        # Stable full-suite stage name; owner replaced theme selection with one style.
+        # Six real captures cover OS day/night, persisted motion and cancelled preview.
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
-        # Spectrum starts dark; light/system remain explicit user choices.
-        self.palette(DARK_BACKGROUND)
-        self.tap(THEME_LABEL)
-        self.tap(LIGHT_THEME_LABEL, "workspace-content")
         self.palette(LIGHT_BACKGROUND)
-        self.tap_visible(WORKSPACE_BACK)
-        self.palette(DARK_BACKGROUND)
+        self.capture("style-system-day-initial")
         self.tap(THEME_LABEL)
-        self.tap(LIGHT_THEME_LABEL, "workspace-content")
-        self.tap(APPLY_LABEL, "workspace-content", direction="start")
-        self.tap_visible(WORKSPACE_BACK)
-        self.palette(LIGHT_BACKGROUND)
-        self.capture("light-initial")
-        self.tap(THEME_LABEL)
-        self.tap("Тёмная", "workspace-content")
+        self.tap("Без движения", "workspace-content")
         self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
-        self.capture("dark-selected")
+        self.capture("style-motion-off")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
         self.palette(DARK_BACKGROUND)
-        self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap(LIGHT_THEME_LABEL, "workspace-content")
+        self.reveal("Без движения", "workspace-content")
+        from portfolio_preferences_probe import selected_control
+        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Motion setting was not restored")
+        self.capture("style-motion-restored")
+        self.tap("Сдержанное", "workspace-content")
+        self.tap("Отменить", "workspace-content", direction="start")
+        self.reveal("Без движения", "workspace-content")
+        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Cancel did not restore saved motion")
+        self.tap("Живое", "workspace-content")
         self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
-        self.palette(LIGHT_BACKGROUND)
-        self.capture("light-selected")
-        self.tap(THEME_LABEL)
-        self.tap("Как в системе", "workspace-content")
-        self.tap(APPLY_LABEL, "workspace-content", direction="start")
-        self.tap_visible(WORKSPACE_BACK)
+        self.palette(DARK_BACKGROUND)
+        self.capture("style-motion-live")
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
-        self.capture("system-dark")
+        self.capture("style-system-night")
         self.command("shell", "cmd", "uimode", "night", "no")
         self.palette(LIGHT_BACKGROUND)
-        self.capture("system-light")
+        self.capture("style-system-day")
 
     def dialogs(self, capture_evidence=True):
         self.tap_resource("profile-security-action")
@@ -747,7 +741,7 @@ def exercise_checks(device, read_tree) -> dict:
             completed_stages.append(name)
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
-            "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,"
+            "PROFILE_UI_TESTS=passed: single-style,system-invariance,motion-persistence,"
             "persistence,about,security,settings-group-scroll,automation,education,font-200,"
             "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,

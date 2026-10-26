@@ -10,6 +10,7 @@ import kotlin.math.min
 /** Finite interactive motion. Android's disabled animators always override this. */
 enum class SpatialMotion { Live, Subdued, Off }
 enum class SpatialState { Idle, Selected, Pressed, Loading, Success, Attention, Disabled }
+enum class SpatialColorMode { Monochrome, Decorative }
 
 object SpatialDepth {
     const val Background = -12f
@@ -46,6 +47,8 @@ internal data class SpatialPrimitive(
     val key: String = "mesh",
     val sharedKey: String? = null,
     val rotationY: Float = 0f,
+    val colorMode: SpatialColorMode = SpatialColorMode.Monochrome,
+    val outlineColor: Color = Color.Unspecified,
 )
 
 internal data class SpatialSlot(

@@ -10,15 +10,15 @@ PROFILE = ROOT / "app/src/main/java/ru/omnicio/app/ui/profile/ProfileSectionTabs
 
 class CompactHomeTests(unittest.TestCase):
 
-    def test_system_state_and_blockers_precede_results_without_raw_portfolio(self):
+    def test_real_portfolio_precedes_analysis_without_hiding_blockers(self):
         source = (HOME / "HomeScreen.kt").read_text(encoding="utf-8")
         home = source.split('fun HomeScreen(', 1)[1].split('\nprivate fun automationStateTitle', 1)[0]
         order = re.findall(r'item\(key = "([\w-]+)"\)', home)
-        self.assertEqual(order[:2], ["system-header", "automation-state"])
+        self.assertEqual(order[:4], ["system-header", "portfolio-overview", "portfolio-actions", "automation-state"])
         self.assertLess(order.index("automation-state"), order.index("automation-blockers"))
         self.assertLess(order.index("automation-blockers"), order.index("analysis-results"))
         self.assertLess(order.index("analysis-results"), order.index("system-connections"))
-        self.assertIn('Text("Система"', home)
+        self.assertIn('Text("Главная"', home)
         self.assertIn('status?.records("blockers")', home)
         self.assertIn('discovery?.records("candidates")', home)
         self.assertIn('onOpenRecommendations, Modifier.fillMaxWidth()', home)

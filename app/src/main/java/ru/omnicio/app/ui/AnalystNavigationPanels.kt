@@ -1,26 +1,35 @@
 package ru.omnicio.app.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.launch
-import ru.omnicio.app.ui.spectrum.SpectrumIconButton
-import ru.omnicio.app.ui.spectrum.SpectrumSymbol
+import ru.omnicio.app.ui.spatial.LocalFlatMotion
+import ru.omnicio.app.ui.spatial.SpatialMotion
+import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.WorkspaceRoute
 
 internal val LocalOpenNavigationMenu = staticCompositionLocalOf<(() -> Unit)?> { null }
@@ -83,31 +92,20 @@ internal fun RegisterPanelExit(route: WorkspaceRoute, request: (() -> Unit) -> U
     }
 }
 
-private val detailDestinations = listOf(
-    WorkspaceRoute.Strategies to "Стратегия",
-    WorkspaceRoute.Market to "Рынок",
-    WorkspaceRoute.Messages to "События",
-    WorkspaceRoute.Assistant to "Ассистент",
-    WorkspaceRoute.Appearance to "Оформление",
-    WorkspaceRoute.Library to "Исследования",
-)
 
-private val menuIcon = ImageVector.Builder("Navigation menu", 24.dp, 24.dp, 24f, 24f).apply {
-    path(fill = SolidColor(Color.Black)) {
-        moveTo(3f, 5f); lineTo(21f, 5f); lineTo(21f, 7f); lineTo(3f, 7f); close()
-        moveTo(3f, 11f); lineTo(21f, 11f); lineTo(21f, 13f); lineTo(3f, 13f); close()
-        moveTo(3f, 17f); lineTo(21f, 17f); lineTo(21f, 19f); lineTo(3f, 19f); close()
-    }
-}.build()
-
+/** A semantic brain button; the bottom bar contains only destinations. */
 @Composable
 internal fun AnalystMenuButton(open: () -> Unit) {
-    IconButton(open, Modifier.size(48.dp).testTag("navigation-menu-open")) {
-        Icon(menuIcon, "Открыть меню", tint = MaterialTheme.colorScheme.onSurface)
-    }
+    SpectrumGlyphButton(SpectrumSymbol.Brain, "Открыть меню", open,
+        Modifier.size(48.dp).testTag("navigation-menu-open"), active = true)
 }
 
-/** Shared navigation only; all settings and commands remain on their real screens. */
+@Composable
+internal fun AnalystHeaderMenu() {
+    if (!LocalWideNavigation.current) LocalOpenNavigationMenu.current?.let { AnalystMenuButton(it) }
+}
+
+/** Menu dismissal finishes before a route-bound draft guard can continue. */
 @Composable
 fun AnalystNavigationPanels(
     selected: AnalystTab,
@@ -117,90 +115,125 @@ fun AnalystNavigationPanels(
     navigateWorkspace: (WorkspaceRoute) -> Unit,
     content: @Composable () -> Unit,
 ) {
-    val drawer = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    if (ru.omnicio.app.ui.workspace.LocalWorkspaceAutoSave.current == null) {
+        ru.omnicio.app.ui.workspace.WorkspaceAutoSaveProvider {
+            AnalystNavigationPanels(selected, selectedWorkspace, wide, navigateTab, navigateWorkspace, content)
+        }
+        return
+    }
+    var menuOpen by remember { mutableStateOf(false) }
     val guard = remember { PanelNavigationGuard() }
     val currentDestination by rememberUpdatedState(selected to selectedWorkspace)
-    val openMenu: () -> Unit = { scope.launch { drawer.open() } }
-    val closeThen: (Boolean, () -> Unit) -> Unit = { sameDestination, navigate ->
-        val source = currentDestination
-        scope.launch {
-            drawer.close()
-            if (drawer.isClosed) {
-                guard.requestDestination(source, { currentDestination }, sameDestination, navigate)
-            }
-        }
-    }
-    val detailRoute = selectedWorkspace?.takeIf { route -> detailDestinations.any { it.first == route } }
+    val openMenu: () -> Unit = { menuOpen = true }
+    val detailRoute = selectedWorkspace
     val exitScope = detailRoute?.let { PanelExitScope(it, guard) }
     val detailMenu = detailRoute?.takeIf { !wide }?.let { DetailNavigationMenu(it, openMenu) }
-    val selectWideTab: (AnalystTab) -> Unit = { tab ->
+    val selectTab: (AnalystTab) -> Unit = { tab ->
         val source = currentDestination
         guard.requestDestination(source, { currentDestination },
             source.second == null && tab == source.first.primaryDestination()) { navigateTab(tab) }
     }
-    LaunchedEffect(wide) {
-        if (wide) drawer.snapTo(DrawerValue.Closed)
+    val selectWorkspace: (WorkspaceRoute) -> Unit = { route ->
+        val source = currentDestination
+        guard.requestDestination(source, { currentDestination }, source.second == route) { navigateWorkspace(route) }
     }
     CompositionLocalProvider(
         LocalWideNavigation provides wide,
-        LocalOpenNavigationMenu provides if (wide) null else openMenu,
+        LocalOpenNavigationMenu provides openMenu,
         LocalDetailNavigationMenu provides detailMenu,
         LocalPanelExitScope provides exitScope,
     ) {
-        // Keep content in the same composition slot when the window changes size.
-        ModalNavigationDrawer(
-            drawerState = drawer,
-            // Only the menu button opens the sheet; edge gestures belong to Android Back.
-            gesturesEnabled = false,
-            // A closed sheet must remain outside its own viewport, including embedded windows.
-            modifier = Modifier.fillMaxSize().clipToBounds().semantics { testTagsAsResourceId = true },
-            drawerContent = {
-                // The DrawerState overload handles native predictive Back and cancellation.
-                ModalDrawerSheet(
-                    drawerState = drawer,
-                    modifier = Modifier.fillMaxHeight().widthIn(max = 360.dp).testTag("navigation-panel"),
-                    windowInsets = WindowInsets.safeDrawing,
-                ) {
-                    // The fixed header must retain its full native touch bounds after list scrolling.
-                    Row(Modifier.fillMaxWidth().zIndex(1f).padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+        // Content stays in one slot when a window changes size or a popup opens.
+        BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().semantics { testTagsAsResourceId = true }) {
+            Row(Modifier.fillMaxSize()) {
+                if (wide) AnalystSideRail(selected, selectedWorkspace, selectTab, selectWorkspace)
+                Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+            }
+            if (menuOpen) {
+                val width = (maxWidth - 24.dp).coerceAtMost(600.dp)
+                val height = maxHeight * .65f
+                AnalystIconDock(selected, selectedWorkspace, width, height,
+                    onDismiss = { menuOpen = false },
+                    onSelect = { destination ->
+                        menuOpen = false
+                        destination.workspace?.let(selectWorkspace) ?: destination.tab?.let(selectTab)
+                    })
+            }
+        }
+    }
+}
+
+/** Short, scrollable icon rows. A native focusable popup consumes outside/Back. */
+@Composable
+private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRoute?,
+    width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp,
+    onDismiss: () -> Unit, onSelect: (AnalystDestination) -> Unit) {
+    val motion = LocalFlatMotion.current
+    val enabled = motion != SpatialMotion.Off
+    val opacity = remember { Animatable(if (enabled) 0f else 1f) }
+    val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
+    val currentDismiss by rememberUpdatedState(onDismiss)
+    val currentSelect by rememberUpdatedState(onSelect)
+    val close: (AnalystDestination?) -> Unit = { destination ->
+        if (!closing) {
+            closing = true
+            scope.launch {
+                opacity.animateTo(0f, tween(if (enabled) 140 else 0))
+                if (destination == null) currentDismiss() else currentSelect(destination)
+            }
+        }
+    }
+    LaunchedEffect(enabled) { if (!closing) opacity.animateTo(1f, tween(if (enabled) 180 else 0)) }
+    val density = LocalDensity.current
+    val top = WindowInsets.safeDrawing.getTop(density)
+    val offset = with(density) { IntOffset(12.dp.roundToPx(), top + 60.dp.roundToPx()) }
+    Popup(alignment = Alignment.TopStart, offset = offset, onDismissRequest = { close(null) },
+        properties = PopupProperties(focusable = true, dismissOnBackPress = true,
+            dismissOnClickOutside = true, clippingEnabled = true)) {
+        val colors = MaterialTheme.colorScheme
+        Column(Modifier.width(width).heightIn(max = height)
+            .graphicsLayer { alpha = opacity.value; scaleX = .96f + .04f * opacity.value; scaleY = scaleX }
+            .clip(RoundedCornerShape(28.dp))
+            .background(Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surface)))
+            .border(1.dp, colors.outlineVariant, RoundedCornerShape(28.dp))
+            .semantics { testTagsAsResourceId = true; paneTitle = "Разделы" }
+            .testTag("navigation-panel")) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End) {
+                SpectrumGlyphButton(SpectrumSymbol.Close, "Закрыть меню", { close(null) },
+                    Modifier.size(48.dp).testTag("navigation-menu-close"))
+            }
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()).testTag("navigation-panel-content")
+                .padding(start = 8.dp, end = 8.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                analystMenuDestinations.groupBy { it.group }.entries.forEachIndexed { row, (group, destinations) ->
+                    if (row > 0) HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = colors.outlineVariant)
+                    LazyRow(Modifier.fillMaxWidth().semantics { contentDescription = group.title }
+                        .testTag("navigation-row-" + group.name.lowercase()),
+                        contentPadding = PaddingValues(horizontal = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Разделы", Modifier.weight(1f).semantics { heading() },
-                            style = MaterialTheme.typography.titleLarge)
-                        SpectrumIconButton(SpectrumSymbol.Close, "Закрыть меню",
-                            { scope.launch { drawer.close() } }, Modifier.testTag("navigation-menu-close"))
-                    }
-                    Column(Modifier.weight(1f).fillMaxWidth().clipToBounds().verticalScroll(rememberScrollState())
-                        .testTag("navigation-panel-content").padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf(AnalystTab.Home to "Система", AnalystTab.Actions to "Решения",
-                            AnalystTab.Profile to "Настройки").forEach { (tab, title) ->
-                            NavigationDrawerItem(
-                                label = { Text(title, softWrap = true) },
-                                selected = selectedWorkspace == null && tab == selected.primaryDestination(),
-                                onClick = { closeThen(selectedWorkspace == null && tab == selected.primaryDestination()) { navigateTab(tab) } },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                                    .testTag("navigation-primary-" + tab.name.lowercase()),
-                            )
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        detailDestinations.forEach { (route, title) ->
-                            NavigationDrawerItem(
-                                label = { Text(title, softWrap = true) },
-                                selected = route == selectedWorkspace,
-                                onClick = { closeThen(route == selectedWorkspace) { navigateWorkspace(route) } },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                                    .testTag("navigation-workspace-" + route.name.lowercase()),
-                            )
+                        itemsIndexed(destinations, key = { _, item -> item.id }) { index, destination ->
+                            val route = destination.workspace
+                            val active = if (route != null) route == selectedWorkspace
+                                else selectedWorkspace == null && destination.tab == selected
+                            val enter = remember { Animatable(if (enabled) 0f else 1f) }
+                            LaunchedEffect(enabled) {
+                                enter.animateTo(1f, tween(if (enabled) 220 else 0,
+                                    delayMillis = if (enabled) (row * 36 + index * 32).coerceAtMost(260) else 0))
+                            }
+                            SpectrumGlyphButton(destination.symbol, destination.title, { close(destination) },
+                                Modifier.size(56.dp).graphicsLayer {
+                                    alpha = enter.value
+                                    translationY = (1f - enter.value) * 14.dp.toPx()
+                                    scaleX = .8f + .2f * enter.value; scaleY = scaleX
+                                }.testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
+                                    else "navigation-primary-" + destination.tab!!.name.lowercase()),
+                                active = active, enabled = !closing)
                         }
                     }
                 }
-            },
-        ) {
-            Row(Modifier.fillMaxSize()) {
-                if (wide) AnalystSideRail(selected, selectWideTab)
-                Box(Modifier.weight(1f).fillMaxHeight()) { content() }
             }
         }
     }

@@ -26,7 +26,7 @@ fun SpectrumAssetMark(assetClass: String, name: String, modifier: Modifier = Mod
     Box(modifier) {
         val primitives = mutableListOf(SpatialPrimitive(SpatialAsset.Catalogue(model),
             color = palette.blue, thickness = 32f, depth = depth + 10f,
-            sharedKey = shared?.let { "$it/class" }))
+            sharedKey = shared?.let { "$it/class" }, colorMode = SpatialColorMode.Decorative))
         if (letter != null) primitives += SpatialPrimitive(SpatialAsset.Glyph(letter),
             rect = Rect(.53f,.49f,.99f,.99f), color = palette.cyan, depth = depth + 19f,
             thickness = 22f, sharedKey = shared?.let { "$it/letter" })

@@ -80,13 +80,13 @@ class NavigationNativeEvidenceTests(unittest.TestCase):
         target = ET.SubElement(viewport, "node", {"package": automation.PACKAGE,
             "resource-id": "navigation-primary-home", "bounds": "[16,90][284,146]",
             "visible-to-user": "true", "enabled": "true", "clickable": "true", "focusable": "true",
-            "selected": "true", "checked": "false", "text": "Система"})
+            "selected": "true", "checked": "false", "text": "Главная"})
         return tree, root, viewport, target
 
     @staticmethod
     def target(tree, minimum=48):
         return automation.navigation_target(tree, "navigation-primary-home", minimum=minimum,
-            touch=True, selected=True, label="Система")
+            touch=True, selected=True, label="Главная")
 
     def test_owned_exact_selected_accessible_target_is_required(self):
         tree, _, _, node = self.frame()
@@ -125,11 +125,11 @@ class NavigationNativeEvidenceTests(unittest.TestCase):
         node.set("clickable", "false")
         self.assertIsNone(self.target(tree))
         self.assertIs(automation.navigation_target(tree, "navigation-primary-home", minimum=48,
-            selected=True, touch=False, label="Система"), node)
+            selected=True, touch=False, label="Главная"), node)
         node.set("selected", "false")
         node.set("checked", "true")
         self.assertIsNone(automation.navigation_target(tree, "navigation-primary-home", minimum=48,
-            selected=True, touch=False, label="Система"))
+            selected=True, touch=False, label="Главная"))
 
     def test_duplicate_and_foreign_label_cannot_supply_navigation_evidence(self):
         tree, _, viewport, node = self.frame()
@@ -138,7 +138,7 @@ class NavigationNativeEvidenceTests(unittest.TestCase):
             self.target(tree)
         tree, _, _, node = self.frame()
         node.set("text", "")
-        ET.SubElement(node, "node", {"package": "other.app", "text": "Система"})
+        ET.SubElement(node, "node", {"package": "other.app", "text": "Главная"})
         self.assertIsNone(self.target(tree))
 
     def test_clipped_disabled_or_invalid_visible_menu_is_not_closed(self):
@@ -156,14 +156,14 @@ class NavigationNativeEvidenceTests(unittest.TestCase):
     def test_hidden_or_outside_same_package_descendant_cannot_supply_label(self):
         tree, _, _, node = self.frame()
         node.set("text", "Different")
-        ET.SubElement(node, "node", {"package": automation.PACKAGE, "text": "Система",
+        ET.SubElement(node, "node", {"package": automation.PACKAGE, "text": "Главная",
             "bounds": "[30,100][120,130]", "visible-to-user": "true", "enabled": "true"})
         self.assertIs(self.target(tree), node)
         for change in ({"visible-to-user": "false"}, {"enabled": "false"},
                        {"bounds": "[16,580][284,600]"}, {"package": "other.app"}):
             tree, _, _, node = self.frame()
             node.set("text", "Different")
-            ET.SubElement(node, "node", {"package": automation.PACKAGE, "text": "Система",
+            ET.SubElement(node, "node", {"package": automation.PACKAGE, "text": "Главная",
                 "bounds": "[30,100][120,130]", "visible-to-user": "true", "enabled": "true", **change})
             with self.subTest(change=change):
                 self.assertIsNone(self.target(tree))
@@ -171,7 +171,7 @@ class NavigationNativeEvidenceTests(unittest.TestCase):
         node.set("text", "")
         parent = ET.SubElement(node, "node", {"package": automation.PACKAGE,
             "bounds": "[20,95][250,140]", "visible-to-user": "false", "enabled": "true"})
-        ET.SubElement(parent, "node", {"package": automation.PACKAGE, "text": "Система",
+        ET.SubElement(parent, "node", {"package": automation.PACKAGE, "text": "Главная",
             "bounds": "[30,100][120,130]", "visible-to-user": "true", "enabled": "true"})
         self.assertIsNone(self.target(tree))
 

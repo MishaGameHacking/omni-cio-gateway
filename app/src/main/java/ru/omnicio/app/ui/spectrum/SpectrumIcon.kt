@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spatial.*
 
@@ -18,6 +17,9 @@ enum class SpectrumSymbol(val asset: String) {
     Back("back"), Forward("forward"), Search("search"), Check("check"), Close("close"), Calendar("calendar"),
     Settings("settings"), Bookmark("bookmark"),
     Expand("plus"), Collapse("minus"), Currency("currency"),
+    Brain("brain"), Decisions("decisions"), Strategy("strategy"), Reports("reports"),
+    Timeline("timeline"), Events("events"), Rules("rules"), Appearance("appearance"),
+    Devices("devices"), Recent("recent"), NewFeatures("new_features"),
 }
 
 /** Decorative mesh. The containing native control owns its text label and target. */
@@ -38,12 +40,12 @@ fun SpectrumIcon(
         else -> if (selected) palette.cyan else palette.blue
     }
     if (tile) SpatialSurface(modifier, SpatialSurfaceKind.Chip,
-        color = lerp(palette.cardStrong, accent, .06f), state = state) {
+        color = palette.containerFor(accent), state = state) {
         SpatialIcon(symbol.asset, Modifier.fillMaxSize().padding(6.dp), tint = accent,
-            state = state, motionAllowed = motionAllowed)
+            state = state, motionAllowed = motionAllowed, colorMode = SpatialColorMode.Decorative)
     } else Box(modifier) {
         SpatialIcon(symbol.asset, Modifier.fillMaxSize(), tint = accent,
-            state = state, motionAllowed = motionAllowed)
+            state = state, motionAllowed = motionAllowed, colorMode = SpatialColorMode.Decorative)
     }
 }
 

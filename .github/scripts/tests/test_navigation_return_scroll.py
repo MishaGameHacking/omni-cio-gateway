@@ -15,7 +15,7 @@ import profile_scroll
 from test_navigation_detail_probe import NativeFrames, case, frame, node
 
 HEADLINE = "Последний результат сохранён"
-PREVIEW = "Предпросмотр цвета, контраста и движения"
+PREVIEW = "Единый стиль · движение и удобство"
 SAVED = "Текущие сохранённые настройки"
 
 
@@ -55,7 +55,7 @@ class ReturnFrames(NativeFrames):
                 node(viewport, bounds="[10,200][310,260]", text=SAVED)
         elif self.page == "home" and self.position == 0:
             node(viewport, bounds="[10,120][310,180]", text=HEADLINE)
-        node(root, bounds="[64,540][142,608]", text="Система", clickable="true",
+        node(root, bounds="[64,540][142,608]", text="Главная", clickable="true",
              focusable="true", **{"resource-id": "bottom-destination-home", "class": "android.view.View"})
         return tree
 

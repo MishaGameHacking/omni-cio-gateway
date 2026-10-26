@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="analyst_background">#050E1C</color>
+    <color name="analyst_on_background">#EDF5FF</color>
+    <color name="analyst_surface">#0A1A2C</color>
+    <color name="analyst_on_surface">#EDF5FF</color>
+    <color name="analyst_primary">#A99AFF</color>
+    <color name="analyst_on_primary">#1B0D45</color>
+    <color name="analyst_primary_container">#403199</color>
+    <color name="analyst_on_primary_container">#FFFFFF</color>
+    <color name="analyst_secondary">#69DFFF</color>
+    <color name="analyst_on_secondary">#023343</color>
+    <color name="analyst_secondary_container">#07384B</color>
+    <color name="analyst_on_secondary_container">#D7F6FF</color>
+    <color name="analyst_tertiary">#8FADFF</color>
+    <color name="analyst_on_tertiary">#09265C</color>
+    <color name="analyst_tertiary_container">#233C75</color>
+    <color name="analyst_on_tertiary_container">#E1EBFF</color>
+    <color name="analyst_surface_variant">#132C43</color>
+    <color name="analyst_on_surface_variant">#ACC3DC</color>
+    <color name="analyst_surface_container">#0D2136</color>
+    <color name="analyst_surface_container_highest">#132C43</color>
+    <color name="analyst_outline">#88A4C5</color>
+    <color name="analyst_outline_variant">#294763</color>
+    <color name="analyst_error">#FF99B2</color>
+    <color name="analyst_on_error">#510D29</color>
+    <color name="analyst_scrim">#01060D</color>
+    <color name="analyst_warning">#FFD177</color>
+    <color name="analyst_disabled_ink">#99AEC7</color>
+    <color name="analyst_disabled_container">#152B41</color>
+
+    <color name="analyst_launcher_background">@color/analyst_surface</color>
+</resources>

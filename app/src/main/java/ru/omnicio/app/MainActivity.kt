@@ -56,6 +56,9 @@ import ru.omnicio.app.ui.AnalystNavigationPanels
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.analystDestination
+import ru.omnicio.app.ui.sectionBackStack
+import ru.omnicio.app.ui.LocalAnalystSectionNavigator
 import ru.omnicio.app.ui.LocalAnalystTabNavigator
 import ru.omnicio.app.ui.analysis.AnalysisProfileSettingsScreen
 import ru.omnicio.app.ui.analysis.IdeasScreen
@@ -360,7 +363,7 @@ private fun AnalystAiApp(
     val livePortfolio = rememberLivePortfolio(
         signedIn?.accessToken, tApiConfigured, portfolioCurrency, userId = signedIn?.user?.telegramId,
         allowCachedOffline = brokerConnection == BrokerConnectionState.Unknown || brokerConnection == BrokerConnectionState.Checking,
-        enabled = screen !in setOf(AppScreen.Home, AppScreen.Recommendations, AppScreen.Profile),
+        enabled = screen !in setOf(AppScreen.Recommendations, AppScreen.Profile),
         onSessionExpired = reauthenticate,
     )
     val visiblePortfolio = if (livePortfolio.state is PortfolioUiState.Ready) livePortfolio.state else when (brokerConnection) {
@@ -375,7 +378,16 @@ private fun AnalystAiApp(
             screenName = destination.name
         }
     }
-    CompositionLocalProvider(LocalWorkspaceBackProgress provides backProgress, LocalReauthenticate provides reauthenticate,
+    val selectSection: (String) -> Unit = { id ->
+        val destination = AppScreen.entries.firstOrNull { it.name == id }
+        val parentStack = sectionBackStack(id)
+        if (destination != null && parentStack != null && destination != screen) {
+            navigate(destination)
+            backStack = ArrayList(parentStack)
+        }
+    }
+    CompositionLocalProvider(LocalAnalystSectionNavigator provides selectSection,
+        LocalWorkspaceBackProgress provides backProgress, LocalReauthenticate provides reauthenticate,
         LocalPortfolioSnapshot provides (visiblePortfolio as? PortfolioUiState.Ready)?.snapshot,
         LocalWorkspaceHistory provides WorkspaceHistory(recentNames.map { RecentDestination(it, screenTitle(it)) }, { name ->
             AppScreen.entries.firstOrNull { it.name == name }?.let(navigate)
@@ -525,7 +537,8 @@ private fun SignedInAppContent(
         onExpired = reauthenticate,
     )
     val refresh: () -> Unit = { onPortfolioRefresh(); workspace.refresh() }
-    val navigateToTab: (AnalystTab) -> Unit = { onScreenChange(it.toAppScreen()) }
+    val selectSection = LocalAnalystSectionNavigator.current
+    val navigateToTab: (AnalystTab) -> Unit = { selectSection(it.toAppScreen().name) }
     val goBack = LocalWorkspaceBack.current
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
@@ -607,7 +620,10 @@ private fun SignedInAppContent(
                     else -> AnalystTab.Profile
                 },
                 selectedWorkspace = WorkspaceRoute.entries.firstOrNull { it.name == screen.name },
-                wide = wide, navigateTab = navigateToTab, navigateWorkspace = navigateWorkspace,
+                wide = wide, navigateTab = navigateToTab, navigateWorkspace = { route ->
+                    if (route == WorkspaceRoute.Reports) reportId = null
+                    selectSection(route.name)
+                },
             ) {
                 AnimatedContent(screen, transitionSpec = { workspaceTransition(initialState, targetState, motion) }, label = "workspace-navigation") { destination ->
                     holder.SaveableStateProvider(destination.name) {
@@ -663,13 +679,7 @@ private fun PrimaryWorkspaceShell(selected: AnalystTab, portfolio: () -> Unit, p
     }
 }
 
-private fun screenTitle(name: String): String = when (name) {
-    "Home" -> "Система"; "Portfolio" -> "Данные источника"; "Recommendations" -> "Решения"; "Risk" -> "Проверки риска"; "Profile" -> "Настройки"
-    "Messages" -> "События"; "Reports" -> "Выводы аналитика"; "Assistant" -> "Ассистент"; "Strategies" -> "Стратегия"; "Market" -> "Рынок"
-    "Appearance" -> "Оформление"; "NotificationSettings" -> "Уведомления"; "Discovery" -> "Поиск"; "Library" -> "Исследования"
-    "Devices" -> "Устройства"; "ActivityHistory" -> "Недавно открыто"; "Goals" -> "Цели"; "NewFeatures" -> "Что нового"
-    "AnalysisTimeline" -> "Работа аналитика"; "TApi" -> "Подключение T-API"; "Education" -> "Обучение"; else -> "Настройки анализа"
-}
+private fun screenTitle(name: String): String = analystDestination(name)?.title ?: "Analyst AI"
 
 private fun AnalystTab.toAppScreen(): AppScreen = when (this) {
     AnalystTab.Actions -> AppScreen.Recommendations

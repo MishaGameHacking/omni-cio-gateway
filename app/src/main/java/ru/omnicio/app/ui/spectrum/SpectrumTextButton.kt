@@ -39,7 +39,7 @@ fun SpectrumActionButton(
         interactionSource = interaction, indication = null, role = Role.Button, onClick = action),
         SpatialSurfaceKind.Button, color = LocalSpectrumPalette.current.cardStrong, state = state) {
         CompositionLocalProvider(LocalContentColor provides
-            if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant) {
+            if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk) {
             Row(Modifier.align(Alignment.Center).padding(contentPadding),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                 content = content)
@@ -66,8 +66,9 @@ fun SpectrumTextButton(
         SpatialSurfaceKind.Button, color = LocalSpectrumPalette.current.cardStrong, state = state) {
         Row(Modifier.align(Alignment.CenterStart).padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (symbol != null) SpatialIcon(symbol.asset, Modifier.size(22.dp), state = state)
-            Text(text, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            if (symbol != null) SpatialIcon(symbol.asset, Modifier.size(22.dp), state = state,
+                colorMode = SpatialColorMode.Monochrome)
+            Text(text, color = if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk,
                 style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         }
     }
@@ -91,6 +92,7 @@ fun SpectrumIconButton(
         .semantics { contentDescription = description }
         .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = click),
         SpatialSurfaceKind.Button, state = state, color = LocalSpectrumPalette.current.cardStrong) {
-        SpatialIcon(symbol.asset, Modifier.align(Alignment.Center).size(26.dp), state = state)
+        SpatialIcon(symbol.asset, Modifier.align(Alignment.Center).size(26.dp), state = state,
+            colorMode = SpatialColorMode.Monochrome)
     }
 }

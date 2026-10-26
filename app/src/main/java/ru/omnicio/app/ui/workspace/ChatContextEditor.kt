@@ -34,21 +34,23 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
             }
             if (!validAccount) Text("Выбранный счёт не найден в текущем снимке. Дождитесь загрузки или выберите доступный счёт, включая «Все мои счета».")
             if (mode == 2) {
-                WorkspaceTextInput(search, { search = it.take(100) }, "Найти инструмент", Modifier.fillMaxWidth())
-                selected?.let { Text("Выбрано: " + it.title, style = MaterialTheme.typography.titleMedium) }
-                val found = positions.filter { search.isBlank() || it.title.contains(search, true) || it.ticker?.contains(search, true) == true }
-                DetailFold("Инструменты · " + found.size, initiallyOpen = selected == null) {
-                    found.take(20).forEach { position -> SpectrumSecondaryButton(position.title, { instrument = position.id }, Modifier.fillMaxWidth()) }
-                    if (found.size > 20) Text("Уточните поиск, чтобы выбрать из остальных инструментов.")
-                }
-                if (keepEvent && instrument == current.instrumentUid && current.eventId != null) {
+                WorkspaceChoicePicker("Инструмент", instrument.orEmpty(), positions.map {
+                    WorkspaceSuggestion(it.id, it.title, listOfNotNull(it.ticker, it.isin).joinToString(" "))
+                }) { instrument = it }
+                if (instrument == current.instrumentUid && current.eventId != null) {
                     Text("Контекст включает выбранную публикацию из досье.", style = MaterialTheme.typography.bodySmall)
-                    SpectrumSecondaryButton("Убрать событие из контекста", { keepEvent = false }, Modifier.fillMaxWidth())
+                    WorkspaceCheckbox("Включить эту публикацию", keepEvent) { keepEvent = it }
                 }
             }
             DetailFold("Период операций", initiallyOpen = start.isNotBlank()) {
                 WorkspaceTextInput(start, { start = it.take(10) }, "С · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
                 WorkspaceTextInput(end, { end = it.take(10) }, "По · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
+                val today = remember { LocalDate.now() }
+                WorkspaceSuggestionRow("", listOf(WorkspaceSuggestion("month", "Последний месяц"),
+                    WorkspaceSuggestion("year", "С начала года"), WorkspaceSuggestion("all", "Весь период"))) { period ->
+                    start = when (period) { "month" -> today.minusMonths(1).toString(); "year" -> today.withDayOfYear(1).toString(); else -> "" }
+                    end = if (period == "all") "" else today.toString()
+                }
                 Text("Период ограничивает доступные операции. Текущая оценка портфеля сохраняет фактическую дату снимка.", style = MaterialTheme.typography.bodySmall)
                 if (!validRange) Text("Укажите обе даты в правильном порядке.", color = MaterialTheme.colorScheme.error)
             }

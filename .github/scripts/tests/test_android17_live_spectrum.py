@@ -17,8 +17,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 45", gradle)
-        self.assertIn('versionName = "0.13.7"', gradle)
+        self.assertIn("versionCode = 47", gradle)
+        self.assertIn('versionName = "0.14.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -75,14 +75,15 @@ class Android17LiveSpectrumTests(unittest.TestCase):
             self.assertIn(release, host)
         for unused in ("SpatialOwner(context)", "TextureView(", "AndroidView(", "Engine.create("):
             self.assertNotIn(unused, host)
-        self.assertIn("drawFlatPrimitive(it, if (it.motionAllowed) progress else 0f)", host)
+        self.assertIn("drawFlatPrimitive(it, if (it.motionAllowed) progress else 0f, palette)", host)
+        self.assertIn("val palette = LocalSpectrumPalette.current", host)
         back = self.source("ui/spatial/SpatialInteraction.kt")
         self.assertIn("PredictiveBackHandler(enabled)", back)
         self.assertIn("finally {", back)
         self.assertIn("back?.value = 0f", back)
         self.assertIn("LocalFlatTactile.current", back)
 
-    def test_system_home_uses_confirmed_analysis_and_three_native_destinations(self):
+    def test_home_uses_confirmed_analysis_and_shared_primary_destinations(self):
         home = self.source("ui/home/HomeScreen.kt")
         body = home.split("private fun automationStateTitle", 1)[0]
         for token in (
@@ -93,7 +94,7 @@ class Android17LiveSpectrumTests(unittest.TestCase):
             'onOpenRecommendations',
             'onOpenProfile',
             'onConnect',
-            '"Система"',
+            '"Главная"',
             '"Результаты"',
             '"Что мешает работе"',
             '"Режим наблюдения"',
@@ -104,11 +105,14 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         for invented in ("model is running", "AI score", "guaranteed return"):
             self.assertNotIn(invented, home.lower())
         bar = self.source("ui/AnalystBottomBar.kt")
-        primary = re.search(r"primaryTabs\s*=\s*listOf\(([^)]+)\)", bar)
-        self.assertIsNotNone(primary)
-        self.assertEqual(re.findall(r"AnalystTab\.(\w+)", primary.group(1)), ["Home", "Actions", "Profile"])
-        for destination, label in (("Home", "Система"), ("Actions", "Решения"), ("Profile", "Настройки")):
-            self.assertIn(f'AnalystTab.{destination} -> "{label}"', bar)
+        catalogue = self.source("ui/NavigationCatalogue.kt")
+        self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
+        for destination,label in (("Home","Главная"),("Portfolio","Портфель"),
+                                  ("Recommendations","Решения"),("Profile","Настройки")):
+            self.assertIn('AnalystDestination("'+destination+'", "'+label+'"', catalogue)
+        self.assertNotIn('showLabel = !compact',bar)
+        self.assertIn('SpectrumGlyphButton(tab.symbol(), tab.label()',bar)
+        self.assertIn('Modifier.size(56.dp)',bar)
         self.assertIn("role = Role.Tab", bar)
         self.assertIn(".selectableGroup()", bar)
 

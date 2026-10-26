@@ -25,7 +25,7 @@ import ru.omnicio.app.ui.portfolio.decimalText
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
 
-/** The home describes server work. Portfolio values stay in the analysis pipeline. */
+/** Real capital first; analysis state and its blockers retain their own source/time. */
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: PortfolioCurrency,
@@ -76,20 +76,29 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                 item(key = "system-header") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ru.omnicio.app.ui.AnalystHeaderMenu()
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Analyst AI", style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary)
-                            Text("Система", style = MaterialTheme.typography.headlineLarge,
+                            Text("Главная", style = MaterialTheme.typography.headlineLarge,
                                 modifier = Modifier.semantics { heading() })
                             LiveSyncLabel()
                         }
                         SpectrumIconButton(SpectrumSymbol.Notifications, "События", onOpenMessages)
                     }
                 }
+                item(key = "portfolio-overview") {
+                    HomePortfolioHero(state, selectedCurrency, refreshing, refreshError,
+                        onOpenPortfolio, onConnect)
+                }
+                item(key = "portfolio-actions") {
+                    HomePortfolioActions(onOpenRisk, { navigate(WorkspaceRoute.Strategies) },
+                        { navigate(WorkspaceRoute.Assistant) })
+                }
                 item(key = "automation-state") {
                     SpectrumCard(modifier = Modifier.testTag("automation-state"), emphasized = true) {
                         SpectrumBadge(if (currentError != null) "Сведения не обновлены" else "Состояние анализа")
-                        Text(title, style = MaterialTheme.typography.headlineMedium,
+                        Text(title, style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                         Text(explanation, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (loading) SpectrumLoadingIndicator(description = title)
@@ -140,7 +149,7 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                 }
                 item(key = "system-connections") {
                     SpectrumCard {
-                        Text("Подключения и режим", style = MaterialTheme.typography.titleLarge)
+                        DetailFold("Подключения и режим") {
                         SystemStateLine("Брокер", when {
                             status?.optBoolean("broker_connected") == true -> "Доступ к данным подтверждён"
                             disconnected -> "Не подключён"
@@ -168,6 +177,7 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                         Text(if (readOnly) "Система анализирует данные. Реальные покупки и продажи не выполняются."
                             else "Сведения о режиме исполнения пока недоступны.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
                 item(key = "system-history") {

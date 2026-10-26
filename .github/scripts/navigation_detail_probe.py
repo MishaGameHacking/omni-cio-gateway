@@ -107,7 +107,7 @@ def wide_rail_frame(tree, scale):
         return None
     bounds = node_bounds(rail)
     targets = []
-    for destination, label in (("home", "Система"), ("actions", "Решения"), ("profile", "Настройки")):
+    for destination, label in (("home", "Главная"), ("actions", "Решения"), ("profile", "Настройки")):
         resource = "rail-destination-" + destination
         target = navigation_target(tree, resource, minimum=minimum, touch=False, label=label,
                                    selected=destination == "profile")
@@ -349,7 +349,7 @@ class _DetailNavigationCase:
                                "The real Assistant composer is absent")
         else:
             label = {"markets": "Ваши инструменты", "notifications": "Настроить события",
-                     "appearance": "Предпросмотр цвета, контраста и движения",
+                     "appearance": "Единый стиль · движение и удобство",
                      "library": "Название, заметка или источник"}[page]
             self.probe.reveal(label, "workspace-content", direction="start", max_swipes=20)
 
@@ -577,7 +577,7 @@ class _DetailNavigationCase:
         self.observed("strategy")
         self.probe.wait_for(lambda: wide_rail_frame(self.owned_frame(), self.scale), "Wide rail did not remain visible")
         self.phase = "wide-dirty-cancel"
-        self.tap("rail-destination-home", selected=False, label="Система")
+        self.tap("rail-destination-home", selected=False, label="Главная")
         cancelled = self.dirty_dialog()
         cancel_capture = self.capture("navigation-wide-dirty-cancel")
         cancel_action = self.dialog_action(cancelled, "Продолжить редактирование")
@@ -587,7 +587,7 @@ class _DetailNavigationCase:
         self.probe.dismiss_keyboard()
         self.probe.wait_for(lambda: wide_rail_frame(self.owned_frame(), self.scale), "Cancellation lost the wide rail")
         self.phase = "wide-dirty-discard"
-        self.tap("rail-destination-home", selected=False, label="Система")
+        self.tap("rail-destination-home", selected=False, label="Главная")
         discarded = self.dirty_dialog()
         discard_capture = self.capture("navigation-wide-dirty-discard")
         discard_action = self.dialog_action(discarded, "Отменить изменения")

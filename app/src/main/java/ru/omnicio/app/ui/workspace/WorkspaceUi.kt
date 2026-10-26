@@ -96,9 +96,9 @@ fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol:
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
-            Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
             onOpenMenu?.let { AnalystMenuButton(it) }
+            Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+            SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
         }
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(start = 56.dp, end = 8.dp),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -18,7 +18,7 @@ class SpectrumForegroundTests(unittest.TestCase):
         self.assertIn('MaterialTheme.colorScheme.background.toArgb()', fixture)
         self.assertIn('probe-foreground:$foreground', fixture)
         driver = (ROOT / '.github/scripts/profile_ui_probe.py').read_text(encoding='utf-8')
-        theme = (ROOT / 'app/src/main/java/ru/omnicio/app/ui/theme/AnalystTheme.kt').read_text(encoding='utf-8')
+        theme = (ROOT / 'app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt').read_text(encoding='utf-8')
         backgrounds = dict(re.findall(r'^(LIGHT|DARK)_BACKGROUND = "([a-f0-9]{8})"$', driver, re.MULTILINE))
         self.assertEqual(set(backgrounds), {'LIGHT', 'DARK'})
         foregrounds = re.search(
@@ -33,8 +33,8 @@ class SpectrumForegroundTests(unittest.TestCase):
             linear = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in rgb]
             return sum(c * w for c, w in zip(linear, (.2126, .7152, .0722)))
 
-        for name in ('Light', 'Dark'):
-            mode = name.upper()
+        for mode in ('LIGHT', 'DARK'):
+            name = 'Dark'
             block = theme.split('private val ' + name + 'Colors = ' + name.lower() + 'ColorScheme(', 1)[1].split('\n)', 1)[0]
             tokens = dict(re.findall(r'\b(background|onBackground)\s*=\s*Color\(0x(FF[0-9A-Fa-f]{6})\)', block))
             with self.subTest(mode=mode):

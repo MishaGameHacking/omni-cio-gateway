@@ -46,11 +46,11 @@ fun RiskScenarioDialog(risks: JSONObject?, onClose: () -> Unit) {
             val candidates = risks?.records("concentrations").orEmpty().filter {
                 it.text("direction") == axis || (axis == "instrument" && it.text("direction") == "position")
             }.distinctBy { it.text("id") }
-            if (candidates.isNotEmpty()) DetailFold("Выбрать из подтверждённых позиций") {
-                candidates.take(40).forEach { candidate -> SpectrumSecondaryButton(candidate.text("label"), { edit("target", candidate.text("id")) }, Modifier.fillMaxWidth(), !action.busy) }
-                if (candidates.size > 40) Text("Показаны первые 40 значений. Точный код можно ввести в поле ниже.")
+            WorkspaceChoicePicker("Объект сценария", current.text("target", ""),
+                candidates.map { WorkspaceSuggestion(it.text("id"), it.text("label")) }, !action.busy) { edit("target", it) }
+            DetailFold("Точный код из источника") {
+                WorkspaceTextInput(current.text("target", ""), { edit("target", it.take(160)) }, "Код из источника или UID инструмента", Modifier.fillMaxWidth(), enabled = !action.busy)
             }
-            WorkspaceTextInput(current.text("target", ""), { edit("target", it.take(160)) }, "Код из источника или UID инструмента", Modifier.fillMaxWidth(), enabled = !action.busy)
         }
         WorkspaceTextInput(current.text("percent", ""), { edit("percent", it.replace(',', '.').replace('−', '-').take(12)) },
             "Предположение, % (от −100 до 1000)", Modifier.fillMaxWidth().testTag("scenario-percent"), enabled = !action.busy, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))

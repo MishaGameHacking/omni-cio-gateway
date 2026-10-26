@@ -36,11 +36,17 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor") +
+        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor", "theme", "theme-lifecycle") +
             businessProbeRoutes.map { "business-$it" } + portfolioProbeRoutes.map { "portfolio-$it" } + automationProbeRoutes.map { "automation-$it" }
         val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in allowedScreens } ?: "profile"
         val scenario = intent.getStringExtra("spectrum_scenario")?.takeIf { it in (if (screen.startsWith("automation-")) automationProbeScenarios else businessProbeScenarios) } ?: "ready"
         val probeRun = intent.getStringExtra("spectrum_probe_run")?.takeIf { it.matches(Regex("[a-f0-9]{32}")) }.orEmpty()
+        val themeRequest = if (screen == "theme") ThemeProbeRequest.parse(
+            intent.getStringExtra("theme_group"), intent.getStringExtra("theme_mode"),
+            intent.getStringExtra("theme_accent"), intent.getStringExtra("theme_motion"), probeRun) else null
+        val lifecycleRequest = if (screen == "theme-lifecycle") ThemeLifecycleRequest.parse(
+            intent.getStringExtra("theme_lifecycle_session"), intent.getStringExtra("theme_lifecycle_phase"), probeRun) else null
+        val lifecycleSession = lifecycleRequest?.let { ThemeLifecycleSession.open(this, it) }
         if (screen == "strategy") getSharedPreferences("strategy_draft_synthetic-ui-test", 0).edit().clear().apply()
         check(runWorkspaceUxChecks() == 24)
         check(runInstrumentLinkRegressions() == 15)
@@ -67,7 +73,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 var appearanceOpen by remember { mutableStateOf(false) }
                 var educationOpen by remember { mutableStateOf(false) }
-                val readinessMarker = "probe-screen:$screen;probe-scenario:$scenario;probe-run:$probeRun;probe-background:$background;probe-foreground:$foreground;probe-primary-foreground:${MaterialTheme.colorScheme.onPrimary.toArgb().toUInt().toString(16)};probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true;${spatialProbeMarker()}"
+                val readinessMarker = "probe-screen:$screen;probe-scenario:$scenario;probe-run:$probeRun;probe-background:$background;probe-foreground:$foreground;probe-primary-foreground:${MaterialTheme.colorScheme.onPrimaryContainer.toArgb().toUInt().toString(16)};probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true;${spatialProbeMarker()}"
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -78,6 +84,8 @@ class ProfileUiProbeActivity : ComponentActivity() {
                     when {
                         appearanceOpen -> AppearanceScreen { appearanceOpen = false }
                         screen == "spatial" -> SpatialRendererProbe()
+                        screen == "theme" -> ThemeStateProbe(requireNotNull(themeRequest))
+                        screen == "theme-lifecycle" -> ThemeLifecycleProbe(requireNotNull(lifecycleSession))
                         screen == "session-context" -> SessionContextProbe()
                         screen == "balance-privacy" -> BalancePrivacyProbe()
                         screen == "goal-editor" -> GoalWorkflowProbe { finish() }

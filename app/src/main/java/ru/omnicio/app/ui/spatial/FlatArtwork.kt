@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -14,20 +15,23 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import ru.omnicio.app.ui.spectrum.SpectrumPalette
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
 /** Original vector artwork. All proportions are logical units, never downloaded images. */
-internal fun DrawScope.drawFlatPrimitive(item: SpatialPrimitive, phase: Float) {
+internal fun DrawScope.drawFlatPrimitive(item: SpatialPrimitive, phase: Float, palette: SpectrumPalette) {
     val rect = item.rect
     val width = size.width * rect.width
     val height = size.height * rect.height
     if (width <= 0f || height <= 0f) return
     val left = size.width * rect.left
     val top = size.height * rect.top
-    val color = if (item.state == SpatialState.Disabled) item.color.copy(alpha = .38f) else item.color
+    val artwork = flatArtworkColors(palette, item.color, item.colorMode, item.state)
+    // Filled controls already carry their resolved state colors; icon support inks are separate.
+    val color = item.color
     when (val asset = item.asset) {
         is SpatialAsset.Wedge -> {
             val side = min(width, height)
@@ -36,12 +40,35 @@ internal fun DrawScope.drawFlatPrimitive(item: SpatialPrimitive, phase: Float) {
             drawArc(color, (asset.start * 360 - 90).toFloat(), (asset.sweep * 360).toFloat(), false,
                 Offset(left + (width - side) / 2 + inset, top + (height - side) / 2 + inset),
                 Size(side - thickness, side - thickness), style = Stroke(thickness))
+            val center = Offset(left + width / 2, top + height / 2)
+            val inner = side * asset.hollow.toFloat() / 2
+            val outer = side / 2
+            if (asset.sweep < 1.0) {
+                for (fraction in listOf(asset.start, asset.start + asset.sweep)) {
+                    val angle = (fraction * 360 - 90) * PI / 180
+                    val direction = Offset(cos(angle).toFloat(), sin(angle).toFloat())
+                    drawLine(palette.semantic.chartSeparator, center + direction * inner,
+                        center + direction * outer, strokeWidth = min(1.dp.toPx(), thickness / 4))
+                }
+            }
+            if (item.state == SpatialState.Selected) {
+                val edge = min(1.5.dp.toPx(), thickness / 4)
+                fun outline(radius: Float, ink: Color) {
+                    drawArc(ink, (asset.start * 360 - 90).toFloat(), (asset.sweep * 360).toFloat(), false,
+                        center - Offset(radius, radius), Size(radius * 2, radius * 2), style = Stroke(edge))
+                }
+                // Every stroke is inside the original annulus and exact angular interval.
+                outline(outer - edge / 2, palette.semantic.chartSelectedOuter)
+                outline(outer - edge * 1.5f, palette.semantic.chartSelectedInner)
+                outline(inner + edge / 2, palette.semantic.chartSelectedOuter)
+                outline(inner + edge * 1.5f, palette.semantic.chartSelectedInner)
+            }
         }
         is SpatialAsset.Glyph -> {
             val side = min(width, height)
-            drawCircle(color.copy(alpha = .15f), side / 2, Offset(left + width / 2, top + height / 2))
+            drawCircle(artwork.ink.copy(alpha = .15f), side / 2, Offset(left + width / 2, top + height / 2))
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                this.color = color.toArgb(); textSize = side * .52f
+                this.color = artwork.ink.toArgb(); textSize = side * .52f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 textAlign = Paint.Align.CENTER
             }
@@ -52,14 +79,22 @@ internal fun DrawScope.drawFlatPrimitive(item: SpatialPrimitive, phase: Float) {
             if (asset.name in setOf("bar", "surface", "button", "chip", "input", "dock", "heading")) {
                 val radius = if (asset.name == "bar") 0f else min(width, height) * .28f
                 drawRoundRect(color, Offset(left, top), Size(width, height), CornerRadius(radius))
+                if (item.outlineColor != Color.Unspecified) {
+                    val edge = min(1.dp.toPx(), min(width, height) / 4)
+                    drawRoundRect(item.outlineColor, Offset(left + edge / 2, top + edge / 2),
+                        Size(width - edge, height - edge), CornerRadius((radius - edge / 2).coerceAtLeast(0f)),
+                        style = Stroke(edge))
+                }
                 if (asset.name == "bar" && item.state == SpatialState.Selected) {
-                    val edge = min(2.dp.toPx(), min(width, height) / 3f)
-                    drawRect(Color.White.copy(alpha = .85f), Offset(left + edge / 2, top + edge / 2),
+                    val edge = min(1.5.dp.toPx(), min(width, height) / 5f)
+                    drawRect(palette.semantic.chartSelectedOuter, Offset(left + edge / 2, top + edge / 2),
                         Size(width - edge, height - edge), style = Stroke(edge))
+                    drawRect(palette.semantic.chartSelectedInner, Offset(left + edge * 1.5f, top + edge * 1.5f),
+                        Size(width - edge * 3, height - edge * 3), style = Stroke(edge))
                 }
             } else {
                 val side = min(width, height)
-                val pulse = sin(phase * PI).toFloat()
+                val pulse = ((1.0 - cos(phase * PI * 2.0)) / 2.0).toFloat()
                 val decorative = asset.name in setOf("orbit", "brand", "avatar")
                 withTransform({
                     translate(left + (width - side) / 2, top + (height - side) / 2)
@@ -68,18 +103,28 @@ internal fun DrawScope.drawFlatPrimitive(item: SpatialPrimitive, phase: Float) {
                         translate(0f, if (decorative) -2f * pulse else 0f)
                         scale(1f + .035f * pulse, 1f + .035f * pulse, Offset(50f, 50f))
                     }
-                }) { flatIcon(asset.name, color, phase, item.state) }
+                }) {
+                    if (item.colorMode == SpatialColorMode.Decorative && item.state != SpatialState.Disabled) {
+                        drawCircle(Brush.radialGradient(listOf(artwork.teal.copy(alpha = .14f + .05f * pulse),
+                            artwork.violet.copy(alpha = .07f), Color.Transparent), Offset(50f, 50f), 50f),
+                            radius = 50f, center = Offset(50f, 50f))
+                        drawArc(artwork.teal.copy(alpha = .25f), 205f, 90f, false,
+                            Offset(5f, 5f), Size(90f, 90f), style = Stroke(1.2f))
+                    }
+                    flatIcon(asset.name, artwork, phase, item.state, item.outlineColor)
+                }
             }
         }
     }
 }
 
-private fun DrawScope.flatIcon(name: String, ink: Color, phase: Float, state: SpatialState) {
-    val white = ink == Color.White
-    val teal = if (white) ink else Color(0xFF16A99B)
-    val violet = if (white) ink else Color(0xFF8065E8)
-    val amber = if (white) ink else Color(0xFFEFAF43)
-    val rose = if (white) ink else Color(0xFFE76E8E)
+private fun DrawScope.flatIcon(name: String, colors: FlatArtworkColors, phase: Float,
+    state: SpatialState, outline: Color) {
+    val ink = colors.ink
+    val teal = colors.teal
+    val violet = colors.violet
+    val amber = colors.amber
+    val rose = colors.rose
     val stroke = Stroke(6f, cap = StrokeCap.Round)
     fun line(a: Float, b: Float, c: Float, d: Float, color: Color = ink, width: Float = 6f) =
         drawLine(color, Offset(a, b), Offset(c, d), width, StrokeCap.Round)
@@ -98,8 +143,78 @@ private fun DrawScope.flatIcon(name: String, ink: Color, phase: Float, state: Sp
     fun circle(x: Float, y: Float, radius: Float, color: Color = ink, fill: Boolean = false) {
         if (fill) drawCircle(color, radius, Offset(x,y)) else drawCircle(color, radius, Offset(x,y), style = stroke)
     }
-    fun check() = path(listOf(25f to 51f, 43f to 69f, 76f to 33f), teal)
+    fun check() = path(listOf(25f to 51f, 43f to 69f, 76f to 33f), ink)
     when (name) {
+        "brain" -> {
+            val left = Path().apply {
+                moveTo(46f, 18f); cubicTo(31f, 9f, 20f, 20f, 23f, 31f)
+                cubicTo(8f, 33f, 8f, 50f, 18f, 57f)
+                cubicTo(11f, 71f, 27f, 85f, 39f, 78f)
+                cubicTo(43f, 87f, 49f, 83f, 49f, 73f); lineTo(49f, 27f)
+                cubicTo(49f, 22f, 49f, 19f, 46f, 18f); close()
+            }
+            drawPath(left, teal.copy(alpha=.18f)); drawPath(left, teal, style=Stroke(5f,cap=StrokeCap.Round))
+            withTransform({ translate(100f,0f); scale(-1f,1f,Offset.Zero) }) {
+                drawPath(left, violet.copy(alpha=.18f)); drawPath(left, violet, style=Stroke(5f,cap=StrokeCap.Round))
+            }
+            path(listOf(23f to 31f,35f to 37f,35f to 47f),teal)
+            path(listOf(18f to 57f,29f to 54f,37f to 62f),teal)
+            path(listOf(77f to 31f,65f to 37f,65f to 47f),violet)
+            path(listOf(82f to 57f,71f to 54f,63f to 62f),violet)
+            circle(50f,49f,5f,amber,true)
+        }
+        "decisions" -> {
+            box(24f,17f,53f,67f,ink.copy(alpha=.12f),true);box(24f,17f,53f,67f,violet)
+            box(38f,11f,25f,13f,teal,true,4f)
+            path(listOf(34f to 50f,45f to 61f,68f to 37f),teal)
+            line(37f,73f,62f,73f,ink,4f)
+        }
+        "strategy" -> {
+            line(50f,78f,50f,49f,teal);line(50f,49f,25f,30f,violet);line(50f,49f,76f,29f,amber)
+            circle(50f,79f,9f,teal,true);box(15f,13f,21f,21f,violet,false,5f)
+            path(listOf(66f to 16f,83f to 16f,83f to 33f),amber)
+        }
+        "reports" -> {
+            path(listOf(23f to 13f,60f to 13f,78f to 31f,78f to 85f,23f to 85f),ink,false,true)
+            path(listOf(60f to 14f,60f to 32f,77f to 32f),violet)
+            line(34f,70f,34f,57f,teal,7f);line(49f,70f,49f,45f,violet,7f);line(64f,70f,64f,53f,amber,7f)
+        }
+        "timeline" -> {
+            line(24f,20f,24f,82f,violet,4f)
+            for (y in listOf(24f,50f,77f)) { circle(24f,y,6f,teal,true);line(39f,y,76f,y,ink,5f) }
+            line(39f,34f,59f,34f,violet,3f);line(39f,60f,68f,60f,violet,3f)
+        }
+        "events" -> {
+            box(17f,23f,66f,59f,ink.copy(alpha=.12f),true);box(17f,23f,66f,59f,violet)
+            line(32f,15f,32f,31f,teal);line(68f,15f,68f,31f,teal);line(19f,39f,81f,39f,violet,4f)
+            path(listOf(52f to 45f,40f to 62f,53f to 62f,45f to 76f,67f to 56f,54f to 56f),amber,true,true)
+        }
+        "rules" -> {
+            line(23f,15f,23f,84f,violet,4f);line(50f,15f,50f,84f,teal,4f);line(77f,15f,77f,84f,violet,4f)
+            box(15f,30f,16f,14f,teal,true,5f);box(42f,57f,16f,14f,amber,true,5f);box(69f,23f,16f,14f,ink,true,5f)
+        }
+        "appearance" -> {
+            val palette = Path().apply { moveTo(51f,14f);cubicTo(7f,11f,5f,74f,40f,84f)
+                cubicTo(64f,91f,48f,66f,64f,62f);cubicTo(93f,68f,92f,17f,51f,14f);close() }
+            drawPath(palette, violet.copy(alpha=.18f));drawPath(palette,ink,style=stroke)
+            circle(31f,34f,6f,teal,true);circle(51f,27f,6f,violet,true)
+            circle(71f,36f,6f,amber,true);circle(26f,56f,6f,rose,true)
+        }
+        "devices" -> {
+            box(13f,21f,54f,40f,violet,false,5f);line(39f,61f,39f,75f,violet);line(25f,77f,51f,77f,violet)
+            box(59f,36f,26f,49f,teal,true,5f);box(63f,41f,18f,32f,ink.copy(alpha=.25f),true,2f)
+            circle(72f,79f,2f,ink,true)
+        }
+        "recent" -> {
+            drawArc(violet,215f,295f,false,Offset(18f,18f),Size(65f,65f),style=stroke)
+            path(listOf(14f to 22f,15f to 43f,35f to 40f),teal)
+            path(listOf(51f to 31f,51f to 52f,66f to 61f),teal)
+        }
+        "new_features" -> {
+            path(listOf(50f to 12f,60f to 38f,87f to 49f,60f to 59f,50f to 86f,40f to 59f,13f to 49f,40f to 38f),violet,true,true)
+            path(listOf(79f to 12f,82f to 20f,91f to 23f,82f to 26f,79f to 34f,76f to 26f,68f to 23f,76f to 20f),teal,true,true)
+            circle(21f,78f,5f,amber,true)
+        }
         "home" -> {
             path(listOf(15f to 45f,50f to 16f,85f to 45f), violet)
             box(25f,43f,50f,39f,ink.copy(alpha=.13f),true)
@@ -146,8 +261,9 @@ private fun DrawScope.flatIcon(name: String, ink: Color, phase: Float, state: Sp
                 path(listOf(50f to 12f,80f to 24f,77f to 57f,66f to 74f,50f to 86f,34f to 74f,23f to 57f,20f to 24f),amber.copy(alpha=.18f),true,true)
                 path(listOf(50f to 12f,80f to 24f,77f to 57f,66f to 74f,50f to 86f,34f to 74f,23f to 57f,20f to 24f),amber,false,true)
             } else {
-                path(listOf(50f to 14f,88f to 80f,12f to 80f),rose.copy(alpha=.15f),true,true)
-                path(listOf(50f to 14f,88f to 80f,12f to 80f),rose,false,true)
+                val warning = if (name == "error") rose else amber
+                path(listOf(50f to 14f,88f to 80f,12f to 80f),warning.copy(alpha=.15f),true,true)
+                path(listOf(50f to 14f,88f to 80f,12f to 80f),warning,false,true)
             }
             line(50f,35f,50f,55f);circle(50f,68f,3.5f,ink,true)
         }
@@ -168,7 +284,7 @@ private fun DrawScope.flatIcon(name: String, ink: Color, phase: Float, state: Sp
             val blink = if(phase > .48f && phase < .56f) 1.5f else 4f
             drawOval(ink,Offset(31f,43f),Size(8f,blink*2))
             drawOval(ink,Offset(61f,43f),Size(8f,blink*2))
-            if(state==SpatialState.Attention)line(41f,66f,59f,66f,rose)
+            if(state==SpatialState.Attention)line(41f,66f,59f,66f,amber)
             else drawArc(teal,20f,140f,false,Offset(38f,52f),Size(24f,16f),style=Stroke(4f,cap=StrokeCap.Round))
         }
         "brand", "orbit" -> {
@@ -220,7 +336,10 @@ private fun DrawScope.flatIcon(name: String, ink: Color, phase: Float, state: Sp
         "close" -> {line(28f,28f,72f,72f);line(72f,28f,28f,72f)}
         "plus" -> {line(24f,50f,76f,50f);line(50f,24f,50f,76f)}
         "minus" -> line(24f,50f,76f,50f)
-        "monogram" -> circle(50f,50f,32f,ink,true)
+        "monogram" -> {
+            circle(50f,50f,32f,ink,true)
+            if (outline != Color.Unspecified) drawCircle(outline, 30f, Offset(50f,50f), style = Stroke(4f))
+        }
         else -> {circle(50f,50f,30f,ink);circle(50f,50f,10f,teal,true)}
     }
 }

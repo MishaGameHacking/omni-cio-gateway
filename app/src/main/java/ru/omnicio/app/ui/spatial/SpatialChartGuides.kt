@@ -23,8 +23,10 @@ fun SpatialChartGuides(
     missingIndices: Set<Int>,
     selectedIndex: Int? = null,
     modifier: Modifier = Modifier,
-    gridColor: Color = LocalSpectrumPalette.current.blue.copy(alpha = .18f),
+    gridColor: Color = LocalSpectrumPalette.current.semantic.chartGrid,
     selectedColor: Color = LocalSpectrumPalette.current.cyan,
+    baselineColor: Color = LocalSpectrumPalette.current.semantic.chartAxis,
+    missingColor: Color = LocalSpectrumPalette.current.semantic.chartAxis,
 ) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current.density
@@ -34,8 +36,9 @@ fun SpatialChartGuides(
         size.width, size.height, density).map { guide ->
         val accent = when (guide.kind) {
             SpatialGuideGeometry.Kind.Grid -> gridColor
-            SpatialGuideGeometry.Kind.Baseline -> gridColor.copy(alpha = (gridColor.alpha * 2f).coerceAtMost(1f))
-            SpatialGuideGeometry.Kind.Selection, SpatialGuideGeometry.Kind.Missing -> selectedColor
+            SpatialGuideGeometry.Kind.Baseline -> baselineColor
+            SpatialGuideGeometry.Kind.Selection -> selectedColor
+            SpatialGuideGeometry.Kind.Missing -> missingColor
         }.compositeOver(palette.card)
         val depth = when (guide.kind) {
             SpatialGuideGeometry.Kind.Grid -> base - 2f

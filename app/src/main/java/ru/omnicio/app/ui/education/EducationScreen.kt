@@ -235,7 +235,7 @@ private fun LessonCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 SpectrumBadge(
                     lesson.category.title,
-                    accent = if (lesson.category == EducationCategory.NEWS) palette.rose else palette.blue,
+                    accent = if (lesson.category == EducationCategory.NEWS) palette.violet else palette.blue,
                 )
                 Text(
                     "${lesson.minutes} мин",

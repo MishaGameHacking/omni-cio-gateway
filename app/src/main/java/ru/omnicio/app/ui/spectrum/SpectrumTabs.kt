@@ -86,9 +86,10 @@ fun SpectrumTabs(
                             .semantics { testTagsAsResourceId = true }.testTag("$scrollTag-item-$index") }
                         .selectable(chosen, interactionSource = interaction, indication = null, role = Role.Tab, onClick = click),
                     kind = SpatialSurfaceKind.Chip,
-                    color = if (chosen) palette.cardStrong else palette.card,
+                    color = if (chosen) palette.colors.primaryContainer else palette.card,
                     state = when { pressed -> SpatialState.Pressed; chosen || focused -> SpatialState.Selected; else -> SpatialState.Idle },
                     emphasized = chosen,
+                    interactive = true,
                 ) {
                     Box(Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                     Text(
@@ -96,7 +97,7 @@ fun SpectrumTabs(
                         style = style,
                         maxLines = 1,
                         softWrap = false,
-                        color = if (chosen) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (chosen) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     }
                 }

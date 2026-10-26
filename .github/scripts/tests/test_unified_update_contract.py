@@ -50,21 +50,16 @@ class UnifiedUpdateContractTests(unittest.TestCase):
     def test_spectrum_primary_navigation_and_internal_destinations(self):
         main = self.source('MainActivity.kt')
         bar = self.source('ui/AnalystBottomBar.kt')
-        primary = re.search(r'private val primaryTabs = listOf\(([^)]*)\)', bar)
-        self.assertIsNotNone(primary)
-        self.assertEqual(re.findall(r'AnalystTab\.(\w+)', primary.group(1)),
-                         ['Home', 'Actions', 'Profile'])
-        self.assertEqual(bar.count('primaryTabs.forEach { tab ->'), 2)
-        for tab, label, screen in (
-                ('Home', 'Система', 'Home'),
-                ('Actions', 'Решения', 'Recommendations'),
-                ('Profile', 'Настройки', 'Profile')):
-            with self.subTest(tab=tab):
-                self.assertIn('AnalystTab.' + tab + ' -> "' + label + '"', bar)
-                self.assertIn('AnalystTab.' + tab + ' -> AppScreen.' + screen, main)
-        # Existing secondary destinations remain reachable without extra primary tabs.
-        for tab in ('Portfolio', 'Risk', 'Education'):
-            self.assertIn('AnalystTab.' + tab + ' -> AppScreen.' + tab, main)
+        catalogue = self.source('ui/NavigationCatalogue.kt')
+        self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
+        self.assertIn('SpectrumGlyphButton',bar)
+        self.assertNotIn('AnalystMenuButton(openMenu)',bar)
+        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Портфель','Portfolio'),
+                                 ('Actions','Решения','Recommendations'),('Profile','Настройки','Profile')):
+            self.assertIn('AnalystDestination("'+screen+'", "'+label+'"',catalogue)
+            self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+screen,main)
+        for tab in ('Risk','Education'):
+            self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+tab,main)
         for screen in ('Recommendations', 'Messages'):
             self.assertIn('AppScreen.' + screen, main)
         self.assertIn('AutonomousDecisionsScreen(goBack)', main)

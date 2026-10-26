@@ -25,8 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -86,7 +84,7 @@ internal fun SignedAmount(amount: MoneyAmount?, percent: ApiDecimal? = null) {
     val sign = amount?.value?.toBigDecimal()?.signum() ?: percent?.toBigDecimal()?.signum() ?: 0
     val colors = MaterialTheme.colorScheme
     val tint = when {
-        sign > 0 -> if (colors.background.luminance() < 0.5f) Color(0xFF42CE76) else Color(0xFF137D3B)
+        sign > 0 -> LocalSpectrumPalette.current.emerald
         sign < 0 -> colors.error
         else -> colors.onSurfaceVariant
     }
@@ -212,7 +210,7 @@ internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: S
         return
     }
     val spectrum = LocalSpectrumPalette.current
-    val palette = listOf(spectrum.blue, spectrum.emerald, spectrum.violet, spectrum.amber, spectrum.rose, spectrum.cyan)
+    val palette = spectrum.chartSeries
     var selectedTitle by remember(caption) { mutableStateOf<String?>(null) }
     val selected = fractions.indexOfFirst { it.id == selectedTitle }
     val choose: (Int) -> Unit = { index -> fractions.getOrNull(index)?.let { selectedTitle = it.id; onSelect(it.id) } }

@@ -12,7 +12,7 @@ internal object WorkspaceEndpointPolicy {
 
     fun permits(path: String): Boolean {
         val allowed = path == "/workspace" || path.startsWith("/workspace/") ||
-            path.startsWith("/workspace?") || path in automationPaths
+            path.startsWith("/workspace?") || path == "/analysis/profile" || path in automationPaths
         if (!allowed || '#' in path) return false
         return try {
             val uri = URI(path)

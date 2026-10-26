@@ -34,59 +34,84 @@ def contrast(first, second):
 
 class SpectrumProductionTokens(unittest.TestCase):
 
-    def test_actual_theme_accents_and_component_text_have_readable_contrast(self):
+    def test_actual_single_style_and_gradient_surfaces_have_readable_contrast(self):
         source = (UI / 'spectrum/SpectrumDesignSystem.kt').read_text(encoding='utf-8')
         theme = (UI / 'theme/AnalystTheme.kt').read_text(encoding='utf-8')
-        schemes = {
-            'light': colors(theme, 'private val LightColors = lightColorScheme('),
-            'dark': colors(theme, 'private val DarkColors = darkColorScheme('),
-        }
-        palettes = {
-            'light': colors(source, 'val LightSpectrumPalette = SpectrumPalette('),
-            'dark': colors(source, 'val DarkSpectrumPalette = SpectrumPalette('),
-        }
-        self.assertIn('primary = palette.cyan', theme)
+        tokens = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
+        c = colors(tokens, 'private val DarkColors = darkColorScheme(')
+        s = colors(tokens, 'private val DarkSemantic = AnalystSemanticColors(')
+        self.assertEqual(len(c), 48)
+        self.assertEqual(len(s), 19)
+        self.assertNotIn('lightColorScheme(', tokens)
+        self.assertNotIn('when (accent)', tokens)
+        self.assertNotIn('isSystemInDarkTheme()', theme)
+        self.assertIn('spectrumPalette(dark = true)', theme)
+        self.assertIn('val colors = palette.colors', theme)
         self.assertIn('colorScheme = colors', theme)
-        on_primary = re.search(
-            r'onPrimary\s*=\s*if \(dark\) (Color\(0xFF[0-9A-Fa-f]{6}\)) else (Color\.White)', theme)
-        self.assertIsNotNone(on_primary)
-        actual_ink = {'dark': rgb(on_primary.group(1)), 'light': rgb(on_primary.group(2))}
-        accent_block = theme.split('private fun workspacePalette(', 1)[1]
-        self.assertCountEqual(re.findall(r'AccentStyle\.(\w+)\s*->', accent_block),
-                              ['AURORA', 'OCEAN', 'IRIS'])
-        self.assertIn('AccentStyle.AURORA -> base.cyan', accent_block)
-        accents = {mode: {'AURORA': palette['cyan']} for mode, palette in palettes.items()}
-        for accent in ('OCEAN', 'IRIS'):
-            match = re.search(
-                r'AccentStyle\.' + accent + r'\s*-> if \(dark\) '
-                r'(Color\(0xFF[0-9A-Fa-f]{6}\)) else (Color\(0xFF[0-9A-Fa-f]{6}\))',
-                accent_block)
-            self.assertIsNotNone(match, accent)
-            accents['dark'][accent], accents['light'][accent] = rgb(match.group(1)), rgb(match.group(2))
-        for mode in ('light', 'dark'):
-            with self.subTest(mode=mode):
-                self.assertEqual(actual_ink[mode], schemes[mode]['onPrimary'])
-                for accent, fill in accents[mode].items():
-                    with self.subTest(accent=accent):
-                        self.assertGreaterEqual(contrast(fill, actual_ink[mode]), 4.5)
-                for background in ('backgroundTop', 'backgroundBottom'):
-                    self.assertGreaterEqual(contrast(palettes[mode][background], schemes[mode]['onBackground']), 4.5)
-                for card in ('card', 'cardStrong'):
+        self.assertIn('val resolved = analystColors(dark, accent)', source)
+        self.assertIn('SpectrumPalette(resolved.material, resolved.semantic, resolved.chartSeries)', source)
+        for family in ('Primary', 'Secondary', 'Tertiary', 'Error'):
+            role = family[0].lower() + family[1:]
+            self.assertGreaterEqual(contrast(c['on' + family], c[role]), 4.5)
+            self.assertGreaterEqual(contrast(c['on' + family + 'Container'], c[role + 'Container']), 4.5)
+        for family in ('Primary', 'Secondary', 'Tertiary'):
+            role = family[0].lower() + family[1:]
+            for ink in ('on' + family + 'Fixed', 'on' + family + 'FixedVariant'):
+                for fill in (role + 'Fixed', role + 'FixedDim'):
+                    self.assertGreaterEqual(contrast(c[ink], c[fill]), 4.5)
+        for family in ('Success', 'Warning', 'Info'):
+            role = family[0].lower() + family[1:]
+            self.assertGreaterEqual(contrast(s['on' + family], s[role]), 4.5)
+            self.assertGreaterEqual(contrast(s['on' + family + 'Container'], s[role + 'Container']), 4.5)
+        # Check every rendered surface gradient stop/interpolation against both text roles.
+        for surface in ('background', 'surface', 'surfaceContainerLowest', 'surfaceContainerLow',
+                        'surfaceContainer', 'surfaceContainerHigh', 'surfaceContainerHighest', 'surfaceBright'):
+            for tint in ('secondaryContainer', 'surfaceContainerLow'):
+                for step in range(8):
+                    fraction = step * .05
+                    fill = tuple(a * (1 - fraction) + b * fraction for a,b in zip(c[surface],c[tint]))
                     for ink in ('onSurface', 'onSurfaceVariant'):
-                        self.assertGreaterEqual(contrast(palettes[mode][card], schemes[mode][ink]), 4.5)
-
-        button = source.split('fun SpectrumPrimaryButton(', 1)[1].split(
-            '\n@Composable\nfun SpectrumSecondaryButton', 1)[0]
-        self.assertIn('color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant', button)
-        self.assertIn('Text(text, color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant', button)
-        self.assertIn('tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant', button)
+                        with self.subTest(surface=surface,tint=tint,step=step,ink=ink):
+                            self.assertGreaterEqual(contrast(c[ink],fill),4.5)
+        button = source.split('fun SpectrumPrimaryButton(', 1)[1].split('fun SpectrumSecondaryButton', 1)[0]
+        self.assertIn('MaterialTheme.colorScheme.primaryContainer else', button)
+        self.assertIn('MaterialTheme.colorScheme.onPrimaryContainer else', button)
+        self.assertIn('semantic.disabledInk', button)
         self.assertIn('role = Role.Button', button)
         self.assertIn('heightIn(min = 54.dp)', button)
-        self.assertNotIn('Color.White', button)
         surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
-        self.assertIn('.clip(shape).background(fill).border(1.dp, border, shape)', surface)
-        self.assertNotIn('drawnModels', surface)
-        # Token/input contrast does not replace actual light/dark runtime captures.
+        self.assertIn('spatialSurfaceColors(palette, color, state', surface)
+        self.assertIn('LocalContentColor provides resolved.foreground', surface)
+        self.assertIn('.clip(shape).background(gradient).border(borderWidth, border, shape)', surface)
+
+    def test_real_date_picker_uses_explicit_readable_calendar_state_roles(self):
+        caller = (UI / 'portfolio/AccountDataState.kt').read_text(encoding='utf-8')
+        factory = (UI / 'spectrum/SpectrumCalendarColors.kt').read_text(encoding='utf-8')
+        tokens = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
+        self.assertIn('colors = ru.omnicio.app.ui.spectrum.spectrumDatePickerColors()', caller)
+        self.assertIn('utcTimeMillis <= todayMillis', caller)
+        self.assertIn('year <= today.year', caller)
+        self.assertIn('val c = MaterialTheme.colorScheme', factory)
+        self.assertIn('val s = LocalSpectrumPalette.current.semantic', factory)
+        block = factory.split('return DatePickerDefaults.colors(', 1)[1].split('dateTextFieldColors =', 1)[0]
+        bindings = {name: (kind, role) for name, kind, role in re.findall(r'(\w+)\s*=\s*(c|s)\.(\w+)', block)}
+        self.assertEqual(len(bindings), 24)
+        for state in ('Day', 'Year'):
+            self.assertEqual(bindings['disabled' + state + 'ContentColor'], ('s', 'disabledInk'))
+            self.assertEqual(bindings['disabledSelected' + state + 'ContentColor'], ('s', 'disabledInk'))
+            self.assertEqual(bindings['disabledSelected' + state + 'ContainerColor'], ('s', 'disabledContainer'))
+        for mode in ('Dark',):
+            source = {'c': colors(tokens, 'private val ' + mode + 'Colors = ' + mode.lower() + 'ColorScheme('),
+                      's': colors(tokens, 'private val ' + mode + 'Semantic = AnalystSemanticColors(')}
+            actual = {name: source[kind][role] for name, (kind, role) in bindings.items()}
+            for state in ('Day', 'Year'):
+                self.assertGreaterEqual(contrast(actual['selected' + state + 'ContentColor'],
+                                                 actual['selected' + state + 'ContainerColor']), 4.5)
+                self.assertGreaterEqual(contrast(actual['disabledSelected' + state + 'ContentColor'],
+                                                 actual['disabledSelected' + state + 'ContainerColor']), 3)
+                self.assertGreaterEqual(contrast(actual['disabled' + state + 'ContentColor'], actual['containerColor']), 3)
+            self.assertGreaterEqual(contrast(actual['dayInSelectionRangeContentColor'],
+                                             actual['dayInSelectionRangeContainerColor']), 4.5)
 
     def test_portfolio_uses_new_presenter_and_live_position_resolution(self):
         screen = (UI / 'portfolio/PortfolioScreen.kt').read_text(encoding='utf-8')

@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -34,107 +35,66 @@ private val limitTitles = linkedMapOf("position_percent" to "Одна позиц
 fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/strategy")
     val active = resource.data?.optJSONObject("active")
+    val auto = LocalWorkspaceAutoSave.current
+    val record = auto?.get(AutoSaveKind.Strategy)
     val context = LocalContext.current
     val storage = remember(context) { EncryptedWorkspaceStore(context) }
     var configText by rememberSaveable(userId) { mutableStateOf(defaultStrategy().toString()) }
-    var baseline by rememberSaveable(userId) { mutableStateOf(configText) }
     var hasEditorState by rememberSaveable(userId) { mutableStateOf(false) }
     var loaded by remember(userId) { mutableStateOf(false) }
     var tab by rememberSaveable(userId) { mutableIntStateOf(0) }
-    var preview by remember { mutableStateOf<JSONObject?>(null) }
-    var pendingExit by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var savedMessage by remember { mutableStateOf<String?>(null) }
-    var draftSaved by remember(userId) { mutableStateOf(false) }
-    var draftRevision by remember(userId) { mutableIntStateOf(0) }
-    val config = remember(configText) { JSONObject(configText) }
-    val dirty = configText != baseline
     val version = active?.optInt("version") ?: 0
-    val previewAction = rememberWorkspaceAction { result ->
-        result.optJSONObject("config")?.let { configText = it.toString() }
-        preview = result
-    }
-    val confirmAction = rememberWorkspaceAction { result ->
-        result.optJSONObject("active")?.optJSONObject("config")?.let { configText = it.toString(); baseline = configText }
-        preview = null; resource.refresh()
-        savedMessage = "Сервер подтвердил новую версию правил."
-    }
-    LaunchedEffect(resource.data) {
-        if (resource.data != null && !loaded) {
+    val config = remember(configText) { JSONObject(configText) }
+    LaunchedEffect(resource.data, auto?.ready) {
+        if (resource.data != null && auto?.ready == true && !loaded) {
             if (!hasEditorState) {
                 val restored = withContext(Dispatchers.IO) { storage.readJson(userId, "strategy_editor")?.optJSONObject("config") }
-                configText = (restored ?: active?.optJSONObject("config") ?: defaultStrategy()).toString()
-                baseline = active?.optJSONObject("config")?.toString() ?: defaultStrategy().toString()
+                configText = record?.draft ?: (restored ?: active?.optJSONObject("config") ?: defaultStrategy()).toString()
                 hasEditorState = true
             }
             loaded = true
         }
     }
-    LaunchedEffect(userId, configText, loaded, draftRevision) {
-        if (loaded) draftSaved = withContext(Dispatchers.IO) { storage.saveJson(userId, "strategy_editor", JSONObject().put("config", JSONObject(configText))) }
+    LaunchedEffect(record?.revision, record?.draft, record?.phase) {
+        if (record != null) {
+            configText = record.draft
+            if (record.phase == AutoSavePhase.Saved) resource.refresh()
+        }
     }
-    val editor = StrategyEditorAvailability(hasEditorState, previewAction.busy || confirmAction.busy)
+    val editor = StrategyEditorAvailability(hasEditorState, auto?.ready != true)
     val edit: (JSONObject) -> Unit = { next ->
-        StrategyEditorAvailability(hasEditorState, previewAction.busy || confirmAction.busy).editIfAllowed {
-            draftSaved = false; configText = next.toString(); preview = null; savedMessage = null
+        if (editor.canEdit) {
+            configText = next.toString()
+            auto?.edit(AutoSaveKind.Strategy, active?.optJSONObject("config") ?: defaultStrategy(), next,
+                version, validStrategy(next))
         }
     }
-    val requestExit: (() -> Unit) -> Unit = { proceed ->
-        if (dirty) {
-            if (pendingExit == null) pendingExit = proceed
-        } else proceed()
-    }
-    val leave: () -> Unit = { requestExit(onBack) }
-    val finishExit: (Boolean) -> Unit = { discard ->
-        pendingExit?.let { proceed ->
-            pendingExit = null
-            if (discard) configText = baseline
-            proceed()
-        }
-    }
+    val restoreVersion = rememberWorkspaceAction { result -> result.optJSONObject("config")?.let(edit) }
+    val requestExit: (() -> Unit) -> Unit = { proceed -> proceed() }
     RegisterPanelExit(WorkspaceRoute.Strategies, requestExit)
-    SpatialBackHandler(onBack = leave)
-    WorkspaceDetailPage("Моя стратегия", "Версии правил и влияние на текущий портфель", leave, SpectrumSymbol.Goal,
+    SpatialBackHandler(onBack = onBack)
+    WorkspaceDetailPage("Моя стратегия", "Правила сохраняются после проверки сервером", onBack, SpectrumSymbol.Strategy,
         adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            // A compact viewport must retain section navigation after the IME closes.
             if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Цель", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                item { WorkspaceRequestState(resource) }
-                item {
-                    StrategyEditorStatus(hasEditorState, active, dirty, draftSaved, loaded, savedMessage) { draftRevision++ }
-                }
+                item { WorkspaceRequestState(resource); AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) } }
                 when (tab) {
                     0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
                     1 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
                     2 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
                     else -> resource.data?.records("history").orEmpty().forEach { old -> item {
-                        StrategyHistoryCard(old, active, loaded, editor, version, previewAction)
+                        StrategyHistoryCard(old, active, loaded, editor, version, restoreVersion)
                     } }
                 }
                 item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
-                preview?.let { result -> item { StrategyPreview(result, !confirmAction.busy && !previewAction.busy) {
-                    confirmAction.perform("/workspace/strategy/confirm", JSONObject().put("preview_id", result.text("preview_id"))
-                        .put("expected_version", result.optInt("expected_version")).put("request_id", UUID.randomUUID().toString()))
-                } } }
-                item {
-                    WorkspaceActionState(previewAction); WorkspaceActionState(confirmAction)
-                    SpectrumPrimaryButton("Рассчитать влияние", {
-                        previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version).put("config", config))
-                    }, Modifier.fillMaxWidth(), loaded && !previewAction.busy && !confirmAction.busy && validStrategy(config), SpectrumSymbol.Risk)
-                }
+                item { WorkspaceActionState(restoreVersion) }
                 if (!validStrategy(config)) item { Text("Проверьте горизонт, сумму резерва и лимиты больше 0 и до 100%.", color = MaterialTheme.colorScheme.error) }
             }
         }
-    }
-    if (pendingExit != null) WorkspaceDialog("Изменения стратегии", { pendingExit = null }) {
-        Text(if (draftSaved) "Черновик сохранён на этом устройстве. Действующие правила изменятся только после подтверждения сервера."
-            else "Сохранение черновика не подтверждено. При выходе изменения могут потеряться; действующие правила не изменятся.")
-        SpectrumPrimaryButton("Продолжить редактирование", { pendingExit = null }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton(if (draftSaved) "Вернуться позже" else "Уйти без сохранённого черновика", { finishExit(false) }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton("Отменить изменения", { finishExit(true) }, Modifier.fillMaxWidth())
     }
 }
 
@@ -178,6 +138,9 @@ private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSON
             },
             "Горизонт, месяцев", Modifier.fillMaxWidth().testTag("strategy-horizon"), enabled = enabled,
             keyboard = KeyboardOptions(keyboardType = KeyboardType.Number))
+        WorkspaceSuggestionRow("", listOf(12, 36, 60, 120).map { WorkspaceSuggestion(it.toString(), "$it мес.") }, enabled) { months ->
+            edit(JSONObject(config.toString()).put("horizon_months", months.toInt()))
+        }
         Text("Выбор цели не добавляет ожидаемую прибыль к капиталу. Доступность инструмента проверяется у брокера.")
     }
 }
@@ -203,6 +166,11 @@ private fun StrategyLimitEditor(title: String, key: String, config: JSONObject, 
         WorkspaceTextInput(limits.text(key, "100"), { raw ->
             edit(JSONObject(config.toString()).put("limits", JSONObject(limits.toString()).put(key, raw.replace(',', '.').take(8))))
         }, title + ", %", Modifier.fillMaxWidth(), enabled = enabled, keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        val percent = limits.text(key, "").toFloatOrNull()?.takeIf { it.isFinite() && it in 0f..100f }
+        if (percent != null) SpectrumSlider(percent, { next ->
+            edit(JSONObject(config.toString()).put("limits", JSONObject(limits.toString()).put(key, next.toInt().toString())))
+        }, Modifier.fillMaxWidth().semantics { contentDescription = title + ", %" }, enabled = enabled,
+            valueRange = 0f..100f, steps = 99)
         Text("Ограничение применяется к подтверждённой доле. 100% не ограничивает эту долю; неизвестные связи не считаются нулём.", style = MaterialTheme.typography.bodySmall)
     }
 }

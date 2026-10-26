@@ -36,14 +36,14 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     SpatialIcon("brand", Modifier.size(56.dp),
-                        tint = MaterialTheme.colorScheme.primary, motionAllowed = false)
+                        tint = MaterialTheme.colorScheme.primary, motionAllowed = true)
                     Text("Analyst AI", style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Войти в систему", style = MaterialTheme.typography.headlineLarge,
+                    Text("Ваш инвестиционный аналитик", style = MaterialTheme.typography.headlineLarge,
                         modifier = Modifier.semantics { heading() })
-                    Text("Войдите, чтобы управлять анализом на вашем сервере.",
+                    Text("Портфель, важные изменения и основания решений — в одном месте.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

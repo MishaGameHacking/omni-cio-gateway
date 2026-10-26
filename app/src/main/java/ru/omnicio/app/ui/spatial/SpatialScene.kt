@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.PowerManager
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import kotlinx.coroutines.delay
 import ru.omnicio.app.ui.spectrum.LocalSpectrumPalette
 
 internal class FlatDrawStats { var operations: Long = 0 }
@@ -94,7 +93,8 @@ fun SpatialSceneRoot(
         }
     }
     val effective = flatMotionPolicy(motion, foreground, systemMotion, constrained, severeThermal)
-    CompositionLocalProvider(LocalFlatContrast provides opaque, LocalFlatDrawStats provides counters, LocalFlatMotion provides effective, LocalFlatTactile provides tactile) {
+    val clock = rememberLiveIconClock(effective)
+    CompositionLocalProvider(LocalLiveIconClock provides clock, LocalFlatContrast provides opaque, LocalFlatDrawStats provides counters, LocalFlatMotion provides effective, LocalFlatTactile provides tactile) {
         SpatialWindow(modifier.graphicsLayer {
             val progress = if (effective == SpatialMotion.Off) 0f
                 else navigationProgress.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
@@ -112,7 +112,7 @@ fun SpatialWindow(modifier: Modifier = Modifier, content: @Composable BoxScope.(
         val progress = if (motion == SpatialMotion.Off) 0f else back.value
         translationX = size.width * .06f * progress
         alpha = 1f - .10f * progress
-    }.background(LocalSpectrumPalette.current.backgroundTop)) {
+    }.background(Brush.verticalGradient(listOf(LocalSpectrumPalette.current.backgroundTop, LocalSpectrumPalette.current.colors.surfaceContainerLowest)))) {
         CompositionLocalProvider(LocalFlatBack provides back) { content() }
     }
 }
@@ -124,33 +124,28 @@ fun spatialDiagnostics(): SpatialDiagnostics = SpatialDiagnostics()
 /** Animated decoration is drawn locally. Financial geometry never participates in motion. */
 @Composable
 internal fun SpatialCanvas(primitives: List<SpatialPrimitive>, modifier: Modifier = Modifier) {
+    val palette = LocalSpectrumPalette.current
     val counters = LocalFlatDrawStats.current
     val motion = LocalFlatMotion.current
     var visible by remember { mutableStateOf(false) }
     val phase = remember { Animatable(0f) }
     val states = primitives.map { it.asset to it.state }
     val canMove = visible && motion != SpatialMotion.Off && primitives.any { it.motionAllowed }
-    val loading = primitives.any { it.motionAllowed && it.state == SpatialState.Loading }
-    val looping = primitives.any { it.motionAllowed &&
-        (it.state == SpatialState.Loading || (it.asset as? SpatialAsset.Catalogue)?.name in setOf("brand", "orbit")) }
+    val live = rememberLiveDecoration(canMove)
     LaunchedEffect(states, canMove, motion) {
         phase.snapTo(0f)
-        if (canMove) {
-            do {
-                phase.animateTo(1f, tween(if (motion == SpatialMotion.Live) 1400 else 320,
-                    easing = if (loading) LinearEasing else FastOutSlowInEasing))
-                phase.snapTo(0f)
-                if (looping && !loading && motion == SpatialMotion.Live) delay(2200)
-            } while (looping && motion == SpatialMotion.Live)
+        if (canMove && motion == SpatialMotion.Subdued) {
+            phase.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
+            phase.snapTo(0f)
         }
     }
-    Canvas(modifier.onGloballyPositioned {
+    Canvas(modifier.then(live.modifier).onGloballyPositioned {
         val bounds = it.boundsInWindow()
         visible = bounds.width > 0f && bounds.height > 0f
     }) {
         // Read animation in the draw phase; editor and screen layouts do not recompose per frame.
-        val progress = if (canMove) phase.value else 0f
+        val progress = if (!canMove) 0f else if (motion == SpatialMotion.Live) live.phase.value else phase.value
         if (counters != null) counters.operations++
-        primitives.forEach { drawFlatPrimitive(it, if (it.motionAllowed) progress else 0f) }
+        primitives.forEach { drawFlatPrimitive(it, if (it.motionAllowed) progress else 0f, palette) }
     }
 }

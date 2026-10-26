@@ -3,11 +3,34 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Обновление Analyst AI</title>
 <style>
-body{margin:0;background:#07111f;color:#f4f4f5;font:16px/1.55 system-ui,sans-serif;padding:24px}
-main{max-width:680px;margin:auto;background:#0b2034;border:1px solid #355ca8;border-radius:24px;padding:24px}
-h1{margin-top:0}.muted{color:#a4a7ae}code{word-break:break-all;color:#57dde6}
+  :root {
+    color-scheme: dark;
+    --bg: #050E1C;
+    --surface: #0A1A2C;
+    --text: #EDF5FF;
+    --muted: #ACC3DC;
+    --primary: #A99AFF;
+    --on-primary: #1B0D45;
+    --primary-container: #403199;
+    --on-primary-container: #FFFFFF;
+    --surface-container: #0D2136;
+    --outline: #88A4C5;
+    --outline-variant: #294763;
+    --danger: #FF99B2;
+    --disabled-ink: #99AEC7;
+    --disabled-container: #152B41;
+  }
+  body { margin:0; background:var(--bg); background-image:radial-gradient(ellipse at top,#122449,transparent 65%); color:var(--text);
+         font:16px/1.55 system-ui,sans-serif; padding:24px; }
+  main { max-width:680px; margin:auto; background:var(--surface);
+         border:1px solid var(--outline-variant); border-radius:24px; padding:24px; }
+  h1 { margin-top:0; }
+  .muted { color:var(--muted); }
+  code { word-break:break-all; color:var(--primary); }
+  ::selection { color:var(--on-primary-container); background:var(--primary-container); }
 </style>
 </head>
 <body><main>
@@ -19,5 +42,5 @@ h1{margin-top:0}.muted{color:#a4a7ae}code{word-break:break-all;color:#57dde6}
 <li>После завершения откройте Analyst AI. Аккаунт, токен T‑Invest и настройки должны сохраниться.</li>
 </ol>
 <p class="muted">Полностью беззвучная установка не гарантируется: Android может требовать подтверждение пользователя. Не отключайте Play Protect и не устанавливайте APK с других сайтов.</p>
-<p class="muted">Сервер обновлений: <code>176.98.178.81.sslip.io</code></p>
+<p class="muted">Сервер обновлений: <code>analyst-ai-2941515.twc1.net</code></p>
 </main></body></html>

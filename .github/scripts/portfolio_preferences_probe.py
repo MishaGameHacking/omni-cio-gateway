@@ -11,7 +11,7 @@ BRIGHT_LIGHTING = 'Яркое освещение'
 AREA = "workspace-content"
 DIRTY = "Предпросмотр · настройки ещё не сохранены"
 DEFAULT = {"motion": "LIVE", "bright_light": False, "accent": "AURORA", "depth": True, "density": "COMFORT"}
-APPLIED = {"motion": "OFF", "bright_light": True, "accent": "OCEAN", "depth": True, "density": "COMPACT"}
+APPLIED = {"motion": "OFF", "bright_light": True, "accent": "AURORA", "depth": True, "density": "COMFORT"}
 PREVIEW = {**APPLIED, "motion": "SUBDUED", "bright_light": False}
 
 
@@ -37,14 +37,14 @@ def _expect_preferences(case, expected):
 
 def _reset(case):
     p = case.probe
-    sections = ("Тема", "Цвет акцента", "Плотность карточек", "Движение", "Яркое освещение", "Приватность")
-    p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
+    sections = ("Движение", "Яркое освещение", "Приватность")
+    p.reveal("Единый стиль · движение и удобство", AREA, direction="start")
     for heading in sections:
         p.reveal(heading, AREA)
     p.tap("Вернуть оформление по умолчанию", AREA)
     for heading in reversed(sections):
         p.reveal(heading, AREA, direction="start")
-    p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
+    p.reveal("Единый стиль · движение и удобство", AREA, direction="start")
     p.reveal("Применить", AREA)
     apply = button_label(p.tree(), "Применить")
     if apply is None or apply.get("enabled") not in {"true", "false"}:
@@ -59,7 +59,7 @@ def _reset(case):
 
 def _preview(case):
     p = case.probe
-    p.reveal("Предпросмотр цвета, контраста и движения", AREA, direction="start")
+    p.reveal("Единый стиль · движение и удобство", AREA, direction="start")
     p.tap("Сдержанное", AREA)
     p.tap(BRIGHT_LIGHTING, AREA)
     _expect_preferences(case, PREVIEW)
@@ -86,8 +86,6 @@ def exercise_appearance(case):
     p = case.probe
     p.find("Оформление")
     _reset(case)
-    p.tap("Океан", AREA)
-    p.tap("Компактно", AREA)
     p.tap(MOTION_DISABLED, AREA)
     p.tap(BRIGHT_LIGHTING, AREA)
     p.reveal(DIRTY, AREA, direction="start")

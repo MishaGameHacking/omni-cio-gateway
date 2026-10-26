@@ -85,9 +85,6 @@ internal fun PortfolioDashboard(
                         PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onOpenSection)
                     }
                     if (selectedSection == 0) {
-                        item(key = "sectors") { WorkspaceLink("Отрасли и классы", "Состав ваших вложений", SpectrumSymbol.Market) {
-                            openWorkspace(WorkspaceRoute.Market)
-                        } }
                         item(key = "allocation") {
                             SpectrumCard {
                                 SectionHeading("Баланс активов")
@@ -144,7 +141,9 @@ private fun PortfolioBalanceCard(
             SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
             Notice("Текущий результат брокера")
         }
+        DetailFold("Валюта и действия") {
         CurrencyChoice(selectedCurrency.name)
+        BalanceVisibilityButton()
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
         Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Оценка брокера в ${selectedCurrency.name}")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -161,12 +160,11 @@ private fun PortfolioBalanceCard(
                 }
             }
         }
-        val observed = snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() }
+        }
         if (error != null) {
             SpectrumBadge("Не удалось обновить", accent = MaterialTheme.colorScheme.error)
             Notice(error)
         }
-        Notice("Данные: ${dateText(observed)}" + if (refreshing) " · обновляем" else " · автообновление")
     }
 }
 

@@ -32,7 +32,7 @@ fun SpectrumAlertDialog(
     containerColor: Color = LocalSpectrumPalette.current.card,
     properties: DialogProperties = DialogProperties(),
 ) {
-    Dialog(onDismissRequest = onDismissRequest, properties = properties) {
+    SpectrumModal(onDismissRequest = onDismissRequest, properties = properties) {
         SpatialWindow(modifier.widthIn(max = 600.dp).fillMaxWidth().heightIn(max = 680.dp)) {
             SpatialSurface(Modifier.fillMaxWidth(), color = containerColor, emphasized = true) {
                 CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {

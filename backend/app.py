@@ -277,15 +277,36 @@ def mobile_login_result(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Возврат в Analyst AI</title>
 <style>
-  body {{ min-height: 100vh; display: grid; place-items: center; margin: 0;
-          padding: 20px; box-sizing: border-box; background: #151c25;
-          color: #f8fafc; font: 16px/1.5 system-ui, sans-serif; }}
-  main {{ text-align: center; max-width: 440px; }}
-  a {{ display: block; margin-top: 22px; padding: 14px 20px; border-radius: 12px;
-       background: #229ed9; color: white; font-weight: 600; text-decoration: none; }}
-  small {{ color: #a8b4c3; }}
+  :root {{
+    color-scheme: dark;
+    --bg: #050E1C;
+    --surface: #0A1A2C;
+    --text: #EDF5FF;
+    --muted: #ACC3DC;
+    --primary: #A99AFF;
+    --on-primary: #1B0D45;
+    --primary-container: #403199;
+    --on-primary-container: #FFFFFF;
+    --surface-container: #0D2136;
+    --outline: #88A4C5;
+    --outline-variant: #294763;
+    --danger: #FF99B2;
+    --disabled-ink: #99AEC7;
+    --disabled-container: #152B41;
+  }}
+  body {{ min-height:100vh; display:grid; place-items:center; margin:0;
+         padding:20px; box-sizing:border-box; background:var(--bg); background-image:radial-gradient(ellipse at top,#122449,transparent 65%);
+         color:var(--text); font:16px/1.5 system-ui,sans-serif; }}
+  main {{ text-align:center; max-width:440px; }}
+  a,a:visited {{ display:block; margin-top:22px; padding:14px 20px; border-radius:12px;
+               background:var(--primary); color:var(--on-primary); font-weight:600; text-decoration:none; }}
+  a:hover,a:active {{ background:color-mix(in srgb,var(--on-primary) 8%,var(--primary)); }}
+  a:focus-visible {{ outline:3px solid var(--primary); outline-offset:3px; }}
+  small {{ color:var(--muted); }}
+  ::selection {{ color:var(--on-primary-container); background:var(--primary-container); }}
 </style>
 </head>
 <body>

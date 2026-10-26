@@ -1,5 +1,7 @@
 package ru.omnicio.app.ui.analysis
 
+import org.json.JSONObject
+
 import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.activity.ComponentActivity
@@ -456,127 +458,39 @@ private fun AnalysisProfileContent(
 ) {
     var section by rememberSaveable { mutableIntStateOf(initialSection.coerceIn(0, 2)) }
     val client = remember { AnalysisBackendClient() }
-    var baseline by remember { mutableStateOf<AnalysisProfile?>(null) }
-    var leaving by remember { mutableStateOf(false) }
-    var draft by remember { mutableStateOf<AnalysisProfile?>(null) }
+    val auto = LocalWorkspaceAutoSave.current
+    val record = auto?.get(AutoSaveKind.Analysis)
+    val resource = rememberWorkspaceResource("/analysis/profile")
+    val profile = remember(record?.draft, resource.data?.toString()) {
+        runCatching { automaticAnalysisProfile(record?.draft?.let(::JSONObject) ?: resource.data ?: return@remember null) }.getOrNull()
+    }
     var status by remember { mutableStateOf<AnalysisStatus?>(null) }
-    var pendingSave by remember { mutableStateOf<AnalysisProfile?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var problem by remember { mutableStateOf<String?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var saveFailed by remember { mutableStateOf(false) }
-    var reload by remember { mutableIntStateOf(0) }
-    val dirty = draft != null && draft != baseline
-    val leave: () -> Unit = { if (dirty) leaving = true else onBack() }
-    BackHandler(onBack = leave)
-    LaunchedEffect(reload) {
-        loading = true
-        problem = null
-        status = null
-        try {
-            when (val result = withContext(Dispatchers.IO) { client.fetchProfile(token) }) {
-                is BackendResult.Success -> { draft = result.value; baseline = result.value }
-                is BackendResult.Failure -> {
-                    problem = result.message
-                    draft = null
-                }
-            }
-            when (val result = withContext(Dispatchers.IO) { client.fetchStatus(token) }) {
-                is BackendResult.Success -> status = result.value
-                is BackendResult.Failure -> status = null
-            }
-        } finally {
-            loading = false
+    BackHandler(onBack = onBack)
+    LaunchedEffect(token) {
+        when (val result = withContext(Dispatchers.IO) { client.fetchStatus(token) }) {
+            is BackendResult.Success -> status = result.value
+            is BackendResult.Failure -> status = null
         }
     }
-    AnalysisScaffold(
-        selected = AnalystTab.Profile,
-        title = "Инвестиционный профиль",
-        subtitle = "Действующие настройки анализа",
-        symbol = SpectrumSymbol.Profile,
-        onPortfolioClick = onPortfolioClick,
-        onProfileClick = onProfileClick,
-        modifier = modifier,
-        showBottomBar = false,
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .consumeWindowInsets(padding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(workspaceGap),
-        ) {
-            item(key = "back") {
-                SpectrumSecondaryButton(
-                    text = "Назад",
-                    onClick = leave,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (loading) item { LoadingCard() }
-            problem?.let { item { ErrorCard(it, { reload++ }, enabled = !loading) } }
-            val profile = draft
-            if (profile != null && !loading) {
+    AnalysisScaffold(selected = AnalystTab.Profile, title = "Инвестиционный профиль",
+        subtitle = "Настройки применяются автоматически", symbol = SpectrumSymbol.Profile,
+        onPortfolioClick = onPortfolioClick, onProfileClick = onProfileClick, modifier = modifier,
+        showBottomBar = false) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
+            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+            item(key = "back") { SpectrumSecondaryButton("Назад", onBack, Modifier.fillMaxWidth()) }
+            item { WorkspaceRequestState(resource); AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Analysis) } }
+            if (profile != null) {
                 item { SpectrumTabs(listOf("Правила", "Уведомления", "Наблюдение"), section, { section = it }) }
                 if (section == 2) item { MonitoringStatus(status) }
-                if (section == 1) item { NotificationDeliverySettingsLink(enabled = !dirty && pendingSave == null) }
-                profileControls(profile, section, enabled = pendingSave == null) { draft = it }
-                message?.let { text ->
-                    item {
-                        StatusCard(
-                            if (saveFailed) "Не удалось сохранить" else "Сохранение",
-                            text,
-                        )
-                    }
+                if (section == 1) item { NotificationDeliverySettingsLink(enabled = true) }
+                profileControls(profile, section, enabled = auto?.ready == true) { changed ->
+                    auto?.edit(AutoSaveKind.Analysis, resource.data?.let(::analysisEditableDocument) ?: profile.automaticDocument(),
+                        changed.automaticDocument(), 0, supportedProfile(changed))
                 }
-                profileSaveControls(supportedProfile(profile), pendingSave != null, dirty,
-                    onReload = { reload++ }, onSave = { pendingSave = profile })
+                if (!supportedProfile(profile)) item { Text("Проверьте значения профиля. Применение приостановлено.") }
             }
         }
-    }
-    if (leaving) WorkspaceDialog("Есть несохранённые изменения", onDismiss = { leaving = false }) {
-        Text("Вернитесь к настройкам и сохраните профиль либо выйдите без изменений.")
-        SpectrumSecondaryButton("Продолжить настройку", { leaving = false }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton("Не сохранять", onBack, Modifier.fillMaxWidth(), enabled = pendingSave == null)
-    }
-
-    LaunchedEffect(pendingSave) {
-        val submitted = pendingSave ?: return@LaunchedEffect
-        message = null
-        saveFailed = false
-        try {
-            when (val result = withContext(Dispatchers.IO) { client.saveProfile(token, submitted) }) {
-                is BackendResult.Success -> {
-                    draft = result.value
-                    baseline = result.value
-                    message = "Профиль сохранён и будет применён к следующим проверкам."
-                }
-                is BackendResult.Failure -> {
-                    saveFailed = true
-                    message = result.message
-                }
-            }
-        } finally {
-            pendingSave = null
-        }
-    }
-}
-
-private fun LazyListScope.profileSaveControls(valid: Boolean, saving: Boolean, dirty: Boolean,
-    onReload: () -> Unit, onSave: () -> Unit) {
-    if (!valid) item {
-        ErrorCard("Профиль содержит неподдерживаемые настройки. Повторите загрузку.", onReload, !saving)
-    }
-    if (dirty) item { Text("Есть несохранённые изменения. Они применятся к следующим проверкам после сохранения.") }
-    item(key = "save") {
-        SpectrumPrimaryButton(
-            text = if (saving) "Сохраняем…" else "Сохранить профиль",
-            onClick = onSave,
-            enabled = !saving && valid && dirty,
-            modifier = Modifier.fillMaxWidth(),
-            symbol = SpectrumSymbol.Analyst,
-        )
     }
 }
 

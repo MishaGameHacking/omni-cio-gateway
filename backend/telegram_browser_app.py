@@ -109,39 +109,53 @@ def _login_page(state: str, nonce: str) -> HTMLResponse:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark">
 <title>Вход в Analyst AI</title>
 <style nonce="{nonce_attr}">
-  :root {{ color-scheme: light dark; --accent:#1686b4; --accent2:#7654c7;
-           --bg:#f4f7ff; --card:rgba(255,255,255,.86); --text:#101318;
-           --muted:#596171; --danger:#b3263c; --border:rgba(87,97,206,.42); }}
-  @media (prefers-color-scheme: dark) {{ :root {{ --bg:#06131f; --card:rgba(10,39,55,.9);
-           --text:#f7f9ff; --muted:#bac3d1; --danger:#ff8995; --border:rgba(120,113,255,.62); }} }}
-  * {{ box-sizing:border-box; }}
+  :root {{
+    color-scheme: dark;
+    --bg: #050E1C;
+    --surface: #0A1A2C;
+    --text: #EDF5FF;
+    --muted: #ACC3DC;
+    --primary: #A99AFF;
+    --on-primary: #1B0D45;
+    --primary-container: #403199;
+    --on-primary-container: #FFFFFF;
+    --surface-container: #0D2136;
+    --outline: #88A4C5;
+    --outline-variant: #294763;
+    --danger: #FF99B2;
+    --disabled-ink: #99AEC7;
+    --disabled-container: #152B41;
+  }}
   body {{ min-height:100vh; margin:0; padding:max(24px,env(safe-area-inset-top)) 20px
          max(24px,env(safe-area-inset-bottom)); display:grid; place-items:center;
-         background:radial-gradient(circle at 82% 7%,rgba(125,91,236,.17),transparent 32%),
-                    radial-gradient(circle at 9% 92%,rgba(34,185,204,.16),transparent 35%),var(--bg);
-         color:var(--text); font:17px/1.48 system-ui,-apple-system,"Segoe UI",sans-serif; }}
-  main {{ width:min(100%,520px); padding:30px 24px; border:1px solid var(--border);
-          border-radius:28px; background:var(--card); box-shadow:0 12px 34px rgba(13,25,67,.16);
-          backdrop-filter:blur(14px); }}
+         background:var(--bg); background-image:radial-gradient(ellipse at top,#122449,transparent 65%); color:var(--text);
+         font:17px/1.48 system-ui,-apple-system,"Segoe UI",sans-serif; }}
+  main {{ width:min(100%,520px); padding:30px 24px; border:1px solid var(--outline-variant);
+         border-radius:28px; background:var(--surface); }}
   .mark {{ width:76px; height:76px; margin:0 auto 20px; display:grid; place-items:center;
-           border-radius:24px; font-size:38px; background:linear-gradient(145deg,#2a9fc4,#7654c7);
-           color:white; box-shadow:0 12px 28px rgba(81,83,193,.25); }}
+          border-radius:24px; font-size:38px; background:var(--primary-container);
+          color:var(--on-primary-container); }}
   h1 {{ margin:0; text-align:center; font-size:clamp(30px,8vw,44px); line-height:1.1; }}
   p {{ color:var(--muted); }}
   .privacy {{ margin:18px 0 24px; padding:16px; border-radius:18px;
-              background:color-mix(in srgb,var(--accent) 8%,transparent); }}
+             background:var(--surface-container); }}
   button,a {{ width:100%; min-height:56px; border:0; border-radius:18px; font:700 18px/1.2 inherit;
-              display:flex; align-items:center; justify-content:center; text-decoration:none; }}
-  button {{ cursor:pointer; color:white; background:linear-gradient(100deg,var(--accent),var(--accent2));
-            box-shadow:0 10px 24px rgba(49,113,183,.24); }}
-  button:disabled {{ opacity:.62; cursor:wait; }}
-  a {{ margin-top:14px; color:var(--accent); border:1px solid var(--border); background:transparent; }}
+             display:flex; align-items:center; justify-content:center; text-decoration:none; }}
+  button {{ cursor:pointer; color:var(--on-primary); background:var(--primary); }}
+  button:not(:disabled):hover,button:not(:disabled):active {{
+    background:color-mix(in srgb,var(--on-primary) 8%,var(--primary)); }}
+  button:disabled {{ color:var(--disabled-ink); background:var(--disabled-container); cursor:wait; }}
+  a,a:visited {{ margin-top:14px; color:var(--primary); border:1px solid var(--outline);
+                background:var(--surface); }}
+  a:hover,a:active {{ color:var(--on-primary-container); background:var(--primary-container); }}
+  button:focus-visible,a:focus-visible {{ outline:3px solid var(--primary); outline-offset:3px; }}
   #status {{ min-height:48px; margin:18px 2px 0; text-align:center; }}
   #status.error {{ color:var(--danger); }}
   small {{ display:block; margin-top:22px; color:var(--muted); text-align:center; }}
+  ::selection {{ color:var(--on-primary-container); background:var(--primary-container); }}
 </style>
 <script nonce="{nonce_attr}" async src="{TELEGRAM_LOGIN_SCRIPT}"></script>
 </head>

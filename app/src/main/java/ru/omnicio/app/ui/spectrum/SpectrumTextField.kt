@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -60,6 +61,8 @@ fun SpectrumTextField(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     minLines: Int = 1,
 ) {
+    val palette = LocalSpectrumPalette.current
+    val colors = MaterialTheme.colorScheme
     val focused = remember { mutableStateOf(false) }
     var selectionStart by rememberSaveable { mutableIntStateOf(value.length) }
     var selectionEnd by rememberSaveable { mutableIntStateOf(value.length) }
@@ -82,6 +85,16 @@ fun SpectrumTextField(
             visualTransformation = visualTransformation, keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
             singleLine = singleLine, maxLines = maxLines, minLines = minLines,
             colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface,
+                errorTextColor = colors.onSurface, disabledTextColor = palette.semantic.disabledInk,
+                cursorColor = colors.primary, errorCursorColor = colors.error,
+                focusedLabelColor = colors.primary, unfocusedLabelColor = colors.onSurfaceVariant,
+                errorLabelColor = colors.error, disabledLabelColor = palette.semantic.disabledInk,
+                focusedPlaceholderColor = colors.onSurfaceVariant, unfocusedPlaceholderColor = colors.onSurfaceVariant,
+                errorPlaceholderColor = colors.onSurfaceVariant, disabledPlaceholderColor = palette.semantic.disabledInk,
+                disabledLeadingIconColor = palette.semantic.disabledInk, disabledTrailingIconColor = palette.semantic.disabledInk,
+                disabledSupportingTextColor = palette.semantic.disabledInk,
+                disabledPrefixColor = palette.semantic.disabledInk, disabledSuffixColor = palette.semantic.disabledInk,
                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                 disabledContainerColor = Color.Transparent, errorContainerColor = Color.Transparent,
                 focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,

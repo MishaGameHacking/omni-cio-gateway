@@ -280,7 +280,7 @@ class _AutomationCase:
         return value
 
     def return_home(self, expected):
-        self.probe.tap_visible("Система")
+        self.probe.tap_visible("Главная")
         self.wait_trace(lambda value: value["page"] == "home",
                         "The actual Home page did not return")
         # The previous visit scrolled down to its Results action. Returning
@@ -405,7 +405,7 @@ class _AutomationCase:
             target("navigation-menu-close", label="Закрыть меню")
 
         def tabs(page):
-            names = {"home": ("home", "Система"), "actions": ("decisions", "Решения"),
+            names = {"home": ("home", "Главная"), "actions": ("decisions", "Решения"),
                      "profile": ("settings", "Настройки")}
             for key, (destination, label) in names.items():
                 # Compose may expose the selected tab as nonclickable. Observe
@@ -415,7 +415,7 @@ class _AutomationCase:
 
         tabs(self.route)
         open_menu()
-        for key, page, label in (("home", "home", "Система"), ("actions", "decisions", "Решения"),
+        for key, page, label in (("home", "home", "Главная"), ("actions", "decisions", "Решения"),
                                  ("profile", "settings", "Настройки")):
             target("navigation-primary-" + key, selected=page == self.route,
                    touch=page != self.route, label=label)
@@ -432,7 +432,7 @@ class _AutomationCase:
             raise AssertionError("Closing navigation changed the underlying page")
 
         if self.route == "settings":
-            tap("bottom-destination-home", selected=False, label="Система")
+            tap("bottom-destination-home", selected=False, label="Главная")
             self.wait_trace(lambda value: value["page"] == "home", "Menu settings check did not start on another page")
         open_menu()
         self.probe.reveal_resource("navigation-primary-profile", "navigation-panel-content",
@@ -443,7 +443,7 @@ class _AutomationCase:
         self.switch()
         self.wait_switch(enabled=True, checked=initial["enabled"])
         tabs("settings")
-        tap("bottom-destination-home", selected=False, label="Система")
+        tap("bottom-destination-home", selected=False, label="Главная")
         self.wait_trace(lambda value: value["page"] == "home", "Bottom navigation did not open System")
         tabs("home")
         tap("bottom-destination-actions", selected=False, label="Решения")
@@ -452,7 +452,7 @@ class _AutomationCase:
         tabs("decisions")
         destination = "home" if self.route == "home" else "profile"
         tap("bottom-destination-" + destination, selected=False,
-            label="Система" if self.route == "home" else "Настройки")
+            label="Главная" if self.route == "home" else "Настройки")
         self.wait_trace(lambda value: value["page"] == self.route, "Navigation did not restore the original root screen")
         tabs(self.route)
 
@@ -516,7 +516,7 @@ class _AutomationCase:
             if actual["version"] != initial["version"] + 1 or actual["rejected"]:
                 raise AssertionError("Acknowledged preference has an unexpected server version")
             self.wait_switch(checked=expected)
-            self.probe.tap_visible("Система")
+            self.probe.tap_visible("Главная")
             self.probe.tap_visible("Настройки")
             self.switch()
             self.keep_switch(self.wait_switch(enabled=True, checked=expected))

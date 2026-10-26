@@ -1,9 +1,9 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="256" android:viewportHeight="256">
     <group android:pivotX="128" android:pivotY="128" android:scaleX="0.66" android:scaleY="0.66">
-        <path android:fillColor="#252C40" android:pathData="M128,28 A100,100 0,1 1,127.99,28" />
-        <path android:fillColor="#68D8C5" android:pathData="M64,126 Q64,118 72,118 L84,118 Q92,118 92,126 L92,180 Q92,188 84,188 L72,188 Q64,188 64,180 Z" />
-        <path android:fillColor="#B6A2FF" android:pathData="M114,98 Q114,90 122,90 L134,90 Q142,90 142,98 L142,180 Q142,188 134,188 L122,188 Q114,188 114,180 Z" />
-        <path android:fillColor="#F4F7FF" android:pathData="M164,70 Q164,62 172,62 L184,62 Q192,62 192,70 L192,180 Q192,188 184,188 L172,188 Q164,188 164,180 Z" />
-        <path android:fillColor="#F5C771" android:pathData="M212,38 A12,12 0,1 1,211.99,38" />
+        <path android:fillColor="@color/analyst_surface_container_highest" android:pathData="M128,28 A100,100 0,1 1,127.99,28" />
+        <path android:fillColor="@color/analyst_primary" android:pathData="M64,126 Q64,118 72,118 L84,118 Q92,118 92,126 L92,180 Q92,188 84,188 L72,188 Q64,188 64,180 Z" />
+        <path android:fillColor="@color/analyst_tertiary" android:pathData="M114,98 Q114,90 122,90 L134,90 Q142,90 142,98 L142,180 Q142,188 134,188 L122,188 Q114,188 114,180 Z" />
+        <path android:fillColor="@color/analyst_on_background" android:pathData="M164,70 Q164,62 172,62 L184,62 Q192,62 192,70 L192,180 Q192,188 184,188 L172,188 Q164,188 164,180 Z" />
+        <path android:fillColor="@color/analyst_warning" android:pathData="M212,38 A12,12 0,1 1,211.99,38" />
     </group>
 </vector>

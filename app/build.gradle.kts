@@ -16,8 +16,8 @@ android {
         minSdk = 37
         targetSdk = 37
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 45
-        versionName = "0.13.7"
+        versionCode = 47
+        versionName = "0.14.0"
     }
 
     buildTypes {
@@ -74,6 +74,8 @@ dependencies {
 
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
+    // Real JSON operations for JVM model checks; never packaged in the Android app.
+    testImplementation("org.json:json:20260814")
 
     screenshotTestImplementation(composeBom)
     screenshotTestImplementation(libs.compose.ui.tooling)

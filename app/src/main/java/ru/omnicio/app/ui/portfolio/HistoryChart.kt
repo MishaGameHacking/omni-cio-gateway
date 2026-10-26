@@ -30,6 +30,7 @@ import ru.omnicio.app.ui.workspace.DetailFold
 import ru.omnicio.app.ui.workspace.LocalWorkspacePreferences
 import ru.omnicio.app.ui.spatial.SpatialBars
 import ru.omnicio.app.ui.spatial.SpatialChartGuides
+import ru.omnicio.app.ui.spatial.historyBarColors
 import java.time.LocalDate
 
 internal data class HistoryMarker(val date: String, val label: String)
@@ -161,7 +162,6 @@ private fun BarTooltip(model: HistoryBars, selected: Int, currency: String) {
 @Composable
 private fun HistoryBarPlot(model: HistoryBars, selected: Int, currency: String, choose: (Int) -> Unit) {
     val palette = LocalSpectrumPalette.current
-    val outline = MaterialTheme.colorScheme.outlineVariant
     val accent = palette.cyan
     val selection = model.bars.getOrNull(selected)
     val index = if (selected < 0) model.bars.lastIndex else selected
@@ -180,10 +180,11 @@ private fun HistoryBarPlot(model: HistoryBars, selected: Int, currency: String, 
             change.consume(); callback(historyBarIndex(change.position.x, size.width.toFloat(), model.bars.size))
         } }) {
         SpatialBars(model.bars.map { it.close?.value?.toDouble() }, model.source.low.toDouble(), model.source.high.toDouble(),
-            selected.takeIf { it >= 0 }, Modifier.fillMaxSize().padding(vertical = 8.dp), listOf(palette.blue))
+            selected.takeIf { it >= 0 }, Modifier.fillMaxSize().padding(vertical = 8.dp),
+            historyBarColors(palette, model.bars.map { it.close?.value?.toDouble() }))
         SpatialChartGuides(model.bars.size, model.source.zero,
             model.bars.indices.filter { model.bars[it].close == null }.toSet(), selected.takeIf { it >= 0 },
-            Modifier.fillMaxSize().padding(vertical = 8.dp), gridColor = outline.copy(alpha = .35f), selectedColor = accent)
+            Modifier.fillMaxSize().padding(vertical = 8.dp), gridColor = palette.semantic.chartGrid, selectedColor = accent)
     }
 }
 

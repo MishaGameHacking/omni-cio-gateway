@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Modifier
@@ -34,60 +35,36 @@ import ru.omnicio.app.ui.spectrum.*
 enum class AnalystTab { Home, Portfolio, Actions, Risk, Education, Profile }
 val LocalWideNavigation = staticCompositionLocalOf { false }
 val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
-private val primaryTabs = listOf(AnalystTab.Home, AnalystTab.Actions, AnalystTab.Profile)
+private val primaryTabs = analystPrimaryDestinations.mapNotNull { it.tab }
 
-/** Three stable destinations; labels can wrap at the user's font size. */
+/** A compact icon dock; labels remain available to accessibility and tooltips. */
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
     if (LocalWideNavigation.current) return
     val navigate = LocalAnalystTabNavigator.current
-    val openMenu = LocalOpenNavigationMenu.current
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val labelStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-    Surface(modifier.fillMaxWidth().zIndex(1f).clipToBounds().testTag("analyst-bottom-bar"), color = MaterialTheme.colorScheme.surface) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val menuWidth = if (openMenu == null) 0.dp else 56.dp
-            val available = with(density) { ((maxWidth - 32.dp - menuWidth) / 3 - 12.dp).toPx() }
-            val compact = primaryTabs.any { tab ->
-                measurer.measure(AnnotatedString(tab.label()), style = labelStyle,
-                    softWrap = false, maxLines = 1).size.width > available
-            }
-            Column {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                if (compact) Text(selected.primaryDestination().label(),
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-                        .clearAndSetSemantics {},
-                    textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface)
-                Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp)
-                    .selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    if (openMenu != null) AnalystMenuButton(openMenu)
-                    primaryTabs.forEach { tab ->
-                        DockDestination(tab, tab == selected.primaryDestination(), Modifier.weight(1f)
-                            .testTag("bottom-destination-" + tab.name.lowercase()),
-                            showLabel = !compact) {
-                            if (tab == AnalystTab.Profile) onProfileClick()
-                            navigate(tab)
-                        }
-                    }
+    Surface(modifier.fillMaxWidth().zIndex(1f).clipToBounds().testTag("analyst-bottom-bar"),
+        color = MaterialTheme.colorScheme.surface) {
+        Column {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)
+                .selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically) {
+                primaryTabs.forEach { tab ->
+                    SpectrumGlyphButton(tab.symbol(), tab.label(), { navigate(tab) },
+                        Modifier.size(56.dp).testTag("bottom-destination-" + tab.name.lowercase()),
+                        active = tab == selected.primaryDestination(), role = Role.Tab)
                 }
             }
         }
     }
 }
 
-internal fun AnalystTab.primaryDestination(): AnalystTab = when (this) {
-    AnalystTab.Home -> AnalystTab.Home
-    AnalystTab.Portfolio, AnalystTab.Actions, AnalystTab.Risk -> AnalystTab.Actions
-    AnalystTab.Education, AnalystTab.Profile -> AnalystTab.Profile
-}
+internal fun AnalystTab.primaryDestination(): AnalystTab = destination().parent
 
 @Composable
-private fun DockDestination(tab: AnalystTab, active: Boolean, modifier: Modifier = Modifier,
+internal fun DockDestination(tab: AnalystTab, active: Boolean, modifier: Modifier = Modifier,
     showLabel: Boolean = true, click: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -99,50 +76,38 @@ private fun DockDestination(tab: AnalystTab, active: Boolean, modifier: Modifier
         interactionSource = interaction, indication = null, role = Role.Tab, onClick = action),
         SpatialSurfaceKind.Chip,
         color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        state = state) {
+        state = state, interactive = true) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
             SpatialIcon(tab.symbol().asset, Modifier.size(26.dp),
-                tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                motionAllowed = false, state = state)
+                tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                motionAllowed = active, state = state, colorMode = SpatialColorMode.Decorative)
             if (showLabel) Text(tab.label(), Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium,
                 textAlign = TextAlign.Center, softWrap = true,
                 fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
-private fun AnalystTab.label() = when (this) {
-    AnalystTab.Home -> "Система"
-    AnalystTab.Actions -> "Решения"
-    AnalystTab.Profile -> "Настройки"
-    AnalystTab.Portfolio -> "Данные"
-    AnalystTab.Risk -> "Риски"
-    AnalystTab.Education -> "Обучение"
-}
+private fun AnalystTab.label() = destination().title
+private fun AnalystTab.symbol() = destination().symbol
 
-private fun AnalystTab.symbol() = when (this) {
-    AnalystTab.Home -> SpectrumSymbol.Home
-    AnalystTab.Actions -> SpectrumSymbol.Goal
-    AnalystTab.Profile -> SpectrumSymbol.Settings
-    AnalystTab.Portfolio -> SpectrumSymbol.Portfolio
-    AnalystTab.Risk -> SpectrumSymbol.Risk
-    AnalystTab.Education -> SpectrumSymbol.Education
-}
-
+@Suppress("UNUSED_PARAMETER")
 @Composable
-fun AnalystSideRail(selected: AnalystTab, navigate: (AnalystTab) -> Unit) {
-    val width = (128f * maxOf(1f, LocalDensity.current.fontScale)).dp
-    Surface(Modifier.fillMaxHeight().width(width).zIndex(1f).clipToBounds().testTag("analyst-side-rail"), color = MaterialTheme.colorScheme.surface) {
+fun AnalystSideRail(selected: AnalystTab, selectedWorkspace: ru.omnicio.app.ui.workspace.WorkspaceRoute?,
+    navigate: (AnalystTab) -> Unit, navigateWorkspace: (ru.omnicio.app.ui.workspace.WorkspaceRoute) -> Unit) {
+    Surface(Modifier.fillMaxHeight().width(80.dp).zIndex(1f).clipToBounds().testTag("analyst-side-rail"),
+        color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
-            .verticalScroll(rememberScrollState()).padding(10.dp).selectableGroup(),
+            .verticalScroll(rememberScrollState()).padding(8.dp).selectableGroup(),
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Analyst AI", style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 16.dp))
+            LocalOpenNavigationMenu.current?.let { AnalystMenuButton(it) }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             primaryTabs.forEach { tab ->
-                DockDestination(tab, tab == selected.primaryDestination(), Modifier.fillMaxWidth()
-                    .testTag("rail-destination-" + tab.name.lowercase())) { navigate(tab) }
+                SpectrumGlyphButton(tab.symbol(), tab.label(), { navigate(tab) },
+                    Modifier.size(56.dp).testTag("rail-destination-" + tab.name.lowercase()),
+                    active = tab == selected.primaryDestination(), role = Role.Tab)
             }
         }
     }

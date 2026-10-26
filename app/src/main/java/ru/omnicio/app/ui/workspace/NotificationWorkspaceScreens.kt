@@ -38,75 +38,74 @@ fun NotificationDeliveryRuntime() {
 
 @Composable
 fun NotificationSettingsScreen(onBack: () -> Unit) {
+    val auto = LocalWorkspaceAutoSave.current
     val resource = rememberWorkspaceResource(NOTIFICATION_PREFERENCES_PATH)
     val context = LocalContext.current
-    var draft by rememberSaveable { mutableStateOf<String?>(null) }
-    var draftVersion by rememberSaveable { mutableStateOf<Int?>(null) }
+    val record = auto?.get(AutoSaveKind.Notifications)
+    val remote = resource.data?.optJSONObject("preferences")
+    val remoteVersion = notificationPreferenceVersion(resource.data)
+    val config = remember(record?.draft, record?.phase, remote?.toString(), remoteVersion) {
+        if (record != null && (record.phase != AutoSavePhase.Saved || record.version >= (remoteVersion ?: -1))) JSONObject(record.draft)
+        else remote
+    }
+    val editable = auto?.ready == true && config != null && remoteVersion != null
     var preview by remember { mutableStateOf<JSONObject?>(null) }
-    var applied by remember { mutableStateOf<String?>(null) }
+    val simulate = rememberWorkspaceAction { preview = it }
     var delivery by remember { mutableStateOf(WorkspaceNotificationService.canNotify(context)) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         delivery = granted && WorkspaceNotificationService.schedule(context)
     }
-    val save = rememberWorkspaceAction(onFailure = { failure ->
-        if (failure.reply.status == 409) resource.refresh()
-    }) { result ->
-        draft = result.optJSONObject("preferences")?.toString(); resource.refresh(); preview = null
-        draftVersion = notificationPreferenceVersion(result)
-        applied = result.optString("applied_at").takeIf(String::isNotBlank)
-        val enabled = result.optJSONObject("preferences")?.optBoolean("enabled") == true
-        if (!enabled) WorkspaceNotificationService.cancel(context) else delivery = WorkspaceNotificationService.schedule(context)
-    }
-    val simulate = rememberWorkspaceAction { preview = it }
-    LaunchedEffect(resource.data) {
-        if (draft == null) {
-            draft = resource.data?.optJSONObject("preferences")?.toString()
-            draftVersion = notificationPreferenceVersion(resource.data)
-        }
-    }
     val foreground = workspaceForeground()
     LaunchedEffect(foreground) { if (foreground) delivery = WorkspaceNotificationService.canNotify(context) }
-    val config = remember(draft) { draft?.let(::JSONObject) }
-    val edit: (String, Any) -> Unit = { key, value ->
-        if (!save.busy && !simulate.busy) { draft = JSONObject(config?.toString() ?: "{}").put(key, value).toString(); applied = null; preview = null }
+    LaunchedEffect(record?.phase, record?.revision) {
+        if (record?.phase == AutoSavePhase.Saved) {
+            if (JSONObject(record.draft).optBoolean("enabled")) delivery = WorkspaceNotificationService.schedule(context)
+            else WorkspaceNotificationService.cancel(context)
+            resource.refresh()
+        }
     }
-    WorkspaceDetailPage("Уведомления", "Ваше время, условия и подтверждение применения", onBack, SpectrumSymbol.Notifications) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-            item { WorkspaceRequestState(resource) }
+    val edit: (String, Any) -> Unit = { key, input ->
+        if (editable && !simulate.busy) {
+            val next = JSONObject(config.toString()).put(key, input)
+            auto?.edit(AutoSaveKind.Notifications, remote ?: JSONObject(), next, remoteVersion ?: -1, notificationRulesValid(next))
+            preview = null
+        }
+    }
+    WorkspaceDetailPage("Уведомления", "Ваше время и условия доставки", onBack, SpectrumSymbol.Notifications) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+            .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+            contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+            item { WorkspaceRequestState(resource); AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Notifications) } }
             config?.let { settings ->
                 item { SpectrumCard {
-                    WorkspaceToggle("Получать события", "Применяется на сервере после сохранения", settings.optBoolean("enabled")) { edit("enabled", it) }
-                    WorkspaceToggle("Утренние и вечерние обзоры", "Только по заданному времени", settings.optBoolean("briefs_enabled")) { edit("briefs_enabled", it) }
-                    WorkspaceToggle("Критичные изменения", "По подтверждённым правилам риска", settings.optBoolean("critical_enabled")) { edit("critical_enabled", it) }
+                    WorkspaceToggle("Получать события", "Применяется автоматически", settings.optBoolean("enabled"), enabled = editable && !simulate.busy) { edit("enabled", it) }
+                    WorkspaceToggle("Утренние и вечерние обзоры", "Только по заданному времени", settings.optBoolean("briefs_enabled"), enabled = editable && !simulate.busy) { edit("briefs_enabled", it) }
+                    WorkspaceToggle("Критичные изменения", "По подтверждённым правилам риска", settings.optBoolean("critical_enabled"), enabled = editable && !simulate.busy) { edit("critical_enabled", it) }
                 } }
                 item { SpectrumCard {
-                    WorkspaceTextInput(settings.text("timezone", "Europe/Moscow"), { edit("timezone", it.take(80)) }, "Часовой пояс", Modifier.fillMaxWidth(), enabled = !save.busy)
-                    Text("Например, Europe/Moscow. Все указанные ниже часы относятся к этому поясу.", style = MaterialTheme.typography.bodySmall)
+                    val zone = settings.text("timezone", "Europe/Moscow")
+                    val deviceZone = remember { ZoneId.systemDefault().id }
+                    val zones = remember(deviceZone, zone) { notificationZoneSuggestions(deviceZone, zone) }
+                    WorkspaceChoicePicker("Часовой пояс", zone, zones, editable && !simulate.busy) { edit("timezone", it) }
+                    Text("Все часы относятся к выбранному поясу.", style = MaterialTheme.typography.bodySmall)
                     listOf("morning" to "Утро", "evening" to "Вечер", "quiet_start" to "Тихие часы с", "quiet_end" to "Тихие часы до").forEach { (key, title) ->
-                        WorkspaceTextInput(settings.text(key, ""), { edit(key, it.take(5)) }, title + " · ЧЧ:ММ", Modifier.fillMaxWidth(), enabled = !save.busy)
+                        WorkspaceTimeChoice(title, settings.text(key, ""), editable && !simulate.busy) { edit(key, it) }
                     }
-                    Text("Ночной интервал может переходить через полночь. Сервер проверяет тихие часы перед выдачей события устройству.")
+                    Text("Тихие часы могут переходить через полночь.")
+                    if (!notificationRulesValid(settings)) Text("Проверьте время: утренний и вечерний обзоры должны приходить в разное время.",
+                        color = MaterialTheme.colorScheme.error)
                 } }
-                item { SpectrumCard(emphasized = true) {
-                    val version = draftVersion
-                    val valid = NotificationRulesStatus(settings, version, notificationPreferenceVersion(resource.data),
-                        !save.busy && !simulate.busy && !resource.busy) {
-                        draft = null; draftVersion = null; preview = null; applied = null; resource.refresh()
-                    }
-                    SpectrumPrimaryButton("Применить правила", {
-                        save.perform(NOTIFICATION_PREFERENCES_PATH, JSONObject(settings.toString()).put("expected_version", checkNotNull(version)), "PUT")
-                    }, Modifier.fillMaxWidth(), valid && !save.busy && !simulate.busy)
-                    SpectrumSecondaryButton("Проверить на прошлых событиях", { simulate.perform("/workspace/notifications/preview", JSONObject().put("preferences", settings)) },
-                        Modifier.fillMaxWidth(), valid && !save.busy && !simulate.busy)
-                    WorkspaceActionState(save); WorkspaceActionState(simulate)
-                    applied?.let { Text("Применено сервером: " + localMoment(it), color = LocalSpectrumPalette.current.emerald) }
-                    if (applied == null) resource.data?.text("applied_at", "")?.takeIf(String::isNotBlank)?.let { Text("Последнее применение: " + localMoment(it)) }
+                item { SpectrumCard {
+                    SpectrumSecondaryButton("Проверить на прошлых событиях", {
+                        simulate.perform("/workspace/notifications/preview", JSONObject().put("preferences", settings))
+                    }, Modifier.fillMaxWidth(), editable && notificationRulesValid(settings) && !simulate.busy)
+                    WorkspaceActionState(simulate)
                 } }
             }
             item { SpectrumCard {
                 Text("Доставка на это устройство", style = MaterialTheme.typography.titleMedium)
                 Text(if (delivery) "Android разрешает показ уведомлений." else "Показ уведомлений пока не разрешён на устройстве.")
-                Text("Устройство периодически получает события при доступной сети. Android может отложить проверку в фоновом режиме; мгновенная доставка не гарантируется. Все события доступны в приложении.")
+                Text("Android может отложить фоновую проверку. Все события доступны в приложении.")
                 if (!delivery) SpectrumPrimaryButton("Разрешить уведомления", { permission.launch(Manifest.permission.POST_NOTIFICATIONS) }, Modifier.fillMaxWidth())
                 SpectrumSecondaryButton("Настройки уведомлений Android", {
                     context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))

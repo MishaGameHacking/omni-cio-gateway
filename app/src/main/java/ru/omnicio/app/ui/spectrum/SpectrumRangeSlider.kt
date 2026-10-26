@@ -75,12 +75,12 @@ private fun RangeHandle(interaction: MutableInteractionSource, enabled: Boolean,
 @Composable
 private fun RangeTrack(start: Float, end: Float, enabled: Boolean) {
     val palette = LocalSpectrumPalette.current
-    val state = if (enabled) SpatialState.Idle else SpatialState.Disabled
     BoxWithConstraints(Modifier.fillMaxWidth().height(8.dp).clearAndSetSemantics { }) {
-        SpatialSurface(Modifier.fillMaxSize(), SpatialSurfaceKind.Chip, color = palette.cardStrong, state = state) { }
+        SpatialSurface(Modifier.fillMaxSize(), SpatialSurfaceKind.Chip,
+            color = if (enabled) palette.cardStrong else palette.semantic.disabledContainer) { }
         if (end > start) SpatialSurface(
             Modifier.offset(x = maxWidth * start).width(maxWidth * (end - start)).fillMaxHeight(),
-            SpatialSurfaceKind.Chip, color = palette.cyan, state = state,
+            SpatialSurfaceKind.Chip, color = if (enabled) palette.cyan else palette.semantic.disabledInk,
         ) { }
     }
 }

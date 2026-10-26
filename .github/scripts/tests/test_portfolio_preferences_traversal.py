@@ -145,10 +145,9 @@ class ResetSectionsProbe:
         root = ET.Element("hierarchy", {"display-width": "320", "display-height": "640", "active-window-id": "51"})
         body = ET.SubElement(root, "node", {**common, "resource-id": preferences.AREA,
             "bounds": "[56,215][320,616]", "scrollable": "true"})
-        rows = [(0, "Предпросмотр цвета, контраста и движения"), (110, "Применить"),
-                (500, "Тема"), (1400, "Цвет акцента"), (2300, "Плотность карточек"),
-                (3200, "Движение"), (4100, "Яркое освещение"), (5000, "Приватность"),
-                (5700, "Вернуть оформление по умолчанию")]
+        rows = [(0, "Единый стиль · движение и удобство"), (110, "Применить"),
+                (500, "Движение"), (1400, "Яркое освещение"), (2300, "Приватность"),
+                (3000, "Вернуть оформление по умолчанию")]
         if self.applied:
             rows.append((60, "Оформление применено"))
         for position, label in rows:
@@ -161,7 +160,7 @@ class ResetSectionsProbe:
 
     def scroll(self, _x1, y1, _x2, y2):
         before = self.offset
-        self.offset = max(0, min(5800 * self.scale - self.height, self.offset + y1 - y2))
+        self.offset = max(0, min(3100 * self.scale - self.height, self.offset + y1 - y2))
         self.movements.append((before, self.offset))
 
     def reveal(self, text, area, direction="end"):

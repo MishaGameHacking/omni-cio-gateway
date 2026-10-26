@@ -24,6 +24,7 @@ import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.spatial.SpatialIcon
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spectrum.SpectrumSwitch as Switch
 import ru.omnicio.app.ui.theme.LocalThemePreference
 import ru.omnicio.app.ui.workspace.*
 
@@ -42,7 +43,6 @@ fun ProfileScreen(
 ) {
     val navigate = LocalWorkspaceNavigator.current
     val presentation = LocalWorkspacePreferences.current
-    val theme = LocalThemePreference.current
     val resource = rememberWorkspaceResource("/automation/status")
     val status = resource.data?.takeIf { it.optInt("schema_version") == 1 }
     var appliedVersion by remember(user.telegramId) { mutableStateOf<Int?>(null) }
@@ -86,10 +86,14 @@ fun ProfileScreen(
                 .semantics { testTagsAsResourceId = true }.testTag("profile-content"),
                 contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item(key = "settings-header") {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Настройки", style = MaterialTheme.typography.headlineLarge,
-                            modifier = Modifier.semantics { heading() })
-                        Text("Правила работы вашей системы", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ru.omnicio.app.ui.AnalystHeaderMenu()
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Настройки", style = MaterialTheme.typography.headlineLarge,
+                                modifier = Modifier.semantics { heading() })
+                            Text("Правила работы вашей системы", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
                 item(key = "automation-preference") {
@@ -147,7 +151,7 @@ fun ProfileScreen(
                 }
                 item(key = "appearance-settings") {
                     SettingsGroup("Интерфейс") {
-                        SettingsLink("Оформление", theme.mode.title + " · размер и плотность элементов", SpectrumSymbol.Settings) {
+                        SettingsLink("Оформление", "Единый стиль · движение и удобство", SpectrumSymbol.Settings) {
                             navigate(WorkspaceRoute.Appearance)
                         }
                         SettingsDivider()
@@ -169,24 +173,6 @@ fun ProfileScreen(
                         SettingsDivider()
                         SettingsLink("Безопасность", "Хранение доступа и режим работы", SpectrumSymbol.Risk,
                             modifier = Modifier.testTag("profile-security-action")) { dialog = "security" }
-                    }
-                }
-                item(key = "tools-settings") {
-                    SettingsGroup("Дополнительно") {
-                        SettingsLink("Поиск инструментов", "Найти инструмент и открыть его исследование", SpectrumSymbol.Search) {
-                            navigate(WorkspaceRoute.Discovery)
-                        }
-                        SettingsDivider()
-                        SettingsLink("Исследования", "Сохранённые материалы и источники", SpectrumSymbol.Bookmark) {
-                            navigate(WorkspaceRoute.Library)
-                        }
-                        SettingsDivider()
-                        SettingsLink("История действий", "Недавно открытые разделы", SpectrumSymbol.Calendar) {
-                            navigate(WorkspaceRoute.ActivityHistory)
-                        }
-                        SettingsDivider()
-                        SettingsLink("Обучение", "Материалы о работе системы и инвестиционных рисках", SpectrumSymbol.Education,
-                            onClick = onOpenEducation)
                     }
                 }
                 item(key = "account-settings") {

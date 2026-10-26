@@ -85,7 +85,7 @@ def wide_frame():
     metrics.update({"probe-spatial-" + key: "0" for key in ("engines", "windows", "frames", "meshes", "pending", "pool")})
     node(root, bounds="[0,0][960,80]", **{"content-desc": ";".join(key + ":" + value for key, value in metrics.items())})
     rail = node(root, bounds="[0,80][256,1600]", **{"resource-id": "analyst-side-rail"})
-    for index, (name, label) in enumerate((("home", "Система"), ("actions", "Решения"), ("profile", "Настройки"))):
+    for index, (name, label) in enumerate((("home", "Главная"), ("actions", "Решения"), ("profile", "Настройки"))):
         top = 200 + index * 160
         node(rail, bounds=f"[10,{top}][246,{top + 136}]", **{"resource-id": "rail-destination-" + name,
              "text": label, "clickable": "true", "focusable": "true", "selected": str(name == "profile").lower()})
@@ -371,7 +371,7 @@ class ScrollBoundaryFrames(NativeFrames):
                 "message-posts:0;message-request-id:none;by-request-gets:0;recovered-request-id:none"})
         viewport = node(tree[0], bounds="[56,100][320,700]",
                         **{"resource-id": "workspace-content", "scrollable": "true"})
-        node(viewport, bounds="[70,110][310,165]", text="Предпросмотр цвета, контраста и движения")
+        node(viewport, bounds="[70,110][310,165]", text="Единый стиль · движение и удобство")
         node(viewport, bounds="[70,180][300,236]", text="Компактно", clickable="true",
              focusable="true", **{"class": "android.widget.Button"})
         node(viewport, bounds="[70,250][310,310]", text="Текущие сохранённые настройки")
@@ -387,7 +387,7 @@ class ScrollBoundaryFrames(NativeFrames):
 class DetailScrollBoundaryTests(unittest.TestCase):
     def test_actual_screen_anchor_uses_the_real_profile_scroll_admission(self):
         anchors = {"markets": "Ваши инструменты", "notifications": "Настроить события",
-                   "appearance": "Предпросмотр цвета, контраста и движения", "library": "Название, заметка или источник"}
+                   "appearance": "Единый стиль · движение и удобство", "library": "Название, заметка или источник"}
         for page, label in anchors.items():
             tree = frame(page, menu=False)
             viewport = node(tree[0], bounds="[56,100][320,700]",

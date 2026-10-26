@@ -5,11 +5,14 @@ import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
@@ -30,6 +33,18 @@ internal fun InstrumentQuotesPanel(position: PortfolioPosition, accountId: Strin
     var end by rememberSaveable(position.id) { mutableStateOf(today.toString()) }
     var interval by rememberSaveable(position.id) { mutableStateOf("day") }
     var selectedTime by rememberSaveable(position.id) { mutableStateOf<String?>(null) }
+    val navigationViewport = remember(position.id) { BringIntoViewRequester() }
+    var resetNavigationRequest by remember(position.id) { mutableIntStateOf(0) }
+    var placedNavigationRequest by remember(position.id) { mutableIntStateOf(0) }
+    val renderedNavigationRequest = resetNavigationRequest
+    LaunchedEffect(position.id, renderedNavigationRequest, placedNavigationRequest, selectedTime) {
+        if (renderedNavigationRequest > 0 && placedNavigationRequest == renderedNavigationRequest && selectedTime == null) {
+            // Reset can remove a tall details block above these same controls.
+            // Wait for their actual new placement; do not retain stale OHLC text
+            // or leave the adjacent actions outside the user's current viewport.
+            navigationViewport.bringIntoView()
+        }
+    }
     val askAnalyst = LocalAskAnalyst.current
     val request = rememberWorkspaceRequest("/workspace/instruments/${position.id}/candles", mapOf("start" to start, "end" to end, "interval" to interval))
     SpectrumCard {
@@ -61,10 +76,16 @@ internal fun InstrumentQuotesPanel(position: PortfolioPosition, accountId: Strin
                 if (chosen != null) CandleDetails(chosen, snapshot.unitLabel)
                 else Text("Коснитесь свечи, чтобы увидеть точные значения.")
                 CandleSurface(snapshot.candles, selected) { selectedTime = snapshot.candles[it].time }
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                FlowRow(Modifier.fillMaxWidth().testTag("quotes-navigation-actions")
+                    .bringIntoViewRequester(navigationViewport)
+                    .onGloballyPositioned { placedNavigationRequest = renderedNavigationRequest },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { selectedTime = snapshot.candles[(if (selected < 0) snapshot.candles.lastIndex else selected - 1).coerceAtLeast(0)].time }) { Text("Предыдущая") }
-                    TextButton(onClick = { selectedTime = null }) { Text("Сбросить") }
+                    TextButton(onClick = {
+                        selectedTime = null
+                        if (chosen != null) resetNavigationRequest++
+                    }) { Text("Сбросить") }
                     TextButton(onClick = { selectedTime = snapshot.candles[(selected + 1).coerceIn(0, snapshot.candles.lastIndex)].time }) { Text("Следующая") }
                 }
                 if (chosen != null && snapshot.candles.size > 35) DetailFold("Лупа выбранного интервала") {
