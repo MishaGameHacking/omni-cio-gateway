@@ -1,0 +1,62 @@
+name: Observe already connected Android devices without installing
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-connected-devices.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-existing-device-observation
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 40
+    env:
+      DEVICE_OBSERVER_ROOT: ${{ github.workspace }}\device-observer-${{ github.run_id }}-${{ github.run_attempt }}\checkout
+      PATCH_DIR: ${{ github.workspace }}\device-observer-${{ github.run_id }}-${{ github.run_attempt }}\transport
+    steps:
+    - name: Require the existing Windows laptop and a new owned observation directory
+      shell: cmd
+      run: 'py -3 -c "import os,sys,pathlib; assert sys.platform==''win32'' and os.environ.get(''COMPUTERNAME'')==''LAPTOP-NPSGA016'';
+        assert sys.version_info[:3]==(3,14,6); p=pathlib.Path(os.environ[''DEVICE_OBSERVER_ROOT'']).parent; assert not p.exists()
+        and not p.is_symlink(); p.mkdir(); pathlib.Path(os.environ[''PATCH_DIR'']).mkdir()"
+
+        if errorlevel 1 exit /b 1'
+    - name: Read pinned canonical lease from the exact source backup
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: 1cc05586b6874bfdd0cdb80131d178de9f95870c
+        path: device-observer-${{ github.run_id }}-${{ github.run_attempt }}/checkout
+        persist-credentials: false
+        clean: false
+    - name: 'Stage verified administrative transport: observe-devices.py'
+      shell: cmd
+      run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''PATCH_DIR''])/''observe-devices.py.b64''; p.open(''w'',encoding=''ascii'').write(''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'')"
+
+        if errorlevel 1 exit /b 1
+
+        py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''PATCH_DIR'']); b=zlib.decompress(base64.b64decode((p/''observe-devices.py.b64'').read_text()));
+        assert hashlib.sha256(b).hexdigest()==''a6f22df414ba0a73a2f83ad0efa2e32c8c074efb6a020831e77f37d7b9e29ab2''; (p/''observe-devices.py'').write_bytes(b)"
+
+        if errorlevel 1 exit /b 1'
+    - name: Read authorized local ADB connections under the existing lease
+      shell: cmd
+      timeout-minutes: 35
+      run: 'py -3 "%PATCH_DIR%\observe-devices.py"
+
+        if errorlevel 1 exit /b 1'
+    - name: Retain only bounded aggregate device metadata
+      if: always()
+      uses: actions/upload-artifact@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        name: windows-existing-device-observation
+        path: ${{ github.workspace }}/device-observer-${{ github.run_id }}-${{ github.run_attempt }}/device-connection-observation.json
+        retention-days: 3
+        if-no-files-found: error
