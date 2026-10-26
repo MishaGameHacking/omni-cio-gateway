@@ -1,0 +1,880 @@
+{
+  "kind": "recovered_exact_frozen_theme46_preparation",
+  "generator_sha256": "fd11f280bc20febbcd480ac458e9958d70b9be81fea66b67237533b1b9a01c0f",
+  "packages": {
+    "assets": {
+      "manifest_sha256": "a320b29b48f408945d9f446070a9ef126262e31c806a60fa4123d7367ae3fd50",
+      "source_files": 23,
+      "source_sha256": {
+        ".github/scripts/tests/test_spectrum_brand_identity.py": "b612173fb8633773085bc7709b3618e1c99fe7eedc377829fa3520e443f33ba4",
+        ".github/scripts/update-help.html": "84d495c82d113289945375b28936c0ca2ca8991ba079b1bf97cf9ab4f44fb13d",
+        "app/src/debug/AndroidManifest.xml": "ee43a26f9601c685533c6197f1eefdf01740cd979645a9a9347de8237a09b9e1",
+        "app/src/main/AndroidManifest.xml": "1d570fb3d24a3e3c7940be4d08422807a309b4aa4af1bf326776242b4a87dec5",
+        "app/src/main/java/ru/omnicio/app/AnalystApplication.kt": "5d970352d4c0388faf2f882c8ef08821a6fe7cac8aab4cf1a15449066395e3db",
+        "app/src/main/java/ru/omnicio/app/ui/theme/ApplicationThemeMode.kt": "6917454ceb9aed5c55a3a7e27e39c7c742c5a700bbf71e13465d0973d1696105",
+        "app/src/main/res/drawable/analyst_brain_foreground.xml": "d0d2fd80978ccf5f352618945084f9ad6ed5b80d2ab3ee913cee02785d24f4c7",
+        "app/src/main/res/drawable/analyst_launcher_background.xml": "f5dc865efadab4a6d05ce1c3b3c6b879e236688c8e24ff1d378220e636dfb5c6",
+        "app/src/main/res/drawable/omni_launcher_background.xml": "f5dc865efadab4a6d05ce1c3b3c6b879e236688c8e24ff1d378220e636dfb5c6",
+        "app/src/main/res/drawable/omni_launcher_foreground.xml": "f5261f5e4a48d6c205a59598a89cddd5667e1be310f3465f4d887622bef88e99",
+        "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc",
+        "app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc",
+        "app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc",
+        "app/src/main/res/mipmap-anydpi-v33/ic_launcher_round.xml": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc",
+        "app/src/main/res/values/colors.xml": "cef4a31cf2a3319f6f5c9b34b19f191ffe78efd59b01fcac29a6cfe3fc3249dc",
+        "app/src/main/res/values/themes.xml": "c7bfb33715599ff7f5ab814930159438a1454e1cfd166e6603a56790df4df59b",
+        "app/src/main/res/values-night/colors.xml": "8cd43ab19cf175c04f261cd62696424d2757d7310a1f7a72ef0cd566d51902d1",
+        "app/src/main/res/values-night/themes.xml": "1a7148b4ec333bee19b4e9cde3775a383e1e69a5d4744bee995c2405a071f6d0",
+        "app/src/test/java/ru/omnicio/app/ui/theme/ApplicationThemeModeTest.kt": "0f17d524f566a820cf038545f344df0402695ce4aa195206d14359f255cb65e9",
+        "backend/app.py": "a402ec6346c3ef5673484e11e2d60640245e1dc1be9ea1f9bec7263a2427ed4b",
+        "backend/owner_app.py": "4b0456f25f82fdfd8e4bc1fbe46c231c855650a4105716589bea611c36e227c3",
+        "backend/telegram_browser_app.py": "6be30431dfe9c6330479e15d1932a9b9bd05352b531ff145558759c6d2696750",
+        "backend/tests/test_owned_web_theme.py": "89cd736ac22e20dad6dc262d89f7b280d827caf6f68cf1c75eb693c4729fd28d"
+      }
+    },
+    "core": {
+      "manifest_sha256": "51bdcd1c41a72fecbc089297fde9f8351cedc4cd82508d0063fdf04c330732f0",
+      "source_files": 40,
+      "source_sha256": {
+        ".github/scripts/profile_ui_probe.py": "39b514be7837256de258e2b3a014a387a99f37f46c1c20ed03350f90c2e08840",
+        ".github/scripts/tests/test_android17_live_spectrum.py": "7d3d8d724ec3b5ac1549266fd96ff1b8ae65deee2b94cc45d04e8e9134ddb0bb",
+        ".github/scripts/tests/test_spectrum_contrast.py": "55c63b61d9b112dc5c62e27e6a27383370293da8a9ea990c264f5f8c8f5c7aed",
+        ".github/scripts/tests/test_spectrum_foreground.py": "92404d472ea3eb3b846d24dcce6ca0e3141ebdae5c680f5fb81c6eb01eb44768",
+        ".github/scripts/tests/test_spectrum_production_tokens.py": "033346f52732ccce4dcc2261daed2a66b6b93333f803f06982540aaef25e22e9",
+        ".github/scripts/tests/test_theme_state_evidence.py": "5e6832c7c2eabfbc50fabfc08befc79ead7d46dc1448a2673539d68b6760cafa",
+        ".github/scripts/theme_palette_expectations.json": "4fb4aa65c080eeaf705398d4879ebee6ed8836bc9d17aece12d5b26627e0a9cc",
+        ".github/scripts/theme_state_evidence.py": "db53c575ce7de05a4adb22d88c3f7ec9bd9bffa790038bfa697e6b17603c64fa",
+        "app/src/debug/java/ru/omnicio/app/ProfileUiProbeActivity.kt": "24f782bb97be34640cb230ac437d2b6250b6e30c24488cec91023c36be181ddc",
+        "app/src/debug/java/ru/omnicio/app/ThemeStateProbe.kt": "a6f1cc354db093e30b88b0efcc8590090f118f0c53093d76585821b0c63351f8",
+        "app/src/main/java/ru/omnicio/app/ui/AnalystBottomBar.kt": "5868bfd6d0d0730ddeadf89680a60bf2f44525014d7d778a6a38fc563320c94b",
+        "app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt": "165e8b195b5a21b060e996df134334cd5b72b99593b6afc165374b43797efaab",
+        "app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisCards.kt": "4b16274eb242c87ff76bdc3cc90f765bc2c25ca3fceae7e05e10291de660cff6",
+        "app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt": "75347bc093dad16f6f5e3dd21823d05e506608487ab968c27eca3759d8c8cf69",
+        "app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt": "c5e26ccbcf6601b91c02a48add175c0b56f690cbb47cb16cefaeeab14115d177",
+        "app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt": "87ba3f8375b1c445e9d980486a11fad6286a33ab704a4b31da5e4c1c09d5948e",
+        "app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioComponents.kt": "02ef810b450a19a5023dd4551453854f6ca8b70dfc50109795de02d7995f4dcb",
+        "app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt": "332b159e052387dddc38bd7fed3cb708528ed79166563b47c7531eab664b3fdf",
+        "app/src/main/java/ru/omnicio/app/ui/spatial/FlatArtwork.kt": "b4b42e7aff7142d0b7084375e6a9f08c0ec7d01e336154de8955f5e57e6d0510",
+        "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt": "15b078a44ce0d8b1cd38d37c849f884770aca2a5f50ef4c89cfdef1d8ec1994a",
+        "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialColors.kt": "2662c96857324fb91d022dc1d5e11c8040219ab5d04ef982cb9cbb5af6328d03",
+        "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt": "6f3df684f0d5768bb736ab1028fdf1401151f934c1a5c0d2b741be5e93691997",
+        "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialModels.kt": "ac6639c2eb63b5bf55748e4fc2a6234b1153d0811d6923c4811f165a958ed817",
+        "app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt": "376e226b70933dd8291dd991428d108ecf088b0a783b6683dc41ccd404feae43",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAssetMark.kt": "f5501302ad9830f758f1af7bf5bc4c6a78430e698c6f29b2b9b1ab9822448d93",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumCalendarColors.kt": "2ee0f4e2672e2482121180d2e9ddd74dbff9b6cea7f748853842ada9d9f7d67a",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt": "0fec8446b279a3d5b9f44f7e2e43487e7474a316828cff1f86b608f79c8a55f1",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumIcon.kt": "bb065b35192a31eca3ee4c777636a1593bac93fc6358d0cbfd7b70270bfb76b9",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt": "b821bb1d2d6005caf3e5efebbbfe8610f1015c41bc1bd6aadf62923e4687651d",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt": "c2459acdfddd865eaa2f0d385b69fe956deff6b2a75432f4d2a82903b44caeae",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTabs.kt": "0d957d2a5f5e3f8431ef7dbb78035a222ec531690fc13d8ce61f4818cc2af933",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt": "c2ef5231fa55251dc75d4963ecba02279de6d838bb5afa5d788fbcd772ea197b",
+        "app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt": "26a62e9a50bba8796b04443a7f4794770b038e2b9b3f341445a52c32ac876026",
+        "app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt": "64fb359e451f8503f98ca63cc766d60283471728411a4063ef70ae91ea1336da",
+        "app/src/main/java/ru/omnicio/app/ui/theme/AnalystTheme.kt": "1c6ce52f1581c21a5e782a5a94caa51963a29417aed13bb8fb5616f0d3ab17a4",
+        "app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt": "20190c9dd62a31763278bd710d20e26d17b3cf5807c099ea6cbf68daabfdc899",
+        "app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceControls.kt": "f708730470200cdbe251c950796754236d17c95fae0e46d6b1225e6391a1c2ff",
+        "app/src/test/java/ru/omnicio/app/ui/spatial/SpatialColorsTest.kt": "9897cd256cbe32b8ed5b62174553965226fe6f49fa0c284999431f5095001da0",
+        "app/src/test/java/ru/omnicio/app/ui/theme/AnalystColorsTest.kt": "11a1506775d30d5a7fb9bc60f548e3c4b28fb2fc1f637df7e99a10ec53d30e0c",
+        "app/src/test/java/ru/omnicio/app/ui/theme/DisplayedThemeTest.kt": "774e3f6fc6d17607e0e26fc08b8b7ade54532742f7e10c8bbc999b85741a05b8"
+      }
+    },
+    "lifecycle": {
+      "manifest_sha256": "11bff56200fc64e8b1a886861ec2739e0522740f192d9dd77536f4ef0f17a134",
+      "source_files": 3,
+      "source_sha256": {
+        ".github/scripts/tests/test_theme_lifecycle_probe.py": "4956ee328d5e7847a506a835e7cc1f6084e45f6388c893d0e3105b2c3a1ff97d",
+        ".github/scripts/theme_lifecycle_probe.py": "cb9bdfdc652ae96625805ad1a670f8c6728fbbc318c464795fcff91778734dbb",
+        "app/src/debug/java/ru/omnicio/app/ThemeLifecycleProbe.kt": "9ef924f7ea359d0b0349313c6aef21f89984fc5ed5deb7d103d731d7f42e3cf9"
+      }
+    },
+    "quotes": {
+      "manifest_sha256": "d128777f368d916c0689c9f6ab378c2cdc36d9eae730e78e9fa6a2be3acd56a3",
+      "source_files": 1,
+      "source_sha256": {
+        "app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt": "0a38fff1cf690ec569d8b516ec8433a4150aa4002be86f542ccef1dcc64d7324"
+      }
+    }
+  },
+  "archive_bytes": 1832816,
+  "archive_sha256": "3242c36e0df5202a39e510f8380f6deb3e922d685c21501f1ac612b0d381817d",
+  "transport_sha256": "fe0c0cf8bedbb54dd0640c7aa4c9b56a3cf70505df91b461432a4814b805e8dc",
+  "files": {
+    "context/candidate43/workflow.yml": {
+      "bytes": 133285,
+      "sha256": "f0e80b7fa64e98f01a090ed171111fccba184752d79950aa25ad0a3a830d0524"
+    },
+    "context/candidate45-retry3-bound/manifest-summary.json": {
+      "bytes": 1613,
+      "sha256": "7e8cfc425cc71790b59c7c998b049d8979847a1a5a4066816cd3be7579fbf913"
+    },
+    "context/candidate45-retry3-bound/reviewed-files.json": {
+      "bytes": 434477,
+      "sha256": "ef48fc46f81237558064b5e227e069fe7250d1a23b3beb76875f5039309dab8d"
+    },
+    "context/candidate45-retry3-build-evidence/controller.json": {
+      "bytes": 443,
+      "sha256": "6f7606711fdf1fa137ab64f31150b65f202ee6c591e7d11c85d29ea08ee9f349"
+    },
+    "context/candidate45-retry3-build-evidence/export-receipt.json": {
+      "bytes": 407,
+      "sha256": "d90fe823e7144291d86ed107b4666c401c53d89a7c1976dedcc3fed6e4d063eb"
+    },
+    "context/candidate45-retry3-build-evidence/source-final.json": {
+      "bytes": 158665,
+      "sha256": "c4fb53e001ec777097d0ffb238df962fa86590873cf297a264ab4bcd037b72f0"
+    },
+    "context/candidate45-retry3-build-evidence/windows-development.json": {
+      "bytes": 30936,
+      "sha256": "6e9c1e41d43984698edb50c100a1f12c2f635915e422a4d97f98ae8f4bb95b76"
+    },
+    "context/candidate46-actual45-request.json": {
+      "bytes": 843,
+      "sha256": "32273e6cd40cedf4eb12291ff31906d2ff1d2dc6c313660168ab0a71e3112236"
+    },
+    "context/candidate46-bound/manifest-summary.json": {
+      "bytes": 2124,
+      "sha256": "a79cbf2690ea2e0028c3cceb386ad2fb3e58e8c6e37a6929483934846151424f"
+    },
+    "context/candidate46-bound/n00-native46.b64": {
+      "bytes": 211604,
+      "sha256": "8617260f52d15f5168f5203c49b9c5e0fa8bbbb9c60352f42703b41f6555044b"
+    },
+    "context/candidate46-bound/patch-manifest.json": {
+      "bytes": 275,
+      "sha256": "e740f94f720d05649c0f033e3d4f079e2f7ea23bdd1027fa243abbb346e9ac29"
+    },
+    "context/candidate46-bound/reviewed-files.json": {
+      "bytes": 750209,
+      "sha256": "a362708141aee5657dade5f6e264b289cc37837c19cf851f311a805ce2cbfea6"
+    },
+    "context/candidate46-bound/windows-full-development.py": {
+      "bytes": 39114,
+      "sha256": "acec28a3aa0b22578b93a2d727edad7aaaa674018ce1b75a3a866ca4d414733d"
+    },
+    "context/candidate46-bound/workflow.yml": {
+      "bytes": 260902,
+      "sha256": "6d28afa879f9e61cd2003e100f45cf190eb855103e5832226cca357821f368da"
+    },
+    "context/candidate46-independent-render-review.json": {
+      "bytes": 1260,
+      "sha256": "e132cea1d5cab085c34cae4bd769954ad19e730773342fd7e307e6bf3b2fb82d"
+    },
+    "context/delivery44-verified.json": {
+      "bytes": 4624,
+      "sha256": "e5ea7be9aac3e2a63ef9175f3d3361906d7938ee0570b3da34d3329533e13b30"
+    },
+    "context/full-build-baseline/n00-linux-guest.py": {
+      "bytes": 4786,
+      "sha256": "9c92c16d88a9e69a6e9b73b61f0e1eff8cd6b1b457451ee104c07bd17a7e29f0"
+    },
+    "context/full-build-baseline/windows-full-development.py": {
+      "bytes": 39114,
+      "sha256": "986cebe48cf4d499aa71d12a491a595bfcaa279adf2cc191b38cd994636bf02d"
+    },
+    "context/native43/n00-portfolio-focused-hook.py": {
+      "bytes": 2015,
+      "sha256": "ddff3bb7c57670141b9e5f0ce02994fb0d8ed7748b781776a284460614f2276e"
+    },
+    "context/native44-bound/n00-runtime.py": {
+      "bytes": 21143,
+      "sha256": "b5479dcb488eed6e38a1c2dc40d21b43e6ce61aeeaed644037be169e4d0d0cb9"
+    },
+    "context/native44-bound/workflow.yml": {
+      "bytes": 41392,
+      "sha256": "9ee2325a8746d5123d0ae07792195639b50f1e738f9f10466fa1c59d04e391d8"
+    },
+    "context/native45-actual-request.json": {
+      "bytes": 1441,
+      "sha256": "6db1a43c85bfd68874b9301fb04574bccadde502fee8ea978809ab785003f7af"
+    },
+    "context/native46/README.md": {
+      "bytes": 8650,
+      "sha256": "ffa1b05a269dd4e5df1fda715ff4781ce7892c3f49a9a09de5bb2e5217506c9f"
+    },
+    "context/native46/independent-static-review.json": {
+      "bytes": 1614,
+      "sha256": "74328b94ce41cee8a55250420e5639d46abbe550cbc6051374db22a57422b720"
+    },
+    "context/native46/manifest.json": {
+      "bytes": 1626,
+      "sha256": "b3e49db286af84e544aa908b460d0158152cf7b4fa64c2ae1c4c16704978d101"
+    },
+    "context/native46/request.example.json": {
+      "bytes": 1165,
+      "sha256": "bbf96e641b8f1d8835d1c4a45997042dac76b9d94cb94df89aa73558e8981e3f"
+    },
+    "context/native46-night-fixture/README.md": {
+      "bytes": 4508,
+      "sha256": "b373f50b006c2e38ca0064481ca96af69b76b9fc4adef3eea83849fbd698faab"
+    },
+    "context/ordinary-ci46-readonly/README.md": {
+      "bytes": 9282,
+      "sha256": "171070681125dc6263e8bc9ffbc702fa0f11faf96518491bf67683b8aef0a187"
+    },
+    "context/ordinary-ci46-readonly/additional-observations.json": {
+      "bytes": 12312,
+      "sha256": "f97131759205909bd14a5e6db9169fb534ec876c0c1b6e38098e8ac83a9a9299"
+    },
+    "context/ordinary-ci46-readonly/github-snapshot.json": {
+      "bytes": 1485567,
+      "sha256": "bdc87e2de01fca4f390368d666dfe97a635efbd0b541c8de9e78acecb9a4208a"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/authoritative_merge_gate.cjs": {
+      "bytes": 5837,
+      "sha256": "1cbe99ee03966f14a42b4cf2484243ed0acde0ae9db2a23d83ab3d953270e322"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/laptop_backend_ci.py": {
+      "bytes": 15009,
+      "sha256": "e5f61d3d2647809dce0e4d0fcb1a216d8a623807d013fab5679d9c634186271e"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/private_apk_review.cjs": {
+      "bytes": 8062,
+      "sha256": "2c5a83430f90d0955bac136d5c57d3cf1ee273ab26022ccc41f1479e3d23463a"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/profile_ui_probe.py": {
+      "bytes": 33588,
+      "sha256": "b61f6b062bcec76078da8de46d30d5cfc1b395a1bf854096f11f5d18637d455c"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/require_clean_sonar.cjs": {
+      "bytes": 1841,
+      "sha256": "b4895a75b3cb2e47da150b98376ff65bc6cff865e5b51ded536978fe1d2a3ce7"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/require_main_release.cjs": {
+      "bytes": 1871,
+      "sha256": "3f152141a57314eb926b18cfe3b693aadc651d2cbafa3d25afd37be5ec8c571c"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/test_apk_installation.py": {
+      "bytes": 36622,
+      "sha256": "e13f92d8bb4f722311bde732399d4c3c78be3ea0ca4f9e3c2053dce71ef76899"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/scripts/windows_android_ci.py": {
+      "bytes": 49874,
+      "sha256": "a338a5ff3177ec429452334433441ef27f5a8c1c1ed30d97e6528cb142df4800"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/workflows/android-apk.yml": {
+      "bytes": 1097,
+      "sha256": "4a01a75f858d08290b9454bb06b0aa3b2d9bdb8bc75b72ebbca47ab44c321414"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/workflows/android-ci.yml": {
+      "bytes": 37729,
+      "sha256": "c3892ee4b873e8eaae3a3c8de5fba72ffd231b98aca0296d10b169575db6d3e7"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/workflows/backend-ci.yml": {
+      "bytes": 9506,
+      "sha256": "6071e3e093f53d6154e4872a7bca09c1e08099e2a3f9e341d185ae16e13dffbd"
+    },
+    "context/ordinary-ci46-readonly/remote/.github/workflows/source-review.yml": {
+      "bytes": 4704,
+      "sha256": "e5a352c3372e92a366d68c578d45ab80ad65bab024efc20b26cbcbc412579bf2"
+    },
+    "context/ordinary-ci46-readonly/remote/.sonarcloud.properties": {
+      "bytes": 190,
+      "sha256": "be03c6f12da57b1eeda8862a6f781963a52e436cc70f1faeb0935465ff4f21a9"
+    },
+    "context/ordinary-ci46-readonly/remote/backend/android_runtime_contract.py": {
+      "bytes": 3142,
+      "sha256": "1ed9a56769d308c9f5457fa383517a80965cd474dff8851e16a85390954335c2"
+    },
+    "context/prepare_candidate43.py": {
+      "bytes": 10775,
+      "sha256": "4eacbfc75c509e81573facfad79564d9474ca2c5a3b2069a612bb1274bcf150d"
+    },
+    "context/prepare_candidate44.py": {
+      "bytes": 14907,
+      "sha256": "34de235114817713500bb73bbc48f1f61f0012de402155ecc23678ecd623f2c7"
+    },
+    "context/prepare_candidate44_recovery.py": {
+      "bytes": 8767,
+      "sha256": "9faf7eed9155105b1affedac00ad2498e6137625150f9fe621f3ef147269de1b"
+    },
+    "context/prepare_candidate45.py": {
+      "bytes": 34385,
+      "sha256": "69bfb8dbefd2cb3ce7bbf03dbd3bbbaf90c66b8b6fb5d38873a6f27e878ecf9a"
+    },
+    "context/prepare_candidate45_retry.py": {
+      "bytes": 8721,
+      "sha256": "ddb92883db045364945e3c7af48184b4c57f40d091e20ca4bcc18ae3a1d1659e"
+    },
+    "context/prepare_candidate45_retry2.py": {
+      "bytes": 12611,
+      "sha256": "67771d08efd24322e261b0990487c83c5cf85701ecf669113787f40c3c859aea"
+    },
+    "context/prepare_candidate45_retry3.py": {
+      "bytes": 7510,
+      "sha256": "72a0d13ebaec28290cc0b536c1b2e94dea0e73d2a54a3ade5637ee9b6b1e2f19"
+    },
+    "context/prepare_candidate45_retry4.py": {
+      "bytes": 9712,
+      "sha256": "68f7f8471edd711d955b322250e9968a04ced7330b47172700351bb6218000b0"
+    },
+    "context/prepare_candidate46.py": {
+      "bytes": 14600,
+      "sha256": "55eec2846eeae450ac665bbcdb7752c08d063ba2a079f51f3ae9895e8e441549"
+    },
+    "context/prepare_ci_migration.py": {
+      "bytes": 17730,
+      "sha256": "a9ba9441c76a6afce31fb8bd24259973183c1cf5c75a2de62a850f86bf078d86"
+    },
+    "context/prepare_delivery43.py": {
+      "bytes": 7189,
+      "sha256": "8f0b751bb4dfa1a4ab449f1e400da9752f82779b406aca14bea72cd05aca9440"
+    },
+    "context/prepare_native43.py": {
+      "bytes": 23263,
+      "sha256": "5d99d4a8e18e3e3f67d400cfb8a4570e638444eb2b6d53c71adc853b56abb225"
+    },
+    "context/prepare_native44.py": {
+      "bytes": 24083,
+      "sha256": "f3f1321d3f3e5d8c0f2244b932fe055b29953abc4e202af0bb982ab3d8e32dc2"
+    },
+    "context/prepare_native45.py": {
+      "bytes": 28141,
+      "sha256": "1cc9d2b65e11ee1a3485f957fdc3d08f939d6706071831e5cfd77d3052d439e0"
+    },
+    "context/prepare_native46.py": {
+      "bytes": 44383,
+      "sha256": "fd11f280bc20febbcd480ac458e9958d70b9be81fea66b67237533b1b9a01c0f"
+    },
+    "context/prepare_theme46_notes.py": {
+      "bytes": 21194,
+      "sha256": "8352ea81232217da674114d0c637c436e7dd92427427825fb33fde558648b2a4"
+    },
+    "context/quote-reset46/README.md": {
+      "bytes": 4590,
+      "sha256": "b9d3a7398fbcaf286b3f4012d9e16b6cdb5f268e276a17045e295299d79f8b44"
+    },
+    "context/quote-reset46/candidate.patch": {
+      "bytes": 4037,
+      "sha256": "14fbee3c2582b58f5ce8a0d5da93c79152eb4d29f1f325174cd61e9d852f10f9"
+    },
+    "context/quote-reset46/manifest.json": {
+      "bytes": 3218,
+      "sha256": "d128777f368d916c0689c9f6ab378c2cdc36d9eae730e78e9fa6a2be3acd56a3"
+    },
+    "context/quote-reset46/source/app/src/main/java/ru/omnicio/app/ui/portfolio/InstrumentQuotesPanel.kt": {
+      "bytes": 12368,
+      "sha256": "0a38fff1cf690ec569d8b516ec8433a4150aa4002be86f542ccef1dcc64d7324"
+    },
+    "context/theme46-assets/LIFECYCLE_PROPOSAL.md": {
+      "bytes": 12774,
+      "sha256": "373015e8fc8615d1e18cc8352fd90f255bfecbf1c7eff1e550773b0fc543ef28"
+    },
+    "context/theme46-assets/README.md": {
+      "bytes": 5577,
+      "sha256": "e1cd21f3abd0d72bcdd872b94591fb352f1a084980f3958343169d03b6940f61"
+    },
+    "context/theme46-assets/brand-checks-prefix.py.txt": {
+      "bytes": 9361,
+      "sha256": "568db2338535bc1d07b7be3c0f3fa7a1e789714ac687b25827418a11037dca9e"
+    },
+    "context/theme46-assets/frozen-18/manifest-summary.json": {
+      "bytes": 8925,
+      "sha256": "f18858fb83e0b442bad8daaa9ce9a5c08db94ee412f8bd63366f5bdedf792398"
+    },
+    "context/theme46-assets/frozen-18/manifest.json": {
+      "bytes": 105456,
+      "sha256": "afb4afb1493fa68d8dcaabbb0891d859c7736e14ff0a00f43a5f7a810b82139a"
+    },
+    "context/theme46-assets/frozen-18/theme46-assets.patch": {
+      "bytes": 53415,
+      "sha256": "249b2f488277376848466823313b7592ad8b9f7a09e0d812b022ef6b9f58bc78"
+    },
+    "context/theme46-assets/manifest-summary.json": {
+      "bytes": 11007,
+      "sha256": "99004f4855ebc03b4777266e07e837d425551b41d4c38e796c3462297cb3b688"
+    },
+    "context/theme46-assets/manifest.json": {
+      "bytes": 127767,
+      "sha256": "a320b29b48f408945d9f446070a9ef126262e31c806a60fa4123d7367ae3fd50"
+    },
+    "context/theme46-assets/prepare_assets.py": {
+      "bytes": 20258,
+      "sha256": "e133e891ada31d5093751a1412cec1a0e336e39b0425f3c85509940dea3afd1a"
+    },
+    "context/theme46-assets/source/.github/scripts/tests/test_spectrum_brand_identity.py": {
+      "bytes": 11131,
+      "sha256": "b612173fb8633773085bc7709b3618e1c99fe7eedc377829fa3520e443f33ba4"
+    },
+    "context/theme46-assets/source/.github/scripts/update-help.html": {
+      "bytes": 2838,
+      "sha256": "84d495c82d113289945375b28936c0ca2ca8991ba079b1bf97cf9ab4f44fb13d"
+    },
+    "context/theme46-assets/source/app/src/debug/AndroidManifest.xml": {
+      "bytes": 527,
+      "sha256": "ee43a26f9601c685533c6197f1eefdf01740cd979645a9a9347de8237a09b9e1"
+    },
+    "context/theme46-assets/source/app/src/main/AndroidManifest.xml": {
+      "bytes": 3055,
+      "sha256": "1d570fb3d24a3e3c7940be4d08422807a309b4aa4af1bf326776242b4a87dec5"
+    },
+    "context/theme46-assets/source/app/src/main/java/ru/omnicio/app/AnalystApplication.kt": {
+      "bytes": 532,
+      "sha256": "5d970352d4c0388faf2f882c8ef08821a6fe7cac8aab4cf1a15449066395e3db"
+    },
+    "context/theme46-assets/source/app/src/main/java/ru/omnicio/app/ui/theme/ApplicationThemeMode.kt": {
+      "bytes": 9192,
+      "sha256": "6917454ceb9aed5c55a3a7e27e39c7c742c5a700bbf71e13465d0973d1696105"
+    },
+    "context/theme46-assets/source/app/src/main/res/drawable/analyst_brain_foreground.xml": {
+      "bytes": 1069,
+      "sha256": "d0d2fd80978ccf5f352618945084f9ad6ed5b80d2ab3ee913cee02785d24f4c7"
+    },
+    "context/theme46-assets/source/app/src/main/res/drawable/analyst_launcher_background.xml": {
+      "bytes": 206,
+      "sha256": "f5dc865efadab4a6d05ce1c3b3c6b879e236688c8e24ff1d378220e636dfb5c6"
+    },
+    "context/theme46-assets/source/app/src/main/res/drawable/omni_launcher_background.xml": {
+      "bytes": 206,
+      "sha256": "f5dc865efadab4a6d05ce1c3b3c6b879e236688c8e24ff1d378220e636dfb5c6"
+    },
+    "context/theme46-assets/source/app/src/main/res/drawable/omni_launcher_foreground.xml": {
+      "bytes": 1927,
+      "sha256": "f5261f5e4a48d6c205a59598a89cddd5667e1be310f3465f4d887622bef88e99"
+    },
+    "context/theme46-assets/source/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml": {
+      "bytes": 350,
+      "sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    "context/theme46-assets/source/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml": {
+      "bytes": 350,
+      "sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    "context/theme46-assets/source/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml": {
+      "bytes": 350,
+      "sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    "context/theme46-assets/source/app/src/main/res/mipmap-anydpi-v33/ic_launcher_round.xml": {
+      "bytes": 350,
+      "sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    "context/theme46-assets/source/app/src/main/res/values/colors.xml": {
+      "bytes": 1711,
+      "sha256": "cef4a31cf2a3319f6f5c9b34b19f191ffe78efd59b01fcac29a6cfe3fc3249dc"
+    },
+    "context/theme46-assets/source/app/src/main/res/values/themes.xml": {
+      "bytes": 2085,
+      "sha256": "c7bfb33715599ff7f5ab814930159438a1454e1cfd166e6603a56790df4df59b"
+    },
+    "context/theme46-assets/source/app/src/main/res/values-night/colors.xml": {
+      "bytes": 1711,
+      "sha256": "8cd43ab19cf175c04f261cd62696424d2757d7310a1f7a72ef0cd566d51902d1"
+    },
+    "context/theme46-assets/source/app/src/main/res/values-night/themes.xml": {
+      "bytes": 2081,
+      "sha256": "1a7148b4ec333bee19b4e9cde3775a383e1e69a5d4744bee995c2405a071f6d0"
+    },
+    "context/theme46-assets/source/app/src/test/java/ru/omnicio/app/ui/theme/ApplicationThemeModeTest.kt": {
+      "bytes": 6243,
+      "sha256": "0f17d524f566a820cf038545f344df0402695ce4aa195206d14359f255cb65e9"
+    },
+    "context/theme46-assets/source/backend/app.py": {
+      "bytes": 29703,
+      "sha256": "a402ec6346c3ef5673484e11e2d60640245e1dc1be9ea1f9bec7263a2427ed4b"
+    },
+    "context/theme46-assets/source/backend/owner_app.py": {
+      "bytes": 6232,
+      "sha256": "4b0456f25f82fdfd8e4bc1fbe46c231c855650a4105716589bea611c36e227c3"
+    },
+    "context/theme46-assets/source/backend/telegram_browser_app.py": {
+      "bytes": 17398,
+      "sha256": "6be30431dfe9c6330479e15d1932a9b9bd05352b531ff145558759c6d2696750"
+    },
+    "context/theme46-assets/source/backend/tests/test_owned_web_theme.py": {
+      "bytes": 13034,
+      "sha256": "89cd736ac22e20dad6dc262d89f7b280d827caf6f68cf1c75eb693c4729fd28d"
+    },
+    "context/theme46-assets/static-scope-review.json": {
+      "bytes": 457,
+      "sha256": "4ca1ab95e7dbfce7d2dd2f0115729975b14d9b005f6d814b7287ba9cdc8f5abe"
+    },
+    "context/theme46-assets/theme46-assets.patch": {
+      "bytes": 71314,
+      "sha256": "e01bcf00bd1f26a5ac1f062be9f9ee3efe6724326fb2bfaa35d32e414815a985"
+    },
+    "context/theme46-core/NATIVE_COVERAGE_PROPOSAL.md": {
+      "bytes": 6701,
+      "sha256": "211cd97be69e410c5d9cb9af97bb1c7db9438bc7d29f45d73f1f5857ef09fa65"
+    },
+    "context/theme46-core/README.md": {
+      "bytes": 4850,
+      "sha256": "f5c85a3252015a5a91a557f129a7e39fa8e83d09c79059a1d7b236b535f3865b"
+    },
+    "context/theme46-core/base/.github/scripts/profile_ui_probe.py": {
+      "bytes": 33588,
+      "sha256": "b61f6b062bcec76078da8de46d30d5cfc1b395a1bf854096f11f5d18637d455c"
+    },
+    "context/theme46-core/base/.github/scripts/tests/test_android17_live_spectrum.py": {
+      "bytes": 7591,
+      "sha256": "ee7c103e1be172a43ba7b6e348bbe37fa46d2edbe87c4c8d20b290438998b790"
+    },
+    "context/theme46-core/base/.github/scripts/tests/test_spectrum_contrast.py": {
+      "bytes": 2171,
+      "sha256": "f456319c86b624affe0163591b4f8d98807c2ed8a0ea0c2d14cfe18c92609ab6"
+    },
+    "context/theme46-core/base/.github/scripts/tests/test_spectrum_foreground.py": {
+      "bytes": 2806,
+      "sha256": "c6ae9c9998885b48d0889af98666b78b57d045ac0e4df1b06839d508940658d1"
+    },
+    "context/theme46-core/base/.github/scripts/tests/test_spectrum_production_tokens.py": {
+      "bytes": 6619,
+      "sha256": "2eec573bf9db0fee8955400c2fa4b9bddb5cfeefbbbe82183e96deb618888a05"
+    },
+    "context/theme46-core/base/app/src/debug/java/ru/omnicio/app/ProfileUiProbeActivity.kt": {
+      "bytes": 7443,
+      "sha256": "1bf301b726607746d7c236a066b63726eb5484670b0865d65a519601d0b169e4"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/AnalystBottomBar.kt": {
+      "bytes": 8072,
+      "sha256": "5e52cef551af74fb81b895809e05cc1806098c67026cbf27d25d1c475c02e2ae"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt": {
+      "bytes": 9597,
+      "sha256": "9b2fc02f70c92196a5e948c8f276c5fe24a7a1457c2c68ca33639e8b49d2019c"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisCards.kt": {
+      "bytes": 18572,
+      "sha256": "e2e70804e3ec3f2ad9002f165fcf3ac7f4bedbafc242138de5a0f3ef70093ff9"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt": {
+      "bytes": 12737,
+      "sha256": "e13065f64e829139a5d5f1ce2fe95d2ce7ae27bd9c2cd19c16b0232f6e7b17a5"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt": {
+      "bytes": 7793,
+      "sha256": "8b16d9f1d892438925163a93acb2053a53a10f547279e6b48704a3e0e967d1cc"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt": {
+      "bytes": 21078,
+      "sha256": "95c8d64271485a09b312d72035bdee0d5f15f58ac23c8cce7f7992a7b0a3bf55"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioComponents.kt": {
+      "bytes": 15347,
+      "sha256": "34c91e8b37b45b225840488fa14f43f9080bb41b104491272b58144566547887"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt": {
+      "bytes": 18002,
+      "sha256": "2d6a6f925791590bd4029d9c5880ff7ca199a3f9a47e49de7d307df7e5e0410e"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spatial/FlatArtwork.kt": {
+      "bytes": 12237,
+      "sha256": "3d1a29fa9e5fa5e052e3616aa3d338e612d5c85e43e15a883004e0e6bf652fa3"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt": {
+      "bytes": 3801,
+      "sha256": "00ffe65419481ffc3d830aafffa926e772bfb60839601ea06ecc4de9515420c3"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt": {
+      "bytes": 11376,
+      "sha256": "c9ffb88d3aed284ab88610034a05874e932d9b55ddc2323e613493df83f847a9"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialModels.kt": {
+      "bytes": 4188,
+      "sha256": "b24250605d79b67883efd37299dd2483240ab101087f88126b3bd81cc0c3109c"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt": {
+      "bytes": 7783,
+      "sha256": "6f7eebe86e3cf8ef0583338e1378bdb812dc2baf61e2a18a57d5e4fec4f58d98"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAssetMark.kt": {
+      "bytes": 1664,
+      "sha256": "c803fd01f54fa1a5b392b54b85be3ec53adc9b5306cd3c0370b419103964b109"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt": {
+      "bytes": 11445,
+      "sha256": "d434d100da1fa97c7cf83c58c8e2bda6e95b93508ae74eff04a5c7ed365a5c1e"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumIcon.kt": {
+      "bytes": 2190,
+      "sha256": "2169702f8cf4eeb648f0d4bd55560372bbcc34f8a2e7f55ddc94ea617db1e040"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt": {
+      "bytes": 3971,
+      "sha256": "cacb220b228075c2536ddbac97545dceb1f00e871d1dae6f9c361effb7c6550a"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt": {
+      "bytes": 3967,
+      "sha256": "ecff41072feef83c74c3490ff1d069c7a247828c447706d1f576efd500ec5299"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTabs.kt": {
+      "bytes": 5495,
+      "sha256": "51599f1211c2630451a17b5ea1d2e4efbd3521e0cf8f39b0e23ffac8ca18c145"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt": {
+      "bytes": 5045,
+      "sha256": "eb322c69f83a4e478983799be9795008ec86a1829d9a554ce7a02c0eb2acf2a9"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt": {
+      "bytes": 11889,
+      "sha256": "64724be9830c0d17bcb05707d9b3bae4a2eea801d6238a6e64b1687355297cf6"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/theme/AnalystTheme.kt": {
+      "bytes": 11170,
+      "sha256": "32757f21b22fca3d492a7aec56a406b8020ef3a99c3664787ed490fc3a35ced1"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt": {
+      "bytes": 11771,
+      "sha256": "5e1e6c210c11ae1f643e153bd0f0d7e291b203e36db071cf8fe9121954ef13e0"
+    },
+    "context/theme46-core/base/app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceControls.kt": {
+      "bytes": 3664,
+      "sha256": "4f63c01ac0d1704738d978593cebfdf67ced48011650536b6a1529efa5932d10"
+    },
+    "context/theme46-core/base-files.json": {
+      "bytes": 8661,
+      "sha256": "a7e2a89ee18d638c0ecc72c458095040c2727b8c0d62d67ada495929edfca92a"
+    },
+    "context/theme46-core/candidate.patch": {
+      "bytes": 253637,
+      "sha256": "b9b07432937f686d34043dbe1725fa518b2c54541f82c57109f70a608c68c59c"
+    },
+    "context/theme46-core/coverage-matrix.json": {
+      "bytes": 16214,
+      "sha256": "95714220db27b72e9725126f321828bbc39bfb87dc4f970c853312f523bbf4f3"
+    },
+    "context/theme46-core/effective-accent-roles.json": {
+      "bytes": 16819,
+      "sha256": "c48903a7b523f5dda7197de55b783903da331794a15a23707ee32a268ec27ba7"
+    },
+    "context/theme46-core/manifest.json": {
+      "bytes": 19935,
+      "sha256": "51bdcd1c41a72fecbc089297fde9f8351cedc4cd82508d0063fdf04c330732f0"
+    },
+    "context/theme46-core/prepare-color-data.py": {
+      "bytes": 5075,
+      "sha256": "193d23f218732a07b8d97bd1d116dbf6be3e91266a43e99cca3867f68918f9c7"
+    },
+    "context/theme46-core/source/.github/scripts/profile_ui_probe.py": {
+      "bytes": 33588,
+      "sha256": "39b514be7837256de258e2b3a014a387a99f37f46c1c20ed03350f90c2e08840"
+    },
+    "context/theme46-core/source/.github/scripts/tests/test_android17_live_spectrum.py": {
+      "bytes": 7674,
+      "sha256": "7d3d8d724ec3b5ac1549266fd96ff1b8ae65deee2b94cc45d04e8e9134ddb0bb"
+    },
+    "context/theme46-core/source/.github/scripts/tests/test_spectrum_contrast.py": {
+      "bytes": 3798,
+      "sha256": "55c63b61d9b112dc5c62e27e6a27383370293da8a9ea990c264f5f8c8f5c7aed"
+    },
+    "context/theme46-core/source/.github/scripts/tests/test_spectrum_foreground.py": {
+      "bytes": 2807,
+      "sha256": "92404d472ea3eb3b846d24dcce6ca0e3141ebdae5c680f5fb81c6eb01eb44768"
+    },
+    "context/theme46-core/source/.github/scripts/tests/test_spectrum_production_tokens.py": {
+      "bytes": 12402,
+      "sha256": "033346f52732ccce4dcc2261daed2a66b6b93333f803f06982540aaef25e22e9"
+    },
+    "context/theme46-core/source/.github/scripts/tests/test_theme_state_evidence.py": {
+      "bytes": 28957,
+      "sha256": "5e6832c7c2eabfbc50fabfc08befc79ead7d46dc1448a2673539d68b6760cafa"
+    },
+    "context/theme46-core/source/.github/scripts/theme_palette_expectations.json": {
+      "bytes": 16754,
+      "sha256": "4fb4aa65c080eeaf705398d4879ebee6ed8836bc9d17aece12d5b26627e0a9cc"
+    },
+    "context/theme46-core/source/.github/scripts/theme_state_evidence.py": {
+      "bytes": 58008,
+      "sha256": "db53c575ce7de05a4adb22d88c3f7ec9bd9bffa790038bfa697e6b17603c64fa"
+    },
+    "context/theme46-core/source/app/src/debug/java/ru/omnicio/app/ProfileUiProbeActivity.kt": {
+      "bytes": 8260,
+      "sha256": "24f782bb97be34640cb230ac437d2b6250b6e30c24488cec91023c36be181ddc"
+    },
+    "context/theme46-core/source/app/src/debug/java/ru/omnicio/app/ThemeStateProbe.kt": {
+      "bytes": 21518,
+      "sha256": "a6f1cc354db093e30b88b0efcc8590090f118f0c53093d76585821b0c63351f8"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/AnalystBottomBar.kt": {
+      "bytes": 8153,
+      "sha256": "5868bfd6d0d0730ddeadf89680a60bf2f44525014d7d778a6a38fc563320c94b"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt": {
+      "bytes": 10435,
+      "sha256": "165e8b195b5a21b060e996df134334cd5b72b99593b6afc165374b43797efaab"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisCards.kt": {
+      "bytes": 18720,
+      "sha256": "4b16274eb242c87ff76bdc3cc90f765bc2c25ca3fceae7e05e10291de660cff6"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/education/EducationScreen.kt": {
+      "bytes": 12739,
+      "sha256": "75347bc093dad16f6f5e3dd21823d05e506608487ab968c27eca3759d8c8cf69"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/portfolio/AccountDataState.kt": {
+      "bytes": 7889,
+      "sha256": "c5e26ccbcf6601b91c02a48add175c0b56f690cbb47cb16cefaeeab14115d177"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/portfolio/HistoryChart.kt": {
+      "bytes": 21134,
+      "sha256": "87ba3f8375b1c445e9d980486a11fad6286a33ab704a4b31da5e4c1c09d5948e"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/portfolio/PortfolioComponents.kt": {
+      "bytes": 15131,
+      "sha256": "02ef810b450a19a5023dd4551453854f6ca8b70dfc50109795de02d7995f4dcb"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt": {
+      "bytes": 18061,
+      "sha256": "332b159e052387dddc38bd7fed3cb708528ed79166563b47c7531eab664b3fdf"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spatial/FlatArtwork.kt": {
+      "bytes": 14681,
+      "sha256": "b4b42e7aff7142d0b7084375e6a9f08c0ec7d01e336154de8955f5e57e6d0510"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialChartGuides.kt": {
+      "bytes": 3924,
+      "sha256": "15b078a44ce0d8b1cd38d37c849f884770aca2a5f50ef4c89cfdef1d8ec1994a"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialColors.kt": {
+      "bytes": 4104,
+      "sha256": "2662c96857324fb91d022dc1d5e11c8040219ab5d04ef982cb9cbb5af6328d03"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialComponents.kt": {
+      "bytes": 11697,
+      "sha256": "6f3df684f0d5768bb736ab1028fdf1401151f934c1a5c0d2b741be5e93691997"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialModels.kt": {
+      "bytes": 4359,
+      "sha256": "ac6639c2eb63b5bf55748e4fc2a6234b1153d0811d6923c4811f165a958ed817"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spatial/SpatialScene.kt": {
+      "bytes": 7839,
+      "sha256": "376e226b70933dd8291dd991428d108ecf088b0a783b6683dc41ccd404feae43"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumAssetMark.kt": {
+      "bytes": 1705,
+      "sha256": "f5501302ad9830f758f1af7bf5bc4c6a78430e698c6f29b2b9b1ab9822448d93"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumCalendarColors.kt": {
+      "bytes": 3042,
+      "sha256": "2ee0f4e2672e2482121180d2e9ddd74dbff9b6cea7f748853842ada9d9f7d67a"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumDesignSystem.kt": {
+      "bytes": 13343,
+      "sha256": "0fec8446b279a3d5b9f44f7e2e43487e7474a316828cff1f86b608f79c8a55f1"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumIcon.kt": {
+      "bytes": 2221,
+      "sha256": "bb065b35192a31eca3ee4c777636a1593bac93fc6358d0cbfd7b70270bfb76b9"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumRangeSlider.kt": {
+      "bytes": 3979,
+      "sha256": "b821bb1d2d6005caf3e5efebbbfe8610f1015c41bc1bd6aadf62923e4687651d"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumSelectionControls.kt": {
+      "bytes": 5644,
+      "sha256": "c2459acdfddd865eaa2f0d385b69fe956deff6b2a75432f4d2a82903b44caeae"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTabs.kt": {
+      "bytes": 5557,
+      "sha256": "0d957d2a5f5e3f8431ef7dbb78035a222ec531690fc13d8ce61f4818cc2af933"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextButton.kt": {
+      "bytes": 5169,
+      "sha256": "c2ef5231fa55251dc75d4963ecba02279de6d838bb5afa5d788fbcd772ea197b"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/spectrum/SpectrumTextField.kt": {
+      "bytes": 13066,
+      "sha256": "26a62e9a50bba8796b04443a7f4794770b038e2b9b3f341445a52c32ac876026"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt": {
+      "bytes": 8504,
+      "sha256": "64fb359e451f8503f98ca63cc766d60283471728411a4063ef70ae91ea1336da"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/theme/AnalystTheme.kt": {
+      "bytes": 9544,
+      "sha256": "1c6ce52f1581c21a5e782a5a94caa51963a29417aed13bb8fb5616f0d3ab17a4"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/workspace/AppearanceScreen.kt": {
+      "bytes": 12234,
+      "sha256": "20190c9dd62a31763278bd710d20e26d17b3cf5807c099ea6cbf68daabfdc899"
+    },
+    "context/theme46-core/source/app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceControls.kt": {
+      "bytes": 3820,
+      "sha256": "f708730470200cdbe251c950796754236d17c95fae0e46d6b1225e6391a1c2ff"
+    },
+    "context/theme46-core/source/app/src/test/java/ru/omnicio/app/ui/spatial/SpatialColorsTest.kt": {
+      "bytes": 6075,
+      "sha256": "9897cd256cbe32b8ed5b62174553965226fe6f49fa0c284999431f5095001da0"
+    },
+    "context/theme46-core/source/app/src/test/java/ru/omnicio/app/ui/theme/AnalystColorsTest.kt": {
+      "bytes": 5909,
+      "sha256": "11a1506775d30d5a7fb9bc60f548e3c4b28fb2fc1f637df7e99a10ec53d30e0c"
+    },
+    "context/theme46-core/source/app/src/test/java/ru/omnicio/app/ui/theme/DisplayedThemeTest.kt": {
+      "bytes": 1505,
+      "sha256": "774e3f6fc6d17607e0e26fc08b8b7ade54532742f7e10c8bbc999b85741a05b8"
+    },
+    "context/theme46-independent-review/core-static-final.json": {
+      "bytes": 8382,
+      "sha256": "70ca60fa40aa997b08bb8faa10ccf08646261a54011909104bd180223bd0b6ce"
+    },
+    "context/theme46-independent-review/core-static-initial.json": {
+      "bytes": 6977,
+      "sha256": "802e9ee06f244c08e3a8d0c12b8dbc5d61c8d2bfaf2ef687db29f93ff9381d19"
+    },
+    "context/theme46-lifecycle/README.md": {
+      "bytes": 12168,
+      "sha256": "a675c8e60c68d67dfa958872cc8b688760f88f18c69b93b50245558a4f783e92"
+    },
+    "context/theme46-lifecycle/candidate.patch": {
+      "bytes": 72123,
+      "sha256": "fc0f9008a124cc82f643f737361e79572823c93181cb51c3124038c3467e2781"
+    },
+    "context/theme46-lifecycle/manifest.json": {
+      "bytes": 3885,
+      "sha256": "11bff56200fc64e8b1a886861ec2739e0522740f192d9dd77536f4ef0f17a134"
+    },
+    "context/theme46-lifecycle/router-delta.json": {
+      "bytes": 1223,
+      "sha256": "e683daf8fdb6ccb019bd55f26a5678615f6732347a559f3781b30dd02af1459d"
+    },
+    "context/theme46-lifecycle/router-delta.patch": {
+      "bytes": 2765,
+      "sha256": "393d8b99b39ca378004a2d9253c6f5edfeb03f6fe5942a3d95c7364445313a73"
+    },
+    "context/theme46-lifecycle/source/.github/scripts/tests/test_theme_lifecycle_probe.py": {
+      "bytes": 19018,
+      "sha256": "4956ee328d5e7847a506a835e7cc1f6084e45f6388c893d0e3105b2c3a1ff97d"
+    },
+    "context/theme46-lifecycle/source/.github/scripts/theme_lifecycle_probe.py": {
+      "bytes": 36341,
+      "sha256": "cb9bdfdc652ae96625805ad1a670f8c6728fbbc318c464795fcff91778734dbb"
+    },
+    "context/theme46-lifecycle/source/app/src/debug/java/ru/omnicio/app/ThemeLifecycleProbe.kt": {
+      "bytes": 14881,
+      "sha256": "9ef924f7ea359d0b0349313c6aef21f89984fc5ed5deb7d103d731d7f42e3cf9"
+    },
+    "context/theme46-runtime-deployment/README.md": {
+      "bytes": 8713,
+      "sha256": "e83f6f8abacc854f167a07adfad153619046d010e7e2a83a330dc60c31f828c4"
+    },
+    "context/theme46-runtime-deployment/deploy-runtime.py": {
+      "bytes": 26194,
+      "sha256": "deeb19675c148b73fa44a392fd95994b9aaa1d9e48622024a91f74abe0be7ebe"
+    },
+    "context/theme46-runtime-deployment/manifest.json": {
+      "bytes": 2095,
+      "sha256": "a2a9bb4e45fad73a868068df1edbdfad91eb6ff98539eb0dfc4ba0ff47931ec0"
+    },
+    "context/theme46-runtime-deployment/prepare-deployment.py": {
+      "bytes": 21436,
+      "sha256": "f2f1e60585f9086fdde01dfb8aac810d53c6e8a750ad1558fe1a0b1f20bd8a01"
+    },
+    "context/theme46-runtime-deployment/public-checks.py": {
+      "bytes": 5330,
+      "sha256": "24b90c9143dbc890aaba79cd41ea1a37a74cca73b204de9f6e7eef948c41062f"
+    },
+    "context/theme46-runtime-deployment/receive-deployment.py": {
+      "bytes": 8891,
+      "sha256": "adbad3ec31921fa6f8c52114f8ea51f2a6ea113aa554bb821a5c473eb38dc1bb"
+    },
+    "context/theme46-screenshot-refresh/readiness.json": {
+      "bytes": 19324,
+      "sha256": "bedf25e50a69488e7a556762d04b8e9c68b9adebad0998c254c91f6de015a139"
+    }
+  },
+  "source_applied": false,
+  "application_tests_executed": false,
+  "build46_completed": false,
+  "publication_performed": false,
+  "old_candidate46_base": "09aa164c73a974655be12f1a32cc58bf433cbc5c",
+  "requires_rebinding_to_latest_verified45": true
+}
