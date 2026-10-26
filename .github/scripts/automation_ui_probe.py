@@ -446,6 +446,9 @@ class _AutomationCase:
         control = self.switch()
         if self.scenario == "error":
             self.probe.reveal(ERROR, "profile-content")
+            # At large fonts, revealing the error can scroll the switch label
+            # out of the native tree. Resolve it again before reading its state.
+            self.switch()
             self.keep_switch(self.wait_switch(enabled=False))
             if self.observed()["writes"] != 0:
                 raise AssertionError("Unknown settings produced a mutation")
