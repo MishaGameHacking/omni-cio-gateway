@@ -1,0 +1,95 @@
+{
+  "kind": "recovered_unfinished_ux47_drafts",
+  "reviewed": false,
+  "frozen": false,
+  "application_or_tests_executed": false,
+  "requires_completed46_base": true,
+  "archive_bytes": 119823,
+  "archive_sha256": "49c60ba17003ec7c421d87f16bcecfa8ad3b6963032e015ed1b631faaf7f24b3",
+  "files": {
+    "context/ux47-audit/SOURCE_PROPOSAL.md": {
+      "bytes": 10604,
+      "sha256": "9651bbbfc7aa8f6ce8acead4ba818b4bdfd0472ff9819a29fd712fe4d7f278f3"
+    },
+    "context/ux47-audit/UX_AUDIT.md": {
+      "bytes": 33419,
+      "sha256": "cf6d908bfa76ef52aacb57f3892ba65b791e26ad47b20bdc40afa233d1392de2"
+    },
+    "context/ux47-audit/navigation-map.json": {
+      "bytes": 13608,
+      "sha256": "e29d1e9b00e51bf418c2aaff645da2fe09271bae6bfed47c56a7f74e06c9950d"
+    },
+    "context/ux47-audit/source-map.json": {
+      "bytes": 220767,
+      "sha256": "47b1db5cee630b8eba0af41bc14b0eb3fc6d41da5a4211254065e57b1e25aed9"
+    },
+    "context/ux47-navigation/base-files.json": {
+      "bytes": 4182,
+      "sha256": "c80f837b9e8156c7f03f7ec61ece36c3f097e79fe42dc6d798397b24f0f8a1dd"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/MainActivity.kt": {
+      "bytes": 43039,
+      "sha256": "aca58f260f3f1953ef34824e2c6989a14653ea636fa48c4151127027b4e42e72"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/AnalystBottomBar.kt": {
+      "bytes": 8153,
+      "sha256": "5868bfd6d0d0730ddeadf89680a60bf2f44525014d7d778a6a38fc563320c94b"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/AnalystNavigationPanels.kt": {
+      "bytes": 10435,
+      "sha256": "165e8b195b5a21b060e996df134334cd5b72b99593b6afc165374b43797efaab"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/analysis/AnalysisScreens.kt": {
+      "bytes": 29134,
+      "sha256": "70fc4409cf40939bd37074d3635f4436684c14d254ca26aad6b096143a3eb95b"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt": {
+      "bytes": 15744,
+      "sha256": "4f3aba4fee1127e315224d5d331385b1d8583f1dbaf4a8ac0cdcff69e2e2fd26"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/profile/ProfileScreen.kt": {
+      "bytes": 18061,
+      "sha256": "332b159e052387dddc38bd7fed3cb708528ed79166563b47c7531eab664b3fdf"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/AnalysisTimelineScreen.kt": {
+      "bytes": 19706,
+      "sha256": "4dc3dc0cd8b1d158f7a2e3309eb619624e96e1d353887ef2084bd86b5376ad4c"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/DiscoveryWorkspaceScreen.kt": {
+      "bytes": 28952,
+      "sha256": "bafd723f94ff66d7038fe50be2231983ff99ac8e558616bacb14cb6a211d49c9"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/MarketWorkspaceScreen.kt": {
+      "bytes": 6902,
+      "sha256": "8ecf6e9311d9eb38f866bad4580448064599e05ca03ec44f7f13671dbb681099"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/NotificationWorkspaceScreens.kt": {
+      "bytes": 16139,
+      "sha256": "165125c173bc30ffee829c5ee5e04458bb7147a8f4d1776e6b12a7cc46d380db"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/ResearchLibraryScreen.kt": {
+      "bytes": 12010,
+      "sha256": "22f68c7013a9357b55058beae05898db25dcf6ba6dd9baf4fa3483abc1fd793a"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceNavigation.kt": {
+      "bytes": 801,
+      "sha256": "7a4b3078ff12598152a9e8b0632bbf5aaa82c923ecf28b0685959cf96b64b336"
+    },
+    "context/ux47-navigation/source/app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceUi.kt": {
+      "bytes": 6730,
+      "sha256": "1d038a4c84b9c5dd3c67263e94e9b56f40539abd6a8eb84cc3fb247b76d7ca4d"
+    },
+    "context/ux47-auth/SCOPE.md": {
+      "bytes": 5153,
+      "sha256": "c31046d66a3d5ffdab5c3efb923f491da941541f24d59b9f37e9bb5d63be2fb0"
+    },
+    "context/ux47-auth/source/app/src/main/java/ru/omnicio/app/ui/auth/TelegramLoginScreen.kt": {
+      "bytes": 5215,
+      "sha256": "42a4afa28b09b48cc4c3a2a81d1e77c10b412ce5182f4326d66c2164323d22fb"
+    },
+    "context/ux47-auth/source/backend/telegram_browser_app.py": {
+      "bytes": 20606,
+      "sha256": "c7ec148e9a0b30a7a904df6bf88a7dee5a4d7ed8e6df6132d4fc760941575d2e"
+    }
+  }
+}
