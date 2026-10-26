@@ -226,6 +226,12 @@ def _event_draft(case):
     p = case.probe
     p.tap("Досье", "profile-tabs")
     case.call(INSTRUMENTS_PATH + SHARE_A + DOSSIER_SUFFIX, {})
+    # The selected holding opens a new position. Traverse its long dossier by
+    # visible sections before locating the action in the exact event record.
+    for heading in ("Эта бумага на всех счетах", "Паспорт рейтинга",
+                    "Показатели компании", "Календарь отчётности", "События и новости"):
+        p.reveal(heading, AREA, max_swipes=20)
+    case.record_text("dossier-news-" + EVENT, "Факт → компания → моя позиция")
     p.tap_resource("dossier-impact-" + EVENT, AREA)
     p.find("Ассистент")
     expected = {"mode": "instrument", "instrument_uid": SHARE_A, "account_id": None,

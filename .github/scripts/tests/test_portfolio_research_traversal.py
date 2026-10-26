@@ -409,5 +409,139 @@ class ReportTabsTraversalTests(unittest.TestCase):
                     case.capture.assert_any_call("published-report")
 
 
+class EventDossierProbe(ProfileProbe):
+    """Long conditional dossier; assistant navigation is unrelated scaffolding."""
+
+    HEADINGS = ((400, "Эта бумага на всех счетах"), (1000, "Паспорт рейтинга"),
+                (1700, "Показатели компании"), (2600, "Календарь отчётности"),
+                (3400, "События и новости"))
+    EVENT_ACTION = "dossier-impact-" + research.EVENT
+    QUESTION = "Как это событие может повлиять на мои позиции?"
+
+    def __init__(self, scale):
+        self.scale, self.offset, self.page = scale, 0, "instrument"
+        self.movements, self.actions = [], []
+        self.question, self.keyboard = "", False
+        self.read_tree = self.tree
+
+    def tree(self):
+        common = {"package": PACKAGE, "visible-to-user": "true", "enabled": "true"}
+        tree = ET.Element("hierarchy", {"display-width": "320", "display-height": "640",
+            "active-window-id": "21", "keyboard-visible": str(self.keyboard).lower()})
+        body = ET.SubElement(tree, "node", {**common, "resource-id": research.AREA,
+            "scrollable": "true", "bounds": "[0,319][320,552]"})
+        if self.page == "assistant":
+            ET.SubElement(body, "node", {**common, "resource-id": "assistant-event-question",
+                "bounds": "[20,340][300,400]", "clickable": "true"})
+            ET.SubElement(body, "node", {**common, "text": self.question,
+                "bounds": "[20,410][300,470]", "class": "android.widget.EditText",
+                "editable": "true", "focused": str(self.keyboard).lower(),
+                "selection-start": str(len(self.question)), "selection-end": str(len(self.question))})
+            return tree
+
+        def row(parent, top, height, **attributes):
+            upper = max(0, top * self.scale - self.offset)
+            lower = min(233, (top + height) * self.scale - self.offset)
+            if upper >= lower:
+                return None
+            return ET.SubElement(parent, "node", {**common,
+                "bounds": f"[20,{319 + upper}][300,{319 + lower}]", **attributes})
+
+        for top, label in self.HEADINGS:
+            row(body, top, 64, text=label)
+        row(body, 100, 64, **{"resource-id": "dossier-impact-news:another-event",
+                            "text": "Разобрать возможное влияние", "clickable": "true"})
+        row(body, 2100, 64, text="Факт → компания → моя позиция")
+        record = row(body, 3500, 1700, **{"resource-id": "dossier-news-" + research.EVENT})
+        if record is not None:
+            row(record, 4750, 64, text="Факт → компания → моя позиция")
+            row(record, 4850, 64, **{"resource-id": self.EVENT_ACTION,
+                                   "text": "Разобрать возможное влияние", "clickable": "true"})
+        return tree
+
+    def scroll_list(self, area, direction):
+        if area != research.AREA or self.page != "dossier" or direction != "end":
+            raise AssertionError("Unexpected event traversal")
+        previous = self.offset
+        self.offset = min(5200 * self.scale - 233, self.offset + 141)
+        self.movements.append((previous, self.offset))
+        return previous != self.offset
+
+    def _semantic_scroll_callback(self, area, direction):
+        return lambda *_coordinates: self.scroll_list(area, direction)
+
+    def _show_resource_on_screen(self, area, resource):
+        from profile_scroll import visible_resource
+        if area != research.AREA or resource != self.EVENT_ACTION or visible_resource(self.tree(), resource) is None:
+            raise AssertionError("Cannot align an absent or unrelated event action")
+        self.offset = 4850 * self.scale - 16
+        return True
+
+    def tap(self, text, area, direction="end", **kwargs):
+        if (text, area, self.page) != ("Досье", "profile-tabs", "instrument"):
+            raise AssertionError("Unexpected instrument tab action")
+        self.page = "dossier"
+
+    def tap_node(self, node):
+        resource = node.get("resource-id")
+        if resource == self.EVENT_ACTION and self.page == "dossier":
+            self.page = "assistant"
+        elif resource == "assistant-event-question" and self.page == "assistant":
+            self.question = self.QUESTION
+        else:
+            raise AssertionError("Wrong event or assistant action")
+        self.actions.append(resource)
+
+    def find(self, text):
+        if (self.page, text) != ("assistant", "Ассистент"):
+            raise AssertionError("Assistant did not open")
+
+    def tap_visible(self, text):
+        if text != "Ваш вопрос" or self.question != self.QUESTION:
+            raise AssertionError("Unexpected draft focus")
+        self.keyboard = True
+
+    def command(self, *args):
+        if args != ("shell", "input", "keyevent", "BACK") or not self.keyboard:
+            raise AssertionError("Unexpected native input command")
+        self.keyboard = False
+
+    wait_for = staticmethod(DossierViewportProbe.wait_for)
+
+
+class EventDossierTraversalTests(unittest.TestCase):
+    def test_event_draft_crosses_long_dossier_and_uses_only_the_exact_unsent_event(self):
+        from portfolio_ui_probe import PortfolioCase
+        from unittest.mock import patch
+
+        for scale in (1, 2):
+            with self.subTest(scale=scale), patch("profile_scroll.time.sleep"):
+                probe = EventDossierProbe(scale)
+                calls = []
+                context = {"mode": "instrument", "instrument_uid": research.SHARE_A,
+                    "account_id": None, "start": None, "end": None,
+                    "event_id": research.EVENT, "title": "СИНТЕТИЧЕСКАЯ публикация"}
+
+                def observed():
+                    return {"calls": calls, "current_page": probe.page, "chat_context": context}
+
+                case = SimpleNamespace(probe=probe, extra={}, capture=Mock(), observed=observed,
+                    call=lambda path, query: calls.append({"method": "GET", "path": path, "query": query}),
+                    expect=lambda predicate, message: self.assertTrue(predicate(observed()), message))
+                case.record_text = lambda *args, **kwargs: PortfolioCase.record_text(case, *args, **kwargs)
+                research._event_draft(case)
+                self.assertGreater(len(probe.movements), 10)
+                self.assertTrue(all(0 < after - before <= 141 for before, after in probe.movements))
+                self.assertEqual(probe.actions, [probe.EVENT_ACTION, "assistant-event-question"])
+                self.assertEqual(case.extra["event_draft"],
+                    {"text": probe.QUESTION, "context": context, "model_request_count": 0})
+                self.assertFalse(probe.keyboard)
+                self.assertEqual([row["path"] for row in calls], [
+                    research.INSTRUMENTS_PATH + research.SHARE_A + research.DOSSIER_SUFFIX,
+                    "/workspace/chat/threads",
+                    "/workspace/chat/threads/synthetic-portfolio-thread/messages"])
+                case.capture.assert_called_once_with("event-draft")
+
+
 if __name__ == "__main__":
     unittest.main()

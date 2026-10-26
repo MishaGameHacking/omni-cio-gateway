@@ -158,10 +158,74 @@ Patch SHA25601edc5058f0c8f6f6235cde97502faa0290fe696e853f74d7802b8c43aeb5715;
 Windows wrapper SHA2560f591779f97fb2ea541548387094af546ddaa4b435679f35f051b1cdaf5c788e.
 The canonical lease and1200s wait limit remain unchanged.
 
+## Report tabs passed on Android; event traversal remained too short
+
+Run40258706962 completed its measured16KB runtime at02:27:51Z.
+The original discovery case passed. Dossier then passed both historical rating
+sources, metric conflicts, scheduled versus published reports, exact report and
+primary-news source URLs, publication roles, independent news identity, and
+fact → issuer → the exact holding on account B.
+
+It failed at the final event action:
+List target not reachable: dossier-impact-event:synthetic-reviewed-event.
+The38-file archive1061139 bytes SHA256
+5d86b5252de8635d7ae2182e39340d9e97fac40a74d5f2c9dd6b10091ab25e3e
+was received by9417611 at02:29:11Z under
+/var/lib/analyst-ai-build/incoming/windows-development-40258706962-1/.
+Collector and cleanup succeeded; failed runtime status is preserved.
+
+[Read-only evidence40259436186](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40259436186)
+returned490412 bytes SHA25612322913c1c5d9c94d413b63686e26f1b60e0e68ad3acbd5edcf03af1b4859c9.
+All13 manifest entries were verified. The failure PNG and the four scheduled
+report, published report, primary source and selected-holding PNGs were viewed.
+Failure PNG47722 bytes SHA256139cf376f12070443ea54ab3f04c9ed43f64a31edfca4fb3cf425ce136f61f8f;
+XML24033 bytes SHA25633e97d31d4ca2fd1eb6b55aa066944d7a9847442bb392ae2a99e6040ed283937.
+Selected-holding PNG44559 bytes SHA256145a526f6f587a26609f60a04332ee93b5eaa1f485ebca211f00429d38158599.
+
+The selected position opens on account B. After returning to its Dossier tab,
+ten forward workspace-content actions only reached the metric-conflict
+section. The body remains[0,319][320,552], active window20, keyboard hidden,
+five successful fixture requests, zero errors. No absent/disabled event
+button or product defect is inferred from that short search.
+
+## Bounded section traversal to the exact event
+
+The repair follows the visible holdings, ratings, metrics, report calendar and
+news headings with the existing per-section bound20 and12-second deadline.
+It then uses the existing scoped record_text helper to reach the fact action
+inside dossier-news-event:synthetic-reviewed-event, followed by the original
+exact event resource tap with unchanged48px and three-frame native checks.
+The assistant context, instrument UID, event ID, native input/keyboard checks,
+and GET-only/no-paid-request assertions remain intact. No app or driver change.
+
+A conditional long dossier contains an earlier unrelated event action and an
+identical metric fact label. The regression uses actual reveal helpers,
+PortfolioCase.record_text, settled resource lookup and native draft evidence
+at two scales; unrelated assistant navigation is scaffolding. Fixture sleeps
+are skipped only inside this synchronous unit test. Device results are separate.
+
+[Windows40260472248](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40260472248)
+applied the two source files from0e08f16ac0595613797fcf8e76c3d3022aa1bbf1
+at02:43:43Z on LAPTOP-NPSGA016 /omni-cio-ci-2.
+The original research probe failed both long-dossier variants in0.039s
+(Ran1 test, failures2) at the exact event action. The reviewed probe was
+restored; all1072 host tests passed48.838s with the same3 platform skips.
+Diff/source/APK identity checks passed; host finished02:44:39Z.
+
+| Windows-applied source | SHA256 |
+|---|---|
+|.github/scripts/portfolio_research_probe.py|87b9787fed6faefd32ccd6ffb70a7442b339cd998e75427f07ca6d2cd5401ab8|
+|.github/scripts/tests/test_portfolio_research_traversal.py|5eed6f76c00cc1cb4fadc4e0980e66796c83052106d700d24be6aa99103137eb|
+
+Code inventory01b1bd5116e497bb43f35f2568d9c0e9186591e7059a736b224ef64194673085.
+Patch SHA256c12cc2b08faf2ebd13923f9842a3e58a8b645cef3640b84bdba8b5334349312c;
+Windows wrapper SHA2568a20acd224bc90642d8e98204eba114b1b0ec67de68c00316c8631fa6f518a5c.
+The canonical lease and1200s wait limit remain unchanged.
+
 ## Continue in order
 
-Run40258706962 is now repeating all14 original portfolio cases at fonts100/200
-on the measured16KB emulator using the exact preview41/debug41/driver bytes.
+Run40260472248 is repeating all14 original portfolio cases at fonts100/200
+on the measured16KB emulator with the exact preview41/debug41/driver.
 Actual runtime results remain pending; no complete UI acceptance is claimed.
 The older prepared full wrappers have obsolete harness inventories.
 
