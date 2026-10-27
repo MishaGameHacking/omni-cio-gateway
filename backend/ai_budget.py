@@ -12,6 +12,11 @@ import sqlite3
 import time
 from typing import Callable, Iterator
 
+try:
+    from .schema_migrations import execute_schema
+except ImportError:
+    from schema_migrations import execute_schema
+
 Connect = Callable[[], sqlite3.Connection]
 MOSCOW = timezone(timedelta(hours=3))
 SCALE = 1_000_000
@@ -69,8 +74,8 @@ class MoneyLedger:
         self.connect = connect
 
     def initialize(self) -> None:
-        with closing(self.connect()) as db:
-            db.executescript('''
+        with transaction(self.connect) as db:
+            execute_schema(db, '''
                 CREATE TABLE IF NOT EXISTS ai_money_reservations (
                     request_key TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -96,7 +101,6 @@ class MoneyLedger:
                     created_at INTEGER NOT NULL
                 );
             ''')
-            db.commit()
 
     @staticmethod
     def _spent(db: sqlite3.Connection, day: str, user_id: int | None) -> int:
