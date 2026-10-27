@@ -15,6 +15,7 @@ from pydantic import Field
 try:
     from . import app as backend
     from .ai_budget import transaction
+    from .schema_migrations import execute_schema
     from .ai_jobs import AnalysisQueue
     from .monitoring_access import monitoring_connection, assert_monitoring_access_in
     from .volume_contract import HTTP_ERRORS, digest, error_code, date_range
@@ -22,6 +23,7 @@ try:
 except ImportError:
     import app as backend
     from ai_budget import transaction
+    from schema_migrations import execute_schema
     from ai_jobs import AnalysisQueue
     from monitoring_access import monitoring_connection, assert_monitoring_access_in
     from volume_contract import HTTP_ERRORS, digest, error_code, date_range
@@ -39,8 +41,10 @@ class JobStopped(RuntimeError):
 
 
 def initialize() -> None:
-    with closing(backend.connect()) as db:
-        db.executescript("""
+    # Keep request receipts and their job schema in the same startup transaction.
+    # Initialization must not expire leases, replay work or clear checkpoints.
+    with transaction(backend.connect) as db:
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS workspace_jobs (
                 id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,request_id TEXT NOT NULL,
                 kind TEXT NOT NULL,payload_json TEXT NOT NULL,payload_hash TEXT NOT NULL,
@@ -54,7 +58,6 @@ def initialize() -> None:
             CREATE INDEX IF NOT EXISTS workspace_jobs_due ON workspace_jobs(state,created_at);
             CREATE INDEX IF NOT EXISTS workspace_jobs_user ON workspace_jobs(user_id,created_at);
         """)
-        db.commit()
 
 
 def _iso(value: int | None) -> str | None:
