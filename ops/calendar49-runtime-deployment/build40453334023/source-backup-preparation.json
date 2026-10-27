@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "kind": "verified_windows_source_backup_preparation",
+  "run_id": 40453334023,
+  "workflow_sha": "55b511a82ad9c2cce57d9d5cf01a3bfc741c1250",
+  "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "complete_source_sha256": "743a71819ec89d97467ce72189374a8070dd0fc3c6611710029b48f4feae8c23",
+  "source_files": 18,
+  "jvm_tests": 232,
+  "jvm_suites": 40,
+  "native_passed": false,
+  "apk_published": false,
+  "server_deployed": false,
+  "plan_complete": false,
+  "original_evidence": {
+    "windows-development.json": {
+      "sha256": "7af8b02af5070253d69b38734372f59d5f47e40961300122aca6e904a89459f0",
+      "bytes": 29025
+    },
+    "controller.json": {
+      "sha256": "8a8a60b8fb51c254b0b8aa5b929f49d6a78607880018e0be4de8bc9085ecd906",
+      "bytes": 443
+    },
+    "source-final.json": {
+      "sha256": "fdfd3d0fad9835210fd122115dc8ea4ecc292c2fbb3e60d518242bda8ad812b4",
+      "bytes": 169864
+    },
+    "export-receipt.json": {
+      "sha256": "0640ce9ae4333816b08e2f025d3b0dd678e8ac6abaa4ae2241cc9df9389f278e",
+      "bytes": 407
+    }
+  }
+}

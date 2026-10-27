@@ -1,0 +1,693 @@
+{
+  "schema": 1,
+  "kind": "windows_development_check_build",
+  "origin": "Windows laptop",
+  "host": "LAPTOP-NPSGA016",
+  "base_commit": "6d037bcbba376d2b2e6e53caa0f96874ac1497ef",
+  "base_source_sha256": "26d1ccf6b9685925291edb968f17ef091b145831d7c6ca791e5e942246af49fa",
+  "github": {
+    "run_id": 40453334023,
+    "run_attempt": 1,
+    "workflow_sha": "55b511a82ad9c2cce57d9d5cf01a3bfc741c1250",
+    "runner_name": "omni-cio-ci-4"
+  },
+  "status": "passed_check_and_build_only",
+  "started_at": "2026-10-27T05:06:14.861307+00:00",
+  "steps": [
+    {
+      "label": "java-default-profile",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\Java_Temurin-Hotspot_jdk\\17.0.20-101\\x64\\bin\\java.exe",
+        "-XshowSettings:properties",
+        "-version"
+      ],
+      "started_at": "2026-10-27T05:06:23.616859+00:00",
+      "timeout_seconds": 30,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\java-default-profile.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:23.683825+00:00",
+      "duration_seconds": 0.066,
+      "log_bytes": 3558,
+      "log_sha256": "40397d8d85a3bcfaed0797209bbc5f8d2d1fa2f201d5f9942fa3907d1895196e"
+    },
+    {
+      "label": "venv",
+      "command": [
+        "C:\\Program Files\\Python314\\python.exe",
+        "-m",
+        "venv",
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv"
+      ],
+      "started_at": "2026-10-27T05:06:24.230202+00:00",
+      "timeout_seconds": 300,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\02-venv.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:31.969382+00:00",
+      "duration_seconds": 7.738,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "install-test-requirements",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "--require-virtualenv",
+        "install",
+        "--no-input",
+        "--no-cache-dir",
+        "--index-url",
+        "https://pypi.org/simple",
+        "-r",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\backend\\requirements-dev.txt"
+      ],
+      "started_at": "2026-10-27T05:06:31.972296+00:00",
+      "timeout_seconds": 900,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\03-install-test-requirements.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:55.032873+00:00",
+      "duration_seconds": 23.059,
+      "log_bytes": 11270,
+      "log_sha256": "041819bbc9feaba0d4b150804a6b98afaf0540b79fb7f19bb143a8cbcb15d101"
+    },
+    {
+      "label": "install-native-tls-requirements",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "--require-virtualenv",
+        "install",
+        "--no-input",
+        "--no-cache-dir",
+        "--index-url",
+        "https://pypi.org/simple",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "-r",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\tools\\timeweb-actions-requirements.txt"
+      ],
+      "started_at": "2026-10-27T05:06:55.044007+00:00",
+      "timeout_seconds": 900,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\04-install-native-tls-requirements.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:56.499316+00:00",
+      "duration_seconds": 1.454,
+      "log_bytes": 326,
+      "log_sha256": "fe824d411a5fe0ee7653adbacf6e14c6a2823486298a83536e1edbafb5684b07"
+    },
+    {
+      "label": "resolved-test-dependencies",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "freeze",
+        "--all"
+      ],
+      "started_at": "2026-10-27T05:06:56.506992+00:00",
+      "timeout_seconds": 60,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\05-resolved-test-dependencies.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:57.090890+00:00",
+      "duration_seconds": 0.583,
+      "log_bytes": 609,
+      "log_sha256": "1c090018235e688ee655318b01d6fd7d4d2c18b040e08ae28c3954cde2eb0491"
+    },
+    {
+      "label": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_at": "2026-10-27T05:06:57.095254+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\06-diff-check.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:57.329227+00:00",
+      "duration_seconds": 0.233,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "dependencies",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "check"
+      ],
+      "started_at": "2026-10-27T05:06:57.331265+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\07-dependencies.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:58.168919+00:00",
+      "duration_seconds": 0.836,
+      "log_bytes": 31,
+      "log_sha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+    },
+    {
+      "label": "python-source-audit",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        ".github/scripts/audit_python_sources.py"
+      ],
+      "started_at": "2026-10-27T05:06:58.171757+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\08-python-source-audit.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:06:59.550435+00:00",
+      "duration_seconds": 1.378,
+      "log_bytes": 111,
+      "log_sha256": "e26a2acffd288aeae7cf7625ccf9128ec1f56c0dde3691cdc2dbc8aa7b912fba"
+    },
+    {
+      "label": "workspace-guard-tests",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "deploy/tests",
+        "-p",
+        "test_timeweb_workspace.py",
+        "-v"
+      ],
+      "started_at": "2026-10-27T05:06:59.558785+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\09-workspace-guard-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:07:01.986799+00:00",
+      "duration_seconds": 2.427,
+      "log_bytes": 2392,
+      "log_sha256": "b3bd79e00b8caf3cc6895160b2091218f1aea20548237b494b152416551135d5"
+    },
+    {
+      "label": "host-tests",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".github/scripts/tests",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "started_at": "2026-10-27T05:07:01.996384+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\10-host-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:08:13.997305+00:00",
+      "duration_seconds": 72.0,
+      "log_bytes": 312178,
+      "log_sha256": "e438544bee8684a577b598ff95f78e3e1c359e78eeb95a0e09b90d6d2c486fba"
+    },
+    {
+      "label": "tools-tests",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/tests",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "started_at": "2026-10-27T05:08:14.007442+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\11-tools-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:08:14.739093+00:00",
+      "duration_seconds": 0.731,
+      "log_bytes": 7962,
+      "log_sha256": "ac79a571fd0da23618c5e89a4d07ca908773f73bbacf09559bb370ebe7140d83"
+    },
+    {
+      "label": "node-tests",
+      "command": [
+        "node",
+        "--test",
+        ".github\\scripts\\authoritative_merge_gate.test.cjs",
+        ".github\\scripts\\ci_private_transfer.test.cjs",
+        ".github\\scripts\\require_clean_sonar.test.cjs",
+        ".github\\scripts\\require_main_release.test.cjs"
+      ],
+      "started_at": "2026-10-27T05:08:14.752665+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\12-node-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:08:14.981427+00:00",
+      "duration_seconds": 0.228,
+      "log_bytes": 4054,
+      "log_sha256": "dc5d7121d55bd383fcd8b5dd63c733a4478bcae5fbd6c88dc86d81a03f6989c8"
+    },
+    {
+      "label": "backend-tests",
+      "command": [
+        "wsl.exe",
+        "--distribution",
+        "Ubuntu-24.04",
+        "--user",
+        "analyst-ci",
+        "--exec",
+        "/usr/bin/timeout",
+        "--kill-after=15s",
+        "1800s",
+        "/usr/bin/python3",
+        "/mnt/c/actions-runner-4/_work/omni-cio-gateway/omni-cio-gateway/windows-development-patches-40453334023-1/n00-linux-guest.py",
+        "/mnt/c/actions-runner-4/_work/_temp/analyst-development-40453334023-1/linux-source.tar",
+        "bbe13aa8b6211467043855ee2194573a881d6f9f3a9d4a91a18404d7850ba716",
+        "/mnt/c/actions-runner-4/_work/_temp/analyst-development-40453334023-1/linux-source-manifest.json",
+        "85489485e71a70b29cebd27362940d0f8a147823ee61388f3ab109b621a8643f",
+        "/opt/analyst-ci/runs/40453334023-1",
+        "/mnt/c/actions-runner-4/_work/_temp/analyst-development-40453334023-1/linux-evidence.zip"
+      ],
+      "started_at": "2026-10-27T05:08:15.910242+00:00",
+      "timeout_seconds": 1850,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\13-backend-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:10:57.600370+00:00",
+      "duration_seconds": 161.689,
+      "log_bytes": 14487,
+      "log_sha256": "4ea4755981ccee38096ecdf206f8bd80bd0ce28f076c96cf8a988744f669f963"
+    },
+    {
+      "label": "stop-owned-linux-distribution",
+      "command": [
+        "wsl.exe",
+        "--terminate",
+        "Ubuntu-24.04"
+      ],
+      "started_at": "2026-10-27T05:10:57.618523+00:00",
+      "timeout_seconds": 60,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\14-stop-owned-linux-distribution.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:10:58.168089+00:00",
+      "duration_seconds": 0.548,
+      "log_bytes": 60,
+      "log_sha256": "10c05eb58e0a214b1b705eb5cf80f917a4a3280b42df742a773da555f030e740"
+    },
+    {
+      "label": "assets",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "tools/prepare_spectrum_checkout.py"
+      ],
+      "started_at": "2026-10-27T05:10:59.341851+00:00",
+      "timeout_seconds": 120,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\15-assets.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:10:59.708310+00:00",
+      "duration_seconds": 0.365,
+      "log_bytes": 368,
+      "log_sha256": "3cae5c476107ebfa0ce41e5755fc1ba5e51274a3aea494970450e9c17390acca"
+    },
+    {
+      "label": "native-alignment-tests",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "tools/test_native_alignment.py"
+      ],
+      "started_at": "2026-10-27T05:10:59.716826+00:00",
+      "timeout_seconds": 180,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\16-native-alignment-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:11:00.008697+00:00",
+      "duration_seconds": 0.291,
+      "log_bytes": 115,
+      "log_sha256": "b797cef533352b982120faa29f0312d9da8975f6eb5cf5833657aca61d8f105e"
+    },
+    {
+      "label": "mesh-tests",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "tools/test_spectrum_meshes.py"
+      ],
+      "started_at": "2026-10-27T05:11:00.018986+00:00",
+      "timeout_seconds": 180,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\17-mesh-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:11:08.039889+00:00",
+      "duration_seconds": 8.02,
+      "log_bytes": 439,
+      "log_sha256": "4d37ee20acc4010f8b66fe1bf0972c91e0dd6d0c93cbaae2d463591b2aedade3"
+    },
+    {
+      "label": "gradle",
+      "command": [
+        "C:\\WINDOWS\\system32\\cmd.exe",
+        "/d",
+        "/c",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\gradlew.bat",
+        ":app:testDebugUnitTest",
+        ":app:lintDebug",
+        ":app:lintPreview",
+        ":app:assembleDebug",
+        ":app:assembleRelease",
+        ":app:assemblePreview",
+        ":ci-ui-driver:lintDebug",
+        ":ci-ui-driver:assembleDebug",
+        "--no-daemon",
+        "--parallel",
+        "--max-workers=2",
+        "--stacktrace"
+      ],
+      "started_at": "2026-10-27T05:11:08.047489+00:00",
+      "timeout_seconds": 7200,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\18-gradle.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:32.309414+00:00",
+      "duration_seconds": 684.261,
+      "log_bytes": 21063,
+      "log_sha256": "ae08fcce32b1596081225809a3fc0df97bc6f10f227c329e08bbe82a2a0ee9e9"
+    },
+    {
+      "label": "mesh-apk-check",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        "tools/generate_spectrum_meshes.py",
+        "--check",
+        "--check-apk"
+      ],
+      "started_at": "2026-10-27T05:22:32.320638+00:00",
+      "timeout_seconds": 180,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\19-mesh-apk-check.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:33.141142+00:00",
+      "duration_seconds": 0.819,
+      "log_bytes": 84,
+      "log_sha256": "8f1d9aec03bb93fcedbf209beba501e98b183727a3329bc96b870b1d7b4b11e5"
+    },
+    {
+      "label": "apk-signature.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\Java_Temurin-Hotspot_jdk\\17.0.20-101\\x64\\bin\\java.exe",
+        "-jar",
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\lib\\apksigner.jar",
+        "verify",
+        "--verbose",
+        "--print-certs",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk"
+      ],
+      "started_at": "2026-10-27T05:22:33.149678+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\signature.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:33.500046+00:00",
+      "duration_seconds": 0.349,
+      "log_bytes": 1044,
+      "log_sha256": "358379d88acd6d8198426c114466a94563ade5edfd3147d7eef8049a61c68177"
+    },
+    {
+      "label": "apk-alignment.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\zipalign.exe",
+        "-c",
+        "-P",
+        "16",
+        "-v",
+        "4",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk"
+      ],
+      "started_at": "2026-10-27T05:22:33.504212+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\alignment.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:33.526162+00:00",
+      "duration_seconds": 0.021,
+      "log_bytes": 14390,
+      "log_sha256": "fff3fa8f403581461096e98596ee1a3eeb861e324f31a52167592b3a46194bf6"
+    },
+    {
+      "label": "apk-badging.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\aapt.exe",
+        "dump",
+        "badging",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk"
+      ],
+      "started_at": "2026-10-27T05:22:33.535522+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\badging.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:33.555746+00:00",
+      "duration_seconds": 0.019,
+      "log_bytes": 5234,
+      "log_sha256": "02fabff74da7bcc0be5e7888fb45fd2239eb908f61c2919c28f46198eff71635"
+    },
+    {
+      "label": "apk-manifest.txt",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\build-tools\\37.0.0\\aapt.exe",
+        "dump",
+        "xmltree",
+        "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\app-preview.apk",
+        "AndroidManifest.xml"
+      ],
+      "started_at": "2026-10-27T05:22:33.565927+00:00",
+      "timeout_seconds": 90,
+      "log": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\outputs\\apk\\preview\\manifest.txt",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:33.584976+00:00",
+      "duration_seconds": 0.017,
+      "log_bytes": 8885,
+      "log_sha256": "c7dbd25954b1dfce47747e83b555337e671314d06d40661f755bbc56747a7343"
+    },
+    {
+      "label": "apk-verification",
+      "command": [
+        "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\venv\\Scripts\\python.exe",
+        ".github/scripts/verify_apk.py"
+      ],
+      "started_at": "2026-10-27T05:22:33.595102+00:00",
+      "timeout_seconds": 120,
+      "log": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1\\24-apk-verification.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-27T05:22:35.302597+00:00",
+      "duration_seconds": 1.706,
+      "log_bytes": 10356,
+      "log_sha256": "e772188d1bcbd3d83a719b6621229b8343c93f531b4641cca5c08a41fdd6e878"
+    }
+  ],
+  "check": {
+    "status": "passed",
+    "started_at": "2026-10-27T05:06:57.094003+00:00",
+    "finished_at": "2026-10-27T05:10:59.339360+00:00",
+    "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60"
+  },
+  "build": {
+    "status": "passed",
+    "started_at": "2026-10-27T05:10:59.340616+00:00",
+    "finished_at": "2026-10-27T05:22:36.702117+00:00",
+    "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+    "apk_sha256": "9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e"
+  },
+  "runtime": {
+    "status": "not_run"
+  },
+  "publication_authorized": false,
+  "phone_verified": false,
+  "timeweb_execution": false,
+  "root": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1",
+  "state": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1",
+  "bootstrap_sha256": "80517ea1faf16cfa1759691321b5ed7dacf95cb94b1f46254eb674faf162f87f",
+  "patch_manifest_sha256": "5e2c48b39d85df1bb530d1cf6e5e487cf0e81d97e537a0ccbaf578fc685db649",
+  "python_version": "3.14.6",
+  "external_quality_gate": {
+    "status": "not_run_by_this_bootstrap"
+  },
+  "retention": {
+    "owned_checkout": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1",
+    "owned_state": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1",
+    "automatic_deletion_performed": false,
+    "cleanup_requires": [
+      "exact_private_archive_confirmed_on_Timeweb",
+      "exact_source_inventory_backed_up_in_Git",
+      "required_APK_inputs_retained_for_runtime_and_phone"
+    ],
+    "preserve_shared_sdk_gradle_signing_profile": true
+  },
+  "patch_files": [
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": ".github/scripts/tests/test_android17_live_spectrum.py",
+      "old_sha256": "c28f248a55b0f159dc9fcc4d364647d28065f0f30392452d23e97f749a66bf66",
+      "new_sha256": "8d7cb319a3b379074adc78e215f492c7769200992b8531b0af3bc19828112c4b"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": ".github/scripts/tests/test_spectrum_brand_identity.py",
+      "old_sha256": "10239f8f7cb00ded540a4138449c8873cdd4380ab41aa8f97f3e51aa5a43e94d",
+      "new_sha256": "6a9ccee22cda1a7e52ed558d251e18b2efe457540f57c54826b3484aaac319bf"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "app/build.gradle.kts",
+      "old_sha256": "8604e3199ba3661efb4fb16058c2bfdc948b6d39f34a1d5ddcace0865be240ae",
+      "new_sha256": "df803506ebb6e1c0793e127e349e73dabedc20bfada67c1e3ac1b41beb0760d8"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/autonomous_ai.py",
+      "old_sha256": "789e338b462021f5d0274ae438638f54257111dbaadbee4dde090e130aa647cf",
+      "new_sha256": "09d0f79dc25c6e0a21af0f4aad81845ac11333f5338bb899666535ef990d2e53"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/autonomous_controller.py",
+      "old_sha256": "926d10f0ee53b17a8c77fc90b6e7d07a8cf656f7e0ab9a3bb344fa063e3bbff5",
+      "new_sha256": "1930c63e307d45b86a68fad0506a34b069a5fdf68cef99a6ed1e8d17588fb56e"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/background_dispatch.py",
+      "old_sha256": null,
+      "new_sha256": "eefe68f2ff91f7be346fc8026ad4e15296bc197d73379e5c7158ed295e7add25"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/event_monitor.py",
+      "old_sha256": null,
+      "new_sha256": "c5c853a1381369cfb0b95db922ec5d98536f261e727452970b2df6bdbc1378ad"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/market_schedule.py",
+      "old_sha256": null,
+      "new_sha256": "71fb3be626fb48856ec955a98a45b86023789e02060cd1bee79ab610c1abc1e1"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/tests/calendar_dispatch_fixtures.py",
+      "old_sha256": null,
+      "new_sha256": "a794108492366e0d348863d914287a4a9ad0cb5d1d6a6acb22ff2bf3bdbf234c"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/tests/test_ai_controls_integration.py",
+      "old_sha256": "2adef29d369e09ae4d21c50ffd14cca74bdf8def3be4a5a56846587b16678b45",
+      "new_sha256": "f43a484cf765c25724cdcb49af7a0a0e5124902291534bf18d7e1ac365583fdc"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/tests/test_autonomous_controller.py",
+      "old_sha256": "7de4b6baf5e72774e4d3ffac43ad0709026617428e3e43a4687be9b650244363",
+      "new_sha256": "867e711a9b6247bb6786ace8dd073a837ae3efdc81ee5fdb9c5617d035526e70"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/tests/test_background_dispatch.py",
+      "old_sha256": null,
+      "new_sha256": "2ec1d86e7497ddac9de4c8adbc32caa0c6eba9808ee1497be84d4bda46ac6fbb"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/tests/test_market_schedule.py",
+      "old_sha256": null,
+      "new_sha256": "49987f384987d15f82bb878c52d49f711c35032bcaa3fbad84abe561bae87cc6"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/tests/test_update_integration.py",
+      "old_sha256": "5e78df45ebd5638f3f94ff30e124d7fba57675be4f481be91c08e57a91d6660d",
+      "new_sha256": "cd7834edab09efe1c75c6d3245b29b3a9a7351ec5d0cca2b130c39dae2948f97"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/volume_jobs.py",
+      "old_sha256": "c18cb703f669ebfc431e8d20292f85851347cfd02c7ae451cea2c911a62e89c6",
+      "new_sha256": "4094b142b0f2b7522380e2d61bcb41a312493b5597bb1140f09a9a341ab5af06"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/volume_market.py",
+      "old_sha256": "6b5883183634b4e23ed15413462bb7fd908c44092ded8bae7ebfc7f00c4b47ce",
+      "new_sha256": "5254e7eef732a28db8e3e3ed63b73a65b29ccdb983b78da686ce0bb3500ea87e"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/volume_monitor.py",
+      "old_sha256": "de762346ad2e504c7c9b28f2e97610241c6637b34cdd411ae4df21a5b5cbde6c",
+      "new_sha256": "ae8ca8ab1fbadc9271a37eee0c04807d1429097b96a00254ec943ae89b514b86"
+    },
+    {
+      "bundle": "n00-calendar-dispatch49",
+      "path": "backend/volume_workspace.py",
+      "old_sha256": "1b5e898823fa0dcdacf978fdd6023da4c9fb7c5ec5057513c277ef55263826a3",
+      "new_sha256": "3c034e056e8af731d5d78cffda95f892f92a4ad5cb0c11b0774a6636953ce08d"
+    }
+  ],
+  "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "complete_source_sha256": "743a71819ec89d97467ce72189374a8070dd0fc3c6611710029b48f4feae8c23",
+  "signing_keystore_sha256_before": "bf4443e8ed6cb10b4ea4c9c0f46751e5955560e8c5f1bbb928b70febfc9e8ef2",
+  "java_runtime": "17.0.20.1+1",
+  "profile_locations": {
+    "java_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService",
+    "gradle_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService\\.gradle",
+    "android_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService\\.android",
+    "existing_debug_keystore": "C:\\Windows\\ServiceProfiles\\NetworkService\\.android\\debug.keystore",
+    "profile_directory_created": false
+  },
+  "sdk_packages": {
+    "platforms;android-37.0": {
+      "source.properties": "fa89029fc0cee414cb5e44a37cd3033771217eeecb5086577bb6d9b1b03b5b5f",
+      "package.xml": "9efedaa8306dc2b690b3ed328b417f19dde7537000701fc761241c6b6ed94c32"
+    },
+    "build-tools;37.0.0": {
+      "source.properties": "fbd87c8567afbc6dc78e140097fcde234f4a61fa7065e85081d43e442ccd3d24",
+      "package.xml": "4a779a6941a75fa0e49074cfab118d499eb5706aa55a08c699578f731fcaa74e"
+    },
+    "emulator": {
+      "source.properties": "ba13085f647fb8389a4d06a1de0e4104ac4e841733e50f67223ac230e1ce685a",
+      "package.xml": "2fd2c4996482128e96927d491431b3aa6771c255091e34f8cd8fa305fd0a4cac"
+    },
+    "platform-tools": {
+      "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+      "package.xml": "5cc8d2f28e44f701d784b4cb31c8fcb5b3a67272856fd8851543b50a879efc8c"
+    },
+    "system-images;android-37.0;google_apis;x86_64": {
+      "source.properties": "bf15b0b43bd0155b258b3756cf523dd917735042633edbb645b34c285a45832d",
+      "package.xml": "bb564bbd70e0de0889a4ebb941cfb74591e445cfedafa1b02cf454a2986deab4"
+    },
+    "system-images;android-37.0;google_apis_ps16k;x86_64": {
+      "source.properties": "758a3348bdeda7cfa1d14ec4c749d5216a8fac5a81b71b80471ac5c7ba837365",
+      "package.xml": "1382dd8ecb580304ea8557eb3124ebcddc7a01c7b71ee322c91a21b2b45fa922"
+    }
+  },
+  "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+  "capacity": {
+    "physical_bytes": 17044721664,
+    "available_bytes": 10194006016,
+    "disk_free_bytes": 44083150848,
+    "logical_cpus": 8,
+    "observed_at": "2026-10-27T05:06:24.228987+00:00"
+  },
+  "apks": {
+    "app/build/outputs/apk/debug/app-debug.apk": {
+      "bytes": 63917960,
+      "sha256": "fc918a3fc2417133b66c11ee5bb6f7882cb9a329833fad8ace0dcd97c0c5154c"
+    },
+    "app/build/outputs/apk/preview/app-preview.apk": {
+      "bytes": 29937843,
+      "sha256": "9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e"
+    },
+    "app/build/outputs/apk/release/app-release-unsigned.apk": {
+      "bytes": 29929631,
+      "sha256": "9859df9b049568cf5e7743618611b8ec550543325192078125de375a22b0557a"
+    },
+    "ci-ui-driver/build/outputs/apk/debug/ci-ui-driver-debug.apk": {
+      "bytes": 2690672,
+      "sha256": "c85912be2f8ba0e7ca1ea8ef6963f0465111bd1b31b9efd3d59fd61b8f85bc3d"
+    }
+  },
+  "finished_at": "2026-10-27T05:22:36.771794+00:00",
+  "source_sha256_after": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "complete_source_sha256_after": "743a71819ec89d97467ce72189374a8070dd0fc3c6611710029b48f4feae8c23"
+}

@@ -1,0 +1,44 @@
+{
+  "apk_published_or_installed": false,
+  "application_or_test_execution_performed": false,
+  "changed_runtime_files": [
+    "/opt/analyst-ai/backend/autonomous_ai.py",
+    "/opt/analyst-ai/backend/autonomous_controller.py",
+    "/opt/analyst-ai/backend/volume_jobs.py",
+    "/opt/analyst-ai/backend/volume_workspace.py",
+    "/opt/analyst-ai/backend/volume_monitor.py",
+    "/opt/analyst-ai/backend/volume_market.py",
+    "/opt/analyst-ai/backend/market_schedule.py",
+    "/opt/analyst-ai/backend/background_dispatch.py",
+    "/opt/analyst-ai/backend/event_monitor.py"
+  ],
+  "files": {
+    "deploy-runtime.py": {
+      "bytes": 60435,
+      "sha256": "5472d20d2aa155a21553756d94311dcf95832b4c57077756ebfa5f6db2122b71"
+    },
+    "expected-identities.json": {
+      "bytes": 20151,
+      "sha256": "47f6483b8647364ec4607cd538fedc1478015f896d6c9dc1101897ac8da3c32b"
+    },
+    "hosted-deployment.py": {
+      "bytes": 230001,
+      "sha256": "19a3c038fe6c12e17b0635e5827a8bffaf0721acfd6185565626b894109594a8"
+    },
+    "workflow.yml": {
+      "bytes": 253554,
+      "sha256": "2a7dcb5a660d64ca60ca2da88d39d6580c3d5d67f807b33f7e643c5ed076fd58"
+    }
+  },
+  "help_deployed": false,
+  "pinned_transport_prefix_sha256": "5569d1c96c52b11766e5f9a2610a442827693491360cd5c051f1b86dc0531800",
+  "request_sha256": "5d86fdea12ead987511c051b11204162a0a2aeb13fb93a769d265df53dda19b9",
+  "reviewed_manifest_sha256": "d81252039e88864e5095670758b3148ec581b4b18f45eecd7ee8f4c7bad0b485",
+  "runtime_observation_sha256": "e60238a67f01be52134c5d8cf0ac75e78f486118af03547931206ac5694b08cb",
+  "schema": 1,
+  "server_mutation_performed": false,
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "state": "prepared_only_not_dispatched",
+  "target_workflow": ".github/workflows/calendar49-runtime-deployment.yml"
+}

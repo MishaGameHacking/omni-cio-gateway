@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "kind": "calendar49_successful_original_build_artifact",
+  "run_id": 40453334023,
+  "run_attempt": 1,
+  "workflow_sha": "55b511a82ad9c2cce57d9d5cf01a3bfc741c1250",
+  "artifact": {
+    "id": 12711283499,
+    "bytes": 238302,
+    "sha256": "f8e58dfa8f60f2d98260459f8b535f5e5f2651f8e54e84a1d8d803827ec4615c"
+  },
+  "jobs": [
+    {
+      "id": 122020858970,
+      "name": "Verify the existing private return transport",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 122020929797,
+      "name": "Apply candidate49 on the authorized laptop and complete the full Windows/WSL build",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 122026195465,
+      "name": "Preserve Windows-hosted Linux test evidence on the existing runtime server",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 122026536162,
+      "name": "Remove only this run's private transfer",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 122026586132,
+      "name": "Require complete laptop check build and preserved evidence",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "previous_failed_run": 40451379074,
+  "full_native_run_performed": false
+}

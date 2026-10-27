@@ -1,0 +1,531 @@
+{
+  "observed_at": "2026-10-27T05:18:29.782345+00:00",
+  "host": "LAPTOP-NPSGA016",
+  "run_id": 40453334023,
+  "build": [
+    {
+      "state": "C:\\actions-runner-4\\_work\\_temp\\analyst-development-40453334023-1",
+      "files": {
+        "windows-development.json": {
+          "sha256": "5addda148391515b1efe867ab6cee0d1a5cd12851012c4045a92aa0d735c0988",
+          "value": {
+            "status": "preparing",
+            "github": {
+              "run_id": 40453334023,
+              "run_attempt": 1,
+              "workflow_sha": "55b511a82ad9c2cce57d9d5cf01a3bfc741c1250",
+              "runner_name": "omni-cio-ci-4"
+            },
+            "check": {
+              "status": "passed",
+              "started_at": "2026-10-27T05:06:57.094003+00:00",
+              "finished_at": "2026-10-27T05:10:59.339360+00:00",
+              "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60"
+            },
+            "build": {
+              "status": "running",
+              "started_at": "2026-10-27T05:10:59.340616+00:00"
+            },
+            "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+            "source_sha256_after": null,
+            "started_at": "2026-10-27T05:06:14.861307+00:00",
+            "finished_at": null,
+            "steps": [
+              {
+                "label": "java-default-profile",
+                "exit_code": 0,
+                "duration_seconds": 0.066
+              },
+              {
+                "label": "venv",
+                "exit_code": 0,
+                "duration_seconds": 7.738
+              },
+              {
+                "label": "install-test-requirements",
+                "exit_code": 0,
+                "duration_seconds": 23.059
+              },
+              {
+                "label": "install-native-tls-requirements",
+                "exit_code": 0,
+                "duration_seconds": 1.454
+              },
+              {
+                "label": "resolved-test-dependencies",
+                "exit_code": 0,
+                "duration_seconds": 0.583
+              },
+              {
+                "label": "diff-check",
+                "exit_code": 0,
+                "duration_seconds": 0.233
+              },
+              {
+                "label": "dependencies",
+                "exit_code": 0,
+                "duration_seconds": 0.836
+              },
+              {
+                "label": "python-source-audit",
+                "exit_code": 0,
+                "duration_seconds": 1.378
+              },
+              {
+                "label": "workspace-guard-tests",
+                "exit_code": 0,
+                "duration_seconds": 2.427
+              },
+              {
+                "label": "host-tests",
+                "exit_code": 0,
+                "duration_seconds": 72
+              },
+              {
+                "label": "tools-tests",
+                "exit_code": 0,
+                "duration_seconds": 0.731
+              },
+              {
+                "label": "node-tests",
+                "exit_code": 0,
+                "duration_seconds": 0.228
+              },
+              {
+                "label": "backend-tests",
+                "exit_code": 0,
+                "duration_seconds": 161.689
+              },
+              {
+                "label": "stop-owned-linux-distribution",
+                "exit_code": 0,
+                "duration_seconds": 0.548
+              },
+              {
+                "label": "assets",
+                "exit_code": 0,
+                "duration_seconds": 0.365
+              },
+              {
+                "label": "native-alignment-tests",
+                "exit_code": 0,
+                "duration_seconds": 0.291
+              },
+              {
+                "label": "mesh-tests",
+                "exit_code": 0,
+                "duration_seconds": 8.02
+              },
+              {
+                "label": "gradle",
+                "exit_code": null,
+                "duration_seconds": null
+              }
+            ]
+          }
+        }
+      },
+      "log_tail": {
+        "10-host-tests.log": [
+          "Ran 1266 tests in 70.270s",
+          "OK (skipped=3)"
+        ],
+        "11-tools-tests.log": [
+          "Ran 52 tests in 0.251s",
+          "OK"
+        ],
+        "18-gradle.log": [
+          "> Task :app:mergeReleaseJniLibFolders",
+          "> Task :app:mergeReleaseNativeLibs",
+          "> Task :app:stripReleaseDebugSymbols",
+          "> Task :app:extractReleaseNativeSymbolTables",
+          "> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE",
+          "> Task :app:checkReleaseDuplicateClasses",
+          "> Task :app:generateReleaseBuildConfig",
+          "> Task :app:generateReleaseResources",
+          "> Task :app:packageReleaseResources",
+          "> Task :app:processReleaseNavigationResources",
+          "> Task :app:parseReleaseLocalResources",
+          "> Task :app:generateReleaseRFile"
+        ],
+        "linux-backend-full-suite.log": [
+          "1766 passed, 1 warning, 1557 subtests passed in 140.63s (0:02:20)"
+        ]
+      }
+    }
+  ],
+  "jvm": [
+    {
+      "path": "C:\\actions-runner-4\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40453334023-1\\app\\build\\test-results\\testDebugUnitTest",
+      "suites": [
+        {
+          "name": "TEST-ru.omnicio.app.BusinessChatContractTest.xml",
+          "sha256": "552981ec93e91dd5f2c407ed17351394be6af21a6c24445c48de955325d016ac",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.backend.BackendConfigTest.xml",
+          "sha256": "20ed432144844cfc3ec2058c53710b1cb248d724329624944a263da31362fd32",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.backend.SessionTransitionsTest.xml",
+          "sha256": "1c7f4cad3f1716e891067b25fef4c9e2a925982ffc80d1af5499b1477e85b53d",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest.xml",
+          "sha256": "d54182f48c3fbe58b9af5d3bf5b4a6f0b4cc46e95e44c4f554ea965eb4cb8848",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.notifications.NotificationSchedulingTest.xml",
+          "sha256": "acdaab4e90a068c5215c6b34148821b692755aa6d38fc59812e55f0af2b5e948",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.workspace.AiAvailabilityMessageTest.xml",
+          "sha256": "9ab9e02809e6e019cc27e826952d3d67a9b00db505fab51f2ce71caf9f380728",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.workspace.ChatRouteQuoteTest.xml",
+          "sha256": "175fdc44f4543830ac2eb0f37848b681c6b78890f4e54f020540663ab2f917a8",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.workspace.LiveCursorTest.xml",
+          "sha256": "5a0d1cb776738c808a04355638c52db9bdb05c6a17e7e7b747dbf481c95d87a2",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest.xml",
+          "sha256": "3f1dd890d75c1ddcf84aeb3e30062c9dd43b32ee2a49459448d5ddd45fb6097a",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.data.workspace.WorkspaceEndpointPolicyTest.xml",
+          "sha256": "6e018c4da6583807f2cfefd34046189e6ebd5cfa3ab7b8f72ba741cf173b7302",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.home.DashboardOrderTest.xml",
+          "sha256": "ad255a18b42331bbfd8c4b5145d0ac449dfafd178fbdc07de5f88cbaaff8556d",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.NavigationCatalogueTest.xml",
+          "sha256": "f86ddd8c6d6b7874bfe50c6f204542eee7ba104aa9d50766f6e26de2c371ff10",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.PanelNavigationGuardTest.xml",
+          "sha256": "658684ae47d990e7a4fe8ee214132cbabce68e80a1c25d4a515906b4f2694c56",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest.xml",
+          "sha256": "24ee1b46a598a28020cfa030994d76a34e210ea1f658437c8c8695215a3e2056",
+          "tests": 19,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.FlatMotionPolicyTest.xml",
+          "sha256": "1c41ec1a30d6df6e6064aad6b51b230992abdeb0fc9ca7d68d5c1f4fcf075f48",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.LiveIconClockTest.xml",
+          "sha256": "e756fb1286a2a8b044d0533cd3b6066c68bbb7965d0d6187ea96212e5f07a20f",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.SpatialChartGeometryTest.xml",
+          "sha256": "43a0b86803f336a6a78a6a1653422464d20cf0a4ee1f6f77995c831618ee36c3",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.SpatialColorsTest.xml",
+          "sha256": "28b5bef143f86da487679efb5b81bf348a9ce4afb57863174528aa1fd23284fa",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.SpatialGeographyGeometryTest.xml",
+          "sha256": "dd155800df7f00dd4b2a6699d98d5115b20427cdd45de7eda32278e23ebeb1e7",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.SpatialGuideGeometryTest.xml",
+          "sha256": "e587f8fd31c265ab8e6f5103f54bf4571d497d4376e5fc25b6b94063f285e000",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.SpatialMaterialTest.xml",
+          "sha256": "631be2dc54c4f78be6e36f97255da4c09e29f1485735ad58e81b4336890c7dc9",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spatial.SpatialPlacementInvalidationTest.xml",
+          "sha256": "3d8eefddcea3fa3a4c46d72fdcf936afefd48a8f7100d3a6cf01952bee0f0a0f",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spectrum.EditorImeHandoffTest.xml",
+          "sha256": "b7d27495716fc27faca4c027e9558d425a3d4ad372ff18acbef0531ca8596f5f",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.spectrum.EditorInputRestorationTest.xml",
+          "sha256": "dc67bb02edea63f9589b502cf4cfb71c6ee06808a0fd91ef32bca3e23195dff3",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.theme.AnalystColorsTest.xml",
+          "sha256": "ec72fa8b192ec50498a03947ab07c88a02abee483a3ca3b2804e3b55d11d9886",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.theme.ApplicationThemeModeTest.xml",
+          "sha256": "23caae40aaa8b98f0f010327e2a23131fde459bc042f19f9dd4e23012a361d2f",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.theme.DisplayedThemeTest.xml",
+          "sha256": "011c2eca52786e5e4710bb42e13f1cacbbddf2c582a5b68d4c38d526b3a2524b",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.updates.UpdateAttemptGateTest.xml",
+          "sha256": "44737692dabf6b597e079369398133279ee56596029e9f783a3d482b5a805c72",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.AssistantComposerAvailabilityTest.xml",
+          "sha256": "f4ad8c1045cf746f06ea467910d7c772be1a5b1174c47ca58d2dbb93bb6307bb",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.AutoSaveModelTest.xml",
+          "sha256": "42d5513509f72c9de66ec001d4bbf31f16c69190ece6da25f65d3bd6fe87c147",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.PlanEditorInitializationTest.xml",
+          "sha256": "d50fa11760fd7395f8c7c79a57cd477a59543be26526381fdc19f79a8d65c118",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.PortfolioDestinationStateTest.xml",
+          "sha256": "0ad105c1496dddf72a0775128fe0a26a3427b445cf9839102f2abb6dacee5c45",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest.xml",
+          "sha256": "becb2651e66f937506bb0dd29f67d02e19545563556fdf8511d1c04e65d00c86",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.StrategyEditorInitializationTest.xml",
+          "sha256": "675517d6889f2a35bfac3ae135a9f2f2a7d7edbac2a06e81e9abb5206cf0ab91",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.StrategyMandateControlsTest.xml",
+          "sha256": "0012df411f04c09f356176c30959c8a49ca873cb5c0e0d55fb5d05b6f436ae09",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.StrategyPercentDraftSaverTest.xml",
+          "sha256": "d60ed1554eeaf7c1f29a88f2da486218a8483eb9f0a6ba86a4d4333611d124f8",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.StrategyPercentDraftTest.xml",
+          "sha256": "d552eff1aeb3c21a215e7fa8cfc5b578e72e5e50a1f5c5776c82939c59b95ee7",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.SuggestedInputModelTest.xml",
+          "sha256": "e4c72666ae0a86be5b0ad85d55ca5c06fed9a3fb79d606c263d92227d2d433f6",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.ui.workspace.WorkspaceActionRecoveryTest.xml",
+          "sha256": "6794840b42b0e0f5e14f46e45722ef731032ff189cb1505d91d34ef65771c55a",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        },
+        {
+          "name": "TEST-ru.omnicio.app.WorkspaceRuntimeRegressionTest.xml",
+          "sha256": "176d52a4392f20acf511b0a81ff78700cf4b56bf1e38432f279c08c02e881dc0",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "failures_details": []
+        }
+      ],
+      "totals": {
+        "tests": 232,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  ]
+}
+

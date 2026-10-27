@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "candidate_version_code": 49,
+  "candidate_version_name": "0.14.2-preview",
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "build_report": {
+    "path": "context/build49-v2/windows-development.json",
+    "sha256": "7af8b02af5070253d69b38734372f59d5f47e40961300122aca6e904a89459f0"
+  },
+  "build_controller": {
+    "path": "context/build49-v2/controller.json",
+    "sha256": "8a8a60b8fb51c254b0b8aa5b929f49d6a78607880018e0be4de8bc9085ecd906"
+  },
+  "build_export_receipt": {
+    "path": "context/build49-v2/export-receipt.json",
+    "sha256": "0640ce9ae4333816b08e2f025d3b0dd678e8ac6abaa4ae2241cc9df9389f278e"
+  },
+  "source_inventory": {
+    "path": "context/build49-v2/source-final.json",
+    "sha256": "fdfd3d0fad9835210fd122115dc8ea4ecc292c2fbb3e60d518242bda8ad812b4"
+  },
+  "reviewed_manifest": {
+    "path": "context/candidate49-calendar-v2/reviewed-files.json",
+    "sha256": "d81252039e88864e5095670758b3148ec581b4b18f45eecd7ee8f4c7bad0b485"
+  },
+  "prepared_build": {
+    "path": "context/candidate49-calendar-v2/manifest-summary.json",
+    "sha256": "042acd194369247dae86610ed6fcb5950ac31bdb8e0f28c4358a539469e0e363"
+  },
+  "runtime_observation": {
+    "path": "context/calendar49-runtime-observation/actual40451419341/runtime-observation.json",
+    "sha256": "e60238a67f01be52134c5d8cf0ac75e78f486118af03547931206ac5694b08cb"
+  }
+}
