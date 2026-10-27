@@ -21,6 +21,7 @@ from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 try:
+    from .ai_budget import transaction
     from .client_compatibility import has_current_session
     from .release_json import (
         ALLOWED_RELEASE_NOTE_CONTROLS,
@@ -29,6 +30,7 @@ try:
         validate_release_text,
     )
 except ImportError:
+    from ai_budget import transaction
     from client_compatibility import has_current_session
     from release_json import (
         ALLOWED_RELEASE_NOTE_CONTROLS,
@@ -205,7 +207,9 @@ def enabled() -> bool:
 
 
 def initialize(connect: Callable[[], sqlite3.Connection]) -> None:
-    with closing(connect()) as db:
+    # DDL is otherwise autocommitted statement by statement. Acquire the write
+    # reservation before the first table/index and preserve the existing rows.
+    with transaction(connect) as db:
         db.execute('''CREATE TABLE IF NOT EXISTS client_versions(
             session_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
             package_name TEXT NOT NULL, version_code INTEGER NOT NULL,
@@ -213,7 +217,6 @@ def initialize(connect: Callable[[], sqlite3.Connection]) -> None:
         db.execute('CREATE INDEX IF NOT EXISTS client_versions_user ON client_versions(user_id)')
         db.execute('''CREATE INDEX IF NOT EXISTS client_versions_identity
             ON client_versions(user_id,package_name,version_code,release_sha256)''')
-        db.commit()
 
 
 def _client_code(value: str | None) -> int:

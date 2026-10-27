@@ -15,6 +15,13 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
+try:
+    from .ai_budget import transaction
+    from .schema_migrations import execute_schema
+except ImportError:
+    from ai_budget import transaction
+    from schema_migrations import execute_schema
+
 MAX_BODY_BYTES = 32 * 1024
 MAX_RECORD_BYTES = 4096
 MAX_BATCH = 8
@@ -31,8 +38,10 @@ METHOD_NAME = re.compile(r"(?:[A-Za-z_$][A-Za-z0-9_$-]{0,95}|<init>|<clinit>)\Z"
 
 
 def initialize(connect) -> None:
-    with closing(connect()) as db:
-        db.executescript("""
+    # Schema and retention cleanup share one rollback boundary. A refused DELETE
+    # or COMMIT must not leave a partially initialized diagnostic registry.
+    with transaction(connect) as db:
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS client_diagnostic_events (
                 user_id INTEGER NOT NULL,
                 event_id TEXT NOT NULL,
@@ -51,7 +60,6 @@ def initialize(connect) -> None:
         """)
         db.execute("DELETE FROM client_diagnostic_events WHERE received_at < ?",
                    (int(time.time()) - RETENTION_SECONDS,))
-        db.commit()
 
 
 def _integer(value, low, high):
