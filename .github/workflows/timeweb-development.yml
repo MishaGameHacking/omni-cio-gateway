@@ -101,24 +101,33 @@ jobs:
         n        missing.append(parent)\\n        parent = parent.parent\\n    for folder in reversed(missing):\\n        owned_directory(folder, account)\\n    with\
         \ target.open(\\'xb\\') as stream:\\n        stream.write(data)\\n    target.chmod(mode)\\n    os.chown(target, account.pw_uid, account.pw_gid)\\n\\n\\ndef\
         \ junit_counts(path):\\n    raw = read_regular(path, 32 * 1024**2)\\n    tree = ET.fromstring(raw)\\n    need(tree.tag in (\\'testsuite\\', \\'testsuites\\\
-        '), \\'invalid_junit_root\\')\\n    suites = [tree] if tree.tag == \\'testsuite\\' else list(tree.findall(\\'testsuite\\'))\\n    counts = {name: sum(int(suite.get(name,\
-        \ \\'0\\')) for suite in suites)\\n              for name in (\\'tests\\', \\'failures\\', \\'errors\\', \\'skipped\\')}\\n    cases = list(tree.iter(\\'testcase\\\
-        '))\\n    need(counts[\\'tests\\'] == len(cases), \\'junit_case_count_mismatch\\')\\n    failures = [case.get(\\'name\\', \\'\\') for case in cases if case.find(\\\
-        'failure\\') is not None]\\n    return counts, identity(raw), failures\\n\\n\\ndef check_candidate(PATCH_FILES, *, change_id=\\'public-sources50\\'):\\n \
-        \   need(os.getuid() == 0 and re.fullmatch(\\'[a-z0-9][a-z0-9-]{0,63}\\', change_id), \\'invalid_administrative_candidate_request\\')\\n    need(BASE.is_dir()\
+        '), \\'invalid_junit_root\\')\\n    suites = [tree] if tree.tag == \\'testsuite\\' else list(tree.findall(\\'testsuite\\'))\\n    names = (\\'tests\\', \\\
+        'failures\\', \\'errors\\', \\'skipped\\')\\n    counters = [{name: int(suite.get(name, \\'0\\')) for name in names} for suite in suites]\\n    need(counters\
+        \ and all(value >= 0 for row in counters for value in row.values()),\\n         \\'negative_or_missing_junit_counters\\')\\n    counts = {name: sum(row[name]\
+        \ for row in counters) for name in names}\\n    cases = list(tree.iter(\\'testcase\\'))\\n    # pytest\\'s successful unittest subtests contribute to testsuite@tests\
+        \ without\\n    # creating an additional testcase element. Preserve both observed counts;\\n    # failure/error/skip counters must still agree with the actual\
+        \ XML elements.\\n    need(len(cases) > 0 and counts[\\'tests\\'] >= len(cases), \\'junit_case_count_mismatch\\')\\n    for counter, element in ((\\'failures\\\
+        ', \\'failure\\'), (\\'errors\\', \\'error\\'), (\\'skipped\\', \\'skipped\\')):\\n        need(counts[counter] == sum(len(case.findall(element)) for case\
+        \ in cases),\\n             \\'junit_\\' + counter + \\'_element_count_mismatch\\')\\n    counts[\\'testcase_elements\\'] = len(cases)\\n    counts[\\'reported_test_excess\\\
+        '] = counts[\\'tests\\'] - len(cases)\\n    failures = [case.get(\\'name\\', \\'\\') for case in cases if case.find(\\'failure\\') is not None]\\n    return\
+        \ counts, identity(raw), failures\\n\\n\\ndef check_candidate(PATCH_FILES, *, change_id=\\'public-sources50\\', live_smoke_source: str | None = None):\\n\
+        \    need(os.getuid() == 0 and re.fullmatch(\\'[a-z0-9][a-z0-9-]{0,63}\\', change_id), \\'invalid_administrative_candidate_request\\')\\n    need(BASE.is_dir()\
         \ and not BASE.is_symlink() and BASE.resolve(strict=True) == BASE, \\'invalid_development_root\\')\\n    account = pwd.getpwnam(\\'analyst-build\\')\\n  \
         \  need(account.pw_uid != 0, \\'test_user_must_be_unprivileged\\')\\n    baseline = baseline_inventory()\\n    python, baseline_report = successful_baseline_venv()\\\
-        n    patches = decode_patches(PATCH_FILES)\\n    suffix = datetime.datetime.now(datetime.timezone.utc).strftime(\\'%Y%m%dT%H%M%SZ\\') + \\'-\\' + uuid.uuid4().hex[:8]\\\
-        n    candidate = BASE / (\\'candidate-\\' + change_id + \\'-\\' + suffix)\\n    state = BASE / (\\'candidate-check-\\' + change_id + \\'-\\' + suffix)\\n\
-        \    owned_directory(candidate, account)\\n    owned_directory(state, account)\\n    state.chmod(0o700)\\n    for name in (\\'home\\', \\'tmp\\', \\'evidence\\\
-        ', \\'pycache\\', \\'baseline-regressions\\'):\\n        owned_directory(state / name, account)\\n        (state / name).chmod(0o700)\\n    candidate_files\
-        \ = dict(baseline[\\'files\\'])\\n    for name, row in baseline[\\'files\\'].items():\\n        original = read_regular(BASE_SOURCE / name)\\n        need(identity(original)\
-        \ == row, \\'baseline_changed_during_copy\\')\\n        data = patches.get(name, original)\\n        mode = stat.S_IMODE((BASE_SOURCE / name).stat().st_mode)\\\
-        n        need(mode in (0o644, 0o755), \\'unexpected_baseline_source_mode\\')\\n        write_source(candidate, name, data, account, mode)\\n        candidate_files[name]\
-        \ = identity(data)\\n    for name, raw in patches.items():\\n        if name not in baseline[\\'files\\']:\\n            write_source(candidate, name, raw,\
-        \ account)\\n            candidate_files[name] = identity(raw)\\n    for name in BASELINE_REGRESSIONS:\\n        write_source(state / \\'baseline-regressions\\\
-        ', Path(name).name, patches[name], account)\\n    candidate_inventory = inventory(candidate_files)\\n    inventory_path = state / \\'evidence/candidate-inventory.json\\\
-        '\\n    inventory_path.write_text(json.dumps(candidate_inventory, sort_keys=True, indent=2) + \\'\\\\n\\')\\n    inventory_binding = {\\'path\\': str(inventory_path),\
+        n    patches = decode_patches(PATCH_FILES)\\n    need(live_smoke_source is None or isinstance(live_smoke_source, str) and\\n         0 < len(live_smoke_source.encode(\\\
+        'utf-8\\')) <= 65536 and \\'\\\\x00\\' not in live_smoke_source,\\n         \\'invalid_administrative_live_smoke_source\\')\\n    suffix = datetime.datetime.now(datetime.timezone.utc).strftime(\\\
+        '%Y%m%dT%H%M%SZ\\') + \\'-\\' + uuid.uuid4().hex[:8]\\n    candidate = BASE / (\\'candidate-\\' + change_id + \\'-\\' + suffix)\\n    state = BASE / (\\'candidate-check-\\\
+        ' + change_id + \\'-\\' + suffix)\\n    owned_directory(candidate, account)\\n    owned_directory(state, account)\\n    state.chmod(0o700)\\n    for name\
+        \ in (\\'home\\', \\'tmp\\', \\'evidence\\', \\'pycache\\', \\'baseline-regressions\\'):\\n        owned_directory(state / name, account)\\n        (state\
+        \ / name).chmod(0o700)\\n    live_smoke_path = state / \\'public-source-live-smoke.py\\'\\n    if live_smoke_source is not None:\\n        write_source(state,\
+        \ live_smoke_path.name, live_smoke_source.encode(\\'utf-8\\'), account, 0o600)\\n    candidate_files = dict(baseline[\\'files\\'])\\n    for name, row in\
+        \ baseline[\\'files\\'].items():\\n        original = read_regular(BASE_SOURCE / name)\\n        need(identity(original) == row, \\'baseline_changed_during_copy\\\
+        ')\\n        data = patches.get(name, original)\\n        mode = stat.S_IMODE((BASE_SOURCE / name).stat().st_mode)\\n        need(mode in (0o644, 0o755),\
+        \ \\'unexpected_baseline_source_mode\\')\\n        write_source(candidate, name, data, account, mode)\\n        candidate_files[name] = identity(data)\\n\
+        \    for name, raw in patches.items():\\n        if name not in baseline[\\'files\\']:\\n            write_source(candidate, name, raw, account)\\n      \
+        \      candidate_files[name] = identity(raw)\\n    for name in BASELINE_REGRESSIONS:\\n        write_source(state / \\'baseline-regressions\\', Path(name).name,\
+        \ patches[name], account)\\n    candidate_inventory = inventory(candidate_files)\\n    inventory_path = state / \\'evidence/candidate-inventory.json\\'\\\
+        n    inventory_path.write_text(json.dumps(candidate_inventory, sort_keys=True, indent=2) + \\'\\\\n\\')\\n    inventory_binding = {\\'path\\': str(inventory_path),\
         \ **identity(read_regular(inventory_path))}\\n    env = {\\n        \\'PATH\\': \\'/usr/bin:/bin\\', \\'HOME\\': str(state / \\'home\\'), \\'LANG\\': \\'C.UTF-8\\\
         ',\\n        \\'PYTHONUNBUFFERED\\': \\'1\\', \\'PYTHONNOUSERSITE\\': \\'1\\', \\'PYTHONPYCACHEPREFIX\\': str(state / \\'pycache\\'),\\n        \\'XDG_CONFIG_HOME\\\
         ': str(state / \\'home/.config\\'), \\'XDG_CACHE_HOME\\': str(state / \\'home/.cache\\'),\\n        \\'TMPDIR\\': str(state / \\'tmp\\'), \\'TMP\\': str(state\
@@ -132,48 +141,63 @@ jobs:
         \      \\'source_inventory\\': inventory_binding, \\'baseline_test_receipt\\': baseline_report,\\n        \\'dependency_mode\\': \\'reused_successful_isolated_source49_test_venv\\\
         ', \\'test_python\\': python,\\n        \\'evidence_directory\\': str(state / \\'evidence\\'), \\'baseline_source_changed\\': False,\\n        \\'live_source_changed\\\
         ': False, \\'trading_or_ai_enabled\\': False, \\'steps\\': [],\\n        \\'patch_files\\': {name: identity(raw) for name, raw in patches.items()},\\n   \
-        \     \\'baseline_regression\\': {\\'steps\\': []},\\n    }\\n\\n    def run(name, arguments, *, cwd=candidate, timeout=900, step_env=None, expected_failure=False):\\\
-        n        log = state / \\'evidence\\' / (name + \\'.log\\')\\n        environment = env if step_env is None else step_env\\n        unit = \\'analyst-candidate-\\\
-        ' + suffix.lower() + \\'-\\' + name\\n        command = [\\'systemd-run\\', \\'--wait\\', \\'--pipe\\', \\'--collect\\', \\'--quiet\\', \\'--unit=\\' + unit,\\\
-        n                   \\'--uid=\\' + str(account.pw_uid), \\'--gid=\\' + str(account.pw_gid),\\n                   \\'--property=WorkingDirectory=\\' + str(cwd),\\\
-        n                   \\'--property=MemoryMax=1G\\', \\'--property=CPUQuota=100%\\', \\'--property=TasksMax=128\\',\\n                   \\'--property=RuntimeMaxSec=\\\
+        \     \\'baseline_regression\\': {\\'steps\\': []},\\n        \\'administrative_live_smoke\\': ({\\'path\\': str(live_smoke_path),\\n                    \
+        \                  **identity(live_smoke_source.encode(\\'utf-8\\'))}\\n                                     if live_smoke_source is not None else None),\\\
+        n    }\\n\\n    def run(name, arguments, *, cwd=candidate, timeout=900, step_env=None, expected_failure=False, network=False):\\n        log = state / \\\
+        'evidence\\' / (name + \\'.log\\')\\n        environment = env if step_env is None else step_env\\n        unit = \\'analyst-candidate-\\' + suffix.lower()\
+        \ + \\'-\\' + name\\n        command = [\\'systemd-run\\', \\'--wait\\', \\'--pipe\\', \\'--collect\\', \\'--quiet\\', \\'--unit=\\' + unit,\\n          \
+        \         \\'--uid=\\' + str(account.pw_uid), \\'--gid=\\' + str(account.pw_gid),\\n                   \\'--property=WorkingDirectory=\\' + str(cwd),\\n \
+        \                  \\'--property=MemoryMax=1G\\', \\'--property=CPUQuota=100%\\', \\'--property=TasksMax=128\\',\\n                   \\'--property=RuntimeMaxSec=\\\
         ' + str(timeout), \\'--property=TimeoutStopSec=10\\',\\n                   \\'--property=NoNewPrivileges=yes\\', \\'--property=ProtectSystem=strict\\',\\\
-        n                   \\'--property=ProtectHome=yes\\', \\'--property=PrivateTmp=yes\\',\\n                   \\'--property=PrivateDevices=yes\\', \\'--property=PrivateNetwork=yes\\\
-        ',\\n                   \\'--property=InaccessiblePaths=-/var/lib/analyst-ai -/etc/analyst-ai -/root\\',\\n                   \\'--property=ReadWritePaths=\\\
-        ' + str(state),\\n                   \\'/usr/bin/env\\', \\'-i\\', *[key + \\'=\\' + value for key, value in environment.items()], *arguments]\\n        print(\\\
-        'TIMEWEB_CANDIDATE_STEP=\\' + name, flush=True)\\n        started = time.monotonic()\\n        with log.open(\\'xb\\') as output:\\n            result = subprocess.run(command,\
-        \ stdin=subprocess.DEVNULL, stdout=output,\\n                                    stderr=subprocess.STDOUT, timeout=timeout + 30)\\n        row = {\\'name\\\
-        ': name, \\'exit_code\\': result.returncode, \\'seconds\\': round(time.monotonic() - started, 3),\\n               \\'log_sha256\\': identity(read_regular(log,\
-        \ 32 * 1024**2))[\\'sha256\\'], \\'network_allowed\\': False}\\n        target = report[\\'baseline_regression\\'][\\'steps\\'] if expected_failure else report[\\\
-        'steps\\']\\n        target.append(row)\\n        print(\\'TIMEWEB_CANDIDATE_RESULT=\\' + json.dumps(row), flush=True)\\n        if result.returncode or name\
-        \ in (\\'candidate-targeted-tests\\', \\'backend-full-suite\\', \\'health-openapi\\'):\\n            print(log.read_text(errors=\\'replace\\')[-18000:], flush=True)\\\
-        n        need(result.returncode == (1 if expected_failure else 0),\\n             \\'baseline_did_not_fail_as_expected\\' if expected_failure else \\'candidate_test_step_failed:\\\
-        ' + name)\\n\\n    try:\\n        baseline_junit = state / \\'evidence/baseline-regressions.xml\\'\\n        regression_paths = [str(state / \\'baseline-regressions\\\
-        ' / Path(name).name) for name in BASELINE_REGRESSIONS]\\n        run(\\'baseline-n02-regressions\\', [python, \\'-m\\', \\'pytest\\', *regression_paths, \\\
-        '-q\\',\\n                                        \\'-p\\', \\'no:cacheprovider\\', \\'--import-mode=importlib\\',\\n                                    \
-        \    \\'--junitxml=\\' + str(baseline_junit)], cwd=BASE_SOURCE,\\n            timeout=180, expected_failure=True,\\n            step_env=dict(env, DATABASE_PATH=str(state\
-        \ / \\'baseline.sqlite3\\'), PYTHONPATH=str(BASE_SOURCE)))\\n        counts, junit_identity, failed_names = junit_counts(baseline_junit)\\n        need(counts[\\\
-        'tests\\'] >= 2 and counts[\\'failures\\'] > 0 and counts[\\'errors\\'] == counts[\\'skipped\\'] == 0,\\n             \\'baseline_failure_not_a_meaningful_regression\\\
-        ')\\n        report[\\'baseline_regression\\'].update(tests=counts, junit=junit_identity, failed_tests=failed_names,\\n                                  \
-        \            expected_failure_observed=True,\\n                                              test_files={name: identity(patches[name]) for name in BASELINE_REGRESSIONS})\\\
-        n        run(\\'dependencies\\', [python, \\'-m\\', \\'pip\\', \\'check\\'], timeout=60)\\n        run(\\'compile-backend\\', [python, \\'-m\\', \\'compileall\\\
-        ', \\'-q\\', \\'backend\\'], timeout=90)\\n        targeted = sorted(name for name in patches if name.startswith(\\'backend/tests/\\'))\\n        target_junit\
-        \ = state / \\'evidence/candidate-targeted-tests.xml\\'\\n        run(\\'candidate-targeted-tests\\', [python, \\'-m\\', \\'pytest\\', *targeted, \\'-q\\\
-        ', \\'-p\\', \\'no:cacheprovider\\',\\n                                         \\'--junitxml=\\' + str(target_junit)], timeout=300)\\n        counts, target_identity,\
-        \ _ = junit_counts(target_junit)\\n        need(counts[\\'tests\\'] > 0 and counts[\\'failures\\'] == counts[\\'errors\\'] == counts[\\'skipped\\'] == 0,\\\
-        n             \\'targeted_tests_not_complete_pass\\')\\n        report[\\'targeted_tests\\'] = counts\\n        report[\\'targeted_junit\\'] = target_identity\\\
-        n        full_junit = state / \\'evidence/backend-tests.xml\\'\\n        run(\\'backend-full-suite\\', [python, \\'-m\\', \\'pytest\\', \\'backend/tests\\\
-        ', \\'-q\\', \\'-p\\', \\'no:cacheprovider\\',\\n                                   \\'--junitxml=\\' + str(full_junit)], timeout=900)\\n        counts, full_identity,\
-        \ _ = junit_counts(full_junit)\\n        need(counts[\\'tests\\'] > counts[\\'skipped\\'] and counts[\\'failures\\'] == counts[\\'errors\\'] == 0,\\n    \
-        \         \\'full_backend_tests_not_passed\\')\\n        report[\\'tests\\'] = counts\\n        report[\\'junit_sha256\\'] = full_identity[\\'sha256\\']\\\
-        n        smoke = \"\"\"from fastapi.testclient import TestClient\\nfrom backend.app import app\\nwith TestClient(app) as client:\\n    health = client.get(\\\
-        '/health\\')\\n    assert health.status_code == 200 and health.json() == {\\'status\\': \\'ok\\'}\\n    assert client.get(\\'/openapi.json\\').status_code\
-        \ == 200\\nprint(\\'HEALTH_OPENAPI=passed\\')\\n\"\"\"\\n        run(\\'health-openapi\\', [python, \\'-c\\', smoke], timeout=90,\\n            step_env=dict(env,\
-        \ DATABASE_PATH=str(state / \\'health.sqlite3\\')))\\n        report[\\'status\\'] = \\'passed\\'\\n    except BaseException as error:\\n        report.update(error_type=type(error).__name__,\
-        \ error=str(error)[:500])\\n        raise\\n    finally:\\n        changed = [name for name, row in candidate_files.items()\\n                   if not (candidate\
-        \ / name).is_file() or (candidate / name).is_symlink()\\n                   or identity(read_regular(candidate / name)) != row]\\n        baseline_changed\
-        \ = [name for name, row in baseline[\\'files\\'].items()\\n                            if not (BASE_SOURCE / name).is_file() or (BASE_SOURCE / name).is_symlink()\\\
-        n                            or identity(read_regular(BASE_SOURCE / name)) != row]\\n        report[\\'changed_sources\\'] = changed\\n        report[\\'baseline_changed_files\\\
+        n                   \\'--property=ProtectHome=yes\\', \\'--property=PrivateTmp=yes\\',\\n                   \\'--property=PrivateDevices=yes\\', \\'--property=PrivateNetwork=\\\
+        ' + (\\'no\\' if network else \\'yes\\'),\\n                   \\'--property=InaccessiblePaths=-/var/lib/analyst-ai -/etc/analyst-ai -/root\\',\\n       \
+        \            \\'--property=ReadWritePaths=\\' + str(state),\\n                   \\'/usr/bin/env\\', \\'-i\\', *[key + \\'=\\' + value for key, value in environment.items()],\
+        \ *arguments]\\n        print(\\'TIMEWEB_CANDIDATE_STEP=\\' + name, flush=True)\\n        started = time.monotonic()\\n        with log.open(\\'xb\\') as\
+        \ output:\\n            result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=output,\\n                                    stderr=subprocess.STDOUT,\
+        \ timeout=timeout + 30)\\n        row = {\\'name\\': name, \\'exit_code\\': result.returncode, \\'seconds\\': round(time.monotonic() - started, 3),\\n   \
+        \            \\'log_sha256\\': identity(read_regular(log, 32 * 1024**2))[\\'sha256\\'], \\'network_allowed\\': network}\\n        target = report[\\'baseline_regression\\\
+        '][\\'steps\\'] if expected_failure else report[\\'steps\\']\\n        target.append(row)\\n        print(\\'TIMEWEB_CANDIDATE_RESULT=\\' + json.dumps(row),\
+        \ flush=True)\\n        if name == \\'public-source-live-smoke\\':\\n            safe_lines = [line for line in log.read_text(errors=\\'replace\\').splitlines()\\\
+        n                          if line.startswith(\\'TIMEWEB_PUBLIC_SOURCE_SMOKE=\\')]\\n            if safe_lines:\\n                print(safe_lines[-1][-18000:],\
+        \ flush=True)\\n        elif result.returncode or name in (\\'candidate-targeted-tests\\', \\'backend-full-suite\\', \\'health-openapi\\'):\\n           \
+        \ print(log.read_text(errors=\\'replace\\')[-18000:], flush=True)\\n        need(result.returncode == (1 if expected_failure else 0),\\n             \\'baseline_did_not_fail_as_expected\\\
+        ' if expected_failure else \\'candidate_test_step_failed:\\' + name)\\n\\n    try:\\n        baseline_junit = state / \\'evidence/baseline-regressions.xml\\\
+        '\\n        regression_paths = [str(state / \\'baseline-regressions\\' / Path(name).name) for name in BASELINE_REGRESSIONS]\\n        run(\\'baseline-n02-regressions\\\
+        ', [python, \\'-m\\', \\'pytest\\', *regression_paths, \\'-q\\',\\n                                        \\'-p\\', \\'no:cacheprovider\\', \\'--import-mode=importlib\\\
+        ',\\n                                        \\'--junitxml=\\' + str(baseline_junit)], cwd=BASE_SOURCE,\\n            timeout=180, expected_failure=True,\\\
+        n            step_env=dict(env, DATABASE_PATH=str(state / \\'baseline.sqlite3\\'), PYTHONPATH=str(BASE_SOURCE)))\\n        counts, junit_identity, failed_names\
+        \ = junit_counts(baseline_junit)\\n        need(counts[\\'tests\\'] >= 2 and counts[\\'failures\\'] > 0 and counts[\\'errors\\'] == counts[\\'skipped\\']\
+        \ == 0,\\n             \\'baseline_failure_not_a_meaningful_regression\\')\\n        need(counts[\\'reported_test_excess\\'] == 0 and len(failed_names) ==\
+        \ counts[\\'failures\\'],\\n             \\'baseline_regression_failure_names_or_cases_mismatch\\')\\n        report[\\'baseline_regression\\'].update(tests=counts,\
+        \ junit=junit_identity, failed_tests=failed_names,\\n                                              expected_failure_observed=True,\\n                    \
+        \                          test_files={name: identity(patches[name]) for name in BASELINE_REGRESSIONS})\\n        run(\\'dependencies\\', [python, \\'-m\\\
+        ', \\'pip\\', \\'check\\'], timeout=60)\\n        run(\\'compile-backend\\', [python, \\'-m\\', \\'compileall\\', \\'-q\\', \\'backend\\'], timeout=90)\\\
+        n        targeted = sorted(name for name in patches if name.startswith(\\'backend/tests/\\'))\\n        target_junit = state / \\'evidence/candidate-targeted-tests.xml\\\
+        '\\n        run(\\'candidate-targeted-tests\\', [python, \\'-m\\', \\'pytest\\', *targeted, \\'-q\\', \\'-p\\', \\'no:cacheprovider\\',\\n               \
+        \                          \\'--junitxml=\\' + str(target_junit)], timeout=300)\\n        counts, target_identity, _ = junit_counts(target_junit)\\n     \
+        \   need(counts[\\'tests\\'] > 0 and counts[\\'failures\\'] == counts[\\'errors\\'] == counts[\\'skipped\\'] == 0,\\n             \\'targeted_tests_not_complete_pass\\\
+        ')\\n        report[\\'targeted_tests\\'] = counts\\n        report[\\'targeted_junit\\'] = target_identity\\n        full_junit = state / \\'evidence/backend-tests.xml\\\
+        '\\n        run(\\'backend-full-suite\\', [python, \\'-m\\', \\'pytest\\', \\'backend/tests\\', \\'-q\\', \\'-p\\', \\'no:cacheprovider\\',\\n           \
+        \                        \\'--junitxml=\\' + str(full_junit)], timeout=900)\\n        counts, full_identity, _ = junit_counts(full_junit)\\n        need(counts[\\\
+        'tests\\'] > counts[\\'skipped\\'] and counts[\\'failures\\'] == counts[\\'errors\\'] == 0,\\n             \\'full_backend_tests_not_passed\\')\\n       \
+        \ report[\\'tests\\'] = counts\\n        report[\\'junit_sha256\\'] = full_identity[\\'sha256\\']\\n        smoke = \"\"\"from fastapi.testclient import TestClient\\\
+        nfrom backend.app import app\\nwith TestClient(app) as client:\\n    health = client.get(\\'/health\\')\\n    assert health.status_code == 200 and health.json()\
+        \ == {\\'status\\': \\'ok\\'}\\n    assert client.get(\\'/openapi.json\\').status_code == 200\\nprint(\\'HEALTH_OPENAPI=passed\\')\\n\"\"\"\\n        run(\\\
+        'health-openapi\\', [python, \\'-c\\', smoke], timeout=90,\\n            step_env=dict(env, DATABASE_PATH=str(state / \\'health.sqlite3\\')))\\n        if\
+        \ live_smoke_source is not None:\\n            run(\\'public-source-live-smoke\\', [python, str(live_smoke_path),\\n                                     \
+        \        str(state / \\'public-source-smoke.sqlite3\\')],\\n                timeout=90, network=True)\\n            smoke_receipt = state / \\'evidence/public-source-live-smoke.json\\\
+        '\\n            smoke_raw = read_regular(smoke_receipt, 128 * 1024)\\n            live = json.loads(smoke_raw)\\n            need(live.get(\\'status\\') ==\
+        \ \\'passed_contract\\' and live.get(\\'source_directory\\') == str(candidate)\\n                 and live.get(\\'source_code_executed_on_timeweb\\') is True\\\
+        n                 and live.get(\\'real_https_requests\\') == 2\\n                 and live.get(\\'fixed_public_test_identifiers_only\\') is True\\n      \
+        \           and live.get(\\'private_user_or_broker_data_read\\') is False\\n                 and live.get(\\'production_database_used\\') is False\\n    \
+        \             and live.get(\\'clock_override_used\\') is False\\n                 and live.get(\\'publication_times_rewritten\\') is False\\n            \
+        \     and live.get(\\'document_hashes_verified\\') is True,\\n                 \\'live_public_source_receipt_not_verified\\')\\n            report[\\'public_source_smoke\\\
+        '] = {\\'receipt\\': {\\'path\\': str(smoke_receipt), **identity(smoke_raw)},\\n                                             \\'result\\': live}\\n      \
+        \  report[\\'status\\'] = \\'passed\\'\\n    except BaseException as error:\\n        report.update(error_type=type(error).__name__, error=str(error)[:500])\\\
+        n        raise\\n    finally:\\n        changed = [name for name, row in candidate_files.items()\\n                   if not (candidate / name).is_file()\
+        \ or (candidate / name).is_symlink()\\n                   or identity(read_regular(candidate / name)) != row]\\n        baseline_changed = [name for name,\
+        \ row in baseline[\\'files\\'].items()\\n                            if not (BASE_SOURCE / name).is_file() or (BASE_SOURCE / name).is_symlink()\\n       \
+        \                     or identity(read_regular(BASE_SOURCE / name)) != row]\\n        report[\\'changed_sources\\'] = changed\\n        report[\\'baseline_changed_files\\\
         '] = baseline_changed\\n        report[\\'baseline_source_changed\\'] = bool(baseline_changed)\\n        if changed or baseline_changed:\\n            report[\\\
         'status\\'] = \\'failed_integrity\\'\\n        report[\\'finished_at_utc\\'] = datetime.datetime.now(datetime.timezone.utc).isoformat()\\n        receipt_path\
         \ = state / \\'evidence/timeweb-backend-check.json\\'\\n        receipt_path.write_text(json.dumps(report, sort_keys=True, indent=2) + \\'\\\\n\\')\\n   \
@@ -346,111 +370,227 @@ jobs:
         broker_schedule_\" + state,\\\\n                \"regular_price_polling_allowed\": state == \"scheduled_window\",\\\\n                \"next_transition_at\"\
         : min(transitions).isoformat() if transitions else None,\\\\n                \"interval_classification\": \"unclassified\" if unclassified else \"legacy_broker_window\"\
         }\\\\n    except (TypeError, ValueError, OverflowError, KeyError):\\\\n        return {**result, \"state\": \"unknown\", \"reason\": \"calendar_incomplete_or_conflicting\"\
-        ,\\\\n                \"regular_price_polling_allowed\": False}\\\\n\\', \\'backend/public_sources.py\\': \\'\"\"\"Bounded public-source intake with immutable\
-        \ documents in the existing DB.\\\\n\\\\nGLEIF is an identity source, never a credit rating or an order permission.\\\\nOnly an exact, checksummed ISIN is\
-        \ sent; broker/user data never reaches it.\\\\nThe result is deliberately separate from operator-reviewed issuer identities.\\\\n\"\"\"\\\\nfrom __future__\
-        \ import annotations\\\\n\\\\nfrom contextlib import closing\\\\nfrom copy import deepcopy\\\\nfrom datetime import datetime, timedelta, timezone\\\\nfrom\
-        \ email.utils import parsedate_to_datetime\\\\nimport hashlib\\\\nimport json\\\\nimport re\\\\nimport sqlite3\\\\nimport time\\\\nfrom urllib.parse import\
-        \ urlencode\\\\nimport uuid\\\\n\\\\nimport httpx\\\\n\\\\nPROVIDER = \"gleif\"\\\\nPARSER_VERSION = \"gleif-exact-isin-v1\"\\\\nBASE_URL = \"https://api.gleif.org/api/v1/lei-records\"\
-        \\\\nMAX_BYTES = 262144\\\\nMAX_DATASET_AGE = timedelta(hours=48)\\\\nSUCCESS_TTL = timedelta(hours=6)\\\\nSOURCE_REGISTRY = {\\\\n    PROVIDER: {\"purpose\"\
-        : \"legal_entity_identity\", \"endpoint\": BASE_URL,\\\\n        \"documentation\": \"https://www.gleif.org/en/lei-data/gleif-api\",\\\\n        \"terms\"\
-        : \"https://www.gleif.org/en/meta/lei-data-terms-of-use\",\\\\n        \"license\": \"CC0-1.0\", \"parser_version\": PARSER_VERSION,\\\\n        \"rating_source\"\
-        : False, \"automatic_trade_permission\": False}}\\\\n\\\\n\\\\ndef snapshot_status(snapshot: dict | None, *, at: datetime | None = None) -> dict:\\\\n   \
-        \ \"\"\"Expose current holdings\\\\\\' stored source status without network or DB writes.\"\"\"\\\\n    now = _clock(at)\\\\n    saved = (snapshot or {}).get(\"\
-        public_sources\") or {}\\\\n    selected, missing = {}, 0\\\\n    for row in (snapshot or {}).get(\"positions\", []):\\\\n        if row.get(\"instrument_type\"\
-        ) not in {\"share\", \"bond\"}:\\\\n            continue\\\\n        isin = normalized_isin((row.get(\"metadata\") or {}).get(\"isin\"))\\\\n        if isin:\\\
-        \\n            selected.setdefault(isin, set()).add(row[\"instrument_uid\"])\\\\n        else:\\\\n            missing += 1\\\\n    observed = {item.get(\"\
-        isin\"): item for item in saved.get(\"items\", [])\\\\n                if isinstance(item, dict) and item.get(\"provider\") == PROVIDER}\\\\n    items = []\\\
-        \\n    for isin, uids in sorted(selected.items()):\\\\n        value = deepcopy(observed.get(isin) or {\"provider\": PROVIDER, \"isin\": isin,\\\\n      \
-        \      \"state\": \"pending\", \"identity\": None, \"reason\": \"source_not_collected\"})\\\\n        value = _safe_result(value, now)\\\\n        value[\"\
-        instrument_uids\"] = sorted(uids)\\\\n        items.append(value)\\\\n    mapped = sum(item.get(\"state\") == \"available\" for item in items)\\\\n    status\
-        \ = \"available\" if items and mapped == len(items) and not missing else \"partial\"\\\\n    if not items and not missing:\\\\n        status = \"not_applicable\"\
-        \ if snapshot else \"not_collected\"\\\\n    return {\"provider\": PROVIDER, \"state\": status, \"checked_at\": saved.get(\"checked_at\"),\\\\n        \"\
-        items\": items, \"eligible_identifiers\": len(items), \"mapped_identifiers\": mapped,\\\\n        \"missing_identifiers\": missing, \"coverage_scope\": \"\
-        held_positions_only\",\\\\n        \"rating_sources_fetched\": False, \"automatic_trade_permission\": False,\\\\n        \"reviewed_issuer_identity_replaced\"\
-        : False, \"source_registry\": SOURCE_REGISTRY[PROVIDER]}\\\\n\\\\n\\\\nclass SourceError(ValueError):\\\\n    \"\"\"A sanitized source-contract error; never\
-        \ include a remote body.\"\"\"\\\\n\\\\n\\\\ndef _clock(value: datetime | None = None) -> datetime:\\\\n    value = datetime.now(timezone.utc) if value is\
-        \ None else value\\\\n    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:\\\\n        raise SourceError(\"source_clock_timezone_required\"\
-        )\\\\n    try:\\\\n        return value.astimezone(timezone.utc)\\\\n    except (ValueError, OverflowError) as error:\\\\n        raise SourceError(\"source_clock_invalid\"\
-        ) from error\\\\n\\\\n\\\\ndef _stamp(value: object) -> datetime:\\\\n    if not isinstance(value, str) or len(value) > 64:\\\\n        raise SourceError(\"\
-        source_timestamp_invalid\")\\\\n    try:\\\\n        return _clock(datetime.fromisoformat(value.replace(\"Z\", \"+00:00\")))\\\\n    except (ValueError, OverflowError)\
-        \ as error:\\\\n        raise SourceError(\"source_timestamp_invalid\") from error\\\\n\\\\n\\\\ndef normalized_isin(value: object) -> str | None:\\\\n  \
-        \  if not isinstance(value, str) or not re.fullmatch(r\"[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]\", value):\\\\n        return None\\\\n    value = value.upper()\\\\\
-        n    digits = \"\".join(str(ord(c) - 55) if c.isalpha() else c for c in value)\\\\n    total = 0\\\\n    for offset, char in enumerate(reversed(digits)):\\\
-        \\n        part = int(char) * (2 if offset % 2 else 1)\\\\n        total += part // 10 + part % 10\\\\n    return value if total % 10 == 0 else None\\\\n\\\
-        \\n\\\\ndef request_url(isin: str) -> str:\\\\n    if not isinstance(isin, str) or normalized_isin(isin) != isin:\\\\n        raise SourceError(\"source_isin_invalid\"\
-        )\\\\n    return BASE_URL + \"?\" + urlencode({\"filter[isin]\": isin, \"page[size]\": 2})\\\\n\\\\n\\\\ndef initialize(db: sqlite3.Connection) -> None:\\\
-        \\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS public_source_documents_v1 (\\\\n        sha256 TEXT PRIMARY KEY, body BLOB NOT NULL, bytes INTEGER NOT\
-        \ NULL,\\\\n        first_received_at TEXT NOT NULL)\"\"\")\\\\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS public_source_observations_v1 (\\\\n     \
-        \   id TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL,\\\\n        url TEXT NOT NULL, document_sha256 TEXT, observed_at TEXT NOT NULL,\\\\\
-        n        state TEXT NOT NULL, payload TEXT NOT NULL)\"\"\")\\\\n    db.execute(\"\"\"CREATE INDEX IF NOT EXISTS public_source_observation_subject\\\\n   \
-        \     ON public_source_observations_v1(provider,subject,observed_at)\"\"\")\\\\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS public_source_cache_v1 (\\\
-        \\n        provider TEXT NOT NULL, subject TEXT NOT NULL, result TEXT NOT NULL,\\\\n        next_check_at TEXT NOT NULL, etag TEXT, last_modified TEXT,\\\\\
-        n        document_sha256 TEXT, failures INTEGER NOT NULL DEFAULT 0,\\\\n        lease_token TEXT, lease_until TEXT,\\\\n        PRIMARY KEY(provider,subject))\"\
-        \"\")\\\\n    db.commit()\\\\n\\\\n\\\\ndef _json(raw: bytes) -> dict:\\\\n    def unique(pairs):\\\\n        result = {}\\\\n        for key, value in pairs:\\\
-        \\n            if key in result:\\\\n                raise SourceError(\"source_duplicate_json_key\")\\\\n            result[key] = value\\\\n        return\
-        \ result\\\\n    try:\\\\n        value = json.loads(raw.decode(\"utf-8\"), object_pairs_hook=unique,\\\\n            parse_constant=lambda _: (_ for _ in\
-        \ ()).throw(SourceError(\"source_nonfinite_json\")))\\\\n    except (UnicodeError, ValueError, RecursionError) as error:\\\\n        raise SourceError(\"\
-        source_json_invalid\") from error\\\\n    if not isinstance(value, dict):\\\\n        raise SourceError(\"source_json_invalid\")\\\\n    return value\\\\\
-        n\\\\n\\\\ndef _text(value: object, limit: int = 240) -> str:\\\\n    if (not isinstance(value, str) or not 1 <= len(value) <= limit\\\\n            or value\
-        \ != value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value)):\\\\n        raise SourceError(\"source_identity_field_invalid\")\\\\n    return value\\\
-        \\n\\\\n\\\\ndef _lei(value: object) -> str:\\\\n    if not isinstance(value, str) or not re.fullmatch(r\"[0-9A-Z]{18}[0-9]{2}\", value):\\\\n        raise\
-        \ SourceError(\"source_lei_invalid\")\\\\n    digits = \"\".join(str(ord(c) - 55) if c.isalpha() else c for c in value)\\\\n    if int(digits) % 97 != 1:\\\
-        \\n        raise SourceError(\"source_lei_invalid\")\\\\n    return value\\\\n\\\\n\\\\ndef parse_gleif(raw: bytes, isin: str, at: datetime) -> dict:\\\\\
-        n    \"\"\"Parse a response from the fixed exact-ISIN endpoint, not name search.\"\"\"\\\\n    at = _clock(at)\\\\n    if not isinstance(raw, bytes) or len(raw)\
-        \ > MAX_BYTES or not isinstance(isin, str) or normalized_isin(isin) != isin:\\\\n        raise SourceError(\"source_input_invalid\")\\\\n    data = _json(raw)\\\
-        \\n    try:\\\\n        meta, rows = data[\"meta\"], data[\"data\"]\\\\n        published = _stamp(meta[\"goldenCopy\"][\"publishDate\"])\\\\n        total\
-        \ = meta[\"pagination\"][\"total\"]\\\\n        page = meta[\"pagination\"][\"currentPage\"]\\\\n        if (type(total) is not int or total < 0 or type(page)\
-        \ is not int or page != 1\\\\n                or not isinstance(rows, list) or len(rows) > 2 or len(rows) != min(total, 2)):\\\\n            raise SourceError(\"\
-        source_pagination_invalid\")\\\\n        result = {\"provider\": PROVIDER, \"isin\": isin, \"state\": \"missing\",\\\\n            \"reason\": \"no_exact_isin_mapping\"\
-        , \"identity\": None,\\\\n            \"url\": request_url(isin), \"parser_version\": PARSER_VERSION,\\\\n            \"dataset_published_at\": published.isoformat(),\
-        \ \"checked_at\": at.isoformat(),\\\\n            \"document_sha256\": hashlib.sha256(raw).hexdigest(),\\\\n            \"rating_verified\": False, \"trade_permission\"\
-        : False}\\\\n        if published > at or at - published > MAX_DATASET_AGE:\\\\n            return {**result, \"state\": \"stale\", \"reason\": \"dataset_time_outside_window\"\
-        }\\\\n        if total == 0:\\\\n            return result\\\\n        if total != 1:\\\\n            return {**result, \"state\": \"ambiguous\", \"reason\"\
-        : \"multiple_exact_isin_mappings\"}\\\\n        row = rows[0]\\\\n        attributes = row[\"attributes\"]\\\\n        lei = _lei(attributes[\"lei\"])\\\\\
-        n        if row[\"type\"] != \"lei-records\" or row[\"id\"] != lei:\\\\n            raise SourceError(\"source_lei_identity_mismatch\")\\\\n        entity,\
-        \ registration = attributes[\"entity\"], attributes[\"registration\"]\\\\n        updated = _stamp(registration[\"lastUpdateDate\"])\\\\n        renewed =\
-        \ _stamp(registration[\"nextRenewalDate\"])\\\\n        if updated > published:\\\\n            raise SourceError(\"source_update_after_publication\")\\\\\
-        n        result[\"entity_updated_at\"] = updated.isoformat()\\\\n        if entity[\"status\"] != \"ACTIVE\" or registration[\"status\"] != \"ISSUED\" or\
-        \ renewed <= at:\\\\n            return {**result, \"state\": \"inactive\", \"reason\": \"entity_or_registration_not_current\"}\\\\n        identity = {\"\
-        lei\": lei, \"name\": _text(entity[\"legalName\"][\"name\"]),\\\\n            \"jurisdiction\": _text(entity[\"jurisdiction\"], 32),\\\\n            \"registered_as\"\
-        : _text(entity[\"registeredAs\"], 160),\\\\n            \"registration_authority\": _text(entity[\"registeredAt\"][\"id\"], 40)}\\\\n        return {**result,\
-        \ \"state\": \"available\", \"reason\": None, \"identity\": identity,\\\\n            \"fresh_until\": min(published + MAX_DATASET_AGE, renewed, at + SUCCESS_TTL).isoformat(),\\\
-        \\n            \"identity_basis\": \"GLEIF_exact_ISIN_filter\"}\\\\n    except (KeyError, TypeError, AttributeError) as error:\\\\n        raise SourceError(\"\
-        source_schema_invalid\") from error\\\\n\\\\n\\\\ndef fetch_document(url: str, headers: dict) -> tuple[int, dict, bytes]:\\\\n    \"\"\"One fixed-origin HTTPS\
-        \ request, no redirect, no credentials, no retry.\"\"\"\\\\n    if not url.startswith(BASE_URL + \"?\"):\\\\n        raise SourceError(\"source_url_not_allowed\"\
-        )\\\\n    started = time.monotonic()\\\\n    with httpx.Client(timeout=httpx.Timeout(2.5), follow_redirects=False, trust_env=False,\\\\n            headers={\"\
-        Accept\": \"application/vnd.api+json, application/json\",\\\\n                     \"Accept-Encoding\": \"identity\", \"User-Agent\": \"AnalystAI-PublicIdentity/1\"\
-        }) as client:\\\\n        with client.stream(\"GET\", url, headers=headers) as response:\\\\n            response_headers = {key.lower(): value for key, value\
-        \ in response.headers.items()\\\\n                                if key.lower() in {\"etag\", \"last-modified\", \"retry-after\", \"content-type\"}}\\\\\
-        n            if response.status_code != 200:\\\\n                return response.status_code, response_headers, b\"\"\\\\n            if response_headers.get(\"\
-        content-type\", \"\").split(\";\", 1)[0] not in {\\\\n                    \"application/json\", \"application/vnd.api+json\"}:\\\\n                raise SourceError(\"\
-        source_content_type_invalid\")\\\\n            if response.headers.get(\"content-encoding\", \"identity\").lower() not in {\"\", \"identity\"}:\\\\n     \
-        \           raise SourceError(\"source_encoding_not_allowed\")\\\\n            body = bytearray()\\\\n            for chunk in response.iter_raw():\\\\n \
-        \               if time.monotonic() - started > 4 or len(body) + len(chunk) > MAX_BYTES:\\\\n                    raise SourceError(\"source_response_limit\"\
-        )\\\\n                body.extend(chunk)\\\\n            return response.status_code, response_headers, bytes(body)\\\\n\\\\n\\\\ndef _header(value: object)\
-        \ -> str | None:\\\\n    if isinstance(value, str) and 0 < len(value) <= 512 and all(32 <= ord(c) < 127 for c in value):\\\\n        return value\\\\n   \
-        \ return None\\\\n\\\\n\\\\ndef _retry_delay(value: object, now: datetime, minimum: timedelta) -> timedelta:\\\\n    if not isinstance(value, str) or len(value)\
-        \ > 128:\\\\n        return minimum\\\\n    try:\\\\n        if value.isascii() and value.isdigit():\\\\n            seconds = int(value)\\\\n        else:\\\
-        \\n            seconds = (_clock(parsedate_to_datetime(value)) - now).total_seconds()\\\\n        maximum = (datetime.max.replace(tzinfo=timezone.utc) - now).total_seconds()\
-        \ - 1\\\\n        return timedelta(seconds=max(minimum.total_seconds(), min(maximum, max(0, seconds))))\\\\n    except (ValueError, TypeError, OverflowError):\\\
-        \\n        return minimum\\\\n\\\\n\\\\ndef _safe_result(result: dict, at: datetime) -> dict:\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"\
-        source_cache_invalid\")\\\\n    if result.get(\"state\") == \"available\":\\\\n        try:\\\\n            if at >= _stamp(result.get(\"fresh_until\")) or\
-        \ _stamp(result[\"checked_at\"]) > at:\\\\n                return {**result, \"state\": \"stale\", \"reason\": \"cached_identity_expired\", \"identity\":\
-        \ None}\\\\n        except (SourceError, KeyError):\\\\n            return {\"provider\": PROVIDER, \"state\": \"unavailable\", \"reason\": \"cache_invalid\"\
-        , \"identity\": None}\\\\n    return result\\\\n\\\\n\\\\ndef _cached_json(value: str) -> dict:\\\\n    if not isinstance(value, str) or len(value) > 32768:\\\
-        \\n        raise SourceError(\"source_cache_invalid\")\\\\n    try:\\\\n        result = json.loads(value)\\\\n    except (ValueError, TypeError) as error:\\\
-        \\n        raise SourceError(\"source_cache_invalid\") from error\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"source_cache_invalid\"\
-        )\\\\n    return result\\\\n\\\\n\\\\ndef cached_result(connect, isin: str, *, at: datetime | None = None) -> dict | None:\\\\n    now = _clock(at)\\\\n \
-        \   with closing(connect()) as db:\\\\n        initialize(db)\\\\n        row = db.execute(\"SELECT result FROM public_source_cache_v1 WHERE provider=? AND\
-        \ subject=?\",\\\\n            (PROVIDER, isin)).fetchone()\\\\n    return _safe_result(_cached_json(row[0]), now) if row else None\\\\n\\\\n\\\\ndef refresh_isin(connect,\
-        \ isin: str, *, at: datetime | None = None, fetch=None) -> dict:\\\\n    now, url = _clock(at), request_url(isin)\\\\n    token = uuid.uuid4().hex\\\\n  \
-        \  with closing(connect()) as db:\\\\n        initialize(db)\\\\n        with db:\\\\n            db.execute(\"BEGIN IMMEDIATE\")\\\\n            row = db.execute(\"\
-        SELECT result,next_check_at,etag,last_modified,document_sha256,failures,lease_until \"\\\\n                \"FROM public_source_cache_v1 WHERE provider=?\
-        \ AND subject=?\", (PROVIDER, isin)).fetchone()\\\\n            if row and (now < _stamp(row[1]) or row[6] and now < _stamp(row[6])):\\\\n               \
-        \ return _safe_result(_cached_json(row[0]), now)\\\\n            initial = {\"provider\": PROVIDER, \"isin\": isin, \"state\": \"pending\", \"identity\":\
-        \ None}\\\\n            db.execute(\"INSERT INTO public_source_cache_v1(provider,subject,result,next_check_at,lease_token,lease_until) \"\\\\n           \
-        \     \"VALUES (?,?,?,?,?,?) ON CONFLICT(provider,subject) DO UPDATE SET lease_token=excluded.lease_token, \"\\\\n                \"lease_until=excluded.lease_until\"\
+        ,\\\\n                \"regular_price_polling_allowed\": False}\\\\n\\', \\'backend/operations_ledger.py\\': \\'\"\"\"Durable observed broker cash movements,\
+        \ not performance or tax accounting.\\\\n\\\\nCalled inside the snapshot transaction. No network, connection, commit, order,\\\\nbalance mutation or guessed\
+        \ zero. Source observation time orders revisions;\\\\nthe date of an operation does not say when its latest status became known.\\\\n\"\"\"\\\\nfrom __future__\
+        \ import annotations\\\\n\\\\nfrom collections import defaultdict\\\\nfrom datetime import datetime, timezone\\\\nfrom decimal import Context, Decimal, InvalidOperation,\
+        \ localcontext\\\\nimport hashlib\\\\nimport json\\\\nimport re\\\\n\\\\n\\\\nclass LedgerError(ValueError):\\\\n    pass\\\\n\\\\n\\\\ndef _time(value):\\\
+        \\n    try:\\\\n        result = datetime.fromisoformat(value.replace(\"Z\", \"+00:00\"))\\\\n        if result.tzinfo is None or result.utcoffset() is None:\\\
+        \\n            raise ValueError\\\\n        return result.astimezone(timezone.utc)\\\\n    except (ValueError, TypeError, AttributeError, OverflowError):\\\
+        \\n        raise LedgerError(\"operation_time_invalid\") from None\\\\n\\\\n\\\\ndef _id(value):\\\\n    if (not isinstance(value, str) or not 1 <= len(value)\
+        \ <= 200\\\\n            or value != value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value)):\\\\n        raise LedgerError(\"operation_identity_invalid\"\
+        )\\\\n    return value\\\\n\\\\n\\\\ndef _json(value):\\\\n    try:\\\\n        result = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(\"\
+        ,\", \":\"), allow_nan=False)\\\\n    except (ValueError, TypeError, RecursionError):\\\\n        raise LedgerError(\"operation_payload_invalid\") from None\\\
+        \\n    if len(result.encode(\"utf-8\")) > 32768:\\\\n        raise LedgerError(\"operation_payload_too_large\")\\\\n    return result\\\\n\\\\n\\\\ndef _hash(value):\\\
+        \\n    return hashlib.sha256(_json(value).encode()).hexdigest()\\\\n\\\\n\\\\ndef initialize_in(db):\\\\n    \"\"\"DDL participates in the caller\\\\\\'s\
+        \ transaction; never use executescript.\"\"\"\\\\n    if not db.in_transaction:\\\\n        raise LedgerError(\"operation_ledger_transaction_required\")\\\
+        \\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS broker_operation_history_v1 (\\\\n        id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, broker_key TEXT\
+        \ NOT NULL,\\\\n        account_id TEXT NOT NULL, operation_id TEXT NOT NULL, data_sha256 TEXT NOT NULL,\\\\n        observed_at TEXT NOT NULL, received_at\
+        \ TEXT NOT NULL, disposition TEXT NOT NULL,\\\\n        reason TEXT, currency TEXT, amount TEXT, bucket TEXT, payload TEXT NOT NULL,\\\\n        evidence\
+        \ TEXT NOT NULL)\"\"\")\\\\n    db.execute(\"\"\"CREATE INDEX IF NOT EXISTS broker_operation_history_scope\\\\n        ON broker_operation_history_v1(user_id,broker_key,account_id,operation_id,observed_at)\"\
+        \"\")\\\\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS broker_operation_current_v1 (\\\\n        user_id INTEGER NOT NULL, broker_key TEXT NOT NULL, account_id\
+        \ TEXT NOT NULL,\\\\n        operation_id TEXT NOT NULL, observed_at TEXT NOT NULL, history_id TEXT,\\\\n        disposition TEXT NOT NULL, reason TEXT,\\\
+        \\n        PRIMARY KEY(user_id,broker_key,account_id,operation_id))\"\"\")\\\\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS broker_operation_windows_v1\
+        \ (\\\\n        id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, broker_key TEXT NOT NULL,\\\\n        account_id TEXT NOT NULL, range_start TEXT, range_end\
+        \ TEXT,\\\\n        observed_at TEXT NOT NULL, received_at TEXT NOT NULL, pagination_complete INTEGER NOT NULL,\\\\n        records_valid INTEGER NOT NULL,\
+        \ issues TEXT NOT NULL)\"\"\")\\\\n\\\\n\\\\ndef _payment(value):\\\\n    if not isinstance(value, dict) or not isinstance(value.get(\"currency\"), str):\\\
+        \\n        raise LedgerError(\"operation_payment_missing\")\\\\n    currency = value[\"currency\"].upper()\\\\n    if re.fullmatch(r\"[A-Z]{3}\", currency)\
+        \ is None:\\\\n        raise LedgerError(\"operation_payment_currency_invalid\")\\\\n    raw = value.get(\"value\", value.get(\"amount\"))\\\\n    try:\\\\\
+        n        with localcontext(Context(prec=50)):\\\\n            if isinstance(raw, dict):\\\\n                units, nano = raw.get(\"units\"), raw.get(\"nano\"\
+        )\\\\n                if (isinstance(units, bool) or not isinstance(units, (str, int))\\\\n                        or re.fullmatch(r\"-?\\\\\\\\d{1,25}\"\
+        , str(units)) is None\\\\n                        or type(nano) is not int or not -999999999 <= nano <= 999999999\\\\n                        or int(units)\
+        \ > 0 > nano or int(units) < 0 < nano):\\\\n                    raise LedgerError(\"operation_payment_invalid\")\\\\n                amount = Decimal(units)\
+        \ + Decimal(nano) / Decimal(1000000000)\\\\n            else:\\\\n                if not isinstance(raw, str) or len(raw) > 80:\\\\n                    raise\
+        \ LedgerError(\"operation_payment_invalid\")\\\\n                amount = Decimal(raw)\\\\n            if not amount.is_finite() or amount.copy_abs() > Decimal(\"\
+        1e24\") or not -9 <= amount.as_tuple().exponent <= 24:\\\\n                raise LedgerError(\"operation_payment_invalid\")\\\\n            return currency,\
+        \ format(amount, \"f\")\\\\n    except (InvalidOperation, ValueError, TypeError):\\\\n        raise LedgerError(\"operation_payment_invalid\") from None\\\
+        \\n\\\\n\\\\ndef _bucket(kind):\\\\n    if not isinstance(kind, str) or not kind.startswith(\"OPERATION_TYPE_\"):\\\\n        return None\\\\n    suffix =\
+        \ kind.removeprefix(\"OPERATION_TYPE_\")\\\\n    if suffix == \"COUPON\":\\\\n        return \"coupon_income\"\\\\n    if suffix in {\"DIVIDEND\", \"DIV_EXT\"\
+        }:\\\\n        return \"dividend_income\"\\\\n    if suffix in {\"BOND_REPAYMENT\", \"BOND_REPAYMENT_FULL\", \"DFA_REDEMPTION\"}:\\\\n        return \"principal_repayment\"\
+        \\\\n    if suffix in {\"INPUT\", \"INPUT_SWIFT\", \"INPUT_ACQUIRING\", \"INP_MULTI\"}:\\\\n        return \"external_deposit\"\\\\n    if suffix in {\"OUTPUT\"\
+        , \"OUTPUT_SWIFT\", \"OUTPUT_ACQUIRING\", \"OUT_MULTI\"}:\\\\n        return \"external_withdrawal\"\\\\n    if suffix in {\"BUY\", \"SELL\", \"BUY_CARD\"\
+        , \"BUY_MARGIN\", \"SELL_MARGIN\", \"DELIVERY_BUY\", \"DELIVERY_SELL\"}:\\\\n        return \"trade_cash\"\\\\n    if \"TAX\" in suffix:\\\\n        return\
+        \ \"observed_tax_cash\"\\\\n    if \"FEE\" in suffix or suffix in {\"OVER_COM\", \"OUT_STAMP_DUTY\"}:\\\\n        return \"fee_cash\"\\\\n    return None\\\
+        \\n\\\\n\\\\ndef _observation(item, refs, fallback, received):\\\\n    candidates, evidence = [], []\\\\n    identifiers = item.get(\"source_ids\", [])\\\\\
+        n    if not isinstance(identifiers, list) or any(not isinstance(value, str) for value in identifiers):\\\\n        raise LedgerError(\"operation_source_ids_invalid\"\
+        )\\\\n    for source_id in identifiers:\\\\n        ref = refs.get(source_id)\\\\n        if ref and ref.get(\"method\") == \"GetOperationsByCursor\" and\
+        \ ref.get(\"subject_id\") == item[\"account_id\"]:\\\\n            at = _time(ref.get(\"observed_at\"))\\\\n            if at > received:\\\\n           \
+        \     raise LedgerError(\"operation_source_from_future\")\\\\n            candidates.append(at)\\\\n            evidence.append(source_id)\\\\n    if candidates:\\\
+        \\n        return max(candidates).isoformat(), sorted(set(evidence)), None\\\\n    return fallback or \"\", [], \"operation_observation_source_missing\"\\\
+        \\n\\\\n\\\\ndef _record_in(db, scope, item, refs, fallback, received, bounds):\\\\n    payload = {key: value for key, value in item.items() if key not in\
+        \ {\"source_ids\", \"position_ref\"}}\\\\n    encoded, data_sha = _json(payload), _hash(payload)\\\\n    reason, currency, amount, bucket = None, None, None,\
+        \ _bucket(item.get(\"type\"))\\\\n    try:\\\\n        observed, evidence, reason = _observation(item, refs, fallback, received)\\\\n    except LedgerError\
+        \ as error:\\\\n        observed, evidence, reason = fallback or \"\", [], str(error)\\\\n    status = item.get(\"state\")\\\\n    disposition = \"pending\"\
+        \ if status == \"OPERATION_STATE_PROGRESS\" else \"cancelled\" if status == \"OPERATION_STATE_CANCELED\" else \"accepted\"\\\\n    try:\\\\n        when =\
+        \ _time(item.get(\"date\"))\\\\n        if observed and when > _time(observed):\\\\n            raise LedgerError(\"operation_date_after_observation\")\\\\\
+        n        if bounds is None or not bounds[0] <= when <= bounds[1]:\\\\n            raise LedgerError(\"operation_outside_observed_range\")\\\\n        if status\
+        \ not in {\"OPERATION_STATE_EXECUTED\", \"OPERATION_STATE_PROGRESS\", \"OPERATION_STATE_CANCELED\"}:\\\\n            raise LedgerError(\"operation_state_unknown\"\
+        )\\\\n        if status == \"OPERATION_STATE_EXECUTED\":\\\\n            currency, amount = _payment(item.get(\"payment\"))\\\\n            if bucket is None:\\\
+        \\n                raise LedgerError(\"operation_type_unclassified\")\\\\n    except LedgerError as error:\\\\n        reason = str(error)\\\\n    if reason:\\\
+        \\n        disposition, currency, amount = \"quarantined\", None, None\\\\n    history_id = _hash([*scope, observed, data_sha, evidence, disposition, reason])\\\
+        \\n    db.execute(\"INSERT OR IGNORE INTO broker_operation_history_v1 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)\",\\\\n        (history_id, *scope, data_sha,\
+        \ observed, received.isoformat(), disposition, reason, currency, amount, bucket, encoded, _json(evidence)))\\\\n    if not observed:\\\\n        return True\
+        \  # Unknown observation time cannot replace a known current state.\\\\n    current = db.execute(\"SELECT observed_at,history_id,disposition FROM broker_operation_current_v1\
+        \ \"\\\\n        \"WHERE user_id=? AND broker_key=? AND account_id=? AND operation_id=?\", scope).fetchone()\\\\n    if current is None or observed > current[0]:\\\
+        \\n        db.execute(\"INSERT INTO broker_operation_current_v1 VALUES (?,?,?,?,?,?,?,?) \"\\\\n            \"ON CONFLICT(user_id,broker_key,account_id,operation_id)\
+        \ DO UPDATE SET observed_at=excluded.observed_at, \"\\\\n            \"history_id=excluded.history_id,disposition=excluded.disposition,reason=excluded.reason\"\
+        ,\\\\n            (*scope, observed, history_id, disposition, reason))\\\\n    conflicted = False\\\\n    if current is not None and observed == current[0]:\\\
+        \\n        versions = db.execute(\"SELECT DISTINCT data_sha256,disposition,reason FROM broker_operation_history_v1 \"\\\\n            \"WHERE user_id=? AND\
+        \ broker_key=? AND account_id=? AND operation_id=? AND observed_at=?\", (*scope, observed)).fetchall()\\\\n        if len(versions) > 1:\\\\n            conflicted\
+        \ = True\\\\n            db.execute(\"UPDATE broker_operation_current_v1 SET history_id=NULL,disposition=\\\\\\'conflicted\\\\\\',reason=\\\\\\'operation_same_time_conflict\\\
+        \\\\' \"\\\\n                \"WHERE user_id=? AND broker_key=? AND account_id=? AND operation_id=?\", scope)\\\\n    return disposition == \"quarantined\"\
+        \ or conflicted\\\\n\\\\n\\\\ndef record_snapshot_in(db, *, user_id: int, broker_key: str, snapshot: dict, at: datetime | None = None) -> dict:\\\\n    \"\
+        \"\"Append observations and return a materialized receipt, atomically with snapshot.\"\"\"\\\\n    initialize_in(db)\\\\n    if type(user_id) is not int or\
+        \ user_id <= 0:\\\\n        raise LedgerError(\"operation_user_invalid\")\\\\n    _id(broker_key)\\\\n    received = datetime.now(timezone.utc) if at is None\
+        \ else _time(at.isoformat())\\\\n    accounts = sorted({_id(row[\"id\"]) for row in snapshot.get(\"accounts\", [])})\\\\n    operations = snapshot.get(\"\
+        operations\")\\\\n    if not isinstance(operations, dict):\\\\n        return {\"state\": \"unavailable\", \"reason\": \"operations_not_collected\", \"history_preserved\"\
+        : True}\\\\n    refs = {row[\"id\"]: row for row in snapshot.get(\"sources\", []) if isinstance(row, dict) and isinstance(row.get(\"id\"), str)}\\\\n    try:\\\
+        \\n        fallback_time = _time(snapshot.get(\"section_as_of\", {}).get(\"operations\"))\\\\n        fallback = fallback_time.isoformat() if fallback_time\
+        \ <= received else None\\\\n    except (LedgerError, AttributeError):\\\\n        fallback = None\\\\n    issues, invalid_accounts = defaultdict(list), []\\\
+        \\n    try:\\\\n        begin, finish = _time(operations.get(\"start\")), _time(operations.get(\"end\"))\\\\n        if not begin < finish <= received:\\\\\
+        n            raise LedgerError(\"operation_range_invalid\")\\\\n        range_valid = True\\\\n    except LedgerError:\\\\n        begin = finish = None\\\
+        \\n        range_valid = False\\\\n    rows = operations.get(\"items\")\\\\n    if not isinstance(rows, list):\\\\n        rows, invalid_accounts = [], [\"\
+        operation_items_invalid\"]\\\\n    for item in rows:\\\\n        account = item.get(\"account_id\") if isinstance(item, dict) else None\\\\n        try:\\\
+        \\n            if account not in accounts:\\\\n                raise LedgerError(\"operation_account_not_in_snapshot\")\\\\n            operation_id = _id(item.get(\"\
+        id\"))\\\\n            invalid = _record_in(db, (user_id, broker_key, account, operation_id), item, refs, fallback, received,\\\\n                (begin,\
+        \ finish) if range_valid else None)\\\\n            if invalid:\\\\n                issues[account].append(\"quarantined_operation\")\\\\n        except LedgerError\
+        \ as error:\\\\n            (issues[account] if account in accounts else invalid_accounts).append(str(error))\\\\n    for account in accounts:\\\\n      \
+        \  account_issues = sorted(set(issues[account] + invalid_accounts + ([] if range_valid else [\"operation_range_invalid\"])))\\\\n        if operations.get(\"\
+        complete\") is not True:\\\\n            account_issues.append(\"operation_pagination_incomplete\")\\\\n        observed_times = []\\\\n        for ref in\
+        \ refs.values():\\\\n            if ref.get(\"method\") != \"GetOperationsByCursor\" or ref.get(\"subject_id\") != account:\\\\n                continue\\\
+        \\n            try:\\\\n                observed = _time(ref.get(\"observed_at\"))\\\\n                if observed > received:\\\\n                    raise\
+        \ LedgerError(\"operation_source_range_time_invalid\")\\\\n                if finish is not None and observed < finish:\\\\n                    continue \
+        \ # Retained attribution provenance does not describe this newer window.\\\\n                observed_times.append(observed)\\\\n            except LedgerError:\\\
+        \\n                account_issues.append(\"operation_source_range_time_invalid\")\\\\n        if not observed_times:\\\\n            account_issues.append(\"\
+        operation_account_observation_missing\")\\\\n        observed = max(observed_times).isoformat() if observed_times else fallback or \"\"\\\\n        account_issues\
+        \ = sorted(set(account_issues))\\\\n        payload = [user_id, broker_key, account, begin.isoformat() if begin else None,\\\\n            finish.isoformat()\
+        \ if finish else None, observed, received.isoformat(), operations.get(\"complete\") is True,\\\\n            not account_issues, account_issues]\\\\n    \
+        \    db.execute(\"INSERT OR IGNORE INTO broker_operation_windows_v1 VALUES (?,?,?,?,?,?,?,?,?,?,?)\",\\\\n            (_hash(payload[:6] + payload[7:]), *payload[:-1],\
+        \ _json(account_issues)))\\\\n    return summary_in(db, user_id=user_id, broker_key=broker_key, account_ids=accounts)\\\\n\\\\n\\\\ndef summary_in(db, *,\
+        \ user_id: int, broker_key: str, account_ids: list[str]) -> dict:\\\\n    totals, counts, coverage = defaultdict(Decimal), defaultdict(int), []\\\\n    with\
+        \ localcontext(Context(prec=50)):\\\\n        for account in account_ids:\\\\n            rows = db.execute(\"SELECT c.disposition,h.currency,h.amount,h.bucket\
+        \ FROM broker_operation_current_v1 c \"\\\\n                \"LEFT JOIN broker_operation_history_v1 h ON h.id=c.history_id \"\\\\n                \"WHERE\
+        \ c.user_id=? AND c.broker_key=? AND c.account_id=?\", (user_id, broker_key, account))\\\\n            for disposition, currency, amount, bucket in rows:\\\
+        \\n                counts[disposition] += 1\\\\n                if disposition == \"accepted\":\\\\n                    totals[currency, bucket] += Decimal(amount)\\\
+        \\n            windows = db.execute(\"SELECT range_start,range_end,observed_at,received_at,pagination_complete,records_valid,issues FROM broker_operation_windows_v1\
+        \ \"\\\\n                \"WHERE user_id=? AND broker_key=? AND account_id=? ORDER BY observed_at DESC,id DESC\", (user_id, broker_key, account)).fetchall()\\\
+        \\n            complete_ranges = sorted({(row[0], row[1]) for row in windows if row[0] and row[1] and row[4] and row[5]})\\\\n            merged = []\\\\\
+        n            for begin, end in complete_ranges:\\\\n                if merged and begin <= merged[-1][1]:\\\\n                    merged[-1][1] = max(merged[-1][1],\
+        \ end)\\\\n                else:\\\\n                    merged.append([begin, end])\\\\n            latest_time = max((row[2] for row in windows), default=\"\
+        \")\\\\n            latest = [row for row in windows if row[2] == latest_time or not row[2] and row[3] >= latest_time]\\\\n            coverage.append({\"\
+        account_id\": account, \"complete_observed_ranges\": merged,\\\\n                \"known_gaps\": [[left[1], right[0]] for left, right in zip(merged, merged[1:])],\\\
+        \\n                \"latest_observation_complete\": bool(latest) and all(row[2] and row[4] and row[5] for row in latest),\\\\n                \"latest_observed_at\"\
+        : latest_time or None,\\\\n                \"latest_issues\": sorted({issue for row in latest for issue in json.loads(row[6])}) if latest else [\"no_observed_range\"\
+        ],\\\\n                \"outside_observed_ranges_unknown\": True})\\\\n    valid = not counts[\"quarantined\"] and not counts[\"conflicted\"] and all(row[\"\
+        latest_observation_complete\"] and not row[\"known_gaps\"] for row in coverage)\\\\n    return {\"state\": \"observed\" if valid and coverage else \"partial\"\
+        , \"operation_counts\": dict(counts),\\\\n        \"cash_movements\": [{\"currency\": currency, \"category\": bucket, \"amount\": format(amount, \"f\")}\\\
+        \\n            for (currency, bucket), amount in sorted(totals.items())], \"coverage\": coverage,\\\\n        \"history_preserved\": True, \"scope\": \"current_broker_connection_and_snapshot_accounts\"\
+        ,\\\\n        \"cash_basis\": \"executed_operation_payment_only\", \"commission_annotations_added\": False,\\\\n        \"income_categories\": [\"coupon_income\"\
+        , \"dividend_income\"],\\\\n        \"principal_repayments_are_income\": False, \"performance_calculated\": False, \"tax_liability_estimated\": False}\\\\\
+        n\\', \\'backend/public_sources.py\\': \\'\"\"\"Bounded public-source intake with immutable documents in the existing DB.\\\\n\\\\nGLEIF is an identity source,\
+        \ never a credit rating or an order permission.\\\\nOnly an exact, checksummed ISIN is sent; broker/user data never reaches it.\\\\nThe result is deliberately\
+        \ separate from operator-reviewed issuer identities.\\\\n\"\"\"\\\\nfrom __future__ import annotations\\\\n\\\\nfrom contextlib import closing\\\\nfrom copy\
+        \ import deepcopy\\\\nfrom datetime import datetime, timedelta, timezone\\\\nfrom email.utils import parsedate_to_datetime\\\\nimport hashlib\\\\nimport json\\\
+        \\nimport re\\\\nimport sqlite3\\\\nimport time\\\\nfrom urllib.parse import urlencode\\\\nimport uuid\\\\n\\\\nimport httpx\\\\n\\\\nPROVIDER = \"gleif\"\
+        \\\\nPARSER_VERSION = \"gleif-exact-isin-v1\"\\\\nBASE_URL = \"https://api.gleif.org/api/v1/lei-records\"\\\\nMAX_BYTES = 262144\\\\nMAX_DATASET_AGE = timedelta(hours=48)\\\
+        \\nSUCCESS_TTL = timedelta(hours=6)\\\\nSOURCE_REGISTRY = {\\\\n    PROVIDER: {\"purpose\": \"legal_entity_identity\", \"endpoint\": BASE_URL,\\\\n      \
+        \  \"documentation\": \"https://www.gleif.org/en/lei-data/gleif-api\",\\\\n        \"terms\": \"https://www.gleif.org/en/meta/lei-data-terms-of-use\",\\\\\
+        n        \"license\": \"CC0-1.0\", \"parser_version\": PARSER_VERSION,\\\\n        \"rating_source\": False, \"automatic_trade_permission\": False}}\\\\n\\\
+        \\n\\\\ndef snapshot_status(snapshot: dict | None, *, at: datetime | None = None) -> dict:\\\\n    \"\"\"Expose current holdings\\\\\\' stored source status\
+        \ without network or DB writes.\"\"\"\\\\n    now = _clock(at)\\\\n    saved = (snapshot or {}).get(\"public_sources\") or {}\\\\n    selected, missing =\
+        \ {}, 0\\\\n    for row in (snapshot or {}).get(\"positions\", []):\\\\n        if row.get(\"instrument_type\") not in {\"share\", \"bond\"}:\\\\n       \
+        \     continue\\\\n        isin = normalized_isin((row.get(\"metadata\") or {}).get(\"isin\"))\\\\n        if isin:\\\\n            selected.setdefault(isin,\
+        \ set()).add(row[\"instrument_uid\"])\\\\n        else:\\\\n            missing += 1\\\\n    observed = {item.get(\"isin\"): item for item in saved.get(\"\
+        items\", [])\\\\n                if isinstance(item, dict) and item.get(\"provider\") == PROVIDER}\\\\n    items = []\\\\n    for isin, uids in sorted(selected.items()):\\\
+        \\n        value = deepcopy(observed.get(isin) or {\"provider\": PROVIDER, \"isin\": isin,\\\\n            \"state\": \"pending\", \"identity\": None, \"\
+        reason\": \"source_not_collected\"})\\\\n        value = _safe_result(value, now)\\\\n        value[\"instrument_uids\"] = sorted(uids)\\\\n        items.append(value)\\\
+        \\n    mapped = sum(item.get(\"state\") == \"available\" for item in items)\\\\n    status = \"available\" if items and mapped == len(items) and not missing\
+        \ else \"partial\"\\\\n    if not items and not missing:\\\\n        status = \"not_applicable\" if snapshot else \"not_collected\"\\\\n    return {\"provider\"\
+        : PROVIDER, \"state\": status, \"checked_at\": saved.get(\"checked_at\"),\\\\n        \"items\": items, \"eligible_identifiers\": len(items), \"mapped_identifiers\"\
+        : mapped,\\\\n        \"missing_identifiers\": missing, \"coverage_scope\": \"held_positions_only\",\\\\n        \"rating_sources_fetched\": False, \"automatic_trade_permission\"\
+        : False,\\\\n        \"reviewed_issuer_identity_replaced\": False, \"source_registry\": SOURCE_REGISTRY[PROVIDER]}\\\\n\\\\n\\\\nclass SourceError(ValueError):\\\
+        \\n    \"\"\"A sanitized source-contract error; never include a remote body.\"\"\"\\\\n\\\\n\\\\ndef _clock(value: datetime | None = None) -> datetime:\\\\\
+        n    value = datetime.now(timezone.utc) if value is None else value\\\\n    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset()\
+        \ is None:\\\\n        raise SourceError(\"source_clock_timezone_required\")\\\\n    try:\\\\n        return value.astimezone(timezone.utc)\\\\n    except\
+        \ (ValueError, OverflowError) as error:\\\\n        raise SourceError(\"source_clock_invalid\") from error\\\\n\\\\n\\\\ndef _stamp(value: object) -> datetime:\\\
+        \\n    if not isinstance(value, str) or len(value) > 64:\\\\n        raise SourceError(\"source_timestamp_invalid\")\\\\n    try:\\\\n        return _clock(datetime.fromisoformat(value.replace(\"\
+        Z\", \"+00:00\")))\\\\n    except (ValueError, OverflowError) as error:\\\\n        raise SourceError(\"source_timestamp_invalid\") from error\\\\n\\\\n\\\
+        \\ndef normalized_isin(value: object) -> str | None:\\\\n    if not isinstance(value, str) or not re.fullmatch(r\"[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]\", value):\\\
+        \\n        return None\\\\n    value = value.upper()\\\\n    digits = \"\".join(str(ord(c) - 55) if c.isalpha() else c for c in value)\\\\n    total = 0\\\
+        \\n    for offset, char in enumerate(reversed(digits)):\\\\n        part = int(char) * (2 if offset % 2 else 1)\\\\n        total += part // 10 + part % 10\\\
+        \\n    return value if total % 10 == 0 else None\\\\n\\\\n\\\\ndef request_url(isin: str) -> str:\\\\n    if not isinstance(isin, str) or normalized_isin(isin)\
+        \ != isin:\\\\n        raise SourceError(\"source_isin_invalid\")\\\\n    return BASE_URL + \"?\" + urlencode({\"filter[isin]\": isin, \"page[size]\": 2})\\\
+        \\n\\\\n\\\\ndef initialize(db: sqlite3.Connection) -> None:\\\\n    db.execute(\"\"\"CREATE TABLE IF NOT EXISTS public_source_documents_v1 (\\\\n       \
+        \ sha256 TEXT PRIMARY KEY, body BLOB NOT NULL, bytes INTEGER NOT NULL,\\\\n        first_received_at TEXT NOT NULL)\"\"\")\\\\n    db.execute(\"\"\"CREATE\
+        \ TABLE IF NOT EXISTS public_source_observations_v1 (\\\\n        id TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL,\\\\n        url TEXT\
+        \ NOT NULL, document_sha256 TEXT, observed_at TEXT NOT NULL,\\\\n        state TEXT NOT NULL, payload TEXT NOT NULL)\"\"\")\\\\n    db.execute(\"\"\"CREATE\
+        \ INDEX IF NOT EXISTS public_source_observation_subject\\\\n        ON public_source_observations_v1(provider,subject,observed_at)\"\"\")\\\\n    db.execute(\"\
+        \"\"CREATE TABLE IF NOT EXISTS public_source_cache_v1 (\\\\n        provider TEXT NOT NULL, subject TEXT NOT NULL, result TEXT NOT NULL,\\\\n        next_check_at\
+        \ TEXT NOT NULL, etag TEXT, last_modified TEXT,\\\\n        document_sha256 TEXT, failures INTEGER NOT NULL DEFAULT 0,\\\\n        lease_token TEXT, lease_until\
+        \ TEXT,\\\\n        PRIMARY KEY(provider,subject))\"\"\")\\\\n    db.commit()\\\\n\\\\n\\\\ndef _json(raw: bytes) -> dict:\\\\n    def unique(pairs):\\\\\
+        n        result = {}\\\\n        for key, value in pairs:\\\\n            if key in result:\\\\n                raise SourceError(\"source_duplicate_json_key\"\
+        )\\\\n            result[key] = value\\\\n        return result\\\\n    try:\\\\n        value = json.loads(raw.decode(\"utf-8\"), object_pairs_hook=unique,\\\
+        \\n            parse_constant=lambda _: (_ for _ in ()).throw(SourceError(\"source_nonfinite_json\")))\\\\n    except (UnicodeError, ValueError, RecursionError)\
+        \ as error:\\\\n        raise SourceError(\"source_json_invalid\") from error\\\\n    if not isinstance(value, dict):\\\\n        raise SourceError(\"source_json_invalid\"\
+        )\\\\n    return value\\\\n\\\\n\\\\ndef _text(value: object, limit: int = 240) -> str:\\\\n    if (not isinstance(value, str) or not 1 <= len(value) <= limit\\\
+        \\n            or value != value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value)):\\\\n        raise SourceError(\"source_identity_field_invalid\"\
+        )\\\\n    return value\\\\n\\\\n\\\\ndef _lei(value: object) -> str:\\\\n    if not isinstance(value, str) or not re.fullmatch(r\"[0-9A-Z]{18}[0-9]{2}\",\
+        \ value):\\\\n        raise SourceError(\"source_lei_invalid\")\\\\n    digits = \"\".join(str(ord(c) - 55) if c.isalpha() else c for c in value)\\\\n   \
+        \ if int(digits) % 97 != 1:\\\\n        raise SourceError(\"source_lei_invalid\")\\\\n    return value\\\\n\\\\n\\\\ndef parse_gleif(raw: bytes, isin: str,\
+        \ at: datetime) -> dict:\\\\n    \"\"\"Parse a response from the fixed exact-ISIN endpoint, not name search.\"\"\"\\\\n    at = _clock(at)\\\\n    if not\
+        \ isinstance(raw, bytes) or len(raw) > MAX_BYTES or not isinstance(isin, str) or normalized_isin(isin) != isin:\\\\n        raise SourceError(\"source_input_invalid\"\
+        )\\\\n    data = _json(raw)\\\\n    try:\\\\n        meta, rows = data[\"meta\"], data[\"data\"]\\\\n        published = _stamp(meta[\"goldenCopy\"][\"publishDate\"\
+        ])\\\\n        total = meta[\"pagination\"][\"total\"]\\\\n        page = meta[\"pagination\"][\"currentPage\"]\\\\n        if (type(total) is not int or\
+        \ total < 0 or type(page) is not int or page != 1\\\\n                or not isinstance(rows, list) or len(rows) > 2 or len(rows) != min(total, 2)):\\\\n\
+        \            raise SourceError(\"source_pagination_invalid\")\\\\n        result = {\"provider\": PROVIDER, \"isin\": isin, \"state\": \"missing\",\\\\n \
+        \           \"reason\": \"no_exact_isin_mapping\", \"identity\": None,\\\\n            \"url\": request_url(isin), \"parser_version\": PARSER_VERSION,\\\\\
+        n            \"dataset_published_at\": published.isoformat(), \"checked_at\": at.isoformat(),\\\\n            \"document_sha256\": hashlib.sha256(raw).hexdigest(),\\\
+        \\n            \"rating_verified\": False, \"trade_permission\": False}\\\\n        if published > at or at - published > MAX_DATASET_AGE:\\\\n          \
+        \  return {**result, \"state\": \"stale\", \"reason\": \"dataset_time_outside_window\"}\\\\n        if total == 0:\\\\n            return result\\\\n    \
+        \    if total != 1:\\\\n            return {**result, \"state\": \"ambiguous\", \"reason\": \"multiple_exact_isin_mappings\"}\\\\n        row = rows[0]\\\\\
+        n        attributes = row[\"attributes\"]\\\\n        lei = _lei(attributes[\"lei\"])\\\\n        if row[\"type\"] != \"lei-records\" or row[\"id\"] != lei:\\\
+        \\n            raise SourceError(\"source_lei_identity_mismatch\")\\\\n        entity, registration = attributes[\"entity\"], attributes[\"registration\"\
+        ]\\\\n        updated = _stamp(registration[\"lastUpdateDate\"])\\\\n        renewed = _stamp(registration[\"nextRenewalDate\"])\\\\n        if updated >\
+        \ published:\\\\n            raise SourceError(\"source_update_after_publication\")\\\\n        result[\"entity_updated_at\"] = updated.isoformat()\\\\n \
+        \       if entity[\"status\"] != \"ACTIVE\" or registration[\"status\"] != \"ISSUED\" or renewed <= at:\\\\n            return {**result, \"state\": \"inactive\"\
+        , \"reason\": \"entity_or_registration_not_current\"}\\\\n        identity = {\"lei\": lei, \"name\": _text(entity[\"legalName\"][\"name\"]),\\\\n       \
+        \     \"jurisdiction\": _text(entity[\"jurisdiction\"], 32),\\\\n            \"registered_as\": _text(entity[\"registeredAs\"], 160),\\\\n            \"registration_authority\"\
+        : _text(entity[\"registeredAt\"][\"id\"], 40)}\\\\n        return {**result, \"state\": \"available\", \"reason\": None, \"identity\": identity,\\\\n    \
+        \        \"fresh_until\": min(published + MAX_DATASET_AGE, renewed, at + SUCCESS_TTL).isoformat(),\\\\n            \"identity_basis\": \"GLEIF_exact_ISIN_filter\"\
+        }\\\\n    except (KeyError, TypeError, AttributeError) as error:\\\\n        raise SourceError(\"source_schema_invalid\") from error\\\\n\\\\n\\\\ndef fetch_document(url:\
+        \ str, headers: dict) -> tuple[int, dict, bytes]:\\\\n    \"\"\"One fixed-origin HTTPS request, no redirect, no credentials, no retry.\"\"\"\\\\n    if not\
+        \ url.startswith(BASE_URL + \"?\"):\\\\n        raise SourceError(\"source_url_not_allowed\")\\\\n    started = time.monotonic()\\\\n    with httpx.Client(timeout=httpx.Timeout(2.5),\
+        \ follow_redirects=False, trust_env=False,\\\\n            headers={\"Accept\": \"application/vnd.api+json, application/json\",\\\\n                     \"\
+        Accept-Encoding\": \"identity\", \"User-Agent\": \"AnalystAI-PublicIdentity/1\"}) as client:\\\\n        with client.stream(\"GET\", url, headers=headers)\
+        \ as response:\\\\n            response_headers = {key.lower(): value for key, value in response.headers.items()\\\\n                                if key.lower()\
+        \ in {\"etag\", \"last-modified\", \"retry-after\", \"content-type\"}}\\\\n            if response.status_code != 200:\\\\n                return response.status_code,\
+        \ response_headers, b\"\"\\\\n            if response_headers.get(\"content-type\", \"\").split(\";\", 1)[0] not in {\\\\n                    \"application/json\"\
+        , \"application/vnd.api+json\"}:\\\\n                raise SourceError(\"source_content_type_invalid\")\\\\n            if response.headers.get(\"content-encoding\"\
+        , \"identity\").lower() not in {\"\", \"identity\"}:\\\\n                raise SourceError(\"source_encoding_not_allowed\")\\\\n            body = bytearray()\\\
+        \\n            for chunk in response.iter_raw():\\\\n                if time.monotonic() - started > 4 or len(body) + len(chunk) > MAX_BYTES:\\\\n       \
+        \             raise SourceError(\"source_response_limit\")\\\\n                body.extend(chunk)\\\\n            return response.status_code, response_headers,\
+        \ bytes(body)\\\\n\\\\n\\\\ndef _header(value: object) -> str | None:\\\\n    if isinstance(value, str) and 0 < len(value) <= 512 and all(32 <= ord(c) < 127\
+        \ for c in value):\\\\n        return value\\\\n    return None\\\\n\\\\n\\\\ndef _retry_delay(value: object, now: datetime, minimum: timedelta) -> timedelta:\\\
+        \\n    if not isinstance(value, str) or len(value) > 128:\\\\n        return minimum\\\\n    try:\\\\n        if value.isascii() and value.isdigit():\\\\\
+        n            seconds = int(value)\\\\n        else:\\\\n            seconds = (_clock(parsedate_to_datetime(value)) - now).total_seconds()\\\\n        maximum\
+        \ = (datetime.max.replace(tzinfo=timezone.utc) - now).total_seconds() - 1\\\\n        return timedelta(seconds=max(minimum.total_seconds(), min(maximum, max(0,\
+        \ seconds))))\\\\n    except (ValueError, TypeError, OverflowError):\\\\n        return minimum\\\\n\\\\n\\\\ndef _safe_result(result: dict, at: datetime)\
+        \ -> dict:\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"source_cache_invalid\")\\\\n    if result.get(\"state\") == \"available\"\
+        :\\\\n        try:\\\\n            if at >= _stamp(result.get(\"fresh_until\")) or _stamp(result[\"checked_at\"]) > at:\\\\n                return {**result,\
+        \ \"state\": \"stale\", \"reason\": \"cached_identity_expired\", \"identity\": None}\\\\n        except (SourceError, KeyError):\\\\n            return {\"\
+        provider\": PROVIDER, \"state\": \"unavailable\", \"reason\": \"cache_invalid\", \"identity\": None}\\\\n    return result\\\\n\\\\n\\\\ndef _cached_json(value:\
+        \ str) -> dict:\\\\n    if not isinstance(value, str) or len(value) > 32768:\\\\n        raise SourceError(\"source_cache_invalid\")\\\\n    try:\\\\n   \
+        \     result = json.loads(value)\\\\n    except (ValueError, TypeError) as error:\\\\n        raise SourceError(\"source_cache_invalid\") from error\\\\n\
+        \    if not isinstance(result, dict):\\\\n        raise SourceError(\"source_cache_invalid\")\\\\n    return result\\\\n\\\\n\\\\ndef cached_result(connect,\
+        \ isin: str, *, at: datetime | None = None) -> dict | None:\\\\n    now = _clock(at)\\\\n    with closing(connect()) as db:\\\\n        initialize(db)\\\\\
+        n        row = db.execute(\"SELECT result FROM public_source_cache_v1 WHERE provider=? AND subject=?\",\\\\n            (PROVIDER, isin)).fetchone()\\\\n\
+        \    return _safe_result(_cached_json(row[0]), now) if row else None\\\\n\\\\n\\\\ndef refresh_isin(connect, isin: str, *, at: datetime | None = None, fetch=None)\
+        \ -> dict:\\\\n    now, url = _clock(at), request_url(isin)\\\\n    token = uuid.uuid4().hex\\\\n    with closing(connect()) as db:\\\\n        initialize(db)\\\
+        \\n        with db:\\\\n            db.execute(\"BEGIN IMMEDIATE\")\\\\n            row = db.execute(\"SELECT result,next_check_at,etag,last_modified,document_sha256,failures,lease_until\
+        \ \"\\\\n                \"FROM public_source_cache_v1 WHERE provider=? AND subject=?\", (PROVIDER, isin)).fetchone()\\\\n            if row and (now < _stamp(row[1])\
+        \ or row[6] and now < _stamp(row[6])):\\\\n                return _safe_result(_cached_json(row[0]), now)\\\\n            initial = {\"provider\": PROVIDER,\
+        \ \"isin\": isin, \"state\": \"pending\", \"identity\": None}\\\\n            db.execute(\"INSERT INTO public_source_cache_v1(provider,subject,result,next_check_at,lease_token,lease_until)\
+        \ \"\\\\n                \"VALUES (?,?,?,?,?,?) ON CONFLICT(provider,subject) DO UPDATE SET lease_token=excluded.lease_token, \"\\\\n                \"lease_until=excluded.lease_until\"\
         , (PROVIDER, isin, json.dumps(initial), now.isoformat(), token,\\\\n                (now + timedelta(seconds=60)).isoformat()))\\\\n        old_body = None\\\
         \\n        if row and row[4]:\\\\n            document = db.execute(\"SELECT body FROM public_source_documents_v1 WHERE sha256=?\", (row[4],)).fetchone()\\\
         \\n            old_body = bytes(document[0]) if document else None\\\\n            if old_body is not None and (len(old_body) > MAX_BYTES or hashlib.sha256(old_body).hexdigest()\
@@ -494,9 +634,9 @@ jobs:
         \ only breaks equal-time ties.\\\\n    return results, [row[3] for row in sorted(due)]\\\\n\\\\n\\\\ndef collect_snapshot_sources(connect, snapshot: dict,\
         \ checkpoint: dict, progress, *,\\\\n                             at: datetime | None = None, fetch=None) -> dict:\\\\n    \"\"\"A bounded sub-lane of the\
         \ existing event job; failed sources stay explicit.\\\\n\\\\n    It changes no positions, ratings, user data or investment rules. Three due\\\\n    identifiers\
-        \ at most; a 10-second scheduling budget bounds network work to\\\\n    under 17 seconds even when the last HTTP read consumes its full timeout.\\\\n    \"\
-        \"\"\\\\n    now, started = _clock(at), time.monotonic()\\\\n    selected, missing = {}, 0\\\\n    for position in snapshot.get(\"positions\", []):\\\\n \
-        \       if position.get(\"instrument_type\") not in {\"share\", \"bond\"}:\\\\n            continue\\\\n        isin = normalized_isin((position.get(\"metadata\"\
+        \ at most; a 10-second scheduling budget stops new requests\\\\n    after slow responses. Individual requests retain their transport timeouts.\\\\n    \"\"\
+        \"\\\\n    now, started = _clock(at), time.monotonic()\\\\n    selected, missing = {}, 0\\\\n    for position in snapshot.get(\"positions\", []):\\\\n   \
+        \     if position.get(\"instrument_type\") not in {\"share\", \"bond\"}:\\\\n            continue\\\\n        isin = normalized_isin((position.get(\"metadata\"\
         ) or {}).get(\"isin\"))\\\\n        if isin:\\\\n            selected.setdefault(isin, []).append(position[\"instrument_uid\"])\\\\n        else:\\\\n   \
         \         missing += 1\\\\n    identifiers = sorted(selected)\\\\n    if not identifiers:\\\\n        return {\"provider\": PROVIDER, \"checked_at\": now.isoformat(),\
         \ \"state\": \"not_applicable\" if not missing else \"partial\",\\\\n            \"items\": [], \"eligible_identifiers\": 0, \"missing_identifiers\": missing,\\\
@@ -511,24 +651,57 @@ jobs:
         \ \"eligible_identifiers\": len(items), \"mapped_identifiers\": mapped,\\\\n        \"missing_identifiers\": missing, \"identifiers_visited\": visited, \"\
         cursor\": checkpoint.get(\"public_source_cursor\") or cursor,\\\\n        \"coverage_scope\": \"held_positions_only\", \"rating_sources_fetched\": False,\\\
         \\n        \"reviewed_issuer_identity_replaced\": False, \"automatic_trade_permission\": False,\\\\n        \"source_registry\": SOURCE_REGISTRY[PROVIDER]}\\\
-        \\n\\', \\'backend/tests/test_n02_lane_recovery.py\\': \\'\"\"\"Independent source failures must not indefinitely freeze completed lanes.\"\"\"\\\\nfrom datetime\
-        \ import datetime, timedelta, timezone\\\\n\\\\nfrom fastapi import HTTPException\\\\n\\\\nfrom backend import background_dispatch as dispatch, event_monitor\\\
-        \\nfrom backend import volume_jobs as jobs, volume_state as state, volume_workspace as workspace\\\\nfrom backend.tests.test_background_dispatch import stored\\\
-        \\nfrom backend.tests.test_volume_workspace import fixture, broker_fixture\\\\nfrom backend.volume_contract import section\\\\n\\\\n\\\\ndef source_clock(fixture):\\\
-        \\n    clock = [datetime.now(timezone.utc)]\\\\n\\\\n    class Clock(datetime):\\\\n        @classmethod\\\\n        def now(cls, tz=None):\\\\n         \
-        \   return clock[0]\\\\n\\\\n    fixture[\"patch\"].setattr(event_monitor, \"datetime\", Clock)\\\\n    fixture[\"patch\"].setattr(event_monitor, \"now_iso\"\
-        , lambda: clock[0].isoformat())\\\\n    fixture[\"patch\"].setattr(workspace, \"now_iso\", lambda: clock[0].isoformat())\\\\n    return clock\\\\n\\\\n\\\\\
-        ndef market_sources(fixture, *, news_available):\\\\n    def collect(user, checkpoint, progress):\\\\n        checkpoint[\"news\"] = section({\"items\": [],\
-        \ \"complete\": news_available},\\\\n            state=\"available\" if news_available else \"unavailable\", as_of=event_monitor.now_iso())\\\\n        checkpoint[\"\
-        calendar\"] = state.saved_snapshot(user)[\"calendar\"]\\\\n        progress(\"collecting_news\", checkpoint)\\\\n    fixture[\"patch\"].setattr(workspace,\
-        \ \"_collect_market_events\", collect)\\\\n\\\\n\\\\ndef test_persistent_news_failure_does_not_freeze_completed_operations_or_payouts(fixture):\\\\n    stored(fixture)\\\
-        \\n    clock = source_clock(fixture)\\\\n    market_sources(fixture, news_available=False)\\\\n    calls, generation = [], [0]\\\\n\\\\n    def read(method,\
-        \ body):\\\\n        calls.append((method, dict(body)))\\\\n        if method == \"operations\":\\\\n            items = [] if generation[0] == 0 else [{\\\
-        \\n                \"id\": \"new-income-\" + body[\"accountId\"], \"type\": \"OPERATION_TYPE_DIVIDEND\",\\\\n                \"date\": clock[0].isoformat(),\
-        \ \"state\": \"OPERATION_STATE_EXECUTED\",\\\\n                \"payment\": {\"units\": \"3\", \"nano\": 0, \"currency\": \"rub\"}, \"quantity\": \"1\"}]\\\
-        \\n            return {\"items\": items, \"hasNext\": False}\\\\n        assert method == \"dividends\"\\\\n        return {\"dividends\": [] if generation[0]\
-        \ == 0 else [{\\\\n            \"paymentDate\": (clock[0] + timedelta(days=3)).isoformat(),\\\\n            \"recordDate\": (clock[0] + timedelta(days=2)).isoformat(),\\\
-        \\n            \"dividendNet\": {\"units\": \"2\", \"nano\": 0, \"currency\": \"rub\"}}]}\\\\n\\\\n    broker_fixture(fixture, read)\\\\n    first = dispatch.enqueue_events(fixture[\"\
+        \\n\\', \\'backend/tests/test_cash_ledger_integration.py\\': \\'\"\"\"Cash history and materialized workspace state commit or roll back together.\"\"\"\\\\\
+        nfrom contextlib import closing\\\\nfrom copy import deepcopy\\\\nfrom datetime import datetime, timedelta, timezone\\\\n\\\\nimport pytest\\\\nfrom fastapi\
+        \ import HTTPException\\\\n\\\\nfrom backend import app as backend, volume_credit, volume_state as state\\\\nfrom backend import volume_workspace as workspace\\\
+        \\nfrom backend.tests.test_volume_workspace import fixture, operation\\\\nfrom backend.volume_contract import source\\\\n\\\\n\\\\ndef observed_operations(fixture,\
+        \ identifier=\"cash-coupon\", amount=\"3\"):\\\\n    snapshot = deepcopy(state.saved_snapshot(fixture[\"user\"]))\\\\n    observed = datetime.now(timezone.utc)\\\
+        \\n    when = observed - timedelta(minutes=1)\\\\n    refs = [source(\"GetOperationsByCursor\", account[\"id\"], observed.isoformat(), ttl=900)\\\\n     \
+        \       for account in snapshot[\"accounts\"]]\\\\n    snapshot[\"sources\"].extend(refs)\\\\n    item = operation(identifier, payment=amount, at=when.isoformat())\\\
+        \\n    item.update(type=\"OPERATION_TYPE_COUPON\", category=\"coupons\", source_ids=[refs[0][\"id\"]])\\\\n    snapshot[\"operations\"] = {\"items\": [item],\
+        \ \"complete\": True,\\\\n        \"start\": (observed - timedelta(days=60)).isoformat(), \"end\": observed.isoformat()}\\\\n    snapshot.setdefault(\"section_as_of\"\
+        , {})[\"operations\"] = observed.isoformat()\\\\n    return snapshot\\\\n\\\\n\\\\ndef history_count():\\\\n    with closing(backend.connect()) as db:\\\\\
+        n        return db.execute(\"SELECT COUNT(*) FROM broker_operation_history_v1\").fetchone()[0]\\\\n\\\\n\\\\ndef test_workspace_persists_history_and_authenticated_materialized_receipt(fixture):\\\
+        \\n    snapshot = observed_operations(fixture)\\\\n    workspace.persist(fixture[\"user\"], snapshot)\\\\n    stored = state.saved_snapshot(fixture[\"user\"\
+        ])\\\\n    assert stored[\"cash_ledger\"][\"state\"] == \"observed\"\\\\n    assert stored[\"cash_ledger\"][\"cash_movements\"] == [\\\\n        {\"currency\"\
+        : \"RUB\", \"category\": \"coupon_income\", \"amount\": \"3\"}]\\\\n    count = history_count()\\\\n    first = fixture[\"client\"].get(\"/workspace/cash-ledger\"\
+        )\\\\n    second = fixture[\"client\"].get(\"/workspace/cash-ledger\")\\\\n    assert first.status_code == second.status_code == 200\\\\n    assert first.json()\
+        \ == second.json()\\\\n    assert first.json()[\"cash_movements\"] == stored[\"cash_ledger\"][\"cash_movements\"]\\\\n    assert first.json()[\"performance_calculated\"\
+        ] is False\\\\n    assert history_count() == count\\\\n\\\\n\\\\ndef test_later_snapshot_failure_rolls_back_both_ledger_and_workspace(fixture):\\\\n    prior\
+        \ = state.saved_snapshot(fixture[\"user\"])\\\\n    count = history_count()\\\\n    snapshot = observed_operations(fixture, \"must-roll-back\")\\\\n\\\\n\
+        \    def fail_after_write(*args):\\\\n        raise RuntimeError(\"synthetic_later_snapshot_failure\")\\\\n\\\\n    fixture[\"patch\"].setattr(volume_credit,\
+        \ \"record_changes_in\", fail_after_write)\\\\n    with pytest.raises(RuntimeError, match=\"synthetic_later_snapshot_failure\"):\\\\n        workspace.persist(fixture[\"\
+        user\"], snapshot)\\\\n    assert history_count() == count\\\\n    assert state.saved_snapshot(fixture[\"user\"]) == prior\\\\n\\\\n\\\\ndef test_rejected_compare_and_swap_cannot_append_cash_history(fixture):\\\
+        \\n    prior = state.saved_snapshot(fixture[\"user\"])\\\\n    count = history_count()\\\\n    stale = deepcopy(prior)\\\\n    stale[\"as_of\"] = (datetime.now(timezone.utc)\
+        \ - timedelta(days=1)).isoformat()\\\\n    with pytest.raises(HTTPException) as error:\\\\n        workspace.persist(fixture[\"user\"], observed_operations(fixture),\
+        \ expected_snapshot=stale)\\\\n    assert error.value.status_code == 409\\\\n    assert history_count() == count\\\\n    assert state.saved_snapshot(fixture[\"\
+        user\"]) == prior\\\\n\\\\n\\\\ndef test_cash_history_remains_when_next_window_no_longer_contains_operation(fixture):\\\\n    first = observed_operations(fixture)\\\
+        \\n    workspace.persist(fixture[\"user\"], first)\\\\n    count = history_count()\\\\n    later = deepcopy(state.saved_snapshot(fixture[\"user\"]))\\\\n\
+        \    later[\"operations\"][\"items\"] = []\\\\n    workspace.persist(fixture[\"user\"], later)\\\\n    assert history_count() == count\\\\n    assert state.saved_snapshot(fixture[\"\
+        user\"])[\"cash_ledger\"][\"cash_movements\"] == [\\\\n        {\"currency\": \"RUB\", \"category\": \"coupon_income\", \"amount\": \"3\"}]\\\\n\\\\n\\\\\
+        ndef test_cash_ledger_requires_authentication_and_matching_broker_connection(fixture):\\\\n    workspace.persist(fixture[\"user\"], observed_operations(fixture))\\\
+        \\n    user = dict(fixture[\"user\"])\\\\n    user[\"tinvest_token_encrypted\"] = b\"synthetic-new-broker-connection\"\\\\n    backend.app.dependency_overrides[backend.current_user]\
+        \ = lambda: user\\\\n    response = fixture[\"client\"].get(\"/workspace/cash-ledger\")\\\\n    assert response.status_code == 200\\\\n    assert response.json()[\"\
+        state\"] == \"unavailable\"\\\\n    assert \"cash_movements\" not in response.json()\\\\n    backend.app.dependency_overrides.pop(backend.current_user, None)\\\
+        \\n    assert fixture[\"client\"].get(\"/workspace/cash-ledger\").status_code == 401\\\\n\\', \\'backend/tests/test_n02_lane_recovery.py\\': \\'\"\"\"Independent\
+        \ source failures must not indefinitely freeze completed lanes.\"\"\"\\\\nfrom datetime import datetime, timedelta, timezone\\\\n\\\\nfrom fastapi import\
+        \ HTTPException\\\\n\\\\nfrom backend import app as backend\\\\nfrom backend import background_dispatch as dispatch, event_monitor\\\\nfrom backend import\
+        \ volume_jobs as jobs, volume_state as state, volume_workspace as workspace\\\\nfrom backend.tests.test_background_dispatch import stored\\\\nfrom backend.tests.test_volume_workspace\
+        \ import fixture, broker_fixture\\\\nfrom backend.volume_contract import section\\\\n\\\\n\\\\ndef source_clock(fixture):\\\\n    clock = [datetime.now(timezone.utc)]\\\
+        \\n\\\\n    class Clock(datetime):\\\\n        @classmethod\\\\n        def now(cls, tz=None):\\\\n            return clock[0]\\\\n\\\\n    fixture[\"patch\"\
+        ].setattr(event_monitor, \"datetime\", Clock)\\\\n    fixture[\"patch\"].setattr(event_monitor, \"now_iso\", lambda: clock[0].isoformat())\\\\n    fixture[\"\
+        patch\"].setattr(workspace, \"now_iso\", lambda: clock[0].isoformat())\\\\n    return clock\\\\n\\\\n\\\\ndef market_sources(fixture, *, news_available):\\\
+        \\n    def collect(user, checkpoint, progress):\\\\n        checkpoint[\"news\"] = section({\"items\": [], \"complete\": news_available},\\\\n           \
+        \ state=\"available\" if news_available else \"unavailable\", as_of=event_monitor.now_iso())\\\\n        checkpoint[\"calendar\"] = state.saved_snapshot(user)[\"\
+        calendar\"]\\\\n        progress(\"collecting_news\", checkpoint)\\\\n    fixture[\"patch\"].setattr(workspace, \"_collect_market_events\", collect)\\\\n\\\
+        \\n\\\\ndef test_persistent_news_failure_does_not_freeze_completed_operations_or_payouts(fixture):\\\\n    stored(fixture)\\\\n    clock = source_clock(fixture)\\\
+        \\n    market_sources(fixture, news_available=False)\\\\n    calls, generation = [], [0]\\\\n\\\\n    def read(method, body):\\\\n        calls.append((method,\
+        \ dict(body)))\\\\n        if method == \"operations\":\\\\n            items = [] if generation[0] == 0 else [{\\\\n                \"id\": \"new-income-\"\
+        \ + body[\"accountId\"], \"type\": \"OPERATION_TYPE_DIVIDEND\",\\\\n                \"date\": clock[0].isoformat(), \"state\": \"OPERATION_STATE_EXECUTED\"\
+        ,\\\\n                \"payment\": {\"units\": \"3\", \"nano\": 0, \"currency\": \"rub\"}, \"quantity\": \"1\"}]\\\\n            return {\"items\": items,\
+        \ \"hasNext\": False}\\\\n        assert method == \"dividends\"\\\\n        return {\"dividends\": [] if generation[0] == 0 else [{\\\\n            \"paymentDate\"\
+        : (clock[0] + timedelta(days=3)).isoformat(),\\\\n            \"recordDate\": (clock[0] + timedelta(days=2)).isoformat(),\\\\n            \"dividendNet\"\
+        : {\"units\": \"2\", \"nano\": 0, \"currency\": \"rub\"}}]}\\\\n\\\\n    broker_fixture(fixture, read)\\\\n    first = dispatch.enqueue_events(fixture[\"\
         user\"], now=clock[0])\\\\n    jobs.run_job(first[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), first[\"job_id\"])[\"state\"] ==\
         \ \"failed\"\\\\n    first_horizon = state.saved_snapshot(fixture[\"user\"])[\"operations\"][\"end\"]\\\\n    assert len(calls) == 4\\\\n    clock[0] += timedelta(seconds=3601)\\\
         \\n    generation[0] = 1\\\\n    second = dispatch.enqueue_events(fixture[\"user\"], now=clock[0])\\\\n    jobs.run_job(second[\"job_id\"])\\\\n    assert\
@@ -603,23 +776,126 @@ jobs:
         \ elapsed[0]), raising=False)\\\\n\\\\n    def read(user, uid):\\\\n        calls.append(uid)\\\\n        elapsed[0] += 20\\\\n        return recovered_instrument(uid)\\\
         \\n\\\\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", read)\\\\n    item = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(item[\"\
         job_id\"])\\\\n    assert len(calls) == 1\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), item[\"job_id\"])[\"state\"] == \"failed\"\\\\n    assert\
-        \ state.saved_snapshot(fixture[\"user\"])[\"event_monitor\"][\"complete\"] is False\\\\n\\', \\'backend/tests/test_public_source_events.py\\': \\'\"\"\"Public\
-        \ evidence runs through the durable event job without changing price truth.\"\"\"\\\\nfrom contextlib import closing\\\\nfrom datetime import datetime, timedelta,\
-        \ timezone\\\\n\\\\nfrom backend import app as backend, public_sources\\\\nfrom backend import background_dispatch as dispatch, volume_jobs as jobs\\\\nfrom\
-        \ backend import volume_state as state, volume_workspace as workspace\\\\nfrom backend.tests.test_background_dispatch import stored, event_sources, forbidden\\\
-        \\nfrom backend.tests.test_public_sources import ISIN, document, encoded\\\\nfrom backend.tests.test_volume_workspace import fixture\\\\n\\\\n\\\\ndef prepared(fixture):\\\
-        \\n    snapshot = stored(fixture)\\\\n    snapshot[\"positions\"][0][\"metadata\"][\"isin\"] = ISIN\\\\n    workspace.persist(fixture[\"user\"], snapshot)\\\
-        \\n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.details, \"load_dashboard\", forbidden)\\\\n    return state.saved_snapshot(fixture[\"\
-        user\"])\\\\n\\\\n\\\\ndef public_document(url, headers):\\\\n    value = document()\\\\n    now = datetime.now(timezone.utc)\\\\n    value[\"meta\"][\"goldenCopy\"\
-        ][\"publishDate\"] = (now - timedelta(minutes=1)).isoformat()\\\\n    return 200, {\"etag\": \\\\\\'\"event-fixture\"\\\\\\'}, encoded(value)\\\\n\\\\n\\\\\
-        ndef test_event_job_persists_public_document_without_promoting_rating_or_revaluing(fixture):\\\\n    old = prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources,\
-        \ \"fetch_document\", public_document)\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"\
-        user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"public_sources\"\
-        ][\"mapped_identifiers\"] == 1\\\\n    assert current[\"public_sources\"][\"rating_sources_fetched\"] is False\\\\n    assert current[\"event_monitor\"][\"\
-        new_rating_sources_fetched\"] is False\\\\n    for name in (\"positions\", \"capital\", \"accounts\", \"as_of\", \"collection\", \"attribution\"):\\\\n  \
-        \      assert current[name] == old[name]\\\\n    with closing(backend.connect()) as db:\\\\n        assert db.execute(\"SELECT COUNT(*) FROM public_source_documents_v1\"\
-        ).fetchone()[0] == 1\\\\n        assert db.execute(\"SELECT COUNT(*) FROM research_evidence_v1\").fetchone()[0] == 0\\\\n\\\\n\\\\ndef test_public_outage_does_not_fail_successful_broker_event_collection(fixture):\\\
-        \\n    prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources, \"fetch_document\", lambda *args: (503, {}, b\"\"))\\\\n    job = dispatch.enqueue_events(fixture[\"\
+        \ state.saved_snapshot(fixture[\"user\"])[\"event_monitor\"][\"complete\"] is False\\\\n\\', \\'backend/tests/test_operations_ledger.py\\': \\'\"\"\"Cash\
+        \ observation regression contracts on isolated SQLite, no broker calls.\"\"\"\\\\nfrom copy import deepcopy\\\\nfrom datetime import datetime, timedelta,\
+        \ timezone\\\\nfrom decimal import Decimal, localcontext\\\\nimport sqlite3\\\\n\\\\nimport pytest\\\\n\\\\nimport backend.app  # Initialize existing app\
+        \ wiring before its adapter modules.\\\\nfrom backend import operations_ledger as ledger\\\\nfrom backend.portfolio_details import normalize_operation\\\\\
+        nfrom backend.volume_contract import source\\\\n\\\\nNOW = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)\\\\n\\\\n\\\\n@pytest.fixture\\\\ndef db(tmp_path):\\\
+        \\n    connection = sqlite3.connect(tmp_path / \"ledger.sqlite3\")\\\\n    connection.row_factory = sqlite3.Row\\\\n    yield connection\\\\n    connection.close()\\\
+        \\n\\\\n\\\\ndef operation(identifier=\"op-1\", amount=\"10\", kind=\"COUPON\", account=\"account-a\", *, status=\"EXECUTED\", at=NOW):\\\\n    # Exercise\
+        \ the real project\\\\\\'s normalized MoneyValue shape, not a guessed\\\\n    # amount scalar. Commission is an annotation and must not be added again.\\\\\
+        n    item = normalize_operation({\"id\": identifier, \"date\": (NOW - timedelta(days=1)).isoformat(),\\\\n        \"type\": \"OPERATION_TYPE_\" + kind, \"\
+        state\": \"OPERATION_STATE_\" + status,\\\\n        \"payment\": {\"units\": amount, \"nano\": 0, \"currency\": \"rub\"},\\\\n        \"commission\": {\"\
+        units\": \"-1\", \"nano\": 0, \"currency\": \"rub\"}, \"quantity\": \"1\"})\\\\n    ref = source(\"GetOperationsByCursor\", account, at.isoformat())\\\\n\
+        \    return {**item, \"account_id\": account, \"source_ids\": [ref[\"id\"]]}, ref\\\\n\\\\n\\\\ndef snapshot(*pairs, at=NOW, complete=True, begin=None, end=None,\
+        \ account_ids=None):\\\\n    items = [deepcopy(pair[0]) for pair in pairs]\\\\n    refs = {pair[1][\"id\"]: deepcopy(pair[1]) for pair in pairs}\\\\n    accounts\
+        \ = account_ids or sorted({item[\"account_id\"] for item in items}) or [\"account-a\"]\\\\n    return {\"snapshot_id\": \"synthetic-snapshot\", \"as_of\"\
+        : at.isoformat(),\\\\n        \"accounts\": [{\"id\": account} for account in accounts], \"sources\": list(refs.values()),\\\\n        \"operations\": {\"\
+        items\": items, \"complete\": complete,\\\\n            \"start\": (begin or at - timedelta(days=60)).isoformat(), \"end\": (end or at).isoformat()}}\\\\\
+        n\\\\n\\\\ndef save(db, value, *, user=1, broker=\"connection-a\", at=NOW):\\\\n    with db:\\\\n        db.execute(\"BEGIN IMMEDIATE\")\\\\n        return\
+        \ ledger.record_snapshot_in(db, user_id=user, broker_key=broker, snapshot=value, at=at)\\\\n\\\\n\\\\ndef movements(receipt):\\\\n    return {(row[\"currency\"\
+        ], row[\"category\"]): Decimal(row[\"amount\"]) for row in receipt[\"cash_movements\"]}\\\\n\\\\n\\\\ndef test_real_normalized_shape_separates_income_principal_and_fee_annotations(db):\\\
+        \\n    value = snapshot(operation(\"coupon\", \"10\"), operation(\"dividend\", \"20\", \"DIVIDEND\"),\\\\n        operation(\"redemption\", \"100\", \"BOND_REPAYMENT_FULL\"\
+        ), operation(\"deposit\", \"200\", \"INPUT\"),\\\\n        operation(\"fee\", \"-1\", \"BROKER_FEE\"), operation(\"tax\", \"-2\", \"TAX\"), operation(\"purchase\"\
+        , \"-50\", \"BUY\"))\\\\n    receipt = save(db, value)\\\\n    assert receipt[\"state\"] == \"observed\"\\\\n    assert movements(receipt) == {(\"RUB\", \"\
+        coupon_income\"): 10, (\"RUB\", \"dividend_income\"): 20,\\\\n        (\"RUB\", \"principal_repayment\"): 100, (\"RUB\", \"external_deposit\"): 200,\\\\n\
+        \        (\"RUB\", \"fee_cash\"): -1, (\"RUB\", \"observed_tax_cash\"): -2, (\"RUB\", \"trade_cash\"): -50}\\\\n    assert receipt[\"commission_annotations_added\"\
+        ] is receipt[\"principal_repayments_are_income\"] is False\\\\n    assert receipt[\"performance_calculated\"] is receipt[\"tax_liability_estimated\"] is False\\\
+        \\n\\\\n\\\\ndef test_replaying_same_operation_and_duplicate_rows_is_idempotent(db):\\\\n    pair = operation()\\\\n    value = snapshot(pair, pair)\\\\n\
+        \    first = save(db, value)\\\\n    second = save(db, value, at=NOW + timedelta(minutes=1))\\\\n    assert movements(first) == movements(second) == {(\"\
+        RUB\", \"coupon_income\"): 10}\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_history_v1\").fetchone()[0] == 1\\\\n    assert db.execute(\"\
+        SELECT COUNT(*) FROM broker_operation_current_v1\").fetchone()[0] == 1\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_windows_v1\").fetchone()[0]\
+        \ == 1\\\\n\\\\n\\\\ndef test_pending_becomes_executed_and_late_pending_cannot_overwrite_it(db):\\\\n    pending = snapshot(operation(status=\"PROGRESS\"\
+        ))\\\\n    first = save(db, pending)\\\\n    assert first[\"cash_movements\"] == [] and first[\"operation_counts\"][\"pending\"] == 1\\\\n    later = NOW\
+        \ + timedelta(minutes=1)\\\\n    executed = snapshot(operation(at=later), at=later)\\\\n    second = save(db, executed, at=later)\\\\n    assert movements(second)\
+        \ == {(\"RUB\", \"coupon_income\"): 10}\\\\n    stale = save(db, pending, at=later + timedelta(minutes=1))\\\\n    assert movements(stale) == movements(second)\\\
+        \\n    assert stale[\"operation_counts\"][\"accepted\"] == 1\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_history_v1\").fetchone()[0]\
+        \ == 2\\\\n\\\\n\\\\ndef test_same_time_conflicts_quarantine_until_newer_independent_observation(db):\\\\n    first = operation(amount=\"10\")\\\\n    second\
+        \ = operation(amount=\"12\")\\\\n    receipt = save(db, snapshot(first, second))\\\\n    assert receipt[\"cash_movements\"] == [] and receipt[\"state\"] ==\
+        \ \"partial\"\\\\n    assert receipt[\"operation_counts\"][\"conflicted\"] == 1\\\\n    assert receipt[\"coverage\"][0][\"latest_observation_complete\"] is\
+        \ False\\\\n    replay = save(db, snapshot(first))\\\\n    assert replay[\"cash_movements\"] == []\\\\n    later = NOW + timedelta(minutes=1)\\\\n    repaired\
+        \ = save(db, snapshot(operation(amount=\"12\", at=later), at=later), at=later)\\\\n    assert repaired[\"operation_counts\"][\"accepted\"] == 1\\\\n    assert\
+        \ movements(repaired) == {(\"RUB\", \"coupon_income\"): 12}\\\\n\\\\n\\\\n@pytest.mark.parametrize(\"payment\", [None, {}, {\"currency\": \"RUB\", \"value\"\
+        : {}},\\\\n    {\"currency\": \"RUB\", \"value\": {\"units\": True, \"nano\": 0}},\\\\n    {\"currency\": \"RUB\", \"value\": {\"units\": \"1\", \"nano\"\
+        : -1}},\\\\n    {\"currency\": \"RUB\", \"amount\": \"NaN\"}, {\"currency\": \"RUB\", \"amount\": 3.1},\\\\n    {\"currency\": \"RUB\", \"amount\": \"0.0000000001\"\
+        }, {\"currency\": \"WRONG\", \"amount\": \"3\"}])\\\\ndef test_missing_or_malformed_payment_is_quarantined_without_fake_zero(db, payment):\\\\n    pair =\
+        \ operation()\\\\n    pair[0][\"payment\"] = payment\\\\n    receipt = save(db, snapshot(pair))\\\\n    assert receipt[\"cash_movements\"] == [] and receipt[\"\
+        state\"] == \"partial\"\\\\n    assert receipt[\"operation_counts\"][\"quarantined\"] == 1\\\\n    assert db.execute(\"SELECT amount FROM broker_operation_history_v1\"\
+        ).fetchone()[0] is None\\\\n\\\\n\\\\ndef test_user_reconnection_and_account_ids_scope_identical_operation_ids(db):\\\\n    save(db, snapshot(operation(amount=\"\
+        10\")))\\\\n    save(db, snapshot(operation(amount=\"20\", account=\"account-b\")))\\\\n    save(db, snapshot(operation(amount=\"30\")), broker=\"connection-b\"\
+        )\\\\n    save(db, snapshot(operation(amount=\"40\")), user=2)\\\\n    assert movements(ledger.summary_in(db, user_id=1, broker_key=\"connection-a\", account_ids=[\"\
+        account-a\"])) == {(\"RUB\", \"coupon_income\"): 10}\\\\n    assert movements(ledger.summary_in(db, user_id=1, broker_key=\"connection-a\", account_ids=[\"\
+        account-b\"])) == {(\"RUB\", \"coupon_income\"): 20}\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_current_v1\").fetchone()[0] == 4\\\\\
+        n\\\\n\\\\ndef test_history_survives_rolling_range_and_does_not_assume_missing_operation_cancelled(db):\\\\n    old = operation(\"old\", \"10\")\\\\n    old[0][\"\
+        date\"] = (NOW - timedelta(days=50)).isoformat()\\\\n    save(db, snapshot(old))\\\\n    later = NOW + timedelta(days=1)\\\\n    new = operation(\"new\",\
+        \ \"5\", at=later)\\\\n    receipt = save(db, snapshot(new, at=later, begin=later - timedelta(days=10)), at=later)\\\\n    assert movements(receipt) == {(\"\
+        RUB\", \"coupon_income\"): 15}\\\\n    assert receipt[\"operation_counts\"][\"accepted\"] == 2\\\\n    assert receipt[\"history_preserved\"] is True\\\\n\
+        \    assert receipt[\"coverage\"][0][\"outside_observed_ranges_unknown\"] is True\\\\n\\\\n\\\\ndef test_source_and_window_failures_do_not_fabricate_empty_complete_history(db):\\\
+        \\n    empty = snapshot()\\\\n    missing = save(db, empty)\\\\n    assert missing[\"state\"] == \"partial\"\\\\n    assert missing[\"coverage\"][0][\"complete_observed_ranges\"\
+        ] == []\\\\n    assert missing[\"coverage\"][0][\"latest_observed_at\"] is None\\\\n    assert \"operation_account_observation_missing\" in missing[\"coverage\"\
+        ][0][\"latest_issues\"]\\\\n    later = NOW + timedelta(minutes=1)\\\\n    proven = snapshot(at=later)\\\\n    proven[\"sources\"] = [source(\"GetOperationsByCursor\"\
+        , \"account-a\", later.isoformat())]\\\\n    receipt = save(db, proven, at=later)\\\\n    assert receipt[\"state\"] == \"observed\"\\\\n    assert receipt[\"\
+        cash_movements\"] == []\\\\n\\\\n\\\\ndef test_invalid_and_missing_operation_timestamps_preserve_snapshot_transaction(db):\\\\n    pair = operation()\\\\\
+        n    value = snapshot(pair)\\\\n    value[\"sources\"][0][\"observed_at\"] = \"not-a-timestamp\"\\\\n    value[\"section_as_of\"] = {\"operations\": \"bad-explicit-time\"\
+        }\\\\n    receipt = save(db, value)\\\\n    assert receipt[\"state\"] == \"partial\" and receipt[\"cash_movements\"] == []\\\\n    row = db.execute(\"SELECT\
+        \ observed_at,disposition FROM broker_operation_history_v1\").fetchone()\\\\n    assert tuple(row) == (\"\", \"quarantined\")\\\\n    # The recent valuation\
+        \ timestamp must not fill the missing operation clock.\\\\n    assert receipt[\"coverage\"][0][\"latest_observed_at\"] is None\\\\n\\\\n\\\\ndef test_operations_outside_declared_range_are_quarantined(db):\\\
+        \\n    pair = operation()\\\\n    pair[0][\"date\"] = (NOW - timedelta(days=100)).isoformat()\\\\n    receipt = save(db, snapshot(pair))\\\\n    assert receipt[\"\
+        cash_movements\"] == [] and receipt[\"state\"] == \"partial\"\\\\n    assert db.execute(\"SELECT reason FROM broker_operation_current_v1\").fetchone()[0]\
+        \ == \"operation_outside_observed_range\"\\\\n\\\\n\\\\ndef test_simultaneous_conflicting_coverage_is_conservative_in_any_insert_order(db):\\\\n    complete\
+        \ = snapshot(operation())\\\\n    incomplete = snapshot(operation(), complete=False)\\\\n    save(db, incomplete)\\\\n    receipt = save(db, complete)\\\\\
+        n    assert receipt[\"coverage\"][0][\"latest_observation_complete\"] is False\\\\n    assert receipt[\"state\"] == \"partial\"\\\\n\\\\n\\\\ndef test_disjoint_windows_report_gap_and_partial_collection_does_not_erase_ranges(db):\\\
+        \\n    early = operation(\"early\")\\\\n    early[0][\"date\"] = (NOW - timedelta(days=55)).isoformat()\\\\n    save(db, snapshot(early, begin=NOW - timedelta(days=60),\
+        \ end=NOW - timedelta(days=50)))\\\\n    middle = operation(\"middle\")\\\\n    middle[0][\"date\"] = (NOW - timedelta(days=10)).isoformat()\\\\n    receipt\
+        \ = save(db, snapshot(middle, begin=NOW - timedelta(days=30)))\\\\n    assert receipt[\"coverage\"][0][\"known_gaps\"] == [[(NOW - timedelta(days=50)).isoformat(),\
+        \ (NOW - timedelta(days=30)).isoformat()]]\\\\n    assert receipt[\"state\"] == \"partial\"\\\\n    later = NOW + timedelta(minutes=1)\\\\n    partial = snapshot(operation(\"\
+        latest\", at=later), at=later, complete=False)\\\\n    retained = save(db, partial, at=later)\\\\n    assert retained[\"coverage\"][0][\"complete_observed_ranges\"\
+        ] == receipt[\"coverage\"][0][\"complete_observed_ranges\"]\\\\n    assert retained[\"coverage\"][0][\"latest_observation_complete\"] is False\\\\n\\\\n\\\
+        \\ndef test_snapshot_failure_rolls_back_ledger_revisions_and_cash_totals(db):\\\\n    save(db, snapshot(operation()))\\\\n    db.execute(\"CREATE TABLE snapshot_marker\
+        \ (value TEXT)\")\\\\n    db.commit()\\\\n    later = NOW + timedelta(minutes=1)\\\\n    with pytest.raises(RuntimeError, match=\"synthetic_snapshot_failure\"\
+        ):\\\\n        with db:\\\\n            db.execute(\"BEGIN IMMEDIATE\")\\\\n            ledger.record_snapshot_in(db, user_id=1, broker_key=\"connection-a\"\
+        ,\\\\n                snapshot=snapshot(operation(amount=\"99\", at=later), at=later), at=later)\\\\n            db.execute(\"INSERT INTO snapshot_marker\
+        \ VALUES (\\\\\\'new snapshot\\\\\\')\")\\\\n            raise RuntimeError(\"synthetic_snapshot_failure\")\\\\n    assert db.execute(\"SELECT COUNT(*) FROM\
+        \ snapshot_marker\").fetchone()[0] == 0\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_history_v1\").fetchone()[0] == 1\\\\n    assert\
+        \ movements(ledger.summary_in(db, user_id=1, broker_key=\"connection-a\", account_ids=[\"account-a\"])) == {(\"RUB\", \"coupon_income\"): 10}\\\\n\\\\n\\\\\
+        ndef test_payment_precision_is_independent_of_caller_decimal_context(db):\\\\n    pair = operation()\\\\n    pair[0][\"payment\"] = {\"currency\": \"RUB\"\
+        , \"value\": {\"units\": \"999999999999999\", \"nano\": 1}}\\\\n    with localcontext() as context:\\\\n        context.prec = 3\\\\n        receipt = save(db,\
+        \ snapshot(pair))\\\\n    assert movements(receipt) == {(\"RUB\", \"coupon_income\"): Decimal(\"999999999999999.000000001\")}\\\\n\\\\n\\\\ndef test_ledger_refuses_independent_commit_boundary(db):\\\
+        \\n    with pytest.raises(ledger.LedgerError, match=\"operation_ledger_transaction_required\"):\\\\n        ledger.record_snapshot_in(db, user_id=1, broker_key=\"\
+        connection-a\", snapshot=snapshot(operation()), at=NOW)\\\\n\\\\n\\\\ndef test_retained_historical_source_does_not_invalidate_new_account_window(db):\\\\\
+        n    value = snapshot(operation())\\\\n    old = source(\"GetOperationsByCursor\", \"account-a\", (NOW - timedelta(hours=3)).isoformat())\\\\n    value[\"\
+        sources\"].append(old)\\\\n    receipt = save(db, value)\\\\n    assert receipt[\"state\"] == \"observed\"\\\\n    assert receipt[\"coverage\"][0][\"latest_observation_complete\"\
+        ] is True\\\\n    assert receipt[\"coverage\"][0][\"latest_observed_at\"] == NOW.isoformat()\\\\n    assert receipt[\"coverage\"][0][\"latest_issues\"] ==\
+        \ []\\\\n\\\\n\\\\ndef test_cancelled_revision_removes_current_cash_but_keeps_executed_history(db):\\\\n    save(db, snapshot(operation()))\\\\n    later\
+        \ = NOW + timedelta(minutes=1)\\\\n    receipt = save(db, snapshot(operation(status=\"CANCELED\", at=later), at=later), at=later)\\\\n    assert receipt[\"\
+        cash_movements\"] == []\\\\n    assert receipt[\"operation_counts\"][\"cancelled\"] == 1\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_history_v1\"\
+        ).fetchone()[0] == 2\\\\n    assert db.execute(\"SELECT COUNT(*) FROM broker_operation_history_v1 WHERE disposition=\\\\\\'accepted\\\\\\'\").fetchone()[0]\
+        \ == 1\\\\n\\\\n\\\\n@pytest.mark.parametrize(\"explicit_operation_clock\", [False, True])\\\\ndef test_new_unproven_cash_never_replaces_history_with_accepted_amount(db,\
+        \ explicit_operation_clock):\\\\n    save(db, snapshot(operation(amount=\"10\")))\\\\n    later = NOW + timedelta(minutes=1)\\\\n    value = snapshot(operation(amount=\"\
+        99\", at=later), at=later)\\\\n    value[\"sources\"] = []\\\\n    value[\"operations\"][\"items\"][0][\"source_ids\"] = []\\\\n    if explicit_operation_clock:\\\
+        \\n        value[\"section_as_of\"] = {\"operations\": later.isoformat()}\\\\n    receipt = save(db, value, at=later)\\\\n    assert receipt[\"state\"] ==\
+        \ \"partial\"\\\\n    assert movements(receipt) == ({} if explicit_operation_clock else {(\"RUB\", \"coupon_income\"): 10})\\\\n    assert db.execute(\"SELECT\
+        \ COUNT(*) FROM broker_operation_history_v1 WHERE disposition=\\\\\\'quarantined\\\\\\'\").fetchone()[0] == 1\\\\n    assert receipt[\"coverage\"][0][\"latest_observation_complete\"\
+        ] is False\\\\n\\\\n\\\\n@pytest.mark.parametrize(\"status\", [\"UNSPECIFIED\", \"UNKNOWN\", \"\"])\\\\ndef test_unknown_operation_status_cannot_be_counted_as_received_income(db,\
+        \ status):\\\\n    receipt = save(db, snapshot(operation(status=status)))\\\\n    assert receipt[\"cash_movements\"] == []\\\\n    assert receipt[\"operation_counts\"\
+        ][\"quarantined\"] == 1\\\\n    assert db.execute(\"SELECT reason FROM broker_operation_current_v1\").fetchone()[0] == \"operation_state_unknown\"\\\\n\\\
+        ', \\'backend/tests/test_public_source_events.py\\': \\'\"\"\"Public evidence runs through the durable event job without changing price truth.\"\"\"\\\\nfrom\
+        \ contextlib import closing\\\\nfrom datetime import datetime, timedelta, timezone\\\\n\\\\nfrom backend import app as backend, public_sources\\\\nfrom backend\
+        \ import background_dispatch as dispatch, volume_jobs as jobs\\\\nfrom backend import volume_state as state, volume_workspace as workspace\\\\nfrom backend.tests.test_background_dispatch\
+        \ import stored, event_sources, forbidden\\\\nfrom backend.tests.test_public_sources import ISIN, document, encoded\\\\nfrom backend.tests.test_volume_workspace\
+        \ import fixture\\\\n\\\\n\\\\ndef prepared(fixture):\\\\n    snapshot = stored(fixture)\\\\n    snapshot[\"positions\"][0][\"metadata\"][\"isin\"] = ISIN\\\
+        \\n    workspace.persist(fixture[\"user\"], snapshot)\\\\n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.details, \"load_dashboard\"\
+        , forbidden)\\\\n    return state.saved_snapshot(fixture[\"user\"])\\\\n\\\\n\\\\ndef public_document(url, headers):\\\\n    value = document()\\\\n    now\
+        \ = datetime.now(timezone.utc)\\\\n    value[\"meta\"][\"goldenCopy\"][\"publishDate\"] = (now - timedelta(minutes=1)).isoformat()\\\\n    return 200, {\"\
+        etag\": \\\\\\'\"event-fixture\"\\\\\\'}, encoded(value)\\\\n\\\\n\\\\ndef test_event_job_persists_public_document_without_promoting_rating_or_revaluing(fixture):\\\
+        \\n    old = prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources, \"fetch_document\", public_document)\\\\n    job = dispatch.enqueue_events(fixture[\"\
+        user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\\
+        n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"public_sources\"][\"mapped_identifiers\"] == 1\\\\n    assert current[\"public_sources\"\
+        ][\"rating_sources_fetched\"] is False\\\\n    assert current[\"event_monitor\"][\"new_rating_sources_fetched\"] is False\\\\n    for name in (\"positions\"\
+        , \"capital\", \"accounts\", \"as_of\", \"collection\", \"attribution\"):\\\\n        assert current[name] == old[name]\\\\n    with closing(backend.connect())\
+        \ as db:\\\\n        assert db.execute(\"SELECT COUNT(*) FROM public_source_documents_v1\").fetchone()[0] == 1\\\\n        assert db.execute(\"SELECT COUNT(*)\
+        \ FROM research_evidence_v1\").fetchone()[0] == 0\\\\n\\\\n\\\\ndef test_public_outage_does_not_fail_successful_broker_event_collection(fixture):\\\\n   \
+        \ prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources, \"fetch_document\", lambda *args: (503, {}, b\"\"))\\\\n    job = dispatch.enqueue_events(fixture[\"\
         user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\\
         n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"public_sources\"][\"state\"] == \"partial\"\\\\n    assert current[\"public_sources\"\
         ][\"items\"][0][\"reason\"] == \"source_http_503\"\\\\n    assert current[\"events\"][\"items\"][0][\"id\"] == \"new-synthetic-news\"\\\\n    assert current[\"\
@@ -1049,8 +1325,10 @@ jobs:
         \\n        if expected_snapshot is not None:\\\\n            current = db.execute(\"SELECT id,broker_key,payload_json FROM workspace_snapshots WHERE user_id=?\
         \ AND currency=?\",\\\\n                                 (user_id, snapshot[\"currency\"])).fetchone()\\\\n            value = None if current is None else\
         \ {**json.loads(current[\"payload_json\"]), \"snapshot_id\": current[\"id\"]}\\\\n            if current is None or current[\"broker_key\"] != state.broker_key(user)\
-        \ or digest(value) != digest(expected_snapshot):\\\\n                raise HTTPException(409, \"workspace_snapshot_changed\")\\\\n        db.execute(\"\"\"\
-        INSERT INTO workspace_snapshots VALUES (?,?,?,?,?,?)\\\\n            ON CONFLICT(user_id,currency) DO UPDATE SET id=excluded.id,broker_key=excluded.broker_key,payload_json=excluded.payload_json,created_at=excluded.created_at\"\
+        \ or digest(value) != digest(expected_snapshot):\\\\n                raise HTTPException(409, \"workspace_snapshot_changed\")\\\\n        try:\\\\n      \
+        \      from . import operations_ledger\\\\n        except ImportError:\\\\n            import operations_ledger\\\\n        snapshot[\"cash_ledger\"] = operations_ledger.record_snapshot_in(\\\
+        \\n            db, user_id=user_id, broker_key=state.broker_key(user), snapshot=snapshot)\\\\n        db.execute(\"\"\"INSERT INTO workspace_snapshots VALUES\
+        \ (?,?,?,?,?,?)\\\\n            ON CONFLICT(user_id,currency) DO UPDATE SET id=excluded.id,broker_key=excluded.broker_key,payload_json=excluded.payload_json,created_at=excluded.created_at\"\
         \"\",\\\\n            (user_id, snapshot[\"currency\"], snapshot[\"snapshot_id\"], state.broker_key(user), state.encode(snapshot), int(time.time())))\\\\\
         n        _record_concentration_changes(db, user_id, snapshot, active, old_breaches, new_breaches, all_current, complete_axes)\\\\n        for item in snapshot.get(\"\
         events\", {}).get(\"items\", []):\\\\n            state.event(db, user_id, \"market_news\", snapshot[\"snapshot_id\"], item, item[\"id\"])\\\\n        volume_credit.record_changes_in(db,\
@@ -1071,31 +1349,35 @@ jobs:
         coverage\", {}).get(\"total\", 0)\\\\n        check_history.append(summary)\\\\n    return {\"last_run\": last, \"last_check\": last_check, \"check_history\"\
         : check_history,\\\\n            \"slot_checks\": [json.loads(row[0]) for row in slot_rows], \"monitor_jobs\": observed_jobs,\\\\n            \"next_runs\"\
         : notifications.schedule_slots(user_id), \"jobs\": user_jobs(user_id),\\\\n            \"budget\": MoneyLedger(backend.connect).user_summary(user_id), \"\
-        readiness\": readiness, \"analysis_diff\": diff}\\\\n\\\\n\\\\n@router.get(\"/public-sources\", responses=HTTP_ERRORS)\\\\ndef public_source_status(user:\
-        \ Annotated[Any, Depends(backend.current_user)],\\\\n                         currency: Literal[\"RUB\", \"USD\", \"EUR\"] = \"RUB\") -> dict:\\\\n    \"\"\
-        \"Read the existing materialized source state; opening a screen never fetches.\"\"\"\\\\n    try:\\\\n        from . import public_sources\\\\n    except\
-        \ ImportError:\\\\n        import public_sources\\\\n    return public_sources.snapshot_status(state.saved_snapshot(user, currency))\\\\n\\\\n\\\\n@router.get(\"\
-        \", responses=HTTP_ERRORS)\\\\ndef workspace(currency: Literal[\"RUB\", \"USD\", \"EUR\"] = \"RUB\", start: date | None = None, end: date | None = None,\\\
-        \\n              *, user: Annotated[Any, Depends(backend.current_user)]) -> dict:\\\\n    snapshot = state.saved_snapshot(user, currency)\\\\n    observed\
-        \ = (snapshot or {}).get(\"as_of\")\\\\n    stale = observed is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(observed)).total_seconds()\
-        \ > 900\\\\n    missing = \"workspace_refresh_required\" if user[\"tinvest_token_encrypted\"] else \"tinvest_not_connected\"\\\\n    base_state, reason =\
-        \ _snapshot_state(snapshot, stale, missing)\\\\n    sections = _snapshot_sections(snapshot, observed, base_state, reason)\\\\n    active = state.active_strategy(int(user[\"\
-        id\"]))\\\\n    exposures = state.exposure_data(snapshot, (active or {}).get(\"config\"))\\\\n    exposure_state = \"partial\" if snapshot and any(not axis[\"\
-        complete\"] for axis in exposures[\"axes\"]) else base_state\\\\n    sections[\"exposures\"] = section({\"axes\": exposures[\"axes\"]}, state=exposure_state,\
-        \ reason=reason or (\"identity_or_valuation_coverage_incomplete\" if exposure_state == \"partial\" else None), as_of=observed)\\\\n    sections[\"goals\"\
-        ] = section(state.goal_data(user), as_of=observed)\\\\n    sections[\"risks\"] = section(state.risk_data(user, currency), state=base_state, reason=reason,\
-        \ as_of=observed)\\\\n    sections[\"ai\"] = section(ai_data(user), as_of=now_iso())\\\\n    sections[\"strategy\"] = section(state.strategy_data(int(user[\"\
-        id\"])), state=\"available\" if active else \"not_configured\", reason=None if active else \"strategy_confirmation_required\")\\\\n    sections[\"notifications\"\
-        ] = section(notifications.preferences_data(int(user[\"id\"])), as_of=now_iso())\\\\n    return {\"schema_version\": 1, \"snapshot_id\": (snapshot or {}).get(\"\
-        snapshot_id\"), \"as_of\": observed, \"currency\": currency,\\\\n            \"sections\": sections, \"sources\": (snapshot or {}).get(\"sources\", []), \"\
-        collection\": (snapshot or {}).get(\"collection\"),\\\\n            \"capabilities\": {\"read_only_broker\": True, \"refresh_requires_explicit_job\": True,\
-        \ \"chat\": True,\\\\n                             \"strategy_confirmation\": True, \"notification_channel\": \"app_poll\", \"push_delivery\": False,\\\\\
-        n                             \"frame_network_requests\": False}, \"requested_range\": {\"start\": str(start) if start else None, \"end\": str(end) if end\
-        \ else None}}\\\\n\\\\n\\\\n@router.get(\"/operations/{account_id}/{operation_id}/position\", responses=HTTP_ERRORS)\\\\ndef operation_position(account_id:\
-        \ str, operation_id: str, user: Annotated[Any, Depends(backend.current_user)]) -> dict:\\\\n    snapshot = state.saved_snapshot(user)\\\\n    operation =\
-        \ next((row for row in (snapshot or {}).get(\"operations\", {}).get(\"items\", []) if row[\"account_id\"] == account_id and row[\"id\"] == operation_id),\
-        \ None)\\\\n    if operation is None:\\\\n        raise HTTPException(404, \"operation_not_in_workspace\")\\\\n    uid = operation.get(\"instrumentUid\")\\\
-        \\n    held = [p for p in (snapshot or {}).get(\"positions\", []) if p[\"account_id\"] == account_id and p[\"instrument_uid\"] == uid]\\\\n    return {\"\
+        readiness\": readiness, \"analysis_diff\": diff}\\\\n\\\\n\\\\n@router.get(\"/cash-ledger\", responses=HTTP_ERRORS)\\\\ndef cash_ledger_status(user: Annotated[Any,\
+        \ Depends(backend.current_user)],\\\\n                       currency: Literal[\"RUB\", \"USD\", \"EUR\"] = \"RUB\") -> dict:\\\\n    snapshot = state.saved_snapshot(user,\
+        \ currency)\\\\n    receipt = (snapshot or {}).get(\"cash_ledger\")\\\\n    if not isinstance(receipt, dict):\\\\n        return {\"state\": \"unavailable\"\
+        , \"reason\": \"cash_ledger_not_collected\",\\\\n                \"performance_calculated\": False, \"tax_liability_estimated\": False}\\\\n    return {**receipt,\
+        \ \"snapshot_id\": snapshot[\"snapshot_id\"],\\\\n            \"operations_as_of\": snapshot.get(\"section_as_of\", {}).get(\"operations\")}\\\\n\\\\n\\\\\
+        n@router.get(\"/public-sources\", responses=HTTP_ERRORS)\\\\ndef public_source_status(user: Annotated[Any, Depends(backend.current_user)],\\\\n          \
+        \               currency: Literal[\"RUB\", \"USD\", \"EUR\"] = \"RUB\") -> dict:\\\\n    \"\"\"Read the existing materialized source state; opening a screen\
+        \ never fetches.\"\"\"\\\\n    try:\\\\n        from . import public_sources\\\\n    except ImportError:\\\\n        import public_sources\\\\n    return\
+        \ public_sources.snapshot_status(state.saved_snapshot(user, currency))\\\\n\\\\n\\\\n@router.get(\"\", responses=HTTP_ERRORS)\\\\ndef workspace(currency:\
+        \ Literal[\"RUB\", \"USD\", \"EUR\"] = \"RUB\", start: date | None = None, end: date | None = None,\\\\n              *, user: Annotated[Any, Depends(backend.current_user)])\
+        \ -> dict:\\\\n    snapshot = state.saved_snapshot(user, currency)\\\\n    observed = (snapshot or {}).get(\"as_of\")\\\\n    stale = observed is not None\
+        \ and (datetime.now(timezone.utc) - datetime.fromisoformat(observed)).total_seconds() > 900\\\\n    missing = \"workspace_refresh_required\" if user[\"tinvest_token_encrypted\"\
+        ] else \"tinvest_not_connected\"\\\\n    base_state, reason = _snapshot_state(snapshot, stale, missing)\\\\n    sections = _snapshot_sections(snapshot, observed,\
+        \ base_state, reason)\\\\n    active = state.active_strategy(int(user[\"id\"]))\\\\n    exposures = state.exposure_data(snapshot, (active or {}).get(\"config\"\
+        ))\\\\n    exposure_state = \"partial\" if snapshot and any(not axis[\"complete\"] for axis in exposures[\"axes\"]) else base_state\\\\n    sections[\"exposures\"\
+        ] = section({\"axes\": exposures[\"axes\"]}, state=exposure_state, reason=reason or (\"identity_or_valuation_coverage_incomplete\" if exposure_state == \"\
+        partial\" else None), as_of=observed)\\\\n    sections[\"goals\"] = section(state.goal_data(user), as_of=observed)\\\\n    sections[\"risks\"] = section(state.risk_data(user,\
+        \ currency), state=base_state, reason=reason, as_of=observed)\\\\n    sections[\"ai\"] = section(ai_data(user), as_of=now_iso())\\\\n    sections[\"strategy\"\
+        ] = section(state.strategy_data(int(user[\"id\"])), state=\"available\" if active else \"not_configured\", reason=None if active else \"strategy_confirmation_required\"\
+        )\\\\n    sections[\"notifications\"] = section(notifications.preferences_data(int(user[\"id\"])), as_of=now_iso())\\\\n    return {\"schema_version\": 1,\
+        \ \"snapshot_id\": (snapshot or {}).get(\"snapshot_id\"), \"as_of\": observed, \"currency\": currency,\\\\n            \"sections\": sections, \"sources\"\
+        : (snapshot or {}).get(\"sources\", []), \"collection\": (snapshot or {}).get(\"collection\"),\\\\n            \"capabilities\": {\"read_only_broker\": True,\
+        \ \"refresh_requires_explicit_job\": True, \"chat\": True,\\\\n                             \"strategy_confirmation\": True, \"notification_channel\": \"\
+        app_poll\", \"push_delivery\": False,\\\\n                             \"frame_network_requests\": False}, \"requested_range\": {\"start\": str(start) if\
+        \ start else None, \"end\": str(end) if end else None}}\\\\n\\\\n\\\\n@router.get(\"/operations/{account_id}/{operation_id}/position\", responses=HTTP_ERRORS)\\\
+        \\ndef operation_position(account_id: str, operation_id: str, user: Annotated[Any, Depends(backend.current_user)]) -> dict:\\\\n    snapshot = state.saved_snapshot(user)\\\
+        \\n    operation = next((row for row in (snapshot or {}).get(\"operations\", {}).get(\"items\", []) if row[\"account_id\"] == account_id and row[\"id\"] ==\
+        \ operation_id), None)\\\\n    if operation is None:\\\\n        raise HTTPException(404, \"operation_not_in_workspace\")\\\\n    uid = operation.get(\"instrumentUid\"\
+        )\\\\n    held = [p for p in (snapshot or {}).get(\"positions\", []) if p[\"account_id\"] == account_id and p[\"instrument_uid\"] == uid]\\\\n    return {\"\
         operation\": operation, \"position_ref\": operation[\"position_ref\"], \"positions\": held,\\\\n            \"relationship\": \"broker_instrument_uid\", \"\
         as_of\": (snapshot or {}).get(\"as_of\")}\\\\n\\\\n\\\\ndef _record_concentration_changes(db, user_id, snapshot, active, old_breaches, new_breaches, all_current,\
         \ complete_axes):\\\\n    for key in new_breaches.keys() | old_breaches.keys():\\\\n        before, after = old_breaches.get(key), new_breaches.get(key)\\\
@@ -1149,5 +1431,67 @@ jobs:
         \ sources=(snapshot or {}).get(\"sources\", []))\\\\n    return sections\\\\n\\\\n\\\\ndef _snapshot_state(snapshot, stale, missing):\\\\n    if stale:\\\\\
         n        return \"partial\", \"snapshot_stale\"\\\\n    if snapshot:\\\\n        return \"available\", None\\\\n    return \"unavailable\", missing\\\\n\\\
         \\n\\\\ndef _section_reason(stale, reason, state):\\\\n    if stale:\\\\n        return \"snapshot_stale\"\\\\n    if reason:\\\\n        return reason\\\\\
-        n    return \"source_coverage_incomplete\" if state == \"partial\" else None\\\\n\\'}\\ncheck_candidate(PATCH_FILES, change_id=\\'n02-n03-r2-20261027\\')\\\
-        n'\nwith_ams(remote, timeout=1800)\nPY\n"
+        n    return \"source_coverage_incomplete\" if state == \"partial\" else None\\\\n\\'}\\ncheck_candidate(PATCH_FILES, change_id=\\'n02-n04-r3-20261027\\',\
+        \ live_smoke_source=\\'\"\"\"Live GLEIF contract smoke; run ONLY as analyst-build on the candidate Timeweb tree.\\\\n\\\\nUsage: python <this-script> /.../candidate-check-.../public-source-smoke.sqlite3\\\
+        \\nUses two fixed public test identifiers and a new isolated database. It imports\\\\nonly backend.public_sources, never app credentials, account data or\
+        \ production DB.\\\\nSource publication times come from the actual HTTPS response and are never changed.\\\\n\"\"\"\\\\nfrom __future__ import annotations\\\
+        \\n\\\\nfrom contextlib import closing\\\\nfrom datetime import datetime, timezone\\\\nimport hashlib\\\\nimport json\\\\nimport os\\\\nfrom pathlib import\
+        \ Path\\\\nimport pwd\\\\nimport sqlite3\\\\nimport sys\\\\nimport time\\\\n\\\\n\\\\ndef need(condition, code):\\\\n    if not condition:\\\\n        raise\
+        \ RuntimeError(code)\\\\n\\\\n\\\\ndef main(database_path):\\\\n    need(os.getuid() != 0 and pwd.getpwuid(os.getuid()).pw_name == \\\\\\'analyst-build\\\\\
+        \\',\\\\n         \\\\\\'live_source_smoke_requires_unprivileged_timeweb_identity\\\\\\')\\\\n    database = Path(database_path)\\\\n    development = Path(\\\
+        \\\\'/var/lib/analyst-ai-build/development\\\\\\')\\\\n    candidate = Path.cwd()\\\\n    need(candidate.parent == development and candidate.name.startswith(\\\
+        \\\\'candidate-\\\\\\') and\\\\n         candidate.resolve(strict=True) == candidate and (candidate / \\\\\\'backend/public_sources.py\\\\\\').is_file(),\\\
+        \\n         \\\\\\'live_source_smoke_requires_exact_candidate_working_directory\\\\\\')\\\\n    need(database.is_absolute() and database.is_relative_to(development)\
+        \ and\\\\n         database.parent.name.startswith(\\\\\\'candidate-check-\\\\\\') and\\\\n         database.name == \\\\\\'public-source-smoke.sqlite3\\\\\
+        \\' and not database.exists() and\\\\n         not database.is_symlink() and database.parent.resolve(strict=True) == database.parent,\\\\n         \\\\\\\
+        'live_source_smoke_requires_new_isolated_database\\\\\\')\\\\n    descriptor = os.open(database, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)\\\
+        \\n    os.close(descriptor)\\\\n    sys.path.insert(0, str(candidate))\\\\n    from backend import public_sources as sources\\\\n    need(Path(sources.__file__).resolve(strict=True)\
+        \ == candidate / \\\\\\'backend/public_sources.py\\\\\\',\\\\n         \\\\\\'live_source_smoke_imported_wrong_module\\\\\\')\\\\n    expected = [(\\\\\\\
+        'public_apple_sample\\\\\\', \\\\\\'US0378331005\\\\\\', 1),\\\\n                (\\\\\\'synthetic_unassigned_russian_sample\\\\\\', \\\\\\'RU0000000003\\\
+        \\\\', 0)]\\\\n    need(all(sources.normalized_isin(isin) == isin for _, isin, _ in expected), \\\\\\'smoke_isin_checksum_invalid\\\\\\')\\\\n    allowed_urls\
+        \ = {sources.request_url(isin) for _, isin, _ in expected}\\\\n    network = []\\\\n\\\\n    def connect():\\\\n        return sqlite3.connect(database)\\\
+        \\n\\\\n    def live_fetch(url, headers):\\\\n        need(url in allowed_urls and not headers, \\\\\\'unexpected_smoke_request\\\\\\')\\\\n        started\
+        \ = time.monotonic()\\\\n        item = {\\\\\\'url_sha256\\\\\\': hashlib.sha256(url.encode()).hexdigest()}\\\\n        network.append(item)\\\\n       \
+        \ try:\\\\n            status, response_headers, body = sources.fetch_document(url, headers)\\\\n        except BaseException as error:\\\\n            item[\\\
+        \\\\'error_type\\\\\\'] = type(error).__name__\\\\n            item[\\\\\\'seconds\\\\\\'] = round(time.monotonic() - started, 3)\\\\n            raise\\\\\
+        n        item.update(http_status=status, bytes=len(body), body_sha256=hashlib.sha256(body).hexdigest(),\\\\n                    seconds=round(time.monotonic()\
+        \ - started, 3))\\\\n        if status == 200:\\\\n            try:\\\\n                payload = json.loads(body)\\\\n                meta = payload.get(\\\
+        \\\\'meta\\\\\\', {})\\\\n                item[\\\\\\'exact_filter_total\\\\\\'] = (meta.get(\\\\\\'pagination\\\\\\') or {}).get(\\\\\\'total\\\\\\')\\\\\
+        n                item[\\\\\\'dataset_published_at\\\\\\'] = (meta.get(\\\\\\'goldenCopy\\\\\\') or {}).get(\\\\\\'publishDate\\\\\\')\\\\n            except\
+        \ (ValueError, TypeError, AttributeError):\\\\n                item[\\\\\\'metadata_parseable\\\\\\'] = False\\\\n        return status, response_headers,\
+        \ body\\\\n\\\\n    rows = []\\\\n    for label, isin, expected_total in expected:\\\\n        before = datetime.now(timezone.utc)\\\\n        result = sources.refresh_isin(connect,\
+        \ isin, fetch=live_fetch)\\\\n        after = datetime.now(timezone.utc)\\\\n        current = network[-1]\\\\n        row = {\\\\\\'sample\\\\\\': label,\
+        \ \\\\\\'isin\\\\\\': isin, \\\\\\'state\\\\\\': result.get(\\\\\\'state\\\\\\'), \\\\\\'reason\\\\\\': result.get(\\\\\\'reason\\\\\\'),\\\\n           \
+        \    \\\\\\'checked_at\\\\\\': result.get(\\\\\\'checked_at\\\\\\'), \\\\\\'dataset_published_at\\\\\\': result.get(\\\\\\'dataset_published_at\\\\\\'),\\\
+        \\n               \\\\\\'entity_updated_at\\\\\\': result.get(\\\\\\'entity_updated_at\\\\\\'),\\\\n               \\\\\\'document_sha256\\\\\\': result.get(\\\
+        \\\\'document_sha256\\\\\\'),\\\\n               \\\\\\'network\\\\\\': current, \\\\\\'expected_exact_filter_total\\\\\\': expected_total,\\\\n         \
+        \      \\\\\\'expected_exact_filter_total_observed\\\\\\': current.get(\\\\\\'exact_filter_total\\\\\\') == expected_total,\\\\n               \\\\\\'rating_verified\\\
+        \\\\': result.get(\\\\\\'rating_verified\\\\\\'), \\\\\\'trade_permission\\\\\\': result.get(\\\\\\'trade_permission\\\\\\')}\\\\n        checked = datetime.fromisoformat(result[\\\
+        \\\\'checked_at\\\\\\'])\\\\n        need(before <= checked <= after, \\\\\\'smoke_result_clock_is_not_real_observation_time\\\\\\')\\\\n        need(result.get(\\\
+        \\\\'rating_verified\\\\\\') is False and result.get(\\\\\\'trade_permission\\\\\\') is False,\\\\n             \\\\\\'identity_source_granted_rating_or_trade_permission\\\
+        \\\\')\\\\n        cache_calls = []\\\\n\\\\n        def reject_network(*args, **kwargs):\\\\n            cache_calls.append(True)\\\\n            raise RuntimeError(\\\
+        \\\\'fresh_cache_unexpectedly_accessed_network\\\\\\')\\\\n\\\\n        cached = sources.refresh_isin(connect, isin, fetch=reject_network)\\\\n        need(not\
+        \ cache_calls and cached.get(\\\\\\'checked_at\\\\\\') == result.get(\\\\\\'checked_at\\\\\\') and\\\\n             cached.get(\\\\\\'document_sha256\\\\\\\
+        ') == result.get(\\\\\\'document_sha256\\\\\\') and\\\\n             cached.get(\\\\\\'dataset_published_at\\\\\\') == result.get(\\\\\\'dataset_published_at\\\
+        \\\\'),\\\\n             \\\\\\'cache_changed_observation_or_source_freshness\\\\\\')\\\\n        row[\\\\\\'cache_read_preserved_timestamps_without_network\\\
+        \\\\'] = True\\\\n        rows.append(row)\\\\n    with closing(connect()) as db:\\\\n        documents = db.execute(\\\\\\'SELECT sha256,body,bytes,first_received_at\
+        \ FROM public_source_documents_v1\\\\\\').fetchall()\\\\n        observations = db.execute(\\\\\\'SELECT COUNT(*) FROM public_source_observations_v1\\\\\\\
+        ').fetchone()[0]\\\\n        cached_identifiers = db.execute(\\\\\\'SELECT COUNT(*) FROM public_source_cache_v1\\\\\\').fetchone()[0]\\\\n    document_integrity\
+        \ = all(hashlib.sha256(bytes(raw)).hexdigest() == digest and len(raw) == size\\\\n                             for digest, raw, size, _ in documents)\\\\\
+        n    need(document_integrity and observations == len(expected) and cached_identifiers == len(expected)\\\\n         and len(network) == len(expected), \\\\\
+        \\'live_source_storage_or_request_count_mismatch\\\\\\')\\\\n    transport_ok = all(item.get(\\\\\\'http_status\\\\\\') == 200 for item in network)\\\\n \
+        \   parser_ok = all(row[\\\\\\'state\\\\\\'] in {\\\\\\'available\\\\\\', \\\\\\'missing\\\\\\', \\\\\\'stale\\\\\\', \\\\\\'inactive\\\\\\', \\\\\\'ambiguous\\\
+        \\\\'} for row in rows)\\\\n    mapping_ok = all(row[\\\\\\'expected_exact_filter_total_observed\\\\\\'] for row in rows)\\\\n    result = {\\\\n        \\\
+        \\\\'schema\\\\\\': 1, \\\\\\'status\\\\\\': \\\\\\'passed_contract\\\\\\' if transport_ok and parser_ok and mapping_ok else \\\\\\'source_contract_unconfirmed\\\
+        \\\\',\\\\n        \\\\\\'checked_at_utc\\\\\\': datetime.now(timezone.utc).isoformat(), \\\\\\'source_code_executed_on_timeweb\\\\\\': True,\\\\n       \
+        \ \\\\\\'source_directory\\\\\\': str(candidate),\\\\n        \\\\\\'real_https_requests\\\\\\': len(network), \\\\\\'fixed_public_test_identifiers_only\\\
+        \\\\': True,\\\\n        \\\\\\'private_user_or_broker_data_read\\\\\\': False, \\\\\\'production_database_used\\\\\\': False,\\\\n        \\\\\\'clock_override_used\\\
+        \\\\': False, \\\\\\'publication_times_rewritten\\\\\\': False,\\\\n        \\\\\\'rows\\\\\\': rows, \\\\\\'documents_persisted\\\\\\': len(documents), \\\
+        \\\\'document_hashes_verified\\\\\\': document_integrity,\\\\n        \\\\\\'observations_persisted\\\\\\': observations, \\\\\\'cached_identifiers\\\\\\\
+        ': cached_identifiers,\\\\n        \\\\\\'apple_identity_currently_available\\\\\\': rows[0][\\\\\\'state\\\\\\'] == \\\\\\'available\\\\\\',\\\\n       \
+        \ \\\\\\'all_source_data_current\\\\\\': all(row[\\\\\\'state\\\\\\'] in (\\\\\\'available\\\\\\', \\\\\\'missing\\\\\\') for row in rows),\\\\n    }\\\\\
+        n    print(\\\\\\'TIMEWEB_PUBLIC_SOURCE_SMOKE=\\\\\\' + json.dumps(result, sort_keys=True), flush=True)\\\\n    output = database.parent / \\\\\\'evidence/public-source-live-smoke.json\\\
+        \\\\'\\\\n    need(not output.exists(), \\\\\\'smoke_receipt_already_exists\\\\\\')\\\\n    output.write_text(json.dumps(result, sort_keys=True, indent=2)\
+        \ + \\\\\\'\\\\\\\\n\\\\\\')\\\\n    need(transport_ok and parser_ok and mapping_ok, \\\\\\'live_gleif_contract_not_confirmed\\\\\\')\\\\n    return result\\\
+        \\n\\\\n\\\\nif __name__ == \\\\\\'__main__\\\\\\':\\\\n    need(len(sys.argv) == 2, \\\\\\'expected_isolated_smoke_database_path\\\\\\')\\\\n    main(sys.argv[1])\\\
+        \\n\\')\\n'\nwith_ams(remote, timeout=1800)\nPY\n"
