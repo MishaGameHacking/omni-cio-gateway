@@ -61,7 +61,7 @@ COMPONENTS = (
 )
 
 
-def dependency_order(components: tuple[Component, ...] = COMPONENTS) -> tuple[str, ...]:
+def _index_components(components: tuple[Component, ...]) -> dict[str, Component]:
     if not isinstance(components, tuple) or len(components) > 100:
         raise ValueError("component_registry_invalid")
     indexed = {}
@@ -73,10 +73,15 @@ def dependency_order(components: tuple[Component, ...] = COMPONENTS) -> tuple[st
         if len(set(node.dependencies)) != len(node.dependencies):
             raise ValueError("component_dependency_duplicate")
         indexed[node.identifier] = node
-    complete, pending, order = set(), set(indexed), []
     for node in components:
         if any(key not in indexed for key in node.dependencies):
             raise ValueError("component_dependency_unknown")
+    return indexed
+
+
+def dependency_order(components: tuple[Component, ...] = COMPONENTS) -> tuple[str, ...]:
+    indexed = _index_components(components)
+    complete, pending, order = set(), set(indexed), []
     while pending:
         ready = sorted(key for key in pending if set(indexed[key].dependencies) <= complete)
         if not ready:

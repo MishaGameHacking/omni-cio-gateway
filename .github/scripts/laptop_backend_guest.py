@@ -14,6 +14,9 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+GUEST_RUNS = Path('/opt/analyst-ci/runs')
+
+
 def need(value, message):
     if not value:
         raise RuntimeError(message)
@@ -21,6 +24,18 @@ def need(value, message):
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def _guest_run_name(location: str) -> str:
+    """Reconstruct one run name from bounded ASCII integers, never a CLI path."""
+    if not isinstance(location, str):
+        raise RuntimeError('invalid_guest_run_root')
+    matched = re.fullmatch(r'/opt/analyst-ci/runs/backend-([1-9]\d{0,19})-([1-9]\d{0,4})',
+                           location, flags=re.ASCII)
+    if matched is None:
+        raise RuntimeError('invalid_guest_run_root')
+    run_id, attempt = (int(value) for value in matched.groups())
+    return f'backend-{run_id}-{attempt}'
 
 
 def load_manifest(archive, archive_hash, manifest_path, manifest_hash):
@@ -79,14 +94,14 @@ def main():
     need(os.getuid() >= 1000 and pwd.getpwuid(os.getuid()).pw_name == 'analyst-ci', 'wrong_linux_test_identity')
     need('microsoft-standard-WSL2' in os.uname().release and sys.version_info[:2] == (3, 12),
          'wrong_project_linux_runtime')
-    release = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+    release = {key: value for line in Path('/etc/os-release').read_text().splitlines()
+               if '=' in line for key, value in [line.split('=', 1)]}
     need(release.get('ID', '').strip('"') == 'ubuntu'
          and release.get('VERSION_ID', '').strip('"') == '24.04', 'wrong_linux_distribution')
     archive, archive_hash, manifest_path, manifest_hash, location, export_path = sys.argv[1:]
     manifest = load_manifest(archive, archive_hash, manifest_path, manifest_hash)
-    root = Path(location)
-    need(root.parent == Path('/opt/analyst-ci/runs') and root.parent.resolve(strict=True) == root.parent
-         and re.fullmatch(r'backend-[1-9]\d{0,19}-[1-9]\d{0,4}', root.name)
+    root = GUEST_RUNS / _guest_run_name(location)
+    need(GUEST_RUNS.resolve(strict=True) == GUEST_RUNS
          and not root.exists() and not root.is_symlink(), 'invalid_guest_run_root')
     root.mkdir(mode=0o700)
     source, evidence, home = root / 'checkout', root / 'evidence', root / 'home'

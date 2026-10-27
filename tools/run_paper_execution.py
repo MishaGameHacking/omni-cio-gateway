@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 from datetime import datetime, timezone
+from functools import partial
 import hashlib
 import json
 from pathlib import Path
@@ -40,7 +41,7 @@ def run(directory: Path) -> dict:
     for scenario in ('timeout_restart', 'partial_cancel', 'manual_change'):
         clock = [1000]
         path = directory / (scenario + '.paper.sqlite3')
-        journal = PaperJournal(path, SCOPE, clock=lambda: clock[0])
+        journal = PaperJournal(path, SCOPE, clock=lambda current_clock=clock: current_clock[0])
         before = AccountSnapshot(SCOPE, 0, 1, 999, 1000*NANO, {'synthetic-share': 100}, 'a'*64, True)
         journal.initialize_account(before)
         intent = OrderIntent(SCOPE, 'synthetic-request', 'synthetic-plan', 'b'*64, 'c'*64,
@@ -51,15 +52,15 @@ def run(directory: Path) -> dict:
             after = replace(before, revision=1, observed_at=clock[0], cash_nanorub=800*NANO,
                             available_units={'synthetic-share': 120}, evidence_sha256='d'*64)
             journal.reconcile_account(after, lease, completed_order_ids=[])
-            _expect('paper_send_not_repeatable', lambda: journal.begin_send(order, lease))
+            _expect('paper_send_not_repeatable', partial(journal.begin_send, order, lease))
             expected_state, expected_lots, expected_sends = 'invalidated', 0, 0
         else:
             journal.begin_send(order, lease)
             if scenario == 'timeout_restart':
                 clock[0] += 1
-                journal = PaperJournal(path, SCOPE, clock=lambda: clock[0])
+                journal = PaperJournal(path, SCOPE, clock=lambda current_clock=clock: current_clock[0])
                 lease = journal.claim('worker-after')
-                _expect('paper_send_not_repeatable', lambda: journal.begin_send(order, lease))
+                _expect('paper_send_not_repeatable', partial(journal.begin_send, order, lease))
                 journal.pause(True)
                 terminal, lots, value, fees = 'filled', 10, 100*NANO, NANO
             else:

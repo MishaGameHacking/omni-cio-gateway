@@ -28,14 +28,20 @@ def test_freshness_boundary(age,state,current):
 @pytest.mark.parametrize("value,state", [(None,"missing"),("2026-10-27T09:00:00","invalid"),(False,"invalid"),(5,"invalid"),("bad","invalid"),("x"*65,"invalid")])
 def test_invalid_clock_is_not_refreshed(value,state):
     result=freshness(value,now=NOW,max_age_seconds=900)
-    assert result["state"]==state and result["as_of"] is None
+    assert result["state"]==state
+    assert result["as_of"] is None
 
 @pytest.mark.parametrize("maximum", [True,0,-1,31536001,1.5])
 def test_bad_age_limit_rejected(maximum):
-    with pytest.raises(ValueError):freshness(stamp(),now=NOW,max_age_seconds=maximum)
+    observed=stamp()
+    with pytest.raises(ValueError):
+        freshness(observed,now=NOW,max_age_seconds=maximum)
 
 def test_clock_requires_timezone_and_accepts_equivalent_offsets():
-    with pytest.raises(ValueError):freshness(stamp(),now=NOW.replace(tzinfo=None),max_age_seconds=900)
+    observed=stamp()
+    naive_now=NOW.replace(tzinfo=None)
+    with pytest.raises(ValueError):
+        freshness(observed,now=naive_now,max_age_seconds=900)
     assert freshness("2026-10-27T12:00:00+03:00",now=NOW,max_age_seconds=900)["age_seconds"]==0
 
 def test_event_refresh_does_not_refresh_valuation_or_operations():
@@ -104,7 +110,8 @@ def test_news_duplicates_are_not_independent_confirmations():
     data=snapshot();item={"id":"story", "published_at":stamp(-20),"title":"Synthetic public story"}
     data["events"]["items"]=[item,deepcopy(item)]
     result=news_inventory(data,now=NOW)
-    assert result["event_groups"]==1 and result["independent_confirmations"] is None
+    assert result["event_groups"]==1
+    assert result["independent_confirmations"] is None
     data["events"]["items"].append({**item,"published_at":stamp(-19)})
     assert news_inventory(data,now=NOW)["conflicting_event_ids"]==1
 

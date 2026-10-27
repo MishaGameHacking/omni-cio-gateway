@@ -711,6 +711,10 @@ def control(root, state, phase, identity):
         save(destination, record)
         print("WINDOWS_ANDROID_CONTROLLER=" + json.dumps(record, sort_keys=True), flush=True)
     if error is not None:
+        # Retain the original worker failure and expose only this job's bounded
+        # synthetic logs; a generic controller error is not enough to diagnose it.
+        from ci_failure_diagnostics import print_worker_failure
+        print_worker_failure(state, phase, read_bytes)
         raise error
 
 
