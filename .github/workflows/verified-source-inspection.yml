@@ -1,0 +1,57 @@
+name: Export pinned verified source for read-only development inspection
+'on':
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/verified-source-inspection.yml]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-verified-source-inspection
+  cancel-in-progress: false
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the immutable verified Timeweb backup
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 40b261af67eca24a5131be2d5b99e06f73224817
+          persist-credentials: false
+          path: verified-source
+      - name: Export versioned source only, without running project code
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib,subprocess,zipfile
+          root=pathlib.Path('verified-source')
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
+          if sha!='40b261af67eca24a5131be2d5b99e06f73224817':raise SystemExit('source_identity_mismatch')
+          tracked=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split('\0')
+          excluded={'.git','.gradle','build','node_modules','.venv','venv','__pycache__'}
+          denied={'.db','.sqlite','.sqlite3','.apk','.aab','.jks','.keystore','.p12','.pfx','.pem','.key'}
+          selected=[]
+          for name in tracked:
+              if not name:continue
+              path=pathlib.PurePosixPath(name)
+              if any(part in excluded for part in path.parts) or path.suffix.lower() in denied:continue
+              if path.name=='.env' or (path.name.startswith('.env.') and not path.name.endswith(('.example','.sample'))):continue
+              source=root/name
+              if source.is_symlink() or not source.is_file():continue
+              if source.stat().st_size>4*1024*1024:continue
+              selected.append(name)
+          out=pathlib.Path('source-inspection');out.mkdir()
+          with zipfile.ZipFile(out/'verified-source.zip','w',zipfile.ZIP_DEFLATED) as archive:
+              for name in sorted(selected):archive.write(root/name,name)
+          archive=out/'verified-source.zip'
+          manifest={'source_commit':sha,'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'bytes':archive.stat().st_size,'files':len(selected),'project_code_executed':False,'runtime_modified':False,'purpose':'read-only source inspection; not a test or release gate'}
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          print(json.dumps(manifest))
+          PY
+      - name: Retain immutable inspection source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verified-timeweb-source-40b261af
+          path: source-inspection/
+          if-no-files-found: error
+          retention-days: 3
