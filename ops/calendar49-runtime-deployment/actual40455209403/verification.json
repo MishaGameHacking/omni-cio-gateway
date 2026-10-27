@@ -1,0 +1,138 @@
+{
+  "deployment": {
+    "actual_calendar_test_evidence": {
+      "original_backend_junit": {
+        "bytes": 276884,
+        "sha256": "7ea9088271a67b3e1e6629738cf55dfad02c29e30d999e2ff1c04d96fdcfdc21"
+      },
+      "original_calendar_test_count": 55,
+      "original_linux_report": {
+        "bytes": 1472,
+        "sha256": "a3aee8c14793eee0cf1f912ceab5c6b7128be44a39ca44f603955abeda768e39"
+      }
+    },
+    "apk_published_or_installed": false,
+    "archive": {
+      "bytes": 69716504,
+      "sha256": "dc171704ffcf004aad7d8990408d301e9b3a63b6f030c0a5321e776cb7711fe4"
+    },
+    "build_report": {
+      "bytes": 29025,
+      "sha256": "7af8b02af5070253d69b38734372f59d5f47e40961300122aca6e904a89459f0"
+    },
+    "caddy_or_service_configuration_changed": false,
+    "database_or_environment_files_opened_by_deployer": false,
+    "dependencies_changed": false,
+    "full_android_runtime_matrix_passed": false,
+    "full_windows_check_and_build_passed": true,
+    "help_deployed": false,
+    "idempotent_verification": false,
+    "kind": "calendar49_exact_nine_file_deployment",
+    "normal_owner_startup_has_possible_database_effects": true,
+    "observed_at": "2026-10-27T05:26:12.977133+00:00",
+    "other_services_restarted_by_deployer": false,
+    "owner_service_restart_performed": true,
+    "physical_phone_verified": false,
+    "public": {
+      "browser_pixels_verified": false,
+      "callback_handoff_verified": true,
+      "callback_headers_verified": true,
+      "callback_http": 200,
+      "callback_style_sha256": "d20328944ed84302094181fdffee0b5d79522034eb8af980f487382ddebef40a",
+      "callback_theme_verified": true,
+      "health_body": {
+        "status": "ok"
+      },
+      "health_http": 200,
+      "login_start_requested": false,
+      "login_transaction_created_by_verifier": false,
+      "owner_denial_requested": false,
+      "retired_enrollment_http": 410,
+      "update_policy_sha256": "eaed003861a4e5e0b31782ff73b9c8b95741b247b8f581b44af8af33d2012574",
+      "update_version_code": 48
+    },
+    "public_host": "analyst-ai-2941515.twc1.net",
+    "runtime_server_id": 9417611,
+    "runtime_sources": {
+      "autonomous_ai.py": {
+        "bytes": 54368,
+        "sha256": "09d0f79dc25c6e0a21af0f4aad81845ac11333f5338bb899666535ef990d2e53"
+      },
+      "autonomous_controller.py": {
+        "bytes": 36417,
+        "sha256": "1930c63e307d45b86a68fad0506a34b069a5fdf68cef99a6ed1e8d17588fb56e"
+      },
+      "background_dispatch.py": {
+        "bytes": 9212,
+        "sha256": "eefe68f2ff91f7be346fc8026ad4e15296bc197d73379e5c7158ed295e7add25"
+      },
+      "event_monitor.py": {
+        "bytes": 8060,
+        "sha256": "c5c853a1381369cfb0b95db922ec5d98536f261e727452970b2df6bdbc1378ad"
+      },
+      "market_schedule.py": {
+        "bytes": 8958,
+        "sha256": "71fb3be626fb48856ec955a98a45b86023789e02060cd1bee79ab610c1abc1e1"
+      },
+      "volume_jobs.py": {
+        "bytes": 19692,
+        "sha256": "4094b142b0f2b7522380e2d61bcb41a312493b5597bb1140f09a9a341ab5af06"
+      },
+      "volume_market.py": {
+        "bytes": 33034,
+        "sha256": "5254e7eef732a28db8e3e3ed63b73a65b29ccdb983b78da686ce0bb3500ea87e"
+      },
+      "volume_monitor.py": {
+        "bytes": 14454,
+        "sha256": "ae8ca8ab1fbadc9271a37eee0c04807d1429097b96a00254ec943ae89b514b86"
+      },
+      "volume_workspace.py": {
+        "bytes": 39906,
+        "sha256": "3c034e056e8af731d5d78cffda95f892f92a4ad5cb0c11b0774a6636953ce08d"
+      }
+    },
+    "schema": 1,
+    "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+    "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+    "status": "deployed_verified",
+    "trading_or_model_routes_called": false
+  },
+  "full_android_runtime_matrix_passed": false,
+  "github_build": {
+    "current_attempt_verified": true,
+    "run_attempt": 1,
+    "run_id": 40453334023,
+    "successful_jobs": 5,
+    "workflow_sha": "55b511a82ad9c2cce57d9d5cf01a3bfc741c1250"
+  },
+  "help_route_added": false,
+  "independent_public": {
+    "browser_pixels_verified": false,
+    "callback_handoff_verified": true,
+    "callback_headers_verified": true,
+    "callback_http": 200,
+    "callback_style_sha256": "d20328944ed84302094181fdffee0b5d79522034eb8af980f487382ddebef40a",
+    "callback_theme_verified": true,
+    "health_body": {
+      "status": "ok"
+    },
+    "health_http": 200,
+    "login_start_requested": false,
+    "login_transaction_created_by_verifier": false,
+    "owner_denial_requested": false,
+    "retired_enrollment_http": 410,
+    "update_policy_sha256": "eaed003861a4e5e0b31782ff73b9c8b95741b247b8f581b44af8af33d2012574",
+    "update_version_code": 48
+  },
+  "kind": "calendar49_public_verification",
+  "login_start_called": false,
+  "owner_denial_forced": false,
+  "physical_phone_verified": false,
+  "schema": 1,
+  "server9417611_verified_by_pinned_transport": true,
+  "source_backup": {
+    "code_files": 873,
+    "head": "521d96293a048e4254bec936710bcfbf166b20a0",
+    "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60"
+  }
+}

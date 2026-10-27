@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "owner_requested_intermediate_without_full_native": true,
+  "build_request": {
+    "path": "context/calendar49-runtime-deployment/request49.json",
+    "sha256": "5d86fdea12ead987511c051b11204162a0a2aeb13fb93a769d265df53dda19b9"
+  },
+  "baseline_publication": {
+    "path": "context/delivery48-published/owner-preview48-public-verification.json",
+    "sha256": "24cfc7637f14c922ac4d366feea9b1fd9dc50a99fd85dc822356aefc4b065cf2"
+  },
+  "runtime_verification": {
+    "path": "context/calendar49-runtime-deployment/actual40455209403/verification.json",
+    "sha256": "2920c8a03991d5c1792d64a10e05f92cea323f58791ab40732e1d6acbbf21782"
+  }
+}

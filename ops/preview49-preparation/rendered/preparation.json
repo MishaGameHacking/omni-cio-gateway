@@ -1,0 +1,53 @@
+{
+  "application_or_test_execution_performed": false,
+  "candidate": {
+    "bytes": 29937843,
+    "sha256": "9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e",
+    "version_code": 49,
+    "version_name": "0.14.2-preview"
+  },
+  "complete_release_gate_passed": false,
+  "files": {
+    "hosted-delivery.py": {
+      "bytes": 31734,
+      "sha256": "d370f3a9982a78e021f82de5bfcd59362fef36f14b88024cf95b3f734429daaa"
+    },
+    "publish-preview49.py": {
+      "bytes": 20614,
+      "sha256": "3da2b95572860f9c005bb636e18953ea39625c419c4552e4d06d7d05daf290d3"
+    },
+    "remote-wrapper.py": {
+      "bytes": 21773,
+      "sha256": "ecd00ccf4886a030e7878369e98bbc0b5b89f5c8a914d65481c930a030fbfa15"
+    },
+    "verify-public49.py": {
+      "bytes": 4871,
+      "sha256": "6e2787bb7c8816003884de890b505e6741fc9d5fda028a3d237b52d83182f686"
+    },
+    "workflow.yml": {
+      "bytes": 39019,
+      "sha256": "bc150840420cb47ef1f9eeb3727ca2aed34b84a67c15bc0b2091767ebd18cbbe"
+    }
+  },
+  "full15_runtime_matrix_passed": false,
+  "native_evidence": {
+    "full_runtime_matrix_passed": false,
+    "physical_phone_verified": false,
+    "run_id": null,
+    "status": "not_executed_for_published_build"
+  },
+  "physical_phone_verified": false,
+  "preparation_only": true,
+  "prior_channel": {
+    "bytes": 29937843,
+    "sha256": "85fb8b3c3e0020080a421efaae1c101df0e55f97bacb791064e1b1cbaa4a8df1",
+    "version_code": 48,
+    "version_name": "0.14.1-preview"
+  },
+  "publication_performed": false,
+  "request_sha256": "40bd76b352c5536a6d9b473821d946fd81a0430cdc04e4edc730e4214c950286",
+  "schema": 1,
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "target_workflow": ".github/workflows/deliver-preview49.yml"
+}
