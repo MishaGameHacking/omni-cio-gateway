@@ -69,26 +69,44 @@ def git_blob(value):
     return hashlib.sha1(b"blob " + str(len(value)).encode() + b"\0" + value).hexdigest()
 
 
+def io_path(path):
+    """Address ordinary absolute local paths without Windows MAX_PATH truncation.
+
+    The extended prefix is an I/O representation only, never an admitted root
+    or receipt identity. UNC, device, relative and parent-traversal inputs are
+    not accepted. No machine registry or filesystem policy is changed.
+    """
+    path = Path(path)
+    if os.name != "nt":
+        return path
+    need(path.is_absolute() and re.fullmatch(r"[A-Za-z]:", path.drive), "local_absolute_path_required")
+    need(all(part not in {".", ".."} and not part.endswith((" ", "."))
+             and ":" not in part and "\0" not in part for part in path.parts[1:]),
+         "noncanonical_local_path")
+    return Path("\\\\?\\" + str(path))
+
+
 def checked(path, *, directory=False):
     """Check every ancestor: Windows junctions must not bypass a lexical allowlist."""
     path = Path(path)
     need(path.is_absolute(), "absolute_path_required")
     for current in (*reversed(path.parents), path):
-        info = current.lstat()
+        info = io_path(current).lstat()
         need(not stat.S_ISLNK(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400,
              "linked_or_reparse_path")
         final_file = current == path and not directory
         need((stat.S_ISREG if final_file else stat.S_ISDIR)(info.st_mode), "unexpected_path_type")
         if final_file:
             need(info.st_nlink == 1, "hardlinked_file")
-    need(path.resolve(strict=True) == path, "noncanonical_path")
-    return path.lstat()
+    filesystem_path = io_path(path)
+    need(filesystem_path.resolve(strict=True) == filesystem_path, "noncanonical_path")
+    return filesystem_path.lstat()
 
 
 def read_bytes(path, limit):
     before = checked(path)
     need(0 <= before.st_size <= limit, "input_size_invalid")
-    with Path(path).open("rb") as source:
+    with io_path(path).open("rb") as source:
         opened = os.fstat(source.fileno())
         need((opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino), "input_replaced_before_read")
         data = source.read(limit + 1)
@@ -236,7 +254,7 @@ def source_identity(root, identity):
         need(not pure.is_absolute() and ".." not in pure.parts and "\\" not in relative and ":" not in relative,
              "unsafe_source_path")
         path = root / relative
-        need(path.is_file(), "source_file_missing")
+        need(io_path(path).is_file(), "source_file_missing:" + relative)
         data = read_bytes(path, MAX_ARCHIVE_BYTES)
         need(git_blob(data).encode("ascii") == blob, "source_bytes_differ_from_tested_commit")
         value = {"bytes": len(data), "sha256": sha_bytes(data), "git_blob": blob.decode("ascii")}
