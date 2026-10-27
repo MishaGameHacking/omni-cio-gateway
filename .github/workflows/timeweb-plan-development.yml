@@ -1,4 +1,4 @@
-name: Continue the autonomous portfolio plan on the existing Timeweb host
+name: Deploy the checked Timeweb runtime layer and preserve exact source backup
 'on':
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -15,8 +15,10 @@ jobs:
   remote:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
-      - name: Read the administrative operation, not execute project code here
+      - name: Read the administrative operation without executing project code here
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -26,17 +28,152 @@ jobs:
           ref: cd1866ee944ccea2259669f4293379241fd4ee02
           path: .transport-admin
           persist-credentials: false
-      - name: Execute the bounded operation on Timeweb 9417611 only
+      - name: Deploy and verify only on the existing Timeweb 9417611
         shell: bash
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-        run: python3 tools/owner_plan_transport_20261027.py
-      - name: Preserve the administrative receipt, including failed runs
+        run: |
+          result=0
+          python3 tools/owner_plan_transport_20261027.py > "$RUNNER_TEMP/owner-plan-console.txt" || result=$?
+          python3 - "$RUNNER_TEMP/owner-plan-console.txt" <<'PY'
+          import pathlib,sys
+          for line in pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines():
+              if line.startswith('SOURCE_EXPORT='):
+                  print('SOURCE_EXPORT=retained_in_artifact_for_exact_backup')
+              else:
+                  print(line)
+          PY
+          exit "$result"
+      - name: Back up exact checked source and refresh only administrative checkpoints
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('node:fs');
+            const zlib = require('node:zlib');
+            const crypto = require('node:crypto');
+            const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+            if (context.repo.owner !== 'MishaGameHacking' || context.repo.repo !== 'omni-cio-gateway') throw new Error('repository_identity_mismatch');
+            const transport = JSON.parse(fs.readFileSync('plan-reports/transport.json', 'utf8'));
+            if (transport.remote_exit_code !== 0 || transport.server_id !== 9417611 || transport.github_sha !== context.sha) throw new Error('successful_remote_receipt_required');
+            const rawReceipt = fs.readFileSync('plan-reports/receipt.txt');
+            if (digest(rawReceipt) !== transport.receipt_sha256) throw new Error('transport_receipt_hash_mismatch');
+            const lines = rawReceipt.toString('utf8').split('\n').filter(line => line.startsWith('SOURCE_EXPORT='));
+            if (lines.length !== 1 || lines[0].length > 3 * 1024 * 1024) throw new Error('bounded_source_export_required');
+            const raw = zlib.gunzipSync(Buffer.from(lines[0].slice('SOURCE_EXPORT='.length), 'base64'), {maxOutputLength: 2 * 1024 * 1024});
+            const exported = JSON.parse(raw.toString('utf8'));
+            const base = '40b261af67eca24a5131be2d5b99e06f73224817';
+            const manifest = '757605b0d8f59b150e481a2d96186d1ae17f74269ce745a2385ed5f2f21bebd8';
+            if (exported.schema !== 1 || exported.base_commit !== base || exported.deployment_run !== context.runId || exported.deployment_github_sha !== context.sha || exported.check_run !== 40472430619 || exported.source_manifest_sha256 !== manifest) throw new Error('source_export_identity_mismatch');
+            const allowed = new Set([
+              'backend/application_hierarchy.py', 'backend/paper_execution.py', 'backend/portfolio_accounting.py',
+              'backend/source_observability.py', 'backend/workspace_readiness.py', 'backend/volume_market.py', 'backend/volume_workspace.py',
+              'backend/tests/test_calendar_start_date.py', 'backend/tests/test_paper_execution.py', 'backend/tests/test_portfolio_accounting.py',
+              'backend/tests/test_readiness_malformed.py', 'backend/tests/test_source_observability.py', 'backend/tests/test_workspace_readiness.py',
+              'tools/inspect_runtime_hierarchy.py', 'tools/run_paper_execution.py',
+              'docs/RUNTIME_HIERARCHY_2026-10-27.md', 'docs/RUNTIME_LAYER_RELEASE_2026-10-27.md',
+              'docs/timeweb-2026-10-27/evidence/runtime-layer-deployment.json',
+              'docs/timeweb-2026-10-27/evidence/runtime-hardened-check.json',
+              'docs/timeweb-2026-10-27/evidence/runtime-layer-source-manifest.json', 'AGENTS.md', 'README.md'
+            ]);
+            const entries = Object.entries(exported.files || {});
+            if (entries.length !== allowed.size) throw new Error('source_export_incomplete');
+            for (const [path, file] of entries) {
+              if (!allowed.has(path) || typeof file.content !== 'string' || Buffer.byteLength(file.content) > 2*1024*1024 || digest(Buffer.from(file.content)) !== file.sha256) throw new Error('source_file_not_allowlisted_or_hash_mismatch');
+            }
+            const report = JSON.parse(exported.files['docs/timeweb-2026-10-27/evidence/runtime-layer-deployment.json'].content);
+            const check = JSON.parse(exported.files['docs/timeweb-2026-10-27/evidence/runtime-hardened-check.json'].content);
+            if (report.status !== 'passed' || report.phase !== 'deployed' || report.test_run !== 40472430619 || check.full_backend.tests !== 3573 || check.full_backend.failures || check.full_backend.errors || check.full_backend.skipped || report.apk_changed !== false) throw new Error('deployment_acceptance_incomplete');
+            for (const [name, value] of Object.entries(report.files)) {
+              if (exported.files['backend/' + name]?.sha256 !== value.new.sha256) throw new Error('deployed_source_not_exact_backup');
+            }
+            fs.writeFileSync('plan-reports/source-export.json', raw);
+            const branch = 'backup/timeweb-runtime-layer-2026-10-27-' + context.runId;
+            try {
+              await github.rest.git.getRef({...context.repo, ref: 'heads/' + branch});
+              throw new Error('backup_branch_already_exists_no_overwrite');
+            } catch (error) { if (error.status !== 404) throw error; }
+            const baseCommit = await github.rest.git.getCommit({...context.repo, commit_sha: base});
+            const tree = [];
+            for (const [path, file] of entries) {
+              const blob = await github.rest.git.createBlob({...context.repo, content: file.content, encoding: 'utf-8'});
+              tree.push({path, mode: '100644', type: 'blob', sha: blob.data.sha});
+            }
+            const createdTree = await github.rest.git.createTree({...context.repo, base_tree: baseCommit.data.tree.sha, tree});
+            const createdCommit = await github.rest.git.createCommit({...context.repo,
+              message: 'Back up exact Timeweb-tested and deployed runtime hierarchy, calendar, accounting and simulation source\n\n2016 tests +1557 subtests; native, Sonar, sandbox and the full plan remain open. No new APK or real trading.',
+              tree: createdTree.data.sha, parents: [base]});
+            await github.rest.git.createRef({...context.repo, ref: 'refs/heads/' + branch, sha: createdCommit.data.sha});
+            const verified = await github.rest.git.getRef({...context.repo, ref: 'heads/' + branch});
+            if (verified.data.object.sha !== createdCommit.data.sha) throw new Error('backup_readback_mismatch');
+            const backup = {schema: 1, branch, commit: createdCommit.data.sha, source_manifest_sha256: manifest,
+              deployment_run: context.runId, files: tree.length, project_code_executed_on_github: false,
+              main_changed: false, apk_changed: false, source_export_sha256: digest(raw)};
+            fs.writeFileSync('plan-reports/backup.json', JSON.stringify(backup, null, 2) + '\n');
+            core.info('SOURCE_BACKUP=' + JSON.stringify(backup));
+            // Administrative docs only; concurrent work is never rebased or overwritten.
+            const adminBranch = 'codex/timeweb-owner-prepare-2026-10-23';
+            const current = await github.rest.git.getRef({...context.repo, ref: 'heads/' + adminBranch});
+            if (current.data.object.sha !== context.sha) {
+              core.warning('Administrative head changed in parallel; exact backup is retained, checkpoint write skipped.');
+              return;
+            }
+            const sourceLink = 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/tree/' + backup.commit;
+            const header = '## Актуальный checkpoint —27.10.2026: проверенный серверный слой\n\n' +
+              'Сервер Timeweb9417611 обновлён: ' + report.finished_at_utc + '.\n' +
+              'Точная резервная копия исходников: [' + backup.commit + '](' + sourceLink + ').\n' +
+              '[Фактическое обновление, проверки и ограничения](docs/RUNTIME_LAYER_RELEASE_2026-10-27.md).\n' +
+              '2016 tests +1557 subtests PASS;59 проверок нового слоя PASS.\n' +
+              'Манифест Python-исходников SHA256 ' + manifest + '.\n' +
+              'Рабочий кандидат: ' + report.source_directory + '.\n' +
+              'Канал APK ' + report.update_version_code + ' сохранён; новый APK не выпускался.\n' +
+              'Полный N00–N11, native/Sonar, реальные денежные расчёты и sandbox не завершены.\n' +
+              'Все изменения/сборки/тесты — на Timeweb; GitHub — резервная копия и административный транспорт.\n' +
+              'Реальную торговлю и платные AI-вызовы не включать. Старые записи ниже — история.\n\n---\n\n';
+            const docs = [];
+            for (const path of ['AGENTS.md','README.md']) {
+              const original = await github.rest.repos.getContent({...context.repo, path, ref: context.sha});
+              if (Array.isArray(original.data) || original.data.encoding !== 'base64') throw new Error('administrative_document_not_readable');
+              const content = header + Buffer.from(original.data.content, 'base64').toString('utf8');
+              const blob = await github.rest.git.createBlob({...context.repo, content, encoding: 'utf-8'});
+              docs.push({path, mode:'100644', type:'blob', sha:blob.data.sha});
+            }
+            const pointer = '# Текущие исходники Timeweb —27.10.2026\n\n' +
+              'Серверное обновление применено; полный план N00–N11 не завершён.\n\n' +
+              '- Резервная копия: [' + backup.commit + '](' + sourceLink + ').\n' +
+              '- Проверенный источник: `' + report.source_directory + '`.\n' +
+              '- Манифест Python SHA256: `' + manifest + '`.\n' +
+              '- Серверная приёмка:40472430619; доставка:' + context.runId + '.\n' +
+              '- Серверный указатель: `/var/lib/analyst-ai-build/development/current-source-runtime-layer-' + context.runId + '.json`.\n' +
+              '- APK ' + report.update_version_code + '/' + report.update_version_name + ' сохранён; установка на телефоне не подтверждена.\n\n' +
+              '[Полный checkpoint](RUNTIME_LAYER_RELEASE_2026-10-27.md).\n';
+            for (const [path, content] of [
+              ['docs/TIMEWEB_CURRENT_SOURCE_2026-10-27.md', pointer],
+              ['docs/RUNTIME_LAYER_RELEASE_2026-10-27.md', exported.files['docs/RUNTIME_LAYER_RELEASE_2026-10-27.md'].content],
+              ['docs/RUNTIME_HIERARCHY_2026-10-27.md', exported.files['docs/RUNTIME_HIERARCHY_2026-10-27.md'].content]
+            ]) {
+              const blob = await github.rest.git.createBlob({...context.repo, content, encoding:'utf-8'});
+              docs.push({path,mode:'100644',type:'blob',sha:blob.data.sha});
+            }
+            const parent = await github.rest.git.getCommit({...context.repo, commit_sha: context.sha});
+            const docTree = await github.rest.git.createTree({...context.repo, base_tree: parent.data.tree.sha, tree: docs});
+            const docCommit = await github.rest.git.createCommit({...context.repo,
+              message:'Record verified Timeweb runtime-layer deployment and exact source handoff; APK unchanged',
+              tree:docTree.data.sha, parents:[context.sha]});
+            const lease = await github.rest.git.getRef({...context.repo,ref:'heads/'+adminBranch});
+            if (lease.data.object.sha !== context.sha) throw new Error('administrative_head_changed_no_overwrite');
+            await github.rest.git.updateRef({...context.repo,ref:'heads/'+adminBranch,sha:docCommit.data.sha,force:false});
+            const readback = await github.rest.git.getRef({...context.repo,ref:'heads/'+adminBranch});
+            if (readback.data.object.sha !== docCommit.data.sha) throw new Error('administrative_checkpoint_readback_changed');
+            backup.administrative_checkpoint_commit = docCommit.data.sha;
+            fs.writeFileSync('plan-reports/backup.json',JSON.stringify(backup,null,2)+'\n');
+            core.info('ADMIN_CHECKPOINT=' + docCommit.data.sha);
+      - name: Preserve exact delivery and source evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: timeweb-plan-${{ github.run_id }}
           path: plan-reports/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
