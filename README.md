@@ -1,3 +1,18 @@
+## Актуальный checkpoint —27.10.2026: проверенный серверный слой
+
+Сервер Timeweb9417611 обновлён: 2026-10-27T08:30:09.810491+00:00.
+Точная резервная копия исходников: [5e35c9a7c7ee3aa402f264ce312f59c121617ddc](https://github.com/MishaGameHacking/omni-cio-gateway/tree/5e35c9a7c7ee3aa402f264ce312f59c121617ddc).
+[Фактическое обновление, проверки и ограничения](docs/RUNTIME_LAYER_RELEASE_2026-10-27.md).
+2016 tests +1557 subtests PASS;59 проверок нового слоя PASS.
+Манифест Python-исходников SHA256 757605b0d8f59b150e481a2d96186d1ae17f74269ce745a2385ed5f2f21bebd8.
+Рабочий кандидат: /var/lib/analyst-ai-build/development/candidate-runtime-hardened-40472430619.
+Канал APK 49 сохранён; новый APK не выпускался.
+Полный N00–N11, native/Sonar, реальные денежные расчёты и sandbox не завершены.
+Все изменения/сборки/тесты — на Timeweb; GitHub — резервная копия и административный транспорт.
+Реальную торговлю и платные AI-вызовы не включать. Старые записи ниже — история.
+
+---
+
 # Analyst AI — Android-приложение и Timeweb backend
 
 **24.10.2026 — APK 0.11.0-preview / 35 доступен для ручной установки.**

@@ -1,3 +1,18 @@
+## Актуальный checkpoint —27.10.2026: проверенный серверный слой
+
+Сервер Timeweb9417611 обновлён: 2026-10-27T08:30:09.810491+00:00.
+Точная резервная копия исходников: [5e35c9a7c7ee3aa402f264ce312f59c121617ddc](https://github.com/MishaGameHacking/omni-cio-gateway/tree/5e35c9a7c7ee3aa402f264ce312f59c121617ddc).
+[Фактическое обновление, проверки и ограничения](docs/RUNTIME_LAYER_RELEASE_2026-10-27.md).
+2016 tests +1557 subtests PASS;59 проверок нового слоя PASS.
+Манифест Python-исходников SHA256 757605b0d8f59b150e481a2d96186d1ae17f74269ce745a2385ed5f2f21bebd8.
+Рабочий кандидат: /var/lib/analyst-ai-build/development/candidate-runtime-hardened-40472430619.
+Канал APK 49 сохранён; новый APK не выпускался.
+Полный N00–N11, native/Sonar, реальные денежные расчёты и sandbox не завершены.
+Все изменения/сборки/тесты — на Timeweb; GitHub — резервная копия и административный транспорт.
+Реальную торговлю и платные AI-вызовы не включать. Старые записи ниже — история.
+
+---
+
 ## Актуальный источник для продолжения разработки
 
 Эта ветка содержит административный SSH-транспорт. Актуальный проектный код расположен в [backup/timeweb-n02-n04-2026-10-27](https://github.com/MishaGameHacking/omni-cio-gateway/tree/40b261af67eca24a5131be2d5b99e06f73224817); code commit `0b345c46cf89f8e5bd4dbec1b53820e1695015fa`, SHA256 `cc88859582fd6281a9051d76c8dbe399dfb885cd7eb033a34d691a3561a0998e`. Продолжение разработки — от этой проверенной версии и её Timeweb-кандидата, указанного в [текущем указателе](docs/TIMEWEB_CURRENT_SOURCE_2026-10-27.md).
