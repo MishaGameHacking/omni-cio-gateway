@@ -530,6 +530,18 @@ def public_source_status(user: Annotated[Any, Depends(backend.current_user)],
     return public_sources.snapshot_status(state.saved_snapshot(user, currency))
 
 
+@router.get("/system-readiness", responses=HTTP_ERRORS)
+def system_readiness(user: Annotated[Any, Depends(backend.current_user)],
+                     currency: Literal["RUB", "USD", "EUR"] = "RUB") -> dict:
+    """Read only the authenticated current connection; never schedule work."""
+    try:
+        from .workspace_readiness import build_status
+    except ImportError:
+        from workspace_readiness import build_status
+    return build_status(state.saved_snapshot(user, currency), state.active_strategy(int(user["id"])),
+                        connected=bool(user["tinvest_token_encrypted"]))
+
+
 @router.get("", responses=HTTP_ERRORS)
 def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None = None, end: date | None = None,
               *, user: Annotated[Any, Depends(backend.current_user)]) -> dict:
@@ -540,6 +552,12 @@ def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None
     base_state, reason = _snapshot_state(snapshot, stale, missing)
     sections = _snapshot_sections(snapshot, observed, base_state, reason)
     active = state.active_strategy(int(user["id"]))
+    try:
+        from .workspace_readiness import build_status
+    except ImportError:
+        from workspace_readiness import build_status
+    sections["system"] = section(build_status(snapshot, active,
+        connected=bool(user["tinvest_token_encrypted"])), as_of=observed)
     exposures = state.exposure_data(snapshot, (active or {}).get("config"))
     exposure_state = "partial" if snapshot and any(not axis["complete"] for axis in exposures["axes"]) else base_state
     sections["exposures"] = section({"axes": exposures["axes"]}, state=exposure_state, reason=reason or ("identity_or_valuation_coverage_incomplete" if exposure_state == "partial" else None), as_of=observed)
@@ -552,7 +570,8 @@ def workspace(currency: Literal["RUB", "USD", "EUR"] = "RUB", start: date | None
             "sections": sections, "sources": (snapshot or {}).get("sources", []), "collection": (snapshot or {}).get("collection"),
             "capabilities": {"read_only_broker": True, "refresh_requires_explicit_job": True, "chat": True,
                              "strategy_confirmation": True, "notification_channel": "app_poll", "push_delivery": False,
-                             "frame_network_requests": False}, "requested_range": {"start": str(start) if start else None, "end": str(end) if end else None}}
+                             "frame_network_requests": False, "public_sources": True, "cash_ledger": True,
+                             "system_readiness": True}, "requested_range": {"start": str(start) if start else None, "end": str(end) if end else None}}
 
 
 @router.get("/operations/{account_id}/{operation_id}/position", responses=HTTP_ERRORS)

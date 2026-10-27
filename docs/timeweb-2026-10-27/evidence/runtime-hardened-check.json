@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "server_id": 9417611,
+  "github_sha": "d73461e9a16122845278d2349ae59ab84fb75516",
+  "source_directory": "/var/lib/analyst-ai-build/development/candidate-runtime-hardened-40472430619",
+  "evidence_directory": "/var/lib/analyst-ai-build/development/runtime-hardened-check-40472430619",
+  "steps": [
+    {
+      "name": "malformed-baseline",
+      "exit_code": 1,
+      "seconds": 1.062,
+      "external_network": false,
+      "log_sha256": "5e8ef21fbbaf3593a0b85ce19928a4be05d1d08f283fabc14fd2754f1ca4fe40",
+      "pytest_summary": [
+        "8 failed, 4 passed in 0.25s"
+      ]
+    },
+    {
+      "name": "source-and-hierarchy",
+      "exit_code": 0,
+      "seconds": 3.349,
+      "external_network": false,
+      "log_sha256": "d2bf3edb82d2c32d54f55500fd4c29987a2dad3116a0ebea5e381c6f4eab14cc",
+      "pytest_summary": [
+        "59 passed, 1 warning in 2.31s"
+      ]
+    },
+    {
+      "name": "full-backend",
+      "exit_code": 0,
+      "seconds": 109.784,
+      "external_network": false,
+      "log_sha256": "8d0e8d34009d0d806dd7aa51aea94c9ecdd817261c5a5724dcbffe677c9620d0",
+      "pytest_summary": [
+        "2016 passed, 1 warning, 1557 subtests passed in 108.23s (0:01:48)"
+      ]
+    },
+    {
+      "name": "offline-hierarchy",
+      "exit_code": 0,
+      "seconds": 0.167,
+      "external_network": false,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pytest_summary": []
+    },
+    {
+      "name": "paper-scenarios",
+      "exit_code": 0,
+      "seconds": 0.181,
+      "external_network": false,
+      "log_sha256": "408c8061ba3a4b04c6f2ffd3ce0ee45b8d43ed297248caa2276c93dae7a0327e",
+      "pytest_summary": []
+    },
+    {
+      "name": "health-openapi",
+      "exit_code": 0,
+      "seconds": 1.121,
+      "external_network": false,
+      "log_sha256": "94c062852e84c1d30c28a0e2466d617a3b5df93ed7964de2ba5cbaa722befbdf",
+      "pytest_summary": []
+    }
+  ],
+  "baseline": {
+    "tests": 12,
+    "failures": 8,
+    "errors": 0,
+    "skipped": 0
+  },
+  "targeted": {
+    "tests": 59,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "full_backend": {
+    "tests": 3573,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "changed_files": {
+    "backend/application_hierarchy.py": {
+      "sha256": "cabb4e0c1607e9a5d76ff4ef82d1eb1ba2f218435c4c43283a2ca6e96a79b424",
+      "bytes": 6850
+    },
+    "backend/paper_execution.py": {
+      "sha256": "c219c230ab1783c1d5a4242017dd2320fc9341cbdfc8d368445646cc4cd86414",
+      "bytes": 28296
+    },
+    "backend/portfolio_accounting.py": {
+      "sha256": "719b349fe033e354b560d44234579ea5dd9826ec3a13c66c7739cf8d8e63ceef",
+      "bytes": 13415
+    },
+    "backend/source_observability.py": {
+      "sha256": "2aeacae6cbb082f2592b67494b8bf3b5b4ed2c13761c5dc9b13524194f3874c6",
+      "bytes": 10906
+    },
+    "backend/tests/test_calendar_start_date.py": {
+      "sha256": "40f715b4d94ffa2622abd7c0a4efaa72f333a3fc24df2cb399e673823312a26b",
+      "bytes": 2958
+    },
+    "backend/tests/test_paper_execution.py": {
+      "sha256": "3e51bf1b52d71a4ceace1f8085f37d50c95251a96fd859b7b773f080e88e54ef",
+      "bytes": 19335
+    },
+    "backend/tests/test_portfolio_accounting.py": {
+      "sha256": "493930a9685845a94043c0c40d77c808d191f5942d1813c65ba744d54c01ea26",
+      "bytes": 8558
+    },
+    "backend/tests/test_readiness_malformed.py": {
+      "sha256": "4da589d4bc92934b00dab131038372ea68f1c81388534eb4c3f3db696ec7b55a",
+      "bytes": 1743
+    },
+    "backend/tests/test_source_observability.py": {
+      "sha256": "da3a15fbf94932cc9a84d25fd3f1508d3f513377f016b0297d66250fcc003fd7",
+      "bytes": 6158
+    },
+    "backend/tests/test_workspace_readiness.py": {
+      "sha256": "19bebac95a24ce26be41823b1562455859609729efc83477d422e94e4949b4a6",
+      "bytes": 5582
+    },
+    "backend/volume_market.py": {
+      "sha256": "9c1536cfaddacc2e9bed9a21b24e868ba1a95267f38cf2bb362ec606fd26096c",
+      "bytes": 33085
+    },
+    "backend/volume_workspace.py": {
+      "sha256": "e650c0542d5a1752f186f9ce0e08dbddc3ba71a214e52356bef2b53c93587803",
+      "bytes": 42407
+    },
+    "backend/workspace_readiness.py": {
+      "sha256": "9e1cdd9b97dcca318a5ce899f73299e252deb5d035cd06b5fef2d72155824e7c",
+      "bytes": 7340
+    },
+    "tools/inspect_runtime_hierarchy.py": {
+      "sha256": "d30d304290e4ba8771d7ae80e6b0b2f2d543fde3955672ba3749a5a4a8acd821",
+      "bytes": 2516
+    },
+    "tools/run_paper_execution.py": {
+      "sha256": "5988b7b63094166f3428730012bfefab2a2f29856cadd4bab0d29cb6c6ee2ff6",
+      "bytes": 5423
+    }
+  },
+  "python_source_manifest_sha256": "757605b0d8f59b150e481a2d96186d1ae17f74269ce745a2385ed5f2f21bebd8",
+  "runtime_changed": false,
+  "real_orders_enabled": false,
+  "paid_ai_called": false,
+  "apk_built": false,
+  "sandbox_tested": false,
+  "sonar_passed": false,
+  "native_android_acceptance_passed": false,
+  "previous_check_run": 40471432615,
+  "finished_at_utc": "2026-10-27T08:20:04.125034+00:00"
+}

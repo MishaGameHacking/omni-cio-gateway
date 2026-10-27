@@ -522,9 +522,10 @@ def dossier(uid: str, user: Any = Depends(backend.current_user)) -> dict:
 
 
 def load_calendar(user: Any) -> dict:
-    # Include the previous UTC day so an overnight broker window is not lost.
+    # TradingSchedules rejects a from date before the current UTC date.
+    # Never turn missing previous-day coverage into an assumed open session.
     today = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time(), timezone.utc)
-    begin = today - timedelta(days=1)
+    begin = today
     finish = today + timedelta(days=6, hours=23, minutes=59)
     with details.BrokerReader(user) as reader:
         raw = broker_read(reader, 'calendar', {'from': begin.isoformat(), 'to': finish.isoformat()})
