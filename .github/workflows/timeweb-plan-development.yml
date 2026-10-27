@@ -1,0 +1,42 @@
+name: Continue the autonomous portfolio plan on the existing Timeweb host
+'on':
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/timeweb-plan-development.yml
+      - deploy/plan-20261027/operation.py
+      - deploy/plan-20261027/payload.json
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+jobs:
+  remote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Read the administrative operation, not execute project code here
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Read the previously verified administrative SSH transport
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Execute the bounded operation on Timeweb 9417611 only
+        shell: bash
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/owner_plan_transport_20261027.py
+      - name: Preserve the administrative receipt, including failed runs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: timeweb-plan-${{ github.run_id }}
+          path: plan-reports/
+          if-no-files-found: warn
+          retention-days: 14
