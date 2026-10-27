@@ -57,6 +57,8 @@ def _position_metadata(raw: dict, position: dict) -> dict:
             "asset_uid": "assetUid", "lot": "lot", "exchange": "exchange", "isin": "isin",
             "instrument_currency": "currency"}
     result = {**{name: raw.get(key) or position.get(key) for name, key in keys.items()}, "source": raw.get("_source")}
+    if raw.get("_exchange_source"):
+        result["exchange_source"] = raw["_exchange_source"]
     currency = result["instrument_currency"]
     # Normalize the broker's spelling at ingestion, before the strict internal
     # contract is used by risk groups, scenarios and purchase limits.
@@ -456,6 +458,12 @@ def persist(user: Any, snapshot: dict, *, expected_snapshot: dict | None = None)
             value = None if current is None else {**json.loads(current["payload_json"]), "snapshot_id": current["id"]}
             if current is None or current["broker_key"] != state.broker_key(user) or digest(value) != digest(expected_snapshot):
                 raise HTTPException(409, "workspace_snapshot_changed")
+        try:
+            from . import operations_ledger
+        except ImportError:
+            import operations_ledger
+        snapshot["cash_ledger"] = operations_ledger.record_snapshot_in(
+            db, user_id=user_id, broker_key=state.broker_key(user), snapshot=snapshot)
         db.execute("""INSERT INTO workspace_snapshots VALUES (?,?,?,?,?,?)
             ON CONFLICT(user_id,currency) DO UPDATE SET id=excluded.id,broker_key=excluded.broker_key,payload_json=excluded.payload_json,created_at=excluded.created_at""",
             (user_id, snapshot["currency"], snapshot["snapshot_id"], state.broker_key(user), state.encode(snapshot), int(time.time())))
@@ -497,6 +505,29 @@ def ai_data(user: Any) -> dict:
             "slot_checks": [json.loads(row[0]) for row in slot_rows], "monitor_jobs": observed_jobs,
             "next_runs": notifications.schedule_slots(user_id), "jobs": user_jobs(user_id),
             "budget": MoneyLedger(backend.connect).user_summary(user_id), "readiness": readiness, "analysis_diff": diff}
+
+
+@router.get("/cash-ledger", responses=HTTP_ERRORS)
+def cash_ledger_status(user: Annotated[Any, Depends(backend.current_user)],
+                       currency: Literal["RUB", "USD", "EUR"] = "RUB") -> dict:
+    snapshot = state.saved_snapshot(user, currency)
+    receipt = (snapshot or {}).get("cash_ledger")
+    if not isinstance(receipt, dict):
+        return {"state": "unavailable", "reason": "cash_ledger_not_collected",
+                "performance_calculated": False, "tax_liability_estimated": False}
+    return {**receipt, "snapshot_id": snapshot["snapshot_id"],
+            "operations_as_of": snapshot.get("section_as_of", {}).get("operations")}
+
+
+@router.get("/public-sources", responses=HTTP_ERRORS)
+def public_source_status(user: Annotated[Any, Depends(backend.current_user)],
+                         currency: Literal["RUB", "USD", "EUR"] = "RUB") -> dict:
+    """Read the existing materialized source state; opening a screen never fetches."""
+    try:
+        from . import public_sources
+    except ImportError:
+        import public_sources
+    return public_sources.snapshot_status(state.saved_snapshot(user, currency))
 
 
 @router.get("", responses=HTTP_ERRORS)

@@ -44,7 +44,7 @@ def required_exchanges(snapshot: dict | None) -> tuple[str, ...]:
     for position in positions:
         metadata = position.get("metadata")
         value = metadata.get("exchange") if isinstance(metadata, dict) else None
-        if not isinstance(value, str) or not value or len(value) > 100:
+        if not isinstance(value, str) or not value or len(value) > 100 or value != value.strip():
             return ()
         values.append(value)
     return tuple(sorted(set(values)))
