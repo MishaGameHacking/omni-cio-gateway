@@ -53,6 +53,7 @@ AUTO_REQUEST_PREFIX = "auto.full."
 
 _MESSAGES = {
     "automation_paused": "Автоматический анализ приостановлен в настройках.",
+    "market_price_polling_paused": "Опрос цен ожидает торгового окна. Проверка событий продолжается.",
     "tinvest_not_connected": "Подключите T-Invest в настройках: сервер пока не получает данные счёта.",
     "analysis_scheduler_disabled": "Фоновый процесс на сервере ещё не включён.",
     "workspace_refresh_required": "Сервер ожидает первый снимок данных брокера.",
@@ -164,7 +165,7 @@ def update_preferences(payload: PreferenceUpdate, user: Any = Depends(backend.cu
             db.execute("""UPDATE workspace_jobs SET cancel_requested=1,
                 state=CASE WHEN state='queued' THEN 'cancelled' ELSE state END,
                 error_code=CASE WHEN state='queued' THEN 'automation_paused' ELSE error_code END,
-                updated_at=? WHERE user_id=? AND request_id LIKE 'auto.full.%'
+                updated_at=? WHERE user_id=? AND (request_id LIKE 'auto.full.%' OR request_id LIKE 'auto.events.%')
                 AND state IN ('queued','running')""", (now, user_id))
             db.execute("""UPDATE ai_work_jobs SET cancel_requested_at=?,updated_at=?,
                 status=CASE WHEN status='queued' THEN 'failed' ELSE status END,
@@ -576,10 +577,21 @@ def status(user: Any = Depends(backend.current_user)) -> dict:
         if state_name == "current":
             state_name = "attention"
     discovery = _discovery(user, active, now)
+    try:
+        from .background_dispatch import schedule
+    except ImportError:
+        from background_dispatch import schedule
+    dispatch = schedule(user, now=datetime.fromtimestamp(now, timezone.utc), snapshot=snapshot)
+    events = dispatch["events"]
+    event_age = _age(events.get("last_successful_at"), now)
+    if (state_name == "attention" and codes == ["workspace_collection_delayed"]
+            and not dispatch["regular_price_polling_allowed"] and events.get("complete") is True
+            and event_age is not None and event_age < 1200):
+        state_name, codes = "waiting", ["market_price_polling_paused"]
     return {"schema_version": 1, "enabled": pref["enabled"], "preference_version": pref["version"],
             "broker_connected": connected, "scheduler_enabled": SCHEDULER_ENABLED, "state": state_name,
             "blockers": [reason(code) for code in codes], "last_observation_at": observed, "last_full_collection_at": full,
-            "current_job": current_job,
+            "current_job": current_job, "dispatch": dispatch,
             "initial_observation": None if initial is None else {"at": _iso(initial["first_observed_at"]),
                 "snapshot_id": initial["first_snapshot_id"], "summary": "Первый снимок счёта получен и сохранён."},
             "discovery": discovery, "execution": {"mode": "read_only", "real_orders_enabled": False},

@@ -353,7 +353,8 @@ def _received_payout_events(operations: list) -> list:
 
 def _collect_market_events(user: Any, checkpoint: dict, progress) -> None:
     if "news" not in checkpoint:
-        checkpoint["news"] = safe_section(lambda: market.load_news(user), empty={"items": [], "complete": False})
+        checkpoint["news"] = safe_section(lambda: details.cached(("workspace-news", *details.identity(user)), 600,
+            lambda: market.load_news(user)), empty={"items": [], "complete": False})
         progress("collecting_news", checkpoint)
     if "calendar" not in checkpoint:
         def calendar_envelope():
@@ -411,7 +412,7 @@ def collect(user: Any, payload: dict, checkpoint: dict, progress) -> dict:
     return {"snapshot_id": snapshot["snapshot_id"], "currency": currency, "as_of": snapshot["as_of"], "collection": snapshot["collection"]}
 
 
-def persist(user: Any, snapshot: dict) -> None:
+def persist(user: Any, snapshot: dict, *, expected_snapshot: dict | None = None) -> None:
     user_id = int(user["id"])
     try:
         from . import volume_credit
@@ -449,6 +450,12 @@ def persist(user: Any, snapshot: dict) -> None:
         assert_current_in(db)
         assert_current_owner_in(db)
         assert_monitoring_access_in(db)
+        if expected_snapshot is not None:
+            current = db.execute("SELECT id,broker_key,payload_json FROM workspace_snapshots WHERE user_id=? AND currency=?",
+                                 (user_id, snapshot["currency"])).fetchone()
+            value = None if current is None else {**json.loads(current["payload_json"]), "snapshot_id": current["id"]}
+            if current is None or current["broker_key"] != state.broker_key(user) or digest(value) != digest(expected_snapshot):
+                raise HTTPException(409, "workspace_snapshot_changed")
         db.execute("""INSERT INTO workspace_snapshots VALUES (?,?,?,?,?,?)
             ON CONFLICT(user_id,currency) DO UPDATE SET id=excluded.id,broker_key=excluded.broker_key,payload_json=excluded.payload_json,created_at=excluded.created_at""",
             (user_id, snapshot["currency"], snapshot["snapshot_id"], state.broker_key(user), state.encode(snapshot), int(time.time())))
@@ -619,7 +626,12 @@ def _snapshot_sections(snapshot, observed, base_state, reason):
         section_stale = section_observed is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(section_observed)).total_seconds() > 900
         if section_stale:
             item_state = "partial"
-        sections[key] = section(data, state=item_state, reason=_section_reason(section_stale, reason, item_state), as_of=section_observed, sources=(snapshot or {}).get("sources", []))
+        item_reason = reason
+        if key in {"payouts", "events"} and key in (snapshot or {}).get("section_as_of", {}):
+            # Event freshness is independent of an intentionally old valuation.
+            item_state = "partial" if section_stale or section_observed is None or data.get("complete") is False else "available"
+            item_reason = None
+        sections[key] = section(data, state=item_state, reason=_section_reason(section_stale, item_reason, item_state), as_of=section_observed, sources=(snapshot or {}).get("sources", []))
     return sections
 
 

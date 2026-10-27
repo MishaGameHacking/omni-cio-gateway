@@ -522,8 +522,10 @@ def dossier(uid: str, user: Any = Depends(backend.current_user)) -> dict:
 
 
 def load_calendar(user: Any) -> dict:
-    begin = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time(), timezone.utc)
-    finish = begin + timedelta(days=6, hours=23, minutes=59)
+    # Include the previous UTC day so an overnight broker window is not lost.
+    today = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time(), timezone.utc)
+    begin = today - timedelta(days=1)
+    finish = today + timedelta(days=6, hours=23, minutes=59)
     with details.BrokerReader(user) as reader:
         raw = broker_read(reader, 'calendar', {'from': begin.isoformat(), 'to': finish.isoformat()})
     exchanges = raw.get('exchanges')
@@ -539,7 +541,7 @@ def load_calendar(user: Any) -> dict:
 
 @router.get('/markets/calendar', responses=HTTP_ERRORS)
 def calendar(user: Any = Depends(backend.current_user)) -> dict:
-    return details.cached(('workspace-calendar', *details.identity(user)), 900, lambda: load_calendar(user))
+    return details.cached(('workspace-calendar', *details.identity(user)), 600, lambda: load_calendar(user))
 
 
 def _instrument_event_rows(reader, method, field, body):

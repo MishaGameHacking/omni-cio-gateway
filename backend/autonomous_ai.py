@@ -810,6 +810,16 @@ def _run_connected_analysis(
 ) -> dict[str, Any]:
     # Android readiness gates interactive API access, never server monitoring.
     assert_monitoring_access(backend.connect)
+    try:
+        from .background_dispatch import automatic_analysis_gate
+        from .volume_monitor import record_check
+    except ImportError:
+        from background_dispatch import automatic_analysis_gate
+        from volume_monitor import record_check
+    waiting = automatic_analysis_gate(user, CURRENT_JOB.get(), current_time)
+    if waiting is not None:
+        record_check(user_id, current_time, status="waiting", reason=waiting["reason"], tier="none")
+        return {"state": "waiting", "reason": waiting["reason"], "tier": "none", "card_id": None}
     previous, previous_row = _latest_snapshot(user_id)
     try:
         snapshot = get_tinvest_portfolio(currency="RUB", user=user)
@@ -971,6 +981,10 @@ def _acquire_lease(name: str, ttl_seconds: int) -> bool:
 def run_scheduler_cycle() -> dict[str, int]:
     init_autonomous_db()
     queue = AnalysisQueue(backend.connect)
+    try:
+        from .background_dispatch import enqueue_cycle
+    except ImportError:
+        from background_dispatch import enqueue_cycle
     with closing(backend.connect()) as db:
         users = db.execute("SELECT * FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
     for user in users:
@@ -978,12 +992,11 @@ def run_scheduler_cycle() -> dict[str, int]:
         if not _automation().preferences(user_id)["enabled"]:
             continue
         try:
-            _automation().enqueue_collection(user)
+            enqueue_cycle(user)
         except HTTPException:
             # A concurrent pause/reconnect or a full interactive queue must not
             # prevent deterministic monitoring of the other eligible users.
             logger.warning("Automatic workspace collection was not queued")
-        queue.enqueue(user_id)
     try:
         from .volume_jobs import drain as drain_workspace
     except ImportError:
@@ -1192,7 +1205,11 @@ def refresh(
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
     queue = AnalysisQueue(backend.connect)
     queue.initialize()
-    return {**queue.enqueue(int(user['id'])), 'reason': 'queued_recheck',
+    try:
+        from .background_dispatch import enqueue_manual_analysis
+    except ImportError:
+        from background_dispatch import enqueue_manual_analysis
+    return {**enqueue_manual_analysis(user), 'reason': 'queued_recheck',
             'tier': 'none', 'card_id': None, 'model': None, 'error_code': None}
 
 

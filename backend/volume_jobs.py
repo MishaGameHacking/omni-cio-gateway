@@ -189,8 +189,14 @@ def _claim(identifier: str | None = None) -> dict | None:
     with transaction(backend.connect) as db:
         _expire(db, now)
         query = """SELECT * FROM workspace_jobs q WHERE q.state='queued'
-            AND NOT EXISTS(SELECT 1 FROM workspace_jobs busy WHERE busy.user_id=q.user_id AND busy.state='running')""" + (" AND q.id=?" if identifier else "") + " ORDER BY q.created_at,q.id LIMIT 1"
-        row = db.execute(query, (identifier,) if identifier else ()).fetchone()
+            AND NOT EXISTS(SELECT 1 FROM workspace_jobs busy WHERE busy.user_id=q.user_id AND busy.state='running')""" + (" AND q.id=?" if identifier else "") + """ ORDER BY CASE WHEN q.kind='reconcile' THEN 0 ELSE MAX(1,
+            CASE WHEN q.kind='events' THEN 1
+                 WHEN q.kind='chat' THEN 2
+                 WHEN q.kind='refresh' AND q.request_id NOT LIKE 'auto.full.%' THEN 2 ELSE 3 END
+            - CAST(MAX(0, ? - q.created_at) / 300 AS INTEGER)) END, q.created_at,q.id LIMIT 1"""
+        # Each five minutes of waiting promotes one level. Even catalogue/full
+        # work eventually reaches the front; existing per-user leases still win.
+        row = db.execute(query, ((identifier,) if identifier else ()) + (now,)).fetchone()
         if not row:
             return None
         owner = uuid.uuid4().hex
@@ -206,6 +212,11 @@ def _enqueue_analysis(job: dict) -> dict:
     with transaction(backend.connect) as db:
         assert_current_in(db)
         result = {"analysis_job_id": AnalysisQueue(backend.connect).enqueue_in(db, job["user_id"])["job_id"]}
+        try:
+            from .background_dispatch import mark_manual_in
+        except ImportError:
+            from background_dispatch import mark_manual_in
+        mark_manual_in(db, job["user_id"], result["analysis_job_id"])
         db.execute("UPDATE workspace_jobs SET result_json=? WHERE id=? AND owner=?", (encode(result), job["id"], job["owner"]))
     return result
 
@@ -219,7 +230,21 @@ def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
         from volume_workspace import collect
         from volume_chat import run_message
         from volume_plans import reconcile_plan
+    if job["kind"] == "events":
+        try:
+            from .event_monitor import collect_events
+        except ImportError:
+            from event_monitor import collect_events
+        return collect_events(user, payload, checkpoint, progress)
     if job["kind"] == "refresh":
+        if job["request_id"].startswith("auto.full."):
+            try:
+                from .background_dispatch import automatic_collection_gate
+            except ImportError:
+                from background_dispatch import automatic_collection_gate
+            waiting = automatic_collection_gate(user, payload, checkpoint)
+            if waiting is not None:
+                return waiting
         return collect(user, payload, checkpoint, progress)
     if job["kind"] == "chat":
         return run_message(user, job, payload)

@@ -213,6 +213,15 @@ def test_status_reports_missing_connection_instead_of_false_running(fixture):
 
 def test_failed_collection_preserves_last_good_snapshot_and_reports_failure(fixture):
     snapshot = saved(fixture, age=1900)
+    # Exercise a real collection failure in an explicitly open broker window.
+    now = datetime.now(timezone.utc)
+    for position in snapshot["positions"]:
+        if position["instrument_type"] in {"share", "bond"}:
+            position.setdefault("metadata", {})["exchange"] = "MOEX"
+    snapshot["calendar"] = {"state": "available", "data": {"timezone": "UTC", "as_of": now.isoformat(),
+        "exchanges": [{"exchange": "MOEX", "days": [{"date": now.isoformat(), "isTradingDay": True,
+            "startTime": (now - timedelta(minutes=10)).isoformat(), "endTime": (now + timedelta(hours=1)).isoformat()}]}]}}
+    workspace.persist(fixture["user"], snapshot)
     job = controller.enqueue_collection(fixture["user"])
     fixture["patch"].setattr(workspace.details, "load_dashboard",
                             lambda *args, **kwargs: (_ for _ in ()).throw(HTTPException(503, "tinvest_timeout")))

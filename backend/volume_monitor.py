@@ -162,7 +162,7 @@ def ingest(user, raw, now: datetime) -> dict:
     previous = {(p["account_id"], p["instrument_uid"]): p for p in old.get("positions", [])}
     accounts, metadata = _monitor_accounts(raw, previous)
     normalized = workspace.normalize_snapshot(user, {**raw, "currency": currency, "source_method": PORTFOLIO_SOURCE, "asOf": now.astimezone(timezone.utc).isoformat(), "accounts": accounts}, metadata)
-    for key in ("attribution", "payouts", "operations", "events", "news", "calendar", "collection"):
+    for key in ("attribution", "payouts", "operations", "events", "news", "calendar", "collection", "event_monitor"):
         if key in old:
             normalized[key] = old[key]
     normalized["section_as_of"] = {key: old.get("section_as_of", {}).get(key, old.get("as_of")) for key in ("attribution", "payouts", "operations", "events") if key in old}
