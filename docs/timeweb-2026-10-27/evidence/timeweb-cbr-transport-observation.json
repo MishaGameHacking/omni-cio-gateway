@@ -1,0 +1,39 @@
+{
+  "application_imported": false,
+  "checked_at_utc": "2026-10-27T06:26:13.694831+00:00",
+  "cookies_used": false,
+  "credentials_sent": false,
+  "javascript_executed": false,
+  "previously_observed_url_only": true,
+  "published_transport_script": {
+    "body_complete": true,
+    "body_sha256": "09af1a18facdd9e5b340a4e9a50a123bdd45641c3712f1ea12a4d032212f306a",
+    "bytes_observed": 225353,
+    "challenge_observed": false,
+    "contains_ajax_php": true,
+    "contains_run_component_action": true,
+    "credential_literals_redacted": 0,
+    "headers": {
+      "Cache-Control": "max-age=2592000",
+      "Content-Length": "225353",
+      "Content-Type": "application/javascript",
+      "Date": "Mon, 26 Oct 2026 23:21:03 GMT",
+      "ETag": "W/\"67d057d9-37049\"",
+      "Last-Modified": "Tue, 11 Mar 2025 15:33:45 GMT"
+    },
+    "http_status": 200,
+    "maximum_bytes": 262144,
+    "state": "public_response_observed",
+    "static_source_bytes": 225353,
+    "static_source_encoding": "zlib+base64",
+    "static_source_sha256": "09af1a18facdd9e5b340a4e9a50a123bdd45641c3712f1ea12a4d032212f306a",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/bitrix/js/main/core/core.min.js?1741707225225353"
+  },
+  "rating_api_called": false,
+  "redirects_followed": false,
+  "schema": 1,
+  "server_id": 9417611,
+  "workarounds_attempted": false,
+  "internal_static_source_omitted_from_public_copy": true
+}

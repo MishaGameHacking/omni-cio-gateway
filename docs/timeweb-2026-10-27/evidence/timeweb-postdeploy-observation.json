@@ -1,0 +1,56 @@
+{
+  "application_imported": false,
+  "checked_at_utc": "2026-10-27T06:22:09.946988+00:00",
+  "configuration_changed": false,
+  "database_mode": "read_only",
+  "deployed_file_hashes_match": true,
+  "job_state_counts_since_deployment": {},
+  "journal_summary": {
+    "bounded_message_count": 0,
+    "raw_messages_returned": false,
+    "sqlite_error_markers": 0,
+    "traceback_markers": 0
+  },
+  "new_storage_aggregates": {
+    "broker_operation_current_v1": {
+      "initialized": false
+    },
+    "broker_operation_history_v1": {
+      "initialized": false
+    },
+    "broker_operation_windows_v1": {
+      "initialized": false
+    },
+    "public_source_documents_v1": {
+      "initialized": false
+    },
+    "public_source_observations_v1": {
+      "initialized": false
+    }
+  },
+  "portfolio_payloads_returned": false,
+  "public_http": {
+    "/health": 200,
+    "/workspace/cash-ledger": 401,
+    "/workspace/public-sources": 401
+  },
+  "schema": 1,
+  "server_id": 9417611,
+  "services": {
+    "analyst-ai-owner.service": {
+      "ActiveEnterTimestamp": "Tue 2026-10-27 06:17:18 UTC",
+      "ActiveState": "active",
+      "MainPID": "49358",
+      "NRestarts": "0",
+      "SubState": "running"
+    },
+    "analyst-ai-updates.service": {
+      "ActiveEnterTimestamp": "Sun 2026-10-25 16:59:12 UTC",
+      "ActiveState": "active",
+      "MainPID": "1210",
+      "NRestarts": "0",
+      "SubState": "running"
+    }
+  },
+  "status": "passed"
+}

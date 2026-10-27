@@ -1,0 +1,47 @@
+{
+  "account_identifiers_returned": false,
+  "account_setup": {
+    "signed_in_account_count": 1,
+    "stored_broker_connection_count": 1,
+    "stored_connection_validity_tested": false
+  },
+  "application_imported": false,
+  "broker_requests_sent": false,
+  "checked_at_utc": "2026-10-27T06:25:11.485246+00:00",
+  "configuration_changed": false,
+  "credential_values_returned": false,
+  "database_mode": "read_only",
+  "explicit_automation_preference_counts": {
+    "true": 1
+  },
+  "new_storage_initialized": {
+    "broker_operation_current_v1": false,
+    "broker_operation_history_v1": false,
+    "broker_operation_windows_v1": false,
+    "public_source_documents_v1": false,
+    "public_source_observations_v1": false
+  },
+  "scheduler": {
+    "enabled": true,
+    "interval_seconds": 300,
+    "source": "running_process_allowlisted_nonsecret_flags_with_verified_code_defaults"
+  },
+  "schema": 1,
+  "server_id": 9417611,
+  "status": "observed",
+  "workspace_job_counts": [
+    {
+      "count": 6,
+      "kind": "events",
+      "state": "failed"
+    },
+    {
+      "count": 177,
+      "kind": "refresh",
+      "state": "completed"
+    }
+  ],
+  "workspaces": {
+    "snapshots": 3
+  }
+}

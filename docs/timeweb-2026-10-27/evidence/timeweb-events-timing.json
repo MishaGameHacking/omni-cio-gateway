@@ -1,0 +1,115 @@
+{
+  "account_identifiers_returned": false,
+  "active_currency_counts": {
+    "RUB": 1
+  },
+  "active_currency_source": "sql_projection_of_latest_strategy_or_default_rub",
+  "application_imported": false,
+  "broker_requests_sent": false,
+  "cash_amounts_returned": false,
+  "checked_at_utc": "2026-10-27T06:29:08.057109+00:00",
+  "configuration_changed": false,
+  "credential_columns_read": false,
+  "current_broker_binding_verified": false,
+  "database_mode": "read_only",
+  "deployed_at_utc": "2026-10-27T06:17:20+00:00",
+  "event_interval_seconds_from_verified_code": 600,
+  "free_form_errors_returned": false,
+  "job_groups_truncated": false,
+  "job_identifiers_returned": false,
+  "job_state_stage_error_groups": [
+    {
+      "count": 7,
+      "error_code": "event_sources_incomplete",
+      "kind": "events",
+      "last_stage": "events_partial",
+      "latest_created_at": "2026-10-27T06:27:30+00:00",
+      "latest_updated_at": "2026-10-27T06:27:32+00:00",
+      "state": "failed"
+    },
+    {
+      "count": 177,
+      "error_code": null,
+      "kind": "refresh",
+      "last_stage": "done",
+      "latest_created_at": "2026-10-27T05:18:49+00:00",
+      "latest_updated_at": "2026-10-27T05:18:51+00:00",
+      "state": "completed"
+    }
+  ],
+  "new_storage_aggregates": {
+    "broker_operation_current_v1": {
+      "initialized": true,
+      "latest_observed_at": "2026-10-27T06:27:32.114121+00:00",
+      "rows": 1
+    },
+    "broker_operation_history_v1": {
+      "initialized": true,
+      "latest_observed_at": "2026-10-27T06:27:32.114121+00:00",
+      "rows": 1
+    },
+    "broker_operation_windows_v1": {
+      "initialized": true,
+      "latest_observed_at": "2026-10-27T06:27:32.114121+00:00",
+      "rows": 1
+    },
+    "public_source_documents_v1": {
+      "initialized": false
+    },
+    "public_source_observations_v1": {
+      "initialized": false
+    }
+  },
+  "portfolio_payloads_returned": false,
+  "schema": 1,
+  "server_id": 9417611,
+  "snapshot_count": 3,
+  "snapshot_due_calculation_is_only_clock_comparison": true,
+  "snapshot_metadata": [
+    {
+      "as_of": "2026-10-27T05:24:04.891142+00:00",
+      "currency": "RUB",
+      "due_by_snapshot_clock": false,
+      "event_age_seconds": 96.185,
+      "event_clock_is_future": false,
+      "event_clock_missing_or_invalid": false,
+      "event_monitor_checked_at": "2026-10-27T06:27:31.871682+00:00",
+      "event_monitor_complete": false,
+      "next_event_due_by_snapshot_clock": "2026-10-27T06:37:31.871682+00:00",
+      "saved_at": "2026-10-27T06:27:32+00:00"
+    },
+    {
+      "as_of": "2026-10-25T09:27:31.016539+00:00",
+      "currency": "EUR",
+      "due_by_snapshot_clock": null,
+      "event_age_seconds": null,
+      "event_clock_is_future": false,
+      "event_clock_missing_or_invalid": true,
+      "event_monitor_checked_at": null,
+      "event_monitor_complete": null,
+      "next_event_due_by_snapshot_clock": null,
+      "saved_at": "2026-10-25T09:27:32+00:00"
+    },
+    {
+      "as_of": "2026-10-25T09:27:25.024585+00:00",
+      "currency": "USD",
+      "due_by_snapshot_clock": null,
+      "event_age_seconds": null,
+      "event_clock_is_future": false,
+      "event_clock_missing_or_invalid": true,
+      "event_monitor_checked_at": null,
+      "event_monitor_complete": null,
+      "next_event_due_by_snapshot_clock": null,
+      "saved_at": "2026-10-25T09:27:26+00:00"
+    }
+  ],
+  "snapshot_metadata_truncated": false,
+  "status": "observed",
+  "workspace_job_timing": {
+    "count": 184,
+    "created_since_deployment": 1,
+    "latest_created_at": "2026-10-27T06:27:30+00:00",
+    "latest_updated_at": "2026-10-27T06:27:32+00:00",
+    "updated_since_deployment": 1
+  }
+}

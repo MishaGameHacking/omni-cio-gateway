@@ -1,0 +1,203 @@
+{
+  "all_pages_observed": true,
+  "anonymous_cookie_count": 8,
+  "anonymous_csrf_present": true,
+  "anonymous_session_memory_only": true,
+  "api_observations": [
+    {
+      "action": "searchRating",
+      "all_rows_match_fixed_isin": true,
+      "api_status": "success",
+      "body_complete": true,
+      "body_sha256": "1ab9dfd504f494381d63293847c051356935a930386b948837034f091de13ba3",
+      "bytes_observed": 1739,
+      "challenge_observed": false,
+      "checked_at_utc": "2026-10-27T06:30:15.035882+00:00",
+      "data_schema": {
+        "itemCount": "int",
+        "itemFields": "list",
+        "itemList": "list",
+        "pageCount": "int",
+        "pageNumber": "int",
+        "pageSize": "int",
+        "sortingDirection": "str",
+        "sortingField": "str"
+      },
+      "envelope_keys": [
+        "data",
+        "errors",
+        "status"
+      ],
+      "error_codes": [],
+      "headers": {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Content-Type": "application/json; charset=UTF-8",
+        "Date": "Tue, 27 Oct 2026 06:30:15 GMT"
+      },
+      "http_status": 200,
+      "maximum_bytes": 262144,
+      "method": "POST",
+      "pagination": {
+        "captchaResult": null,
+        "itemCount": 1,
+        "pageCount": 1,
+        "pageNumber": 1,
+        "pageSize": 25,
+        "sortingDirection": "ascending",
+        "sortingField": "objectName"
+      },
+      "public_field_names": [
+        "dateFrom",
+        "dateTo",
+        "formSearh",
+        "inn",
+        "isin",
+        "koNumber",
+        "ratingName"
+      ],
+      "public_rows": [
+        {
+          "country": "РОССИЯ",
+          "inn": "7726588547",
+          "isin": "RU000A105A95",
+          "koNumber": "",
+          "kraName": "АО \"Эксперт РА\"",
+          "objectId": "235561",
+          "objectName": "Облигации Газпром Капитал серии ЗО34-1-Д",
+          "objectType": "TBND – облигационный займ",
+          "prediction": "NA – не предусмотрен методологией",
+          "ratingAction": "AF – подтверждение кредитного рейтинга",
+          "ratingValue": "ruAAA",
+          "releaseDate": "22.06.2026",
+          "releaseUrl": "https://raexpert.ru/releases/2026/jun22",
+          "subjectName": "Общество с ограниченной ответственностью Газпром капитал"
+        }
+      ],
+      "row_count": 1,
+      "row_schema": [
+        {
+          "country": "str",
+          "inn": "str",
+          "isin": "str",
+          "koNumber": "str",
+          "kraName": "str",
+          "objectId": "str",
+          "objectName": "str",
+          "objectType": "str",
+          "prediction": "str",
+          "ratingAction": "str",
+          "ratingValue": "str",
+          "releaseDate": "str",
+          "releaseUrl": "str",
+          "subjectName": "str"
+        }
+      ],
+      "state": "public_api_response_observed",
+      "timeout_seconds": 10,
+      "url": "https://ratings.cbr.ru/bitrix/services/main/ajax.php?mode=ajax&c=prr.form&action=searchRating"
+    },
+    {
+      "action": "searchObjectHistory",
+      "api_status": "success",
+      "body_complete": true,
+      "body_sha256": "c20ea6d9a4ec13e44bb557f2c038542de2ecb7ddf09e8d5f531906fb02337ec6",
+      "bytes_observed": 685,
+      "challenge_observed": false,
+      "checked_at_utc": "2026-10-27T06:30:15.534688+00:00",
+      "data_schema": {
+        "objectId": "str",
+        "table": "list",
+        "title": "str"
+      },
+      "envelope_keys": [
+        "data",
+        "errors",
+        "status"
+      ],
+      "error_codes": [],
+      "headers": {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Content-Type": "application/json; charset=UTF-8",
+        "Date": "Tue, 27 Oct 2026 06:30:15 GMT"
+      },
+      "history_row_count": 3,
+      "history_row_schema": [
+        {
+          "kraName": "str",
+          "ratingValue": "str",
+          "releaseDate": "str"
+        },
+        {
+          "kraName": "str",
+          "ratingValue": "str",
+          "releaseDate": "str"
+        }
+      ],
+      "http_status": 200,
+      "maximum_bytes": 262144,
+      "method": "POST",
+      "public_field_names": [
+        "objectId"
+      ],
+      "public_history_rows": [
+        {
+          "kraName": "АО \"Эксперт РА\"",
+          "ratingValue": "ruAAA",
+          "releaseDate": "22.06.2026"
+        },
+        {
+          "kraName": "АО \"Эксперт РА\"",
+          "ratingValue": "ruAAA",
+          "releaseDate": "24.06.2025"
+        },
+        {
+          "kraName": "АО \"Эксперт РА\"",
+          "ratingValue": "ruAAA",
+          "releaseDate": "19.12.2024"
+        }
+      ],
+      "public_title": "Облигации Газпром Капитал серии ЗО34-1-Д",
+      "state": "public_api_response_observed",
+      "timeout_seconds": 10,
+      "url": "https://ratings.cbr.ru/bitrix/services/main/ajax.php?mode=ajax&c=prr.form&action=searchObjectHistory"
+    }
+  ],
+  "application_imported": false,
+  "authenticated_session_used": false,
+  "captcha_markup_present": false,
+  "captcha_requested_or_solved": false,
+  "checked_at_utc": "2026-10-27T06:30:14.202740+00:00",
+  "first_search_response_verified": true,
+  "fixed_public_isin": "RU000A105A95",
+  "history_response_observed": true,
+  "javascript_executed": false,
+  "nonempty_row_schema_observed": true,
+  "pagination_verified": false,
+  "public_form": {
+    "body_complete": true,
+    "body_sha256": "75b1d6b1ccbd3ba898a088a50fe6b24f0ed6912f080158880f13c7c4ea7704c0",
+    "bytes_observed": 152748,
+    "challenge_observed": false,
+    "checked_at_utc": "2026-10-27T06:30:14.230519+00:00",
+    "headers": {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Date": "Tue, 27 Oct 2026 06:30:14 GMT"
+    },
+    "http_status": 200,
+    "maximum_bytes": 524288,
+    "method": "GET",
+    "state": "public_response_observed",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/?formSearh=quick&ratingName=&inn=&isin=RU000A105A95&koNumber=&dateFrom=&dateTo=&disclaimer=1"
+  },
+  "redirects_followed": false,
+  "schema": 1,
+  "server_id": 9417611,
+  "session_values_logged": false,
+  "source_dates_rewritten": false,
+  "state": "bounded_normal_public_search_observed",
+  "template_sha256": "bbec9549847fa59c90c71359938f77aefbe9d3d0f865c01e373cea2bf29e05de",
+  "transport_sha256": "09af1a18facdd9e5b340a4e9a50a123bdd45641c3712f1ea12a4d032212f306a",
+  "workarounds_attempted": false
+}

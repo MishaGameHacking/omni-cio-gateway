@@ -1,0 +1,69 @@
+{
+  "all_source_data_current": true,
+  "apple_identity_currently_available": true,
+  "cached_identifiers": 2,
+  "checked_at_utc": "2026-10-27T06:15:16.236438+00:00",
+  "clock_override_used": false,
+  "document_hashes_verified": true,
+  "documents_persisted": 2,
+  "fixed_public_test_identifiers_only": true,
+  "observations_persisted": 2,
+  "private_user_or_broker_data_read": false,
+  "production_database_used": false,
+  "publication_times_rewritten": false,
+  "real_https_requests": 2,
+  "rows": [
+    {
+      "cache_read_preserved_timestamps_without_network": true,
+      "checked_at": "2026-10-27T06:15:15.794332+00:00",
+      "dataset_published_at": "2026-10-27T00:00:00+00:00",
+      "document_sha256": "204601c52aaacfe2e0c072d2d34be55a4d3d698bbb23f755ddf23a4dc601e660",
+      "entity_updated_at": "2026-03-03T16:34:33+00:00",
+      "expected_exact_filter_total": 1,
+      "expected_exact_filter_total_observed": true,
+      "isin": "US0378331005",
+      "network": {
+        "body_sha256": "204601c52aaacfe2e0c072d2d34be55a4d3d698bbb23f755ddf23a4dc601e660",
+        "bytes": 3446,
+        "dataset_published_at": "2026-10-27T00:00:00Z",
+        "exact_filter_total": 1,
+        "http_status": 200,
+        "seconds": 0.257,
+        "url_sha256": "1ea1d2db3fed3f3235ff5b23c1e7853200b94ea36e64584dad93391c511fe240"
+      },
+      "rating_verified": false,
+      "reason": null,
+      "sample": "public_apple_sample",
+      "state": "available",
+      "trade_permission": false
+    },
+    {
+      "cache_read_preserved_timestamps_without_network": true,
+      "checked_at": "2026-10-27T06:15:16.081518+00:00",
+      "dataset_published_at": "2026-10-27T00:00:00+00:00",
+      "document_sha256": "1cac1cba24bc8dcfb95846e9f8d61178211f461ba004a36e985fca7982a0a0c8",
+      "entity_updated_at": null,
+      "expected_exact_filter_total": 0,
+      "expected_exact_filter_total_observed": true,
+      "isin": "RU0000000003",
+      "network": {
+        "body_sha256": "1cac1cba24bc8dcfb95846e9f8d61178211f461ba004a36e985fca7982a0a0c8",
+        "bytes": 413,
+        "dataset_published_at": "2026-10-27T00:00:00Z",
+        "exact_filter_total": 0,
+        "http_status": 200,
+        "seconds": 0.146,
+        "url_sha256": "bcb25812c4d903ad1dafe8e3cf857cdbd304f25100253c6598afe0db67e31d08"
+      },
+      "rating_verified": false,
+      "reason": "no_exact_isin_mapping",
+      "sample": "synthetic_unassigned_russian_sample",
+      "state": "missing",
+      "trade_permission": false
+    }
+  ],
+  "schema": 1,
+  "source_code_executed_on_timeweb": true,
+  "source_directory": "/var/lib/analyst-ai-build/development/candidate-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f",
+  "status": "passed_contract"
+}
