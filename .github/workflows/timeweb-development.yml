@@ -1,0 +1,84 @@
+name: Inspect existing Timeweb development capacity and exact retained source49
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/timeweb-development.yml
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - name: Read the existing pinned administrative SSH transport
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Observe fixed project directories and development tools on Timeweb
+      shell: bash
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        PYTHONUNBUFFERED: '1'
+      run: |
+        python - <<'PY'
+        import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+        sys.path[:0]=[".transport-admin/deploy",".transport-admin/tools"]
+        import prepare_owner_vm as p
+        import access_owner_vm as access
+        token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+        def api(method,path,body=None):
+            req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+            try:
+                with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                    raw=r.read(4194305);assert len(raw)<=4194304
+                    return r.status,json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+
+        def with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):
+            sid=9417611;ip="83.217.195.29";host="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU runner@runnervmtai0g"
+            status,data=api("GET","/servers/"+str(sid));assert status==200
+            server=data["server"]
+            assert server["name"]=="Analyst AI runtime 20261025" and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
+            access.SERVER_ID=sid
+            with tempfile.TemporaryDirectory(prefix="analyst-ams-admin-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                created=access.request(token,"POST","/ssh-keys",{"name":"analyst-ams-admin-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
+                assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
+                attached=False
+                try:
+                    access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
+                    cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                    for attempt in range(12):
+                        try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
+                        except (p.ProbeError,subprocess.TimeoutExpired):
+                            if attempt==11:raise
+                            time.sleep(5)
+                    payload=remote_script.encode() if binary_input is None else binary_input
+                    remote_command="python3 -" if binary_input is None else "python3 -c "+shlex.quote(remote_script)
+                    result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                    if not capture:print(result.stdout.decode(errors="replace"),flush=True)
+                    if result.returncode:
+                        print("AMS_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-4000:],flush=True)
+                        raise RuntimeError("remote_task_failed")
+                    return result.stdout
+                finally:
+                    try:
+                        if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                    finally:
+                        access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                    print("AMS_TEMP_KEY_REMOVED=true",flush=True)
+
+        remote = '"""Read bounded project paths and tool metadata; never read secrets or live data."""\nfrom __future__ import annotations\n\nimport datetime\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport pwd\nimport re\nimport shutil\nimport stat\nimport subprocess\nimport zipfile\n\nARCHIVE = Path(\'/var/lib/analyst-ai-build/incoming/windows-development-40453334023-1/windows-development-evidence.zip\')\nEXPECTED_ARCHIVE_BYTES = 69716504\nEXPECTED_ARCHIVE_SHA256 = \'dc171704ffcf004aad7d8990408d301e9b3a63b6f030c0a5321e776cb7711fe4\'\nEXPECTED_SOURCE_SHA256 = \'8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60\'\n\n\ndef command(args: list[str]) -> dict:\n    try:\n        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,\n                                text=True, timeout=15, check=False)\n        return {\'exit_code\': result.returncode, \'output\': result.stdout[:3000]}\n    except (OSError, subprocess.TimeoutExpired) as exc:\n        return {\'error_type\': type(exc).__name__}\n\n\ndef directory(path: str) -> dict:\n    base = Path(path)\n    if not base.exists():\n        return {\'path\': path, \'exists\': False}\n    if base.is_symlink() or not base.is_dir():\n        return {\'path\': path, \'exists\': True, \'plain_directory\': False}\n    items = []\n    total = 0\n    for child in base.iterdir():\n        if not re.fullmatch(r\'[A-Za-z0-9_.-]{1,160}\', child.name):\n            continue\n        if child.name.startswith(\'.\') or re.search(r\'env|secret|key|token|credential|session|\\.db|\\.sqlite\', child.name, re.I):\n            continue\n        total += 1\n        info = child.lstat()\n        items.append({\'name\': child.name, \'kind\': \'directory\' if stat.S_ISDIR(info.st_mode) else\n                      \'file\' if stat.S_ISREG(info.st_mode) else \'other\',\n                      \'bytes\': info.st_size if stat.S_ISREG(info.st_mode) else None,\n                      \'modified\': int(info.st_mtime)})\n    items.sort(key=lambda row: row[\'modified\'], reverse=True)\n    return {\'path\': path, \'exists\': True, \'plain_directory\': True,\n            \'permitted_entry_count\': total, \'entries\': items[:60]}\n\n\ndef source_locations() -> list[dict]:\n    found = []\n    for parent_name in (\'/root\', \'/opt\', \'/var/lib/analyst-ai-build\', \'/home/analyst-build\'):\n        parent = Path(parent_name)\n        if not parent.is_dir() or parent.is_symlink():\n            continue\n        candidates = []\n        for child in parent.iterdir():\n            if re.fullmatch(r\'(analyst|omni|source|work|build)[A-Za-z0-9_.-]{0,120}\', child.name, re.I):\n                if child.is_dir() and not child.is_symlink():\n                    candidates.append(child)\n        for path in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)[:40]:\n            found.append({\'path\': str(path), \'git\': (path / \'.git\').is_dir(),\n                          \'backend\': (path / \'backend\').is_dir(),\n                          \'gradlew\': (path / \'gradlew\').is_file(),\n                          \'app\': (path / \'app\').is_dir()})\n    return found\n\n\ndef archive_metadata() -> dict:\n    if not ARCHIVE.exists():\n        return {\'exists\': False}\n    for parent in ARCHIVE.parents:\n        if parent.is_symlink():\n            raise RuntimeError(\'archive_parent_is_symlink\')\n    info = ARCHIVE.lstat()\n    if not stat.S_ISREG(info.st_mode) or info.st_size != EXPECTED_ARCHIVE_BYTES:\n        raise RuntimeError(\'retained_archive_identity_mismatch\')\n    digest = hashlib.sha256()\n    with ARCHIVE.open(\'rb\') as stream:\n        for part in iter(lambda: stream.read(1024 * 1024), b\'\'):\n            digest.update(part)\n    if digest.hexdigest() != EXPECTED_ARCHIVE_SHA256:\n        raise RuntimeError(\'retained_archive_hash_mismatch\')\n    with zipfile.ZipFile(ARCHIVE) as bundle:\n        entries = bundle.infolist()\n        if len(entries) > 20000 or sum(i.file_size for i in entries) > 490 * 1024**2:\n            raise RuntimeError(\'retained_archive_inventory_exceeds_limit\')\n        names = [item.filename for item in entries]\n        source_names = [name for name in names if name.startswith(\'source/\')]\n        metadata_name = \'evidence/source-final.json\'\n        if bundle.getinfo(metadata_name).file_size > 8 * 1024**2:\n            raise RuntimeError(\'source_manifest_exceeds_limit\')\n        inventory = json.loads(bundle.read(metadata_name))\n        return {\'exists\': True, \'bytes\': info.st_size, \'sha256\': digest.hexdigest(),\n                \'source_entry_count\': len(source_names), \'total_entry_count\': len(entries),\n                \'source_manifest_keys\': sorted(inventory),\n                \'source_sha256\': inventory.get(\'sha256\', inventory.get(\'source_sha256\')),\n                \'contains_backend_requirements\': \'source/backend/requirements.txt\' in names,\n                \'contains_android_gradlew\': \'source/gradlew\' in names,\n                \'contains_backend_tests\': any(name.startswith(\'source/backend/tests/\') for name in names),\n                \'contains_host_tests\': any(name.startswith(\'source/.github/scripts/tests/\') for name in names),\n                \'contains_app_source\': any(name.startswith(\'source/app/src/\') for name in names),\n                \'manifest_sha256\': hashlib.sha256(bundle.read(metadata_name)).hexdigest()}\n\n\ndef main() -> None:\n    memory = {}\n    for line in Path(\'/proc/meminfo\').read_text().splitlines():\n        key, value = line.split(\':\', 1)\n        if key in (\'MemTotal\', \'MemAvailable\', \'SwapTotal\', \'SwapFree\'):\n            memory[key + \'_kib\'] = int(value.strip().split()[0])\n    disk = shutil.disk_usage(\'/\')\n    tools = {}\n    for name in (\'python3\', \'node\', \'java\', \'javac\', \'git\', \'adb\', \'emulator\', \'gradle\'):\n        executable = shutil.which(name)\n        tools[name] = {\'path\': executable}\n        if executable and name in (\'python3\', \'node\', \'java\', \'javac\', \'git\'):\n            tools[name][\'version\'] = command([executable, \'-version\' if name in (\'java\', \'javac\') else \'--version\'])\n    accounts = {}\n    for name in (\'analyst-build\', \'analyst-ai\'):\n        try:\n            entry = pwd.getpwnam(name)\n            accounts[name] = {\'uid\': entry.pw_uid, \'gid\': entry.pw_gid, \'home\': entry.pw_dir}\n        except KeyError:\n            accounts[name] = {\'exists\': False}\n    services = {}\n    for name in (\'analyst-ai-owner.service\', \'analyst-ai-updates.service\'):\n        services[name] = command([\'systemctl\', \'show\', name, \'--no-pager\',\n                                 \'--property=ActiveState,SubState,WorkingDirectory,FragmentPath,MemoryCurrent\'])\n    sdk_paths = (\'/opt/android-sdk\', \'/opt/android-sdk-linux\', \'/opt/analyst-ai-sdk\',\n                 \'/opt/android\', \'/opt/analyst-ai-build/android-sdk\', \'/root/Android/Sdk\',\n                 \'/home/analyst-build/Android/Sdk\', \'/usr/lib/android-sdk\')\n    result = {\n        \'schema\': 1, \'status\': \'read_only_inventory\',\n        \'checked_at_utc\': datetime.datetime.now(datetime.timezone.utc).isoformat(),\n        \'server_id\': 9417611, \'cpu_count\': os.cpu_count(), \'architecture\': os.uname().machine,\n        \'memory\': memory, \'disk_bytes\': {\'total\': disk.total, \'used\': disk.used, \'free\': disk.free},\n        \'tools\': tools, \'accounts\': accounts, \'services\': services,\n        \'directories\': [directory(path) for path in (\'/opt/analyst-ai\', \'/var/lib/analyst-ai-build\',\n                                                   \'/var/lib/analyst-ai-build/incoming\')],\n        \'source_locations\': source_locations(),\n        \'android_sdk\': [directory(path) for path in sdk_paths if Path(path).exists()],\n        \'python_venv\': command([\'/opt/analyst-ai/venv/bin/python\', \'--version\']),\n        \'retained_source49\': archive_metadata(),\n        \'live_source_changed\': False, \'private_configuration_read\': False,\n    }\n    print(json.dumps(result, ensure_ascii=True, sort_keys=True))\n\n\nif __name__ == \'__main__\':\n    main()\n'
+        output = with_ams(remote, timeout=180, capture=True)
+        result = json.loads(output)
+        assert result["status"] == "read_only_inventory"
+        print(json.dumps(result, indent=2, sort_keys=True))
+        PY
