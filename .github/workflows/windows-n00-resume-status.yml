@@ -1,74 +1,55 @@
-name: Observe corrected mandate48 build and original backend results
-on:
+name: Observe calendar49 v2 original build progress
+true:
   push:
-    branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [.github/workflows/windows-n00-resume-status.yml]
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-resume-status.yml
 permissions:
   contents: read
 jobs:
   observe:
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
     timeout-minutes: 5
     steps:
-      - name: Read only exact task-owned build reports and original JVM XML
-        shell: 'py -3 {0}'
-        env:
-          PYTHONUTF8: '1'
-          PYTHONIOENCODING: utf-8
-        run: |
-          import datetime, hashlib, json, os, pathlib, re, sys
-          import xml.etree.ElementTree as ET
-          assert sys.platform == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'
-          run = 40400521138
-          result = {'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    'host': os.environ['COMPUTERNAME'], 'run_id': run, 'build': [], 'jvm': []}
-          for suffix in ('', '-2', '-3', '-4'):
-              runner = pathlib.Path('C:/actions-runner' + suffix + '/_work')
-              state = runner / ('_temp/analyst-development-' + str(run) + '-1')
-              if state.is_dir():
-                  item = {'state': str(state), 'files': {}, 'log_tail': {}}
-                  for name in ('windows-development.json', 'controller.json', 'export-receipt.json'):
-                      path = state / name
-                      if not path.is_file() or path.is_symlink():
-                          continue
-                      raw = path.read_bytes()
-                      assert len(raw) < 4 * 1024**2
-                      value = json.loads(raw)
-                      if name == 'windows-development.json':
-                          value = {key: value.get(key) for key in ('status', 'github', 'check', 'build',
-                              'source_sha256', 'source_sha256_after', 'started_at', 'finished_at')}
-                      item['files'][name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': value}
-                  for name in ('10-host-tests.log', '11-tools-tests.log', '18-gradle.log', 'linux-backend-full-suite.log'):
-                      path = state / name
-                      if not path.is_file() or path.is_symlink():
-                          continue
-                      with path.open('rb') as stream:
-                          stream.seek(max(0, path.stat().st_size - 24000))
-                          lines = stream.read().decode('utf-8', errors='replace').splitlines()
-                      item['log_tail'][name] = [line[:700] for line in lines if len(line) < 1000 and
-                          re.search(r'Ran \d+ tests?|^OK\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|^> Task|^e:', line)][-12:]
-                  backend = state / 'linux-backend-tests.xml'
-                  if backend.is_file() and not backend.is_symlink() and backend.stat().st_size <= 32 * 1024**2:
-                      raw = backend.read_bytes()
-                      assert b'<!DOCTYPE' not in raw.upper() and b'<!ENTITY' not in raw.upper()
-                      document = ET.fromstring(raw)
-                      item['mandate_failures'] = [{'name': case.get('name'), 'class': case.get('classname'),
-                          'message': failure.get('message', '')[:6000], 'details': (failure.text or '')[:14000]}
-                          for case in document.iter('testcase') if 'test_portfolio_mandate' in case.get('classname', '')
-                          for failure in case.findall('failure')][:5]
-                  result['build'].append(item)
-              folder = runner / ('omni-cio-gateway/omni-cio-gateway/windows-development-' + str(run) + '-1/app/build/test-results/testDebugUnitTest')
-              if folder.is_dir():
-                  suites = []
-                  for path in sorted(folder.glob('TEST-*.xml')):
-                      assert path.is_file() and not path.is_symlink() and path.stat().st_size < 4 * 1024**2
-                      raw = path.read_bytes()
-                      node = ET.fromstring(raw)
-                      suites.append({'name': path.name, 'sha256': hashlib.sha256(raw).hexdigest(),
-                          **{key: int(node.get(key, '0')) for key in ('tests', 'failures', 'errors', 'skipped')},
-                          'failures_details': [{'case': case.get('name'), 'type': failure.get('type'),
-                              'message': failure.get('message', '')[:1200]}
-                              for case in node.findall('testcase') for failure in case.findall('failure')][:8]})
-                  result['jvm'].append({'path': str(folder), 'suites': suites,
-                      'totals': {key: sum(s[key] for s in suites) for key in ('tests', 'failures', 'errors', 'skipped')}})
-          print('N00_RESUME_OBSERVATION=' + json.dumps(result, ensure_ascii=True))
+    - name: Read only exact task-owned build reports and original JVM XML
+      shell: py -3 {0}
+      env:
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
+      run: "import datetime, hashlib, json, os, pathlib, re, sys\nimport xml.etree.ElementTree as ET\nassert sys.platform\
+        \ == 'win32' and os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'\nrun = 40453334023\nresult = {'observed_at':\
+        \ datetime.datetime.now(datetime.timezone.utc).isoformat(),\n          'host': os.environ['COMPUTERNAME'], 'run_id':\
+        \ run, 'build': [], 'jvm': []}\nfor suffix in ('', '-2', '-3', '-4'):\n    runner = pathlib.Path('C:/actions-runner'\
+        \ + suffix + '/_work')\n    state = runner / ('_temp/analyst-development-' + str(run) + '-1')\n    if state.is_dir():\n\
+        \        item = {'state': str(state), 'files': {}, 'log_tail': {}}\n        for name in ('windows-development.json',\
+        \ 'controller.json', 'export-receipt.json'):\n            path = state / name\n            if not path.is_file() or\
+        \ path.is_symlink():\n                continue\n            raw = path.read_bytes()\n            assert len(raw) <\
+        \ 4 * 1024**2\n            value = json.loads(raw)\n            if name == 'windows-development.json':\n         \
+        \       assert value['github']['run_id'] == run and value['github']['run_attempt'] == 1\n                assert value['github']['workflow_sha']\
+        \ == '55b511a82ad9c2cce57d9d5cf01a3bfc741c1250'\n                assert value['base_commit'] == '6d037bcbba376d2b2e6e53caa0f96874ac1497ef'\n\
+        \                assert value['bootstrap_sha256'] == '80517ea1faf16cfa1759691321b5ed7dacf95cb94b1f46254eb674faf162f87f'\n\
+        \                assert value['patch_manifest_sha256'] == '5e2c48b39d85df1bb530d1cf6e5e487cf0e81d97e537a0ccbaf578fc685db649'\n\
+        \                value['steps'] = [{k: row.get(k) for k in ('label', 'exit_code', 'duration_seconds')} for row in\
+        \ value.get('steps', [])]\n                value = {key: value.get(key) for key in ('status', 'github', 'check', 'build',\n\
+        \                    'source_sha256', 'source_sha256_after', 'started_at', 'finished_at', 'steps')}\n            item['files'][name]\
+        \ = {'sha256': hashlib.sha256(raw).hexdigest(), 'value': value}\n        for name in ('10-host-tests.log', '11-tools-tests.log',\
+        \ '18-gradle.log', 'linux-backend-full-suite.log'):\n            path = state / name\n            if not path.is_file()\
+        \ or path.is_symlink():\n                continue\n            with path.open('rb') as stream:\n                stream.seek(max(0,\
+        \ path.stat().st_size - 24000))\n                lines = stream.read().decode('utf-8', errors='replace').splitlines()\n\
+        \            item['log_tail'][name] = [line[:700] for line in lines if len(line) < 1000 and\n                re.search(r'Ran\
+        \ \\d+ tests?|^OK\\b|FAILED|BUILD SUCCESSFUL|BUILD FAILED|passed|^> Task|^e:', line)][-12:]\n        result['build'].append(item)\n\
+        \    folder = runner / ('omni-cio-gateway/omni-cio-gateway/windows-development-' + str(run) + '-1/app/build/test-results/testDebugUnitTest')\n\
+        \    if folder.is_dir():\n        suites = []\n        for path in sorted(folder.glob('TEST-*.xml')):\n          \
+        \  assert path.is_file() and not path.is_symlink() and path.stat().st_size < 4 * 1024**2\n            raw = path.read_bytes()\n\
+        \            node = ET.fromstring(raw)\n            suites.append({'name': path.name, 'sha256': hashlib.sha256(raw).hexdigest(),\n\
+        \                **{key: int(node.get(key, '0')) for key in ('tests', 'failures', 'errors', 'skipped')},\n       \
+        \         'failures_details': [{'case': case.get('name'), 'type': failure.get('type'),\n                    'message':\
+        \ failure.get('message', '')[:1200]}\n                    for case in node.findall('testcase') for failure in case.findall('failure')][:8]})\n\
+        \        result['jvm'].append({'path': str(folder), 'suites': suites,\n            'totals': {key: sum(s[key] for\
+        \ s in suites) for key in ('tests', 'failures', 'errors', 'skipped')}})\nprint('N00_RESUME_OBSERVATION=' + json.dumps(result,\
+        \ ensure_ascii=True))\n"
