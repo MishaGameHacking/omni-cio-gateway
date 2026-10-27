@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -26,10 +27,29 @@ def fixture_path(path):
     return Path('\\\\?\\' + str(path)) if os.name == 'nt' else path
 
 
+def remove_fixture(root):
+    """Git creates read-only object files on Windows; remove only this fixture."""
+    target = fixture_path(root)
+
+    def retry_readonly_file(function, name, error):
+        path = Path(name)
+        if not isinstance(error, PermissionError) or function is not os.unlink:
+            raise error
+        if not path.is_relative_to(target) or path.is_symlink():
+            raise error
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & stat.S_IWRITE:
+            raise error
+        path.chmod(info.st_mode | stat.S_IWRITE)
+        function(name)
+
+    shutil.rmtree(target, onexc=retry_readonly_file)
+
+
 class LongCommittedPathTests(unittest.TestCase):
     def setUp(self):
         self.base = Path(tempfile.mkdtemp(prefix='analyst-ci-long-path-')).resolve()
-        self.addCleanup(shutil.rmtree, fixture_path(self.base))
+        self.addCleanup(remove_fixture, self.base)
         self.root = self.base / 'source'
         self.root.mkdir()
         self.relative = 'references/' + 'a' * 120 + '/' + 'b' * 120 + '/expected.png'
