@@ -1,119 +1,159 @@
-"""Bounded read-only calendar diagnosis; no application imports or runtime changes."""
-import datetime
+"""Verify the calendar date correction and test it in an isolated Timeweb copy."""
+import contextlib
+import datetime as dt
 import fcntl
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
+import urllib.request
+import xml.etree.ElementTree as ET
 
-BASE = Path('/var/lib/analyst-ai-build/development')
-POINTER = BASE / 'current-source-n02-n04-r4-20261027.json'
-CANDIDATE = BASE / 'candidate-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f'
-EXPECTED = {
- 'event_monitor.py': '68cf1edfba5226f1f866c9dceb904787e0b68b9808329b08e90418face9573d4',
- 'market_schedule.py': '184f3f8a4aca281579a6768e442a357b02bc8620f813a3e6f162a75ed4982498',
- 'operations_ledger.py': 'c6874e515e2e526328cdbc3f1f8741c788004765f76f22f057518e7fad90e414',
- 'public_sources.py': '274849ad97b7e7cf6bd0cf4bdfd4298da04b94464df85b3e6d9333be1ddcc614',
- 'volume_monitor.py': '66ff4c8837ea154c7728b3775c8a0c1e349e7746a2254d87f4edd3224c606e64',
- 'volume_workspace.py': 'f555bd502addede8ade3068231322e7ad5c702f83da7d37ee5821a0cb14b2452',
-}
-lock = open('/var/lock/analyst-ai-plan-development.lock', 'a')
-fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-report = {'schema': 1, 'server_id': 9417611, 'operation': 'calendar_read_only_diagnosis',
- 'github_sha': ENVELOPE['github_sha'], 'run_id': ENVELOPE['run_id'],
- 'checked_at_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
- 'application_imported': False, 'runtime_changed': False, 'database_mode': 'ro/query_only',
- 'real_orders_enabled': False, 'paid_ai_called': False}
-for root in [CANDIDATE / 'backend', Path('/opt/analyst-ai/backend')]:
- for name, expected in EXPECTED.items():
-  if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
-   raise RuntimeError('source_identity_changed')
-report['verified_source_pointer_sha256'] = hashlib.sha256(POINTER.read_bytes()).hexdigest()
-report['test_python_exists'] = (BASE / 'source49-check-20261027T055218Z-20765533/venv/bin/python').exists()
-report['kvm_available'] = Path('/dev/kvm').exists()
-report['cpu_count'] = os.cpu_count()
-report['disk_free_bytes'] = shutil.disk_usage(BASE).free
-report['android_sdk_directories'] = [str(p) for p in [Path('/opt/android-sdk'), Path('/opt/android'), Path('/var/lib/analyst-ai-build/android-sdk')] if p.is_dir()]
-# Dependencies come from the existing runtime venv. This child never imports the app.
-child = r'''
-import datetime,hashlib,json,re,shlex,sqlite3,ssl
-from pathlib import Path
-from contextlib import closing
-import certifi,httpx
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-from cryptography.fernet import Fernet
-settings={}
-for line in Path('/etc/analyst-ai/backend.env').read_text().splitlines():
- if not line.strip() or line.lstrip().startswith('#'):continue
- key,sep,value=line.partition('=')
- if key not in {'DATABASE_PATH','FERNET_KEY','ANALYST_OWNER_TELEGRAM_SUB'}:continue
- values=shlex.split(value,comments=False)
- if not sep or len(values)!=1:raise RuntimeError('configuration_parse_failed')
- settings[key]=values[0]
-path=Path(settings.get('DATABASE_PATH','/var/lib/analyst-ai/backend.db')).resolve()
-if not path.is_file():raise RuntimeError('database_missing')
-with closing(sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)) as db:
- db.execute('PRAGMA query_only=ON')
- registry=db.execute('SELECT telegram_sub FROM installation_owner WHERE singleton=1').fetchall()
- rows=db.execute('SELECT telegram_sub,tinvest_token_encrypted FROM users').fetchall()
- if len(registry)!=1 or len(rows)!=1 or rows[0][0]!=registry[0][0] or registry[0][0]!=settings['ANALYST_OWNER_TELEGRAM_SUB']:
-  raise RuntimeError('owner_binding_unverified')
- encrypted=rows[0][1]
- if not encrypted:raise RuntimeError('broker_connection_missing')
- token=Fernet(settings['FERNET_KEY'].encode()).decrypt(encrypted).decode()
-cert_bytes=Path('/opt/analyst-ai/backend/certs/russian_trusted_root_ca.pem').read_bytes()
-cert=x509.load_pem_x509_certificate(cert_bytes)
-if cert.fingerprint(hashes.SHA256()).hex()!='d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31':raise RuntimeError('broker_ca_mismatch')
-context=ssl.create_default_context(cafile=certifi.where());context.load_verify_locations(cadata=cert_bytes.decode('ascii'))
-now=datetime.datetime.now(datetime.timezone.utc)
-today=now.replace(hour=0,minute=0,second=0,microsecond=0)
-body={'from':(today-datetime.timedelta(days=1)).isoformat(),'to':(today+datetime.timedelta(days=6,hours=23,minutes=59)).isoformat()}
-url='https://invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/TradingSchedules'
-result={'method':'TradingSchedules','request_dates':body,'account_id_sent':False,'token_returned':False,'owner_binding_verified':True,'requests':1}
-try:
- with httpx.Client(verify=context,timeout=httpx.Timeout(12,connect=5),follow_redirects=False) as client:
-  with client.stream('POST',url,headers={'Authorization':'Bearer '+token,'Accept':'application/json','Content-Type':'application/json'},json=body) as response:
-   result['http_status']=response.status_code
-   raw=bytearray()
-   for part in response.iter_bytes():
-    raw.extend(part)
-    if len(raw)>1024*1024:raise RuntimeError('calendar_response_too_large')
-   result['response_bytes']=len(raw)
-   result['response_sha256']=hashlib.sha256(raw).hexdigest()
-   try:data=json.loads(raw)
-   except ValueError:data={}
-   if not isinstance(data,dict):data={}
-   code=data.get('code')
-   result['upstream_code']=str(code) if re.fullmatch(r'[0-9]{1,6}',str(code)) else None
-   # Free-form upstream text is not returned. Diagnose against the official error catalogue.
-   text=' '.join(str(data.get(k,'')) for k in ('message','description')).lower()
-   result['error_keywords']=[word for word in ('exchange','from','to','date','period','range','maximum','invalid','required','not found','unimplemented','limit') if word in text]
-   result['exchange_count']=len(data['exchanges']) if isinstance(data.get('exchanges'),list) else None
-except (httpx.TimeoutException,httpx.TransportError) as error:
- result['transport_error_type']=type(error).__name__
-finally:
- token='';settings.clear()
-print(json.dumps(result))
+ROOT = Path('/var/lib/analyst-ai-build/development')
+BASE = ROOT / 'candidate-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f'
+PYTHON = ROOT / 'source49-check-20261027T055218Z-20765533/venv/bin/python'
+# Reuse the exact already-inspected, successful read-only diagnostic. Only its
+# requested start date changes; authentication, redaction and hash guards do not.
+url = 'https://raw.githubusercontent.com/MishaGameHacking/omni-cio-gateway/11ee6980a047218a0a0ba627f233233d097b6549/deploy/plan-20261027/operation.py'
+with urllib.request.urlopen(url, timeout=20) as response:
+    raw = response.read(65537)
+if len(raw)>65536 or hashlib.sha256(raw).hexdigest()!='d6e7026b2c71d1489a8df3b70135c4e5284c7493863ae01d09cad3835b86e5fd':
+    raise RuntimeError('diagnostic_source_mismatch')
+text = raw.decode()
+old_date = '(today-datetime.timedelta(days=1)).isoformat()'
+if text.count(old_date)!=1:raise RuntimeError('diagnostic_patch_mismatch')
+text = text.replace(old_date, 'today.isoformat()')
+buffer = io.StringIO()
+namespace = {'ENVELOPE': ENVELOPE, '__name__': '__main__'}
+with contextlib.redirect_stdout(buffer):
+    exec(compile(text, 'verified-calendar-start-date-diagnostic', 'exec'), namespace)
+probe = json.loads(buffer.getvalue())
+namespace['lock'].close()
+print('CALENDAR_CURRENT_DAY_PROBE='+json.dumps(probe), flush=True)
+if probe.get('calendar',{}).get('http_status')!=200 or not probe['calendar'].get('exchange_count'):
+    raise RuntimeError('calendar_correction_not_confirmed_no_product_patch')
+lock = open('/var/lock/analyst-ai-plan-development.lock','a')
+fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+run_id=ENVELOPE['run_id']
+work=ROOT/('candidate-calendar-'+run_id)
+evidence=ROOT/('candidate-calendar-check-'+run_id)
+if work.exists() or evidence.exists():raise RuntimeError('candidate_already_exists')
+shutil.copytree(BASE,work,ignore=shutil.ignore_patterns('.git','.venv','venv','__pycache__','.pytest_cache','build','.gradle'))
+evidence.mkdir(mode=0o700)
+relative='backend/volume_market.py'
+before=(BASE/relative).read_bytes()
+if before!=(Path('/opt/analyst-ai')/relative).read_bytes():raise RuntimeError('calendar_runtime_source_changed')
+original='    # Include the previous UTC day so an overnight broker window is not lost.\n    today = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time(), timezone.utc)\n    begin = today - timedelta(days=1)\n'
+replacement='    # TradingSchedules rejects a from date before the current UTC date.\n    # Never turn missing previous-day coverage into an assumed open session.\n    today = datetime.combine(datetime.now(timezone.utc).date(), datetime.min.time(), timezone.utc)\n    begin = today\n'
+if before.decode().count(original)!=1:raise RuntimeError('calendar_product_patch_mismatch')
+(work/relative).write_text(before.decode().replace(original,replacement))
+test=r'''"""Regression for the real 2026-10-27 TradingSchedules HTTP 400.
+
+Synthetic calendar payloads only. A successful calendar read never authorizes
+trading and does not invent coverage for a previous UTC day.
+"""
+from datetime import datetime, timedelta, timezone
+import os
+from unittest.mock import MagicMock
+import pytest
+from fastapi import HTTPException
+os.environ.setdefault('TELEGRAM_CLIENT_ID','123456')
+os.environ.setdefault('TELEGRAM_CLIENT_SECRET','test-only')
+os.environ.setdefault('BACKEND_PUBLIC_URL','https://example.invalid')
+os.environ.setdefault('FERNET_KEY','AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=')
+os.environ['ANALYSIS_SCHEDULER_ENABLED']='false'
+from backend import volume_market as market
+
+@pytest.mark.parametrize('instant',[
+    datetime(2026,10,27,6,59,tzinfo=timezone.utc),
+    datetime(2026,10,27,0,0,tzinfo=timezone.utc),
+    datetime(2026,10,27,23,59,59,tzinfo=timezone.utc),
+    datetime(2026,12,31,23,59,59,tzinfo=timezone.utc),
+    datetime(2028,2,29,12,tzinfo=timezone.utc),
+])
+def test_calendar_request_never_begins_in_previous_utc_day(monkeypatch,instant):
+    class Clock(datetime):
+        @classmethod
+        def now(cls,tz=None):return instant.astimezone(tz or timezone.utc)
+    monkeypatch.setattr(market,'datetime',Clock)
+    monkeypatch.setattr(market.details,'BrokerReader',MagicMock())
+    seen=[]
+    def read(reader,method,body):
+        assert method=='calendar'
+        seen.append(body)
+        assert datetime.fromisoformat(body['from']).date()==instant.date()
+        return {'exchanges':[]}
+    monkeypatch.setattr(market,'broker_read',read)
+    result=market.load_calendar(object())
+    assert len(seen)==1
+    begin=datetime.fromisoformat(seen[0]['from'])
+    finish=datetime.fromisoformat(seen[0]['to'])
+    assert begin.utcoffset()==timedelta(0)
+    assert timedelta(0)<finish-begin<timedelta(days=14)
+    assert result['exchanges']==[]
+    assert result['basis']=='broker_sections_not_guaranteed_instrument_availability'
+    assert 'trade_permission' not in result
+
+@pytest.mark.parametrize('payload',[{}, {'exchanges':None},{'exchanges':'MOEX'}])
+def test_invalid_calendar_response_is_not_treated_as_closed_or_open(monkeypatch,payload):
+    monkeypatch.setattr(market.details,'BrokerReader',MagicMock())
+    monkeypatch.setattr(market,'broker_read',lambda *args:payload)
+    with pytest.raises(HTTPException) as caught:market.load_calendar(object())
+    assert caught.value.status_code==502
+    assert caught.value.detail=='calendar_invalid_response'
+
+def test_calendar_error_is_preserved_without_a_synthetic_schedule(monkeypatch):
+    monkeypatch.setattr(market.details,'BrokerReader',MagicMock())
+    def read(*args):raise HTTPException(502,'tinvest_unexpected_status')
+    monkeypatch.setattr(market,'broker_read',read)
+    with pytest.raises(HTTPException) as caught:market.load_calendar(object())
+    assert caught.value.detail=='tinvest_unexpected_status'
 '''
-result = subprocess.run(['/opt/analyst-ai/venv/bin/python', '-c', child], capture_output=True, timeout=35,
- env={'PATH':'/usr/bin:/bin','HOME':'/root','PYTHONDONTWRITEBYTECODE':'1','PYTHONUNBUFFERED':'1'})
-report['diagnostic_exit_code'] = result.returncode
-if result.returncode == 0:
- report['calendar'] = json.loads(result.stdout)
-else:
- report['diagnostic_error'] = 'bounded_calendar_diagnostic_failed'
- report['diagnostic_stderr_bytes'] = len(result.stderr)
-for root in [CANDIDATE / 'backend', Path('/opt/analyst-ai/backend')]:
- for name, expected in EXPECTED.items():
-  if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
-   raise RuntimeError('source_changed_during_diagnosis')
-report['source_unchanged'] = True
-report['status'] = 'observed' if result.returncode == 0 else 'diagnostic_failed'
-directory = BASE / ('plan-audit-' + ENVELOPE['run_id'])
-directory.mkdir(mode=0o700)
-(directory / 'calendar-diagnostic.json').write_text(json.dumps(report, indent=2)+'\n')
-print(json.dumps(report, indent=2), flush=True)
-if result.returncode != 0:raise SystemExit(1)
+(work/'backend/tests/test_calendar_start_date.py').write_text(test)
+# Both baseline and candidate are tested with the same new regression, in copies.
+baseline=ROOT/('calendar-regression-baseline-'+run_id)
+shutil.copytree(work,baseline,ignore=shutil.ignore_patterns('__pycache__','.pytest_cache'))
+(baseline/relative).write_bytes(before)
+env={'PATH':'/usr/bin:/bin','HOME':str(evidence),'PYTHONPATH':str(work),
+     'PYTHONDONTWRITEBYTECODE':'1','PYTHONUNBUFFERED':'1',
+     'TELEGRAM_CLIENT_ID':'123456','TELEGRAM_CLIENT_SECRET':'test-only',
+     'BACKEND_PUBLIC_URL':'https://example.invalid','FERNET_KEY':'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+     'ANALYSIS_SCHEDULER_ENABLED':'false','AI_EXTERNAL_PROCESSING_APPROVED':'false',
+     'DATABASE_PATH':str(evidence/'isolated-tests.sqlite3')}
+steps=[]
+def check(name,source,arguments,expected=0,limit=240):
+    start=time.monotonic()
+    command=['unshare','--net','--',str(PYTHON),*arguments]
+    settings={**env,'PYTHONPATH':str(source),'DATABASE_PATH':str(evidence/(name+'.sqlite3'))}
+    result=subprocess.run(command,cwd=source,env=settings,capture_output=True,timeout=limit)
+    data=result.stdout+result.stderr
+    (evidence/(name+'.log')).write_bytes(data)
+    steps.append({'name':name,'exit_code':result.returncode,'seconds':round(time.monotonic()-start,3),
+      'network_allowed':False,'log_sha256':hashlib.sha256(data).hexdigest()})
+    if result.returncode!=expected:
+        print('FAILED_CHECK='+json.dumps(steps[-1]),flush=True)
+        print(data.decode(errors='replace')[-16000:],flush=True)
+        raise RuntimeError('candidate_check_failed_'+name)
+check('baseline-regression',baseline,['-m','pytest','backend/tests/test_calendar_start_date.py','-q','--junitxml='+str(evidence/'baseline.xml')],expected=1)
+check('targeted-regression',work,['-m','pytest','backend/tests/test_calendar_start_date.py','-q','--junitxml='+str(evidence/'targeted.xml')])
+check('full-backend',work,['-m','pytest','backend/tests','-q','--junitxml='+str(evidence/'full.xml')],limit=300)
+check('health-openapi',work,['-c',"from fastapi.testclient import TestClient; from backend.app import app; c=TestClient(app); assert c.get('/health').status_code==200; assert c.get('/openapi.json').status_code==200; print('HEALTH_OPENAPI_OK')"])
+def results(path):
+    root=ET.parse(path).getroot()
+    suites=[root] if root.tag=='testsuite' else list(root.iter('testsuite'))
+    return {key:sum(int(s.attrib.get(key,0)) for s in suites) for key in ('tests','failures','errors','skipped')}
+if results(evidence/'baseline.xml')['failures']!=5:raise RuntimeError('baseline_regression_not_reproduced_exactly')
+if before!=(BASE/relative).read_bytes() or before!=(Path('/opt/analyst-ai')/relative).read_bytes():raise RuntimeError('source_changed_during_check')
+report={'schema':1,'status':'passed','server_id':9417611,'github_sha':ENVELOPE['github_sha'],
+ 'source_directory':str(work),'evidence_directory':str(evidence),'calendar_probe':probe['calendar'],
+ 'steps':steps,'baseline_regression':results(evidence/'baseline.xml'),'targeted':results(evidence/'targeted.xml'),
+ 'full_backend':results(evidence/'full.xml'),'runtime_changed':False,'real_orders_enabled':False,
+ 'changed_files':{p:{'sha256':hashlib.sha256((work/p).read_bytes()).hexdigest(),'bytes':(work/p).stat().st_size}
+ for p in [relative,'backend/tests/test_calendar_start_date.py']},
+ 'finished_at_utc':dt.datetime.now(dt.timezone.utc).isoformat()}
+(evidence/'receipt.json').write_text(json.dumps(report,indent=2)+'\n')
+print('CALENDAR_CANDIDATE='+json.dumps(report,indent=2),flush=True)
