@@ -20,6 +20,7 @@ from pydantic import Field
 try:
     from . import app as backend, volume_jobs as jobs, volume_state as state, volume_impact as impact
     from .ai_budget import transaction, token_cost
+    from .schema_migrations import execute_schema
     from .ai_guarded_client import GuardedAIClient, GuardError
     from .ai_policy import AnalysisTier
     from .investment_chat_policy import plan_chat, ChatPolicyError
@@ -30,6 +31,7 @@ except ImportError:
     import volume_state as state
     import volume_impact as impact
     from ai_budget import transaction, token_cost
+    from schema_migrations import execute_schema
     from ai_guarded_client import GuardedAIClient, GuardError
     from ai_policy import AnalysisTier
     from investment_chat_policy import plan_chat, ChatPolicyError
@@ -57,13 +59,15 @@ uncertainties:[string],actions:[{type:'open_instrument'|'open_risks'|'open_strat
 
 
 def initialize() -> None:
-    with closing(backend.connect()) as db:
+    # History and chat schema share one rollback boundary. A late index failure
+    # must not commit the history table or replay any saved model request.
+    with transaction(backend.connect) as db:
         try:
             from .portfolio_details import ensure_history
         except ImportError:
             from portfolio_details import ensure_history
         ensure_history(db)
-        db.executescript("""
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS workspace_chat_threads (
                 id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,title TEXT NOT NULL,created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS workspace_chat_messages (
@@ -74,7 +78,6 @@ def initialize() -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS workspace_chat_one_response ON workspace_chat_messages(job_id,role);
             CREATE INDEX IF NOT EXISTS workspace_chat_thread_time ON workspace_chat_messages(user_id,thread_id,created_at);
         """)
-        db.commit()
 
 
 class ThreadCreate(state.RequestId):
