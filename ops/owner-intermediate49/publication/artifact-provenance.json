@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "kind": "working49_release_provenance",
+  "build": {
+    "run_id": 40453334023,
+    "head": "55b511a82ad9c2cce57d9d5cf01a3bfc741c1250",
+    "all_five_jobs_success": true,
+    "artifact_id": 12711283499,
+    "artifact_sha256": "f8e58dfa8f60f2d98260459f8b535f5e5f2651f8e54e84a1d8d803827ec4615c"
+  },
+  "deployment": {
+    "run_id": 40455209403,
+    "head": "2b663eece0c9e6d3dfc4dade65d61dcde5bdc817",
+    "conclusion": "success",
+    "artifact_id": 12711859492,
+    "artifact_sha256": "d6381dfb70dd26d33d3c2d7c436065ccb517fdeaba10494463b09d5be4cb8576"
+  },
+  "publication": {
+    "run_id": 40455412997,
+    "head": "ed3cfd8d6cdfdd0d6321f3b2eb06012f9452af6f",
+    "conclusion": "success",
+    "artifact_id": 12711394037,
+    "artifact_sha256": "b07869aec81fb0e352f83a698cd4246f510e98ca79a182697b488c178e8279b0"
+  },
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "current_documentation_commit": "64ee25c6b6f90c25073269eb58a76dab806e2502",
+  "physical_phone_verified": false,
+  "phone_observer": {
+    "run_id": 40297200288,
+    "run_attempt": 4,
+    "job_id": 122028505158,
+    "conclusion": "success"
+  },
+  "plan_complete": false
+}

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "documentation_only": true,
+  "runtime_run": 40455209403,
+  "publication_run": 40455412997,
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "code_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "plan_complete": false,
+  "published_at": "2026-10-27T05:28:09+00:00",
+  "files": {
+    "docs/RELEASE_49_2026-10-27.md": {
+      "bytes": 11526,
+      "sha256": "2fdbe750442c3aac12eba265b126163aaf2e3771c5671ce81c34218e18550c72"
+    },
+    "README.md": {
+      "bytes": 174666,
+      "sha256": "f727c31f9fe7727c231d2a1e0654c488e018b603979ca5691954d0c6ca321411"
+    },
+    "AGENTS.md": {
+      "bytes": 193762,
+      "sha256": "3066b6ef106c054aed2a8f262d6c300bb51710a97d32ec29d0ec641c4ce1eab9"
+    },
+    "docs/PLAN_STATUS.md": {
+      "bytes": 393429,
+      "sha256": "3cf91b50a6301fe640716c98cb70ce44b0e28b299d73788de8e266d0b541c988"
+    },
+    "docs/AUTONOMOUS_PORTFOLIO_2026-10-25.md": {
+      "bytes": 127878,
+      "sha256": "d99805288d132b2f4d14120671818c06e9adaebc1c58cae21ac8a7306c11a5bd"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "adb_server_listening_before": false,
+  "application_changed": false,
+  "application_launched": false,
+  "authorized_non_emulator_with_target_package": 0,
+  "connection_counts": {
+    "authorized": 0,
+    "offline": 0,
+    "other": 0,
+    "unauthorized": 0
+  },
+  "device_identifiers_exported": false,
+  "device_pair_or_connect_requested": false,
+  "host": "LAPTOP-NPSGA016",
+  "installation_confirmed": false,
+  "kind": "existing_windows_adb_connection_observation",
+  "observations": [],
+  "observed_at": "2026-10-27T05:31:05.700126+00:00",
+  "physical_phone_verified": false,
+  "run_attempt": 4,
+  "run_id": 40297200288,
+  "schema": 1,
+  "status": "observed",
+  "workflow_sha": "0335582517d861cf854ab8134371a2ec41d3524b"
+}

@@ -1,0 +1,126 @@
+{
+  "backend_health_body": {
+    "status": "ok"
+  },
+  "backend_health_http": 200,
+  "client_observations_at_publication": {
+    "client_headers_are_not_device_attestation": true,
+    "database_open_mode": "ro",
+    "exact49_reported_by_active_session": false,
+    "observed_at": 1793078889,
+    "physical_phone_verified": false,
+    "query_only": true,
+    "scope": "active_authenticated_preview_sessions",
+    "status": "read",
+    "versions": [
+      {
+        "active_session_count": 1,
+        "last_seen_at": 1793078888,
+        "sessions_reporting_exact49": 0,
+        "version_code": 48
+      }
+    ]
+  },
+  "complete_release_gate_passed": false,
+  "https_apk_bytes": 29937843,
+  "https_apk_sha256": "9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e",
+  "https_entire_apk_download_verified": true,
+  "https_policy_verified": true,
+  "kind": "owner_preview49_public_delivery",
+  "physical_phone_verified": false,
+  "publication": {
+    "apk_bytes": 29937843,
+    "apk_sha256": "9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e",
+    "backend_deployment_performed": false,
+    "baseline_publication_sha256": "24cfc7637f14c922ac4d366feea9b1fd9dc50a99fd85dc822356aefc4b065cf2",
+    "build_export_receipt_sha256": "0640ce9ae4333816b08e2f025d3b0dd678e8ac6abaa4ae2241cc9df9389f278e",
+    "build_report_sha256": "7af8b02af5070253d69b38734372f59d5f47e40961300122aca6e904a89459f0",
+    "calendar_runtime_sources": {
+      "autonomous_ai.py": {
+        "bytes": 54368,
+        "sha256": "09d0f79dc25c6e0a21af0f4aad81845ac11333f5338bb899666535ef990d2e53"
+      },
+      "autonomous_controller.py": {
+        "bytes": 36417,
+        "sha256": "1930c63e307d45b86a68fad0506a34b069a5fdf68cef99a6ed1e8d17588fb56e"
+      },
+      "background_dispatch.py": {
+        "bytes": 9212,
+        "sha256": "eefe68f2ff91f7be346fc8026ad4e15296bc197d73379e5c7158ed295e7add25"
+      },
+      "event_monitor.py": {
+        "bytes": 8060,
+        "sha256": "c5c853a1381369cfb0b95db922ec5d98536f261e727452970b2df6bdbc1378ad"
+      },
+      "market_schedule.py": {
+        "bytes": 8958,
+        "sha256": "71fb3be626fb48856ec955a98a45b86023789e02060cd1bee79ab610c1abc1e1"
+      },
+      "volume_jobs.py": {
+        "bytes": 19692,
+        "sha256": "4094b142b0f2b7522380e2d61bcb41a312493b5597bb1140f09a9a341ab5af06"
+      },
+      "volume_market.py": {
+        "bytes": 33034,
+        "sha256": "5254e7eef732a28db8e3e3ed63b73a65b29ccdb983b78da686ce0bb3500ea87e"
+      },
+      "volume_monitor.py": {
+        "bytes": 14454,
+        "sha256": "ae8ca8ab1fbadc9271a37eee0c04807d1429097b96a00254ec943ae89b514b86"
+      },
+      "volume_workspace.py": {
+        "bytes": 39906,
+        "sha256": "3c034e056e8af731d5d78cffda95f892f92a4ad5cb0c11b0774a6636953ce08d"
+      }
+    },
+    "calendar_runtime_verification_sha256": "2920c8a03991d5c1792d64a10e05f92cea323f58791ab40732e1d6acbbf21782",
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+    "channel_version": 49,
+    "complete_release_gate_passed": false,
+    "database_mutations_performed": false,
+    "date": "2026-10-27",
+    "explicit_intermediate_preview": true,
+    "full15_runtime_matrix_passed": false,
+    "full_check_and_build_passed": true,
+    "kind": "owner_requested_latest_built_preview_delivery",
+    "native_status": "not_executed_for_published_build",
+    "owner_request": "Вся работа на ноуте; обновить рабочее приложение и APK на Timeweb без повторной полной матрицы",
+    "package_name": "ru.omnicio.app.debug",
+    "paid_ai_calls_performed": false,
+    "phone_verified": false,
+    "preview_install_smoke": {
+      "full_runtime_matrix_passed": false,
+      "physical_phone_verified": false,
+      "run_id": null,
+      "status": "not_executed_for_published_build"
+    },
+    "previous_apk_sha256": "85fb8b3c3e0020080a421efaae1c101df0e55f97bacb791064e1b1cbaa4a8df1",
+    "previous_version": 48,
+    "prior_native_attempt": {
+      "artifact_id": 12685050936,
+      "artifact_sha256": "9f8dc6419f23bcaf4fd964684582dcf7920fae9a0394aba44555cdd7c7869762",
+      "build_run_id": 40386457173,
+      "is_evidence_for_published_build": false,
+      "run_id": 40389869187,
+      "status": "failed"
+    },
+    "publication_method": "existing_locked_atomic_immutable_release_api",
+    "published_at": 1793078889,
+    "reason_for_current_manifest_change": "Owner requests an intermediate working update; exact build, signature, prior channel and deployed mandate are verified. Native/phone acceptance remains open.",
+    "runtime_pass": false,
+    "service_restart_performed": false,
+    "session_or_owner_binding_mutations_performed": false,
+    "signing_key_mutations_performed": false,
+    "source_archive_bytes": 69716504,
+    "source_archive_sha256": "dc171704ffcf004aad7d8990408d301e9b3a63b6f030c0a5321e776cb7711fe4",
+    "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+    "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+    "trading_orders_submitted": false,
+    "url": "https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-49-9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e.apk",
+    "version_code": 49,
+    "version_name": "0.14.2-preview",
+    "windows_run_attempt": 1,
+    "windows_run_id": 40453334023
+  },
+  "schema": 1
+}
