@@ -13,7 +13,6 @@ import sqlite3
 
 MAX_SCHEMA_CHARACTERS = 262144
 MAX_SCHEMA_STATEMENTS = 512
-_LEADING = re.compile(r"(?:\s+|--[^\r\n]*(?:\r?\n|\Z)|/\*[\s\S]*?\*/)*")
 _KEYWORD = re.compile(r"[A-Za-z]+")
 _ALLOWED = frozenset({"CREATE", "ALTER", "DROP"})
 
@@ -23,8 +22,34 @@ class SchemaMigrationError(ValueError):
 
 
 def _body(statement: str) -> str:
-    match = _LEADING.match(statement)
-    return statement[match.end():] if match else statement
+    """Skip only leading whitespace/comments, without a repeated regex group."""
+    position = 0
+    while position < len(statement):
+        if statement[position].isspace():
+            position += 1
+        elif statement.startswith("--", position):
+            end = statement.find("\n", position + 2)
+            if end < 0:
+                return ""
+            position = end + 1
+        elif statement.startswith("/*", position):
+            end = statement.find("*/", position + 2)
+            if end < 0:
+                raise SchemaMigrationError("schema_statement_incomplete")
+            position = end + 2
+        else:
+            return statement[position:]
+    return ""
+
+
+def _is_schema_statement(statement: str) -> bool:
+    body = _body(statement).strip()
+    if body == ";":
+        return False
+    keyword = _KEYWORD.match(body)
+    if keyword is None or keyword.group().upper() not in _ALLOWED:
+        raise SchemaMigrationError("schema_statement_not_ddl")
+    return True
 
 
 def schema_statements(script: str) -> tuple[str, ...]:
@@ -39,13 +64,8 @@ def schema_statements(script: str) -> tuple[str, ...]:
             continue
         statement = script[start:index + 1]
         start = index + 1
-        body = _body(statement).strip()
-        if body == ";":
-            continue
-        keyword = _KEYWORD.match(body)
-        if keyword is None or keyword.group().upper() not in _ALLOWED:
-            raise SchemaMigrationError("schema_statement_not_ddl")
-        statements.append(statement)
+        if _is_schema_statement(statement):
+            statements.append(statement)
         if len(statements) > MAX_SCHEMA_STATEMENTS:
             raise SchemaMigrationError("schema_statement_limit")
     if _body(script[start:]).strip():

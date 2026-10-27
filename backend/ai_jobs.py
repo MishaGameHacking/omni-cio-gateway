@@ -17,8 +17,10 @@ from typing import Callable
 
 try:
     from .ai_budget import Connect, transaction
+    from .schema_migrations import execute_schema
 except ImportError:
     from ai_budget import Connect, transaction
+    from schema_migrations import execute_schema
 
 CURRENT_JOB: ContextVar[tuple[str, str] | None] = ContextVar('analyst_current_job', default=None)
 MAX_ATTEMPTS = 3
@@ -34,8 +36,8 @@ class AnalysisQueue:
         self.connect = connect
 
     def initialize(self) -> None:
-        with closing(self.connect()) as db:
-            db.executescript('''
+        with transaction(self.connect) as db:
+            execute_schema(db, '''
                 CREATE TABLE IF NOT EXISTS ai_work_jobs (
                     id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -56,14 +58,12 @@ class AnalysisQueue:
                     ON ai_work_jobs(user_id) WHERE status IN ('queued','running');
                 CREATE INDEX IF NOT EXISTS ai_work_due ON ai_work_jobs(status,due_at);
             ''')
-            # executescript commits independently. Acquire the write reservation
-            # AFTER it, before reading the legacy schema, so two starting
-            # workers cannot both attempt the same ADD COLUMN migration.
-            db.execute('BEGIN IMMEDIATE')
+            # The same write reservation covers both DDL and the legacy upgrade.
+            # A failed ALTER must also roll back newly created indexes; another
+            # initializer must not inspect columns outside this transaction.
             columns = {row[1] for row in db.execute('PRAGMA table_info(ai_work_jobs)')}
             if 'cancel_requested_at' not in columns:
                 db.execute('ALTER TABLE ai_work_jobs ADD COLUMN cancel_requested_at INTEGER')
-            db.commit()
 
     @staticmethod
     def _expire(db: sqlite3.Connection, now: int) -> None:
