@@ -1,0 +1,41 @@
+name: Observe deployed runtime and actual Android toolchain without mutation
+'on':
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/timeweb-runtime-observation.yml
+      - deploy/plan-20261027/observe_runtime.py
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Transport the bounded observer to the existing Timeweb host
+        shell: bash
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          cp deploy/plan-20261027/observe_runtime.py deploy/plan-20261027/operation.py
+          python3 tools/owner_plan_transport_20261027.py
+      - name: Retain non-secret observation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-observation-${{ github.run_id }}
+          path: plan-reports/
+          if-no-files-found: warn
+          retention-days: 7
