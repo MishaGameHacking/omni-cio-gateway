@@ -124,7 +124,8 @@ def denying_factory(path, expected_action, expected_name):
 def assert_closed(opened):
     assert opened
     for db in opened:
-        with pytest.raises(sqlite3.ProgrammingError):
+        # A wrong-thread ProgrammingError is not evidence that close() ran.
+        with pytest.raises(sqlite3.ProgrammingError, match='closed database'):
             db.execute('SELECT 1')
 
 
@@ -155,9 +156,12 @@ def test_late_failure_rolls_back_every_new_state_object(workspace, monkeypatch, 
 ])
 def test_failed_index_repair_retains_every_saved_value(workspace, monkeypatch, action, name):
     seed_state(workspace)
+    healthy = snapshot(workspace.path)
+    assert any(kind == 'index' and identifier == EVENT_INDEX for kind, identifier, _ in healthy[0])
     with closing(connect_file(workspace.path)) as db, db:
         db.execute('DROP INDEX workspace_events_user')
     before = snapshot(workspace.path)
+    assert not any(identifier == EVENT_INDEX for _, identifier, _ in before[0])
     factory, opened, refused = denying_factory(workspace.path, action, name)
     with monkeypatch.context() as patch:
         patch.setattr(workspace.backend, 'connect', factory)
@@ -167,7 +171,10 @@ def test_failed_index_repair_retains_every_saved_value(workspace, monkeypatch, a
     assert snapshot(workspace.path) == before
     assert_closed(opened)
     workspace.state.initialize()
-    assert snapshot(workspace.path)[1] == before[1]
+    # Reopen independently: rows alone cannot establish that the index persisted.
+    repaired = snapshot(workspace.path)
+    assert repaired == healthy
+    assert repaired[1] == before[1]
 
 
 def test_interrupt_after_final_table_does_not_leave_partial_schema(workspace, monkeypatch):
@@ -239,16 +246,16 @@ def test_single_write_transaction_starts_before_first_create(workspace, monkeypa
     assert_closed(opened)
 
 
-@pytest.mark.parametrize('populated', (False, True))
-def test_concurrent_initializers_preserve_existing_versions(workspace, monkeypatch, populated):
-    seed_sentinel(workspace.path)
-    if populated:
-        seed_state(workspace)
-    before = snapshot(workspace.path)[1]
+def concurrent_startups(workspace, monkeypatch, initialize):
+    """Retain handles and prove closure on each handle's owning thread."""
     barrier = threading.Barrier(2, timeout=5)
+    lock = threading.Lock()
+    opened, verified = [], []
 
     def connect():
         db = connect_file(workspace.path)
+        with lock:
+            opened.append((threading.get_ident(), db))
         try:
             barrier.wait()
         except BaseException:
@@ -256,14 +263,56 @@ def test_concurrent_initializers_preserve_existing_versions(workspace, monkeypat
             raise
         return db
 
-    monkeypatch.setattr(workspace.backend, 'connect', connect)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(workspace.state.initialize) for _ in range(2)]
-        for future in futures:
-            future.result(timeout=10)
+    def worker():
+        thread_id = threading.get_ident()
+        try:
+            initialize()
+        finally:
+            with lock:
+                owned = [db for creator, db in opened if creator == thread_id]
+            try:
+                assert len(owned) == 1
+                assert_closed(owned)
+                with lock:
+                    verified.append(thread_id)
+            finally:
+                # Cleanup follows the assertion, so it cannot hide a leaked handle.
+                # This also runs on the owning thread; check_same_thread stays on.
+                for db in owned:
+                    db.close()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(workspace.backend, 'connect', connect)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(worker) for _ in range(2)]
+            for future in futures:
+                future.result(timeout=10)
+    assert len(opened) == len(verified) == 2
+    assert {creator for creator, _ in opened} == set(verified)
+    assert len(set(verified)) == 2
+
+
+@pytest.mark.parametrize('populated', (False, True))
+def test_concurrent_initializers_preserve_existing_versions(workspace, monkeypatch, populated):
+    seed_sentinel(workspace.path)
+    if populated:
+        seed_state(workspace)
+    before = snapshot(workspace.path)[1]
+    concurrent_startups(workspace, monkeypatch, workspace.state.initialize)
     schema, rows = snapshot(workspace.path)
     assert {name for _, name, _ in schema} == set(QUERIES) | {EVENT_INDEX}
     assert all(rows[name] == values for name, values in before.items())
+
+
+def test_concurrent_closure_probe_detects_a_retained_open_handle(workspace, monkeypatch):
+    # Deliberately faulty synthetic initializer: the probe must fail BEFORE its
+    # own cleanup. Retained references prevent GC from closing the leaked handle.
+    def leaking_initializer():
+        db = workspace.backend.connect()
+        db.execute('SELECT 1')
+
+    with pytest.raises(pytest.fail.Exception, match='DID NOT RAISE'):
+        concurrent_startups(workspace, monkeypatch, leaking_initializer)
 
 
 def test_busy_writer_leaves_no_partial_schema(workspace, monkeypatch):

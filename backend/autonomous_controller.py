@@ -23,6 +23,7 @@ try:
     from . import volume_catalogue as catalogue, volume_market as market
     from . import portfolio_details as details, volume_purchases as purchases
     from .ai_budget import transaction, micro_rub, BudgetDenied
+    from .schema_migrations import execute_schema
     from .ai_jobs import assert_current_owner_in
     from .ai_guarded_client import configured_route, GuardError
     from .ai_policy import AnalysisTier
@@ -37,6 +38,7 @@ except ImportError:
     import portfolio_details as details
     import volume_purchases as purchases
     from ai_budget import transaction, micro_rub, BudgetDenied
+    from schema_migrations import execute_schema
     from ai_jobs import assert_current_owner_in
     from ai_guarded_client import configured_route, GuardError
     from ai_policy import AnalysisTier
@@ -94,8 +96,10 @@ def reason(code: str) -> dict:
 
 
 def initialize() -> None:
-    with closing(backend.connect()) as db:
-        db.executescript("""
+    # Keep all controller schema changes inside one write transaction. Startup
+    # must preserve pauses, connection history, discovery cursors and leases.
+    with transaction(backend.connect) as db:
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS automation_preferences (
                 user_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
                 version INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -116,7 +120,6 @@ def initialize() -> None:
             CREATE INDEX IF NOT EXISTS automation_events_user
                 ON automation_events(user_id,created_at DESC);
         """)
-        db.commit()
 
 
 def _preferences_in(db, user_id: int) -> dict:
