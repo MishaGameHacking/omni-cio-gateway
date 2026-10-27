@@ -178,6 +178,46 @@ tests = replace(tests, '    snapshot = saved(fixture, age=1900)\n    job = contr
     job = controller.enqueue_collection(fixture["user"])''')
 save("backend/tests/test_autonomous_controller.py", tests)
 
+tests = base("backend/tests/test_ai_controls_integration.py")
+tests = replace(tests, 'from backend.tests.test_autonomous_ai import sample_snapshot',
+                'from backend.tests.test_autonomous_ai import sample_snapshot\nfrom backend.tests.calendar_dispatch_fixtures import open_dispatch_market')
+tests = replace(tests, '        now = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)\n        def synthetic_run(user_id):',
+                '        now = datetime.now(UTC)\n        def synthetic_run(user_id):')
+tests = replace(tests, "        with patch.dict(os.environ, {'AI_EXTERNAL_PROCESSING_APPROVED':'false'}), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90, cash_share=5))",
+                "        with open_dispatch_market(self.user, now=now), patch.dict(os.environ, {'AI_EXTERNAL_PROCESSING_APPROVED':'false'}), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90, cash_share=5))")
+tests = replace(tests, "        with patch.object(ai, 'get_tinvest_portfolio', side_effect=HTTPException(status_code=503, detail='tinvest_timeout')):",
+                "        with open_dispatch_market(self.user), patch.object(ai, 'get_tinvest_portfolio', side_effect=HTTPException(status_code=503, detail='tinvest_timeout')):")
+save("backend/tests/test_ai_controls_integration.py", tests)
+
+tests = base("backend/tests/test_update_integration.py")
+tests = replace(tests, 'from backend.tests.test_autonomous_ai import sample_snapshot',
+                'from backend.tests.test_autonomous_ai import sample_snapshot\nfrom backend.tests.calendar_dispatch_fixtures import open_dispatch_market')
+tests = replace(tests, '''        with patch.object(ai.AnalysisQueue, 'enqueue') as enqueue, \\
+                patch.object(ai, 'drain', return_value={}) as drain:
+            ai.run_scheduler_cycle()
+        enqueue.assert_called_once_with(self.uid)
+        drain.assert_called_once()''',
+'''        with closing(backend.connect()) as db:
+            user = db.execute('SELECT * FROM users WHERE id=?', (self.uid,)).fetchone()
+        with open_dispatch_market(user), patch.object(ai, 'drain', return_value={}) as drain:
+            ai.run_scheduler_cycle()
+        self.assertFalse(updates.user_can_run(backend.connect, self.uid))
+        with closing(backend.connect()) as db:
+            queued = db.execute("SELECT user_id,status FROM ai_work_jobs").fetchall()
+        self.assertEqual([(row['user_id'], row['status']) for row in queued], [(self.uid, 'queued')])
+        drain.assert_called_once()''')
+tests = replace(tests, '''        with patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90)), \\
+                patch.object(ai.GuardedAIClient, 'check_ready', side_effect=ai.GuardError('test_ai_disabled')):
+            result = ai.run_scheduler_cycle()
+        self.assertEqual(result, {'processed': 5, 'failed': 0})''',
+'''        with closing(backend.connect()) as db:
+            users = db.execute('SELECT * FROM users ORDER BY id').fetchall()
+        with open_dispatch_market(*users), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90)), \\
+                patch.object(ai.GuardedAIClient, 'check_ready', side_effect=ai.GuardError('test_ai_disabled')):
+            result = ai.run_scheduler_cycle()
+        self.assertEqual(result, {'processed': 5, 'failed': 0})''')
+save("backend/tests/test_update_integration.py", tests)
+
 for name in ("app/build.gradle.kts", ".github/scripts/tests/test_android17_live_spectrum.py", ".github/scripts/tests/test_spectrum_brand_identity.py"):
     text = base(name)
     text = text.replace('versionCode = 48', 'versionCode = 49').replace('versionName = "0.14.1"', 'versionName = "0.14.2"')

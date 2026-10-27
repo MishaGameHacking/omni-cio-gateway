@@ -3,21 +3,21 @@
   "base_commit": "6d037bcbba376d2b2e6e53caa0f96874ac1497ef",
   "base_source_sha256": "26d1ccf6b9685925291edb968f17ef091b145831d7c6ca791e5e942246af49fa",
   "base_build_run": 40400521138,
-  "source_paths": 15,
-  "new_paths": 5,
+  "source_paths": 18,
+  "new_paths": 6,
   "version_code": 49,
   "version_name": "0.14.2-preview",
-  "reviewed_files_sha256": "8927e53d2e8849de97d77b80416f406c4f6f749fc2d5e876830f04d32b522f25",
-  "bundle_sha256": "e50246793ad4886757eac22a26bd94b41804e9e57bcd06437a6a749bd4d24a94",
-  "transport_sha256": "a9ae51cffd36ea572db8cc0d91122c0f20906c4922eeeb1dc98136f45f65dbb7",
-  "patch_manifest_sha256": "5915cfe14736e29203dc718ee48b4260cf89568ce9f401ff82f06be2593ed9c8",
+  "reviewed_files_sha256": "d81252039e88864e5095670758b3148ec581b4b18f45eecd7ee8f4c7bad0b485",
+  "bundle_sha256": "0ed9ad1d07dd56325ed7cd8a0f5a097a933e29d3200ff3d015a05c3b9bccb8b7",
+  "transport_sha256": "608d4b88a5486e808deb0a1db6a1397172d9ba86e0c014caef4cc715f58194d3",
+  "patch_manifest_sha256": "5e2c48b39d85df1bb530d1cf6e5e487cf0e81d97e537a0ccbaf578fc685db649",
   "bootstrap_sha256": "80517ea1faf16cfa1759691321b5ed7dacf95cb94b1f46254eb674faf162f87f",
-  "workflow_sha256": "46c3ff1fadeef3fb1fd661abd86f78df94732ade9db265c28d0a6ecd06c0d54b",
+  "workflow_sha256": "6a2c2c81f10f4b1e380907f74d8ce2c33d96768c04a868f62ffa2043b93f957e",
   "bundle_specs": [
     {
       "name": "n00-calendar-dispatch49",
-      "transport_sha256": "a9ae51cffd36ea572db8cc0d91122c0f20906c4922eeeb1dc98136f45f65dbb7",
-      "decoded_sha256": "e50246793ad4886757eac22a26bd94b41804e9e57bcd06437a6a749bd4d24a94"
+      "transport_sha256": "608d4b88a5486e808deb0a1db6a1397172d9ba86e0c014caef4cc715f58194d3",
+      "decoded_sha256": "0ed9ad1d07dd56325ed7cd8a0f5a097a933e29d3200ff3d015a05c3b9bccb8b7"
     }
   ],
   "transport_storage": "exact GitHub event SHA, per-file SHA256 verified on Windows",

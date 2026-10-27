@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "run_id": 40451379074,
+  "workflow_sha": "6f3c8ba94d5be67d9bb943daaaf0c984a0921557",
+  "status": "failed_checks_build_passed",
+  "not_a_successful_release": true,
+  "new_calendar_contracts_passed": 55,
+  "jvm_tests_passed": 232,
+  "failure_count": 4,
+  "failures": [
+    {
+      "module": "backend.tests.test_ai_controls_integration.ControlsIntegrationTests",
+      "name": "test_scheduler_drains_through_real_analysis_without_live_model",
+      "message": "AssertionError: {'processed': 0, 'failed': 0} != {'processed': 1, 'failed': 0}\n- {'failed': 0, 'processed': 0}\n?                            ^\n\n+ {'failed': 0, 'processed': 1}\n?                            ^"
+    },
+    {
+      "module": "backend.tests.test_ai_controls_integration.ControlsIntegrationTests",
+      "name": "test_scheduler_retry_keeps_collection_job_after_temporary_error",
+      "message": "AssertionError: 0 != 1"
+    },
+    {
+      "module": "backend.tests.test_update_integration.ApplicationUpdateTests",
+      "name": "test_five_users_without_sessions_are_monitored_independently",
+      "message": "AssertionError: {'processed': 0, 'failed': 0} != {'processed': 5, 'failed': 0}\n- {'failed': 0, 'processed': 0}\n?                            ^\n\n+ {'failed': 0, 'processed': 5}\n?                            ^"
+    },
+    {
+      "module": "backend.tests.test_update_integration.ApplicationUpdateTests",
+      "name": "test_scheduler_enqueues_connected_users_without_client_readiness",
+      "message": "AssertionError: Expected 'enqueue' to be called once. Called 0 times."
+    }
+  ],
+  "original_files": {
+    "TEST-ru.omnicio.app.ui.spatial.SpatialMaterialTest.xml": {
+      "bytes": 661,
+      "sha256": "91d2fa3c396890b34133ac779752c03f674edd3934e9754d4937c4b675802824"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.StrategyPercentDraftSaverTest.xml": {
+      "bytes": 673,
+      "sha256": "770b1e753212181a62d2d2d14f2ac7d8822ae996ea5e3c25bb6bf62437904d6b"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.SpatialGeographyGeometryTest.xml": {
+      "bytes": 810,
+      "sha256": "facfddd89e125217aff73431a6c08311bf908d2cf6ba27e02091c6e635dc510f"
+    },
+    "TEST-ru.omnicio.app.ui.PanelNavigationGuardTest.xml": {
+      "bytes": 1880,
+      "sha256": "0bb5b005316049275e21ea5f3f8bda74c125e375c5aa208de9ace9199e561115"
+    },
+    "TEST-ru.omnicio.app.data.workspace.VolumeWorkspaceClientTest.xml": {
+      "bytes": 1201,
+      "sha256": "c64a0f1c396dfbf95804fd8294b911648c79a71a2501db6321817c0d6236f696"
+    },
+    "linux-linux-test-report.json": {
+      "bytes": 1381,
+      "sha256": "b4625ee94e5950a929c459698bf774a62765b12f55304cdc9f46fa7a894109b0"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.WorkspaceActionRecoveryTest.xml": {
+      "bytes": 973,
+      "sha256": "85703bae49dd859c4bcc6d6bee15e6bb14f8260a136a3e8743cb6e2840ced202"
+    },
+    "TEST-ru.omnicio.app.data.backend.BackendConfigTest.xml": {
+      "bytes": 775,
+      "sha256": "9dbbdf331296ad19260b795575eaa6071f60c1212d4a3cd6a3b6d53c9e5e1f24"
+    },
+    "TEST-ru.omnicio.app.data.workspace.LiveCursorTest.xml": {
+      "bytes": 881,
+      "sha256": "92707e78df1a5952ad2bec0317d095403843b41fec41597b541d4c8c96c56672"
+    },
+    "TEST-ru.omnicio.app.BusinessChatContractTest.xml": {
+      "bytes": 2382,
+      "sha256": "0af2e7e62a725df222dc72eff5bdfb816e6d0744ae33582298e85b424680c321"
+    },
+    "11-tools-tests.log": {
+      "bytes": 7962,
+      "sha256": "ddd4654ef8e5d9ccf514d033a6a2aa6f2f5ac754b2d034aee69ea6263e2f1f40"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.AutoSaveModelTest.xml": {
+      "bytes": 2080,
+      "sha256": "12e37a3dd0b2b6e0d62aefcc0e0b26c8763a368bd5d366c37ae863a75ef7a18b"
+    },
+    "TEST-ru.omnicio.app.ui.updates.UpdateAttemptGateTest.xml": {
+      "bytes": 1964,
+      "sha256": "e443e312344c42c4099e912d56da034f9f99871a5abcf94ca67f884b681365f9"
+    },
+    "TEST-ru.omnicio.app.ui.spectrum.EditorInputRestorationTest.xml": {
+      "bytes": 2081,
+      "sha256": "2abd2d65829d5773ab8e22cca735f4e3d9414b16a7c6eb6adea0928795bd9d90"
+    },
+    "TEST-ru.omnicio.app.ui.portfolio.WorkspaceFinancialSemanticsTest.xml": {
+      "bytes": 3671,
+      "sha256": "583bf306ff3b857f00367065d147f51eb46ec25e093718955890b9b399df78ac"
+    },
+    "source-final.json": {
+      "bytes": 169700,
+      "sha256": "b7c1edf686463d06cebbd6217c4bd36843da25cf85fb241b22940a10e1a29454"
+    },
+    "TEST-ru.omnicio.app.ui.NavigationCatalogueTest.xml": {
+      "bytes": 916,
+      "sha256": "55447ed87a6e061655c686c8ec40097ca5125dad2fa96754859b3d2bfb722d44"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.StrategyEditorInitializationTest.xml": {
+      "bytes": 869,
+      "sha256": "5610a284842ce87e875f78248a1b7dff29915d005ed096da9220cf52d1e6e1bb"
+    },
+    "TEST-ru.omnicio.app.ui.home.DashboardOrderTest.xml": {
+      "bytes": 771,
+      "sha256": "f3f2f3ca7fca5f8dd0f333e50479e22d11de961ca5dd518281266fd682e165d3"
+    },
+    "TEST-ru.omnicio.app.ui.theme.DisplayedThemeTest.xml": {
+      "bytes": 629,
+      "sha256": "2f5473f4a777336f863d58b1a5c6d33290c603f4a0d4cd285186df2868fd8ca0"
+    },
+    "TEST-ru.omnicio.app.data.workspace.ChatRouteQuoteTest.xml": {
+      "bytes": 874,
+      "sha256": "63f3dff5cb3118e9854ea1345fb89035efad7841cf17b11fc73dedfdd730cd7c"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.StrategyPercentDraftTest.xml": {
+      "bytes": 935,
+      "sha256": "f02d025b90b9a34ae6dadf4ab3a0f0f02ddc823b350cb543ad740fb565948802"
+    },
+    "export-receipt.json": {
+      "bytes": 406,
+      "sha256": "46d7e25da450e0080d80b07e2ee24e9c637f80afdc082aedb1704b402095933b"
+    },
+    "18-gradle.log": {
+      "bytes": 21063,
+      "sha256": "f37e41ea756fd4315de5865d663fe5c0c0e2edd422c201a10579d9a15f104ec0"
+    },
+    "TEST-ru.omnicio.app.ui.spectrum.EditorImeHandoffTest.xml": {
+      "bytes": 3434,
+      "sha256": "aba5409651e454c3f86186e12f9e340216657e7b3b93478ed2d0478346361201"
+    },
+    "TEST-ru.omnicio.app.ui.theme.ApplicationThemeModeTest.xml": {
+      "bytes": 1553,
+      "sha256": "e058e8a3112f68853283f9dededdba5989e6d0528f53333704aed444f70e6ad9"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.SpatialGuideGeometryTest.xml": {
+      "bytes": 655,
+      "sha256": "42ac65bba8f3876759b7f374cc897e19eb7555fb14a2bf30602f2531f32cbf55"
+    },
+    "10-host-tests.log": {
+      "bytes": 312178,
+      "sha256": "4611c240813ec4230bcee4b9fd9caa977fdb5480e506fa0aab2e2f45ba5ef59f"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.SpatialChartGeometryTest.xml": {
+      "bytes": 961,
+      "sha256": "6f5a478d6529bbd4637e3e6388c3b56491d19cc827ec0ab01803c2f0c45f8a1e"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.SuggestedInputModelTest.xml": {
+      "bytes": 816,
+      "sha256": "e14206b8d3dd231a28d01e55322c131ab1d3458ef5dd75d648821a438e5b7105"
+    },
+    "controller.json": {
+      "bytes": 490,
+      "sha256": "9022f34ecd00ea8f343415f27a03727692bbb94cd25265ff36c13cb3f3a6228e"
+    },
+    "TEST-ru.omnicio.app.data.notifications.NotificationSchedulingTest.xml": {
+      "bytes": 950,
+      "sha256": "95e4b426d0c29cf8097a72829a163ef4b3f0cce3a8697fef8ba9b557e93f1937"
+    },
+    "TEST-ru.omnicio.app.data.backend.SessionTransitionsTest.xml": {
+      "bytes": 785,
+      "sha256": "bbd0dbde2332a962d602b2522cd3fcb12565306d5c12f06217047567594edb77"
+    },
+    "applied-patches.json": {
+      "bytes": 4273,
+      "sha256": "2f89b2aac780265703570e9da2d62a27ae449f835512eead329c766f7a064368"
+    },
+    "12-node-tests.log": {
+      "bytes": 4061,
+      "sha256": "e686af02a7d4f726fc2c3e13ff5f2cfa1b445d9f9c091a4cdce8ef5c43d9aefc"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.PlanEditorInitializationTest.xml": {
+      "bytes": 981,
+      "sha256": "ed57f95a9d1473cdd7769bae46b302f22807a246956617a6c2d403ff5c7175c9"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.StrategyMandateControlsTest.xml": {
+      "bytes": 833,
+      "sha256": "2bd2c5ea6bc0d3dc298f3ce3a91a836f0c7b131331882c8c1a13903db25aa126"
+    },
+    "TEST-ru.omnicio.app.data.workspace.WorkspaceEndpointPolicyTest.xml": {
+      "bytes": 680,
+      "sha256": "ccf23cfbb221f0c1d43598e7d5a10ad96c13d24c4fb4865fbe95e0ec3ee29f3b"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.PortfolioDestinationStateTest.xml": {
+      "bytes": 824,
+      "sha256": "8856f8c2be1fc119be8841a63e380361e1254eba635954f67360d87eb53962e1"
+    },
+    "TEST-ru.omnicio.app.data.workspace.AiAvailabilityMessageTest.xml": {
+      "bytes": 658,
+      "sha256": "11726245d6fa9b12981f7d3bcd29f426e0cc97b22d7cedc575eb05cd88c9791d"
+    },
+    "windows-development.json": {
+      "bytes": 28305,
+      "sha256": "cf5b952236f4c19e283d2ea1051e5c0520b743951f296b3177dbe31d72821ffd"
+    },
+    "TEST-ru.omnicio.app.WorkspaceRuntimeRegressionTest.xml": {
+      "bytes": 2537,
+      "sha256": "f8a48a11d9949b8d21041162cb2df7eeca0e9210dfa2acf0aa7307dbfd6e1f6f"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.FlatMotionPolicyTest.xml": {
+      "bytes": 764,
+      "sha256": "6ff2464482c915828d16155da3a0cdb0af8fee872df903de04dd62dc2fd28821"
+    },
+    "TEST-ru.omnicio.app.ui.theme.AnalystColorsTest.xml": {
+      "bytes": 1102,
+      "sha256": "b5857e9a696bd4fccb1a757b3f735983eb9d61b80f777e8e4b4aca064fce75d7"
+    },
+    "linux-backend-tests.xml": {
+      "bytes": 281782,
+      "sha256": "b2a5c51b37e2f0d3d3fea2086870c55438f50b517c1027c29fabd15645f0ac8b"
+    },
+    "TEST-ru.omnicio.app.data.diagnostics.CrashReportSanitizerTest.xml": {
+      "bytes": 1102,
+      "sha256": "62b1c89b967ad8c5a6e48054f26efe213a7ef18d147db8072966dad42bcfafcb"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.PurchaseCheckLifetimeTest.xml": {
+      "bytes": 926,
+      "sha256": "a67ebb79bf6a713d85f0a2318afa33d5a4696cd00e4274123858a39972de9716"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.LiveIconClockTest.xml": {
+      "bytes": 631,
+      "sha256": "f4d9355af64e4ed270039d978f071cf24ec9e2975e6cc580ec14bc96d2aa95f8"
+    },
+    "linux-backend-full-suite.log": {
+      "bytes": 7914,
+      "sha256": "21e0ed57ee858621fb3e4c734773d5c8ed850a6483c043db7047bcde492e9a89"
+    },
+    "original-artifact.zip": {
+      "bytes": 240705,
+      "sha256": "5acf7cd3cf0eea4655b08ef5d2e95cfc27c8fbd969885f42800edcb4433ca694"
+    },
+    "TEST-ru.omnicio.app.ui.workspace.AssistantComposerAvailabilityTest.xml": {
+      "bytes": 1045,
+      "sha256": "2db229fc87d39d53ae8cd922bb4e35c02d1a67fc52943cd67b86eea3a3a48339"
+    },
+    "source-before.json": {
+      "bytes": 168936,
+      "sha256": "04f32489210c8c9c06917e304596f0c580bd91b5da93d4613c4dade6de80fad7"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.SpatialColorsTest.xml": {
+      "bytes": 1422,
+      "sha256": "832a576215fd3838c75e04348192dee695a3a2f469c9eb51aeee4de323d915ae"
+    },
+    "TEST-ru.omnicio.app.ui.spatial.SpatialPlacementInvalidationTest.xml": {
+      "bytes": 1041,
+      "sha256": "e5f076aaa81ed2ecde82b39a77d7e7503992ba05a1fae3778977013ec86fc5df"
+    }
+  },
+  "repair": "Supply a persisted synthetic broker calendar to four scheduler integration cases; retain real dispatch, queue, analysis, retry and per-user assertions. Runtime code unchanged from v1."
+}
