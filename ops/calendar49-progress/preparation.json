@@ -3,5 +3,10 @@
   "read_only": true,
   "target_run": 40453334023,
   "source_observer_sha256": "d028f2a7042568693421272ae2866b0eac32294afb6c88b67615461a7ee08762",
-  "workflow_sha256": "2612aba5f4cb940cf6867e2b613a35064934c26333aee2ba27cb3769c78f3f04"
+  "workflow_sha256": "750b559883b9f2242f08adaf8c8089a7114aae56c39431dbc4fb61801ff5153b",
+  "first_dispatch": {
+    "run_id": 40454513867,
+    "status": "invalid_workflow_yaml_boolean_key",
+    "application_not_executed": true
+  }
 }

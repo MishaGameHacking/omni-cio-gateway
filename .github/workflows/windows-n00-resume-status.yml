@@ -1,10 +1,4 @@
 name: Observe calendar49 v2 original build progress
-true:
-  push:
-    branches:
-    - codex/timeweb-owner-prepare-2026-10-23
-    paths:
-    - .github/workflows/windows-n00-resume-status.yml
 permissions:
   contents: read
 jobs:
@@ -53,3 +47,9 @@ jobs:
         \        result['jvm'].append({'path': str(folder), 'suites': suites,\n            'totals': {key: sum(s[key] for\
         \ s in suites) for key in ('tests', 'failures', 'errors', 'skipped')}})\nprint('N00_RESUME_OBSERVATION=' + json.dumps(result,\
         \ ensure_ascii=True))\n"
+'on':
+  push:
+    branches:
+    - codex/timeweb-owner-prepare-2026-10-23
+    paths:
+    - .github/workflows/windows-n00-resume-status.yml
