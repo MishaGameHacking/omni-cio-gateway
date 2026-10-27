@@ -1,4 +1,4 @@
-name: Verify N02 recovery and N03 public sources on Timeweb
+name: Verify autonomous portfolio backend candidate on Timeweb
 'on':
   push:
     branches:
@@ -431,25 +431,26 @@ jobs:
         )\\\\n                body.extend(chunk)\\\\n            return response.status_code, response_headers, bytes(body)\\\\n\\\\n\\\\ndef _header(value: object)\
         \ -> str | None:\\\\n    if isinstance(value, str) and 0 < len(value) <= 512 and all(32 <= ord(c) < 127 for c in value):\\\\n        return value\\\\n   \
         \ return None\\\\n\\\\n\\\\ndef _retry_delay(value: object, now: datetime, minimum: timedelta) -> timedelta:\\\\n    if not isinstance(value, str) or len(value)\
-        \ > 128:\\\\n        return minimum\\\\n    try:\\\\n        if value.isascii() and value.isdigit():\\\\n            seconds = int(value[:8])\\\\n       \
-        \ else:\\\\n            seconds = (_clock(parsedate_to_datetime(value)) - now).total_seconds()\\\\n        return timedelta(seconds=max(minimum.total_seconds(),\
-        \ min(21600, max(0, seconds))))\\\\n    except (ValueError, TypeError, OverflowError):\\\\n        return minimum\\\\n\\\\n\\\\ndef _safe_result(result: dict,\
-        \ at: datetime) -> dict:\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"source_cache_invalid\")\\\\n    if result.get(\"state\"\
-        ) == \"available\":\\\\n        try:\\\\n            if at >= _stamp(result.get(\"fresh_until\")) or _stamp(result[\"checked_at\"]) > at:\\\\n           \
-        \     return {**result, \"state\": \"stale\", \"reason\": \"cached_identity_expired\", \"identity\": None}\\\\n        except (SourceError, KeyError):\\\\\
-        n            return {\"provider\": PROVIDER, \"state\": \"unavailable\", \"reason\": \"cache_invalid\", \"identity\": None}\\\\n    return result\\\\n\\\\\
-        n\\\\ndef _cached_json(value: str) -> dict:\\\\n    if not isinstance(value, str) or len(value) > 32768:\\\\n        raise SourceError(\"source_cache_invalid\"\
-        )\\\\n    try:\\\\n        result = json.loads(value)\\\\n    except (ValueError, TypeError) as error:\\\\n        raise SourceError(\"source_cache_invalid\"\
-        ) from error\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"source_cache_invalid\")\\\\n    return result\\\\n\\\\n\\\\ndef cached_result(connect,\
-        \ isin: str, *, at: datetime | None = None) -> dict | None:\\\\n    now = _clock(at)\\\\n    with closing(connect()) as db:\\\\n        initialize(db)\\\\\
-        n        row = db.execute(\"SELECT result FROM public_source_cache_v1 WHERE provider=? AND subject=?\",\\\\n            (PROVIDER, isin)).fetchone()\\\\n\
-        \    return _safe_result(_cached_json(row[0]), now) if row else None\\\\n\\\\n\\\\ndef refresh_isin(connect, isin: str, *, at: datetime | None = None, fetch=None)\
-        \ -> dict:\\\\n    now, url = _clock(at), request_url(isin)\\\\n    token = uuid.uuid4().hex\\\\n    with closing(connect()) as db:\\\\n        initialize(db)\\\
-        \\n        with db:\\\\n            db.execute(\"BEGIN IMMEDIATE\")\\\\n            row = db.execute(\"SELECT result,next_check_at,etag,last_modified,document_sha256,failures,lease_until\
-        \ \"\\\\n                \"FROM public_source_cache_v1 WHERE provider=? AND subject=?\", (PROVIDER, isin)).fetchone()\\\\n            if row and (now < _stamp(row[1])\
-        \ or row[6] and now < _stamp(row[6])):\\\\n                return _safe_result(_cached_json(row[0]), now)\\\\n            initial = {\"provider\": PROVIDER,\
-        \ \"isin\": isin, \"state\": \"pending\", \"identity\": None}\\\\n            db.execute(\"INSERT INTO public_source_cache_v1(provider,subject,result,next_check_at,lease_token,lease_until)\
-        \ \"\\\\n                \"VALUES (?,?,?,?,?,?) ON CONFLICT(provider,subject) DO UPDATE SET lease_token=excluded.lease_token, \"\\\\n                \"lease_until=excluded.lease_until\"\
+        \ > 128:\\\\n        return minimum\\\\n    try:\\\\n        if value.isascii() and value.isdigit():\\\\n            seconds = int(value)\\\\n        else:\\\
+        \\n            seconds = (_clock(parsedate_to_datetime(value)) - now).total_seconds()\\\\n        maximum = (datetime.max.replace(tzinfo=timezone.utc) - now).total_seconds()\
+        \ - 1\\\\n        return timedelta(seconds=max(minimum.total_seconds(), min(maximum, max(0, seconds))))\\\\n    except (ValueError, TypeError, OverflowError):\\\
+        \\n        return minimum\\\\n\\\\n\\\\ndef _safe_result(result: dict, at: datetime) -> dict:\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"\
+        source_cache_invalid\")\\\\n    if result.get(\"state\") == \"available\":\\\\n        try:\\\\n            if at >= _stamp(result.get(\"fresh_until\")) or\
+        \ _stamp(result[\"checked_at\"]) > at:\\\\n                return {**result, \"state\": \"stale\", \"reason\": \"cached_identity_expired\", \"identity\":\
+        \ None}\\\\n        except (SourceError, KeyError):\\\\n            return {\"provider\": PROVIDER, \"state\": \"unavailable\", \"reason\": \"cache_invalid\"\
+        , \"identity\": None}\\\\n    return result\\\\n\\\\n\\\\ndef _cached_json(value: str) -> dict:\\\\n    if not isinstance(value, str) or len(value) > 32768:\\\
+        \\n        raise SourceError(\"source_cache_invalid\")\\\\n    try:\\\\n        result = json.loads(value)\\\\n    except (ValueError, TypeError) as error:\\\
+        \\n        raise SourceError(\"source_cache_invalid\") from error\\\\n    if not isinstance(result, dict):\\\\n        raise SourceError(\"source_cache_invalid\"\
+        )\\\\n    return result\\\\n\\\\n\\\\ndef cached_result(connect, isin: str, *, at: datetime | None = None) -> dict | None:\\\\n    now = _clock(at)\\\\n \
+        \   with closing(connect()) as db:\\\\n        initialize(db)\\\\n        row = db.execute(\"SELECT result FROM public_source_cache_v1 WHERE provider=? AND\
+        \ subject=?\",\\\\n            (PROVIDER, isin)).fetchone()\\\\n    return _safe_result(_cached_json(row[0]), now) if row else None\\\\n\\\\n\\\\ndef refresh_isin(connect,\
+        \ isin: str, *, at: datetime | None = None, fetch=None) -> dict:\\\\n    now, url = _clock(at), request_url(isin)\\\\n    token = uuid.uuid4().hex\\\\n  \
+        \  with closing(connect()) as db:\\\\n        initialize(db)\\\\n        with db:\\\\n            db.execute(\"BEGIN IMMEDIATE\")\\\\n            row = db.execute(\"\
+        SELECT result,next_check_at,etag,last_modified,document_sha256,failures,lease_until \"\\\\n                \"FROM public_source_cache_v1 WHERE provider=?\
+        \ AND subject=?\", (PROVIDER, isin)).fetchone()\\\\n            if row and (now < _stamp(row[1]) or row[6] and now < _stamp(row[6])):\\\\n               \
+        \ return _safe_result(_cached_json(row[0]), now)\\\\n            initial = {\"provider\": PROVIDER, \"isin\": isin, \"state\": \"pending\", \"identity\":\
+        \ None}\\\\n            db.execute(\"INSERT INTO public_source_cache_v1(provider,subject,result,next_check_at,lease_token,lease_until) \"\\\\n           \
+        \     \"VALUES (?,?,?,?,?,?) ON CONFLICT(provider,subject) DO UPDATE SET lease_token=excluded.lease_token, \"\\\\n                \"lease_until=excluded.lease_until\"\
         , (PROVIDER, isin, json.dumps(initial), now.isoformat(), token,\\\\n                (now + timedelta(seconds=60)).isoformat()))\\\\n        old_body = None\\\
         \\n        if row and row[4]:\\\\n            document = db.execute(\"SELECT body FROM public_source_documents_v1 WHERE sha256=?\", (row[4],)).fetchone()\\\
         \\n            old_body = bytes(document[0]) if document else None\\\\n            if old_body is not None and (len(old_body) > MAX_BYTES or hashlib.sha256(old_body).hexdigest()\
@@ -547,78 +548,78 @@ jobs:
         , first_horizon)) == 2\\\\n    assert {row[2] for row in calls} == {first_horizon}\\\\n    assert state.saved_snapshot(fixture[\"user\"])[\"operations\"][\"\
         end\"] == first_horizon\\\\n\\', \\'backend/tests/test_n02_metadata_recovery.py\\': \\'\"\"\"A failed instrument lookup must not permanently disable automatic\
         \ polling.\"\"\"\\\\nfrom copy import deepcopy\\\\nfrom datetime import datetime, timedelta, timezone\\\\nfrom types import SimpleNamespace\\\\n\\\\nimport\
-        \ pytest\\\\nfrom fastapi import HTTPException\\\\n\\\\nfrom backend import autonomous_ai as ai, background_dispatch as dispatch, event_monitor, market_schedule\\\
-        \\nfrom backend import volume_jobs as jobs, volume_state as state, volume_workspace as workspace\\\\nfrom backend import volume_monitor as monitor\\\\nfrom\
-        \ backend.tests.test_background_dispatch import stored, event_sources, forbidden\\\\nfrom backend.tests.test_volume_workspace import fixture\\\\nfrom backend.volume_contract\
-        \ import now_iso, source\\\\n\\\\n\\\\ndef missing_exchange(fixture):\\\\n    snapshot = stored(fixture, open_window=True)\\\\n    target = next(row for row\
-        \ in snapshot[\"positions\"] if row[\"instrument_type\"] == \"share\")\\\\n    target[\"metadata\"].pop(\"exchange\", None)\\\\n    workspace.persist(fixture[\"\
-        user\"], snapshot)\\\\n    return state.saved_snapshot(fixture[\"user\"]), target[\"instrument_uid\"]\\\\n\\\\n\\\\ndef recovered_instrument(uid):\\\\n  \
-        \  return {\"uid\": uid, \"exchange\": \"MOEX\",\\\\n            \"_source\": source(\"GetInstrumentBy\", uid, now_iso(), ttl=86400)}\\\\n\\\\n\\\\ndef test_missing_exchange_recovers_in_event_lane_without_refreshing_valuation(fixture):\\\
-        \\n    old, uid = missing_exchange(fixture)\\\\n    assert dispatch.schedule(fixture[\"user\"])[\"reason\"] == \"instrument_exchange_unknown\"\\\\n    event_sources(fixture)\\\
-        \\n    fixture[\"patch\"].setattr(workspace.details, \"load_dashboard\", forbidden)\\\\n    fixture[\"patch\"].setattr(ai, \"get_tinvest_portfolio\", forbidden)\\\
-        \\n    calls = []\\\\n\\\\n    def read(user, identifier):\\\\n        calls.append(identifier)\\\\n        return recovered_instrument(identifier)\\\\n\\\
-        \\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", read)\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"\
-        job_id\"])\\\\n    assert calls == [uid]\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\n   \
-        \ current = state.saved_snapshot(fixture[\"user\"])\\\\n    for name in (\"as_of\", \"capital\", \"accounts\", \"collection\", \"attribution\"):\\\\n    \
-        \    assert current[name] == old[name]\\\\n    for prior, present in zip(old[\"positions\"], current[\"positions\"]):\\\\n        assert {key: value for key,\
-        \ value in present.items() if key != \"metadata\"} == {\\\\n            key: value for key, value in prior.items() if key != \"metadata\"}\\\\n    repaired\
-        \ = next(row for row in current[\"positions\"] if row[\"instrument_uid\"] == uid)\\\\n    assert repaired[\"metadata\"][\"exchange\"] == \"MOEX\"\\\\n   \
-        \ assert repaired[\"metadata\"][\"exchange_source\"][\"id\"] in {ref[\"id\"] for ref in current[\"sources\"]}\\\\n    prior_metadata = next(row[\"metadata\"\
-        ] for row in old[\"positions\"] if row[\"instrument_uid\"] == uid)\\\\n    assert {key: value for key, value in repaired[\"metadata\"].items() if key not\
-        \ in {\"exchange\", \"exchange_source\"}} == prior_metadata\\\\n    assert current[\"snapshot_id\"] != old[\"snapshot_id\"]\\\\n    assert dispatch.schedule(fixture[\"\
-        user\"])[\"regular_price_polling_allowed\"] is True\\\\n    previous = {(row[\"account_id\"], row[\"instrument_uid\"]): row for row in current[\"positions\"\
-        ]}\\\\n    _, metadata = monitor._monitor_accounts(fixture[\"dashboard\"], previous)\\\\n    later = workspace.normalize_snapshot(fixture[\"user\"], fixture[\"\
-        dashboard\"], metadata)\\\\n    retained = next(row for row in later[\"positions\"] if row[\"instrument_uid\"] == uid)\\\\n    assert retained[\"metadata\"\
-        ][\"exchange_source\"] == repaired[\"metadata\"][\"exchange_source\"]\\\\n\\\\n\\\\ndef test_unavailable_metadata_does_not_open_polling_or_discard_successful_events(fixture):\\\
-        \\n    old, uid = missing_exchange(fixture)\\\\n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.details, \"load_dashboard\", forbidden)\\\
-        \\n\\\\n    def unavailable(user, identifier):\\\\n        assert identifier == uid\\\\n        raise HTTPException(503, \"synthetic_instrument_unavailable\"\
-        )\\\\n\\\\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", unavailable)\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n   \
-        \ jobs.run_job(job[\"job_id\"])\\\\n    result = jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])\\\\n    assert result[\"state\"] == \"failed\"\
-        \\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"positions\"] == old[\"positions\"]\\\\n    assert current[\"events\"][\"\
-        items\"][0][\"id\"] == \"new-synthetic-news\"\\\\n    assert current[\"event_monitor\"][\"complete\"] is False\\\\n    assert dispatch.schedule(fixture[\"\
-        user\"])[\"regular_price_polling_allowed\"] is False\\\\n    assert dispatch.enqueue_events(fixture[\"user\"]) == {\"state\": \"current\"}\\\\n\\\\n\\\\ndef\
-        \ test_bounded_metadata_retries_survive_changed_holdings_without_starving_later_instruments(fixture):\\\\n    old = stored(fixture, open_window=True)\\\\\
-        n    template = next(row for row in old[\"positions\"] if row[\"instrument_type\"] == \"share\")\\\\n    old[\"positions\"] = []\\\\n    for index in range(7):\\\
-        \\n        row = deepcopy(template)\\\\n        row[\"instrument_uid\"] = \"retry-\" + str(index).zfill(2)\\\\n        row[\"metadata\"].pop(\"exchange\"\
-        , None)\\\\n        old[\"positions\"].append(row)\\\\n    workspace.persist(fixture[\"user\"], old)\\\\n    event_sources(fixture)\\\\n    calls = []\\\\\
-        n\\\\n    def read(user, identifier):\\\\n        calls.append(identifier)\\\\n        if int(identifier[-2:]) < 3:\\\\n            raise HTTPException(503,\
-        \ \"synthetic_permanently_unavailable\")\\\\n        return recovered_instrument(identifier)\\\\n\\\\n    fixture[\"patch\"].setattr(workspace.market, \"\
-        instrument\", read)\\\\n    first = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(first[\"job_id\"])\\\\n    assert len(calls) == 5\\\\\
-        n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), first[\"job_id\"])[\"state\"] == \"failed\"\\\\n    changed = state.saved_snapshot(fixture[\"user\"\
-        ])\\\\n    changed[\"positions\"][0][\"quantity\"] = \"2\"\\\\n    workspace.persist(fixture[\"user\"], changed)\\\\n    second = dispatch.enqueue_events(fixture[\"\
-        user\"], now=datetime.now(timezone.utc) + timedelta(seconds=601))\\\\n    jobs.run_job(second[\"job_id\"])\\\\n    assert calls[5:7] == [\"retry-05\", \"\
-        retry-06\"]\\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert all(row[\"metadata\"].get(\"exchange\") == \"MOEX\" for row in current[\"\
-        positions\"] if int(row[\"instrument_uid\"][-2:]) >= 3)\\\\n    assert current[\"event_monitor\"][\"complete\"] is False\\\\n    assert dispatch.schedule(fixture[\"\
-        user\"])[\"regular_price_polling_allowed\"] is False\\\\n\\\\n\\\\n@pytest.mark.parametrize(\"exchange\", [None, \"\", \" \", \" MOEX \", \"x\" * 101])\\\\\
-        ndef test_metadata_response_without_valid_exchange_never_guesses_moex(fixture, exchange):\\\\n    old, uid = missing_exchange(fixture)\\\\n    event_sources(fixture)\\\
-        \\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", lambda user, identifier: {\"uid\": identifier, \"exchange\": exchange})\\\\n    job =\
-        \ dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"\
-        ])[\"state\"] == \"failed\"\\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"positions\"] == old[\"positions\"]\\\\n   \
-        \ assert dispatch.schedule(fixture[\"user\"])[\"reason\"] == \"instrument_exchange_unknown\"\\\\n    assert market_schedule.required_exchanges({\"positions\"\
-        : [{\"instrument_type\": \"share\", \"metadata\": {\"exchange\": exchange}}]}) == ()\\\\n\\\\n\\\\ndef test_metadata_budget_stops_scheduling_after_a_slow_source(fixture):\\\
-        \\n    old = stored(fixture)\\\\n    for row in old[\"positions\"]:\\\\n        if row[\"instrument_type\"] == \"share\":\\\\n            row[\"metadata\"\
-        ].pop(\"exchange\", None)\\\\n    workspace.persist(fixture[\"user\"], old)\\\\n    event_sources(fixture)\\\\n    elapsed, calls = [0.0], []\\\\n    fixture[\"\
-        patch\"].setattr(event_monitor, \"time\", SimpleNamespace(monotonic=lambda: elapsed[0]), raising=False)\\\\n\\\\n    def read(user, uid):\\\\n        calls.append(uid)\\\
-        \\n        elapsed[0] += 20\\\\n        return recovered_instrument(uid)\\\\n\\\\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", read)\\\
-        \\n    item = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(item[\"job_id\"])\\\\n    assert len(calls) == 1\\\\n    assert jobs.get_job(int(fixture[\"\
-        user\"][\"id\"]), item[\"job_id\"])[\"state\"] == \"failed\"\\\\n    assert state.saved_snapshot(fixture[\"user\"])[\"event_monitor\"][\"complete\"] is False\\\
-        \\n\\', \\'backend/tests/test_public_source_events.py\\': \\'\"\"\"Public evidence runs through the durable event job without changing price truth.\"\"\"\\\
-        \\nfrom contextlib import closing\\\\nfrom datetime import datetime, timedelta, timezone\\\\n\\\\nfrom backend import app as backend, public_sources\\\\nfrom\
-        \ backend import background_dispatch as dispatch, volume_jobs as jobs\\\\nfrom backend import volume_state as state, volume_workspace as workspace\\\\nfrom\
-        \ backend.tests.test_background_dispatch import stored, event_sources, forbidden\\\\nfrom backend.tests.test_public_sources import ISIN, document, encoded\\\
-        \\nfrom backend.tests.test_volume_workspace import fixture\\\\n\\\\n\\\\ndef prepared(fixture):\\\\n    snapshot = stored(fixture)\\\\n    snapshot[\"positions\"\
-        ][0][\"metadata\"][\"isin\"] = ISIN\\\\n    workspace.persist(fixture[\"user\"], snapshot)\\\\n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.details,\
-        \ \"load_dashboard\", forbidden)\\\\n    return state.saved_snapshot(fixture[\"user\"])\\\\n\\\\n\\\\ndef public_document(url, headers):\\\\n    value = document()\\\
-        \\n    now = datetime.now(timezone.utc)\\\\n    value[\"meta\"][\"goldenCopy\"][\"publishDate\"] = (now - timedelta(minutes=1)).isoformat()\\\\n    return\
-        \ 200, {\"etag\": \\\\\\'\"event-fixture\"\\\\\\'}, encoded(value)\\\\n\\\\n\\\\ndef test_event_job_persists_public_document_without_promoting_rating_or_revaluing(fixture):\\\
-        \\n    old = prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources, \"fetch_document\", public_document)\\\\n    job = dispatch.enqueue_events(fixture[\"\
-        user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\\
-        n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"public_sources\"][\"mapped_identifiers\"] == 1\\\\n    assert current[\"public_sources\"\
-        ][\"rating_sources_fetched\"] is False\\\\n    assert current[\"event_monitor\"][\"new_rating_sources_fetched\"] is False\\\\n    for name in (\"positions\"\
-        , \"capital\", \"accounts\", \"as_of\", \"collection\", \"attribution\"):\\\\n        assert current[name] == old[name]\\\\n    with closing(backend.connect())\
-        \ as db:\\\\n        assert db.execute(\"SELECT COUNT(*) FROM public_source_documents_v1\").fetchone()[0] == 1\\\\n        assert db.execute(\"SELECT COUNT(*)\
-        \ FROM research_evidence_v1\").fetchone()[0] == 0\\\\n\\\\n\\\\ndef test_public_outage_does_not_fail_successful_broker_event_collection(fixture):\\\\n   \
-        \ prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources, \"fetch_document\", lambda *args: (503, {}, b\"\"))\\\\n    job = dispatch.enqueue_events(fixture[\"\
+        \ pytest\\\\nfrom fastapi import HTTPException\\\\n\\\\nfrom backend import app as backend\\\\nfrom backend import autonomous_ai as ai, background_dispatch\
+        \ as dispatch, event_monitor, market_schedule\\\\nfrom backend import volume_jobs as jobs, volume_state as state, volume_workspace as workspace\\\\nfrom backend\
+        \ import volume_monitor as monitor\\\\nfrom backend.tests.test_background_dispatch import stored, event_sources, forbidden\\\\nfrom backend.tests.test_volume_workspace\
+        \ import fixture\\\\nfrom backend.volume_contract import now_iso, source\\\\n\\\\n\\\\ndef missing_exchange(fixture):\\\\n    snapshot = stored(fixture, open_window=True)\\\
+        \\n    target = next(row for row in snapshot[\"positions\"] if row[\"instrument_type\"] == \"share\")\\\\n    target[\"metadata\"].pop(\"exchange\", None)\\\
+        \\n    workspace.persist(fixture[\"user\"], snapshot)\\\\n    return state.saved_snapshot(fixture[\"user\"]), target[\"instrument_uid\"]\\\\n\\\\n\\\\ndef\
+        \ recovered_instrument(uid):\\\\n    return {\"uid\": uid, \"exchange\": \"MOEX\",\\\\n            \"_source\": source(\"GetInstrumentBy\", uid, now_iso(),\
+        \ ttl=86400)}\\\\n\\\\n\\\\ndef test_missing_exchange_recovers_in_event_lane_without_refreshing_valuation(fixture):\\\\n    old, uid = missing_exchange(fixture)\\\
+        \\n    assert dispatch.schedule(fixture[\"user\"])[\"reason\"] == \"instrument_exchange_unknown\"\\\\n    event_sources(fixture)\\\\n    fixture[\"patch\"\
+        ].setattr(workspace.details, \"load_dashboard\", forbidden)\\\\n    fixture[\"patch\"].setattr(ai, \"get_tinvest_portfolio\", forbidden)\\\\n    calls = []\\\
+        \\n\\\\n    def read(user, identifier):\\\\n        calls.append(identifier)\\\\n        return recovered_instrument(identifier)\\\\n\\\\n    fixture[\"patch\"\
+        ].setattr(workspace.market, \"instrument\", read)\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert\
+        \ calls == [uid]\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\n    current = state.saved_snapshot(fixture[\"\
+        user\"])\\\\n    for name in (\"as_of\", \"capital\", \"accounts\", \"collection\", \"attribution\"):\\\\n        assert current[name] == old[name]\\\\n \
+        \   for prior, present in zip(old[\"positions\"], current[\"positions\"]):\\\\n        assert {key: value for key, value in present.items() if key != \"metadata\"\
+        } == {\\\\n            key: value for key, value in prior.items() if key != \"metadata\"}\\\\n    repaired = next(row for row in current[\"positions\"] if\
+        \ row[\"instrument_uid\"] == uid)\\\\n    assert repaired[\"metadata\"][\"exchange\"] == \"MOEX\"\\\\n    assert repaired[\"metadata\"][\"exchange_source\"\
+        ][\"id\"] in {ref[\"id\"] for ref in current[\"sources\"]}\\\\n    prior_metadata = next(row[\"metadata\"] for row in old[\"positions\"] if row[\"instrument_uid\"\
+        ] == uid)\\\\n    assert {key: value for key, value in repaired[\"metadata\"].items() if key not in {\"exchange\", \"exchange_source\"}} == prior_metadata\\\
+        \\n    assert current[\"snapshot_id\"] != old[\"snapshot_id\"]\\\\n    assert dispatch.schedule(fixture[\"user\"])[\"regular_price_polling_allowed\"] is True\\\
+        \\n    previous = {(row[\"account_id\"], row[\"instrument_uid\"]): row for row in current[\"positions\"]}\\\\n    _, metadata = monitor._monitor_accounts(fixture[\"\
+        dashboard\"], previous)\\\\n    later = workspace.normalize_snapshot(fixture[\"user\"], fixture[\"dashboard\"], metadata)\\\\n    retained = next(row for\
+        \ row in later[\"positions\"] if row[\"instrument_uid\"] == uid)\\\\n    assert retained[\"metadata\"][\"exchange_source\"] == repaired[\"metadata\"][\"exchange_source\"\
+        ]\\\\n\\\\n\\\\ndef test_unavailable_metadata_does_not_open_polling_or_discard_successful_events(fixture):\\\\n    old, uid = missing_exchange(fixture)\\\\\
+        n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.details, \"load_dashboard\", forbidden)\\\\n\\\\n    def unavailable(user, identifier):\\\
+        \\n        assert identifier == uid\\\\n        raise HTTPException(503, \"synthetic_instrument_unavailable\")\\\\n\\\\n    fixture[\"patch\"].setattr(workspace.market,\
+        \ \"instrument\", unavailable)\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    result = jobs.get_job(int(fixture[\"\
+        user\"][\"id\"]), job[\"job_id\"])\\\\n    assert result[\"state\"] == \"failed\"\\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert\
+        \ current[\"positions\"] == old[\"positions\"]\\\\n    assert current[\"events\"][\"items\"][0][\"id\"] == \"new-synthetic-news\"\\\\n    assert current[\"\
+        event_monitor\"][\"complete\"] is False\\\\n    assert dispatch.schedule(fixture[\"user\"])[\"regular_price_polling_allowed\"] is False\\\\n    assert dispatch.enqueue_events(fixture[\"\
+        user\"]) == {\"state\": \"current\"}\\\\n\\\\n\\\\ndef test_bounded_metadata_retries_survive_changed_holdings_without_starving_later_instruments(fixture):\\\
+        \\n    old = stored(fixture, open_window=True)\\\\n    template = next(row for row in old[\"positions\"] if row[\"instrument_type\"] == \"share\")\\\\n  \
+        \  old[\"positions\"] = []\\\\n    for index in range(7):\\\\n        row = deepcopy(template)\\\\n        row[\"instrument_uid\"] = \"retry-\" + str(index).zfill(2)\\\
+        \\n        row[\"metadata\"].pop(\"exchange\", None)\\\\n        old[\"positions\"].append(row)\\\\n    workspace.persist(fixture[\"user\"], old)\\\\n   \
+        \ event_sources(fixture)\\\\n    calls = []\\\\n\\\\n    def read(user, identifier):\\\\n        calls.append(identifier)\\\\n        if int(identifier[-2:])\
+        \ < 3:\\\\n            raise HTTPException(503, \"synthetic_permanently_unavailable\")\\\\n        return recovered_instrument(identifier)\\\\n\\\\n    fixture[\"\
+        patch\"].setattr(workspace.market, \"instrument\", read)\\\\n    first = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(first[\"job_id\"\
+        ])\\\\n    assert len(calls) == 5\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), first[\"job_id\"])[\"state\"] == \"failed\"\\\\n    changed\
+        \ = state.saved_snapshot(fixture[\"user\"])\\\\n    changed[\"positions\"][0][\"quantity\"] = \"2\"\\\\n    workspace.persist(fixture[\"user\"], changed)\\\
+        \\n    second = dispatch.enqueue_events(fixture[\"user\"], now=datetime.now(timezone.utc) + timedelta(seconds=601))\\\\n    jobs.run_job(second[\"job_id\"\
+        ])\\\\n    assert calls[5:7] == [\"retry-05\", \"retry-06\"]\\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert all(row[\"metadata\"\
+        ].get(\"exchange\") == \"MOEX\" for row in current[\"positions\"] if int(row[\"instrument_uid\"][-2:]) >= 3)\\\\n    assert current[\"event_monitor\"][\"\
+        complete\"] is False\\\\n    assert dispatch.schedule(fixture[\"user\"])[\"regular_price_polling_allowed\"] is False\\\\n\\\\n\\\\n@pytest.mark.parametrize(\"\
+        exchange\", [None, \"\", \" \", \" MOEX \", \"x\" * 101])\\\\ndef test_metadata_response_without_valid_exchange_never_guesses_moex(fixture, exchange):\\\\\
+        n    old, uid = missing_exchange(fixture)\\\\n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", lambda user,\
+        \ identifier: {\"uid\": identifier, \"exchange\": exchange})\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"job_id\"\
+        ])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"failed\"\\\\n    current = state.saved_snapshot(fixture[\"\
+        user\"])\\\\n    assert current[\"positions\"] == old[\"positions\"]\\\\n    assert dispatch.schedule(fixture[\"user\"])[\"reason\"] == \"instrument_exchange_unknown\"\
+        \\\\n    assert market_schedule.required_exchanges({\"positions\": [{\"instrument_type\": \"share\", \"metadata\": {\"exchange\": exchange}}]}) == ()\\\\\
+        n\\\\n\\\\ndef test_metadata_budget_stops_scheduling_after_a_slow_source(fixture):\\\\n    old = stored(fixture)\\\\n    for row in old[\"positions\"]:\\\\\
+        n        if row[\"instrument_type\"] == \"share\":\\\\n            row[\"metadata\"].pop(\"exchange\", None)\\\\n    workspace.persist(fixture[\"user\"],\
+        \ old)\\\\n    event_sources(fixture)\\\\n    elapsed, calls = [0.0], []\\\\n    fixture[\"patch\"].setattr(event_monitor, \"time\", SimpleNamespace(monotonic=lambda:\
+        \ elapsed[0]), raising=False)\\\\n\\\\n    def read(user, uid):\\\\n        calls.append(uid)\\\\n        elapsed[0] += 20\\\\n        return recovered_instrument(uid)\\\
+        \\n\\\\n    fixture[\"patch\"].setattr(workspace.market, \"instrument\", read)\\\\n    item = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(item[\"\
+        job_id\"])\\\\n    assert len(calls) == 1\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), item[\"job_id\"])[\"state\"] == \"failed\"\\\\n    assert\
+        \ state.saved_snapshot(fixture[\"user\"])[\"event_monitor\"][\"complete\"] is False\\\\n\\', \\'backend/tests/test_public_source_events.py\\': \\'\"\"\"Public\
+        \ evidence runs through the durable event job without changing price truth.\"\"\"\\\\nfrom contextlib import closing\\\\nfrom datetime import datetime, timedelta,\
+        \ timezone\\\\n\\\\nfrom backend import app as backend, public_sources\\\\nfrom backend import background_dispatch as dispatch, volume_jobs as jobs\\\\nfrom\
+        \ backend import volume_state as state, volume_workspace as workspace\\\\nfrom backend.tests.test_background_dispatch import stored, event_sources, forbidden\\\
+        \\nfrom backend.tests.test_public_sources import ISIN, document, encoded\\\\nfrom backend.tests.test_volume_workspace import fixture\\\\n\\\\n\\\\ndef prepared(fixture):\\\
+        \\n    snapshot = stored(fixture)\\\\n    snapshot[\"positions\"][0][\"metadata\"][\"isin\"] = ISIN\\\\n    workspace.persist(fixture[\"user\"], snapshot)\\\
+        \\n    event_sources(fixture)\\\\n    fixture[\"patch\"].setattr(workspace.details, \"load_dashboard\", forbidden)\\\\n    return state.saved_snapshot(fixture[\"\
+        user\"])\\\\n\\\\n\\\\ndef public_document(url, headers):\\\\n    value = document()\\\\n    now = datetime.now(timezone.utc)\\\\n    value[\"meta\"][\"goldenCopy\"\
+        ][\"publishDate\"] = (now - timedelta(minutes=1)).isoformat()\\\\n    return 200, {\"etag\": \\\\\\'\"event-fixture\"\\\\\\'}, encoded(value)\\\\n\\\\n\\\\\
+        ndef test_event_job_persists_public_document_without_promoting_rating_or_revaluing(fixture):\\\\n    old = prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources,\
+        \ \"fetch_document\", public_document)\\\\n    job = dispatch.enqueue_events(fixture[\"user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"\
+        user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"public_sources\"\
+        ][\"mapped_identifiers\"] == 1\\\\n    assert current[\"public_sources\"][\"rating_sources_fetched\"] is False\\\\n    assert current[\"event_monitor\"][\"\
+        new_rating_sources_fetched\"] is False\\\\n    for name in (\"positions\", \"capital\", \"accounts\", \"as_of\", \"collection\", \"attribution\"):\\\\n  \
+        \      assert current[name] == old[name]\\\\n    with closing(backend.connect()) as db:\\\\n        assert db.execute(\"SELECT COUNT(*) FROM public_source_documents_v1\"\
+        ).fetchone()[0] == 1\\\\n        assert db.execute(\"SELECT COUNT(*) FROM research_evidence_v1\").fetchone()[0] == 0\\\\n\\\\n\\\\ndef test_public_outage_does_not_fail_successful_broker_event_collection(fixture):\\\
+        \\n    prepared(fixture)\\\\n    fixture[\"patch\"].setattr(public_sources, \"fetch_document\", lambda *args: (503, {}, b\"\"))\\\\n    job = dispatch.enqueue_events(fixture[\"\
         user\"])\\\\n    jobs.run_job(job[\"job_id\"])\\\\n    assert jobs.get_job(int(fixture[\"user\"][\"id\"]), job[\"job_id\"])[\"state\"] == \"completed\"\\\\\
         n    current = state.saved_snapshot(fixture[\"user\"])\\\\n    assert current[\"public_sources\"][\"state\"] == \"partial\"\\\\n    assert current[\"public_sources\"\
         ][\"items\"][0][\"reason\"] == \"source_http_503\"\\\\n    assert current[\"events\"][\"items\"][0][\"id\"] == \"new-synthetic-news\"\\\\n    assert current[\"\
@@ -745,10 +746,14 @@ jobs:
         instrument_uids\": [\"sold-position\"]}]}}\\\\n    original = deepcopy(snapshot)\\\\n    view = sources.snapshot_status(snapshot, at=NOW + timedelta(hours=7))\\\
         \\n    assert view[\"state\"] == \"partial\" and view[\"mapped_identifiers\"] == 0\\\\n    assert view[\"items\"][0][\"state\"] == \"stale\"\\\\n    assert\
         \ view[\"items\"][0][\"identity\"] is None\\\\n    assert view[\"items\"][0][\"instrument_uids\"] == [\"current\"]\\\\n    assert snapshot == original\\\\\
-        n\\', \\'backend/volume_monitor.py\\': \\'\"\"\"Reuse autonomous broker observations in the materialized workspace.\"\"\"\\\\nfrom contextlib import closing\\\
-        \\nfrom dataclasses import asdict\\\\nfrom datetime import datetime, timezone\\\\nimport json\\\\nfrom typing import Annotated, Any\\\\nfrom zoneinfo import\
-        \ ZoneInfo\\\\n\\\\nfrom fastapi import APIRouter, Depends, HTTPException\\\\n\\\\nPORTFOLIO_SOURCE = \\\\\\'GetPortfolio/GetPositions\\\\\\'\\\\n\\\\n\\\\\
-        ntry:\\\\n    from . import app as backend, volume_state as state, volume_workspace as workspace\\\\n    from . import volume_market as market, portfolio_details\
+        n\\\\n\\\\n@pytest.mark.parametrize(\"as_http_date\", [False, True])\\\\ndef test_long_retry_after_never_polls_before_provider_deadline(connect, as_http_date):\\\
+        \\n    retry_at = NOW + timedelta(days=2)\\\\n    header = format_datetime(retry_at, usegmt=True) if as_http_date else \"172800\"\\\\n    result = sources.refresh_isin(connect,\
+        \ ISIN, at=NOW,\\\\n        fetch=lambda *args: (429, {\"retry-after\": header}, b\"\"))\\\\n    assert result[\"next_check_at\"] == retry_at.isoformat()\\\
+        \\n    sources.refresh_isin(connect, ISIN, at=NOW + timedelta(days=1),\\\\n        fetch=lambda *args: pytest.fail(\"long provider retry deadline ignored\"\
+        ))\\\\n\\', \\'backend/volume_monitor.py\\': \\'\"\"\"Reuse autonomous broker observations in the materialized workspace.\"\"\"\\\\nfrom contextlib import\
+        \ closing\\\\nfrom dataclasses import asdict\\\\nfrom datetime import datetime, timezone\\\\nimport json\\\\nfrom typing import Annotated, Any\\\\nfrom zoneinfo\
+        \ import ZoneInfo\\\\n\\\\nfrom fastapi import APIRouter, Depends, HTTPException\\\\n\\\\nPORTFOLIO_SOURCE = \\\\\\'GetPortfolio/GetPositions\\\\\\'\\\\n\\\
+        \\n\\\\ntry:\\\\n    from . import app as backend, volume_state as state, volume_workspace as workspace\\\\n    from . import volume_market as market, portfolio_details\
         \ as details\\\\n    from .volume_contract import HTTP_ERRORS, digest, section, safe_section, source, money, decimal, text_number\\\\n    from .ai_budget\
         \ import transaction\\\\nexcept ImportError:\\\\n    import app as backend\\\\n    import volume_state as state\\\\n    import volume_workspace as workspace\\\
         \\n    import volume_market as market\\\\n    import portfolio_details as details\\\\n    from volume_contract import HTTP_ERRORS, digest, section, safe_section,\
@@ -1144,5 +1149,5 @@ jobs:
         \ sources=(snapshot or {}).get(\"sources\", []))\\\\n    return sections\\\\n\\\\n\\\\ndef _snapshot_state(snapshot, stale, missing):\\\\n    if stale:\\\\\
         n        return \"partial\", \"snapshot_stale\"\\\\n    if snapshot:\\\\n        return \"available\", None\\\\n    return \"unavailable\", missing\\\\n\\\
         \\n\\\\ndef _section_reason(stale, reason, state):\\\\n    if stale:\\\\n        return \"snapshot_stale\"\\\\n    if reason:\\\\n        return reason\\\\\
-        n    return \"source_coverage_incomplete\" if state == \"partial\" else None\\\\n\\'}\\ncheck_candidate(PATCH_FILES, change_id=\"n02-n03-20261027\")\\n'\n\
-        with_ams(remote, timeout=1800)\nPY\n"
+        n    return \"source_coverage_incomplete\" if state == \"partial\" else None\\\\n\\'}\\ncheck_candidate(PATCH_FILES, change_id=\\'n02-n03-r2-20261027\\')\\\
+        n'\nwith_ams(remote, timeout=1800)\nPY\n"
