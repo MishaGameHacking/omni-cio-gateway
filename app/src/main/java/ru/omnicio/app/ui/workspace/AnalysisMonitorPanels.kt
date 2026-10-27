@@ -28,6 +28,7 @@ internal fun AnalysisSlotChecks(checks: List<JSONObject>, openCheck: (String) ->
                 else AnalysisSlotResult(check, openCheck)
             }
         }
+        ServerReadinessPanel()
     }
 }
 
