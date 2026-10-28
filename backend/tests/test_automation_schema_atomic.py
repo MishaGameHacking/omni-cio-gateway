@@ -202,7 +202,8 @@ def test_restart_preserves_pause_expired_lease_cursor_and_connection_history(con
     assert controller.module.preferences(202)['enabled'] is True
     with pytest.raises(HTTPException) as caught:
         controller.module.assert_enabled(101)
-    assert caught.value.status_code == 409 and caught.value.detail == 'automation_paused'
+    assert caught.value.status_code == 409
+    assert caught.value.detail == 'automation_paused'
     assert snapshot(controller.path) == before
 
 
