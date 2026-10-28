@@ -1,0 +1,43 @@
+{
+  "source_commit": "94f42c48ac4073e7750c78e396bc661da4b31be0",
+  "workflow_run": 40703109199,
+  "backend_tests": 2224,
+  "subtests": 1557,
+  "sonar_annotations": 0,
+  "sonar_check": 122869085788,
+  "host": "LAPTOP-NPSGA016",
+  "distribution": "Ubuntu-24.04",
+  "source_sha256": "95856316ab7a0e89e9b7fd0dbfdbfbb01485f3444d11ad110125bc05d86ed7bf",
+  "bundle": {
+    "source_commit": "94f42c48ac4073e7750c78e396bc661da4b31be0",
+    "bundle_sha256": "b56fe6f959634a90c97483b4ae6bb28b4a2e18616a4554752053136e27eb69cb",
+    "changed_server_modules": [
+      "osint_catalogue.py",
+      "osint_content.py",
+      "osint_network.py",
+      "osint_worker.py"
+    ],
+    "apk_changed": false
+  },
+  "artifact": {
+    "id": 12822029572,
+    "name": "server-runtime-40703109199-1",
+    "size_in_bytes": 479041,
+    "url": "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/actions/artifacts/12822029572",
+    "archive_download_url": "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/actions/artifacts/12822029572/zip",
+    "expired": false,
+    "created_at": "2026-10-28T14:14:17Z",
+    "expires_at": "2026-11-04T14:09:02Z",
+    "updated_at": "2026-10-28T14:14:17Z",
+    "digest": "sha256:e6e9ebc05efc071516dfee4ae411c5d63e3808870ecd3676f012b0805a5a0eff",
+    "workflow_run": {
+      "id": 40703109199,
+      "repository_id": 1312247309,
+      "head_repository_id": 1312247309,
+      "head_branch": "codex/investment-osint-2026-10-28",
+      "head_sha": "94f42c48ac4073e7750c78e396bc661da4b31be0"
+    }
+  },
+  "installer_tests": 13,
+  "installer_run": 40704536708
+}

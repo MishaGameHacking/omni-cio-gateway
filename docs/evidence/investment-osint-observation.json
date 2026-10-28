@@ -1,0 +1,395 @@
+{
+  "schema": 1,
+  "server_id": 9417611,
+  "source_commit": "94f42c48ac4073e7750c78e396bc661da4b31be0",
+  "observed_at": "2026-10-28T14:41:11.448096+00:00",
+  "health": 200,
+  "unauthenticated_osint": 401,
+  "apk_policy_unchanged": true,
+  "product_tests_executed": false,
+  "observation": {
+    "sources": [
+      {
+        "source_id": "cbr_press",
+        "status": "ready",
+        "error": null,
+        "last_check": 1793198449,
+        "last_success": 1793198449,
+        "coverage": {
+          "coverage": "publisher_feed_window",
+          "items_seen": 15,
+          "rejected": 0,
+          "relevant": 7,
+          "truncated": false
+        },
+        "documents": 7,
+        "pdf_pending": 0
+      },
+      {
+        "source_id": "gazprom_reports",
+        "status": "unavailable",
+        "error": "osint_source_unavailable",
+        "last_check": 1793195928,
+        "last_success": null,
+        "coverage": {},
+        "documents": 0,
+        "pdf_pending": 0
+      },
+      {
+        "source_id": "gdelt_finance",
+        "status": "unavailable",
+        "error": "osint_http_429",
+        "last_check": 1793197487,
+        "last_success": null,
+        "coverage": {
+          "http_status": 429
+        },
+        "documents": 0,
+        "pdf_pending": 0
+      },
+      {
+        "source_id": "moex_listing",
+        "status": "ready",
+        "error": null,
+        "last_check": 1793197492,
+        "last_success": 1793197492,
+        "coverage": {
+          "coverage": "publisher_feed_window",
+          "items_seen": 393,
+          "rejected": 0,
+          "relevant": 393,
+          "truncated": false
+        },
+        "documents": 211,
+        "pdf_pending": 0
+      },
+      {
+        "source_id": "moex_news",
+        "status": "partial",
+        "error": null,
+        "last_check": 1793198459,
+        "last_success": 1793198459,
+        "coverage": {
+          "coverage": "publisher_feed_window",
+          "items_seen": 1346,
+          "rejected": 0,
+          "relevant": 431,
+          "truncated": true
+        },
+        "documents": 158,
+        "pdf_pending": 0
+      },
+      {
+        "source_id": "moex_reports",
+        "status": "ready",
+        "error": null,
+        "last_check": 1793195939,
+        "last_success": 1793195939,
+        "coverage": {
+          "coverage": "approved_issuer_index",
+          "empty_index": false,
+          "items_seen": 31,
+          "relevant": 0,
+          "truncated": false
+        },
+        "documents": 1,
+        "pdf_pending": 9
+      },
+      {
+        "source_id": "moex_risk",
+        "status": "ready",
+        "error": null,
+        "last_check": 1793198141,
+        "last_success": 1793198141,
+        "coverage": {
+          "coverage": "publisher_feed_window",
+          "items_seen": 316,
+          "rejected": 0,
+          "relevant": 298,
+          "truncated": false
+        },
+        "documents": 166,
+        "pdf_pending": 0
+      },
+      {
+        "source_id": "nornickel_reports",
+        "status": "unavailable",
+        "error": "osint_source_unavailable",
+        "last_check": 1793195935,
+        "last_success": null,
+        "coverage": {},
+        "documents": 0,
+        "pdf_pending": 0
+      }
+    ],
+    "active_documents": {
+      "news": 542,
+      "report": 1
+    },
+    "jobs": [
+      {
+        "state": "completed",
+        "stage": "done",
+        "error_code": null,
+        "paid_started": 0,
+        "created_at": 1793198449,
+        "updated_at": 1793198468
+      },
+      {
+        "state": "completed",
+        "stage": "done",
+        "error_code": null,
+        "paid_started": 0,
+        "created_at": 1793198137,
+        "updated_at": 1793198147
+      },
+      {
+        "state": "completed",
+        "stage": "done",
+        "error_code": null,
+        "paid_started": 0,
+        "created_at": 1793197797,
+        "updated_at": 1793197806
+      },
+      {
+        "state": "completed",
+        "stage": "done",
+        "error_code": null,
+        "paid_started": 0,
+        "created_at": 1793197473,
+        "updated_at": 1793197496
+      },
+      {
+        "state": "completed",
+        "stage": "done",
+        "error_code": null,
+        "paid_started": 0,
+        "created_at": 1793197167,
+        "updated_at": 1793197173
+      }
+    ],
+    "report_samples": [
+      {
+        "source_id": "moex_reports",
+        "url": "https://www.moex.com/media/msfo/summary-micex-rts-fs-2q2026-rus.pdf",
+        "sha256": "e4b024bb5fa99d339e9c9e2720ce5bf776dccda46d424aa6472f1e8f89918206",
+        "extraction": {
+          "needs_ocr": false,
+          "page_count": 37,
+          "truncated": false
+        },
+        "financial_candidates": 5
+      }
+    ]
+  },
+  "services_active": true,
+  "report_targets": [
+    {
+      "url": "https://fs.moex.com/f/22010/summary-micex-rts-fs-1q2025-rus.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793198468,
+      "next_at": 1793220068,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://www.moex.com/media/msfo/summary-micex-rts-fs-2q2026-rus.pdf",
+      "kind": "pdf",
+      "status": "ready",
+      "error": null,
+      "last_check": 1793198467,
+      "next_at": 1793803261,
+      "coverage_json": "{\"coverage\":\"official_report_text\",\"items_seen\":1,\"needs_ocr\":false,\"page_count\":37,\"relevant\":1,\"truncated\":false}"
+    },
+    {
+      "url": "https://fs.moex.com/f/20524/summary-micex-rts-fs-2q2024-rus.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793198147,
+      "next_at": 1793219747,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/18044",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793198144,
+      "next_at": 1793219744,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/21549/summary-micex-rts-fs-4q2024-eng.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793198141,
+      "next_at": 1793219741,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/22760/summary-micex-rts-fs-2q2025-eng-final.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197806,
+      "next_at": 1793219406,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/20156/summary-micex-rts-fs-1q2024-eng.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197804,
+      "next_at": 1793219404,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/23628/summary-micex-rts-fs-4q2025-rus.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197800,
+      "next_at": 1793219400,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/19095/summary-micex-rts-fs-3q2023-eng.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197797,
+      "next_at": 1793219397,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/18650",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197496,
+      "next_at": 1793219096,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/20155/summary-micex-rts-fs-1q2024-rus.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197173,
+      "next_at": 1793218773,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/18036",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197170,
+      "next_at": 1793218770,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/23336/summary-micex-rts-fs-3q2025-rus-final-251.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793197167,
+      "next_at": 1793218767,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/22011/summary-micex-rts-fs-1q2025-eng.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196889,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/20525/summary-micex-rts-fs-2q2024-eng.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196886,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/23819/summary-micex-rts-fs-1q2026-rus.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196576,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/25385",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196573,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/21029/summary-micex-rts-fs-3q2024-rus.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196570,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/24112",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196265,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/24111",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196262,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/f/23629/summary-micex-rts-fs-fs-4q2025-eng.pdf",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196259,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://fs.moex.com/files/25384",
+      "kind": "pdf",
+      "status": "unavailable",
+      "error": "osint_source_unavailable",
+      "last_check": 1793196256,
+      "next_at": 1793197158,
+      "coverage_json": "{}"
+    },
+    {
+      "url": "https://www.moex.com/media/msfo/summary-micex-rts-fs-2q2026-eng.pdf",
+      "kind": "pdf",
+      "status": "pending",
+      "error": null,
+      "last_check": null,
+      "next_at": 1793195939,
+      "coverage_json": "{}"
+    }
+  ]
+}
