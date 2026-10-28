@@ -1,4 +1,4 @@
-"""Compile and test version display on the owner laptop without publishing APKs."""
+"""Check and build the one-time server-aware shell on the owner laptop."""
 from __future__ import annotations
 
 import json
@@ -15,10 +15,8 @@ import windows_android_ci as ci
 def run_worker(root, state):
     ci.need(sys.stdin.buffer.readline(64) == b"VERSION_CHECK_READY\n", "worker_handshake_required")
     env, _ = ci.test_environment(root, state)
-    command = [env["COMSPEC"], "/d", "/c", str(root / "gradlew.bat"),
-               ":app:testDebugUnitTest", ":app:lintDebug", ":app:compilePreviewKotlin",
-               "--no-daemon", "--max-workers=2", "--stacktrace"]
-    subprocess.run(command, cwd=root, env=env, check=True, timeout=2400)
+    run = ci.Steps(root, state, "shell-build", env)
+    ci.build_worker(root, state, run)
 
 
 def main():
@@ -53,7 +51,7 @@ def main():
                     raise
                 process.stdin.write(b"VERSION_CHECK_READY\n")
                 process.stdin.close()
-                deadline = time.monotonic() + 2500
+                deadline = time.monotonic() + 10800
                 while process.poll() is None:
                     ci.need(time.monotonic() < deadline, "version_check_timeout")
                     try:
@@ -62,6 +60,7 @@ def main():
                         print("VERSION_CLIENT_CHECK=running", flush=True)
                 ci.need(process.returncode == 0, "version_client_checks_failed")
                 ci.need(ci.source_identity(root, identity) == before, "verified_sources_changed")
+                report["apk"] = ci.read_json(root / "app/build/outputs/apk/preview/apk-verification.json")
                 report["status"] = "passed"
         finally:
             try:

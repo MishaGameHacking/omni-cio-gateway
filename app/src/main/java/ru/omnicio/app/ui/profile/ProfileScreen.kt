@@ -171,7 +171,11 @@ fun ProfileScreen(
                     SettingsGroup("Приватность") {
                         SettingsToggle("Запретить снимки экрана",
                             if (screenshotsBlocked) "Снимки и запись экрана заблокированы" else "Скриншоты разрешены",
-                            screenshotsBlocked, onChange = onScreenshotsBlockedChange)
+                            presentation.value.screenshotsBlocked, onChange = { next ->
+                                presentation.update(presentation.value.copy(screenshotsBlocked = next))
+                            })
+                        Text(presentation.saveStatus, style = MaterialTheme.typography.bodySmall)
+                        if (presentation.saveFailed) SpectrumSecondaryButton("Повторить сохранение", presentation.retrySave, Modifier.fillMaxWidth())
                         SettingsDivider()
                         SettingsLink("Безопасность", "Хранение доступа и режим работы", SpectrumSymbol.Risk,
                             modifier = Modifier.testTag("profile-security-action")) { dialog = "security" }

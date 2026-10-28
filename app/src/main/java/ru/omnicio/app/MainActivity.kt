@@ -387,12 +387,20 @@ private fun AnalystAiApp(
         }
     }
     CompositionLocalProvider(LocalAnalystSectionNavigator provides selectSection,
+        LocalWorkspaceSession provides WorkspaceSession(signedIn?.accessToken.orEmpty(), signedIn?.user?.telegramId.orEmpty()),
         LocalWorkspaceBackProgress provides backProgress, LocalReauthenticate provides reauthenticate,
         LocalPortfolioSnapshot provides (visiblePortfolio as? PortfolioUiState.Ready)?.snapshot,
         LocalWorkspaceHistory provides WorkspaceHistory(recentNames.map { RecentDestination(it, screenTitle(it)) }, { name ->
             AppScreen.entries.firstOrNull { it.name == name }?.let(navigate)
         })) {
         AnalystTheme {
+            val remotePresentation = LocalWorkspacePreferences.current
+            LaunchedEffect(signedIn?.user?.telegramId, remotePresentation.value.screenshotsBlocked) {
+                if (signedIn != null) {
+                    screenshotsBlocked = remotePresentation.value.screenshotsBlocked
+                    onScreenshotsBlockedChange(screenshotsBlocked)
+                }
+            }
             CompositionLocalProvider(LocalBrokerConnection provides brokerConnection, LocalWorkspaceBack provides goBack) {
                 AnalystAppContent(
                     authState = authState, authError = authError, onStartTelegramLogin = onStartTelegramLogin,
@@ -609,6 +617,8 @@ private fun SignedInAppContent(
             chatJson = target.json().toString(); chatTitle = target.title; onScreenChange(AppScreen.Assistant)
         }, LocalEvidenceNavigator provides evidenceNavigator,
         LocalOpenAnalysisReport provides { id -> reportId = id; onScreenChange(AppScreen.Reports) }) {
+        val remotePresentation = LocalWorkspacePreferences.current
+        LaunchedEffect(liveSync.revision) { remotePresentation.refreshRemote() }
         SessionExpiryObserver(session.accessToken, reauthenticate)
         NotificationDeliveryRuntime()
         BoxWithConstraints(Modifier.fillMaxSize()) {

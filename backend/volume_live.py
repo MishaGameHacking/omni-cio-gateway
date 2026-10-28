@@ -21,15 +21,18 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 try:
-    from . import app as backend, research_store, server_version
+    from . import app as backend, research_store, server_version, volume_presentation
 except ImportError:
     import app as backend
     import research_store
     import server_version
+    import volume_presentation
 
 router = APIRouter(prefix="/workspace", tags=["Live data"])
+router.include_router(volume_presentation.router)
 POLL_INTERVAL = .5
 USER_TABLES = (
+    "workspace_presentation_preferences",
     "workspace_snapshots", "workspace_records", "workspace_strategy_versions",
     "workspace_events", "workspace_chat_threads", "workspace_chat_messages",
     "workspace_notification_preferences", "workspace_notification_outbox",
@@ -60,6 +63,7 @@ DEPLOYMENT = deployment_signature()
 
 def initialize(connect=None) -> None:
     connect = backend.connect if connect is None else connect
+    volume_presentation.initialize(connect)
     with closing(connect()) as db:
         # Reviewed evidence already has its own durable revision.
         research_store.initialize(db)
