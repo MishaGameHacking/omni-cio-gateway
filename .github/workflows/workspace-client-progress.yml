@@ -10,9 +10,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Read bounded non-secret logs of the exact owned verification run
-        shell: powershell
+        shell: py -3 {0}
         run: |
-          @'
           import json, os, re
           from pathlib import Path
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
@@ -29,5 +28,3 @@ jobs:
                       stream.seek(max(0,log.stat().st_size-24000))
                       text = stream.read(24000).decode("utf-8",errors="replace")
                   print("GRADLE_PROGRESS=" + "\\n".join(line for line in text.splitlines() if re.search(r"Task |FAIL|ERROR|^e: |BUILD |Exception|What went wrong",line))[-10000:])
-          '@ | py -3 -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
