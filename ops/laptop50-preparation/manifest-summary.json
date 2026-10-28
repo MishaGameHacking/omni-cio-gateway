@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "state": "prepared_source_only",
+  "base_commit": "5e35c9a7c7ee3aa402f264ce312f59c121617ddc",
+  "base_source_sha256": "ccb895a11da33f75655b96b24e6355b599132ae41de213b743a4c9135a6759a7",
+  "base_code_files": 895,
+  "source_paths": 7,
+  "version_code": 50,
+  "version_name": "0.15.0-preview",
+  "reviewed_files_sha256": "9d9339787af61f0266c8fca98b8c74ee12128a0ae997b845e93ebd4fd7afe6de",
+  "bundle_sha256": "6c2889d0aedfbf038875fadcfe94b4d1ec4a33e03ad4bd96ba4e74fb810443cc",
+  "transport_sha256": "6211c51db1bebcee83fe0785bc0bb83c69772e909d752d61635b3ca59209d8e2",
+  "patch_manifest_sha256": "f59f23f29786d0006867aeecd954904f35adb08c5afb7ded544c14fce6939d66",
+  "bootstrap_sha256": "037870486bbe79a33e36b84b30347851c21d25b85678e9031ddbd0044b390f47",
+  "workflow_sha256": "f53c613a505c571978f2a10f7d6327fbecf95a99667aae7b6963bec2f81d3a07",
+  "guest_sha256": "9c92c16d88a9e69a6e9b73b61f0e1eff8cd6b1b457451ee104c07bd17a7e29f0",
+  "all_original_build_phases_preserved": true,
+  "application_or_tests_executed": false,
+  "published": false,
+  "full_plan_complete": false
+}
