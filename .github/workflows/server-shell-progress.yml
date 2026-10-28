@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 3
     steps:
       - name: Read task names and completion states for this build only
-        shell: pwsh
+        shell: powershell
         run: |
           @'
           from pathlib import Path
