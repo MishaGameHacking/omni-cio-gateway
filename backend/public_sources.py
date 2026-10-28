@@ -127,6 +127,10 @@ def initialize(db: sqlite3.Connection) -> None:
     db.commit()
 
 
+def _reject_nonfinite(_: str) -> None:
+    raise SourceError("source_nonfinite_json")
+
+
 def _json(raw: bytes) -> dict:
     def unique(pairs):
         result = {}
@@ -137,7 +141,7 @@ def _json(raw: bytes) -> dict:
         return result
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique,
-            parse_constant=lambda _: (_ for _ in ()).throw(SourceError("source_nonfinite_json")))
+            parse_constant=_reject_nonfinite)
     except (UnicodeError, ValueError, RecursionError) as error:
         raise SourceError("source_json_invalid") from error
     if not isinstance(value, dict):
@@ -216,25 +220,27 @@ def fetch_document(url: str, headers: dict) -> tuple[int, dict, bytes]:
     if not url.startswith(BASE_URL + "?"):
         raise SourceError("source_url_not_allowed")
     started = time.monotonic()
-    with httpx.Client(timeout=httpx.Timeout(2.5), follow_redirects=False, trust_env=False,
+    with (
+        httpx.Client(timeout=httpx.Timeout(2.5), follow_redirects=False, trust_env=False,
             headers={"Accept": "application/vnd.api+json, application/json",
-                     "Accept-Encoding": "identity", "User-Agent": "AnalystAI-PublicIdentity/1"}) as client:
-        with client.stream("GET", url, headers=headers) as response:
-            response_headers = {key.lower(): value for key, value in response.headers.items()
-                                if key.lower() in {"etag", "last-modified", "retry-after", "content-type"}}
-            if response.status_code != 200:
-                return response.status_code, response_headers, b""
-            if response_headers.get("content-type", "").split(";", 1)[0] not in {
-                    "application/json", "application/vnd.api+json"}:
-                raise SourceError("source_content_type_invalid")
-            if response.headers.get("content-encoding", "identity").lower() not in {"", "identity"}:
-                raise SourceError("source_encoding_not_allowed")
-            body = bytearray()
-            for chunk in response.iter_raw():
-                if time.monotonic() - started > 4 or len(body) + len(chunk) > MAX_BYTES:
-                    raise SourceError("source_response_limit")
-                body.extend(chunk)
-            return response.status_code, response_headers, bytes(body)
+                     "Accept-Encoding": "identity", "User-Agent": "AnalystAI-PublicIdentity/1"}) as client,
+        client.stream("GET", url, headers=headers) as response,
+    ):
+        response_headers = {key.lower(): value for key, value in response.headers.items()
+                            if key.lower() in {"etag", "last-modified", "retry-after", "content-type"}}
+        if response.status_code != 200:
+            return response.status_code, response_headers, b""
+        if response_headers.get("content-type", "").split(";", 1)[0] not in {
+                "application/json", "application/vnd.api+json"}:
+            raise SourceError("source_content_type_invalid")
+        if response.headers.get("content-encoding", "identity").lower() not in {"", "identity"}:
+            raise SourceError("source_encoding_not_allowed")
+        body = bytearray()
+        for chunk in response.iter_raw():
+            if time.monotonic() - started > 4 or len(body) + len(chunk) > MAX_BYTES:
+                raise SourceError("source_response_limit")
+            body.extend(chunk)
+        return response.status_code, response_headers, bytes(body)
 
 
 def _header(value: object) -> str | None:
