@@ -80,7 +80,7 @@ internal fun AccountOperations(token: String, account: PortfolioAccount,
             PeriodControls(period) { start = it.start; end = it.end }
             val primary = listOf(0, 1, 6, 7)
             SpectrumTabs(listOf("Все", "Сделки", "Доход", "Пополнения"), primary.indexOf(category), { category = primary[it] })
-            SpectrumTextButton("Фильтр: ${OperationCategories[category].second}", { filterOpen = true }, symbol = SpectrumSymbol.Expand)
+            SpectrumTextButton("Фильтр: ${OperationCategories[category].second}", { filterOpen = true }, symbol = SpectrumSymbol.ChevronDown)
             AccountDataNotice(request)
         }
         operationRows(visible, account) { chosenId = it }
@@ -274,4 +274,5 @@ internal fun operationStateLabel(value: String): String = when (value) {
     "STOP_ORDER_TYPE_STOP_LIMIT" -> "Стоп-лимит"
     else -> "Статус уточняется · код в подробностях"
 }
+
 

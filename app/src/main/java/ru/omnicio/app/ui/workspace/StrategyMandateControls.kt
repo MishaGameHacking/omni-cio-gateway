@@ -6,6 +6,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -47,7 +49,10 @@ internal fun StrategyNumberChoice(title: String, value: String, unit: String, en
     val parsed = strategyNumberInput(text, minimum, maximum, whole)
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val commit = { if (enabled && parsed != null && parsed != value) onChange(parsed) }
-    SpectrumTextField(text, { text = it }, Modifier.fillMaxWidth().onFocusChanged { state ->
+    SpectrumTextField(text, { text = it }, Modifier.fillMaxWidth()
+        .semantics { testTagsAsResourceId = true }
+        .testTag(if (title == "Горизонт") "strategy-horizon" else "strategy-number-" + title)
+        .onFocusChanged { state ->
         if (focused && !state.hasFocus) commit()
         focused = state.hasFocus
     }, enabled = enabled, singleLine = true,

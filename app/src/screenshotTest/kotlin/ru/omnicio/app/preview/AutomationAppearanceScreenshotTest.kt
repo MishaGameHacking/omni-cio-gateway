@@ -27,7 +27,7 @@ import ru.omnicio.app.ui.theme.AnalystTheme
 import ru.omnicio.app.ui.workspace.*
 
 /**
- * Real production Compose layouts rendered by Layoutlib on the Timeweb host.
+ * Real production Compose layouts rendered by Layoutlib on the owner laptop.
  * Explicit synthetic state, no authentication, networking, device runtime, or
  * interaction evidence. These images cannot satisfy an Android release gate.
  */
@@ -121,7 +121,7 @@ private fun HostAppearance(page: String, state: String) {
         AnalystTheme {
             Column(Modifier.fillMaxSize()) {
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ\nTimeweb · Layoutlib · без Android runtime",
+                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ\nНоутбук · Layoutlib · без Android runtime",
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -177,4 +177,44 @@ private fun appearanceResource(state: String): WorkspaceResource {
         .put("events", JSONArray())
     val error = if (state == "error") "Синтетическая ошибка связи. Настоящая сеть не вызывалась." else null
     return WorkspaceResource(data, false, error) {}
+}
+
+@PreviewTest
+@Preview(name = "strategy-profiles-compact", widthDp = 390, heightDp = 1100, locale = "ru")
+@Preview(name = "strategy-profiles-large-text", widthDp = 320, heightDp = 1500, fontScale = 2f, locale = "ru")
+@Composable
+fun StrategyProfilesAppearance() {
+    val catalogue = JSONObject().put("items", JSONArray().apply {
+        listOf("capital" to "Защита капитала", "coupon" to "Купонный доход", "balanced" to "Сбалансированный портфель",
+            "growth" to "Долгосрочный рост", "equity" to "Акции и дивиденды").forEach { (id, title) ->
+            put(JSONObject().put("id", id).put("title", title).put("description", "Синтетический пример профиля")
+                .put("config", JSONObject().put("mandate", JSONObject().put("bond_target_percent", "60").put("share_target_percent", "40"))))
+        }
+    })
+    AnalystTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().padding(16.dp)) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                StrategyProfilesPanel(catalogue, JSONObject(), true, {}, {})
+            }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "strategy-fields-compact", widthDp = 390, heightDp = 844, locale = "ru")
+@Preview(name = "strategy-fields-large-text", widthDp = 320, heightDp = 1100, fontScale = 2f, locale = "ru")
+@Composable
+fun StrategyFieldsAppearance() {
+    AnalystTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                WorkspaceChoices("Цель", listOf("Сохранение капитала", "Регулярные выплаты", "Рост капитала"), 1) {}
+                StrategyNumberChoice("Горизонт", "120", "мес.", true, "1", "600", emptyList(), emptyList()) {}
+                StrategyNumberChoice("Резерв", "10000.25", "RUB", true, "0", "999999999999999.99", emptyList(), emptyList()) {}
+                StrategyNumberChoice("Допустимый убыток", "", "%", true, "0", "100", emptyList(), emptyList()) {}
+            }
+        }
+    }
 }

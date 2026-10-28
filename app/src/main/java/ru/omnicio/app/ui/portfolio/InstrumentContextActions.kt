@@ -37,7 +37,7 @@ internal fun InstrumentContextActions(position: PortfolioPosition, accountId: St
     var selectedKeys by rememberSaveable(user, accountId, position.id) { mutableStateOf(emptyList<String>()) }
     val selectedRows = selectedKeys.mapNotNull { key -> rows.singleOrNull { portfolioRowKey(it) == key } }
     SpectrumTextButton("Действия с бумагой", { panel = "menu" }, Modifier.fillMaxWidth().testTag("instrument-context-actions"),
-        symbol = SpectrumSymbol.Expand)
+        symbol = SpectrumSymbol.ChevronDown)
     when (panel) {
         "menu" -> InstrumentActionSheet(position, { panel = null }) {
             SpectrumTextButton("Сравнить с другими бумагами", {
@@ -159,3 +159,4 @@ private fun InstrumentConcentration(row: JSONObject, sources: List<JSONObject>) 
         SourceProvenance(sources, row.stringList("source_ids"))
     }
 }
+

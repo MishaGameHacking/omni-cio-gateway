@@ -156,7 +156,7 @@ private fun RatingDraftControl(ratings: Set<String>, onChange: (Set<String>) -> 
     val threshold = RatingChoices.indexOfLast { it in ratings }.coerceAtLeast(0)
     SpectrumCard {
         Text("Кредитные рейтинги", style = MaterialTheme.typography.titleLarge)
-        SpectrumTextButton("Минимум: ${RatingChoices[threshold]}", onClick = { open = true }, symbol = SpectrumSymbol.Expand)
+        SpectrumTextButton("Минимум: ${RatingChoices[threshold]}", onClick = { open = true }, symbol = SpectrumSymbol.ChevronDown)
         DetailFold("Исключения (${RatingChoices.take(threshold + 1).count { it !in ratings }})") {
             RatingChoices.take(threshold + 1).forEach { rating -> WorkspaceToggle(rating, "Включать в отбор", rating in ratings) { enabled ->
                 onChange(if (enabled) ratings + rating else ratings - rating)
@@ -168,3 +168,4 @@ private fun RatingDraftControl(ratings: Set<String>, onChange: (Set<String>) -> 
             TextButton(onClick = { onChange(RatingChoices.take(index + 1).toSet()); open = false }) { Text(rating) }
         } } }, confirmButton = { TextButton(onClick = { open = false }) { Text("Закрыть") } })
 }
+
