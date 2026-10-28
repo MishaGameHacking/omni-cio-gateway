@@ -130,6 +130,7 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                             if (disconnected) onConnect else onOpenProfile, Modifier.fillMaxWidth())
                     }
                 }
+                item(key = "data-readiness") { HomeSystemReadiness(selectedCurrency) }
                 if (!disconnected || hasObservation || candidates.isNotEmpty()) item(key = "analysis-results") {
                     SpectrumCard {
                         Text("Результаты", style = MaterialTheme.typography.titleLarge)
