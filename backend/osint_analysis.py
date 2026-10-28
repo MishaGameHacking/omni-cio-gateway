@@ -46,7 +46,8 @@ def clean_text(value: str, maximum: int = MAX_TEXT) -> str:
     value = unicodedata.normalize("NFKC", str(value or ""))[:maximum * 2]
     if SENSITIVE.search(value):
         raise IntakeError("osint_sensitive_material_rejected")
-    value = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[контакт удалён]", value)
+    value = "\n".join(" ".join("[контакт удалён]" if "@" in token else token
+                      for token in line.split(" ")) for line in value.split("\n"))
     value = re.sub(r"\+7[\s(-]*\d{3}[)\s-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}", "[контакт удалён]", value)
     value = "".join(char for char in value if char in "\n\t" or unicodedata.category(char)[0] != "C")
     return re.sub(r"[^\S\n]+", " ", value).strip()[:maximum]
@@ -71,25 +72,48 @@ def bands(value: str) -> list[tuple[int, int]]:
     return [(index, (number >> (index * 16)) & 65535) for index in range(4)]
 
 
+def _unit_hint(text):
+    return next((name for pattern, name in (
+        (r"миллион.{0,20}рубл|млн\.?\s*руб", "RUB million"),
+        (r"тысяч.{0,20}рубл|тыс\.?\s*руб", "RUB thousand"),
+        (r"USD.{0,15}million|millions? of.{0,10}dollars", "USD million"))
+        if re.search(pattern, text, re.I)), None)
+
+
+def _page_candidates(page):
+    unit = _unit_hint(page["text"])
+    result = []
+    for line in page["text"].splitlines():
+        for metric, pattern in FINANCIAL_LABELS.items():
+            if not re.search(pattern, line, re.I):
+                continue
+            tokens = NUMBERS.findall(line)
+            if tokens:
+                result.append({"metric": metric, "page": page["page"],
+                    "raw_values": tokens[:8], "unit_hint": unit, "period": None,
+                    "quote": clean_text(line, 420), "status": "candidate_requires_column_and_period_validation"})
+        if len(result) >= 80:
+            break
+    return result
+
+
 def financial_candidates(pages: list[dict]) -> list[dict]:
     result = []
     for page in pages:
-        text = page["text"]
-        unit = next((name for pattern, name in (
-            (r"миллион.{0,20}рубл|млн\.?\s*руб", "RUB million"),
-            (r"тысяч.{0,20}рубл|тыс\.?\s*руб", "RUB thousand"),
-            (r"USD.{0,15}million|millions? of.{0,10}dollars", "USD million"))
-            if re.search(pattern, text, re.I)), None)
-        for line in text.splitlines():
-            for metric, pattern in FINANCIAL_LABELS.items():
-                if re.search(pattern, line, re.I):
-                    tokens = NUMBERS.findall(line)
-                    if tokens:
-                        result.append({"metric": metric, "page": page["page"],
-                            "raw_values": tokens[:8], "unit_hint": unit, "period": None,
-                            "quote": clean_text(line, 420), "status": "candidate_requires_column_and_period_validation"})
-            if len(result) >= 80:
-                return result
+        result.extend(_page_candidates(page))
+        if len(result) >= 80:
+            break
+    return result[:80]
+
+
+def _evidence(sample, topic):
+    result = []
+    pattern = TOPICS.get(topic, (r"$^", "", ""))[0]
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", sample):
+        if re.search(pattern, sentence, re.I):
+            result.append(sentence.strip()[:420])
+        if len(result) == 3:
+            break
     return result
 
 
@@ -106,13 +130,7 @@ def analyze(title: str, text: str, *, report: bool = False, pages: list[dict] | 
     stance = "source_claim"
     if topic == "cyber_incident":
         stance = "denial" if re.search(r"опроверг|не\s+подтверд|не\s+обнаруж|den(?:y|ies|ied)", sample, re.I) else "unconfirmed_report"
-    evidence = []
-    pattern = TOPICS.get(topic, (r"$^", "", ""))[0]
-    for sentence in re.split(r"(?<=[.!?])\s+|\n", sample):
-        if re.search(pattern, sentence, re.I):
-            evidence.append(sentence.strip()[:420])
-        if len(evidence) == 3:
-            break
+    evidence = _evidence(sample, topic)
     impact = TOPICS.get(topic, ("", "normal", "Не обнаружена инвестиционная тема."))[2]
     label = "Источник опровергает сообщение об инциденте. " if stance == "denial" else ""
     return {"version": VERSION, "relevant": relevant, "topics": matches, "topic": topic,

@@ -77,7 +77,7 @@ def extract_pdf(raw: bytes) -> dict:
         raise IntakeError("osint_pdf_resource_limit")
     try:
         value = json.loads(result.stdout)
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise IntakeError("osint_pdf_parse_failed") from None
     if value.get("error"):
         raise IntakeError(value["error"])

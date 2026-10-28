@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import urllib.request
 
+REQUIREMENTS = 'requirements.txt'
 BASE = '2d3e08614f15cfb1d9e9428a0d3613672394a92b'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
 
@@ -26,9 +27,14 @@ def baseline_inventory():
     expected = {}
     for name in names:
         relative = Path(name).relative_to('backend').as_posix()
-        if '/' not in relative and (relative.endswith('.py') or relative == 'requirements.txt'):
+        if '/' not in relative and (relative.endswith('.py') or relative == REQUIREMENTS):
             expected[relative] = digest(git('show', BASE + ':' + name))
     return expected
+
+
+def verify_requirements(relative, name, raw):
+    if relative == REQUIREMENTS and raw != git('show', BASE + ':' + name) + b'pypdf==6.21.3\n':
+        raise RuntimeError('unreviewed_dependency_change')
 
 
 def changed_modules(expected):
@@ -39,15 +45,12 @@ def changed_modules(expected):
         if name.startswith('backend/tests/'):
             continue
         relative = Path(name).relative_to('backend').as_posix()
-        if status not in {'A', 'M'} or '/' in relative or not (relative.endswith('.py') or relative == 'requirements.txt'):
+        if status not in {'A', 'M'} or '/' in relative or not (relative.endswith('.py') or relative == REQUIREMENTS):
             raise RuntimeError('deployment_scope_requires_separate_review')
         raw = Path(name).read_bytes()
         if raw != git('show', 'HEAD:' + name):
             raise RuntimeError('source_changed_after_verification')
-        if relative == 'requirements.txt':
-            before = git('show', BASE + ':' + name)
-            if raw != before + b'pypdf==6.21.3\n':
-                raise RuntimeError('unreviewed_dependency_change')
+        verify_requirements(relative, name, raw)
         files[relative] = {'before': expected.get(relative), 'after': digest(raw),
                            'content': raw.decode('utf-8')}
     if not files or len(files) > 24:

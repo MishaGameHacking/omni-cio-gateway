@@ -233,12 +233,6 @@ def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
         from volume_workspace import collect
         from volume_chat import run_message
         from volume_plans import reconcile_plan
-    if job["kind"] == "osint":
-        try:
-            from .osint_worker import collect as collect_osint
-        except ImportError:
-            from osint_worker import collect as collect_osint
-        return collect_osint(user, payload, checkpoint, progress)
     if job["kind"] == "events":
         try:
             from .event_monitor import collect_events
@@ -284,6 +278,14 @@ def _fail_job(job: dict, error: Exception) -> None:
         db.execute("UPDATE workspace_jobs SET state=?,error_code=?,updated_at=? WHERE id=? AND owner=?", (status, code, int(time.time()), job["id"], job["owner"]))
 
 
+def _public_collection(user, payload, checkpoint):
+    try:
+        from .osint_worker import collect
+    except ImportError:
+        from osint_worker import collect
+    return collect(user, payload, checkpoint, progress)
+
+
 def run_job(identifier: str | None = None) -> None:
     job = _claim(identifier)
     if job is None:
@@ -297,7 +299,8 @@ def run_job(identifier: str | None = None) -> None:
         payload, checkpoint = json.loads(job["payload_json"]), json.loads(job["checkpoint_json"])
         access = nullcontext() if job["kind"] == "osint" else monitoring_connection(job["user_id"], user["tinvest_token_encrypted"])
         with access:
-            result = _perform_job(job, user, payload, checkpoint)
+            result = (_public_collection(user, payload, checkpoint) if job["kind"] == "osint"
+                      else _perform_job(job, user, payload, checkpoint))
             with transaction(backend.connect) as db:
                 assert_current_in(db)
                 db.execute("UPDATE workspace_jobs SET state='completed',stage='done',result_json=?,checkpoint_json='{}',updated_at=? WHERE id=? AND owner=?", (encode(result), int(time.time()), job["id"], job["owner"]))

@@ -20,19 +20,7 @@ def status(connect, now: int | None = None) -> dict:
         state = dict(db.execute("SELECT * FROM osint_revision_v1 WHERE singleton=1").fetchone())
         counts = dict(db.execute("SELECT source_id,COUNT(*) FROM osint_publications_v1 WHERE expires_at>? GROUP BY source_id", (now,)))
         targets = db.execute("SELECT * FROM osint_targets_v1").fetchall()
-    rows = []
-    for source in SOURCES:
-        related = [row for row in targets if row["source_id"] == source.id]
-        root = next((row for row in related if row["url"] == canonical_url(source.url, source.hosts)), None)
-        success = root["last_success"] if root else None
-        stale = success is None or now - success > source.interval * 3
-        rows.append({"id": source.id, "title": source.title,
-            "state": "pending" if root is None else root["status"], "stale": stale,
-            "last_check": root["last_check"] if root else None, "last_success": success,
-            "next_check": root["next_at"] if root else None, "error": root["error"] if root else None,
-            "coverage": json.loads(root["coverage_json"]) if root else {},
-            "documents": counts.get(source.id, 0), "targets": len(related),
-            "target_failures": sum(row["status"] == "unavailable" for row in related)})
+    rows = [_source_status(source, targets, counts, now) for source in SOURCES]
     return {"schema_version": 1, "revision": state["revision"], "server_time": now,
         "state": "attention" if any(row["stale"] or row["state"] in {"partial", "unavailable", "empty"} or row["target_failures"] or row["coverage"].get("truncated") or row["coverage"].get("empty_index") for row in rows) else "current",
         "sources": rows, "documents": sum(counts.values()),
@@ -42,6 +30,20 @@ def status(connect, now: int | None = None) -> dict:
                     "document_limit": MAX_PUBLICATIONS, "frontier_limit": MAX_FRONTIER},
         "last_cleanup": state["last_cleanup"], "search_mode": state["search_mode"],
         "paid_models_used": False, "real_orders_enabled": False}
+
+
+def _source_status(source, targets, counts, now):
+    related = [row for row in targets if row["source_id"] == source.id]
+    root = next((row for row in related if row["url"] == canonical_url(source.url, source.hosts)), None)
+    success = root["last_success"] if root else None
+    stale = success is None or now - success > source.interval * 3
+    return {"id": source.id, "title": source.title,
+        "state": "pending" if root is None else root["status"], "stale": stale,
+        "last_check": root["last_check"] if root else None, "last_success": success,
+        "next_check": root["next_at"] if root else None, "error": root["error"] if root else None,
+        "coverage": json.loads(root["coverage_json"]) if root else {},
+        "documents": counts.get(source.id, 0), "targets": len(related),
+        "target_failures": sum(row["status"] == "unavailable" for row in related)}
 
 
 def sources() -> list[dict]:

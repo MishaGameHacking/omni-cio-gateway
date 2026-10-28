@@ -186,8 +186,9 @@ def test_unknown_date_refresh_does_not_extend_retention(corpus):
 
 def test_capacity_failure_is_atomic(corpus, monkeypatch):
     monkeypatch.setattr(store, "MAX_OBJECT_BYTES", 3)
+    row = item()
     with pytest.raises(catalogue.IntakeError, match="capacity"):
-        save(corpus, item())
+        save(corpus, row)
     assert read.documents(corpus, now=NOW)["items"] == []
 
 
@@ -211,9 +212,10 @@ def test_transaction_guard_prevents_cancelled_write(corpus):
 
     def stopped(_db):
         raise HTTPException(409, "paused")
+    rows = [(item(), analysis.analyze(item()["title"], item()["text"]))]
     with pytest.raises(HTTPException):
         store.finish(corpus, target, now=NOW, status="ready", next_at=NOW + 1000, headers={}, coverage={},
-                     rows=[(item(), analysis.analyze(item()["title"], item()["text"]))], guard=stopped)
+                     rows=rows, guard=stopped)
     assert read.documents(corpus, now=NOW)["items"] == []
 
 
@@ -300,3 +302,91 @@ def test_pdf_child_extracts_text_and_marks_scanned_pages():
 def test_pdf_invalid_bytes_rejected():
     with pytest.raises(catalogue.IntakeError, match="pdf_invalid"):
         worker.extract_pdf(b"not a PDF")
+
+
+def test_redirect_does_not_contact_unapproved_host(monkeypatch):
+    called = []
+
+    def redirect(url, *_args):
+        called.append(url)
+        return 302, {"location": "https://evil.example/private"}, b""
+    monkeypatch.setattr(network, "_fetch_once", redirect)
+    with pytest.raises(catalogue.IntakeError, match="host_not_approved"):
+        network.request("https://www.moex.com/a", ("www.moex.com",))
+    assert called == ["https://www.moex.com/a"]
+
+
+def test_tls_checks_certificate_hostname_and_connects_checked_numeric_address(monkeypatch):
+    from types import SimpleNamespace
+    socket = SimpleNamespace(close=lambda: None)
+    observed = {}
+    context = SimpleNamespace(check_hostname=False, verify_mode=0)
+
+    def wrap(value, server_hostname):
+        observed.update(socket=value, hostname=server_hostname)
+        return socket
+    context.wrap_socket = wrap
+    monkeypatch.setattr(network, "public_addresses", lambda _host: ["1.1.1.1"])
+    monkeypatch.setattr(network.ssl, "create_default_context", lambda _purpose: context)
+
+    def connect(address, timeout):
+        observed.update(address=address, timeout=timeout)
+        return socket
+    monkeypatch.setattr(network.socket, "create_connection", connect)
+    connection = network._connection("www.moex.com")
+    connection.close()
+    assert context.check_hostname is True
+    assert context.verify_mode == network.ssl.CERT_REQUIRED
+    assert observed["address"] == ("1.1.1.1", 443)
+    assert observed["hostname"] == "www.moex.com"
+
+
+def test_streaming_body_and_compressed_content_are_bounded():
+    from types import SimpleNamespace
+    connection = SimpleNamespace(sock=None)
+    response = io.BytesIO(b"123456")
+    deadline = time.monotonic() + 10
+    with pytest.raises(catalogue.IntakeError, match="response_too_large"):
+        network._read_body(response, {}, connection, deadline, 5)
+    with pytest.raises(catalogue.IntakeError, match="encoding_not_supported"):
+        network._read_body(response, {"content-encoding": "gzip"}, connection, deadline, 5)
+
+
+def test_robots_unavailable_is_fail_closed_and_cached(application, monkeypatch):
+    calls = []
+
+    def denied(*_args, **_kwargs):
+        calls.append(True)
+        return 403, {}, b"", "https://www.moex.com/robots.txt"
+    monkeypatch.setattr(network, "request", denied)
+    source = catalogue.BY_ID["moex_reports"]
+    for _ in range(2):
+        with pytest.raises(catalogue.IntakeError, match="robots_unavailable"):
+            worker._before(source.url, source, lambda _db: None, robots_required=True)
+    assert calls == [True]
+
+
+def test_retry_after_persists_source_backoff(application, monkeypatch):
+    now = int(time.time())
+    with closing(backend.connect()) as db:
+        db.execute("UPDATE osint_targets_v1 SET next_at=? WHERE source_id!='moex_news'", (now + 10000,))
+        db.commit()
+    target = store.claim(backend.connect, now)
+    monkeypatch.setattr(network, "request", lambda *_args, **_kwargs: (429, {"retry-after": "3600"}, b"", target["url"]))
+    result = worker.process(target, worker.guard_for(1))
+    assert result["status"] == "unavailable"
+    with closing(backend.connect()) as db:
+        saved = db.execute("SELECT * FROM osint_targets_v1 WHERE id=?", (target["id"],)).fetchone()
+        assert saved["next_at"] >= now + 3600
+        assert saved["error"] == "osint_http_429"
+        assert saved["lease_owner"] is None
+
+
+def test_existing_scheduler_collects_for_owner_without_broker(application, monkeypatch):
+    monkeypatch.setattr(worker, "process", lambda target, guard: store.finish(backend.connect, target,
+        now=int(time.time()), status="empty", next_at=int(time.time()) + 3600,
+        headers={}, coverage={"items_seen": 0}, guard=guard))
+    autonomous_ai.run_scheduler_cycle()
+    with closing(backend.connect()) as db:
+        jobs = db.execute("SELECT kind,state,paid_started FROM workspace_jobs").fetchall()
+    assert any(row["kind"] == "osint" and row["state"] == "completed" and row["paid_started"] == 0 for row in jobs)

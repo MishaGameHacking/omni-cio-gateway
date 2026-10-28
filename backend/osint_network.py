@@ -30,68 +30,83 @@ def _connection(host: str):
     # The checked numeric address is also the address actually connected to.
     # TLS still verifies the original hostname; redirects get an independent check.
     address = public_addresses(host)[0]
-    connection = http.client.HTTPSConnection(host, timeout=TIMEOUT, context=ssl.create_default_context())
+    context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    connection = http.client.HTTPSConnection(host, timeout=TIMEOUT, context=context)
     sock = socket.create_connection((address, 443), timeout=TIMEOUT)
     try:
-        connection.sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+        connection.sock = context.wrap_socket(sock, server_hostname=host)
     except BaseException:
         sock.close()
         raise
     return connection
 
 
-def request(url: str, hosts: tuple[str, ...], headers: dict | None = None, maximum: int = 2_097_152,
-            *, before_request=None) -> tuple[int, dict, bytes, str]:
-    current = canonical_url(url, hosts)
-    deadline = time.monotonic() + 60
+def _request_headers(headers):
     safe = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity",
             "Accept": "application/rss+xml,application/atom+xml,application/json,text/html,application/pdf,text/plain"}
     for name in ("If-None-Match", "If-Modified-Since"):
         value = (headers or {}).get(name)
         if isinstance(value, str) and len(value) <= 512 and "\r" not in value and "\n" not in value:
             safe[name] = value
+    return safe
+
+
+def _read_body(response, metadata, connection, deadline, maximum):
+    if metadata.get("content-encoding", "identity").lower() not in {"", "identity"}:
+        raise IntakeError("osint_encoding_not_supported")
+    declared = metadata.get("content-length")
+    if declared and (not declared.isdigit() or int(declared) > maximum):
+        raise IntakeError("osint_response_too_large")
+    chunks, size = [], 0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise IntakeError("osint_response_deadline")
+        if connection.sock is not None:
+            connection.sock.settimeout(min(TIMEOUT, remaining))
+        block = response.read(min(65536, maximum + 1 - size))
+        if not block:
+            break
+        chunks.append(block)
+        size += len(block)
+        if size > maximum:
+            raise IntakeError("osint_response_too_large")
+    return b"".join(chunks)
+
+
+def _fetch_once(current, safe, maximum, deadline):
+    parts = urlsplit(current)
+    if time.monotonic() >= deadline:
+        raise IntakeError("osint_response_deadline")
+    connection = _connection(parts.hostname)
+    try:
+        connection.request("GET", parts.path + ("?" + parts.query if parts.query else ""), headers=safe)
+        response = connection.getresponse()
+        metadata = {key.lower(): value for key, value in response.getheaders()}
+        raw = _read_body(response, metadata, connection, deadline, maximum) if response.status == 200 else b""
+        return response.status, metadata, raw
+    finally:
+        connection.close()
+
+
+def request(url: str, hosts: tuple[str, ...], headers: dict | None = None, maximum: int = 2_097_152,
+            *, before_request=None) -> tuple[int, dict, bytes, str]:
+    current = canonical_url(url, hosts)
+    deadline = time.monotonic() + 60
+    safe = _request_headers(headers)
     for attempt in range(4):
-        parts = urlsplit(current)
         if before_request:
             before_request(current)
-        if time.monotonic() >= deadline:
-            raise IntakeError("osint_response_deadline")
-        connection = _connection(parts.hostname)
-        try:
-            connection.request("GET", parts.path + ("?" + parts.query if parts.query else ""), headers=safe)
-            response = connection.getresponse()
-            metadata = {key.lower(): value for key, value in response.getheaders()}
-            if response.status in REDIRECTS:
-                if attempt == 3:
-                    raise IntakeError("osint_redirect_limit")
-                current = canonical_url(urljoin(current, metadata.get("location", "")), hosts)
-                safe.pop("If-None-Match", None)
-                safe.pop("If-Modified-Since", None)
-                continue
-            if response.status != 200:
-                return response.status, metadata, b"", current
-            if metadata.get("content-encoding", "identity").lower() not in {"", "identity"}:
-                raise IntakeError("osint_encoding_not_supported")
-            declared = metadata.get("content-length")
-            if declared and (not declared.isdigit() or int(declared) > maximum):
-                raise IntakeError("osint_response_too_large")
-            chunks, size = [], 0
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise IntakeError("osint_response_deadline")
-                if connection.sock is not None:
-                    connection.sock.settimeout(min(TIMEOUT, remaining))
-                block = response.read(min(65536, maximum + 1 - size))
-                if not block:
-                    break
-                chunks.append(block)
-                size += len(block)
-                if size > maximum:
-                    raise IntakeError("osint_response_too_large")
-            return response.status, metadata, b"".join(chunks), current
-        finally:
-            connection.close()
+        status, metadata, raw = _fetch_once(current, safe, maximum, deadline)
+        if status not in REDIRECTS:
+            return status, metadata, raw, current
+        if attempt == 3:
+            raise IntakeError("osint_redirect_limit")
+        current = canonical_url(urljoin(current, metadata.get("location", "")), hosts)
+        safe.pop("If-None-Match", None)
+        safe.pop("If-Modified-Since", None)
     raise IntakeError("osint_redirect_limit")
 
 

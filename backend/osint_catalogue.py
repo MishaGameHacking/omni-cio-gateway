@@ -7,6 +7,8 @@ import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 USER_AGENT = "AnalystAIResearch/1.0 (+https://github.com/MishaGameHacking/omni-cio-gateway)"
+MOEX_HOSTS = ("www.moex.com", "moex.com")
+MOEX_RSS_DOCUMENTATION = "https://www.moex.com/a40"
 MAX_TEXT = 240_000
 MAX_BODY = 2 * 1024 * 1024
 MAX_PDF = 12 * 1024 * 1024
@@ -33,20 +35,20 @@ class Source:
 
 SOURCES = (
     Source("moex_news", "Новости Московской биржи", "https://www.moex.com/export/news.aspx?cat=100",
-           "rss", "moex", ("www.moex.com", "moex.com"), 600, "https://www.moex.com/a40",
+           "rss", "moex", MOEX_HOSTS, 600, MOEX_RSS_DOCUMENTATION,
            permission="publisher_rss_headlines_and_annotations"),
     Source("moex_listing", "Новости листинга", "https://www.moex.com/export/news.aspx?cat=104",
-           "rss", "moex", ("www.moex.com", "moex.com"), 900, "https://www.moex.com/a40",
+           "rss", "moex", MOEX_HOSTS, 900, MOEX_RSS_DOCUMENTATION,
            permission="publisher_rss_headlines_and_annotations"),
     Source("moex_risk", "Риск-параметры биржи", "https://www.moex.com/export/news.aspx?cat=122",
-           "rss", "moex", ("www.moex.com", "moex.com"), 900, "https://www.moex.com/a40",
+           "rss", "moex", MOEX_HOSTS, 900, MOEX_RSS_DOCUMENTATION,
            permission="publisher_rss_headlines_and_annotations"),
     Source("cbr_press", "Пресс-релизы Банка России", "https://www.cbr.ru/rss/RssPress",
            "rss", "cbr", ("www.cbr.ru", "cbr.ru"), 900, "https://cbr.ru/development/RSS/",
            permission="publisher_rss"),
     Source("moex_reports", "Отчётность Московской биржи",
            "https://www.moex.com/o-birzhe/finansovaya-otchetnost/msfo",
-           "index", "moex", ("www.moex.com", "moex.com", "fs.moex.com"), 21600,
+           "index", "moex", (*MOEX_HOSTS, "fs.moex.com"), 21600,
            "https://www.moex.com/o-birzhe/finansovaya-otchetnost/msfo", "Московская Биржа"),
     Source("nornickel_reports", "Отчётность Норникеля", "https://nornickel.ru/investors/",
            "index", "nornickel", ("nornickel.ru", "www.nornickel.ru"), 21600,
@@ -74,7 +76,7 @@ def canonical_url(value: str, hosts: tuple[str, ...] | None = None) -> str:
         url = urlsplit(value)
         host = (url.hostname or "").encode("idna").decode().lower()
         port = url.port
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise IntakeError("osint_url_invalid") from None
     if url.scheme != "https" or not host or url.username or url.password or port not in (None, 443):
         raise IntakeError("osint_url_invalid")
@@ -88,15 +90,20 @@ def canonical_url(value: str, hosts: tuple[str, ...] | None = None) -> str:
         raise IntakeError("osint_literal_address_denied")
     if "." not in host or host.endswith((".local", ".internal", ".onion")):
         raise IntakeError("osint_host_not_public")
+    query = clean_query(url.query)
+    return urlunsplit(("https", host, url.path or "/", query, ""))
+
+
+def clean_query(query: str) -> str:
     try:
-        pairs = parse_qsl(url.query, keep_blank_values=True, max_num_fields=40)
+        pairs = parse_qsl(query, keep_blank_values=True, max_num_fields=40)
     except ValueError:
         raise IntakeError("osint_url_invalid") from None
     if any(re.search(r"password|secret|access_token|authorization|api[_-]?key", key, re.I) for key, _ in pairs):
         raise IntakeError("osint_credential_url_denied")
     pairs = [(key, value) for key, value in pairs
              if not key.lower().startswith("utm_") and key.lower() not in {"fbclid", "gclid"}]
-    return urlunsplit(("https", host, url.path or "/", urlencode(sorted(pairs)), ""))
+    return urlencode(sorted(pairs))
 
 
 def target_url(source: Source, url: str, kind: str) -> str:

@@ -130,46 +130,53 @@ def feed(raw: bytes, source, now: int) -> tuple[list[dict], dict]:
     for item in entries[:500]:
         try:
             rows.append(_entry(item, source, now))
-        except (IntakeError, ValueError):
+        except ValueError:
             rejected += 1
     return rows, {"items_seen": len(entries), "rejected": rejected, "truncated": len(entries) > 500,
                   "coverage": "publisher_feed_window"}
+
+
+def _report_target(link, source, base, now):
+    label = plain(link["label"])[:400]
+    context = plain(link["context"])
+    url = urljoin(base, link["href"])
+    try:
+        path = urlsplit(url).path.lower()
+    except ValueError:
+        return None
+    years = [int(value) for value in re.findall(r"(?<!\d)20\d{2}(?!\d)", label + " " + path)]
+    if years and max(years) < datetime.fromtimestamp(now, timezone.utc).year - 4:
+        return None
+    kind = "pdf" if path.endswith(".pdf") or re.fullmatch(r"/files/\d+", path) else "index"
+    if not _report_link_allowed(kind, label, context, path):
+        return None
+    try:
+        url = target_url(source, url, kind)
+    except ValueError:
+        return None
+    dates = re.findall(r"\b\d{2}\.\d{2}\.20\d{2}\b", label)
+    published = timestamp(dates[-1]) if dates else None
+    if published and published > now + 600:
+        published = None
+    return {"url": url, "kind": kind, "title": label or source.title,
+            "published_at": published, "context": context[-1000:]}
+
+
+def _report_link_allowed(kind, label, context, path):
+    if kind == "index":
+        return bool(re.search(r"/20\d{2}/?$", path))
+    terms = label + " " + context[-650:]
+    return bool(re.search(r"отч[её]тност|МСФО|РСБУ|financial.statement|IFRS", terms, re.I)) and not re.search(
+        r"презентац|presentat|транскрипт|transcript|датабук|databook", label, re.I)
 
 
 def report_links(raw: bytes, source, base: str, now: int) -> tuple[list[dict], dict]:
     parsed = page(raw.decode("utf-8", errors="replace"))
     targets = {}
     for link in parsed.links:
-        label = plain(link["label"])[:400]
-        context = plain(link["context"])
-        url = urljoin(base, link["href"])
-        try:
-            path = urlsplit(url).path.lower()
-        except ValueError:
-            continue
-        years = [int(value) for value in re.findall(r"(?<!\d)20\d{2}(?!\d)", label + " " + path)]
-        current_year = datetime.fromtimestamp(now, timezone.utc).year
-        if years and max(years) < current_year - 4:
-            continue
-        kind = "pdf" if path.endswith(".pdf") or re.fullmatch(r"/files/\d+", path) else "index"
-        terms = label + " " + context[-650:]
-        if kind == "pdf":
-            if not re.search(r"отч[её]тност|МСФО|РСБУ|financial.statement|IFRS", terms, re.I):
-                continue
-            if re.search(r"презентац|presentat|транскрипт|transcript|датабук|databook", label, re.I):
-                continue
-        elif not re.search(r"/20\d{2}/?$", path):
-            continue
-        try:
-            url = target_url(source, url, kind)
-        except (IntakeError, ValueError):
-            continue
-        dates = re.findall(r"\b\d{2}\.\d{2}\.20\d{2}\b", label)
-        published = timestamp(dates[-1]) if dates else None
-        if published and published > now + 600:
-            published = None
-        targets[url] = {"url": url, "kind": kind, "title": label or source.title,
-                        "published_at": published, "context": context[-1000:]}
+        target = _report_target(link, source, base, now)
+        if target is not None:
+            targets[target["url"]] = target
     ordered = sorted(targets.values(), key=lambda row: (row["published_at"] or 0, row["url"]), reverse=True)
     return ordered[:120], {"items_seen": len(targets), "truncated": len(targets) > 120,
                           "coverage": "approved_issuer_index", "empty_index": not targets}
@@ -178,7 +185,7 @@ def report_links(raw: bytes, source, base: str, now: int) -> tuple[list[dict], d
 def discovery(raw: bytes, now: int) -> tuple[list[dict], dict]:
     try:
         value = json.loads(raw)
-    except (ValueError, UnicodeError):
+    except ValueError:
         raise IntakeError("osint_discovery_invalid") from None
     if not isinstance(value, dict) or not isinstance(value.get("articles"), list):
         raise IntakeError("osint_discovery_schema_invalid")
