@@ -17,7 +17,7 @@ jobs:
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40748914017-1"
+              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40750352430-1"
               for name in ("shell-build-steps.json", "gradle.log"):
                   path = folder / name
                   if not path.is_file(): continue
