@@ -1,0 +1,95 @@
+name: Deliver verified redesigned Android shell51
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-shell-delivery.yml]
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
+  EXPECTED_TEST_RUN: '40724497603'
+  EXPECTED_RUNTIME_DEPLOY_RUN: '40721312988'
+  EXPECTED_RUNTIME_SOURCE_SHA: aad0a117074a1b083021f93ef9ff928102b95557
+  EXPECTED_RUNTIME_TEST_RUN: '40718753255'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: dce40c3b8ba6a08c40a51886ca8cb721895709b2049df2606f2b1edd332ab68c
+  EXPECTED_APK_SHA256: d5d8a3a86c7400515206cab74c04299cd7008bdbc246bd22dddd21e05d0db0c9
+jobs:
+  deliver:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: c9ec61aea2385bcee3e65b84d872c469241af2a4
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
+          path: .source-quality
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
+      - name: Require exact laptop build, delivery-tool checks, clean analysis and server deployment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref=process.env.EXPECTED_SOURCE_SHA;
+            async function backendTree(commit_sha) {
+              const {data:commit}=await github.rest.git.getCommit({...context.repo,commit_sha});
+              const {data:tree}=await github.rest.git.getTree({...context.repo,tree_sha:commit.tree.sha});
+              const entry=tree.tree.find(item=>item.path==='backend'&&item.type==='tree');
+              if(!entry) throw new Error('Backend source inventory missing');
+              return entry.sha;
+            }
+            if(await backendTree(ref)!==await backendTree(process.env.EXPECTED_RUNTIME_SOURCE_SHA))
+              throw new Error('Client requires backend changes that were not deployed');
+            const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/workspace-strategies-2026-10-28'});
+            if(branch.object.sha!==ref) throw new Error('Source branch advanced before publication');
+            for(const [run_id,sha,path] of [
+                [Number(process.env.EXPECTED_TEST_RUN),ref,'.github/workflows/workspace-redesign.yml'],
+                [40723629124,'c9ec61aea2385bcee3e65b84d872c469241af2a4','.github/workflows/workspace-shell-tools-check.yml'],
+                [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'ad710d8ef0e54071cb5ecdc39d2ba9e8441e1a6d','.github/workflows/workspace-deploy.yml']]) {
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+              if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||run.path!==path||run.run_attempt!==1)
+                throw new Error('Required exact verification is not successful');
+            }
+            const {newestSonarCheck,assertCleanSonar}=require('./.source-quality/.github/scripts/require_clean_sonar.cjs');
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=newestSonarCheck(checks,ref);
+            if(!sonar||sonar.status!=='completed') throw new Error('Exact source analysis not completed');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            assertCleanSonar(sonar,notes,ref);
+            const run_id=Number(process.env.EXPECTED_TEST_RUN);
+            const items=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
+            const matches=items.filter(x=>x.name==='server-version-client-'+run_id+'-1'&&!x.expired);
+            if(matches.length!==1||matches[0].digest!=='sha256:'+process.env.EXPECTED_CLIENT_ARTIFACT_SHA256)
+              throw new Error('Client artifact identity changed');
+            const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'shell-artifact.zip'),Buffer.from(archive.data));
+      - name: Bind exact signed APK bytes and clean build evidence
+        run: python3 tools/prepare_workspace_shell.py
+      - name: Transfer to the existing Timeweb runtime and verify the complete public APK
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/deliver_workspace_shell.py
+      - name: Preserve public delivery receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: workspace-shell-delivery-${{ github.run_id }}
+          path: plan-reports/
+          retention-days: 7
+          if-no-files-found: warn

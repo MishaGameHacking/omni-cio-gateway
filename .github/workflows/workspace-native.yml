@@ -1,0 +1,77 @@
+name: Verify redesigned shell on native Android emulators
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-native.yml]
+permissions:
+  contents: read
+concurrency:
+  group: workspace-native-acceptance
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
+  EXPECTED_TEST_RUN: '40724497603'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: dce40c3b8ba6a08c40a51886ca8cb721895709b2049df2606f2b1edd332ab68c
+jobs:
+  verify:
+    permissions:
+      contents: read
+      actions: read
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 285
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 6cdf1603bdd9099a6e0d7e871c340a6dce59601d
+          path: native-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: tools/workspace_native.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
+          path: native-source-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Download only exact verified client build
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id=Number(process.env.EXPECTED_TEST_RUN);
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(run.status!=='completed'||run.conclusion!=='success'||run.run_attempt!==1||
+               run.head_sha!==process.env.EXPECTED_SOURCE_SHA||run.path!=='.github/workflows/workspace-redesign.yml')
+              throw new Error('Native input build not verified');
+            const items=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
+            const matches=items.filter(x=>x.name==='server-version-client-'+run_id+'-1'&&!x.expired);
+            if(matches.length!==1||matches[0].digest!=='sha256:'+process.env.EXPECTED_CLIENT_ARTIFACT_SHA256)
+              throw new Error('Native input artifact changed');
+            const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'workspace-native-artifact.zip'),Buffer.from(archive.data));
+      - name: Run full unchanged API37 4KB and 16KB suite on exact built APKs
+        shell: cmd
+        working-directory: native-source-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 ..\native-tools-${{ github.run_id }}-${{ github.run_attempt }}\tools\workspace_native.py
+          if errorlevel 1 exit /b 1
+      - name: Preserve native results and synthetic screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: workspace-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/workspace-native-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+            ${{ runner.temp }}/workspace-native-${{ github.run_id }}-${{ github.run_attempt }}/*.log
+            ${{ runner.temp }}/workspace-native-${{ github.run_id }}-${{ github.run_attempt }}/install-api37-*/
+            native-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/outputs/apk/preview/ui-screens/
+            native-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/outputs/apk/preview/profile-ui/
+          if-no-files-found: warn
+          retention-days: 7
