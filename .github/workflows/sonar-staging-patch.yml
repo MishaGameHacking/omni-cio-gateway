@@ -21,6 +21,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           def read(path):
               return Path(path).read_text(encoding="utf-8")
@@ -34,6 +35,13 @@ jobs:
               if count != expected:
                   raise RuntimeError(f"{path}: expected {expected} exact matches, found {count}")
               write(path, value.replace(old, new))
+
+          def replace_pattern(path, pattern, replacement, expected=1):
+              value = read(path)
+              value, count = re.subn(pattern, replacement, value, flags=re.S)
+              if count != expected:
+                  raise RuntimeError(f"{path}: expected {expected} pattern matches, found {count}")
+              write(path, value)
 
           replace(
               "backend/paper_execution.py",
@@ -49,8 +57,8 @@ jobs:
 
           replace(
               ".github/scripts/tests/test_theme_state_evidence.py",
-              """        canvas.rect((140, 80, 260, 112), self.colors[\"onPrimary\"])\n        with self.assertRaisesRegex(AssertionError, \"primary container\"):\n            evidence.primary_button_pixels(canvas.image(), bounds, 1.0,\n                                           self.colors[\"onPrimary\"], self.colors[\"pressedPrimary\"])\n""",
-              """        canvas.rect((140, 80, 260, 112), self.colors[\"onPrimary\"])\n        image = canvas.image()\n        with self.assertRaisesRegex(AssertionError, \"primary container\"):\n            evidence.primary_button_pixels(image, bounds, 1.0,\n                                           self.colors[\"onPrimary\"], self.colors[\"pressedPrimary\"])\n""",
+              """        self.assertGreater(theme.paired_pixels(canvas.image(), bounds, ink, fill)[\"foreground_pixels\"], 3)\n        with self.assertRaisesRegex(AssertionError, \"absent\"):\n            theme.primary_button_pixels(canvas.image(), bounds, 1.0, ink, fill)\n""",
+              """        image = canvas.image()\n        self.assertGreater(theme.paired_pixels(image, bounds, ink, fill)[\"foreground_pixels\"], 3)\n        with self.assertRaisesRegex(AssertionError, \"absent\"):\n            theme.primary_button_pixels(image, bounds, 1.0, ink, fill)\n""",
           )
 
           path = ".github/scripts/automation_ui_probe.py"
@@ -90,30 +98,33 @@ jobs:
               if value.count(old) != 1:
                   raise RuntimeError(f"theme regex changed: {old}")
               value = value.replace(old, new)
-          old = """def frame_pixels(image, tree, observed):\n"""
-          new = """def _switch_roles(checked, enabled):\n    if not enabled:\n        return \"disabledInk\", \"disabledContainer\"\n    if checked:\n        return \"onPrimary\", \"primary\"\n    return \"outline\", \"surfaceContainerHighest\"\n\n\ndef frame_pixels(image, tree, observed):\n"""
-          if value.count(old) != 1:
+          marker = "def frame_pixels(image, tree, observed):\n"
+          helper = """def _switch_roles(checked, enabled):\n    if not enabled:\n        return \"disabledInk\", \"disabledContainer\"\n    if checked:\n        return \"onPrimary\", \"primary\"\n    return \"outline\", \"surfaceContainerHighest\"\n\n\ndef frame_pixels(image, tree, observed):\n"""
+          if value.count(marker) != 1:
               raise RuntimeError("theme switch helper insertion point changed")
-          value = value.replace(old, new)
+          value = value.replace(marker, helper)
           old = """                foreground, background = (\"disabledInk\", \"disabledContainer\") if not enabled else \\\n                    ((\"onPrimary\", \"primary\") if checked else (\"outline\", \"surfaceContainerHighest\"))\n"""
-          new = """                foreground, background = _switch_roles(checked, enabled)\n"""
           if value.count(old) != 1:
               raise RuntimeError("theme nested switch roles changed")
-          value = value.replace(old, new)
+          value = value.replace(old, "                foreground, background = _switch_roles(checked, enabled)\n")
           write(path, value)
 
           path = ".github/scripts/tests/test_navigation_detail_probe.py"
           value = read(path)
-          value = value.replace("from unittest.mock import patch", "from unittest.mock import Mock, patch")
-          value = value.replace('patch("profile_ui_probe.time.monotonic", lambda: now[0])',
-                                'patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0])')
+          if "from unittest.mock import patch" not in value:
+              raise RuntimeError("navigation mock import changed")
+          value = value.replace("from unittest.mock import patch", "from unittest.mock import Mock, patch", 1)
+          old_clock = 'patch("profile_ui_probe.time.monotonic", lambda: now[0])'
+          if value.count(old_clock) < 4:
+              raise RuntimeError("navigation monotonic patches changed")
+          value = value.replace(old_clock, 'patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0])')
           marker = 'USER = "synthetic-business-00000000-0000-0000-0000-000000000001"\n\n\n'
           helper = '''USER = "synthetic-business-00000000-0000-0000-0000-000000000001"\n\n\ndef enter_wide_viewport(probe):\n    with details.wide_emulator_viewport(probe, {}):\n        pass\n\n\n'''
           if value.count(marker) != 1:
               raise RuntimeError("navigation helper insertion point changed")
           value = value.replace(marker, helper)
-          old = '''        now, sleep = self.clock()\n        with patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n            case(probe).observed("strategy")\n'''
-          new = '''        now, sleep = self.clock()\n        navigation_case = case(probe)\n        with patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n            navigation_case.observed("strategy")\n'''
+          old = '''        with patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n            case(probe).observed("strategy")\n'''
+          new = '''        navigation_case = case(probe)\n        with patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n            navigation_case.observed("strategy")\n'''
           if value.count(old) != 2:
               raise RuntimeError("navigation persistent exception blocks changed")
           value = value.replace(old, new)
@@ -122,23 +133,319 @@ jobs:
           if value.count(old) != 1:
               raise RuntimeError("navigation immediate exception block changed")
           value = value.replace(old, new)
-          old = '''            with self.subTest(values=values), self.assertRaisesRegex(AssertionError, expected):\n                with details.wide_emulator_viewport(probe, {}):\n                    self.fail("Invalid viewport admitted")\n'''
-          new = '''            with self.subTest(values=values), self.assertRaisesRegex(AssertionError, expected):\n                enter_wide_viewport(probe)\n'''
+          old = '''        with self.assertRaises((AssertionError, ValueError)):\n            with details.wide_emulator_viewport(probe, {}):\n                self.fail("Ambiguous or unowned display was admitted")\n'''
           if value.count(old) != 1:
-              raise RuntimeError("navigation invalid viewport block changed")
-          value = value.replace(old, new)
-          old = '''            with self.subTest(values=values), self.assertRaises(AssertionError):\n                with details.wide_emulator_viewport(probe, {}):\n                    self.fail("Foreign viewport admitted")\n'''
-          new = '''            with self.subTest(values=values), self.assertRaises(AssertionError):\n                enter_wide_viewport(probe)\n'''
+              raise RuntimeError("navigation rejected identity block changed")
+          value = value.replace(old, '''        with self.assertRaises((AssertionError, ValueError)):\n            enter_wide_viewport(probe)\n''')
+          old = '''            with self.subTest(field=field), self.assertRaises((AssertionError, ValueError)):\n                with details.wide_emulator_viewport(probe, {}):\n                    self.fail("Unowned display was admitted")\n'''
           if value.count(old) != 1:
-              raise RuntimeError("navigation foreign viewport block changed")
-          value = value.replace(old, new)
-          if value.count("probe.read_tree = lambda: frame()") != 1:
-              raise RuntimeError("navigation read_tree lambda changed")
-          value = value.replace("probe.read_tree = lambda: frame()", "probe.read_tree = Mock(return_value=frame())")
+              raise RuntimeError("navigation unowned display block changed")
+          value = value.replace(old, '''            with self.subTest(field=field), self.assertRaises((AssertionError, ValueError)):\n                enter_wide_viewport(probe)\n''')
+          old = '''        probe.read_tree = lambda: frame()\n        with self.assertRaises(AssertionError):\n            with details.wide_emulator_viewport(probe, {}):\n                self.fail("Unauthenticated frame source was admitted")\n'''
+          if value.count(old) != 1:
+              raise RuntimeError("navigation unauthenticated frame block changed")
+          value = value.replace(old, '''        probe.read_tree = Mock(return_value=frame())\n        with self.assertRaises(AssertionError):\n            enter_wide_viewport(probe)\n''')
           write(path, value)
 
-          workflow = Path(".github/workflows/sonar-staging-patch.yml")
-          workflow.unlink()
+          path = ".github/scripts/theme_lifecycle_probe.py"
+          value = read(path)
+          for old, new in (
+              ('r"[1-9][0-9]{0,8}"', 'r"[1-9]\\d{0,8}"'),
+              ('r"Window #[0-9]+ Window\\{[0-9a-f]+ u[0-9]+ ([^}]+)\\}"',
+               'r"Window #\\d+ Window\\{[0-9a-f]+ u\\d+ ([^}]+)\\}"'),
+          ):
+              if value.count(old) != 1:
+                  raise RuntimeError(f"theme lifecycle regex changed: {old}")
+              value = value.replace(old, new)
+          if value.count('"Применить"') != 3:
+              raise RuntimeError("theme apply literal count changed")
+          value = value.replace('"Применить"', "APPLY_LABEL")
+          marker = 'ACCENTS = {"AURORA", "VIOLET", "FOREST", "AMBER"}\n'
+          if value.count(marker) != 1:
+              raise RuntimeError("theme apply constant insertion point changed")
+          value = value.replace(marker, marker + 'APPLY_LABEL = "Применить"\n')
+          pattern = re.compile(r"def checked_choice\(.*?(?=\ndef dialog_window)", re.S)
+          choice_helpers = '''def _choice_window(tree):
+    active_window = active_window_id(tree)
+    windows = [child for child in tree if child.tag == "node"
+               and _window_id(child) == active_window and _bool(child, "visible-to-user")]
+    if len(windows) != 1:
+        raise AssertionError("Choice requires one active visible owned window")
+    window = windows[0]
+    window_package = window.get("package", "")
+    if not window_package:
+        raise AssertionError("Choice window package is missing")
+    return active_window, window_package, bounds(window)
+
+
+def _choice_owner(tree, label, resource, active_window):
+    if resource:
+        owners = [node for node in visible_resource(tree, resource) if _window_id(node) == active_window]
+        if label:
+            owners = [node for node in owners if node.get("text") == label or node.get("content-desc") == label]
+    else:
+        owners = [node for node in visible_label(tree, label) if _window_id(node) == active_window]
+    if len(owners) != 1:
+        raise AssertionError("Choice owner is missing or ambiguous")
+    return owners[0]
+
+
+def _validate_choice_owner(owner, active_window, window_package, window_bounds, density):
+    owner_window_id = _window_id(owner)
+    owner_package = owner.get("package", "")
+    owner_bounds = bounds(owner)
+    owner_scale = node_scale(owner)
+    if owner_window_id != active_window or owner_package != window_package or not _bool(owner, "visible-to-user"):
+        raise AssertionError("Choice owner is foreign or hidden")
+    if not _contains(window_bounds, owner_bounds):
+        raise AssertionError("Choice owner is clipped outside the active window")
+    if not .5 <= owner_scale <= 3 or abs(owner_scale - density) > .05:
+        raise AssertionError("Choice owner density does not match the native capture")
+    return owner_bounds, owner_package, owner_scale
+
+
+def _choice_role(owner, owner_package, checked, enabled):
+    roles = [node for node in owner.iter()
+             if node.get("role") in {"RadioButton", "Checkbox", "Switch"}
+             and node.get("package") == owner_package and _bool(node, "visible-to-user")
+             and _bool(node, "checked") == checked]
+    if enabled is not None:
+        roles = [node for node in roles if _bool(node, "enabled") == enabled]
+    if len(roles) != 1:
+        raise AssertionError("Expected exactly one visible checked role under the choice")
+    return roles[0]
+
+
+def _validate_choice_role(role, owner_bounds, owner_package, active_window, owner_scale):
+    role_bounds = bounds(role)
+    if role.get("package") != owner_package or _window_id(role) != active_window or not _contains(owner_bounds, role_bounds):
+        raise AssertionError("Choice role escaped its owned row or window")
+    if (role_bounds[2] - role_bounds[0]) / owner_scale < 48 or (role_bounds[3] - role_bounds[1]) / owner_scale < 48:
+        raise AssertionError("Choice role target is smaller than 48dp")
+
+
+def _owned_choice_nodes(owner, owner_bounds, owner_package, active_window):
+    visible_owned = []
+    for node in owner.iter():
+        if node.get("package") == owner_package and _bool(node, "visible-to-user"):
+            if _window_id(node) != active_window or not _contains(owner_bounds, bounds(node)):
+                raise AssertionError("Choice descendant is outside its owned row")
+            visible_owned.append(node)
+    return visible_owned
+
+
+def _validate_choice_text(owner, role, visible_owned, label, checked):
+    labels = [node_text(node) for node in visible_owned if node.get("text")]
+    if label not in labels and owner.get("content-desc") != label:
+        raise AssertionError("Choice label is not in the exact native row")
+    state = state_description(role)
+    if not labels and not owner.get("content-desc") and not state:
+        raise AssertionError("Choice has no accessible label or state")
+    if state:
+        expected = "selected" if checked else "not selected"
+        if checked and "not " in state.lower():
+            raise AssertionError("Checked role exposes the opposite state")
+        if not checked and expected not in state.lower() and state.lower() in {"selected", "checked"}:
+            raise AssertionError("Unchecked role exposes the opposite state")
+
+
+def checked_choice(tree, label, checked, *, resource=None, enabled=None, density=1.0):
+    if density <= 0 or density != density:
+        raise AssertionError("Choice density is invalid")
+    active_window, window_package, window_bounds = _choice_window(tree)
+    owner = _choice_owner(tree, label, resource, active_window)
+    owner_bounds, owner_package, owner_scale = _validate_choice_owner(
+        owner, active_window, window_package, window_bounds, density)
+    role = _choice_role(owner, owner_package, checked, enabled)
+    _validate_choice_role(role, owner_bounds, owner_package, active_window, owner_scale)
+    visible_owned = _owned_choice_nodes(owner, owner_bounds, owner_package, active_window)
+    _validate_choice_text(owner, role, visible_owned, label, checked)
+    return role
+
+'''
+          value, count = pattern.subn(choice_helpers, value)
+          if count != 1:
+              raise RuntimeError(f"theme checked choice block changed: {count}")
+          marker = '''    def observed(self):\n        return parse_state(self.probe.tree(), expected_nonce=self.nonce)\n\n'''
+          waiter = '''    def observed(self):\n        return parse_state(self.probe.tree(), expected_nonce=self.nonce)\n\n    def wait_observed(self, key, value, message):\n        def current():\n            state = self.observed()\n            return state if state is not None and state[key] == value else None\n        self.probe.wait_for(current, message)\n\n'''
+          if value.count(marker) != 1:
+              raise RuntimeError("theme wait helper insertion point changed")
+          value = value.replace(marker, waiter)
+          replacements = (
+              ('''        self.probe.wait_for(lambda: state if (state := self.observed()) and state["appearance"] == mode else None,\n                            "Appearance state did not apply")\n''',
+               '''        self.wait_observed("appearance", mode, "Appearance state did not apply")\n'''),
+              ('''        self.probe.wait_for(lambda: state if (state := self.observed()) and state["mode"] == mode else None,\n                            "Theme mode did not apply")\n''',
+               '''        self.wait_observed("mode", mode, "Theme mode did not apply")\n'''),
+              ('''        self.probe.wait_for(lambda: state if (state := self.observed()) and state["accent"] == accent else None,\n                            "Accent did not apply")\n''',
+               '''        self.wait_observed("accent", accent, "Accent did not apply")\n'''),
+          )
+          for old, new in replacements:
+              if value.count(old) != 1:
+                  raise RuntimeError("theme observed wait block changed")
+              value = value.replace(old, new)
+          write(path, value)
+
+          path = ".github/scripts/windows_android_ci.py"
+          value = read(path)
+          source_count = value.count('"source.json"')
+          previous_count = value.count('"previous43.apk"')
+          if source_count != 6 or previous_count != 3:
+              raise RuntimeError(f"windows receipt literals changed: source={source_count} previous={previous_count}")
+          value = value.replace('"source.json"', "SOURCE_RECEIPT")
+          value = value.replace('"previous43.apk"', "PREVIOUS43_APK")
+          marker = 'PHASE_SECONDS = {"build": 10800, "runtime-prepare": 2400, "profile-16384": 7200, "profile-4096": 7200, "validate": 600}\n'
+          if value.count(marker) != 1:
+              raise RuntimeError("windows constants insertion point changed")
+          value = value.replace(marker, marker + 'SOURCE_RECEIPT = "source.json"\nPREVIOUS43_APK = "previous43.apk"\n')
+          pattern = re.compile(r"def control\(root, state, phase, identity\):.*?(?=\ndef export_evidence)", re.S)
+          control_helpers = '''def _worker_phase(value):
+    if value == "build":
+        return "build"
+    if value == "runtime-prepare":
+        return "runtime-prepare"
+    if value == "profile-16384":
+        return "profile-16384"
+    if value == "profile-4096":
+        return "profile-4096"
+    if value == "validate":
+        return "validate"
+    raise RuntimeError("unexpected_worker_phase")
+
+
+def _prepare_control(root, state, phase, identity):
+    first = phase in ("build", "runtime-prepare")
+    if first:
+        state.mkdir(exist_ok=False)
+        env, _ = test_environment(root, state)
+        source = source_identity(root, identity)
+        save(state / SOURCE_RECEIPT, source)
+        save(state / "identity.json", identity)
+    else:
+        checked(state, directory=True)
+        need(read_json(state / "identity.json") == identity, "runtime_context_changed")
+        need(source_identity(root, identity) == read_json(state / SOURCE_RECEIPT), "source_changed_between_phases")
+        env, _ = test_environment(root, state)
+    return first, env
+
+
+def _emulator_lease(root):
+    lease_bytes = read_bytes(root / ".github/scripts/emulator_lease.py", MAX_JSON_BYTES)
+    need(git_blob(lease_bytes) == LEASE_BLOB, "canonical_emulator_lease_changed")
+    sys.path.insert(0, str(root / ".github/scripts"))
+    import emulator_lease
+    return emulator_lease
+
+
+def _controller_record(state, phase, identity):
+    record = {"phase": phase, **identity, "host": HOST, "started_at": now(), "status": "running",
+              "worker_started": False, "owned_processes_after": None, "publication_authorized": False}
+    destination = state / (phase + "-controller.json")
+    need(not destination.exists(), "controller_phase_already_recorded")
+    save(destination, record)
+    return record, destination
+
+
+def _worker_arguments(state, phase):
+    admitted_phase = _worker_phase(phase)
+    python = state / "venv/Scripts/python.exe" if admitted_phase in ("profile-16384", "profile-4096") else Path(sys.executable)
+    return [str(python), str(Path(__file__).resolve()), "worker", "--phase", admitted_phase]
+
+
+def _await_worker(process, phase):
+    deadline = time.monotonic() + PHASE_SECONDS[phase]
+    while process.poll() is None:
+        remaining = deadline - time.monotonic()
+        need(remaining > 0, "owned_worker_deadline_exceeded")
+        try:
+            process.wait(timeout=min(30, remaining))
+        except subprocess.TimeoutExpired:
+            print("WINDOWS_ANDROID_PROGRESS=" + json.dumps({"phase": phase, "running": True}), flush=True)
+
+
+def _cleanup_worker(job, process, record):
+    try:
+        if job is not None:
+            if job.active():
+                job.stop()
+            end = time.monotonic() + 30
+            while job.active() and time.monotonic() < end:
+                time.sleep(0.2)
+            record["owned_processes_after"] = job.active()
+            need(record["owned_processes_after"] == 0, "owned_processes_remain")
+    finally:
+        try:
+            if job is not None:
+                job.close()
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=15)
+
+
+def _run_worker(root, state, phase, env, record):
+    job = OwnedJob()
+    process = None
+    try:
+        with (state / (phase + "-worker.log")).open("xb") as log:
+            process = subprocess.Popen(_worker_arguments(state, phase), cwd=root, env=env, stdin=subprocess.PIPE,
+                                       stdout=log, stderr=subprocess.STDOUT, close_fds=True)
+            job.attach(process)
+            record.update(worker_started=True, worker_pid=process.pid)
+            process.stdin.write(b"WINDOWS_OWNED_JOB_READY\\n")
+            process.stdin.close()
+            _await_worker(process, phase)
+            record["worker_exit_code"] = process.returncode
+            need(process.returncode == 0, "owned_worker_failed")
+    finally:
+        _cleanup_worker(job, process, record)
+
+
+def _finalize_control(root, state, phase, identity, first, record, error):
+    if phase == "profile-16384":
+        base = root / "app/build/outputs/apk/preview"
+        if (base / "ui-screens").exists():
+            snapshot_ui(base / "ui-screens", base / "ui-screens-api37-16384")
+    need(source_identity(root, identity) == read_json(state / SOURCE_RECEIPT), "sources_changed_during_worker")
+    if not first:
+        require_runtime_inputs(root, state, identity)
+    if error is None:
+        record["status"] = "passed"
+
+
+def control(root, state, phase, identity):
+    phase = _worker_phase(phase)
+    first, env = _prepare_control(root, state, phase, identity)
+    emulator_lease = _emulator_lease(root)
+    lease_context = nullcontext() if phase in ("profile-16384", "profile-4096") else emulator_lease.exclusive_emulator()
+    record, destination = _controller_record(state, phase, identity)
+    error = None
+    try:
+        with lease_context:
+            _run_worker(root, state, phase, env, record)
+    except BaseException as failure:
+        error = failure
+        record.update(status="failed", error_type=type(failure).__name__, error=str(failure)[:500])
+    try:
+        _finalize_control(root, state, phase, identity, first, record, error)
+    except BaseException as failure:
+        if error is None:
+            error = failure
+        record.update(status="failed", final_integrity_error=type(failure).__name__)
+    record["finished_at"] = now()
+    save(destination, record)
+    print("WINDOWS_ANDROID_CONTROLLER=" + json.dumps(record, sort_keys=True), flush=True)
+    if error is not None:
+        from ci_failure_diagnostics import print_worker_failure
+        print_worker_failure(state, phase, read_bytes)
+        raise error
+
+'''
+          value, count = pattern.subn(control_helpers, value)
+          if count != 1:
+              raise RuntimeError(f"windows control block changed: {count}")
+          write(path, value)
+
+          Path(".github/workflows/sonar-staging-patch.yml").unlink()
           PY
       - name: Commit exact patches
         shell: bash
