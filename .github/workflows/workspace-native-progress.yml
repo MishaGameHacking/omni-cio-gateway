@@ -17,7 +17,7 @@ jobs:
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp/workspace-native-40730944124-1"
+              folder = Path("C:/") / runner / "_work/_temp/workspace-native-40733125027-1"
               report = folder / "native-steps.json"
               if report.is_file():
                   value = json.loads(report.read_text(encoding="utf-8"))
