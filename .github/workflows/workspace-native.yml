@@ -9,9 +9,9 @@ concurrency:
   group: workspace-native-acceptance
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
-  EXPECTED_TEST_RUN: '40724497603'
-  EXPECTED_CLIENT_ARTIFACT_SHA256: dce40c3b8ba6a08c40a51886ca8cb721895709b2049df2606f2b1edd332ab68c
+  EXPECTED_SOURCE_SHA: 5fa082e0464f11c1cc4de0a977e20601e6e3ba7d
+  EXPECTED_TEST_RUN: '40757238094'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: 790e913040bcf222d0102a98c7651ede41fc586fca815322c8df035b6ce343c4
 jobs:
   verify:
     permissions:
@@ -31,23 +31,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5c850394959ead8af17ab78b4c1d7756e9eedfa4
+          ref: 94fe75e7bf09d8cec33123f7081d14b9be17bae0
           path: native-tools-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
           sparse-checkout: tools/workspace_native.py
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
+          ref: 5fa082e0464f11c1cc4de0a977e20601e6e3ba7d
           path: native-source-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
       - name: Download only exact verified client build
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40732735843});
+            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40753466731});
             if(toolsRun.status!=='completed'||toolsRun.conclusion!=='success'||toolsRun.run_attempt!==1||
-               toolsRun.head_sha!=='5c850394959ead8af17ab78b4c1d7756e9eedfa4'||toolsRun.path!=='.github/workflows/workspace-shell-tools-check.yml')
+               toolsRun.head_sha!=='94fe75e7bf09d8cec33123f7081d14b9be17bae0'||toolsRun.path!=='.github/workflows/workspace-shell-tools-check.yml')
               throw new Error('Native preparation input checks did not pass');
             const run_id=Number(process.env.EXPECTED_TEST_RUN);
             const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
@@ -60,14 +60,14 @@ jobs:
               throw new Error('Native input artifact changed');
             const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
             require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'workspace-native-artifact.zip'),Buffer.from(archive.data));
-            const {data:baselineRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40676480217});
+            const {data:baselineRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40724497603});
             if(baselineRun.status!=='completed'||baselineRun.conclusion!=='success'||baselineRun.run_attempt!==1||
-               baselineRun.head_sha!=='2d3e08614f15cfb1d9e9428a0d3613672394a92b'||baselineRun.path!=='.github/workflows/server-runtime.yml')
-              throw new Error('Baseline50 build identity changed');
-            const baselineItems=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:40676480217,per_page:100});
-            const baseline=baselineItems.filter(x=>x.name==='server-version-client-40676480217-1'&&!x.expired);
-            if(baseline.length!==1||baseline[0].digest!=='sha256:0303e6d8af4247bf5b33ef41b689e1a83b33bcea963d2b0de35d11485dd730cc')
-              throw new Error('Baseline50 artifact identity changed');
+               baselineRun.head_sha!=='900f4fe794ca2aa6a911515189369ba6c3bb3ebb'||baselineRun.path!=='.github/workflows/workspace-redesign.yml')
+              throw new Error('Baseline51 build identity changed');
+            const baselineItems=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:40724497603,per_page:100});
+            const baseline=baselineItems.filter(x=>x.name==='server-version-client-40724497603-1'&&!x.expired);
+            if(baseline.length!==1||baseline[0].digest!=='sha256:dce40c3b8ba6a08c40a51886ca8cb721895709b2049df2606f2b1edd332ab68c')
+              throw new Error('Baseline51 artifact identity changed');
             const old=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:baseline[0].id,archive_format:'zip'});
             require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'workspace-baseline-artifact.zip'),Buffer.from(old.data));
 
