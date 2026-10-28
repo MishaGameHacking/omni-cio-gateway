@@ -15,10 +15,10 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 6fa2630c43027156086d5b814bafc53eb8114404
-  EXPECTED_TEST_RUN: '40648197468'
-  EXPECTED_ARTIFACT_SHA256: 9a92419f38b32ff62e4644d6f86bad62710f2dc6beefff4175a89078be906513
-  EXPECTED_BUNDLE_SHA256: 875c93def2004b7e585f29d7c923a9c1ef654bc4f3808ed2ca9e71ebee9ea135
+  EXPECTED_SOURCE_SHA: 1da6e6420b51ebe66c8196e3869a2525f0ffe69f
+  EXPECTED_TEST_RUN: '40650633108'
+  EXPECTED_ARTIFACT_SHA256: 5cef0e4427346d22135a550617ae9fe9588ba24e3d728bb4080894af07e85997
+  EXPECTED_BUNDLE_SHA256: 778ae39d2a1f8ab20feaa16a5e6850c70265191948c8905aaae8fd8df3e4ece5
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 6fa2630c43027156086d5b814bafc53eb8114404
+          ref: 1da6e6420b51ebe66c8196e3869a2525f0ffe69f
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
@@ -36,7 +36,7 @@ jobs:
           script: |
             const {newestSonarCheck, assertCleanSonar} = require('./.github/scripts/require_clean_sonar.cjs');
             const ref = process.env.EXPECTED_SOURCE_SHA;
-            for (const candidate of ['45168fa6ec2a5d98ba72ea013ed2a7b34a4d7201', ref]) {
+            for (const candidate of [ref]) {
               const checks = await github.paginate(github.rest.checks.listForRef, {...context.repo, ref:candidate, per_page:100});
               const found = newestSonarCheck(checks, candidate);
               if (found) {

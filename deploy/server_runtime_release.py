@@ -19,7 +19,7 @@ BASE = '5e35c9a7c7ee3aa402f264ce312f59c121617ddc'
 MODULES = {'ai_budget.py', 'ai_jobs.py', 'app.py', 'autonomous_controller.py',
            'client_diagnostics.py', 'client_updates.py', 'schema_migrations.py',
            'volume_chat.py', 'volume_jobs.py', 'volume_notifications.py', 'volume_state.py'}
-SERVICE = 'analyst-ai-owner.service'
+SERVICES = ('analyst-ai-owner.service', 'analyst-ai-updates.service')
 PUBLIC = 'https://analyst-ai-2941515.twc1.net'
 
 
@@ -134,7 +134,8 @@ def healthy():
     status, raw = request('/health')
     need(status == 200 and json.loads(raw) == {'status': 'ok'}, 'runtime_health_failed')
     need(request('/workspace/live?wait=0')[0] == 401, 'runtime_authentication_changed')
-    need(systemctl('is-active', SERVICE) == 'active', 'runtime_service_inactive')
+    for service in SERVICES:
+        need(systemctl('is-active', service) == 'active', 'runtime_service_inactive')
 
 
 def database_path():
@@ -166,13 +167,14 @@ def run(envelope):
         policy_path = '/client/update-policy?package_name=ru.omnicio.app.debug'
         policy_status, policy_before = request(policy_path)
         need(policy_status == 200, 'apk_policy_unavailable')
-        old_pid = systemctl('show', SERVICE, '--property=MainPID', '--value')
+        old_pids = {service: systemctl('show', service, '--property=MainPID', '--value')
+                    for service in SERVICES}
         database = database_path()
         archive.mkdir(mode=0o700)
         backup = archive / 'previous-source'
         backup.mkdir(mode=0o700)
         (archive / 'source-bundle.json').write_text(json.dumps(bundle), encoding='utf-8')
-        systemctl('stop', SERVICE)
+        systemctl('stop', *SERVICES)
         try:
             verify_base(root, bundle['expected'], bundle['files'])
             with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as source:
@@ -184,7 +186,7 @@ def run(envelope):
                 for name, row in bundle['files'].items():
                     need(digest(read_regular(root / name)) == row['after'],
                          'installed_source_verification_failed')
-                systemctl('start', SERVICE)
+                systemctl('start', *SERVICES)
                 try:
                     for attempt in range(8):
                         try:
@@ -194,16 +196,17 @@ def run(envelope):
                             if attempt == 7:
                                 raise
                             time.sleep(2)
-                    need(systemctl('show', SERVICE, '--property=MainPID', '--value') not in {'0', old_pid},
-                         'runtime_process_not_replaced')
+                    for service in SERVICES:
+                        need(systemctl('show', service, '--property=MainPID', '--value') not in {'0', old_pids[service]},
+                             'runtime_process_not_replaced')
                     need(request(policy_path) == (policy_status, policy_before), 'apk_policy_changed')
                 except BaseException:
-                    systemctl('stop', SERVICE)
+                    systemctl('stop', *SERVICES)
                     raise
 
             install(root, backup, bundle['files'], activate)
         except BaseException:
-            systemctl('start', SERVICE)
+            systemctl('start', *SERVICES)
             healthy()
             (archive / 'failure.json').write_text(json.dumps({'status': 'failed', 'previous_service_restarted': True}))
             raise
@@ -223,4 +226,11 @@ def run(envelope):
 
 
 if __name__ == '__main__':
-    run(ENVELOPE)
+    try:
+        run(ENVELOPE)
+    except Exception as error:
+        code = str(error)
+        if re.fullmatch('[a-z_]{1,100}', code) is None:
+            code = type(error).__name__
+        print(json.dumps({'status': 'failed', 'code': code, 'server_id': 9417611}), flush=True)
+        raise

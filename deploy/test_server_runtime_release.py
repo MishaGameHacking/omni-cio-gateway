@@ -1,9 +1,9 @@
 """Temporary-file deployment regressions; no services, credentials or live data."""
-import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).with_name('server_runtime_release.py'))
 release = importlib.util.module_from_spec(spec)
@@ -53,11 +53,37 @@ class ReleaseFilesTests(unittest.TestCase):
             release.verify_base(self.root, {'app.py': self.changes['app.py']['before']}, self.changes)
         self.assertEqual((self.root / 'app.py').read_bytes(), b'concurrent-fix')
 
-    def test_mismatched_content_and_path_are_rejected(self):
+    def test_unreviewed_module_set_is_rejected(self):
         bundle = {'schema': 1, 'base_commit': release.BASE, 'host': 'LAPTOP-NPSGA016',
                   'source_commit': 'a' * 40, 'apk_changed': False,
                   'files': {'../app.py': self.changes['app.py']}, 'expected': {}}
         with self.assertRaisesRegex(RuntimeError, 'unreviewed_module_set'):
+            release.validate(bundle)
+
+    def test_failed_second_replacement_restores_the_first_module(self):
+        original = release.replace_file
+        def interrupt(path, raw, template):
+            if path.name == 'schema_migrations.py':
+                raise OSError('synthetic replacement interruption')
+            return original(path, raw, template)
+        with mock.patch.object(release, 'replace_file', side_effect=interrupt):
+            with self.assertRaisesRegex(OSError, 'synthetic replacement interruption'):
+                release.install(self.root, self.backup, self.changes, lambda: None)
+        self.assertEqual((self.root / 'app.py').read_bytes(), b'previous-app')
+        self.assertFalse((self.root / 'schema_migrations.py').exists())
+
+    def test_tampered_source_bytes_are_rejected(self):
+        expected = {name: release.digest(b'synthetic old') for name in release.MODULES
+                    if name != 'schema_migrations.py'}
+        expected['requirements.txt'] = release.digest(b'synthetic requirements')
+        expected.update({f'module_{index}.py': release.digest(b'synthetic baseline') for index in range(50)})
+        files = {name: {'before': expected.get(name), 'after': release.digest(b'synthetic new'),
+                        'content': 'synthetic new'} for name in release.MODULES}
+        bundle = {'schema': 1, 'base_commit': release.BASE, 'host': 'LAPTOP-NPSGA016',
+                  'source_commit': 'a' * 40, 'apk_changed': False, 'expected': expected, 'files': files}
+        release.validate(bundle)
+        files['app.py']['content'] = 'unverified replacement'
+        with self.assertRaisesRegex(RuntimeError, 'invalid_module_identity'):
             release.validate(bundle)
 
 
