@@ -179,6 +179,9 @@ fun ProfileScreen(
                     SettingsGroup("Аккаунт") {
                         Text(user.name?.takeIf(String::isNotBlank) ?: "Вход через Telegram",
                             style = MaterialTheme.typography.titleMedium)
+                        SettingsLink("Обучение", "Как пользоваться Analyst AI", SpectrumSymbol.Analyst,
+                            onClick = onOpenEducation)
+                        SettingsDivider()
                         SettingsLink("О приложении", "Версия " + BuildConfig.VERSION_NAME, SpectrumSymbol.Update) { dialog = "about" }
                         SettingsDivider()
                         SettingsLink("Выйти", "Завершить сеанс на этом устройстве", SpectrumSymbol.Profile, danger = true) {
