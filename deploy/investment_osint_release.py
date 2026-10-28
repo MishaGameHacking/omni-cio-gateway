@@ -20,9 +20,9 @@ import urllib.error
 import urllib.request
 import zipfile
 
-BASE = '2d3e08614f15cfb1d9e9428a0d3613672394a92b'
+BASE = '85bec9cf862cffeb5687854f6852531769cee696'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
-MODULES = {'osint_catalogue.py', 'osint_network.py', 'osint_pdf.py', 'osint_analysis.py', 'osint_content.py', 'osint_store.py', 'osint_retention.py', 'osint_read.py', 'osint_worker.py', 'osint_api.py', 'volume_live.py', 'volume_jobs.py', 'autonomous_ai.py', 'autonomous_controller.py', 'requirements.txt'}
+MODULES = {'osint_catalogue.py', 'osint_network.py', 'osint_content.py', 'osint_worker.py'}
 SERVICES = ('analyst-ai-owner.service', 'analyst-ai-updates.service')
 PUBLIC = 'https://analyst-ai-2941515.twc1.net'
 
@@ -100,6 +100,23 @@ def install_dependency(root, entries):
         shutil.rmtree(destination)
         raise
     return destination
+
+
+def verify_dependency(root, entries):
+    vendor = root / '_osint_vendor'
+    need(vendor.is_dir() and not vendor.is_symlink(), 'pdf_dependency_missing')
+    for relative, expected in entries.items():
+        need(read_regular(vendor / relative) == expected, 'pdf_dependency_installed_bytes_changed')
+
+
+def retry_collection_failures(database):
+    now = int(time.time())
+    with closing(sqlite3.connect(database, timeout=30)) as db:
+        changed = db.execute("""UPDATE osint_targets_v1 SET next_at=MIN(next_at,?)
+            WHERE lease_until<=? AND error IN ('osint_source_unavailable','osint_response_too_large')""",
+            (now, now)).rowcount
+        db.commit()
+    return changed
 
 
 def read_regular(path):
@@ -216,7 +233,7 @@ def run(envelope):
     with Path('/var/lock/analyst-ai-plan-development.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         verify_base(root, bundle['expected'], bundle['files'])
-        need(not (root / '_osint_vendor').exists(), 'pdf_dependency_already_present')
+        verify_dependency(root, dependency)
         healthy()
         policy_path = '/client/update-policy?package_name=ru.omnicio.app.debug'
         policy_status, policy_before = request(policy_path)
@@ -262,7 +279,6 @@ def run(envelope):
                     systemctl('stop', *SERVICES)
                     raise
 
-            vendor = install_dependency(root, dependency)
             install(root, backup, bundle['files'], activate)
         except BaseException:
             if vendor is not None:
@@ -274,6 +290,7 @@ def run(envelope):
         installed = {name: digest(read_regular(root / name)) for name in bundle['files']}
         need(all(installed[name] == row['after'] for name, row in bundle['files'].items()),
              'installed_source_verification_failed')
+        retried = retry_collection_failures(database)
         receipt = {'schema': 1, 'status': 'deployed', 'server_id': 9417611,
                    'source_commit': bundle['source_commit'], 'test_run_id': bundle['run_id'],
                    'deployment_run_id': run_id, 'installed_sha256': installed,
@@ -281,7 +298,7 @@ def run(envelope):
                    'health': 200, 'unauthenticated_live': 401, 'unauthenticated_version': 401, 'unauthenticated_presentation': 401, 'unauthenticated_osint': 401,
                    'pdf_dependency_sha256': bundle['pdf_dependency']['sha256'],
                    'apk_policy_sha256': digest(policy_before), 'apk_changed': False,
-                   'database_backup_created': True, 'tests_executed_on_timeweb': False,
+                   'database_backup_created': True, 'tests_executed_on_timeweb': False, 'source_failures_requeued': retried,
                    'physical_phone_verified': False}
         (archive / 'deployment.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
         print(json.dumps(receipt), flush=True)

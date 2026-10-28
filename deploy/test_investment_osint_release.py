@@ -5,6 +5,8 @@ import io
 import importlib.util
 from pathlib import Path
 import tempfile
+import sqlite3
+import time
 import unittest
 import zipfile
 from unittest import mock
@@ -87,7 +89,7 @@ class ReleaseFilesTests(unittest.TestCase):
         bundle = {'schema': 1, 'base_commit': release.BASE, 'host': 'LAPTOP-NPSGA016',
                   'source_commit': 'a' * 40, 'apk_changed': False, 'expected': expected, 'files': files}
         release.validate(bundle)
-        files['volume_live.py']['content'] = 'unverified replacement'
+        files[sorted(release.MODULES)[0]]['content'] = 'unverified replacement'
         with self.assertRaisesRegex(RuntimeError, 'invalid_module_identity'):
             release.validate(bundle)
 
@@ -131,6 +133,36 @@ class PdfDependencyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'pdf_dependency_already_present'):
                 release.install_dependency(root, {'pypdf/__init__.py': b'other bytes'})
             self.assertEqual((vendor / 'pypdf/__init__.py').read_bytes(), b'verified bytes')
+
+
+class DeployedDependencyAndRetryTests(unittest.TestCase):
+    def test_existing_dependency_is_verified_without_replacing_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / 'app.py').write_text('synthetic runtime')
+            entries = {'pypdf/__init__.py': b'reviewed dependency'}
+            vendor = release.install_dependency(root, entries)
+            release.verify_dependency(root, entries)
+            (vendor / 'pypdf/__init__.py').write_bytes(b'unreviewed change')
+            with self.assertRaisesRegex(RuntimeError, 'pdf_dependency_installed_bytes_changed'):
+                release.verify_dependency(root, entries)
+
+    def test_retry_preserves_provider_backoff_and_active_worker_leases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / 'fixture.db'
+            now = int(time.time())
+            with sqlite3.connect(database) as db:
+                db.execute('CREATE TABLE osint_targets_v1(id INTEGER PRIMARY KEY,next_at INTEGER,lease_until INTEGER,error TEXT)')
+                db.executemany('INSERT INTO osint_targets_v1 VALUES(?,?,?,?)', [
+                    (1, now + 3600, 0, 'osint_response_too_large'),
+                    (2, now + 3600, 0, 'osint_http_429'),
+                    (3, now + 3600, now + 600, 'osint_source_unavailable')])
+            self.assertEqual(release.retry_collection_failures(database), 1)
+            with sqlite3.connect(database) as db:
+                rows = db.execute('SELECT next_at FROM osint_targets_v1 ORDER BY id').fetchall()
+            self.assertLess(rows[0][0], now + 3600)
+            self.assertEqual(rows[1][0], now + 3600)
+            self.assertEqual(rows[2][0], now + 3600)
 
 
 if __name__ == '__main__':

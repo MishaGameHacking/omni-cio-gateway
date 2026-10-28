@@ -15,10 +15,10 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 85bec9cf862cffeb5687854f6852531769cee696
-  EXPECTED_TEST_RUN: '40698462259'
-  EXPECTED_ARTIFACT_SHA256: 7c6dabeef41190a7cb1a1218213276ffe7f8eedc9ffb1bbb5548da43c2653560
-  EXPECTED_BUNDLE_SHA256: 7b0016b20656957bf7797640ba24eda2085bce5f3fe8784e01a8c102a31db906
+  EXPECTED_SOURCE_SHA: 94f42c48ac4073e7750c78e396bc661da4b31be0
+  EXPECTED_TEST_RUN: '40703109199'
+  EXPECTED_ARTIFACT_SHA256: e6e9ebc05efc071516dfee4ae411c5d63e3808870ecd3676f012b0805a5a0eff
+  EXPECTED_BUNDLE_SHA256: b56fe6f959634a90c97483b4ae6bb28b4a2e18616a4554752053136e27eb69cb
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 85bec9cf862cffeb5687854f6852531769cee696
+          ref: 94f42c48ac4073e7750c78e396bc661da4b31be0
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
