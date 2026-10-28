@@ -172,6 +172,8 @@ class _SpatialSession:
         if (mesh, button) != form_bounds(self.probe.tree(), density):
             raise AssertionError("Spatial evidence layout changed during capture")
         image = read_screenshot(path)
+        print("SPATIAL_FORM_COLORS=" + json.dumps({"button_bounds": button,
+              "foreground_rgb": primary_foreground(before), "screenshot": name}), flush=True)
         result = {"scenario": name, "runtime": observed,
                   "artwork": (artwork_witness if observed.get("renderer") == "native-2d" else mesh_witness)(image, mesh, background),
                   "primary_button": native_label_contrast(image, button, primary_foreground(before))}
@@ -384,3 +386,4 @@ def _visible_scroll_rows(tree):
     return {label for node in tree.iter("node")
             for label in node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
             if label.startswith("Тестовая строка ")}
+

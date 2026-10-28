@@ -150,6 +150,20 @@ class SpatialFrameEvidenceTests(unittest.TestCase):
 
 
 
+class PrimaryLabelRegressionTests(unittest.TestCase):
+    def test_actual_white_label_passes_but_obsolete_container_ink_fails(self):
+        # Colors observed in native40760401285; this synthetic regression is not device evidence.
+        blue, white, obsolete = (36, 99, 235), (255, 255, 255), (21, 60, 137)
+        image = synthetic_image(background=blue,
+            paint=lambda x, y: white if 40 < x < 60 and 40 < y < 60 else None)
+        actual = evidence.native_label_contrast(image, (0, 0, 100, 100), white)
+        self.assertGreaterEqual(actual["rendered_label_contrast"], 4.5)
+        with self.assertRaisesRegex(AssertionError, "contrast"):
+            evidence.native_label_contrast(image, (0, 0, 100, 100), obsolete)
+        with self.assertRaisesRegex(AssertionError, "missing"):
+            evidence.native_label_contrast(synthetic_image(background=blue), (0, 0, 100, 100), white)
+
+
 class PlainNativeScreenTests(unittest.TestCase):
     def frame(self, screen="balance-privacy", scale=1.0, draws=0, **changes):
         values = dict(engines=0, windows=0, frames=0, meshes=0, pending=0, pool=0,
@@ -244,3 +258,4 @@ class PlainNativeScreenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

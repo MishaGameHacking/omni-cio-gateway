@@ -17,6 +17,8 @@ class SpectrumForegroundTests(unittest.TestCase):
         self.assertIn('LocalContentColor.current.toArgb()', fixture)
         self.assertIn('MaterialTheme.colorScheme.background.toArgb()', fixture)
         self.assertIn('probe-foreground:$foreground', fixture)
+        self.assertIn('probe-primary-foreground:${MaterialTheme.colorScheme.onPrimary.toArgb()', fixture)
+        self.assertNotIn('probe-primary-foreground:${MaterialTheme.colorScheme.onPrimaryContainer.', fixture)
         driver = (ROOT / '.github/scripts/profile_ui_probe.py').read_text(encoding='utf-8')
         theme = (ROOT / 'app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt').read_text(encoding='utf-8')
         backgrounds = dict(re.findall(r'^(LIGHT|DARK)_BACKGROUND = "([a-f0-9]{8})"$', driver, re.MULTILINE))
@@ -46,4 +48,5 @@ class SpectrumForegroundTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

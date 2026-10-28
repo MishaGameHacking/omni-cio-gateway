@@ -36,7 +36,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "spatial", "session-context", "balance-privacy", "goal-editor", "theme", "theme-lifecycle") +
+        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "education", "spatial", "session-context", "balance-privacy", "goal-editor", "theme", "theme-lifecycle") +
             businessProbeRoutes.map { "business-$it" } + portfolioProbeRoutes.map { "portfolio-$it" } + automationProbeRoutes.map { "automation-$it" }
         val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in allowedScreens } ?: "profile"
         val scenario = intent.getStringExtra("spectrum_scenario")?.takeIf { it in (if (screen.startsWith("automation-")) automationProbeScenarios else businessProbeScenarios) } ?: "ready"
@@ -72,8 +72,8 @@ class ProfileUiProbeActivity : ComponentActivity() {
                 val automationTransport = remember { AutomationProbeTransport("ready") }
                 var screenshotsBlocked by remember { mutableStateOf(false) }
                 var appearanceOpen by remember { mutableStateOf(false) }
-                var educationOpen by remember { mutableStateOf(false) }
-                val readinessMarker = "probe-screen:$screen;probe-scenario:$scenario;probe-run:$probeRun;probe-background:$background;probe-foreground:$foreground;probe-primary-foreground:${MaterialTheme.colorScheme.onPrimaryContainer.toArgb().toUInt().toString(16)};probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true;${spatialProbeMarker()}"
+                var educationOpen by remember { mutableStateOf(screen == "education") }
+                val readinessMarker = "probe-screen:$screen;probe-scenario:$scenario;probe-run:$probeRun;probe-background:$background;probe-foreground:$foreground;probe-primary-foreground:${MaterialTheme.colorScheme.onPrimary.toArgb().toUInt().toString(16)};probe-refresh-tests:$refreshChecks;probe-education-tests:$educationChecks;probe-update-tests:$updateChecks;probe-install-stream-tests:$installChecks;probe-protocol-tests:$protocolChecks;probe-download-tests:$downloadChecks;probe-gate-tests:$gateChecks;probe-feedback-tests:$feedbackChecks;probe-submission-tests:$submissionChecks;probe-analysis-tests:$analysisChecks;probe-release-json-tests:$releaseJsonChecks;probe-research-presentation-tests:$researchChecks;probe-edge-to-edge:true;${spatialProbeMarker()}"
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -92,7 +92,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
                         screen.startsWith("automation-") -> AutomationWorkspaceProbe(screen, scenario)
                         screen.startsWith("business-") -> BusinessWorkspaceProbe(screen, scenario, onBack = { finish() })
                         screen.startsWith("portfolio-") -> PortfolioWorkspaceProbe(screen, scenario, onBack = { finish() })
-                        screen != "profile" -> SpectrumDashboardProbe(screen)
+                        screen != "profile" && screen != "education" -> SpectrumDashboardProbe(screen)
                         educationOpen -> EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
                         else -> AutomationProbeProvider(automationTransport) { ProfileScreen(
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),
@@ -119,3 +119,4 @@ class ProfileUiProbeActivity : ComponentActivity() {
         }
     }
 }
+
