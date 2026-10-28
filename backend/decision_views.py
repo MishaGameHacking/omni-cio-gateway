@@ -11,6 +11,16 @@ def _fresh(value, now, seconds):
         return False
 
 
+# Keep one latest explanation per instrument; current facts take precedence.
+def _unique(rows):
+    result = {}
+    for row in rows:
+        uid = row.get("instrument_uid")
+        if uid and uid not in result:
+            result[uid] = row
+    return list(result.values())
+
+
 def project(discovery: dict, events: list, now: int) -> dict:
     candidates = discovery.get("candidates") or []
     current, pending = [], []
@@ -21,17 +31,9 @@ def project(discovery: dict, events: list, now: int) -> dict:
             current.append(row)
         else:
             pending.append(row)
-    # Keep one latest explanation per instrument; current facts take precedence.
-    def unique(rows):
-        result = {}
-        for row in rows:
-            uid = row.get("instrument_uid")
-            if uid and uid not in result:
-                result[uid] = row
-        return list(result.values())
-    current = unique(current)
+    current = _unique(current)
     current_ids = {row["instrument_uid"] for row in current}
-    pending = unique([row for row in pending if row.get("instrument_uid") not in current_ids])
+    pending = _unique([row for row in pending if row.get("instrument_uid") not in current_ids])
     history, seen = [], set()
     for event in events:
         identity = (event.get("kind"), event.get("title"), event.get("summary"))

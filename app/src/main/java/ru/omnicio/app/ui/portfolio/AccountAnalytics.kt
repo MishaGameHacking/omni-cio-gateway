@@ -50,7 +50,6 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
     val selectedData = selectedPeriod?.let { scope -> rememberAccountData(token, account.id, "analytics",
         scope.parameters() + ("currency" to account.totalValue.currency), interval = 60_000) }
     val workspace = LocalWorkspaceSnapshot.current
-    val askAnalyst = LocalAskAnalyst.current
     val events = workspace?.sectionData("events")?.records("items").orEmpty().filter { event ->
         event.stringList("instrument_uids").any { uid -> account.positions.any { it.id == uid } } || event.optionalText("account_id") == account.id
     }
@@ -62,25 +61,8 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
     LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
         contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
         if (panel == 0) item(key = "history") {
-            CompactCard {
-                CurrencyChoice(account.totalValue.currency)
-                if (request.error != null || request.showingPreviousQuery || request.json == null) AccountDataNotice(request)
-                if (request.json == null) PeriodControls(period, setPeriod)
-                request.json?.let { data ->
-                    val history = data.objects("history").mapNotNull { point ->
-                        point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
-                    }
-                    HistoryChart(history, data.optString("currency"),
-                        markers = events.mapNotNull { event -> event.optionalText("occurred_at")?.let { HistoryMarker(it, event.optionalText("title") ?: "Событие источника") } },
-                        selectionKey = "${account.id}:${request.displayedParameters}",
-                        initialSelectedDate = anchor?.toString(),
-                        initialSelectedInstant = initialDate?.let { runCatching { java.time.Instant.parse(it).toString() }.getOrNull() },
-                        sourceResolution = data.optionalText("historyResolution") ?: resolutionOverride,
-                        onSelection = { if (!request.showingPreviousQuery) selectedPeriod = it },
-                        controls = { PeriodControls(period, setPeriod) })
-                    if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
-                }
-            }
+            AccountGraphCard(account, request, events, period, setPeriod, anchor, initialDate,
+                resolutionOverride, { selectedPeriod = it })
         }
         if (panel == 1) item(key = "period-comparison") { DetailFold("Сравнить два периода") { AccountPeriodComparison(token, account) } }
         if (panel == 2 && events.isNotEmpty()) item(key = "source-events") { CompactCard {
@@ -94,21 +76,8 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
         } }
         if (panel == 1) item(key = "money-period") { PeriodControls(period, setPeriod) }
         if (panel == 1) item(key = "cashflow") {
-            CompactCard {
-                SectionHeading("Движение денег")
-                val scope = selectedPeriod ?: period
-                Notice(if (selectedPeriod == null) "За выбранный период" else "${scope.start} — ${scope.end}")
-                val current = selectedData ?: request
-                if (current.showingPreviousQuery || current.json == null) {
-                    Notice(current.error ?: "Обновляем статистику интервала…")
-                } else {
-                    current.error?.let { Notice(it) }
-                    CashFlowSummary(current.json)
-                    TextButton(onClick = { askAnalyst(ChatContext(mode = "portfolio", accountId = account.id,
-                        title = "${account.name} · ${scope.start ?: "вся история"} — ${scope.end ?: "по последний снимок"}",
-                        start = scope.start, end = scope.end)) }) { Text("Обсудить выбранный период") }
-                }
-            }
+            AccountCashFlowCard(account, selectedData ?: request, selectedPeriod ?: period,
+                selectedPeriod != null)
         }
         if (!historyOnly && panel == 1) item(key = "open-positions") {
             CompactCard {
@@ -126,6 +95,50 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
         if (!historyOnly && panel == 2) item(key = "structure") { CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) } }
     }
     }
+    }
+}
+
+@Composable
+private fun AccountGraphCard(account: PortfolioAccount, request: AccountData, events: List<JSONObject>,
+    period: PortfolioPeriod, setPeriod: (PortfolioPeriod) -> Unit, anchor: java.time.LocalDate?,
+    initialDate: String?, resolutionOverride: String?, onSelection: (PortfolioPeriod?) -> Unit) {
+    CompactCard {
+        CurrencyChoice(account.totalValue.currency)
+        if (request.error != null || request.showingPreviousQuery || request.json == null) AccountDataNotice(request)
+        if (request.json == null) PeriodControls(period, setPeriod)
+        request.json?.let { data ->
+            val history = data.objects("history").mapNotNull { point ->
+                point.optString("value").toBigDecimalOrNull()?.let { HistoryPoint(point.optString("date"), it) }
+            }
+            HistoryChart(history, data.optString("currency"),
+                markers = events.mapNotNull { event -> event.optionalText("occurred_at")?.let { HistoryMarker(it, event.optionalText("title") ?: "Событие источника") } },
+                selectionKey = "${account.id}:${request.displayedParameters}",
+                initialSelectedDate = anchor?.toString(),
+                initialSelectedInstant = initialDate?.let { runCatching { java.time.Instant.parse(it).toString() }.getOrNull() },
+                sourceResolution = data.optionalText("historyResolution") ?: resolutionOverride,
+                onSelection = { if (!request.showingPreviousQuery) onSelection(it) },
+                controls = { PeriodControls(period, setPeriod) })
+            if (data.optBoolean("historyTruncated")) Notice("Выборка графика ограничена. Выберите более короткий период.")
+        }
+    }
+}
+
+@Composable
+private fun AccountCashFlowCard(account: PortfolioAccount, current: AccountData,
+    scope: PortfolioPeriod, selectionActive: Boolean) {
+    val askAnalyst = LocalAskAnalyst.current
+    CompactCard {
+        SectionHeading("Движение денег")
+        Notice(if (!selectionActive) "За выбранный период" else "${scope.start} — ${scope.end}")
+        if (current.showingPreviousQuery || current.json == null) {
+            Notice(current.error ?: "Обновляем статистику интервала…")
+        } else {
+            current.error?.let { Notice(it) }
+            CashFlowSummary(current.json)
+            TextButton(onClick = { askAnalyst(ChatContext(mode = "portfolio", accountId = account.id,
+                title = "${account.name} · ${scope.start ?: "вся история"} — ${scope.end ?: "по последний снимок"}",
+                start = scope.start, end = scope.end)) }) { Text("Обсудить выбранный период") }
+        }
     }
 }
 

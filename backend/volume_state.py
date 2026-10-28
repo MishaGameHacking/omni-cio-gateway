@@ -396,6 +396,11 @@ class StrategyPreview(StrictModel):
     rollback_to_version: int | None = Field(default=None, ge=1)
 
 
+def _preserve_tuning(config, active, payload):
+    if (active or {}).get("config", {}).get("tuning") and payload.config is not None and "tuning" not in payload.config.model_fields_set:
+        config["tuning"] = active["config"]["tuning"]
+
+
 @router.post("/strategy/preview", responses=HTTP_ERRORS)
 def preview_strategy(payload: StrategyPreview, user: Any = Depends(backend.current_user)) -> dict:
     return _preview_strategy(payload, user)
@@ -418,8 +423,7 @@ def _preview_strategy(payload: StrategyPreview, user: Any) -> dict:
     else:
         config = validate_config(payload.config)
     config = preserve_mandate(config, active, supplied=((payload.config is not None and "mandate" in payload.config.model_fields_set) or (payload.rollback_to_version is not None and config.get("mandate") is not None)))
-    if (active or {}).get("config", {}).get("tuning") and payload.config is not None and "tuning" not in payload.config.model_fields_set:
-        config["tuning"] = active["config"]["tuning"]
+    _preserve_tuning(config, active, payload)
     snapshot = saved_snapshot(user, config["reserve"]["currency"])
     if not snapshot:
         raise HTTPException(409, "workspace_refresh_required")

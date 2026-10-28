@@ -396,6 +396,26 @@ def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
     return base
 
 
+def _research_catalogues(user, config, classes):
+    user_id = int(user["id"])
+    found, scanned, sources, errors = {}, 0, [], []
+    for kind in classes:
+        assert_enabled(user_id)
+        assert_monitoring_access(backend.connect)
+        try:
+            observed = catalogue.load_catalogue(user, kind)
+            scanned += len(observed["items"])
+            sources.append(observed["source"])
+            for item in observed["items"]:
+                if _catalogue_candidate(item, config):
+                    found[item["uid"]] = item
+        except HTTPException as error:
+            if error_code(error) in {"monitoring_connection_changed", "automation_paused"}:
+                raise
+            errors.append(error_code(error))
+    return found, scanned, sources, errors
+
+
 def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     user_id = int(user["id"])
     active = state.active_strategy(user_id)
@@ -410,27 +430,13 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     account = _account_for_research(snapshot, config)
     if account is None:
         return _empty_discovery("blocked", ["observed_cash_not_above_reserve"]), cursor
-    found, scanned, sources, errors = {}, 0, [], []
     deadline = time.monotonic() + DISCOVERY_TIME_BUDGET_SECONDS
     try:
         from .strategy_profiles import research_tuning
     except ImportError:
         from strategy_profiles import research_tuning
     tuning = research_tuning(config, snapshot)
-    for kind in tuning["asset_classes"]:
-        assert_enabled(user_id)
-        assert_monitoring_access(backend.connect)
-        try:
-            observed = catalogue.load_catalogue(user, kind)
-            scanned += len(observed["items"])
-            sources.append(observed["source"])
-            for item in observed["items"]:
-                if _catalogue_candidate(item, config):
-                    found[item["uid"]] = item
-        except HTTPException as error:
-            if error_code(error) in {"monitoring_connection_changed", "automation_paused"}:
-                raise
-            errors.append(error_code(error))
+    found, scanned, sources, errors = _research_catalogues(user, config, tuning["asset_classes"])
     ordered = [found[key] for key in sorted(found)]
     result = _empty_discovery("partial", ["research_incomplete"])
     result.update(as_of=now_iso(), snapshot_id=snapshot["snapshot_id"], strategy_version=version, sources=sources)

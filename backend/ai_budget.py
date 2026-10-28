@@ -69,6 +69,12 @@ def transaction(connect: Connect) -> Iterator[sqlite3.Connection]:
         yield db
 
 
+def _validate_monthly_caps(*caps):
+    for cap in caps:
+        if cap is not None and (type(cap) is not int or not 0 < cap <= MAX_MONEY):
+            raise BudgetDenied("ai_monthly_budget_disabled_or_invalid")
+
+
 class MoneyLedger:
     def __init__(self, connect: Connect):
         self.connect = connect
@@ -123,9 +129,7 @@ class MoneyLedger:
                 ceiling: int, user_cap: int, project_cap: int, at: int | None = None, job: tuple[str, str] | None = None, guard=None,
                 user_month_cap: int | None = None, project_month_cap: int | None = None) -> None:
         _validate_reservation(user_id, key, route, model, ceiling, user_cap, project_cap)
-        for cap in (user_month_cap, project_month_cap):
-            if cap is not None and (type(cap) is not int or not 0 < cap <= MAX_MONEY):
-                raise BudgetDenied("ai_monthly_budget_disabled_or_invalid")
+        _validate_monthly_caps(user_month_cap, project_month_cap)
         now = int(time.time()) if at is None else at
         day = day_key(now)
         with transaction(self.connect) as db:
@@ -145,14 +149,17 @@ class MoneyLedger:
                 raise BudgetDenied('ai_user_budget_exhausted')
             if self._spent(db, day, None) + ceiling > project_cap:
                 raise BudgetDenied('ai_project_budget_exhausted')
-            if user_month_cap is not None and self._monthly_spent(db, day, user_id) + ceiling > user_month_cap:
-                raise BudgetDenied('ai_user_monthly_budget_exhausted')
-            if project_month_cap is not None and self._monthly_spent(db, day, None) + ceiling > project_month_cap:
-                raise BudgetDenied('ai_project_monthly_budget_exhausted')
+            self._check_monthly_caps(db, day, user_id, ceiling, user_month_cap, project_month_cap)
             db.execute('''INSERT INTO ai_money_reservations
                 (request_key,user_id,day_key,route_id,model,ceiling,charge,state,created_at,updated_at)
                 VALUES (?,?,?,?,?,?,?,'reserved',?,?)''',
                 (key, user_id, day, route, model, ceiling, ceiling, now, now))
+
+    def _check_monthly_caps(self, db, day, user_id, ceiling, user_month_cap, project_month_cap):
+        if user_month_cap is not None and self._monthly_spent(db, day, user_id) + ceiling > user_month_cap:
+            raise BudgetDenied('ai_user_monthly_budget_exhausted')
+        if project_month_cap is not None and self._monthly_spent(db, day, None) + ceiling > project_month_cap:
+            raise BudgetDenied('ai_project_monthly_budget_exhausted')
 
     def uncertain(self, key: str, *, pause_reason: str | None = None,
                   observed_cost: int | None = None) -> None:

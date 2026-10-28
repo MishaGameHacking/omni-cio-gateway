@@ -266,6 +266,9 @@ class GuardedAIClient:
         except BudgetDenied as error:
             raise GuardError(str(error)) from None
 
+    def _monthly_cap(self, name):
+        return micro_rub(self.env[name]) if name in self.env else None
+
     def _complete(self, tier, messages, max_output_tokens: int):
         assert_monitoring_access(self.connect)
         encoded = _encoded_messages(messages, max_output_tokens)
@@ -286,8 +289,8 @@ class GuardedAIClient:
         self.ledger.reserve(user_id=self.user_id, key=reservation, route=route.identifier, model=route.model,
                             ceiling=ceiling, user_cap=micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')),
                             project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job, guard=self.budget_guard,
-                            user_month_cap=micro_rub(self.env['AI_USER_MONTHLY_RUB']) if 'AI_USER_MONTHLY_RUB' in self.env else None,
-                            project_month_cap=micro_rub(self.env['AI_PROJECT_MONTHLY_RUB']) if 'AI_PROJECT_MONTHLY_RUB' in self.env else None)
+                            user_month_cap=self._monthly_cap('AI_USER_MONTHLY_RUB'),
+                            project_month_cap=self._monthly_cap('AI_PROJECT_MONTHLY_RUB'))
         payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
         if route.mode == 'gateway':
             payload['model'] = route.model

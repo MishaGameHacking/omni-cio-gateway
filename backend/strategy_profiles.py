@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, StrictBool
 try:
     from .volume_contract import decimal, text_number, financial_context
 except ImportError:
-    from volume_contract import decimal, text_number
+    from volume_contract import decimal, text_number, financial_context
 
 PROFILE_IDS = ("capital", "coupon", "balanced", "growth", "equity")
 
@@ -34,30 +34,66 @@ PROFILES = (
 )
 
 
-def _template(row, active: dict | None, snapshot: dict | None) -> dict:
-    (identifier, title, description, goal, risk, horizon, bonds, reserve_pct,
-     position, issuer, group, sector, rating, turnover, cost, cooldown) = row
-    previous = (active or {}).get("config", {})
-    prior_mandate = previous.get("mandate") or {}
+def _account_reserve(previous: dict, snapshot: dict | None, reserve_pct: int):
     accounts = (snapshot or {}).get("accounts", [])
     account_ids = {str(item.get("id")) for item in accounts if item.get("id")}
-    account = prior_mandate.get("account_id")
+    account = (previous.get("mandate") or {}).get("account_id")
     if account not in account_ids:
         account = next(iter(account_ids)) if len(account_ids) == 1 else None
     selected = next((row for row in accounts if row.get("id") == account), None)
     total = decimal((selected or {}).get("value"))
     if (snapshot or {}).get("currency") != "RUB":
         total = None
-    old_reserve = decimal(previous.get("reserve", {})) if previous.get("reserve", {}).get("currency") == "RUB" else None
-    reserve = max(old_reserve or Decimal(0), ((total or Decimal(0)) * reserve_pct / 100).quantize(Decimal("0.01"), rounding=ROUND_UP))
-    limits = dict(zip(("position_percent", "issuer_percent", "group_percent", "sector_percent", "currency_percent"),
-                      map(str, (position, issuer, group, sector, 100))))
-    # The preset cannot silently loosen an existing concentration ceiling.
+    old = previous.get("reserve", {})
+    old_reserve = decimal(old) if old.get("currency") == "RUB" else None
+    calculated = ((total or Decimal(0)) * reserve_pct / 100).quantize(Decimal("0.01"), rounding=ROUND_UP)
+    return account, total, max(old_reserve or Decimal(0), calculated)
+
+
+def _concentration_limits(previous, values):
+    keys = ("position_percent", "issuer_percent", "group_percent", "sector_percent", "currency_percent")
+    limits = dict(zip(keys, map(str, values)))
     for key, value in limits.items():
         old = decimal(previous.get("limits", {}).get(key))
         if old is not None and old > 0:
             limits[key] = text_number(min(Decimal(value), old))
-    mode = "bonds" if bonds == 100 else "shares" if bonds == 0 else "mixed"
+    return limits
+
+
+def _smaller_decimal(previous, key, maximum):
+    old = decimal(previous.get(key))
+    if old is None:
+        old = Decimal(maximum)
+    return text_number(min(Decimal(maximum), old))
+
+
+def _asset_mode(bonds):
+    if bonds == 100:
+        return "bonds"
+    return "shares" if bonds == 0 else "mixed"
+
+
+def _suggested_profile(current):
+    mode = (current.get("mandate") or {}).get("asset_mode")
+    if mode == "bonds":
+        return "coupon" if current.get("goal") == "income" else "capital"
+    return {"shares": "equity", "mixed": "balanced"}.get(mode, "capital")
+
+
+def _batch_size(available):
+    if available < 10000:
+        return 2
+    return 4 if available < 100000 else 8
+
+
+def _template(row, active: dict | None, snapshot: dict | None) -> dict:
+    (identifier, title, description, goal, risk, horizon, bonds, reserve_pct,
+     position, issuer, group, sector, rating, turnover, cost, cooldown) = row
+    previous = (active or {}).get("config", {})
+    prior_mandate = previous.get("mandate") or {}
+    account, total, reserve = _account_reserve(previous, snapshot, reserve_pct)
+    limits = _concentration_limits(previous, (position, issuer, group, sector, 100))
+    mode = _asset_mode(bonds)
     config = {
         "goal": goal, "risk_level": risk, "horizon_months": horizon,
         "reserve": {"amount": text_number(reserve), "currency": "RUB"},
@@ -78,15 +114,12 @@ def _template(row, active: dict | None, snapshot: dict | None) -> dict:
         "loss_capacity_percent": capacity,
         "bond_target_percent": str(bonds), "share_target_percent": str(100 - bonds),
         "minimum_rating_level": min(rating, prior_mandate.get("minimum_rating_level", rating)),
-        "max_discretionary_turnover_percent": text_number(min(Decimal(turnover), decimal(prior_mandate.get("max_discretionary_turnover_percent")) or Decimal(turnover))),
+        "max_discretionary_turnover_percent": _smaller_decimal(prior_mandate, "max_discretionary_turnover_percent", turnover),
         "turnover_window_days": prior_mandate.get("turnover_window_days", 30),
-        "max_trade_cost_percent": text_number(min(Decimal(cost), decimal(prior_mandate.get("max_trade_cost_percent")) if decimal(prior_mandate.get("max_trade_cost_percent")) is not None else Decimal(cost))),
+        "max_trade_cost_percent": _smaller_decimal(prior_mandate, "max_trade_cost_percent", cost),
         "rebalance_cooldown_days": max(cooldown, prior_mandate.get("rebalance_cooldown_days", 0)),
         "reinvest_coupons": True, "reinvest_dividends": True, "allowed_sessions": ["main"],
     }
-    # Keep a valid nonnegative zero-turnover owner choice.
-    if decimal(prior_mandate.get("max_discretionary_turnover_percent")) == 0:
-        mandate["max_discretionary_turnover_percent"] = "0"
     config["mandate"] = mandate
     return {"id": identifier, "title": title, "description": description, "config": config,
             "missing": missing, "ready_for_preview": not missing, "reserve_percent": reserve_pct}
@@ -98,8 +131,7 @@ def catalogue(active: dict | None, snapshot: dict | None) -> dict:
     rows = [_template(row, active, snapshot) for row in PROFILES]
     current = (active or {}).get("config", {})
     mode = current.get("mandate", {}).get("asset_mode")
-    suggested = ("coupon" if current.get("goal") == "income" else "capital") if mode == "bonds" else (
-        "equity" if mode == "shares" else "balanced" if mode == "mixed" else "capital")
+    suggested = _suggested_profile(current)
     return {"revision": 1, "items": rows, "suggested_id": suggested,
             "suggestion_basis": "existing_asset_mode_and_goal" if mode else "conservative_draft_not_personal_suitability",
             "tuning": research_tuning(current, snapshot),
@@ -125,7 +157,7 @@ def research_tuning(config: dict, snapshot: dict | None) -> dict:
     mode = config.get("mandate", {}).get("asset_mode", "mixed")
     classes = {"bonds": ["bond"], "shares": ["share"], "mixed": ["bond", "share"]}.get(mode, [])
     # Small portfolios need fewer simultaneous candidate requests, not weaker limits.
-    maximum = 2 if available < 10000 else 4 if available < 100000 else 8
+    maximum = _batch_size(available)
     return {"enabled": enabled, "profile_id": tuning.get("profile_id"),
             "candidate_batch": maximum if enabled else 8, "asset_classes": classes,
             "available_above_reserve": {"amount": text_number(available), "currency": currency},

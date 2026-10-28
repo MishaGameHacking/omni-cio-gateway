@@ -42,30 +42,13 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
         if (foreground) while (isActive) { delay(20_000); refreshStatus() }
     }
     val navigate = LocalWorkspaceNavigator.current
-    val broker = LocalBrokerConnection.current
     val disconnected = status?.has("broker_connected") == true && !status.optBoolean("broker_connected")
     val mode = status?.text("state", "") ?: ""
-    val currentError = resource.error
-    val title = when {
-        currentError != null -> "Связь требует проверки"
-        status == null -> "Получаем состояние"
-        else -> automationStateTitle(mode)
-    }
-    val explanation = when {
-        currentError != null -> "Не удалось обновить состояние системы. Сохранённые сведения могут быть устаревшими."
-        status == null -> "Проверяем подключение и работу серверного анализа."
-        else -> automationStateDescription(mode)
-    }
     val blockers = status?.records("blockers").orEmpty().filterNot { blocker ->
         val code = blocker.text("code", "")
         (disconnected && code in setOf("tinvest_not_connected", "broker_not_connected")) ||
             (mode == "paused" && code in setOf("automation_paused", "paused"))
     }
-    val discovery = status?.optJSONObject("discovery")
-    val candidates = discovery?.records("candidates").orEmpty()
-    val observation = status?.text("last_observation_at", "").orEmpty()
-    val hasObservation = observation.isNotBlank()
-    val loading = resource.busy && status == null || mode == "collecting" && currentError == null
 
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
@@ -96,28 +79,8 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                         { navigate(WorkspaceRoute.Assistant) })
                 }
                 item(key = "automation-state") {
-                    SpectrumCard(modifier = Modifier.testTag("automation-state")) {
-                        Text("Сегодня", style = MaterialTheme.typography.titleLarge)
-                        Text(title, style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                        if (loading) SpectrumLoadingIndicator(description = title)
-                        if (currentError != null || mode != "current")
-                            Text(explanation, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        val currentCount = candidates.count { it.optBoolean("evidence_current", false) }
-                        Text(if (currentCount > 0) "Актуальных результатов: $currentCount"
-                            else "Новых проверенных решений пока нет.",
-                            style = MaterialTheme.typography.bodyMedium)
-                        if (hasObservation) Text("Проверка · " + localMoment(observation),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        SpectrumTextButton("Открыть решения", onOpenRecommendations,
-                            Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Forward)
-                        if (disconnected || broker == BrokerConnectionState.Missing && status == null)
-                            SpectrumPrimaryButton("Подключить Т-Инвестиции", onConnect,
-                                Modifier.fillMaxWidth(), enabled = !resource.busy)
-                        if (currentError != null) SpectrumSecondaryButton("Повторить проверку связи",
-                            resource.refresh, Modifier.fillMaxWidth(), enabled = !resource.busy)
-                    }
+                    HomeAutomationCard(status, resource.error, resource.busy, resource.refresh,
+                        onOpenRecommendations, onConnect)
                 }
                 if (blockers.isNotEmpty()) item(key = "automation-blockers") {
                     SpectrumCard(modifier = Modifier.testTag("automation-blockers")) {
@@ -131,6 +94,53 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HomeAutomationCard(status: JSONObject?, error: String?, busy: Boolean, refresh: () -> Unit,
+    onOpenRecommendations: () -> Unit, onConnect: () -> Unit) {
+    val broker = LocalBrokerConnection.current
+    val disconnected = status?.has("broker_connected") == true && !status.optBoolean("broker_connected")
+    val mode = status?.text("state", "") ?: ""
+    val currentError = error
+    val title = when {
+        currentError != null -> "Связь требует проверки"
+        status == null -> "Получаем состояние"
+        else -> automationStateTitle(mode)
+    }
+    val explanation = when {
+        currentError != null -> "Не удалось обновить состояние системы. Сохранённые сведения могут быть устаревшими."
+        status == null -> "Проверяем подключение и работу серверного анализа."
+        else -> automationStateDescription(mode)
+    }
+    val discovery = status?.optJSONObject("discovery")
+    val candidates = discovery?.records("candidates").orEmpty()
+    val observation = status?.text("last_observation_at", "").orEmpty()
+    val hasObservation = observation.isNotBlank()
+    val loading = busy && status == null || mode == "collecting" && currentError == null
+
+    SpectrumCard(modifier = Modifier.testTag("automation-state")) {
+        Text("Сегодня", style = MaterialTheme.typography.titleLarge)
+        Text(title, style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if (loading) SpectrumLoadingIndicator(description = title)
+        if (currentError != null || mode != "current")
+            Text(explanation, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val currentCount = candidates.count { it.optBoolean("evidence_current", false) }
+        Text(if (currentCount > 0) "Актуальных результатов: $currentCount"
+            else "Новых проверенных решений пока нет.",
+            style = MaterialTheme.typography.bodyMedium)
+        if (hasObservation) Text("Проверка · " + localMoment(observation),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SpectrumTextButton("Открыть решения", onOpenRecommendations,
+            Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Forward)
+        if (disconnected || broker == BrokerConnectionState.Missing && status == null)
+            SpectrumPrimaryButton("Подключить Т-Инвестиции", onConnect,
+                Modifier.fillMaxWidth(), enabled = !busy)
+        if (currentError != null) SpectrumSecondaryButton("Повторить проверку связи",
+            refresh, Modifier.fillMaxWidth(), enabled = !busy)
     }
 }
 
@@ -154,14 +164,6 @@ private fun automationStateDescription(state: String): String = when (state) {
     "attention" -> "Проверка выявила ограничение. Его причина показана ниже."
     "current" -> "Можно открыть выводы и проверить их основания."
     else -> "Ожидаем подтверждённые сведения от сервера."
-}
-
-@Composable
-private fun SystemStateLine(label: String, value: String) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge)
-    }
 }
 
 /** Retained for existing secondary portfolio views; never composed on the system home. */

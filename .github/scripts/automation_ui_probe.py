@@ -310,15 +310,26 @@ class _AutomationCase:
                         "paused": "Анализ на паузе"}[self.scenario]
             self.probe.reveal(expected, "workspace-content")
             if self.scenario == "ready":
-                self.probe.tap("Посмотреть решения", "workspace-content")
+                self.probe.tap("Открыть решения", "workspace-content")
                 self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
                 self.probe.tap_visible("Настройки")
                 self.switch()
                 self.return_home(expected)
         elif self.scenario == "ready":
             self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
+            self.probe.tap("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
+            self.probe.reveal("К списку", "workspace-content")
+            self.probe.tap("К списку", "workspace-content")
+            self.probe.tap_visible("Проверка")
+            self.probe.reveal("Очередь проверок пуста", "workspace-content")
+            self.probe.tap_visible("История")
+            self.probe.reveal("СИНТЕТИЧЕСКАЯ ПРОВЕРКА", "workspace-content")
+            self.probe.tap_visible("Актуально")
+            self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
+            if self.observed()["writes"] != before["writes"]:
+                raise AssertionError("Decision navigation wrote settings or started a paid task")
         else:
-            self.probe.reveal("Проверенных предложений пока нет", "workspace-content")
+            self.probe.reveal("Новых решений пока нет", "workspace-content")
         after = self.observed()
         renderer = self.probe.wait_for(lambda: ready_spatial_metrics(self.probe.tree()),
                                       "Automation screen did not draw actual native artwork")

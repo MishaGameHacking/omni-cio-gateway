@@ -519,6 +519,7 @@ class ProfileProbe:
                 self.command("shell", "input", "tap", str(left + (right - left) // 34), str((top + bottom) // 2))
                 self.find("Выбранный интервал: 2026-10-01 — 2026-10-01")
                 self.capture("bars-selected")
+                self.tap("Выбрать наблюдение или диапазон", "workspace-content")
                 self.tap_resource("history-selection-next", "workspace-content")
                 self.find("Выбранный интервал: 2026-10-02 — 2026-10-02")
                 self.tap_resource("history-selection-reset", "workspace-content")
@@ -664,6 +665,7 @@ class ProfileProbe:
         self.reveal("Изменение стоимости", "workspace-content")
         self.reveal("Минимум / максимум", "workspace-content")
         self.capture("bars-large-font")
+        self.tap("Выбрать наблюдение или диапазон", "workspace-content", direction="start")
         self.tap_resource("history-selection-reset", "workspace-content", direction="start")
         self.reveal("За показанный период", "workspace-content")
 

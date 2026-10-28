@@ -1,9 +1,8 @@
 """Isolated strategy/account and cost controls, never real broker calls."""
 from copy import deepcopy
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import localcontext
-import json
 import pytest
 
 from backend import volume_state as state
@@ -136,8 +135,9 @@ def test_monthly_budget_keeps_uncertain_reservation_across_months(fixture):
         ledger.reserve(key="second",at=next_day,**kwargs)
     ledger.reserve(key="november",at=int(datetime(2026,11,1,tzinfo=timezone.utc).timestamp()),**kwargs)
     ledger.uncertain("november")
+    december = int(datetime(2026,12,1,tzinfo=timezone.utc).timestamp())
     with pytest.raises(BudgetDenied,match="monthly_budget_exhausted|user_budget_exhausted"):
-        ledger.reserve(key="december",at=int(datetime(2026,12,1,tzinfo=timezone.utc).timestamp()),**kwargs)
+        ledger.reserve(key="december",at=december,**kwargs)
 
 
 @pytest.mark.parametrize("cap",[0,-1,True,"10"])

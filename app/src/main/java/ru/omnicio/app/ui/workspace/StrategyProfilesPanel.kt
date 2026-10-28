@@ -63,5 +63,6 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
         SpectrumPrimaryButton("Использовать профиль", {
             proposed?.let { select(JSONObject(it.toString())) }; selectedId = null
         }, Modifier.fillMaxWidth(), enabled && proposed != null)
+        SpectrumSecondaryButton("Отмена", { selectedId = null }, Modifier.fillMaxWidth())
     }
 }
