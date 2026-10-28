@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 
 /** First-party, resolution-independent clay tiles. No bitmap downloads or continuous 3D engine. */
-internal fun DrawScope.clayIcon(name: String, colors: FlatArtworkColors, phase: Float, state: SpatialState) {
+internal fun DrawScope.clayIcon(name: String, phase: Float, state: SpatialState) {
     val hue = when (name) {
         "portfolio", "income", "currency" -> Color(0xFFF5BC54)
         "capital", "risk", "home", "devices" -> Color(0xFF75B2F1)

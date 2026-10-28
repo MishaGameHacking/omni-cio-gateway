@@ -410,7 +410,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        foreground = "ff17243a" if expected == DARK_BACKGROUND else "ff17243a"
+        foreground = "ff17243a"
         self.marker("probe-foreground:" + foreground)
 
     def open(self):

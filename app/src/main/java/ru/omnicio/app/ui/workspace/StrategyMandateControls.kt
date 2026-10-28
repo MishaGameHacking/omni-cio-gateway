@@ -43,12 +43,19 @@ internal fun strategyNumberInput(raw: String, minimum: String, maximum: String, 
 internal fun StrategyNumberChoice(title: String, value: String, unit: String, enabled: Boolean,
     minimum: String, maximum: String, presets: List<String>, steps: List<String>,
     percentSlider: Boolean = false, onChange: (String) -> Unit) {
-    var text by rememberSaveable(title, value) { mutableStateOf(value) }
-    var focused by remember { mutableStateOf(false) }
+    val ownerId = LocalWorkspaceSession.current.userId
+    var text by rememberSaveable(ownerId, title, value) { mutableStateOf(value) }
+    var submitted by remember(ownerId, title, value) { mutableStateOf(value) }
+    var focused by remember(ownerId, title) { mutableStateOf(false) }
     val whole = unit == "мес." || unit == "дн."
     val parsed = strategyNumberInput(text, minimum, maximum, whole)
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    val commit = { if (enabled && parsed != null && parsed != value) onChange(parsed) }
+    val commit = {
+        if (enabled && parsed != null && parsed != submitted) {
+            submitted = parsed
+            onChange(parsed)
+        }
+    }
     SpectrumTextField(text, { text = it }, Modifier.fillMaxWidth()
         .semantics { testTagsAsResourceId = true }
         .testTag(if (title == "Горизонт") "strategy-horizon" else "strategy-number-" + title)

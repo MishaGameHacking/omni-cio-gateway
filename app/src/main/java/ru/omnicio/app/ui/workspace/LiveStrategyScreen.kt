@@ -136,37 +136,54 @@ internal fun strategyValidationIssues(config: JSONObject): List<String> = buildL
     val reserve = config.optJSONObject("reserve")
     val amount = reserve?.optString("amount")?.toBigDecimalOrNull()
     if (amount == null || amount.signum() < 0) add("Резерв: укажите сумму от нуля.")
-    val limits = config.optJSONObject("limits")
-    limitTitles.forEach { (key, title) ->
-        val number = limits?.optString(key)?.toBigDecimalOrNull()
-        if (number == null || number.signum() <= 0 || number > java.math.BigDecimal(100))
-            add("$title: лимит должен быть больше 0 и не больше 100%.")
-    }
+    addAll(strategyLimitIssues(config.optJSONObject("limits")))
     if (config.has("mandate")) {
-        val mandate = config.optJSONObject("mandate")
-        if (mandate == null) add("Инвестиционный профиль: выберите состав и счёт.")
-        else {
-            if (mandate.optString("account_id").isBlank()) add("Счёт: выберите подключённый счёт.")
-            val labels = mapOf("loss_capacity_percent" to "Допустимый убыток", "bond_target_percent" to "Доля облигаций",
-                "share_target_percent" to "Доля акций", "max_discretionary_turnover_percent" to "Предел оборота",
-                "max_trade_cost_percent" to "Предел издержек")
-            labels.forEach { (key, label) ->
-                val number = mandate.optString(key).toBigDecimalOrNull()
-                if (number == null || number < java.math.BigDecimal.ZERO || number > java.math.BigDecimal(100))
-                    add("$label: укажите значение от 0 до 100%.")
-            }
-            listOf(Triple("minimum_rating_level", "Минимальный рейтинг", 0..9),
-                Triple("turnover_window_days", "Период учёта оборота", 1..366),
-                Triple("rebalance_cooldown_days", "Пауза между перераспределениями", 0..365)).forEach { (key, label, range) ->
-                val number = mandate.opt(key) as? Int
-                if (number == null || number !in range) add("$label: выберите допустимое значение.")
-            }
-            if (mandate.opt("reinvest_coupons") !is Boolean) add("Купоны: выберите способ использования.")
-            if (mandate.opt("reinvest_dividends") !is Boolean) add("Дивиденды: выберите способ использования.")
-            if (!validPortfolioMandate(mandate) && isEmpty()) add("Проверьте состав портфеля, сумму долей 100% и основную сессию.")
-        }
+        addAll(strategyMandateIssues(config.optJSONObject("mandate")))
         if (reserve?.optString("currency") != "RUB") add("Для инвестиционного профиля выберите резерв в RUB.")
     }
+}
+
+private fun strategyLimitIssues(limits: JSONObject?): List<String> =
+    limitTitles.mapNotNull { (key, title) ->
+        val number = limits?.optString(key)?.toBigDecimalOrNull()
+        if (number == null || number.signum() <= 0 || number > java.math.BigDecimal(100))
+            "$title: лимит должен быть больше 0 и не больше 100%."
+        else null
+    }
+
+private fun mandatePercentIssues(mandate: JSONObject): List<String> {
+    val labels = mapOf("loss_capacity_percent" to "Допустимый убыток", "bond_target_percent" to "Доля облигаций",
+        "share_target_percent" to "Доля акций", "max_discretionary_turnover_percent" to "Предел оборота",
+        "max_trade_cost_percent" to "Предел издержек")
+    return labels.mapNotNull { (key, label) ->
+        val number = mandate.optString(key).toBigDecimalOrNull()
+        if (number == null || number < java.math.BigDecimal.ZERO || number > java.math.BigDecimal(100))
+            "$label: укажите значение от 0 до 100%."
+        else null
+    }
+}
+
+private fun mandateChoiceIssues(mandate: JSONObject): List<String> = buildList {
+    listOf(Triple("minimum_rating_level", "Минимальный рейтинг", 0..9),
+        Triple("turnover_window_days", "Период учёта оборота", 1..366),
+        Triple("rebalance_cooldown_days", "Пауза между перераспределениями", 0..365)).forEach { (key, label, range) ->
+        val number = mandate.opt(key) as? Int
+        if (number == null || number !in range) add("$label: выберите допустимое значение.")
+    }
+    if (mandate.opt("reinvest_coupons") !is Boolean) add("Купоны: выберите способ использования.")
+    if (mandate.opt("reinvest_dividends") !is Boolean) add("Дивиденды: выберите способ использования.")
+}
+
+private fun strategyMandateIssues(mandate: JSONObject?): List<String> = buildList {
+    if (mandate == null) {
+        add("Инвестиционный профиль: выберите состав и счёт.")
+        return@buildList
+    }
+    if (mandate.optString("account_id").isBlank()) add("Счёт: выберите подключённый счёт.")
+    addAll(mandatePercentIssues(mandate))
+    addAll(mandateChoiceIssues(mandate))
+    if (!validPortfolioMandate(mandate) && isEmpty())
+        add("Проверьте состав портфеля, сумму долей 100% и основную сессию.")
 }
 
 internal fun validStrategy(config: JSONObject): Boolean = strategyValidationIssues(config).isEmpty()
