@@ -9,21 +9,23 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read bounded owned build diagnostics
+      - name: Read bounded owned build and render diagnostics
         shell: py -3 {0}
         run: |
-          import json, os, re
+          import json, os
           from pathlib import Path
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
+          folders = ("redesign-visual-40750716085-1", "server-version-client-40753215261-1")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40750352430-1"
-              for name in ("shell-build-steps.json", "shell-build-steps-17-gradle.log"):
-                  path = folder / name
-                  if not path.is_file(): continue
-                  with path.open("rb") as stream:
-                      stream.seek(max(0,path.stat().st_size-26000))
-                      value = stream.read(26000).decode("utf-8",errors="replace")
-                  if name.endswith(".json"):
-                      value = json.dumps([{"label":s.get("label"),"exit_code":s.get("exit_code")} for s in json.loads(value).get("steps",[])])
-                  print("OWNED_BUILD_PROGRESS=" + name + "\n" + value[-24000:])
+              for owned in folders:
+                  folder = Path("C:/") / runner / "_work/_temp" / owned
+                  for path in folder.glob("*steps*.log"):
+                      if not any(word in path.name for word in ("gradle", "compose-preview", "host-tests")):
+                          continue
+                      with path.open("rb") as stream:
+                          stream.seek(max(0,path.stat().st_size-18000))
+                          value=stream.read(18000).decode("utf-8", errors="replace")
+                      lines=value.splitlines()
+                      selected=[line for line in lines if any(word in line for word in ("e: ", "FAIL", "Error", "Exception", "BUILD ", "Task ", "Ran ", "OK", "FAILED", "tests completed"))]
+                      print(owned + "/" + path.name + "\n" + "\n".join(selected[-40:]))
