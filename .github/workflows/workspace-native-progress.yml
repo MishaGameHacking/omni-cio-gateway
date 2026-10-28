@@ -16,7 +16,7 @@ jobs:
           from pathlib import Path
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
-          folders = ("redesign-visual-40750716085-1", "server-version-client-40753215261-1")
+          folders = ("redesign-visual-40755995707-1", "server-version-client-40755957252-1")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
               for owned in folders:
                   folder = Path("C:/") / runner / "_work/_temp" / owned
