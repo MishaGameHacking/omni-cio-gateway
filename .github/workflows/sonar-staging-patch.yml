@@ -12,7 +12,7 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: codex/sonar50-staging-2026-10-28
           fetch-depth: 0
@@ -34,9 +34,6 @@ jobs:
               if count != expected:
                   raise RuntimeError(f"{path}: expected {expected} exact matches, found {count}")
               write(path, value.replace(old, new))
-
-          def replace_all(path, old, new, expected):
-              replace(path, old, new, expected=expected)
 
           replace(
               "backend/paper_execution.py",
