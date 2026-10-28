@@ -9,6 +9,8 @@ on:
       - tools/prepare_server_runtime_transport.py
 permissions:
   contents: read
+  actions: read
+  checks: read
 concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
@@ -39,11 +41,11 @@ jobs:
               const found = newestSonarCheck(checks, candidate);
               if (found) {
                 const notes = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:found.id, per_page:100});
-                for (const note of notes) core.info('SONAR_FINDING=' + JSON.stringify({sha:candidate,path:note.path,line:note.start_line,message:note.message}));
+                for (const note of notes) core.info('SONAR_FINDING=' + JSON.stringify({sha:candidate,path:note.path,line:note.start_line,title:note.title,message:note.message}));
               }
             }
             let sonar;
-            for (let attempt=0;attempt<18;attempt++) {
+            for (let attempt=0;attempt<6;attempt++) {
               const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
               sonar=newestSonarCheck(checks,ref);
               if (sonar?.status==='completed') break;
