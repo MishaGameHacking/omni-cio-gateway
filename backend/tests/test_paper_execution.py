@@ -247,8 +247,9 @@ def test_manual_account_change_invalidates_unsent_plans(world):
     assert journal.status()['reserved_nanorub'] == 0
     with pytest.raises(ExecutionError, match='send_not_repeatable'):
         journal.begin_send(order, lease)
+    stale_plan = intent('stale-plan')
     with pytest.raises(ExecutionError, match='revision_stale'):
-        journal.prepare(intent('stale-plan'))
+        journal.prepare(stale_plan)
     journal.prepare(intent('new-plan', snapshot_revision=1))
 
 
@@ -385,8 +386,9 @@ def test_snapshot_before_terminal_observation_cannot_release_funds(world):
     journal, snapshot, _, _ = world
     order, lease = active(journal)
     observe(journal, order, lease)
+    next_snapshot = replace(snapshot, revision=1)
     with pytest.raises(ExecutionError, match='not_reconciliable'):
-        journal.reconcile_account(replace(snapshot, revision=1), lease, completed_order_ids=[order])
+        journal.reconcile_account(next_snapshot, lease, completed_order_ids=[order])
     assert journal.status()['reserved_nanorub'] == 102*NANO
 
 
