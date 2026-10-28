@@ -43,7 +43,7 @@ def _source_status(source, targets, counts, now):
         "next_check": root["next_at"] if root else None, "error": root["error"] if root else None,
         "coverage": json.loads(root["coverage_json"]) if root else {},
         "documents": counts.get(source.id, 0), "targets": len(related),
-        "target_failures": sum(row["status"] == "unavailable" for row in related)}
+        "target_failures": sum(row["status"] in {"unavailable", "partial"} for row in related)}
 
 
 def sources() -> list[dict]:

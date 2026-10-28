@@ -69,7 +69,9 @@ are labelled unknown and expire relative to first observation, never last fetch.
 Index links explicitly dated before the rolling five-calendar-year window are
 skipped. Cleanup is bounded and does not delete portfolio data or reviewed
 research facts. Old unreferenced bodies and revision history are removed after
-30/365 days. Completed OSINT jobs expire after seven days. The extracted-text
+30/365 days. Minimal hash tombstones prevent unchanged undated publications from
+reappearing after expiry (one year since last observation, capped at 200,000 hashes).
+Completed OSINT jobs expire after seven days. The extracted-text
 budget is 256 MiB, with 100,000 publications and 5,000 frontier targets; this is
 not a total SQLite file-size promise. Capacity failures are visible and do not
 silently drop accepted evidence. Backups retain their existing policy.

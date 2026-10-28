@@ -4,7 +4,6 @@ on:
     branches: [codex/investment-osint-2026-10-28]
 permissions:
   contents: read
-  checks: read
 concurrency:
   group: analyst-investment-osint-verification
   cancel-in-progress: false
@@ -62,6 +61,9 @@ jobs:
           retention-days: 7
 
   source-quality:
+    permissions:
+      contents: read
+      checks: read
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:

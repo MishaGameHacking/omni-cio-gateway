@@ -74,6 +74,9 @@ def initialize(connect) -> None:
             """CREATE TABLE IF NOT EXISTS osint_hosts_v1 (
                 host TEXT PRIMARY KEY,next_at REAL NOT NULL DEFAULT 0,robots_text TEXT,
                 robots_expires INTEGER NOT NULL DEFAULT 0,robots_status INTEGER)""",
+            """CREATE TABLE IF NOT EXISTS osint_tombstones_v1 (
+                key_sha TEXT PRIMARY KEY,raw_sha TEXT NOT NULL,last_seen INTEGER NOT NULL)""",
+            "CREATE INDEX IF NOT EXISTS osint_tombstones_age ON osint_tombstones_v1(last_seen)",
             """CREATE TABLE IF NOT EXISTS osint_rejections_v1 (
                 target_id TEXT NOT NULL,reason TEXT NOT NULL,count INTEGER NOT NULL,at INTEGER NOT NULL,
                 PRIMARY KEY(target_id,reason,at))""",
@@ -196,6 +199,10 @@ def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
     if expiry <= now:
         return False
     raw_sha = item.get("raw_sha") or sha(item["title"] + "\0" + item["text"])
+    if not item.get("published_at") and db.execute(
+            "SELECT 1 FROM osint_tombstones_v1 WHERE key_sha=? AND raw_sha=?", (key, raw_sha)).fetchone():
+        db.execute("UPDATE osint_tombstones_v1 SET last_seen=? WHERE key_sha=?", (now, key))
+        return False
     revision = sha(encoded({key: item.get(key) for key in ("title", "text", "published_at", "primary")}
                           ) + raw_sha + analysis["version"])
     if old and old["revision_sha"] == revision:

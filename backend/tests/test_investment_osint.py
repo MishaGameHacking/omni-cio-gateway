@@ -390,3 +390,14 @@ def test_existing_scheduler_collects_for_owner_without_broker(application, monke
     with closing(backend.connect()) as db:
         jobs = db.execute("SELECT kind,state,paid_started FROM workspace_jobs").fetchall()
     assert any(row["kind"] == "osint" and row["state"] == "completed" and row["paid_started"] == 0 for row in jobs)
+
+
+def test_expired_undated_item_does_not_resurrect_when_feed_changes(corpus):
+    row = item(published=None)
+    save(corpus, row)
+    later = NOW + 31 * 86400
+    cleanup(corpus, later)
+    assert save(corpus, row, later) is False
+    assert read.documents(corpus, now=later)["items"] == []
+    row["text"] = "Биржа: изменены условия дивидендов"
+    assert save(corpus, row, later) is True

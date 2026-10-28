@@ -19,11 +19,18 @@ def cleanup(connect, now: int, guard=None) -> dict:
         expired = [row[0] for row in db.execute(
             "SELECT id FROM osint_publications_v1 WHERE expires_at<=? ORDER BY expires_at LIMIT 1000", (now,))]
         for identifier in expired:
+            db.execute("""INSERT OR REPLACE INTO osint_tombstones_v1(key_sha,raw_sha,last_seen)
+                SELECT key_sha,raw_sha,? FROM osint_publications_v1 WHERE id=? AND published_at IS NULL""",
+                (now, identifier))
             db.execute("DELETE FROM osint_similarity_v1 WHERE publication_id=?", (identifier,))
             if state["search_mode"] == "fts5":
                 db.execute("DELETE FROM osint_search_v1 WHERE rowid=?", (identifier,))
             db.execute("DELETE FROM osint_history_v1 WHERE publication_id=?", (identifier,))
             db.execute("DELETE FROM osint_publications_v1 WHERE id=?", (identifier,))
+        db.execute("DELETE FROM osint_tombstones_v1 WHERE key_sha IN "
+                   "(SELECT key_sha FROM osint_tombstones_v1 WHERE last_seen<? LIMIT 2000)", (now - 365 * DAY,))
+        db.execute("DELETE FROM osint_tombstones_v1 WHERE key_sha IN "
+                   "(SELECT key_sha FROM osint_tombstones_v1 ORDER BY last_seen DESC LIMIT -1 OFFSET 200000)")
         db.execute("UPDATE osint_publications_v1 SET similar_id=NULL WHERE similar_id IS NOT NULL AND "
                    "NOT EXISTS(SELECT 1 FROM osint_publications_v1 p WHERE p.id=osint_publications_v1.similar_id)")
         db.execute("DELETE FROM osint_history_v1 WHERE rowid IN "

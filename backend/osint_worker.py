@@ -162,6 +162,8 @@ def _parse(target, source, raw, final_url, now, window):
     rows = []
     for item in items:
         analysis = analyze(item["title"], item["text"], report=item["kind"] == "report", pages=item.get("pages"))
+        if item["kind"] == "report":
+            analysis["extraction"] = {key: coverage[key] for key in ("page_count", "truncated", "needs_ocr")}
         analysis["issuer_hint"] = source.issuer
         analysis["issuer_identity_verified"] = False
         rows.append((item, analysis))
