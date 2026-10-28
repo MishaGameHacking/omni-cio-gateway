@@ -99,8 +99,9 @@ def test_failed_legacy_alter_also_rolls_back_new_indexes(tmp_path):
     factory = denying_factory(path,
         lambda action, _first, second: action == sqlite3.SQLITE_ALTER_TABLE and second == TABLE,
         opened, refusals)
+    queue = AnalysisQueue(factory)
     with pytest.raises(sqlite3.DatabaseError):
-        AnalysisQueue(factory).initialize()
+        queue.initialize()
     assert len(refusals) == 1
     assert materialized(path) == before
     assert_closed(opened[0])
