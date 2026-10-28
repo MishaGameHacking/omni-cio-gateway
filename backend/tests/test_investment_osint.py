@@ -401,3 +401,17 @@ def test_expired_undated_item_does_not_resurrect_when_feed_changes(corpus):
     assert read.documents(corpus, now=later)["items"] == []
     row["text"] = "Биржа: изменены условия дивидендов"
     assert save(corpus, row, later) is True
+
+
+def test_transport_can_use_second_checked_public_address(monkeypatch):
+    connected = object()
+    calls = []
+
+    def connect(address, timeout):
+        calls.append((address, timeout))
+        if len(calls) == 1:
+            raise OSError("unreachable first address")
+        return connected
+    monkeypatch.setattr(network.socket, "create_connection", connect)
+    assert network._connect_address(["1.1.1.1", "8.8.8.8"]) is connected
+    assert len(calls) == 2

@@ -20,21 +20,31 @@ REDIRECTS = {301, 302, 303, 307, 308}
 
 
 def public_addresses(host: str) -> list[str]:
-    addresses = sorted({row[4][0] for row in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)})
+    addresses = sorted({row[4][0] for row in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)},
+                       key=lambda address: (ipaddress.ip_address(address).version, address))
     if not addresses or any(not ipaddress.ip_address(value).is_global for value in addresses):
         raise IntakeError("osint_address_not_public")
     return addresses
 
 
+def _connect_address(addresses):
+    for address in addresses[:3]:
+        try:
+            return socket.create_connection((address, 443), timeout=4)
+        except OSError:
+            continue
+    raise IntakeError("osint_connection_unavailable")
+
+
 def _connection(host: str):
     # The checked numeric address is also the address actually connected to.
     # TLS still verifies the original hostname; redirects get an independent check.
-    address = public_addresses(host)[0]
+    addresses = public_addresses(host)
     context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     context.check_hostname = True
     context.verify_mode = ssl.CERT_REQUIRED
     connection = http.client.HTTPSConnection(host, timeout=TIMEOUT, context=context)
-    sock = socket.create_connection((address, 443), timeout=TIMEOUT)
+    sock = _connect_address(addresses)
     try:
         connection.sock = context.wrap_socket(sock, server_hostname=host)
     except BaseException:
